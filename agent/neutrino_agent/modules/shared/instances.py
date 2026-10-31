@@ -77,6 +77,10 @@ TEMPLATE_ACCOUNT = ACCOUNT_SERVICE_TEMPLATE_ACCOUNT
 NOBODY = AccountEntry(0, 0, "", "")
 # How much of a failed command's words an ``apply_failed`` keeps.
 DETAIL_CHARS = 500
+# How many times, and how often, an uninstall deletes the module's directory.
+# Windows refuses to delete a program file for a moment after its process ended.
+REMOVE_TRIES = 30
+REMOVE_RETRY_S = 1.0
 
 
 def machine_for(platform, name: str) -> ServiceMachine:
@@ -408,6 +412,13 @@ class InstanceHooks:
     def forget_module(self) -> None:
         """Delete what ``prepare_module`` wrote, once no instance is left."""
 
+    def stop_installs(self) -> None:
+        """Stop every install still running, before the module's files go.
+
+        Raises:
+            OSError: When the system will not stop one.
+        """
+
 
 class InstancesModuleRunner(ModuleRunner):
     """Installs a module's software from the hub's bytes and runs it per account."""
@@ -538,13 +549,17 @@ class InstancesModuleRunner(ModuleRunner):
         self._forget_states()
 
     def uninstall(self, recipe: dict) -> None:
-        """Delete the module's directory; each account's own data stays.
+        """Stop every install still running and delete the module's directory; each account's own data stays.
 
         Args:
             recipe: The module's recipe.
+
+        Raises:
+            OSError: When the system will not stop an install.
         """
         self._close_forwarders()
-        remove_tree(self._machine.module_dir)
+        self._hooks.stop_installs()
+        self._remove_module_dir()
 
     def validate(self, config: dict) -> None:
         """Parse and check a configuration for this system.
@@ -738,6 +753,15 @@ class InstancesModuleRunner(ModuleRunner):
         details = dict(self._hooks.module_details())
         details["instances"] = [dict(state) for state in self._read_states()]
         return details
+
+    def _remove_module_dir(self) -> None:
+        """Delete the module's directory, trying again while a file of it stays."""
+        directory = self._machine.module_dir
+        for _turn in range(REMOVE_TRIES):
+            remove_tree(directory)
+            if not os.path.exists(directory):
+                return
+            time.sleep(REMOVE_RETRY_S)
 
     def _run_configure(self, config: dict, context) -> None:
         """The ``configure`` step: what every instance shares, and no instance for an account no longer named."""

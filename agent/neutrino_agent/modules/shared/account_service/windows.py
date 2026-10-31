@@ -220,7 +220,7 @@ def write(service, machine) -> bool:
     is_registered = False
     if not held.get("is_present") or held.get("description") != description:
         if held.get("is_present"):
-            _stop_instance(task, output_mark(service, machine), machine)
+            stop_task_tree(task, output_mark(service, machine), machine)
         machine.powershell.call(
             "task_write",
             {
@@ -243,13 +243,13 @@ def start(service, machine, *, is_restart: bool) -> None:
     held = machine.powershell.call("task_read", {"task": task})
     if held.get("state") == ACCOUNT_SERVICE_WINDOWS_TASK_RUNNING:
         return
-    _stop_instance(task, output_mark(service, machine), machine)
+    stop_task_tree(task, output_mark(service, machine), machine)
     machine.powershell.call("task_start", {"task": task})
 
 
 def stop(service, machine) -> None:
     """Stop and disable the task and end the instance's process tree. It stays stopped across a reboot."""
-    _stop_instance(
+    stop_task_tree(
         task_name(service.name, service.account),
         output_mark(service, machine),
         machine,
@@ -263,7 +263,7 @@ def remove(service, machine) -> None:
     agent granted it.
     """
     task = task_name(service.name, service.account)
-    _stop_instance(task, output_mark(service, machine), machine)
+    stop_task_tree(task, output_mark(service, machine), machine)
     machine.powershell.call("task_remove", {"task": task})
     if machine.batch_logon is not None:
         machine.batch_logon.release(service.account, task)
@@ -369,8 +369,18 @@ def remove_path(path: str) -> None:
         pass
 
 
-def _stop_instance(task: str, mark: str, machine) -> None:
-    """Take the instance's process tree, stop its task, and end what is left."""
+def stop_task_tree(task: str, mark: str, machine) -> None:
+    """Take a task's process tree, stop the task, and end what is left.
+
+    Args:
+        task: The scheduled task.
+        mark: A text on the command line of the tree's root process.
+        machine: The machine.
+
+    Raises:
+        OSError: When the kernel refuses the process table or the PowerShell
+            host fails.
+    """
     entries = machine.processes.entries()
     roots = [
         entry.pid

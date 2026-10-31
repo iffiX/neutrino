@@ -114,6 +114,7 @@ from neutrino_agent.modules.shared.account_service.constants import (
 )
 from neutrino_agent.modules.shared.account_service.windows import (
     remove_path,
+    stop_task_tree,
     task_arguments,
     write_text,
 )
@@ -1071,6 +1072,22 @@ class CloudcliHooks(InstanceHooks):
             return ""
         return self._install_log_path(account)
 
+    def stop_installs(self) -> None:
+        """Stop every account's install still running: Windows' task and its processes, Linux's service.
+
+        On a Mac an install runs as a child of its step, and an uninstall
+        starts after that step ends.
+
+        Raises:
+            OSError: When the kernel refuses the process table or the
+                PowerShell host fails.
+        """
+        if self._os_name == "windows":
+            self._stop_windows_installs()
+        elif self._os_name == "linux":
+            self._stop_linux_installs()
+        self.installing = frozenset()
+
     @property
     def _os_name(self) -> str:
         return self._platform.os_name
@@ -1405,6 +1422,30 @@ class CloudcliHooks(InstanceHooks):
         if result != 0 or not is_app_ready(app, self._version):
             raise npm_failure(output, account)
         return False
+
+    def _stop_windows_installs(self) -> None:
+        """End each install task's process tree and unregister the task.
+
+        Raises:
+            OSError: When the kernel refuses the process table or the
+                PowerShell host fails.
+        """
+        self._read_install_tasks()
+        machine = self.machine
+        for name in self._install_tasks:
+            account = name[len(CLOUDCLI_INSTALL_TASK_PREFIX) :]
+            stop_task_tree(name, self._install_script_path(account), machine)
+            machine.powershell.call("task_remove", {"task": name})
+            if machine.batch_logon is not None:
+                machine.batch_logon.release(account, name)
+            self._log(f"{self.name}: stopped the install for {account}")
+
+    def _stop_linux_installs(self) -> None:
+        """Stop every install service that outlived an agent, and forget it."""
+        pattern = f"{CLOUDCLI_INSTALL_UNIT_PREFIX}*.service"
+        run = self.machine.run
+        run(["systemctl", "stop", pattern], is_checked=False)
+        run(["systemctl", "reset-failed", pattern], is_checked=False)
 
     def _install_script_path(self, account: str) -> str:
         return ntpath.join(

@@ -76,7 +76,7 @@ from neutrino_agent.modules.shared.package import unpack_artifact
 from neutrino_agent.modules.shared.source_fetch import SourceProbe
 from neutrino_agent.modules.shared.subprocess_run import CommandResult
 from neutrino_agent.platforms.base import AgentPlatform
-from tests.conftest import FakeBatchLogon, RecordingHost
+from tests.conftest import FakeBatchLogon, FakeProcessTable, RecordingHost
 
 SECRET = "instance-secret"  # scan: allow
 PASSWORD = "hub-password-1"  # scan: allow
@@ -210,7 +210,7 @@ def land_package(app: str, *, is_finished: bool = True) -> None:
 def hooks_for(os_name, module_dir, *, held=None, **kwargs) -> CloudcliHooks:
     tools = {
         key: kwargs.pop(key)
-        for key in ("run", "powershell", "batch_logon")
+        for key in ("run", "powershell", "batch_logon", "processes")
         if key in kwargs
     }
     kwargs.setdefault("probe", Probe())
@@ -1277,6 +1277,72 @@ def test_only_the_end_of_a_long_install_output_is_judged(tmp_path):
     assert len(output) == 8000
     assert output.endswith("npm error last")
     assert install_output(str(tmp_path / "absent.log")) == ""
+
+
+# --- an uninstall while an install runs ---
+
+
+def test_an_uninstall_ends_a_windows_install_and_its_processes_first(tmp_path):
+    host = RecordingHost(
+        {"task_states": {"tasks": [install_task("Running", 0x41301)]}},
+    )
+    module_dir = with_node(tmp_path, "windows")
+    script = module_dir + "\\run\\install_ann.cmd"
+    table = FakeProcessTable(
+        [
+            (10, 1, 100, "cmd.exe", f'"cmd.exe" /s /c "{script} >> log 2>&1"', ""),
+            (11, 10, 101, "node.exe", "node.exe npm-cli.js install", ""),
+            (12, 11, 102, "cmd.exe", "cmd.exe /d /s /c prebuild-install", ""),
+            (20, 1, 100, "node.exe", "node.exe server.js", ""),
+        ]
+    )
+    hooks = hooks_for(
+        "windows",
+        module_dir,
+        powershell=host,
+        run=granted,
+        batch_logon=FakeBatchLogon(host.calls),
+        processes=table,
+    )
+    hooks.installing = frozenset({"ann"})
+
+    hooks.stop_installs()
+
+    assert host.ops() == [
+        "task_states",
+        "task_stop",
+        "task_remove",
+        "batch_logon_release",
+    ]
+    assert host.args_of("task_remove") == [{"task": "neutrino_cloudcli_install_ann"}]
+    assert table.ended == [10, 11, 12]
+    assert hooks.installing == frozenset()
+
+
+def test_an_uninstall_stops_a_linux_install_service_that_outlived_an_agent(linux):
+    hooks, machine, _entry = linux
+    hooks.installing = frozenset({"ann"})
+
+    hooks.stop_installs()
+
+    assert machine.calls == [
+        ["systemctl", "stop", "neutrino_cloudcli_install_*.service"],
+        ["systemctl", "reset-failed", "neutrino_cloudcli_install_*.service"],
+    ]
+    assert hooks.installing == frozenset()
+
+
+def test_a_mac_has_no_install_to_stop_at_an_uninstall(tmp_path):
+    calls = []
+
+    def run_as(*args, **kwargs):
+        calls.append(args)
+
+    hooks = hooks_for("darwin", with_node(tmp_path, "darwin"), run_as=run_as)
+
+    hooks.stop_installs()
+
+    assert calls == []
 
 
 def test_a_refused_login_is_credential_invalid(windows):

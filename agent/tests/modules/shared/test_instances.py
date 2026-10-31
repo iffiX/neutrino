@@ -36,6 +36,7 @@ from dataclasses import dataclass
 import pytest
 
 from neutrino_agent.exceptions import ModuleApplyError, ModuleInstallPending
+import neutrino_agent.modules.shared.instances as instances_module
 from neutrino_agent.modules.shared.account_service import (
     AccountEntry,
     AccountService,
@@ -731,6 +732,61 @@ def test_an_uninstall_deletes_the_modules_directory(runner, tmp_path):
     runner.uninstall({})
 
     assert not (tmp_path / "state" / "demo").exists()
+
+
+def test_an_uninstall_stops_the_installs_before_the_directory_goes(
+    runner, tmp_path, monkeypatch
+):
+    held = tmp_path / "state" / "demo" / "node"
+    held.mkdir(parents=True)
+    seen = []
+    monkeypatch.setattr(
+        runner.hooks, "stop_installs", lambda: seen.append(held.exists())
+    )
+
+    runner.uninstall({})
+
+    assert seen == [True]
+    assert not held.exists()
+
+
+def test_an_uninstall_tries_again_while_a_file_of_an_ended_process_stays(
+    runner, tmp_path, monkeypatch
+):
+    """Windows kept node.exe a moment after the install's processes were ended."""
+    directory = tmp_path / "state" / "demo"
+    directory.mkdir(parents=True)
+    removed = instances_module.remove_tree
+    tries = []
+
+    def remove_on_third(path):
+        tries.append(path)
+        if len(tries) == 3:
+            removed(path)
+
+    slept = []
+    monkeypatch.setattr(instances_module, "remove_tree", remove_on_third)
+    monkeypatch.setattr(instances_module.time, "sleep", slept.append)
+
+    runner.uninstall({})
+
+    assert len(tries) == 3
+    assert slept == [1.0, 1.0]
+    assert not directory.exists()
+
+
+def test_an_uninstall_gives_up_on_a_directory_that_stays(runner, tmp_path, monkeypatch):
+    directory = tmp_path / "state" / "demo"
+    directory.mkdir(parents=True)
+    tries = []
+    slept = []
+    monkeypatch.setattr(instances_module, "remove_tree", tries.append)
+    monkeypatch.setattr(instances_module.time, "sleep", slept.append)
+
+    runner.uninstall({})
+
+    assert len(tries) == 30
+    assert directory.exists()
 
 
 def test_the_journal_is_the_units_with_the_refusal_last(runner, monkeypatch):
