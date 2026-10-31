@@ -102,6 +102,7 @@ cookie or secret of the app or of the visitor.
 | --- | --- |
 | The link's facts stay after `#` in the address, and the shell keeps a copy in `sessionStorage`, which is per tab. The page writes nothing to `localStorage`, IndexedDB or a cookie of its own, and the cache of the app's files is the one thing of the share it leaves in the browser after its tab closes. | A refresh and a bookmark keep working, and a closed tab leaves the app's public code behind and nothing else. |
 | A tab whose address has a `#` part with no facts in it uses its kept copy. A tab the app opened at `/docs#section` is one. | The app's own fragment stays in the address, and a refresh of that tab keeps its share. |
+| A changed `#` part loads the page again in a tab with no facts, and when it holds other facts than the tab's. A `#` part with no facts changes nothing in a tab that has facts. | A change after `#` does not load a page by itself, so a whole link pasted over the introduction or the incomplete-link screen left that screen showing. |
 | The page shows nothing of the share beyond the screens below: no hub name, no machine, no link. | A visitor sees the app the owner shared and nothing else. |
 
 ## The screens
