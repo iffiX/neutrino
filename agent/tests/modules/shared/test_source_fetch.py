@@ -92,7 +92,9 @@ def sources():
 
 
 def document(integrity=INTEGRITY, size=200_000) -> bytes:
-    return json.dumps({"dist": {"integrity": integrity}, "pad": "x" * size}).encode()
+    return json.dumps(
+        {"versions": {VERSION: {"dist": {"integrity": integrity}}}, "pad": "x" * size}
+    ).encode()
 
 
 def closed_port() -> str:
@@ -167,8 +169,8 @@ def test_the_fastest_comes_first_and_a_near_tie_goes_to_the_earlier_first_byte()
 
 
 def test_a_registry_document_names_the_package_with_its_slash_escaped():
-    assert registry_document("https://registry.npmjs.org/", PACKAGE, VERSION) == (
-        "https://registry.npmjs.org/@cloudcli-ai%2Fcloudcli/1.37.3"
+    assert registry_document("https://registry.npmjs.org/", PACKAGE) == (
+        "https://registry.npmjs.org/@cloudcli-ai%2Fcloudcli"
     )
 
 
@@ -193,7 +195,27 @@ def test_registries_are_ranked_by_speed_while_they_name_the_pinned_integrity(sou
         (silent, "unreachable"),
     ]
     assert failures[0]["detail"] == "the registry names sha512-other"
-    assert fast.asked == ["/@cloudcli-ai%2Fcloudcli/1.37.3"]
+    assert fast.asked == ["/@cloudcli-ai%2Fcloudcli"]
+
+
+def test_a_registry_names_the_integrity_of_the_installed_version_alone(sources):
+    other = json.dumps(
+        {"versions": {"1.37.2": {"dist": {"integrity": INTEGRITY}}}}
+    ).encode()
+    source = sources(body=other)
+
+    chosen, failures = rank_registries(
+        [source.url], package=PACKAGE, version=VERSION, integrity=INTEGRITY
+    )
+
+    assert chosen == []
+    assert failures == [
+        {
+            "source": source.url,
+            "reason": "digest_mismatch",
+            "detail": "the registry names no integrity",
+        }
+    ]
 
 
 def test_every_ranking_probes_again(sources):

@@ -154,7 +154,9 @@ class Probe:
         if speed is None:
             return SourceProbe(source=source, reason="unreachable", detail="refused")
         integrity = self.integrities.get(source, INTEGRITY)
-        body = json.dumps({"dist": {"integrity": integrity}}).encode()
+        body = json.dumps(
+            {"versions": {"1.37.3": {"dist": {"integrity": integrity}}}}
+        ).encode()
         return SourceProbe(source=source, is_answered=True, speed=speed, body=body)
 
 
@@ -732,7 +734,7 @@ def test_the_fastest_registry_naming_the_integrity_is_used_with_the_fastest_host
     hooks.prepare(CONFIG, CONFIG.instances[0], entry)
 
     assert machine.tried == [("https://fast.example", "https://h-fast")]
-    assert "https://wrong.example/@cloudcli-ai%2Fcloudcli/1.37.3" in probe.asked
+    assert "https://wrong.example/@cloudcli-ai%2Fcloudcli" in probe.asked
 
 
 def test_a_failed_install_runs_again_on_the_next_registry_and_host(tmp_path):

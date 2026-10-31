@@ -111,7 +111,9 @@ CLOUDCLI_SOURCE_SETS = {
 
 def answering_probe(url, *, source="", is_error_answer=False):
     """Every source answers at once, a registry with the pinned integrity."""
-    body = json.dumps({"dist": {"integrity": CLOUDCLI_INTEGRITY}}).encode()
+    body = json.dumps(
+        {"versions": {"1.37.3": {"dist": {"integrity": CLOUDCLI_INTEGRITY}}}}
+    ).encode()
     return SourceProbe(source=source or url, is_answered=True, speed=1.0, body=body)
 
 

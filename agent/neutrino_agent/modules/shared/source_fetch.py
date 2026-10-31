@@ -230,19 +230,18 @@ def ranked(probes: list) -> list:
     )
 
 
-def registry_document(registry: str, package: str, version: str) -> str:
-    """The address of one version's document on an npm registry. Pure.
+def registry_document(registry: str, package: str) -> str:
+    """The address of a package's document on an npm registry. Pure.
 
     Args:
         registry: The registry, such as ``https://registry.npmjs.org``.
         package: The package, such as ``@cloudcli-ai/cloudcli``.
-        version: The version.
 
     Returns:
-        ``<registry>/<package, its slash escaped>/<version>``.
+        ``<registry>/<package, its slash escaped>``.
     """
     name = urllib.parse.quote(package, safe="@")
-    return f"{registry.rstrip('/')}/{name}/{urllib.parse.quote(version)}"
+    return f"{registry.rstrip('/')}/{name}"
 
 
 def rank_registries(
@@ -264,16 +263,13 @@ def rank_registries(
         ``{source, reason, detail}``.
     """
     probes = probe_all(
-        [
-            (registry, registry_document(registry, package, version))
-            for registry in registries
-        ],
+        [(registry, registry_document(registry, package)) for registry in registries],
         probe_one=probe_one,
     )
     for found in probes:
         if not found.is_answered:
             continue
-        named = _integrity_of(found.body)
+        named = _integrity_of(found.body, version)
         if named != integrity:
             found.is_answered = False
             found.reason = REASON_DIGEST_MISMATCH
@@ -445,13 +441,15 @@ def _bearer_token(challenge: str, *, source: str, probe_one) -> str:
     return token if isinstance(token, str) else ""
 
 
-def _integrity_of(body: bytes) -> str:
-    """The ``dist.integrity`` a version's document names, empty for none."""
+def _integrity_of(body: bytes, version: str) -> str:
+    """The ``dist.integrity`` a package's document names for a version, empty for none."""
     try:
         document = json.loads(body.decode("utf-8"))
     except (UnicodeDecodeError, ValueError):
         return ""
-    dist = document.get("dist") if isinstance(document, dict) else None
+    versions = document.get("versions") if isinstance(document, dict) else None
+    entry = versions.get(version) if isinstance(versions, dict) else None
+    dist = entry.get("dist") if isinstance(entry, dict) else None
     integrity = dist.get("integrity") if isinstance(dist, dict) else None
     return integrity if isinstance(integrity, str) else ""
 
