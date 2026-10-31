@@ -166,10 +166,11 @@ The sidebar's lines under the renamed entries, the Agents page's among them in "
 A docs page follows this table where the term list in
 [doc-author](../../doc-author/SKILL.md) offers a choice.
 
-A module's title on the panel is the catalog's `ui.module_title.<name>`
-when the catalog has it, and the manifest's `title` otherwise. A module
-named after its product has no catalog entry and reads the same in both
-languages, unless its publisher names it in Chinese: SiYuan is 思源笔记.
+A module's title on the panel is the catalog's `ui.module_title.<name>`, and
+every module has a catalog entry. A name the catalog lacks, such as a module
+of a newer agent, reads the manifest's `title`. A module named after its
+product reads the same in both languages, unless its publisher names it in
+Chinese: SiYuan is 思源笔记.
 
 | Manifest name | English | Chinese |
 | --- | --- | --- |
@@ -346,7 +347,7 @@ where they fit.
 | `ui.accounts.ai_tools` | AI tools use the hub's gateway | AI 工具走中枢网关 |
 | `ui.accounts.edit`, `ui.accounts.remove` | Edit, Remove | 编辑、移除 |
 | `ui.accounts.remove_title` | Remove {account} | 移除 {account} |
-| `ui.accounts.remove_body` | {modules} stop running as {account}, and its AI tools go back to their own settings. | {modules} 不再以 {account} 运行，它的 AI 工具改回原来的设置。 |
+| `ui.accounts.remove_body` | What runs as {account} stops: {modules}. Its AI tools go back to their own settings. | {modules} 不再以 {account} 运行，它的 AI 工具改回原来的设置。 |
 | `ui.accounts.remove_body_none` | {account} leaves this machine's accounts, and its AI tools go back to their own settings. | {account} 从这台机器的可用账户里移除，它的 AI 工具改回原来的设置。 |
 | `ui.machine.version`, `ui.machine.platform`, `ui.machine.hostname`, `ui.machine.last_report` | Version, Platform, Host name, Last report | 版本、平台、主机名、最后上报 |
 | `ui.machine.uptime`, `ui.machine.load`, `ui.machine.disk`, `ui.machine.temperature` | Uptime, Load 1/5/15 min, Disk, Temperature | 运行时间、负载 1/5/15 分钟、磁盘、温度 |
@@ -644,7 +645,7 @@ the agent's `cli/wording.py` words the same codes in English.
 | `code.machine_set_failed` | Podman could not change the machine: {detail} | Podman 没能修改虚拟机：{detail} |
 | `code.machine_unreachable` | The Podman machine does not answer: {detail} | Podman 虚拟机没有响应：{detail} |
 | `code.container_name_reserved` | The name {name} starts with neutrino_, which the hub keeps for the containers of its modules. | 容器名 {name} 以 neutrino_ 开头，这个前缀留给中枢模块的容器。 |
-| `code.module_in_use` | {modules} need this module; uninstall them first. | {modules} 依赖这个模块，先卸载它们。 |
+| `code.module_in_use` | First uninstall what requires this module: {modules}. | 先卸载依赖这个模块的“{modules}”。 |
 | `code.container_hub_owned` | {name} is run by a module of the hub; change it in that module's tab. | {name} 由中枢的模块运行，要改就到那个模块的标签页里改。 |
 | `code.containers_not_applied` | Containers did not apply the containers of this module; fix the error on the Containers tab, then press Start here. | 容器模块没能应用这个模块的容器；请先处理“容器”标签页上的错误，再在这里按“启动”。 |
 
