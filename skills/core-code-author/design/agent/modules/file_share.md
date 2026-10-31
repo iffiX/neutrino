@@ -37,18 +37,32 @@ them.
 
 The module's shares live in a file of the module's own,
 `/etc/samba/neutrino.conf`, whose first line is the module's generated
-marker. `smb.conf` is the person's, whoever wrote it, an earlier version of
-this module included: a file an earlier version rendered whole, its first
-line the marker, is the person's file now, left as it is. While the module
-serves at least one share of its own it adds one line to `smb.conf`,
-`include = /etc/samba/neutrino.conf`, right after the `[global]` header,
-once, and changes nothing else in it, not its `[global]`, not the person's
-shares, not the person's Samba users. When the last share of the module's
-goes, at a disable as at uninstall, the module deletes its file and takes
-that one line out again; a machine adopted with no enabled account keeps
-its `smb.conf` byte for byte, and the module starts no server there. A
-machine with no `smb.conf` at all gets the distribution's stock file first,
-the first of `/usr/share/samba/smb.conf`, `/etc/samba/smb.conf.example` and
+marker and whose last line is a `[global]` header. `smb.conf` is the
+person's, whoever wrote it, an earlier version of this module included: a
+file an earlier version rendered whole, its first line the marker, is the
+person's file now, left as it is. While the module serves at least one share
+of its own it adds one line to `smb.conf`, `include =
+/etc/samba/neutrino.conf`, right after the `[global]` header, or first in a
+file with no such header, once, and changes nothing else in it, not its
+`[global]`, not the person's shares, not the person's Samba users. When the
+last share of the module's goes, at a disable as at uninstall, the module
+deletes its file and takes that one line out again; a machine adopted with
+no enabled account keeps its `smb.conf` byte for byte, and the module starts
+no server there.
+
+Samba reads an included file in place of the `include` line, and smbd ignores
+a global setting inside a share, with `Global parameter ... found in service
+section` in its log. The `[global]` header that ends the module's file
+returns Samba to the global section, so the lines after the `include` line
+mean what they meant before it, with shares after the person's `[global]` and
+with no `[global]` at all, and a line an earlier build wrote stays where it
+is. Samba gives a share the defaults it has read when it reaches the share's
+header, so a share default in the person's `[global]`, such as `create mask`
+or `vfs objects`, reaches the person's shares and none of the module's.
+
+A machine with no `smb.conf` at all gets the distribution's stock file
+first, the first of `/usr/share/samba/smb.conf`,
+`/etc/samba/smb.conf.example` and
 `/usr/share/doc/samba-common/examples/smb.conf.default` that is there, else
 a `[global]` of one line, `server role = standalone server`. The apply's
 note says which. The stock file's settings reach none of the module's
