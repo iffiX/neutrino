@@ -350,6 +350,24 @@ def test_a_tex_step_whose_tlmgr_ends_after_the_agent_began_to_stop_keeps_nothing
     assert box.planned() == ["wait_app", "tex"]
 
 
+def test_a_tex_step_tries_no_other_source_after_the_agent_began_to_stop(box):
+    def stop_during_the_install(command):
+        if "tlmgr" in command and "install" in command:
+            box.context.is_stopped = True
+
+    box.podman.on_call = stop_during_the_install
+    box.podman.install_refusals = {"https://fast.example/CTAN/systems/texlive/tlnet"}
+    box.hooks.installed("6.3.2")
+
+    box.start()
+
+    assert [call[5:7] for call in box.podman.named("tlmgr")] == [
+        ["https://fast.example/CTAN/systems/texlive/tlnet", "update"],
+        ["https://fast.example/CTAN/systems/texlive/tlnet", "install"],
+    ]
+    assert box.record()["steps"] == ["replica_set", "admin"]
+
+
 def test_a_replica_set_made_after_the_agent_began_to_stop_is_not_kept(box):
     def stop_during_mongosh(command):
         if "mongosh" in command:

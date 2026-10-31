@@ -1104,7 +1104,7 @@ class AyakaleafHooks(ContainerHooks, GuestAccountHooks):
         record = self._record()
         steps = list(record.get("steps") or [])
         if AYAKALEAF_STEP_TEX not in steps:
-            self._install_tex()
+            self._install_tex(context)
             if self._is_stopping(context, AYAKALEAF_STEP_TEX):
                 return
             record = self._keep({**record, "steps": [*steps, AYAKALEAF_STEP_TEX]})
@@ -1176,11 +1176,12 @@ class AyakaleafHooks(ContainerHooks, GuestAccountHooks):
         self._replica_since = None
         raise _setup_failed(AYAKALEAF_STEP_REPLICA_SET, detail or "mongosh failed")
 
-    def _install_tex(self) -> None:
+    def _install_tex(self, context) -> None:
         """Install the Chinese TeX set with ``tlmgr``, from each source of the ``ctan`` set fastest first.
 
         A source serves the set once ``tlmgr`` exits 0 and ``kpsewhich``
-        finds each of its files.
+        finds each of its files. No source is tried once the agent began to
+        stop.
 
         Raises:
             ModuleSetupError: When no source serves it.
@@ -1199,6 +1200,8 @@ class AyakaleafHooks(ContainerHooks, GuestAccountHooks):
         )
         detail = ""
         for source in order:
+            if context.is_stopping():
+                return
             repository = source.rstrip("/") + AYAKALEAF_TEX_REPOSITORY_PATH
             self._log(f"{self._name}: tlmgr installs from {repository}")
             for verb in AYAKALEAF_TEX_VERBS:
