@@ -73,6 +73,7 @@ BASE_IMPLEMENTED = {
     "agent_log_path": "",
     "agent_bin_dir": "",
     "account_details": "accounts",
+    "has_account": "accounts",
     "agent_data_dir": "",
     "agent_var_dir": "",
     "agent_service_start_hint": "agent_service",

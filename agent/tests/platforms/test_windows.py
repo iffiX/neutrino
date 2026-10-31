@@ -1044,6 +1044,21 @@ def test_an_account_home_keeps_its_contract(monkeypatch, error):
         WindowsPlatform().account_home("ghost")
 
 
+@pytest.mark.parametrize(
+    ("answer", "is_had"), [("S-1-5-21-1", True), (KeyError("ghost"), False)]
+)
+def test_an_account_is_had_by_its_sid_whatever_its_profile(monkeypatch, answer, is_had):
+    def account_sid(account, *, advapi32=None, kernel32=None):
+        if isinstance(answer, BaseException):
+            raise answer
+        return answer
+
+    monkeypatch.setattr(windows_module, "account_sid", account_sid)
+    monkeypatch.setattr(windows_module, "account_home", homes_of({}))
+
+    assert WindowsPlatform().has_account("fresh") is is_had
+
+
 def test_a_step_runs_on_this_thread_acting_as_the_account(monkeypatch):
     acted = []
 

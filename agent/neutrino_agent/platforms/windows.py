@@ -78,6 +78,7 @@ from neutrino_agent.platforms.base import AgentPlatform, is_added_name
 from neutrino_agent.platforms.powershell_host import agent_host
 from neutrino_agent.platforms.windows_accounts import (
     account_home,
+    account_sid,
     check_password,
     impersonated,
     read_users,
@@ -483,6 +484,24 @@ class WindowsPlatform(AgentPlatform):
                 continue
             accounts.add(name)
         return sorted(accounts)
+
+    def has_account(self, account: str) -> bool:
+        """Whether the machine has an account of this name, its profile made or not.
+
+        Args:
+            account: The account.
+
+        Returns:
+            True when Windows finds the account's SID.
+
+        Raises:
+            OSError: When the account's name cannot be looked up.
+        """
+        try:
+            account_sid(account, advapi32=self._advapi32, kernel32=self._kernel32)
+        except KeyError:
+            return False
+        return True
 
     def account_home(self, account: str) -> str:
         """One account's profile directory, as Windows records it.

@@ -74,6 +74,7 @@ CONTAINERS = [
     }
 ]
 MACHINE = {"account": "me", "cpus": 2, "memory_gib": 4, "disk_gib": 0}
+KNOWN_ACCOUNTS = ("me", "ann")
 CONFIG = {"containers": CONTAINERS, "mirrors": [], "machine": MACHINE}
 
 PS_OUTPUT = json.dumps(
@@ -347,12 +348,19 @@ class Platform(AgentPlatform):
         self.os_name = os_name
         self._root = root
         self.opened: list = []
+        # Accounts the computer has with no profile yet.
+        self.with_no_home: set = set()
 
     def agent_log_path(self):
         return os.path.join(self._root, "agent.log")
 
     def account_home(self, account):
+        if account in self.with_no_home:
+            raise KeyError(account)
         return f"/Users/{account}"
+
+    def has_account(self, account):
+        return account in KNOWN_ACCOUNTS
 
     def open_to_accounts(self, directory):
         self.opened.append(directory)
@@ -368,10 +376,11 @@ class FakeProbe:
         return {key: "http" for key, _, _ in targets}
 
 
-def lookup(account):
-    if account not in ("me", "ann"):
+def lookup(platform, account):
+    home = platform.account_home(account)
+    if account not in KNOWN_ACCOUNTS:
         raise KeyError(account)
-    return AccountEntry(501, 20, f"/Users/{account}", "/bin/zsh")
+    return AccountEntry(501, 20, home, "/bin/zsh")
 
 
 class Rig:
@@ -391,7 +400,7 @@ class Rig:
             os_name="darwin",
             module_dir=str(tmp_path / "state" / "podman"),
             record_dir=str(tmp_path / "config" / "podman"),
-            lookup_account=lookup,
+            lookup_account=functools.partial(lookup, self.platform),
             run=self.launchctl,
             chown=lambda path, uid, gid: None,
             launchd_dir=str(tmp_path / "LaunchDaemons"),
@@ -699,7 +708,26 @@ def test_a_new_machine_of_an_account_the_computer_lacks_is_refused(rig):
     assert closed["params"] == {"account": "ghost"}
 
 
+def test_a_new_machine_of_an_account_with_no_profile_reads_no_disk(tmp_path):
+    rig = Rig(tmp_path, os_name="windows", provider="wsl")
+    rig.platform.with_no_home.add("ann")
+
+    closed = rig.runner.command("machine_read", {"account": "ann"})
+
+    assert (closed["exit_code"], closed["code"]) == (0, "")
+    assert closed["result"]["disk_gib"] == 100
+    assert closed["result"]["disk_gib_now"] == 0
+
+
 # --- refusals ---
+
+
+def test_an_account_with_no_profile_is_not_unknown(tmp_path):
+    rig = Rig(tmp_path, os_name="windows", provider="wsl")
+    rig.platform.with_no_home.add("ann")
+    machine = dict(MACHINE, account="ann", password="pw", disk_gib=100)
+
+    rig.runner.validate(dict(CONFIG, containers=[], machine=machine))
 
 
 def test_an_account_the_computer_does_not_have_is_unknown(rig):

@@ -1302,9 +1302,7 @@ class PodmanMachineModuleRunner(ModuleRunner):
         """
         disk_gib_now = 0
         if account:
-            try:
-                self._service_machine.lookup_account(account)
-            except KeyError:
+            if not self._platform.has_account(account):
                 return command_outcome(1, "account_unknown", {"account": account})
             disk_gib_now = self._disk_now(self._machine_of(account, ""), self._record())
         return {
@@ -1356,10 +1354,7 @@ class PodmanMachineModuleRunner(ModuleRunner):
         disk_gib_now = 0
         is_known = True
         if settings.account:
-            try:
-                self._service_machine.lookup_account(settings.account)
-            except KeyError:
-                is_known = False
+            is_known = self._platform.has_account(settings.account)
             if is_known:
                 machine = self._machine_of(settings.account, settings.password)
                 disk_gib_now = self._disk_now(machine, self._record())

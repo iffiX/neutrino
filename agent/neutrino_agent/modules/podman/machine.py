@@ -148,10 +148,13 @@ class PodmanMachine:
     def is_present(self) -> bool:
         """Whether the account has its default machine: its settings file is there.
 
-        Raises:
-            KeyError: When the computer does not have the account.
+        Returns:
+            True when the file is there; False too for an account with no home.
         """
-        return os.path.isfile(self.settings_path())
+        try:
+            return os.path.isfile(self.settings_path())
+        except KeyError:
+            return False
 
     def ssh_port(self) -> int:
         """The ssh port the machine forwards to the computer's loopback, now.

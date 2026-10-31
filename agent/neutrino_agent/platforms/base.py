@@ -223,6 +223,24 @@ class AgentPlatform:
             )
         return details
 
+    def has_account(self, account: str) -> bool:
+        """Whether the machine has an account of this name.
+
+        Args:
+            account: The account.
+
+        Returns:
+            True when the account database has it.
+
+        Raises:
+            PlatformUnsupportedError: When the platform cannot answer.
+        """
+        try:
+            self.account_home(account)
+        except KeyError:
+            return False
+        return True
+
     def account_home(self, account: str) -> str:
         """One account's home directory, from the account database.
 

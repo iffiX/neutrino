@@ -324,6 +324,18 @@ def test_the_read_names_the_port_from_the_settings_file_and_the_key_in_place(
     )
 
 
+def test_an_account_with_no_home_has_no_machine():
+    machine = PodmanMachine(
+        platform=RecordingPlatform(),
+        account="fresh",
+        password="pw",
+        binary=WINDOWS_BINARY,
+        provider="wsl",
+    )
+
+    assert not machine.is_present()
+
+
 def test_the_port_is_read_again_at_every_read(tmp_path):
     write_settings(tmp_path, port=49759)
     machine = mac_machine(tmp_path)
