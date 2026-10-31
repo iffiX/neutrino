@@ -32,6 +32,9 @@ import time
 from neutrino_agent.constants import (
     AGENT_MODULE_OUTPUT_LIMIT_BYTES,
     AGENT_PACKAGE_LOCK_RETRY_S,
+    AGENT_PACMAN_LOCK_HOLDERS,
+    AGENT_PACMAN_LOCK_PATH,
+    AGENT_PACMAN_LOCK_TEXT,
     AGENT_UPDATE_DNF_LOCK_TEXT,
     AGENT_UPDATE_LOCK_TIMEOUT_S,
     AGENT_WAIT_PACKAGE_MANAGER,
@@ -53,12 +56,6 @@ DNF_LOCK_PATHS = ("/var/lib/dnf/rpmdb_lock.pid", "/var/cache/dnf/metadata_lock.p
 PROC_DIR = "/proc"
 # What apt prints after a dpkg run was cut.
 DPKG_INTERRUPTED_TEXT = "dpkg was interrupted"
-# The file pacman makes while it runs, what it prints while that file stands,
-# and the kernel's names of the processes that make it. The file names no
-# holder, and a pacman the agent's stop ended leaves it behind.
-PACMAN_LOCK_PATH = "/var/lib/pacman/db.lck"
-PACMAN_LOCK_TEXT = "unable to lock database"
-PACMAN_LOCK_HOLDERS = ("pacman", "packagekitd", "pamac-daemon")
 # The code a step fails with once the system's lock stayed held.
 CODE_PACKAGE_MANAGER_BUSY = "package_manager_busy"
 # The wait sink of the task running on each thread.
@@ -292,11 +289,11 @@ def _run_pacman(command: list, timeout_s: int) -> str:
                     told = None
                     _tell_wait({})
                 with contextlib.suppress(FileNotFoundError):
-                    os.unlink(PACMAN_LOCK_PATH)
+                    os.unlink(AGENT_PACMAN_LOCK_PATH)
                 try:
                     return installers.run_checked(command, timeout_s=timeout_s)
                 except InstallError as error:
-                    if PACMAN_LOCK_TEXT not in str(error):
+                    if AGENT_PACMAN_LOCK_TEXT not in str(error):
                         raise
             if waited >= AGENT_UPDATE_LOCK_TIMEOUT_S:
                 raise ModuleApplyError(CODE_PACKAGE_MANAGER_BUSY, {"holder": holder})
@@ -312,7 +309,7 @@ def _run_pacman(command: list, timeout_s: int) -> str:
 
 def _pacman_lock_holder() -> str:
     """The name of a process that holds pacman's lock file; empty while none does."""
-    if not os.path.exists(PACMAN_LOCK_PATH):
+    if not os.path.exists(AGENT_PACMAN_LOCK_PATH):
         return ""
     try:
         names = os.listdir(PROC_DIR)
@@ -326,7 +323,7 @@ def _pacman_lock_holder() -> str:
                 held = stream.read().strip()
         except OSError:
             continue
-        if held in PACMAN_LOCK_HOLDERS:
+        if held in AGENT_PACMAN_LOCK_HOLDERS:
             return held
     return ""
 

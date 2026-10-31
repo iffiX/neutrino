@@ -16,6 +16,7 @@ import json
 import os
 import shutil
 import subprocess
+import threading
 from pathlib import Path
 
 import pytest
@@ -388,15 +389,25 @@ def test_the_installer_sees_the_package_under_its_final_name(tmp_path, kind):
     assert ".part" not in install
 
 
+def test_the_arch_package_lands_under_the_extension_pacman_reads(tmp_path):
+    path = stream_outcome(
+        tmp_path, [PACKAGE_BYTES], ("", {"sha256": sha256(PACKAGE_BYTES)}), "arch"
+    )
+
+    assert path == str(tmp_path / "packages" / "neutrino_agent.pkg.tar.zst")
+    assert "pacman -U --noconfirm /s/update.pkg.tar.zst" in what_installs("arch", path)
+
+
 RELEASE_NAMES = {
     "deb": "neutrino-agent_0.5.0_amd64.deb",
     "rpm": "neutrino-agent-0.5.0-1.x86_64.rpm",
+    "arch": "neutrino-agent-0.5.0-1-x86_64.pkg.tar.zst",
     "msi": "neutrino-agent-0.5.0-windows-amd64.msi",
     "pkg": "neutrino-agent-0.5.0-macos.pkg",
 }
 
 
-@pytest.mark.parametrize("kind", ["deb", "rpm", "msi", "pkg"])
+@pytest.mark.parametrize("kind", ["deb", "rpm", "arch", "msi", "pkg"])
 def test_the_package_takes_the_file_name_its_release_gave_it(tmp_path, kind):
     name = RELEASE_NAMES[kind]
     path = stream_outcome(
@@ -615,6 +626,7 @@ def test_an_update_writes_its_script_root_only_beside_the_state_and_runs_it(
 def test_the_family_names_the_package_kind():
     assert self_update.package_kind({"os": "linux", "family": "debian"}) == "deb"
     assert self_update.package_kind({"os": "linux", "family": "rhel"}) == "rpm"
+    assert self_update.package_kind({"os": "linux", "family": "arch"}) == "arch"
     assert self_update.package_kind({"os": "linux", "family": ""}) == ""
 
 
@@ -678,7 +690,7 @@ def stubbed(tmp_path, monkeypatch):
     program of its own that reports no version until a test gives it one."""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    for kind in ("deb", "rpm", "pkg"):
+    for kind in ("deb", "rpm", "arch", "pkg"):
         monkeypatch.setitem(
             self_update.PACKAGE_KIND_TO_PROGRAM, kind, str(bin_dir / "nagent")
         )
@@ -868,6 +880,139 @@ def test_dnf_runs_again_while_another_transaction_holds_the_rpm_lock(
     assert len(calls.read_text().splitlines()) == 3
     assert written["output"].count("rpm transaction lock") == 2
     assert written["output"].endswith("Installed\n")
+
+
+def pacman_unit(tmp_path, stubbed, monkeypatch, *, is_reinstall=False):
+    """The unit of an Arch package, its lock file at a path of this test's.
+
+    Returns:
+        The lock file's path, the file the stubbed pacman records its calls
+        in, and what runs the unit.
+    """
+    lock = tmp_path / "db.lck"
+    monkeypatch.setattr(self_update, "AGENT_PACMAN_LOCK_PATH", str(lock))
+    monkeypatch.setattr(self_update, "AGENT_PACKAGE_LOCK_RETRY_S", 1)
+    monkeypatch.setattr(self_update, "PROC_DIR", str(tmp_path / "proc"))
+    calls = tmp_path / "pacman_calls"
+    stub_manager(
+        stubbed,
+        "pacman",
+        body=f"""
+echo "$*" >> {calls}
+if [ -e {lock} ]; then
+    echo "error: failed to init transaction (unable to lock database)"
+    exit 1
+fi
+echo Installed
+""",
+    )
+    run = functools.partial(
+        run_unit,
+        tmp_path,
+        kind="arch",
+        package="neutrino-agent-0.5.2-1-x86_64.pkg.tar.zst",
+        is_reinstall=is_reinstall,
+    )
+    return lock, calls, run
+
+
+def pacman_holder(tmp_path, comm: str):
+    """One process of this name in the stand-in for /proc.
+
+    Returns:
+        Its directory, which a test removes when the process ends.
+    """
+    directory = tmp_path / "proc" / "4242"
+    directory.mkdir(parents=True)
+    (directory / "comm").write_text(comm + "\n")
+    return directory
+
+
+def test_the_arch_update_is_pacman_upgrade_and_the_version_decides(
+    tmp_path, stubbed, monkeypatch
+):
+    agent_at(stubbed, tmp_path, "0.5.1")
+    _, calls, run = pacman_unit(tmp_path, stubbed, monkeypatch)
+
+    written = json.loads(run())
+
+    assert calls.read_text().splitlines() == [
+        f"-U --noconfirm {tmp_path}/update.pkg.tar.zst"
+    ]
+    assert written["kind"] == "arch"
+    assert written["exit_code"] == 1
+    assert "found version 0.5.1" in written["output"]
+    assert not (tmp_path / "update.pkg.tar.zst").exists()
+
+
+def test_a_pacman_lock_file_no_process_holds_is_removed_first(
+    tmp_path, stubbed, monkeypatch
+):
+    """A pacman the agent's stop ended leaves the file behind."""
+    lock, calls, run = pacman_unit(tmp_path, stubbed, monkeypatch, is_reinstall=True)
+    lock.write_text("")
+
+    written = json.loads(run())
+
+    assert written["exit_code"] == 0
+    assert not lock.exists()
+    assert len(calls.read_text().splitlines()) == 1
+
+
+def test_the_arch_update_waits_for_a_process_that_holds_the_lock_file(
+    tmp_path, stubbed, monkeypatch
+):
+    lock, calls, run = pacman_unit(tmp_path, stubbed, monkeypatch, is_reinstall=True)
+    lock.write_text("")
+    holder = pacman_holder(tmp_path, "packagekitd")
+    released = threading.Timer(2, shutil.rmtree, [holder])
+    released.start()
+
+    written = json.loads(run())
+    released.join()
+
+    assert written["exit_code"] == 0
+    assert written["output"].endswith("Installed\n")
+    assert len(calls.read_text().splitlines()) == 1
+
+
+def test_a_process_holding_the_lock_file_past_the_wait_fails_the_update(
+    tmp_path, stubbed, monkeypatch
+):
+    lock, calls, run = pacman_unit(tmp_path, stubbed, monkeypatch, is_reinstall=True)
+    lock.write_text("")
+    monkeypatch.setattr(self_update, "AGENT_UPDATE_LOCK_TIMEOUT_S", 1)
+    pacman_holder(tmp_path, "pamac-daemon")
+
+    written = json.loads(run())
+
+    assert written["exit_code"] == 1
+    assert "pamac-daemon still holds the package manager" in written["output"]
+    assert not calls.exists()
+
+
+def test_pacman_runs_again_while_it_says_another_run_holds_its_lock(
+    tmp_path, stubbed, monkeypatch
+):
+    """A holder of another name made the file between the look and the run."""
+    _, calls, run = pacman_unit(tmp_path, stubbed, monkeypatch, is_reinstall=True)
+    stub_manager(
+        stubbed,
+        "pacman",
+        body=f"""
+echo "$*" >> {calls}
+if [ "$(wc -l < {calls})" -le 1 ]; then
+    echo "error: failed to init transaction (unable to lock database)"
+    exit 1
+fi
+echo Installed
+""",
+    )
+
+    written = json.loads(run())
+
+    assert written["exit_code"] == 0
+    assert len(calls.read_text().splitlines()) == 2
 
 
 def test_dnf_refusing_for_another_reason_is_not_run_again(

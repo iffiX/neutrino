@@ -10,8 +10,8 @@ launchd on macOS; the unit and the job run a script written beside the
 agent's state, which links the package to a file of its own there first,
 since the agent an install starts clears the packages directory. Each
 install waits for another one's lock: apt by its own timeout, dnf by running
-again while it names the rpm lock, msiexec by the Windows Installer's mutex
-and once more after a busy answer. An install to another version reads the
+again while it names the rpm lock, pacman while a process holds its lock file,
+msiexec by the Windows Installer's mutex and once more after a busy answer. An install to another version reads the
 version installed before and after the package manager: it installs nothing
 when the agent is that version already, and the version afterwards, not the
 package manager's exit, decides whether it went through. Each writes what
@@ -40,6 +40,10 @@ import time
 from neutrino_agent.constants import (
     AGENT_DARWIN_LINK_PATH,
     AGENT_LINUX_PROGRAM_PATH,
+    AGENT_PACKAGE_LOCK_RETRY_S,
+    AGENT_PACMAN_LOCK_HOLDERS,
+    AGENT_PACMAN_LOCK_PATH,
+    AGENT_PACMAN_LOCK_TEXT,
     AGENT_REINSTALL_INSTALLED_CODES,
     AGENT_REINSTALL_LOG_NAME,
     AGENT_REINSTALL_OUTPUT_LIMIT_BYTES,
@@ -69,11 +73,15 @@ from neutrino_agent.streams.package import (
     PackageStream,
 )
 
-FAMILY_TO_PACKAGE_KIND = {"debian": "deb", "rhel": "rpm"}
+FAMILY_TO_PACKAGE_KIND = {"debian": "deb", "rhel": "rpm", "arch": "arch"}
 # The received package's final name before its kind's extension, when the
 # hub sends no release name; ``installer`` and ``dnf`` refuse a file that
 # does not end in ``.pkg`` or ``.rpm``.
 PACKAGE_FILE_STEM = "neutrino_agent"
+# A kind's file extension, where it is not the kind.
+PACKAGE_KIND_TO_EXTENSION = {"arch": "pkg.tar.zst"}
+# Where the kernel shows each process.
+PROC_DIR = "/proc"
 # The package kind a machine installs by its operating system alone.
 OS_TO_PACKAGE_KIND = {"windows": "msi", "darwin": "pkg"}
 # The agent's own program where the install runs a shell script; its
@@ -81,6 +89,7 @@ OS_TO_PACKAGE_KIND = {"windows": "msi", "darwin": "pkg"}
 PACKAGE_KIND_TO_PROGRAM = {
     "deb": AGENT_LINUX_PROGRAM_PATH,
     "rpm": AGENT_LINUX_PROGRAM_PATH,
+    "arch": AGENT_LINUX_PROGRAM_PATH,
     "pkg": AGENT_DARWIN_LINK_PATH,
 }
 # The version a release file name carries: after ``neutrino-agent``, up to
@@ -142,6 +151,32 @@ $result = [ordered]@{{package = {package}; kind = 'msi'; version = $version; sta
 [IO.File]::WriteAllText({result}, ($result | ConvertTo-Json -Compress))
 """
 
+# The shell a pacman install runs in the script: while the lock file stands it
+# looks for a process that holds it, up to the limit. A file no process holds
+# is removed, and pacman runs, and runs again while its output names the lock.
+# The wait of ``modules/shared/system_package.py``, for a script outside the
+# agent.
+_PACMAN_INSTALL = """waited=0; code=1
+while :; do
+    holder=
+    if [ -e {lock} ]; then
+        for comm in {proc}/[0-9]*/comm; do
+            read -r name 2>/dev/null < "$comm" || continue
+            case "$name" in {holders}) holder=$name; break ;; esac
+        done
+    fi
+    if [ -z "$holder" ]; then
+        rm -f {lock}
+        out=$(pacman -U --noconfirm {package} 2>&1); code=$?
+        [ -z "$out" ] || printf '%s\\n' "$out"
+        [ $code != 0 ] && [ $waited -lt {limit} ] || break
+        case "$out" in *{text}*) ;; *) break ;; esac
+    elif [ $waited -ge {limit} ]; then
+        echo "$holder still holds the package manager"; code=1; break
+    fi
+    sleep {retry}; waited=$((waited + {retry}))
+done; (exit $code)"""
+
 # The stamp the unit writes its times with, and the pipeline that turns the
 # log's tail into one JSON string: backslashes and quotes escaped, every
 # line ended with an escaped newline.
@@ -162,8 +197,8 @@ def package_kind(platform: dict) -> str:
         platform: The tuple from ``platforms.detect.platform_tuple``.
 
     Returns:
-        ``msi`` on Windows, ``pkg`` on macOS, ``deb`` or ``rpm`` by the
-        distribution family, or empty when the hub bakes nothing for this
+        ``msi`` on Windows, ``pkg`` on macOS, ``deb``, ``rpm`` or ``arch`` by
+        the distribution family, or empty when the hub bakes nothing for this
         machine.
     """
     by_os = OS_TO_PACKAGE_KIND.get(platform.get("os", ""), "")
@@ -178,7 +213,7 @@ def install_command(
     """The detached command that installs a received package. Pure.
 
     Args:
-        kind: ``deb``, ``rpm``, ``msi`` or ``pkg``.
+        kind: ``deb``, ``rpm``, ``arch``, ``msi`` or ``pkg``.
         path: The received package file.
         state_dir: The agent's state directory, where the install's script,
             its log and its result are written.
@@ -206,12 +241,13 @@ def install_command(
 def install_script(
     kind: str, path: str, *, state_dir: str, version: str, is_reinstall: bool
 ) -> str:
-    """The shell script a ``deb``, ``rpm`` or ``pkg`` install runs. Pure.
+    """The shell script a ``deb``, ``rpm``, ``arch`` or ``pkg`` install runs. Pure.
 
     The script links the received file to a file of its own beside the
     state before anything waits, installs from that one and deletes it at
-    the end. apt waits for the dpkg lock another install holds, and dnf
-    runs again while it says another transaction holds the rpm lock. An
+    the end. apt waits for the dpkg lock another install holds, dnf
+    runs again while it says another transaction holds the rpm lock, and
+    pacman waits while a process holds its lock file. An
     install that is no reinstall reads the installed agent's ``--version``
     first, installs nothing when it names ``version``, and otherwise has the
     package manager install the file as an upgrade; it reads the version
@@ -221,7 +257,7 @@ def install_script(
     installed, and the package manager's exit is its own.
 
     Args:
-        kind: ``deb``, ``rpm`` or ``pkg``.
+        kind: ``deb``, ``rpm``, ``arch`` or ``pkg``.
         path: The received package file.
         state_dir: Where the log and the result are written.
         version: The package's version, the hub's own; written into the
@@ -407,13 +443,13 @@ def receive_package(channel, *, directory: str, kind: str) -> str:
     Args:
         channel: The stream's channel, already opened as ``package {}``.
         directory: Where the file lands.
-        kind: ``deb``, ``rpm``, ``msi`` or ``pkg``, the final name's
-            extension.
+        kind: ``deb``, ``rpm``, ``arch``, ``msi`` or ``pkg``, which names the
+            final name's extension.
 
     Returns:
         The path of the file whose digest matched the close's ``sha256``,
         renamed to the release file name the close carried, or
-        ``neutrino_agent.<kind>`` when it carried none or an unsafe one.
+        ``neutrino_agent.<extension>`` when it carried none or an unsafe one.
 
     Raises:
         SelfUpdateError: When the bytes do not match the digest the hub
@@ -423,7 +459,7 @@ def receive_package(channel, *, directory: str, kind: str) -> str:
             file remains.
     """
     received = PackageStream(
-        channel, directory=directory, name=f"{PACKAGE_FILE_STEM}.{kind}"
+        channel, directory=directory, name=f"{PACKAGE_FILE_STEM}.{_extension(kind)}"
     ).receive()
     if "path" in received:
         return received["path"]
@@ -445,7 +481,7 @@ def run_update(
             It outlives this process: the install restarts the service,
             and the agent that starts then clears the directory, so a Linux
             or macOS install links it to a file of its own first.
-        kind: ``deb``, ``rpm``, ``msi`` or ``pkg``.
+        kind: ``deb``, ``rpm``, ``arch``, ``msi`` or ``pkg``.
         state_dir: The agent's state directory, where the install's script
             is written and the install writes what it did.
         version: The package's version, as :func:`install_script` takes it.
@@ -575,17 +611,30 @@ def _reinstall_result_path(state_dir: str) -> str:
     return os.path.join(state_dir, AGENT_REINSTALL_RESULT_NAME)
 
 
+def _extension(kind: str) -> str:
+    """A package kind's file extension.
+
+    Args:
+        kind: ``deb``, ``rpm``, ``arch``, ``msi`` or ``pkg``.
+
+    Returns:
+        The extension with no leading dot.
+    """
+    return PACKAGE_KIND_TO_EXTENSION.get(kind, kind)
+
+
 def _work_path(state_dir: str, kind: str) -> str:
     """Where a Linux or macOS install links the received package to.
 
     Args:
         state_dir: The agent's state directory.
-        kind: ``deb``, ``rpm`` or ``pkg``, the file's extension.
+        kind: ``deb``, ``rpm``, ``arch`` or ``pkg``, which names the file's
+            extension.
 
     Returns:
         The file's path.
     """
-    return os.path.join(state_dir, f"{AGENT_UPDATE_PACKAGE_STEM}.{kind}")
+    return os.path.join(state_dir, f"{AGENT_UPDATE_PACKAGE_STEM}.{_extension(kind)}")
 
 
 def _script_path(state_dir: str) -> str:
@@ -623,18 +672,29 @@ def _package_manager_line(kind: str, path: str, *, is_reinstall: bool) -> str:
     """The package manager's own command line for one install. Pure.
 
     Args:
-        kind: ``deb``, ``rpm`` or ``pkg``.
+        kind: ``deb``, ``rpm``, ``arch`` or ``pkg``.
         path: The package file the install reads.
         is_reinstall: Whether the file is the version installed now, which
             apt and dnf install only through their reinstall verbs.
 
     Returns:
         The command line; dnf's runs again each second while what it said
-        names the rpm lock, for as long as apt waits for the dpkg lock.
+        names the rpm lock, for as long as apt waits for the dpkg lock, and
+        pacman's waits as long while a process holds its lock file.
     """
     package = shlex.quote(path)
     if kind == "pkg":
         return f"installer -pkg {package} -target /"
+    if kind == "arch":
+        return _PACMAN_INSTALL.format(
+            lock=shlex.quote(AGENT_PACMAN_LOCK_PATH),
+            proc=shlex.quote(PROC_DIR),
+            holders=" | ".join(AGENT_PACMAN_LOCK_HOLDERS),
+            limit=AGENT_UPDATE_LOCK_TIMEOUT_S,
+            retry=AGENT_PACKAGE_LOCK_RETRY_S,
+            package=package,
+            text=shlex.quote(AGENT_PACMAN_LOCK_TEXT),
+        )
     if kind == "deb":
         reinstall = " --reinstall" if is_reinstall else ""
         return (
@@ -660,7 +720,7 @@ def _reporting_script(
     Args:
         install: The package manager's own command line, naming the file
             the received one is linked to.
-        kind: ``deb``, ``rpm`` or ``pkg``.
+        kind: ``deb``, ``rpm``, ``arch`` or ``pkg``.
         path: The received package file.
         version: The package's version, written into the result.
         state_dir: Where the log and the result are written.

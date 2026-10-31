@@ -166,7 +166,7 @@ def fakes(tmp_path, monkeypatch):
     dnf_lock = tmp_path / "rpmdb_lock.pid"
     monkeypatch.setattr(system_package_module, "DNF_LOCK_PATHS", (str(dnf_lock),))
     alpm_lock = tmp_path / "db.lck"
-    monkeypatch.setattr(system_package_module, "PACMAN_LOCK_PATH", str(alpm_lock))
+    monkeypatch.setattr(system_package_module, "AGENT_PACMAN_LOCK_PATH", str(alpm_lock))
 
     class Fakes:
         lock = dnf_lock

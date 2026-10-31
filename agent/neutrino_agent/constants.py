@@ -168,13 +168,19 @@ AGENT_UPDATE_PACKAGE_STEM = "update"
 # What dnf5 says when it refuses at once because another transaction holds
 # the rpm lock.
 AGENT_UPDATE_DNF_LOCK_TEXT = "rpm transaction lock"
+# The file pacman makes while it runs, what it prints while that file stands,
+# and the kernel's names of the processes that make it. The file names no
+# holder, and a pacman the agent's stop ended leaves it behind.
+AGENT_PACMAN_LOCK_PATH = "/var/lib/pacman/db.lck"
+AGENT_PACMAN_LOCK_TEXT = "unable to lock database"
+AGENT_PACMAN_LOCK_HOLDERS = ("pacman", "packagekitd", "pamac-daemon")
 # The Windows Installer holds this mutex while it installs, msiexec answers
 # the busy code while another install holds it, and the reboot code when an
 # install finished with a restart owed.
 AGENT_UPDATE_MSI_MUTEX = "Global\\_MSIExecute"
 AGENT_UPDATE_MSI_BUSY_CODE = 1618
 AGENT_UPDATE_MSI_REBOOT_CODE = 3010
-# The agent's own program as the deb and the rpm install it.
+# The agent's own program as the Linux packages install it.
 AGENT_LINUX_PROGRAM_PATH = "/usr/bin/nagent"
 # Where each package puts the Go programs the agent runs, the transport and
 # the SSH server: ``bin/`` in the agent's program directory, under
