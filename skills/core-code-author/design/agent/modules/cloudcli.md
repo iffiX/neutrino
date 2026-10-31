@@ -98,11 +98,19 @@ path that answers to it.
 
 **A failed install names its step.** `download_failed {file, sources}` is
 an install that no source served Node.js, or that no registry served the
-package's integrity. `cloudcli_npm_install_failed` is a failed npm, and
-`cloudcli_native_module_failed` is better-sqlite3, node-pty or bcrypt unable
-to fetch its prebuilt binary. Both npm codes hold `detail`, the last four
-distinct lines prebuild-install, node-gyp and npm wrote, else the last four
-distinct error lines Node.js wrote, such as `Error: EPERM: ...`. It keeps
+package's integrity. `cloudcli_native_module_failed {account, module, detail}`
+is prebuild-install writing `prebuild-install warn install`, its line for a
+binary it could not fetch; `module` is the native module npm's `path` line
+ends with. `cloudcli_npm_install_failed {account, detail}` is every other
+failed npm, and a native module npm installed and Node.js cannot load, whose
+`detail` is the module and the first line of its error. npm starts every line
+of its report with `npm error`, and closes it with advice about permissions
+and the path of its log, so `detail` keeps only the lines that name the cause:
+npm's `code`, its `path`, the failed request, prebuild-install's line, and the
+errors a tool threw, `FetchError:`, `Error:` and `gyp ERR! stack Error:`, the
+last four distinct ones. A report with none of them keeps its first four lines,
+never the line naming its log file. On Windows the script writes a line at the
+start of each attempt, and the failure reads the last attempt's lines alone. It keeps
 the last whole lines that fit in 400 characters. node-pty and bcrypt hold their binaries inside their npm packages.
 better-sqlite3 fetches its own from the host
 `npm_config_better_sqlite3_binary_host` names: the artifact's `hosts` list
