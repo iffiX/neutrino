@@ -780,7 +780,7 @@ def test_a_closed_forwarder_ends_every_connection_it_serves_both_sockets():
         wait_until(lambda: all(up.fileno() == -1 for up in hooks.upstreams))
         with pytest.raises(ConnectionRefusedError):
             socket.create_connection(("127.0.0.1", port), timeout=5)
-        assert forwarder._sockets == set()
+        wait_until(lambda: forwarder._sockets == set())
     finally:
         kept.close()
         ws.close()
