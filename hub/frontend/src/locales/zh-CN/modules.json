@@ -341,6 +341,7 @@
   "ui.modules.enabled_accounts": "启用的账户",
   "ui.modules.failed": "上一步失败了。",
   "ui.modules.failed_code": "上一步失败了：{code}。",
+  "ui.modules.failed_step": "第 {index}/{count} 步失败：{step}",
   "ui.modules.holder_agent": "被控端更新",
   "ui.modules.holder_unnamed": "另一个程序",
   "ui.modules.home_folder": "主目录",

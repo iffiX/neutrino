@@ -114,6 +114,13 @@
   align-self: flex-start;
 }
 
+/* A failure's words keep the lines of the command's output, and a long
+   address wraps inside the tab. */
+.modules_failure_detail {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 /* A dead press loses its border, the red one of Uninstall included. */
 .modules_actions .button:disabled {
   border-color: transparent;

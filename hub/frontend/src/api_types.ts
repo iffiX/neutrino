@@ -1204,6 +1204,16 @@ export interface ModuleTaskWait {
   params: Record<string, unknown>;
 }
 
+/** The step a module's kept failure failed at, and its place in the plan. */
+export interface ModuleFailedStep {
+  name: string;
+  params: Record<string, unknown>;
+  /** 1-based: the step's place in the plan. */
+  index: number;
+  /** The steps in the plan. */
+  count: number;
+}
+
 /** A module's task, as its agent reports it on the module's row. */
 export interface ModuleTask {
   /** The plan, in the order the steps run. */
@@ -1263,6 +1273,8 @@ export interface DeviceModuleView {
   is_configured: boolean;
   /** The module's last task; null before its first. */
   task: ModuleTask | null;
+  /** The step the module's kept failure failed at; null without one. */
+  step: ModuleFailedStep | null;
   /** The hub's task with the lines of the module's last task, to follow on
    * `/ws/hub/task`; empty when none has run. */
   task_id: string;

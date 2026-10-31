@@ -341,6 +341,7 @@
   "ui.modules.enabled_accounts": "Enabled accounts",
   "ui.modules.failed": "The last step failed.",
   "ui.modules.failed_code": "The last step failed: {code}.",
+  "ui.modules.failed_step": "Failed at step {index} of {count}: {step}",
   "ui.modules.holder_agent": "the agent's update",
   "ui.modules.holder_unnamed": "another program",
   "ui.modules.home_folder": "home folder",

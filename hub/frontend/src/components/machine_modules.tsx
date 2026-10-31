@@ -29,7 +29,9 @@ import {
   useLanguage,
 } from "../i18n";
 import { MODULE_DESCRIPTORS } from "../module_descriptors";
+import { stepWords } from "../module_step_words";
 import { moduleTitle, withModuleTitle } from "../module_title";
+import { stripAnsi } from "../strip_ansi";
 import { useApiResource } from "../use_api_resource";
 import { useConfirm } from "../use_confirm";
 import {
@@ -690,7 +692,23 @@ export function MachineModules({
                 <div className="notice notice--error">
                   <Icon name="alert" size={15} />
                   <div className="notice_body">
-                    {describeFailure(activeRow, manifestTitles)}
+                    {activeRow.step !== null && (
+                      <span>
+                        {t("ui.modules.failed_step", {
+                          index: activeRow.step.index,
+                          count: activeRow.step.count,
+                          step: stepWords(
+                            activeRow.step,
+                            activeRow.name,
+                            0,
+                            manifestTitles,
+                          ),
+                        })}
+                      </span>
+                    )}
+                    <span className="modules_failure_detail">
+                      {stripAnsi(describeFailure(activeRow, manifestTitles))}
+                    </span>
                   </div>
                 </div>
               )}
