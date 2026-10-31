@@ -22,7 +22,8 @@
 # another program holds the package manager's lock, each install waits up to
 # LOCK_WAIT_S seconds and names it. While cloud-init sets the machine up, the
 # script first waits up to LOCK_WAIT_S seconds for it, unless cloud-init runs
-# the script.
+# the script. An apt install that finds no version of a dependency runs
+# apt-get update once and tries again.
 set -eu
 
 # The edition this script installs; the mainland source tree stamps it cn.
@@ -66,6 +67,9 @@ LOCK_WAIT_S=300
 APT_LOCKS="/var/lib/dpkg/lock-frontend /var/lib/apt/lists/lock"
 DNF_LOCK_FILES="/var/lib/dnf/rpmdb_lock.pid /var/cache/dnf/metadata_lock.pid"
 DNF_LOCK_TEXT="rpm transaction lock"
+# What apt prints in C when its package lists name no version of a
+# dependency, or a version the archive no longer serves.
+APT_STALE_LISTS_TEXT="unmet dependencies|Unable to fetch some archives"
 # Where the kernel lists the file locks held, and shows each process.
 PROC_LOCKS=/proc/locks
 PROC_DIR=/proc
@@ -194,6 +198,29 @@ wait_for_cloud_init() {
     timeout "$LOCK_WAIT_S" cloud-init status --wait >/dev/null 2>&1 || code=$?
     [ "$code" != 124 ] \
         || fail "cloud-init is still setting up this machine after $LOCK_WAIT_S seconds; nothing was installed. Run this script again once it has finished."
+}
+
+# Install a deb with apt once no other program holds its locks. An install
+# whose output names stale package lists runs apt-get update once, then the
+# install again.
+install_deb() {
+    for attempt in first last; do
+        wait_for_package_manager deb
+        {
+            code=0
+            $as_root env LC_ALL=C apt-get install -y -o DPkg::Lock::Timeout="$LOCK_WAIT_S" "$1" 2>&1 \
+                || code=$?
+            echo "$code" >"$work/apt_exit"
+        } | tee "$work/apt_out"
+        code=$(cat "$work/apt_exit")
+        [ "$code" != 0 ] || return 0
+        if [ "$attempt" = last ] || ! grep -Eq "$APT_STALE_LISTS_TEXT" "$work/apt_out"; then
+            return "$code"
+        fi
+        echo "Updating the package lists to find the package's dependencies"
+        wait_for_package_manager deb
+        $as_root apt-get update -o DPkg::Lock::Timeout="$LOCK_WAIT_S" || return
+    done
 }
 
 # Run dnf under root once no other program holds its lock: dnf 4's by the
@@ -608,10 +635,7 @@ main() {
     echo "Installing $name"
     case "$kind" in
         macos) $as_root installer -pkg "$package" -target / ;;
-        deb)
-            wait_for_package_manager deb
-            $as_root apt-get install -y -o DPkg::Lock::Timeout="$LOCK_WAIT_S" "$package"
-            ;;
+        deb) install_deb "$package" ;;
         rpm) run_dnf install -y "$package" ;;
         arch) $as_root pacman -U --noconfirm "$package" ;;
     esac

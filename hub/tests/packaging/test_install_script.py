@@ -101,6 +101,11 @@ echo "$2:x:1001:1001::$FAKE_SUDO_USER_HOME:/bin/sh"
 running=""
 [ ! -f "${FAKE_CLOUD_INIT:-/none}" ] || running=" (cloud-init running)"
 echo "$(basename "$0") $*$running" >> "$FAKE_LOG"
+if [ "$1" = install ] && [ -n "${FAKE_APT_FAILS:-}" ] && [ -s "$FAKE_APT_FAILS" ]; then
+    if [ "${LC_ALL:-}" = C ]; then head -n 1 "$FAKE_APT_FAILS"; else echo "E: 无法修正错误"; fi
+    sed -i 1d "$FAKE_APT_FAILS"
+    exit 100
+fi
 """,
     "cloud-init": """#!/bin/sh
 case "$1" in
@@ -301,7 +306,9 @@ def test_a_debian_machine_installs_the_hub_deb_from_the_latest_release(stand_ins
     (install,) = _installs(asked)
     assert install.startswith("apt-get install -y -o DPkg::Lock::Timeout=300 /")
     assert install.endswith("/neutrino-hub_9.9.9_amd64.deb")
-    assert any(line.startswith("sudo apt-get install -y") for line in asked)
+    assert any(
+        line.startswith("sudo env LC_ALL=C apt-get install -y") for line in asked
+    )
     paths = [
         path
         for site in (stand_ins.first, stand_ins.second)
@@ -933,7 +940,9 @@ def test_a_run_asks_for_the_password_once_before_it_downloads(
     assert asked.count("sudo -v") == 1
     assert result.stderr.count("asks for administrator rights once") == 1
     assert all(
-        line.startswith(("sudo -n", "sudo installer", "sudo apt-get", "sudo dnf"))
+        line.startswith(
+            ("sudo -n", "sudo installer", "sudo env LC_ALL=C apt-get", "sudo dnf")
+        )
         for line in asked[2:]
         if line.startswith("sudo")
     )
@@ -1448,11 +1457,12 @@ def test_dnf_5_runs_again_while_another_transaction_holds_the_rpm_lock(
     assert len([line for line in _installs(asked) if line.startswith("dnf")]) == 3
 
 
-# --- cloud-init setting the machine up ---
+# --- cloud-init setting the machine up, and stale package lists ---
 
 CLOUD_INIT_WAIT = (
     "Waiting up to 300 seconds for cloud-init to finish setting up this machine"
 )
+LISTS_UPDATE = "Updating the package lists to find the package's dependencies"
 
 
 @pytest.mark.parametrize("os_release", ["ubuntu", "rocky"])
@@ -1517,3 +1527,60 @@ def test_a_script_cloud_init_runs_waits_for_no_cloud_init(stand_ins, tmp_path):
     assert result.returncode == 0, result.stderr
     assert "cloud-init" not in result.stdout
     assert len(_installs(asked)) == 1
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "The following packages have unmet dependencies:",
+        "E: Unable to fetch some archives, maybe run apt-get update or try with "
+        "--fix-missing?",
+    ],
+)
+def test_stale_package_lists_are_updated_once_and_the_install_runs_again(
+    stand_ins, tmp_path, said
+):
+    """apt's words are matched in C, whatever the person's language."""
+    fails = tmp_path / "apt_fails"
+    fails.write_text(said + "\n")
+
+    result, asked = stand_ins(
+        "agent", environment={"FAKE_APT_FAILS": str(fails), "LANG": "zh_CN.UTF-8"}
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert LISTS_UPDATE in result.stdout.splitlines()
+    assert [line.split(" -o ")[0] for line in _installs(asked)] == [
+        "apt-get install -y",
+        "apt-get update",
+        "apt-get install -y",
+    ]
+    assert "Installed neutrino-agent_9.9.9_amd64.deb" in result.stdout
+
+
+def test_lists_still_stale_after_the_update_fail_with_apt_s_code(stand_ins, tmp_path):
+    fails = tmp_path / "apt_fails"
+    fails.write_text("The following packages have unmet dependencies:\n" * 2)
+
+    result, asked = stand_ins("agent", environment={"FAKE_APT_FAILS": str(fails)})
+
+    assert result.returncode == 100
+    assert [line.split(" -o ")[0] for line in _installs(asked)] == [
+        "apt-get install -y",
+        "apt-get update",
+        "apt-get install -y",
+    ]
+    assert "Installed" not in result.stdout
+
+
+def test_another_apt_failure_updates_no_lists(stand_ins, tmp_path):
+    fails = tmp_path / "apt_fails"
+    fails.write_text("dpkg: error processing archive\n")
+
+    result, asked = stand_ins("agent", environment={"FAKE_APT_FAILS": str(fails)})
+
+    assert result.returncode == 100
+    assert [line.split(" -o ")[0] for line in _installs(asked)] == [
+        "apt-get install -y"
+    ]
+    assert LISTS_UPDATE not in result.stdout
