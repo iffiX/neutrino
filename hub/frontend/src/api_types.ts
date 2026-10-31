@@ -1256,6 +1256,8 @@ export interface DeviceModuleView {
   /** The line the uninstall dialog shows under its body. Null for a module
    * the agent carries. */
   uninstall_data: ModuleUninstallData | null;
+  /** The modules its entry for the machine's platform requires. */
+  requires: string[];
   /** Whether the hub holds a configuration for the module on this device;
    * the first Configure imports one from the machine where it holds none. */
   is_configured: boolean;

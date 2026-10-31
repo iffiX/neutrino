@@ -345,6 +345,8 @@
   "ui.modules.holder_unnamed": "另一个程序",
   "ui.modules.home_folder": "主目录",
   "ui.modules.install": "安装",
+  "ui.modules.install_title": "在 {device} 上安装 {module}",
+  "ui.modules.install_requires_body": "会先安装“{modules}”。",
   "ui.modules.install_present": "这台机器上已经装了。",
   "ui.modules.install_version": "安装另一个版本…",
   "ui.modules.install_version_confirm": "安装",

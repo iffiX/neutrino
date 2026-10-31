@@ -456,6 +456,33 @@ export function MachineModules({
       onConfirm: () => void restart(),
     });
 
+  // Install on a module whose required module reads absent opens a dialog
+  // naming that module first.
+  const askInstall = () => {
+    if (activeRow === undefined) {
+      return;
+    }
+    const absent = activeRow.requires.filter(
+      (name) => reportedRows[name]?.state === "absent",
+    );
+    if (absent.length === 0) {
+      void act("install");
+      return;
+    }
+    confirm.ask({
+      title: t("ui.modules.install_title", {
+        module: moduleTitle(activeRow.name, activeRow.title),
+        device: deviceName,
+      }),
+      body: t(
+        "ui.modules.install_requires_body",
+        codeParams({ modules: absent }),
+      ),
+      confirmLabel: t("ui.modules.install"),
+      onConfirm: () => void act("install"),
+    });
+  };
+
   const askUninstall = () => {
     if (activeRow === undefined) {
       return;
@@ -712,7 +739,7 @@ export function MachineModules({
                       isPresent ? t("ui.modules.install_present") : undefined
                     }
                     isBusy={busyAction === "install"}
-                    onClick={() => void act("install")}
+                    onClick={askInstall}
                   />
                   <ActionButton
                     action="start"
