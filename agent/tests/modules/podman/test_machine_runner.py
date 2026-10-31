@@ -61,6 +61,7 @@ from neutrino_agent.modules.shared.account_service import (
 )
 from neutrino_agent.modules.shared.base import ModuleStep
 from neutrino_agent.modules.shared.subprocess_run import CommandResult
+from neutrino_agent.platforms import base as platforms_base_module
 from neutrino_agent.platforms.base import AgentPlatform
 
 CONTAINERS = [
@@ -1835,6 +1836,18 @@ def test_a_module_s_containers_are_applied_once_the_root_script_wrote_them(
     assert applied is True
     assert rig.runner.is_applied("demo") is False
     assert rig.runner.is_applied("late") is False
+
+
+def test_the_page_ports_are_under_the_state_root(rig, monkeypatch, tmp_path):
+    config_root = tmp_path / "config_root"
+    state_root = tmp_path / "state_root"
+    monkeypatch.setattr(platforms_base_module, "AGENT_DATA_DIR_POSIX", str(config_root))
+    monkeypatch.setattr(platforms_base_module, "AGENT_VAR_DIR", str(state_root))
+
+    rig.make_runner().page_port("demo", "neutrino_demo")
+
+    assert (state_root / "demo" / "page_ports.json").is_file()
+    assert not config_root.exists()
 
 
 def test_a_restarted_agent_counts_a_module_s_containers_written_until_its_first_apply(

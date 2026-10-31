@@ -4,8 +4,7 @@ A hub container whose module has a page publishes its ``page_port`` on
 ``127.0.0.1`` at a port the agent picks the first time and keeps, so the
 container's file stays the same across applies, and the module's forwarder
 reads the same port. The record is ``page_ports.json`` in the module's
-directory under the configuration root, root-only: one port per container
-name.
+directory under the state root, root-only: one port per container name.
 
 Not pure: binds a socket and writes files.
 """
@@ -47,8 +46,8 @@ class PodmanPagePortStore:
     def __init__(self, *, directory: str, pick=free_loopback_port):
         """
         Args:
-            directory: The configuration root; each module's record is in
-                its own directory under it.
+            directory: The state root; each module's record is in its own
+                directory under it.
             pick: Returns a free loopback port.
         """
         self._directory = directory

@@ -108,11 +108,11 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
         self._wanted: "PodmanConfig | None" = None
         self._source_sets: dict = {}
         self._probe = PodmanServiceProbe()
-        data_dir = platform.agent_data_dir()
+        var_dir = platform.agent_var_dir()
         self._records = InstanceRecordStore(
-            directory=os.path.join(data_dir, self.name), fields=PODMAN_RECORD_FIELDS
+            directory=os.path.join(var_dir, self.name), fields=PODMAN_RECORD_FIELDS
         )
-        self._page_ports = PodmanPagePortStore(directory=data_dir)
+        self._page_ports = PodmanPagePortStore(directory=var_dir)
 
     def take_config(self, config: dict) -> None:
         """Take the configuration the state names, before any apply of it.

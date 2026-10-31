@@ -20,6 +20,7 @@ from neutrino_agent.modules.podman.applier import PodmanContainerState
 from neutrino_agent.modules.podman.runner import PodmanModuleRunner
 from neutrino_agent.modules.shared.base import ModuleStep
 from neutrino_agent.modules.shared.subprocess_run import CommandResult
+from neutrino_agent.platforms import base as platforms_base_module
 from neutrino_agent.platforms.base import AgentPlatform
 
 # What ``podman ps -a --format json`` prints for a running and an exited
@@ -687,6 +688,22 @@ def test_the_page_port_is_picked_once_and_kept_in_the_module_s_record(hub_runner
 
     assert FakeRenderer.seen[-1][1].page_ports == {"neutrino_demo": 40123}
     assert hub_runner.page_port("demo", "neutrino_demo") == 40123
+
+
+def test_the_record_and_the_page_ports_are_under_the_state_root(
+    hub_runner, monkeypatch, tmp_path
+):
+    config_root = tmp_path / "config"
+    state_root = tmp_path / "state"
+    monkeypatch.setattr(platforms_base_module, "AGENT_DATA_DIR_POSIX", str(config_root))
+    monkeypatch.setattr(platforms_base_module, "AGENT_VAR_DIR", str(state_root))
+    runner = PodmanModuleRunner(platform=AgentPlatform(), log=lambda m: None)
+
+    runner.apply(HUB_CONFIG)
+
+    assert (state_root / "podman" / "root.json").is_file()
+    assert (state_root / "demo" / "page_ports.json").is_file()
+    assert not config_root.exists()
 
 
 def test_the_record_names_the_declared_and_hub_containers_after_a_start(

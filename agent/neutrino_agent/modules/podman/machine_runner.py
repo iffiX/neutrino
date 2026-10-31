@@ -394,7 +394,7 @@ class PodmanMachineModuleRunner(ModuleRunner):
         self._written: "PodmanConfig | None" = None
         self._wanted: "PodmanConfig | None" = None
         self._source_sets: dict = {}
-        self._page_ports = PodmanPagePortStore(directory=platform.agent_data_dir())
+        self._page_ports = PodmanPagePortStore(directory=platform.agent_var_dir())
         # The last reading of the machine: ``(at, account, command, info)``,
         # ``info`` None when the machine did not answer.
         self._reading: "tuple | None" = None
