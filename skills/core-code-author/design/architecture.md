@@ -208,8 +208,8 @@ runs one passes `--yes`: the deb's and the rpm's removal script and the
 Windows installer's removal run `nhub reset network --yes`. The agent's
 commands that change the machine do the same: `nagent start`, `stop`,
 `leave`, `join` over an existing binding and `service uninstall`, and the
-agent's deb removal script runs `nagent leave --yes`. A machine with no
-binding is told so by `nagent leave` without a question.
+agent's deb and Arch removal scripts run `nagent leave --yes`. A machine with
+no binding is told so by `nagent leave` without a question.
 
 The questions are answered in the terminal or in a browser. The hub's
 service serves the browser's questions from the install on the panel's HTTP

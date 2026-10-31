@@ -320,8 +320,7 @@ manager's output, to `local_agent.log` beside it:
 A machine with no agent gets none. A hub that is not set up serves the setup
 wizard and starts no panel, and `nhub setup` installs its agent
 ([../design/architecture.md](../design/architecture.md), "`nhub setup`
-configures and starts, and installs nothing"). The Arch package carries no
-agent package, so a hub there starts no script. An agent of 0.5 is replaced
+configures and starts, and installs nothing"). An agent of 0.5 is replaced
 by the agent of 0.6, which reads `hub_key_missing` until it joins again with
 a new link from the hub's own row on the Agents page
 ([../design/transport.md](../design/transport.md), "A peer of 0.5").

@@ -174,7 +174,7 @@ platform in words, not only in the filename.
 | --- | --- | --- | --- |
 | Debian, Ubuntu, Raspberry Pi OS, amd64 and arm64 | `.deb` | `.deb` | `.deb` |
 | Fedora, RHEL, AlmaLinux, Rocky | `.rpm` | `.rpm` | `.rpm` |
-| Arch, EndeavourOS, Manjaro | `.pkg.tar.zst` | none | none |
+| Arch, EndeavourOS, Manjaro, x86-64 | `.pkg.tar.zst` | `.pkg.tar.zst` | `.pkg.tar.zst` |
 | Windows 10 and 11, x64 | `.msi`, `server` mode | `.msi` | `.msi` |
 | macOS on Apple silicon | `.pkg`, `server` mode | `.pkg` | `.pkg` |
 | macOS on Intel | `.pkg`, `server` mode | `.pkg` | `.pkg` |
@@ -284,12 +284,14 @@ tools need it, at the pin the client's packages carry.
 | `neutrino-agent_<version>_arm64.deb` | The same on ARM64 |
 | `neutrino-agent-<version>-1.x86_64.rpm` | Fedora, RHEL, AlmaLinux, Rocky |
 | `neutrino-agent-<version>-1.aarch64.rpm` | The same on ARM64 |
+| `neutrino-agent-<version>-1-x86_64.pkg.tar.zst` | Arch, EndeavourOS, Manjaro |
 | `neutrino-agent-<version>-windows-amd64.msi` | Windows 10 1809 or newer, x86-64 |
 | `neutrino-agent-<version>-macos-arm64.pkg` | macOS 13 or newer on Apple silicon |
 | `neutrino-agent-<version>-macos-amd64.pkg` | macOS 13 or newer on Intel |
 
 32-bit ARM is not published, because no interpreter build is. Windows is
-x86-64 only, because RustDesk publishes no Windows ARM64 build.
+x86-64 only, because RustDesk publishes no Windows ARM64 build. Arch is
+x86-64 only ("Hub").
 
 ```bash
 sudo apt install ./neutrino-agent_<version>_amd64.deb
@@ -322,6 +324,7 @@ window and the tray.
 | `neutrino-client_<version>_arm64.deb` | The same on ARM64 |
 | `neutrino-client-<version>-1.x86_64.rpm` | Fedora, RHEL, AlmaLinux, Rocky |
 | `neutrino-client-<version>-1.aarch64.rpm` | The same on ARM64 |
+| `neutrino-client-<version>-1-x86_64.pkg.tar.zst` | Arch, EndeavourOS, Manjaro |
 | `neutrino-client-<version>-windows-amd64.msi` | Windows 10 or newer, x86-64 |
 | `neutrino-client-<version>-macos-arm64.pkg` | macOS 13 or newer on Apple silicon |
 | `neutrino-client-<version>-macos-amd64.pkg` | macOS 13 or newer on Intel |
@@ -447,8 +450,11 @@ seconds while another program holds the package manager's lock, as the
 agent's own installs wait
 ([../design/agent.md](../design/agent.md), "The system's own lock"): apt's
 locks, dpkg's and the package lists' that `apt-get update` writes, as
-`/proc/locks` lists them, dnf 4's lock files, the Windows Installer's
-`Global\_MSIExecute` mutex. It prints one line per holder, `Waiting up to
+`/proc/locks` lists them, dnf 4's lock files, a process named `pacman`,
+`packagekitd` or `pamac-daemon` while pacman's lock file stands, the Windows
+Installer's `Global\_MSIExecute` mutex. A pacman lock file no such process
+holds is what a cut run left, and the script removes it. It prints one line
+per holder, `Waiting up to
 300 seconds for <name> (process <pid>) to finish with the package
 manager`, `<name>` the whole name from the process's command line, and
 `another Windows Installer install` on Windows, where the mutex names no
@@ -477,7 +483,10 @@ parents, and it waits for no cloud-init, since cloud-init waits for it.
 `unmet dependencies`, `not installable`, `has no installation candidate`,
 `Unable to locate package` or `Unable to fetch some archives`, the script
 prints `Updating the package lists to find the package's dependencies`, runs
-`apt-get update` once, then the install again. Before their first update,
+`apt-get update` once, then the install again. On Arch it runs `pacman -U`
+the same way, and an output naming `could not satisfy dependencies`, `unable
+to satisfy dependency`, `failed retrieving file` or `failed to retrieve some
+files` takes one `pacman -Sy` and the install again. Before their first update,
 Ubuntu's cloud image lists no universe package, and Debian's lists no
 package at all. cloud-init updates them only when its user-data names a
 package, so this retry covers a machine it has already finished on.
@@ -548,8 +557,8 @@ sentence when a tool it needs is missing.
 | Script | Builds | Runs on |
 | --- | --- | --- |
 | `build_hub.py` | the hub's `.deb`, `.rpm` and Arch package | Linux with podman or docker, after `npm run build` in `hub/frontend` |
-| `build_agent.py` | the agent's `.deb` and `.rpm` | Linux with podman or docker |
-| `build_client_desktop.py` | the client's `.deb` and `.rpm` | Linux of the target architecture, with podman or docker |
+| `build_agent.py` | the agent's `.deb`, `.rpm` and Arch package | Linux with podman or docker |
+| `build_client_desktop.py` | the client's `.deb`, `.rpm` and Arch package | Linux of the target architecture, with podman or docker |
 | `build_agent_windows.py`, `build_client_windows.py` | the two `.msi` | Windows with Python 3.13 and WiX 6 |
 | `build_agent_macos.py`, `build_client_macos.py` | the two `.pkg` | macOS with Python 3.13, of the architecture it builds |
 | `build_hub_windows.py` | the hub's `.msi`, compiled by Nuitka, with the programs it drives and the agent's `.msi` in its cache | Windows with Python 3.13 and WiX 6 |
@@ -575,8 +584,9 @@ Every asset name comes from `PACKAGING_ASSET_PATTERNS` in
 `packaging/shared/constants.py`, whose `msi` and `macos_pkg` keys name the
 Windows and macOS packages; the `pkg` key stays Arch's.
 
-`--families` chooses the distribution families of the Linux builds; the agent
-and the client have no Arch package and say so rather than failing.
+`--families` chooses the distribution families of the Linux builds. Arch
+Linux is x86-64 only: on arm64 each build says it makes no Arch package
+rather than failing.
 `packaging/ci/check.py <target> <artifact>` installs a built package where it
 runs, checks that it works, and removes it again; the workflow runs it after
 every build.
@@ -598,6 +608,11 @@ The hub and the agent are built in containers of the target family, because
 each carries an interpreter compiled against that family's C libraries, so
 podman or docker is not optional. `--architecture arm64` runs those containers
 under emulation; the host needs QEMU registered with binfmt_misc first.
+
+The agent's Arch package comes out of an `archlinux` container with RustDesk's
+host out of upstream's own Arch package. The client's three Linux packages
+all come out of `debian:12`, the Arch one by Debian's `makepkg`, which holds
+one glibc floor.
 
 The client is compiled, and Nuitka under emulation takes hours, so its Linux
 packages are built on a machine of their own architecture. The Windows `.msi`
@@ -625,7 +640,7 @@ rule.
 | `.rpm` of an architecture | the agent `.rpm` of that architecture |
 | `.msi` | the agent `.msi` |
 | `.pkg` of an architecture | the agent `.pkg` of that architecture |
-| Arch `.pkg.tar.zst` | none, because no agent package is published for Arch |
+| Arch `.pkg.tar.zst` | the agent Arch package |
 
 The build reads every agent package of its edition and writes
 `agent_packages.json` beside the cache. The manifest names every platform the

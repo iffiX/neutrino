@@ -18,16 +18,18 @@ new floor is written down.
 | hub `.msi` | none | the agent `.msi` it carries and installs on its own machine at setup | Windows 10 1809 |
 | hub `.pkg` | none | `neutrino_transport`, built by Go 1.27, which names macOS 13 as its least system ("The Go programs") | macOS 13, arm64 and amd64 |
 | agent `.deb`, `.rpm` | 2.34 | the same floor as the hub's (`agent/packaging/constants.py`), chosen so the two packages require one system; the RustDesk host binary needs 2.27 and Codeg's binaries 2.34 | Debian 12, Ubuntu 22.04, RHEL 9 |
+| agent Arch package | 2.34 | the same tree and floor check as the `.deb`, RustDesk's host out of upstream's Arch package (`agent/packaging/build_pkg.py`) | Arch, a rolling release, x86-64 |
 | agent `.msi` | none | the pseudo console the shell stream runs PowerShell on (`agent/neutrino_agent/streams/windows_shell.py:76`) | Windows 10 1809 |
 | agent `.pkg` | none | `neutrino_transport` and `neutrino_ssh_server`, built by Go 1.27 for macOS 13; the RustDesk app asks for 12.3 (`packaging/shared/rustdesk_assets.py:41`) | macOS 13, arm64 and amd64 |
 | client `.deb` | 2.34 | `nclient` and `mount_helper`, compiled in `debian:12` (`packaging/build/build_client_desktop.py:40`) | Debian 12, Ubuntu 22.04 |
 | client `.rpm` | 2.34 | the same two binaries out of the same container (`packaging/build/build_client_desktop.py:50`) | RHEL 9, AlmaLinux 9 |
+| client Arch package | 2.34 | the same two binaries out of the same `debian:12` container (`packaging/build/build_client_desktop.py`) | Arch, a rolling release, x86-64 |
 | client `.pkg` | none | `neutrino_transport`, built by Go 1.27 for macOS 13; the RustDesk app asks for 12.3 (`packaging/shared/rustdesk_assets.py:41`) | macOS 13, arm64 and amd64 |
 | client `.msi` | none | the WebView2 Evergreen runtime and CPython 3.13 (`packaging/build/build_client_windows.py:41`, `packaging/build/build_client_windows.py:90`) | Windows 10 1809 |
 | client `.apk` | none | `openProxyFileDescriptor`, which the Files provider serves a share's file through, from API level 26 (`minSdk` in `client/android/`) | Android 8.0 |
 | client `.ipa` | none | the deployment target 16.0 in `client/ios/project.yml`; iOS 16 is the last system of the iPhone X, the oldest phone the app is tested on | iOS 16 |
 
-Ubuntu 22.04 has glibc 2.35, above all four Linux floors, and the hub's `.deb`
+Ubuntu 22.04 has glibc 2.35, above every Linux floor, and the hub's `.deb`
 reaches it because the DHCP client is named `dhcpcd-base | dhcpcd5`
 (`hub/neutrino_hub/system/constants.py:197`): Ubuntu has the first name from
 24.04 and the same daemon in the second before it, whose `dhcpcd.service` the
@@ -128,6 +130,14 @@ setting needs it ([agent/ai_tools.md](agent/ai_tools.md)). The hub's
 a hub test keeps the two the same. The agent draws no window, so it holds no
 bindings and depends on nothing named `python`.
 
+The Arch package's `depends=` is the list the `.deb` and the `.rpm` name for
+the RustDesk host, under the Arch names upstream's Arch package uses:
+`gtk3`, `libxcb`, `xdotool`, `libxfixes`, `alsa-lib`, `systemd-libs`, `curl`,
+`libva`, `gst-plugins-base`, `pam` and `gst-plugin-pipewire`, with `systemd`
+(`agent/packaging/build_pkg.py`). It adds `libpulse`: `librustdesk.so` links
+`libpulse.so.0` and `libpulse-simple.so.0`, which upstream's list leaves out
+and nothing else on that list brings on an Arch cloud image.
+
 The interpreter is held because the system's is no fit. The agent is
 standard library only, so one architecture-independent package once ran on
 whatever Python a device already had. A project that installs into
@@ -149,9 +159,11 @@ copy of cc-switch repeats the same pin.
 
 A machine still supplies the window's toolkit. On Linux that is the
 WebKitGTK 4.1 stack and the appindicator library, plain dependencies of the
-deb and the rpm; on Windows the WebView2 runtime, for which the installer
-runs Microsoft's bootstrapper when the machine has none; on macOS WKWebView,
-which is the system's. The compile is native, so each package comes off a
+deb, the rpm and the Arch package (`webkit2gtk-4.1`,
+`gobject-introspection-runtime`, `libayatana-appindicator`, with `polkit` and
+`cifs-utils` for a mount); on Windows the WebView2 runtime, for which the
+installer runs Microsoft's bootstrapper when the machine has none; on macOS
+WKWebView, which is the system's. The compile is native, so each package comes off a
 machine of its own architecture. A checkout pays none of it: `pip install -e
 client` runs on the checkout's interpreter, and `nclient gui` uses whatever
 can import `gi`.
@@ -286,17 +298,19 @@ runner's Homebrew OpenSSL loads on the runner and on nothing else.
 the staged tree, takes the highest `GLIBC_` version any of them names, and
 exits when it is above `PACKAGING_GLIBC_FLOOR`
 (`hub/packaging/venv_tree.py:633`, `agent/packaging/payload.py:343`,
-`client/desktop/packaging/payload.py:437`). The constant is 2.34 in all three
+`client/desktop/packaging/payload.py:437`), the Arch builds among them. The
+constant is 2.34 in all three
 packages (`hub/packaging/constants.py:13`, `agent/packaging/constants.py:12`,
 `client/desktop/packaging/constants.py:13`). A build whose tree needs more than
 that fails at that line, before anything is published.
 
-**The two formats declare the floor differently.** An `.rpm` gets its glibc
+**The formats declare the floor differently.** An `.rpm` gets its glibc
 requirement from a scan of its own payload, with only the interpreter's library
 excluded (`client/desktop/packaging/build_rpm.py:97`), so `dnf` rejects a
 package the machine is too old for. A `.deb` declares no libc dependency at
 all, and `apt` installs it on a machine below the floor, where the first run
-fails on the missing symbol version. The assertion at build time takes the
+fails on the missing symbol version. An Arch package declares none either, and
+Arch's own glibc is above the floor. The assertion at build time takes the
 place of the declaration the format omits.
 
 **A VM of the oldest system is the proof.**

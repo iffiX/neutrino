@@ -156,7 +156,7 @@ agent/
                      own: server/, session/, forward/,
                      cmd/neutrino_ssh_server/ the binary. It is Go, so the
                      agent's package stays standard library.
-  packaging/         Its .deb and .rpm builders and the payload every
+  packaging/         Its .deb, .rpm and Arch builders and the payload every
                      package stages, the .msi and .pkg included.
   tests/
 ```
@@ -190,9 +190,9 @@ client/desktop/
                      polkit/ the policy for the mount helper.
   frontend/          The window's page: plain HTML, CSS and JavaScript, no
                      framework and no node toolchain.
-  packaging/         The .deb and .rpm builders, the payload every package
-                     stages, the .msi and .pkg included, and the icon
-                     containers.
+  packaging/         The .deb, .rpm and Arch builders, the payload every
+                     package stages, the .msi and .pkg included, and the
+                     icon containers.
   tests/
 ```
 
@@ -242,8 +242,9 @@ and calls it.
 ```
 packaging/
   shared/            Library modules, no main(): constants.py the names of
-                     package files and machines, the Nuitka, WiX, pkg and
-                     RustDesk builders, the container runner, the cores cache.
+                     package files and machines, the Nuitka, WiX, pkg, makepkg
+                     and RustDesk builders, the container runner, the cores
+                     cache.
   build/             One build_<target>.py per target: build_hub.py,
                      build_agent.py and build_client_desktop.py in containers;
                      build_hub_windows.py, build_hub_macos.py,
