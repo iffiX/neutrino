@@ -4,7 +4,8 @@ What these pin: one router per account-layer row and none for any other
 module, each serving the module's read, apply and set at the module's own
 path; the view lists every available account with whether the module
 enables it and what the machine reports of its instance, with each
-module's own field; a set replaces the enabled accounts, generates each
+module's own field, a file share's row running only while the module is
+active; a set replaces the enabled accounts, generates each
 newly enabled account's secrets once and keeps them across a disable,
 checks the section on the agent as the state will carry it, wants the
 module running and pushes; a set on a stopped module keeps it stopped and
@@ -397,3 +398,27 @@ def test_a_file_share_row_runs_while_the_machine_serves_its_home_share(api):
     }
 
     assert (rows["alice"]["is_running"], rows["bob"]["is_running"]) == (True, False)
+
+
+def test_a_stopped_file_shares_rows_run_none_of_its_home_shares(api):
+    client, runtime = api
+    client.post(
+        "/api/agent/module/samba/set",
+        json={"device_id": DEVICE, "accounts": ["alice", "bob"]},
+    )
+    runtime.report(
+        DEVICE,
+        "samba",
+        state="stopped",
+        is_active=False,
+        shares=[
+            {"name": "alice", "path": "/home/alice", "params": {}},
+            {"name": "bob", "path": "/srv/bob", "params": {}},
+        ],
+    )
+
+    rows = client.get("/api/agent/module/samba", params={"device_id": DEVICE}).json()[
+        "accounts"
+    ]
+
+    assert [row["is_running"] for row in rows] == [False, False]

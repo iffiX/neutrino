@@ -83,9 +83,9 @@ def device_view(
         the port the agent took and whether the instance runs as last
         reported, and the module's own field on each row; the module's own
         view fields beside them. A file share row runs while the machine
-        reports its Home share served, and the row of an enabled account
-        with no share path whose home the machine has not reported carries
-        ``account_home_unknown {account}``.
+        reports the module active and its Home share served, and the row of
+        an enabled account with no share path whose home the machine has not
+        reported carries ``account_home_unknown {account}``.
     """
     store = DeviceAccountStore(runtime.desired_states)
     enabled = runtime.desired_states.enabled_accounts(context.key, row.name)
@@ -96,9 +96,10 @@ def device_view(
         for instance in context.details.get("instances") or []
         if isinstance(instance, dict)
     }
+    is_serving = bool(context.details.get("is_active"))
     served = {
         str(share.get("name", "") or "")
-        for share in context.details.get("shares") or []
+        for share in (context.details.get("shares") if is_serving else None) or []
         if isinstance(share, dict)
     }
     rows = []
