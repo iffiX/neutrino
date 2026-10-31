@@ -164,22 +164,22 @@ ecosystem's packages, such as PyPI's, for the whole system.
 ```json
 {
   "pypi": {
-    "probe": "/pip/",
+    "probe": "/numpy/",
     "sources": ["https://pypi.org/simple", "https://pypi.tuna.tsinghua.edu.cn/simple", "https://mirrors.aliyun.com/pypi/simple", "https://mirrors.cloud.tencent.com/pypi/simple"],
     "variables": ["PIP_INDEX_URL", "UV_DEFAULT_INDEX", "UV_INDEX_URL"]
   },
   "npm": {
-    "probe": "/npm/latest",
+    "probe": "/npm/-/npm-10.9.2.tgz",
     "sources": ["https://registry.npmjs.org", "https://registry.npmmirror.com", "https://mirrors.cloud.tencent.com/npm"],
     "variables": ["npm_config_registry", "YARN_NPM_REGISTRY_SERVER", "BUN_CONFIG_REGISTRY"]
   },
   "huggingface": {
-    "probe": "/openai-community/gpt2/resolve/main/config.json",
+    "probe": "/openai-community/gpt2/resolve/607a30d783dfa663caf39e06633721c8d4cfcd7e/tokenizer.json", "_probe_scan": "scan: allow",
     "sources": ["https://huggingface.co", "https://hf-mirror.com"],
     "variables": ["HF_ENDPOINT"]
   },
   "ctan": {
-    "probe": "/systems/texlive/tlnet/tlpkg/texlive.tlpdb.sha512",
+    "probe": "/systems/texlive/tlnet/tlpkg/texlive.tlpdb.xz",
     "sources": ["https://mirror.ctan.org", "https://mirrors.mit.edu/CTAN", "https://mirrors.tuna.tsinghua.edu.cn/CTAN", "https://mirrors.ustc.edu.cn/CTAN", "https://mirrors.aliyun.com/CTAN", "https://mirrors.cloud.tencent.com/CTAN", "https://mirrors.sjtug.sjtu.edu.cn/ctan", "https://mirror.nju.edu.cn/CTAN"],
     "variables": []
   }
@@ -188,7 +188,7 @@ ecosystem's packages, such as PyPI's, for the whole system.
 
 | Key | Holds |
 | --- | --- |
-| `probe` | the path the probe fetches under each source: a small document every source of the set serves |
+| `probe` | the path of the file a probe reads under each source ("The file a probe reads") |
 | `sources` | the addresses, the publisher's first |
 | `variables` | the environment variables the ecosystem's tools read the address from: pip and uv for `pypi`; npm, pnpm and Yarn 1 (`npm_config_registry`), Yarn 2 and later, and Bun for `npm`; the Hugging Face libraries for `huggingface`; none for `ctan`, since `tlmgr` reads its repository from its command line |
 
@@ -207,7 +207,8 @@ ecosystem's packages, such as PyPI's, for the whole system.
 | The `ctan` set's first source is CTAN's own redirector, then the MIT mirror and the mirrors at Tsinghua, USTC, Aliyun, Tencent, SJTU and Nanjing. Its sources can hold snapshots of TeX Live a day apart, and `tlmgr` checks every package it installs against the signed package database of the one source it reads. | In the lab the eight sources served two `texlive.tlpdb.sha512` a day apart, so no digest names the same bytes on every source, and the signature makes each source safe alone. |
 
 better-sqlite3's prebuilt binary host serves that one package alone, so it
-stays in CloudCLI's artifact as `hosts` ([modules/cloudcli.md](modules/cloudcli.md)).
+stays in CloudCLI's artifact as `hosts`, and `hosts_probe` names the path a
+probe reads under each setting's hosts ([modules/cloudcli.md](modules/cloudcli.md)).
 
 ## Choosing a source
 
@@ -215,7 +216,9 @@ One method chooses among the sources of every download:
 
 | Rule | Reason |
 | --- | --- |
-| Every source is probed at once, and a probe waits at most 5 seconds for an answer. A file's probe asks for its first 1 MiB with a Range request. | A probe that small still measures a speed, and 5 seconds bounds the wait on a source that never answers. |
+| Every source is probed at once, and a probe waits at most 5 seconds for an answer. | 5 seconds bounds the wait on a source that never answers. |
+| A probe reads 100 KB to 1 MiB of a real file. It asks for the file's first 1 MiB with a Range request, and the read stops 5 seconds after its first byte, the speed taken over what arrived. | A smaller read times the first packets: over CTAN's eight sources 144 B gave 5 and 6 different winners in two runs of 10, and 1 MiB gave 3, the two fastest of a 16 MiB read among them. The time limit bounds a slow line: eight sources sharing 200 KB/s end in 6 seconds, and 1 MiB from each takes 42. |
+| A probe checks no digest, except an npm registry's. | The download, the pull or the tool checks the bytes it takes, and a probe's file is often another file. |
 | The sources that answered are ranked by the probe's speed, measured from its first byte to its last, and the download starts on the fastest. Two speeds within a tenth of each other go to the earlier first byte. | Speed decides a large download, and the first byte decides between two equal ones. |
 | While a download has at least 30 seconds left at its speed now, the fetcher measures the other sources every 30 seconds. Each measure is a 1 MiB Range request at the current offset, to every source that has not failed. | A short download ends before a change pays back; 1 MiB per source every 30 seconds costs a few percent of the transfer. |
 | A source whose measure is at least 1.5 times the current source's speed over the last 10 seconds takes over. The download resumes there by a Range request at the current offset, and the next measure comes 30 seconds later. | A short probe measures low against a running transfer, and a smaller gap changes source on noise. |
@@ -230,10 +233,10 @@ What is probed differs by what the source serves:
 | Source | The probe | What follows |
 | --- | --- | --- |
 | a file | a Range request for its first 1 MiB | the download, with the measures and the moves |
-| a container image | the registry's manifest request for the image's digest | Podman pulls `<source>@<digest>` from the fastest; a pull that fails goes on to the next source. A source whose probe got no answer is pulled from after the ranked ones, in the artifact's order, and only a pull's own failure is listed in `download_failed` |
-| an npm registry | a GET of the package's document | npm runs with the fastest as `--registry`; an install that fails runs again with the next |
-| a source set a container lists | a GET of the set's `probe` path under each source | every variable of the set names the fastest in the container's environment; the container's tools read it, and nothing moves later |
-| a host an npm setting names | a GET of the host's base address | the setting names the fastest host; an install that fails on a native module runs again with the next |
+| a container image | a Range request for the first 1 MiB of its largest layer, which the registry's manifest for the image's digest and the manifest of its first Linux image name | Podman pulls `<source>@<digest>` from the fastest; a pull that fails goes on to the next source. A source whose probe got no answer is pulled from after the ranked ones, in the artifact's order, and only a pull's own failure is listed in `download_failed` |
+| an npm registry | a GET of the package's whole document, whose integrity it checks | npm runs with the fastest as `--registry`; an install that fails runs again with the next |
+| a source set a container lists | a Range request for the first 1 MiB of the set's `probe` file under each source | every variable of the set names the fastest in the container's environment; the container's tools read it, and nothing moves later |
+| a host an npm setting names | a Range request for the first 1 MiB of the setting's `hosts_probe` file under each host | the setting names the fastest host; an install that fails on a native module runs again with the next |
 | a version list or `latest.json` | a GET | the fastest valid answer is read |
 
 An image's probe can fail where its pull works, and Podman checks the
@@ -247,6 +250,30 @@ probes and ranks, since the agent downloads no file itself and hands the
 chosen source to Podman, to npm or to a container's environment.
 `install.sh` and `install.ps1` hold a small one each: they probe, start on
 the fastest, and move on a stall, with no measures while a file downloads.
+Their probe has 5 seconds for the answer and the bytes together.
+
+## The file a probe reads
+
+Each list names its probe file once, in the data file that holds the list.
+
+| List | The file | Its size | Why the path holds |
+| --- | --- | --- | --- |
+| `pypi` | `/numpy/` | 1.3 to 2.4 MB | An index page is the one kind of file all four sources serve under `/simple`: pypi.org keeps the packages on another host. This page grows with each release. |
+| `npm` | `/npm/-/npm-10.9.2.tgz` | 2.7 MB | A published version's tarball does not change. |
+| `huggingface` | `/openai-community/gpt2/resolve/607a30d783dfa663caf39e06633721c8d4cfcd7e/tokenizer.json` | 1.4 MB | A file at a commit does not change. | <!-- scan: allow -->
+| `ctan` | `/systems/texlive/tlnet/tlpkg/texlive.tlpdb.xz` | 2.8 MB | The bytes change each day and the path does not: `tlmgr` reads this package database from the repository first. |
+| better-sqlite3's hosts | `/v12.6.2/better-sqlite3-v12.6.2-node-v127-linux-x64.tar.gz` | 1.1 MB | A release's file does not change. |
+| an image's registries | its largest layer, by its digest | the layer's | The digest names the bytes, and the layer goes only with the image. |
+| CloudCLI's registries | the package's document | 220 to 296 KB | The install needs this document, and the probe checks its integrity. |
+| a `hub` artifact | the artifact | the artifact's | The download takes this file. |
+
+| Rule | Reason |
+| --- | --- |
+| A source that no longer serves the file fails its probe, and is tried after the ranked sources. A file gone from every source leaves the list in its own order, the publisher's first, and the install goes on. An npm registry is the exception: when none names the integrity, the install fails `download_failed`. | A probe orders the sources, and the digest of what they serve decides the rest. |
+| A hub test pins each name, the sets' in `test_source_sets.py` and the hosts' in `test_manifests.py`. No test reads the file upstream. | A name changes only together with its test, and a suite that needs the network fails for reasons of its own. |
+| An image's probe reads a layer, and a registry that serves the manifest and no layer is left unranked. | From one host, `ghcr.m.daocloud.io` served every manifest and answered 503 for every layer, and `ghcr.nju.edu.cn` won 7 of 10 rankings on a 1.6 KB manifest while it reads a layer at a tenth of `ghcr.io`'s speed. |
+| A list of one image source is not probed. | One source has no order to find. |
+| A registry's token goes to the address asked and to no address it redirects to. | A registry redirects a layer to a storage host, a party the token is not for. |
 
 ## From the hub's cache
 

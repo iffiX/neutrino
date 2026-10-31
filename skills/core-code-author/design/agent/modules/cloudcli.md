@@ -90,9 +90,10 @@ distinct error lines Node.js wrote, such as `Error: EPERM: ...`. It keeps
 the last whole lines that fit in 400 characters. node-pty and bcrypt hold their binaries inside their npm packages.
 better-sqlite3 fetches its own from the host
 `npm_config_better_sqlite3_binary_host` names: the artifact's `hosts` list
-that setting's hosts, its GitHub releases and then npmmirror's copy, and the
-agent sets it to the fastest. An install that fails on a native module runs
-again with the next host.
+that setting's hosts, its GitHub releases and then npmmirror's copy, its
+`hosts_probe` names the file a probe reads on them, and the agent sets it to
+the fastest. An install that fails on a native module runs again with the
+next host.
 
 **npm's name lookups go one family at a time on Linux.** npm runs with
 `RES_OPTIONS=single-request-reopen`, so glibc asks for the A and the AAAA
