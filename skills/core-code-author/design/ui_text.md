@@ -606,7 +606,6 @@ the agent's `cli/wording.py` words the same codes in English.
 | `ui.containers.run_account_warning` | The old account's machine stops; its images and named volumes stay there. | 旧账户的虚拟机会停下，里面的镜像和命名卷留在原处。 |
 | `ui.containers.run_needed` | Choose an account under Run settings first. | 先在“运行设置”里选一个账户。 |
 | `ui.containers.account_title`, the dialog before an **Install** | Choose the account that runs the containers | 选择运行容器的账户 |
-| `ui.containers.account_hint` | CPUs, memory and the disk limit use their defaults; change them later under Run settings. | CPU、内存和磁盘上限先用默认值，之后可在“运行设置”里修改。 |
 | `ui.containers.account_empty` | This machine reports no account. | 这台机器没有上报账户。 |
 | `ui.containers.browse` | Browse… | 浏览… |
 | `ui.containers.volume_placeholder_linux`, `ui.containers.volume_placeholder_windows`, `ui.containers.volume_placeholder_darwin` | `/srv/share:/data`, `C:\data:/data`, `/Users/me/data:/data` | `/srv/share:/data`、`C:\data:/data`、`/Users/me/data:/data` |
@@ -642,6 +641,8 @@ the agent's `cli/wording.py` words the same codes in English.
 | `code.machine_cpus_invalid` | CPUs must be between 0 and {max}. | 非法 CPU 数：要在 0 到 {max} 之间。 |
 | `code.machine_memory_invalid` | Memory must be between 0 and {max} GiB. | 非法内存大小：要在 0 到 {max} GiB 之间。 |
 | `code.machine_disk_shrink` | The disk is {current_gib} GiB and only grows; {disk_gib} GiB is smaller. | 磁盘现在是 {current_gib} GiB，只能改大，{disk_gib} GiB 比它小。 |
+| `code.credential_invalid` | Windows does not accept this password for {account}. Type the right one in the account's form. | 非法凭据：Windows 不接受 {account} 的这个密码。请在账户的表单里填对。 |
+| `code.account_logon_refused` | Windows refused the logon of {account}: {detail} | Windows 拒绝了 {account} 的登录：{detail} |
 | `code.machine_disk_invalid` | The disk limit {disk_gib} GiB is not valid: on Windows it is 1 GiB or more. | 非法磁盘上限：Windows 上至少要 1 GiB，{disk_gib} GiB 不行。 |
 | `code.volume_not_shared` | The volume {volume} of {name} is outside what the Podman machine shares: a fixed drive on Windows; /Users, /private or /var/folders on macOS. | 容器 {name} 的卷 {volume} 不在 Podman 虚拟机共享的范围内：Windows 上是本机的固定磁盘，macOS 上是 /Users、/private 或 /var/folders。 |
 | `code.udp_not_forwarded` | Port {port} of {name} is UDP, and WSL forwards TCP alone; on Windows publish it on TCP. | 容器 {name} 的端口 {port} 是 UDP，而 WSL 只转发 TCP；在 Windows 上请用 TCP 发布。 |

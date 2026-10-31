@@ -951,27 +951,37 @@ required modules that are absent listed one to a line, the question
 dialog, except for the account below.
 
 **Install** on Containers or on a module that requires it, on a Windows or
-macOS machine whose Run settings name no account, asks for the account before
-anything installs (`components/containers_account_modal.tsx`). The **Yes** of
-the dialog above opens it; Containers itself opens it alone. An account already
-named asks nothing, and Linux never asks.
+macOS machine whose Run settings name no account, asks for the account and the
+machine's numbers before anything installs
+(`components/containers_account_modal.tsx`). The **Yes** of the dialog above
+opens it; Containers itself opens it alone. An account already named asks
+nothing, and Linux never asks.
 
 | Part | Idiom |
 | --- | --- |
 | Title | `ui.containers.account_title` |
-| **Account** | a picker with one choice among the accounts the machine reports (`system_accounts`), the hint `ui.containers.account_hint` under it, and `ui.containers.account_empty` in an empty list |
-| **Password** | on a Windows machine alone, while the chosen account has no stored login: the **Available accounts** form's field, with its words |
+| **Account** | a picker with one choice among the accounts the machine reports (`system_accounts`), and `ui.containers.account_empty` in an empty list |
+| **Password** | on a Windows machine alone, while the chosen account has no stored login or Windows refused the stored one: the **Available accounts** form's field, with its words |
+| **CPUs**, **Memory (GiB)**, **Disk limit (GiB)** | one row, the Run settings' three fields with their least values, words and refusals (`components/containers_machine_fields.tsx`), each filled with the number `podman/new_machine` reads: half the CPUs, the default memory, and the disk the account's machine has with `ui.containers.run_disk_hint` under it, or else 100 GiB |
+| The memory hint | `ui.containers.run_memory_need {need}` under **Memory (GiB)** while `need_gib`, which counts the module being installed, passes the field, or the default memory while the field is 0 |
 | Buttons | `ui.confirm.cancel` and `ui.modules.install` |
 
+The dialog holds none of the Run settings' words about 0 or about what a change
+costs: `ui.containers.run_default_hint`, `ui.containers.run_restart_warning` and
+`ui.containers.run_wsl_warning`.
+
 **Cancel**, Escape and the backdrop write nothing and install nothing, and
-the first dialog's **Yes** counts for nothing. **Install** sends, in order,
-`account/add` for an account not yet available (`account/set` for an available
-one with no login), `machine/set`, and the press itself. A refused write shows
-in the dialog and installs nothing; an account already added stays available.
-CPUs and memory are 0, and the disk limit 0 on macOS and 100 on Windows. A
-`machine_disk_shrink` on that limit sends `machine/set` again with the
-refusal's `current_gib`: the dialog has no field for the disk, and an account's
-existing WSL disk can read 1 TB. All three change later in Run settings.
+the first dialog's **Yes** counts for nothing. **Install** sends, in order, on
+Windows `account/password/test` with the password typed, empty for the stored
+login; then `account/add` for an account not yet available (`account/set` for an
+available one with no login or a refused one), `machine/set` with the numbers
+shown, and the press itself. A refusal shows in the dialog and installs nothing:
+the test writes nothing, and an account already added stays available.
+`credential_invalid` on a stored login shows the **Password** field, and the
+next **Install** replaces the login. A `podman/new_machine` read that fails
+shows `ErrorPanel` with its retry in place of the fields, and **Install** stays
+disabled. On Windows one press is one logon on the machine
+([agent/modules/containers.md](agent/modules/containers.md), "The account and its machine").
 
 **Uninstall** asks through `useConfirm`, one dialog for every module: the
 title `ui.modules.uninstall_title`, the body `ui.modules.uninstall_body`, and
