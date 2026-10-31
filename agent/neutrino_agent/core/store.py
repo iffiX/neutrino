@@ -66,11 +66,12 @@ class MachineStateStore:
         self._mutate(change)
 
     def _read(self) -> dict:
-        try:
-            with open(self._path, "r", encoding="utf-8") as stream:
-                data = json.load(stream)
-        except (OSError, ValueError):
-            return {}
+        with self._lock:
+            try:
+                with open(self._path, "r", encoding="utf-8") as stream:
+                    data = json.load(stream)
+            except (OSError, ValueError):
+                return {}
         return data if isinstance(data, dict) else {}
 
     def _mutate(self, change) -> None:

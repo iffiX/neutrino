@@ -1,10 +1,12 @@
-"""The machine's own state store: atomic, 0600, and free of secrets."""
+"""The machine's own state store: atomic, 0600, free of secrets, one open at a time."""
 
 import json
 import os
+import threading
 
 import pytest
 
+import neutrino_agent.core.store as store_module
 from neutrino_agent.core.store import MachineStateStore
 
 SHARE = {
@@ -67,3 +69,32 @@ def test_an_unreadable_file_reads_as_empty(tmp_path):
     store.set_rdp_share(SHARE)
     assert store.rdp_share() == SHARE
     assert isinstance(json.loads(path.read_text()), dict)
+
+
+def test_a_write_waits_for_a_read_that_holds_the_file_open(store, monkeypatch):
+    store.set_rdp_share(SHARE)
+    reading, released = threading.Event(), threading.Event()
+    loaded = json.load
+    calls = []
+
+    def slow_load(stream):
+        calls.append(stream)
+        if len(calls) == 1:
+            reading.set()
+            released.wait(5)
+        return loaded(stream)
+
+    monkeypatch.setattr(store_module.json, "load", slow_load)
+    reader = threading.Thread(target=store.rdp_share)
+    reader.start()
+    assert reading.wait(5)
+    writer = threading.Thread(target=store.clear_rdp_share)
+    writer.start()
+    writer.join(0.2)
+
+    assert writer.is_alive()
+    released.set()
+    reader.join(5)
+    writer.join(5)
+    monkeypatch.setattr(store_module.json, "load", loaded)
+    assert store.rdp_share() == {}
