@@ -208,7 +208,8 @@ same mark. The mark means nothing to the agent; it changes
 that entry's hash, so the hash the agent tried for that module no longer
 matches and that module alone is tried again. A change to one module's entry, or a mark on it,
 never runs another module's failed step again. A press writes its `want`
-and its mark in one hold of `CONFIG_WRITE_LOCK`, and the hub reads every
+and its mark, the `want` and the mark of each module it requires, and the
+module's file in one hold of `CONFIG_WRITE_LOCK`, and the hub reads every
 module's `want` and mark for a state in one hold of it. A state composed
 between the two writes would carry the new `want` with the old mark, and
 the module would plan a second task when the press's own state arrives.
