@@ -1,18 +1,6 @@
 /* The directory picker: the confirm modal's frame, wide and tall enough for
    a listing, with the file browser filling it. */
 
-.directory_picker_backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 60;
-  display: flex;
-  overflow-y: auto;
-  padding: var(--space-5);
-  background: var(--color-overlay);
-  backdrop-filter: blur(4px);
-  animation: fade_in_up 160ms ease both;
-}
-
 .directory_picker_modal {
   display: flex;
   flex-direction: column;

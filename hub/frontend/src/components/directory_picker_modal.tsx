@@ -1,9 +1,7 @@
-import { createPortal } from "react-dom";
-
+import { DialogLayer } from "./dialog_layer";
 import { FileBrowser } from "./file_browser";
 import { Icon } from "./icon";
 import { t, useLanguage } from "../i18n";
-import { useEscapeLayer } from "../use_escape_layer";
 
 import "./directory_picker_modal.css";
 
@@ -39,20 +37,9 @@ export function DirectoryPickerModal({
   );
   // Redrawn when the panel's language changes.
   useLanguage();
-  useEscapeLayer(onCancel);
 
-  return createPortal(
-    <div
-      className="directory_picker_backdrop"
-      role="dialog"
-      aria-modal="true"
-      aria-label={title}
-      onClick={(event) => {
-        if (event.target === event.currentTarget) {
-          onCancel();
-        }
-      }}
-    >
+  return (
+    <DialogLayer label={title} onDismiss={onCancel}>
       <div className="directory_picker_modal">
         <div className="directory_picker_head">
           <Icon name={pick === "file" ? "file" : "folder"} size={16} />
@@ -66,7 +53,6 @@ export function DirectoryPickerModal({
           onCancel={onCancel}
         />
       </div>
-    </div>,
-    document.body,
+    </DialogLayer>
   );
 }

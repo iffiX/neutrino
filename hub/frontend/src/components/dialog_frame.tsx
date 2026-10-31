@@ -1,10 +1,9 @@
-import { createPortal } from "react-dom";
 import type { ReactNode } from "react";
 
+import { DialogLayer } from "./dialog_layer";
 import { Icon } from "./icon";
 import type { IconName } from "./icon";
 import { t, useLanguage } from "../i18n";
-import { useEscapeLayer } from "../use_escape_layer";
 
 import "./dialog_frame.css";
 
@@ -44,22 +43,9 @@ export function DialogFrame({
 }: DialogFrameProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
-  useEscapeLayer(onClose);
 
-  // A portal, so no ancestor's transform or scroll container can capture the
-  // fixed backdrop.
-  return createPortal(
-    <div
-      className="dialog_backdrop"
-      role="dialog"
-      aria-modal="true"
-      aria-label={title}
-      onClick={(event) => {
-        if (event.target === event.currentTarget) {
-          onClose();
-        }
-      }}
-    >
+  return (
+    <DialogLayer label={title} onDismiss={onClose}>
       <div className={`dialog ${className}`}>
         <div className="dialog_head">
           <div className="dialog_title">
@@ -81,7 +67,6 @@ export function DialogFrame({
         <div className="dialog_body">{children}</div>
         {foot !== undefined && <div className="dialog_foot">{foot}</div>}
       </div>
-    </div>,
-    document.body,
+    </DialogLayer>
   );
 }

@@ -1,6 +1,6 @@
+import { DialogLayer } from "./dialog_layer";
 import { Icon } from "./icon";
 import { t, useLanguage } from "../i18n";
-import { useEscapeLayer } from "../use_escape_layer";
 
 import "./confirm_modal.css";
 
@@ -53,20 +53,9 @@ export function ConfirmModal({
 }: ConfirmModalProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
-  useEscapeLayer(onCancel);
 
   return (
-    <div
-      className="confirm_backdrop"
-      role="dialog"
-      aria-modal="true"
-      aria-label={title}
-      onClick={(event) => {
-        if (event.target === event.currentTarget) {
-          onCancel();
-        }
-      }}
-    >
+    <DialogLayer label={title} onDismiss={onCancel}>
       <div className="confirm_modal">
         <div className="confirm_head">
           <Icon name="alert" size={16} />
@@ -111,6 +100,6 @@ export function ConfirmModal({
           </button>
         </div>
       </div>
-    </div>
+    </DialogLayer>
   );
 }

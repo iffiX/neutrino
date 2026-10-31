@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { DialogLayer } from "./dialog_layer";
 import { Icon } from "./icon";
 import { Spinner } from "./spinner";
 import { apiGet, apiPost, describeError } from "../api_client";
@@ -209,16 +210,6 @@ function UpdateDialogModal({ dialog }: UpdateDialogModalProps) {
     }
   }, [isSignedOut]);
 
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && isDismissable && !isStarting) {
-        finish();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [finish, isDismissable, isStarting]);
-
   const start = async () => {
     setStartError(null);
     setIsStarting(true);
@@ -238,20 +229,9 @@ function UpdateDialogModal({ dialog }: UpdateDialogModalProps) {
 
   const version = target.version;
   return (
-    <div
-      className="confirm_backdrop"
-      role="dialog"
-      aria-modal="true"
-      aria-label={t("ui.settings.update_confirm_title", { version })}
-      onClick={(event) => {
-        if (
-          event.target === event.currentTarget &&
-          isDismissable &&
-          !isStarting
-        ) {
-          finish();
-        }
-      }}
+    <DialogLayer
+      label={t("ui.settings.update_confirm_title", { version })}
+      onDismiss={isDismissable && !isStarting ? finish : null}
     >
       <div className="confirm_modal">
         <div className="confirm_head">
@@ -382,7 +362,7 @@ function UpdateDialogModal({ dialog }: UpdateDialogModalProps) {
           </div>
         )}
       </div>
-    </div>
+    </DialogLayer>
   );
 }
 

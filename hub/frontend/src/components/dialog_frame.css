@@ -1,18 +1,6 @@
 /* The frame every dialog is drawn in: a form that turns into a log once it
    is running, a link and its QR, a catalog. */
 
-.dialog_backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 60;
-  display: grid;
-  place-items: center;
-  padding: var(--space-5);
-  background: var(--color-overlay);
-  backdrop-filter: blur(4px);
-  animation: fade_in_up 160ms ease both;
-}
-
 .dialog {
   display: flex;
   flex-direction: column;

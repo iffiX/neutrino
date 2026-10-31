@@ -57,6 +57,9 @@
   --sidebar-width: 232px;
   --bottom-nav-height: 56px;
   --top-bar-height: 56px;
+
+  /* --- Layers --- */
+  --layer-top: 60;
 }
 
 /* --- Reset --- */

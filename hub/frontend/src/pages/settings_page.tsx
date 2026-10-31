@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent, ReactNode } from "react";
 
 import { ApplyBar } from "../components/apply_bar";
+import { DialogLayer } from "../components/dialog_layer";
 import { ErrorPanel } from "../components/error_panel";
 import { HttpsPanel } from "../components/https_panel";
 import { Icon } from "../components/icon";
@@ -839,16 +840,6 @@ function RestoreArchiveModal({
   }, [task.lines]);
 
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && isDismissable) {
-        onCancel();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onCancel, isDismissable]);
-
-  useEffect(() => {
     if (task.isRunning) {
       wasApplying.current = true;
       return;
@@ -870,16 +861,9 @@ function RestoreArchiveModal({
   }, [task.isRunning, task.exitCode]);
 
   return (
-    <div
-      className="confirm_backdrop"
-      role="dialog"
-      aria-modal="true"
-      aria-label={t("ui.settings.restore_title", { name: file.name })}
-      onClick={(event) => {
-        if (event.target === event.currentTarget && isDismissable) {
-          onCancel();
-        }
-      }}
+    <DialogLayer
+      label={t("ui.settings.restore_title", { name: file.name })}
+      onDismiss={isDismissable ? onCancel : null}
     >
       <div className="confirm_modal">
         <div className="confirm_head">
@@ -963,7 +947,7 @@ function RestoreArchiveModal({
           </div>
         )}
       </div>
-    </div>
+    </DialogLayer>
   );
 }
 

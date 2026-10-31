@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
+import { DialogLayer } from "./dialog_layer";
 import { ErrorPanel } from "./error_panel";
 import { Icon } from "./icon";
 import { StatusDot } from "./status_dot";
@@ -265,16 +266,6 @@ function AccountLoginModal({
     onDismiss();
   }, [login, onDismiss]);
 
-  useEffect(() => {
-    const handleKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        dismiss();
-      }
-    };
-    window.addEventListener("keydown", handleKey);
-    return () => window.removeEventListener("keydown", handleKey);
-  }, [dismiss]);
-
   // A finished flow is not asked about again, and neither is one that failed
   // or expired.
   const watchedLogin = failure === null ? login : null;
@@ -390,17 +381,7 @@ function AccountLoginModal({
   };
 
   return (
-    <div
-      className="confirm_backdrop"
-      role="dialog"
-      aria-modal="true"
-      aria-label={t("ui.ai.sign_in_title")}
-      onClick={(event) => {
-        if (event.target === event.currentTarget) {
-          dismiss();
-        }
-      }}
-    >
+    <DialogLayer label={t("ui.ai.sign_in_title")} onDismiss={dismiss}>
       <div className="confirm_modal">
         <div className="confirm_head">
           <Icon name="key" size={16} />
@@ -543,7 +524,7 @@ function AccountLoginModal({
           )}
         </div>
       </div>
-    </div>
+    </DialogLayer>
   );
 }
 

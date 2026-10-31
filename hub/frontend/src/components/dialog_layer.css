@@ -1,0 +1,14 @@
+/* A dropdown shares this z-index. The later child of the body lies above. */
+.dialog_layer {
+  position: fixed;
+  inset: 0;
+  z-index: var(--layer-top);
+  display: grid;
+  place-items: center;
+  overflow-y: auto;
+  padding: var(--space-5);
+  background: var(--color-overlay);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+  animation: fade_in_up 160ms ease both;
+}

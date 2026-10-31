@@ -45,7 +45,7 @@
   --picker-row: 34px;
 
   position: fixed;
-  z-index: 80;
+  z-index: var(--layer-top);
   display: flex;
   flex-direction: column;
   overflow: hidden;

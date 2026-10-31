@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { createPortal } from "react-dom";
 
 import { ApplyBar } from "./apply_bar";
 import { ContainersRunSettings } from "./containers_run_settings";
+import { DialogLayer } from "./dialog_layer";
 import { DirectoryPickerModal } from "./directory_picker_modal";
 import { JournalPanel } from "./journal_panel";
 import { ErrorPanel } from "./error_panel";
@@ -1062,9 +1062,9 @@ function ContainerShellModal({
   // Redrawn when the panel's language changes.
   useLanguage();
   const [failedCode, setFailedCode] = useState<number | null>(null);
-  // A portal, so no ancestor may capture the fixed backdrop.
-  return createPortal(
-    <div className="container_shell_backdrop" role="dialog" aria-modal="true">
+  // Escape belongs to the shell.
+  return (
+    <DialogLayer label={name} onDismiss={null}>
       <div className="container_shell">
         <div className="container_shell_head">
           <div className="container_shell_title">
@@ -1106,7 +1106,6 @@ function ContainerShellModal({
           </div>
         )}
       </div>
-    </div>,
-    document.body,
+    </DialogLayer>
   );
 }

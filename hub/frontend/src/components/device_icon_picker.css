@@ -22,7 +22,7 @@
 
 .device_icon_picker_grid {
   position: fixed;
-  z-index: 70;
+  z-index: var(--layer-top);
   display: grid;
   gap: var(--space-1);
   grid-template-columns: repeat(4, 34px);

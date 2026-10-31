@@ -43,7 +43,7 @@
 
 .row_menu_list {
   position: fixed;
-  z-index: 70;
+  z-index: var(--layer-top);
   display: flex;
   flex-direction: column;
   min-width: 180px;
