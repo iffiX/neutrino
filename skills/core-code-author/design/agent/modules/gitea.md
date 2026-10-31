@@ -58,6 +58,12 @@ install or an apply there that finds no usable `git` is refused
 Mac without the developer tools `/usr/bin/git` is a stub that opens a dialog
 on the screen, so it is never run and never named.
 
+**What a report reads.** `gitea --version` runs once per program file.
+`gitea admin user list --admin` runs with it, after a `configure`, after the
+module's own `admin` and `password` verbs, and every 10 minutes otherwise. Each
+read starts a process and the agent reports every few seconds, so an
+administrator a person makes in Gitea's own page shows within 10 minutes.
+
 **The binary comes from its publisher.** `data/manifests/gitea.json` names
 the release binary, kind `binary`, at one tested version for every system:
 `linux-amd64`, `linux-arm64`, `darwin-10.12-amd64`, `darwin-10.12-arm64` and
