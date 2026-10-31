@@ -136,6 +136,27 @@ the comment says the module made it, the user itself; a user the module did
 not make is never deleted. The comment is the mark the module tells its own
 users by.
 
+## SELinux on Linux
+
+SELinux denies smbd every folder without a Samba label, such as a home's
+`user_home_dir_t` or a folder's `var_t`, so a share mounts and every read and
+write in it fails. On a machine where `getenforce` prints `Enforcing` or
+`Permissive`, the module turns on the boolean `samba_export_all_rw` while it
+serves shares. The boolean lets smbd read and write every file type outside the
+policy's security types, so each share's `valid users` and the folder's Unix
+mode are the limits left.
+
+| Rule | Reason |
+| --- | --- |
+| The boolean covers a Home share and a folder share at any path. | A label on each folder changes the person's files, and `samba_enable_home_dirs` covers homes alone. |
+| A `configure` that serves a share and starts the server reads the boolean with `getsebool`. It runs `setsebool -P` only when the boolean reads off, and writes `samba: turned on the SELinux boolean samba_export_all_rw` to the apply's output. | `setsebool -P` commits to the policy store, so an apply that changes nothing runs none. |
+| The module's record under the state root stores `is_selinux_boolean_ours` when the module turned the boolean on. A boolean that reads on before the module stays out of the record. | A person's own setting stays theirs. |
+| A **Stop**, a `configure` under `stopped` and a `configure` that serves no share leave the boolean as it is. | A **Start** would have to turn it on again. |
+| An uninstall turns the boolean off only when the record stores the mark and the boolean reads on. | A boolean that was on before the module stays on after it. |
+| A boolean the person turned off while the module serves shares goes on again at the next `configure`, with the same line in the output. | The shares fail without it. |
+| A failing or missing `getsebool` or `setsebool` writes `samba: could not turn on the SELinux boolean samba_export_all_rw` with the tool's words to the output, and the apply goes on. An uninstall does the same with `turn off`. The next `configure` reads the boolean again. | The share and its accounts are configured either way, and the output names what is missing. |
+| A machine with no `getenforce`, or where it prints `Disabled`, runs neither `getsebool` nor `setsebool` and writes no line. | SELinux denies nothing there. |
+
 ## Windows and macOS
 
 On Windows and macOS the module drives the system's own SMB server. It
@@ -176,6 +197,7 @@ module's grant to that user off the folder on both systems.
 Removing the agent's package takes away what the agent added in order to
 run, and leaves what the machine serves. On every system the shares and the
 accounts stay as they are and the system's SMB server goes on serving them.
+On Linux the SELinux boolean stays as it is, since those shares need it.
 The agent's own units, scheduled tasks and the fence an earlier version left
 go with the package, and so do its modules' Windows services, found by name
 as the rest are. An agent installed again imports nothing it finds: the
