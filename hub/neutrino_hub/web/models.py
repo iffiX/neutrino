@@ -2077,6 +2077,17 @@ class ChannelModuleTask(BaseModel):
     is_running: bool = False
 
 
+class ChannelModuleFailedStep(BaseModel):
+    """The step a module's kept failure failed at, and its place in the plan."""
+
+    name: str
+    params: dict = Field(default_factory=dict)
+    # 1-based: the step's place in the plan.
+    index: int = 0
+    # The steps in the plan.
+    count: int = 0
+
+
 class ChannelModuleReport(BaseModel):
     """What the agent observed of one module."""
 
@@ -2089,6 +2100,8 @@ class ChannelModuleReport(BaseModel):
     details: dict = Field(default_factory=dict)
     # The module's last task since the agent started; None before its first.
     task: ChannelModuleTask | None = None
+    # The step the module's kept failure failed at; None without one.
+    step: ChannelModuleFailedStep | None = None
 
 
 class ChannelDesktopReport(BaseModel):
@@ -2311,6 +2324,8 @@ class DeviceModuleView(BaseModel):
     details: dict = Field(default_factory=dict)
     # The module's last task as the machine reports it; None before its first.
     task: ChannelModuleTask | None = None
+    # The step the module's kept failure failed at; None without one.
+    step: ChannelModuleFailedStep | None = None
     # The hub's task with the lines of the module's last task, for the page
     # to follow; empty when the agent has opened no log for it.
     task_id: str = ""

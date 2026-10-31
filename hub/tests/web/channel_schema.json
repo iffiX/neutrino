@@ -249,6 +249,35 @@
           "title": "ChannelMachine",
           "type": "object"
         },
+        "ChannelModuleFailedStep": {
+          "description": "The step a module's kept failure failed at, and its place in the plan.",
+          "properties": {
+            "name": {
+              "title": "Name",
+              "type": "string"
+            },
+            "params": {
+              "additionalProperties": true,
+              "title": "Params",
+              "type": "object"
+            },
+            "index": {
+              "default": 0,
+              "title": "Index",
+              "type": "integer"
+            },
+            "count": {
+              "default": 0,
+              "title": "Count",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "title": "ChannelModuleFailedStep",
+          "type": "object"
+        },
         "ChannelModuleReport": {
           "description": "What the agent observed of one module.",
           "properties": {
@@ -286,6 +315,17 @@
               "anyOf": [
                 {
                   "$ref": "#/$defs/ChannelModuleTask"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "step": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ChannelModuleFailedStep"
                 },
                 {
                   "type": "null"
@@ -1680,8 +1720,66 @@
       "title": "ChannelMachine",
       "type": "object"
     },
+    "ChannelModuleFailedStep": {
+      "description": "The step a module's kept failure failed at, and its place in the plan.",
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "params": {
+          "additionalProperties": true,
+          "title": "Params",
+          "type": "object"
+        },
+        "index": {
+          "default": 0,
+          "title": "Index",
+          "type": "integer"
+        },
+        "count": {
+          "default": 0,
+          "title": "Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "ChannelModuleFailedStep",
+      "type": "object"
+    },
     "ChannelModuleReport": {
       "$defs": {
+        "ChannelModuleFailedStep": {
+          "description": "The step a module's kept failure failed at, and its place in the plan.",
+          "properties": {
+            "name": {
+              "title": "Name",
+              "type": "string"
+            },
+            "params": {
+              "additionalProperties": true,
+              "title": "Params",
+              "type": "object"
+            },
+            "index": {
+              "default": 0,
+              "title": "Index",
+              "type": "integer"
+            },
+            "count": {
+              "default": 0,
+              "title": "Count",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "title": "ChannelModuleFailedStep",
+          "type": "object"
+        },
         "ChannelModuleTask": {
           "description": "A module's task, as the agent reports it on the module's row.",
           "properties": {
@@ -1782,6 +1880,17 @@
           "anyOf": [
             {
               "$ref": "#/$defs/ChannelModuleTask"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "step": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChannelModuleFailedStep"
             },
             {
               "type": "null"

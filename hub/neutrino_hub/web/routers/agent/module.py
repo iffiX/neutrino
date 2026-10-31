@@ -95,6 +95,7 @@ from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.constants import WEB_JOURNAL_LINE_LIMIT
 from neutrino_hub.web.models import (
     ApplyResult,
+    ChannelModuleFailedStep,
     ChannelModuleTask,
     DeviceModuleListView,
     DeviceModuleRequest,
@@ -720,12 +721,13 @@ def module_status(
 
     Returns:
         ``{"state", "is_active", "version", "code", "params", "details",
-        "task"}``, the details as the agent sent them and the version the
-        one they name; the state is ``unknown`` until the agent has
-        said, and ``absent`` for a ``container`` module a report from the
-        device leaves out, since the agent observes one only once a state
-        names it. The task is the module's last one: None before its first,
-        and None for a task outside the protocol's shape.
+        "task", "step"}``, the details as the agent sent them and the
+        version the one they name; the state is ``unknown`` until the agent
+        has said, and ``absent`` for a ``container`` module a report from
+        the device leaves out, since the agent observes one only once a
+        state names it. The task is the module's last one: None before its
+        first, and None for a task outside the protocol's shape. The step is
+        the one the module's kept failure failed at, None without one.
     """
     reported = runtime.device_modules.get(key, {}).get(module) or {}
     details = reported.get("details")
@@ -739,7 +741,26 @@ def module_status(
         "params": dict(reported.get("params") or {}),
         "details": dict(details),
         "task": reported_task(reported.get("task")),
+        "step": reported_step(reported.get("step")),
     }
+
+
+def reported_step(step: object) -> "dict | None":
+    """A module row's ``step`` as the panel's views take it.
+
+    Args:
+        step: The row's ``step`` as the agent sent it.
+
+    Returns:
+        ``{name, params, index, count}``; None for a row with no step and
+        for one whose step does not have that shape.
+    """
+    if not isinstance(step, dict):
+        return None
+    try:
+        return ChannelModuleFailedStep.model_validate(step).model_dump()
+    except ValidationError:
+        return None
 
 
 def reported_task(task: object) -> "dict | None":

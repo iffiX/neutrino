@@ -719,6 +719,29 @@ def test_a_row_with_no_task_or_an_unreadable_one_reads_none(api, task):
     assert row["task"] is None
 
 
+def test_a_row_carries_the_step_its_kept_failure_failed_at(api):
+    client, runtime = api
+    step = {"name": "tex", "params": {}, "index": 12, "count": 12}
+    runtime.device_modules[DEVICE] = {
+        "fakedesk": {"state": "install_failed", "code": "x", "step": step},
+    }
+
+    row = client.get(MODULE_PATH, params={"device_id": DEVICE}).json()["modules"][0]
+
+    assert row["step"] == step
+    assert row["task"] is None
+
+
+@pytest.mark.parametrize("step", [None, "tex", {"index": 1}])
+def test_a_row_with_no_step_or_an_unreadable_one_reads_none(api, step):
+    client, runtime = api
+    runtime.device_modules[DEVICE] = {"fakedesk": {"state": "failed", "step": step}}
+
+    row = client.get(MODULE_PATH, params={"device_id": DEVICE}).json()["modules"][0]
+
+    assert row["step"] is None
+
+
 def test_the_row_names_the_newest_task_carrying_the_modules_lines(api):
     client, runtime = api
     label = module_task_label(DEVICE, "fakedesk")
