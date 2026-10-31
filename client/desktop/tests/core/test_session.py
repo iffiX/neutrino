@@ -79,8 +79,10 @@ def wait_for(condition, timeout_s: float = WAIT_S) -> bool:
 class Harness:
     """A session on a real local channel to a fake transport, and what it told."""
 
-    def __init__(self, binding: dict, **kwargs):
+    def __init__(self, binding: dict, *, answers=None, **kwargs):
         self.transport = FakeTransport()
+        # Set before the session starts. Its thread sends a pending join at once.
+        self.transport.answers.update(answers or {})
         self.channel = ClientTransportChannel(
             connect=unix_connect,
             listen=self.transport.listen,
@@ -759,8 +761,10 @@ def pending(config_path) -> dict:
 
 
 def test_a_pending_join_is_spent_through_the_transport_and_then_dialled(config_path):
-    made = Harness(pending(config_path))
-    made.transport.answers["join"] = lambda line: {"binding_id": "c9", "token": "t9"}
+    made = Harness(
+        pending(config_path),
+        answers={"join": lambda line: {"binding_id": "c9", "token": "t9"}},
+    )
     try:
         join = made.transport.next_command("join")
         assert join["binding"] == "pending_1"
@@ -783,8 +787,9 @@ def test_a_pending_join_is_spent_through_the_transport_and_then_dialled(config_p
 
 
 def test_a_refused_ticket_waits_for_good(config_path):
-    made = Harness(pending(config_path))
-    made.transport.answers["join"] = lambda line: {"code": "ticket_spent"}
+    made = Harness(
+        pending(config_path), answers={"join": lambda line: {"code": "ticket_spent"}}
+    )
     try:
         made.transport.next_command("join")
         assert wait_for(lambda: made.session.waiting() is not None)
@@ -796,11 +801,15 @@ def test_a_refused_ticket_waits_for_good(config_path):
 
 
 def test_a_paused_join_counts_down_and_joins_again(config_path):
-    made = Harness(pending(config_path))
-    made.transport.answers["join"] = lambda line: {
-        "code": "admission_paused",
-        "params": {"retry_after_s": 1},
-    }
+    made = Harness(
+        pending(config_path),
+        answers={
+            "join": lambda line: {
+                "code": "admission_paused",
+                "params": {"retry_after_s": 1},
+            }
+        },
+    )
     try:
         made.transport.next_command("join")
         assert wait_for(lambda: made.session.waiting() is not None)
@@ -817,11 +826,16 @@ def test_a_join_refused_control_unavailable_joins_again_after_its_retry_after_s(
     config_path, params, wait_s
 ):
     now = [1000.0]
-    made = Harness(pending(config_path), clock=lambda: now[0])
-    made.transport.answers["join"] = lambda line: {
-        "code": "control_unavailable",
-        "params": params,
-    }
+    made = Harness(
+        pending(config_path),
+        clock=lambda: now[0],
+        answers={
+            "join": lambda line: {
+                "code": "control_unavailable",
+                "params": params,
+            }
+        },
+    )
     try:
         made.transport.next_command("join")
         assert wait_for(lambda: made.session.waiting() is not None)
@@ -838,11 +852,15 @@ def test_a_join_refused_control_unavailable_joins_again_after_its_retry_after_s(
 
 
 def test_a_join_that_reached_no_address_waits_and_tries_again(config_path):
-    made = Harness(pending(config_path))
-    made.transport.answers["join"] = lambda line: {
-        "code": "hub_unreachable",
-        "params": {"detail": "timeout"},
-    }
+    made = Harness(
+        pending(config_path),
+        answers={
+            "join": lambda line: {
+                "code": "hub_unreachable",
+                "params": {"detail": "timeout"},
+            }
+        },
+    )
     try:
         made.transport.next_command("join")
         assert wait_for(lambda: made.session.waiting() is not None)
@@ -854,8 +872,9 @@ def test_a_join_that_reached_no_address_waits_and_tries_again(config_path):
 
 
 def test_a_join_on_another_key_waits_untrusted_a_minute(config_path):
-    made = Harness(pending(config_path))
-    made.transport.answers["join"] = lambda line: {"code": "hub_untrusted"}
+    made = Harness(
+        pending(config_path), answers={"join": lambda line: {"code": "hub_untrusted"}}
+    )
     try:
         made.transport.next_command("join")
         assert wait_for(lambda: made.session.waiting() is not None)
