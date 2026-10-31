@@ -177,6 +177,37 @@ def test_every_step_lock_is_worded(language, lock):
     assert f"ui.modules.lock.{lock}" in catalog(language, "modules.json")
 
 
+@pytest.mark.parametrize("language", list(WEB_LANGUAGES))
+def test_every_module_has_a_title_of_its_own(language):
+    words = catalog(language, "modules.json")
+    for module, manifest in load_module_manifests().items():
+        if manifest.get("is_module", True):
+            assert f"ui.module_title.{module}" in words, module
+
+
+@pytest.mark.parametrize(
+    "language, in_use, remove_body",
+    [
+        (
+            "en",
+            "First uninstall what requires this module: {modules}.",
+            "What runs as {account} stops: {modules}. "
+            "Its AI tools go back to their own settings.",
+        ),
+        (
+            "zh-CN",
+            "先卸载依赖这个模块的“{modules}”。",
+            "{modules} 不再以 {account} 运行，它的 AI 工具改回原来的设置。",
+        ),
+    ],
+)
+def test_a_sentence_of_a_module_list_reads_for_one_or_several(
+    language, in_use, remove_body
+):
+    assert catalog(language, "codes.json")["code.module_in_use"] == in_use
+    assert catalog(language, "modules.json")["ui.accounts.remove_body"] == remove_body
+
+
 def test_every_key_a_source_names_is_one_english_words():
     worded = english_keys()
     for path in source_paths():

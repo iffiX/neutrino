@@ -355,7 +355,7 @@
   "code.runner_unknown": "被控端不能运行 {runner}，先更新被控端。",
   "code.method_unknown": "被控端不能用 {method} 方式安装，先更新被控端。",
   "code.container_name_reserved": "容器名 {name} 以 neutrino_ 开头，这个前缀留给中枢模块的容器。",
-  "code.module_in_use": "{modules} 依赖这个模块，先卸载它们。",
+  "code.module_in_use": "先卸载依赖这个模块的“{modules}”。",
   "code.container_hub_owned": "{name} 由中枢的模块运行，要改就到那个模块的标签页里改。",
   "code.containers_not_applied": "容器模块没能应用这个模块的容器；请先处理“容器”标签页上的错误，再在这里按“启动”。",
   "code.control_unavailable": "中枢正忙，没有应答，稍后再试。",

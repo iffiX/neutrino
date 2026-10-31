@@ -8,7 +8,6 @@ import type { StatusTone } from "./status_dot";
 import { apiPath, apiPost, describeError } from "../api_client";
 import { codeParams } from "../code_params";
 import { hasWord, t, useLanguage } from "../i18n";
-import { moduleTitle } from "../module_title";
 import { useApiResource } from "../use_api_resource";
 import { useConfirm } from "../use_confirm";
 import { HUB_EVENT_CONFIG, HUB_EVENT_DEVICE_REPORT } from "../use_hub_events";
@@ -104,9 +103,7 @@ export function AccountsPanel({ deviceId, isEditable }: AccountsPanelProps) {
           ? t("ui.accounts.remove_body_none", { account: account.account })
           : t("ui.accounts.remove_body", {
               account: account.account,
-              modules: account.modules
-                .map((name) => moduleTitle(name, name))
-                .join(", "),
+              ...codeParams({ modules: account.modules }),
             }),
       confirmLabel: t("ui.accounts.remove"),
       onConfirm: () => void remove(account),

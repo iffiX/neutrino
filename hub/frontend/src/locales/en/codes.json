@@ -355,7 +355,7 @@
   "code.runner_unknown": "This agent cannot run {runner}; update the agent.",
   "code.method_unknown": "This agent cannot install by {method}; update the agent.",
   "code.container_name_reserved": "The name {name} starts with neutrino_, which the hub keeps for the containers of its modules.",
-  "code.module_in_use": "{modules} need this module; uninstall them first.",
+  "code.module_in_use": "First uninstall what requires this module: {modules}.",
   "code.container_hub_owned": "{name} is run by a module of the hub; change it in that module's tab.",
   "code.containers_not_applied": "Containers did not apply the containers of this module; fix the error on the Containers tab, then press Start here.",
   "code.control_unavailable": "The hub is busy and did not answer; try again.",
