@@ -11,7 +11,8 @@ hash moving only when every mentioned module's task ended with no failure,
 the tried hash written at a task's end and none for ``hub_unreachable``, a
 failed module tried again only when its own entry changes, the hub's retry
 mark being such a change, the first failure in ``APPLY_ORDER`` naming the
-state error, the hashes kept under the agent's build, the tasks of two
+state error, the hashes kept under the agent's build, a write of the
+state or the hashes waiting for a read that holds its file open, the tasks of two
 modules running at once, a newer entry taken at the next step boundary and
 at a waiting step's check, a step that waits for something outside the
 agent run again every recheck interval with no lock held, the wait of a
@@ -31,6 +32,8 @@ import os
 import stat
 import threading
 import time
+
+import pytest
 
 import neutrino_agent.core.desired_state as desired_state_module
 from neutrino_agent.core.desired_state import (
@@ -409,6 +412,43 @@ def test_a_missing_or_broken_file_reads_as_nothing(tmp_path):
 
     (tmp_path / "desired.json").write_text("not json")
     assert store.read() == {}
+
+
+@pytest.mark.parametrize(
+    "read, write, value",
+    [
+        ("read", "write", {"hash": "h2", "modules": {}}),
+        ("read_tried", "write_tried", {"samba": "a2"}),
+    ],
+)
+def test_a_write_waits_for_a_read_that_holds_the_file_open(
+    tmp_path, monkeypatch, read, write, value
+):
+    store = DesiredStateStore(path=str(tmp_path / "desired.json"))
+    store.write({"hash": "h1", "modules": {}})
+    store.write_tried({"samba": "a1"})
+    reading, released = threading.Event(), threading.Event()
+    loaded = json.load
+
+    def slow_load(stream):
+        reading.set()
+        released.wait(5)
+        return loaded(stream)
+
+    monkeypatch.setattr(desired_state_module.json, "load", slow_load)
+    reader = threading.Thread(target=getattr(store, read))
+    reader.start()
+    assert reading.wait(5)
+    writer = threading.Thread(target=getattr(store, write), args=(value,))
+    writer.start()
+    writer.join(0.2)
+
+    assert writer.is_alive()
+    released.set()
+    reader.join(5)
+    writer.join(5)
+    monkeypatch.setattr(desired_state_module.json, "load", loaded)
+    assert getattr(store, read)() == value
 
 
 def test_the_latest_state_is_the_one_last_taken(tmp_path):

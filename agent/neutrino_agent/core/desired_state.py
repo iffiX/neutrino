@@ -175,6 +175,8 @@ class DesiredStateStore:
         """
         self._path = path
         self._build = build
+        # One open of the files at a time.
+        self._lock = threading.Lock()
 
     def read(self) -> dict:
         """The stored state.
@@ -183,11 +185,12 @@ class DesiredStateStore:
             The document, ``{hash, modules, desktop}``; empty when nothing
             was ever taken or the file cannot be read.
         """
-        try:
-            with open(self._path, "r", encoding="utf-8") as stream:
-                held = json.load(stream)
-        except (OSError, ValueError):
-            return {}
+        with self._lock:
+            try:
+                with open(self._path, "r", encoding="utf-8") as stream:
+                    held = json.load(stream)
+            except (OSError, ValueError):
+                return {}
         return dict(held) if isinstance(held, dict) else {}
 
     def write(self, document: dict) -> None:
@@ -207,7 +210,8 @@ class DesiredStateStore:
             with os.fdopen(handle, "w", encoding="utf-8") as stream:
                 json.dump(document, stream)
             os.chmod(temporary, 0o600)
-            os.replace(temporary, self._path)
+            with self._lock:
+                os.replace(temporary, self._path)
         except BaseException:
             if os.path.exists(temporary):
                 os.unlink(temporary)
@@ -221,11 +225,12 @@ class DesiredStateStore:
             kept, the file cannot be read, it holds another shape, or
             another build of the agent kept it.
         """
-        try:
-            with open(self._path + TRIED_SUFFIX, "r", encoding="utf-8") as stream:
-                held = json.load(stream)
-        except (OSError, ValueError):
-            return {}
+        with self._lock:
+            try:
+                with open(self._path + TRIED_SUFFIX, "r", encoding="utf-8") as stream:
+                    held = json.load(stream)
+            except (OSError, ValueError):
+                return {}
         if not isinstance(held, dict) or held.get("build") != self._build:
             return {}
         hashes = held.get("hashes")
@@ -244,10 +249,11 @@ class DesiredStateStore:
         Raises:
             OSError: When the file is there and cannot be deleted.
         """
-        try:
-            os.unlink(self._path + TRIED_SUFFIX)
-        except FileNotFoundError:
-            pass
+        with self._lock:
+            try:
+                os.unlink(self._path + TRIED_SUFFIX)
+            except FileNotFoundError:
+                pass
 
     def write_tried(self, tried: dict) -> None:
         """Keep the hash of the entry last tried, per section, root-only,
@@ -270,7 +276,8 @@ class DesiredStateStore:
                     sort_keys=True,
                 )
             os.chmod(temporary, 0o600)
-            os.replace(temporary, self._path + TRIED_SUFFIX)
+            with self._lock:
+                os.replace(temporary, self._path + TRIED_SUFFIX)
         except BaseException:
             if os.path.exists(temporary):
                 os.unlink(temporary)
