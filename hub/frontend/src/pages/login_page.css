@@ -142,6 +142,7 @@
 .login_page--lockdown .login_card {
   border-color: rgb(255 66 82 / 45%);
   background: #000;
+  color: var(--color-text);
 }
 
 @keyframes login_lockdown_pulse {

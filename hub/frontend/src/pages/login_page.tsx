@@ -131,7 +131,7 @@ export function LoginPage() {
         <div className="login_orb login_orb--violet" />
       </div>
 
-      <div className="login_card">
+      <div className="login_card" data-theme={isLocked ? "dark" : undefined}>
         <div className="login_brand">
           <span className="login_brand_mark">
             <HubFace face={isLocked ? "angry" : "open"} />
