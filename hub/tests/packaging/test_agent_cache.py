@@ -25,6 +25,7 @@ RELEASE_AGENTS = (
     RPM_NAME,
     "neutrino-agent_0.1.0_arm64.deb",
     "neutrino-agent-0.1.0-1.aarch64.rpm",
+    "neutrino-agent-0.1.0-1-x86_64.pkg.tar.zst",
     "neutrino-agent-0.1.0-windows-amd64.msi",
     "neutrino-agent-0.1.0-macos-arm64.pkg",
     "neutrino-agent-0.1.0-macos-amd64.pkg",
@@ -34,6 +35,7 @@ RELEASE_AGENTS = (
 CN_RELEASE_AGENTS = (
     "neutrino-agent_0.1.0_amd64-cn.deb",
     "neutrino-agent-0.1.0-1.x86_64-cn.rpm",
+    "neutrino-agent-0.1.0-1-x86_64-cn.pkg.tar.zst",
     "neutrino-agent-0.1.0-windows-amd64-cn.msi",
 )
 
@@ -176,14 +178,12 @@ def test_the_cache_directory_is_the_one_the_runtime_names():
         ("deb", "arm64", "neutrino-agent_0.1.0_arm64.deb"),
         ("rpm", "x86_64", RPM_NAME),
         ("rpm", "aarch64", "neutrino-agent-0.1.0-1.aarch64.rpm"),
-        ("pkg", "x86_64", None),
+        ("pkg", "x86_64", "neutrino-agent-0.1.0-1-x86_64.pkg.tar.zst"),
     ],
 )
 def test_a_hub_package_carries_the_agent_package_of_its_own_platform_alone(
     tmp_path, monkeypatch, kind, machine, carried
 ):
-    """The Arch package carries none, because no agent package is published
-    for Arch."""
     tree, staged_python, _ = _staging(
         tmp_path, monkeypatch, prebuilt=True, has_release_sites=True
     )
@@ -195,7 +195,7 @@ def test_a_hub_package_carries_the_agent_package_of_its_own_platform_alone(
         family=venv_tree.AGENT_FAMILY_OF_HUB_KIND[kind],
     )
 
-    assert _cached(tree) == ([carried] if carried else [])
+    assert _cached(tree) == [carried]
 
 
 def test_a_release_names_every_agent_package_of_its_edition_with_its_hash(
@@ -211,6 +211,7 @@ def test_a_release_names_every_agent_package_of_its_edition_with_its_hash(
 
     manifest = _manifest(data)
     assert sorted(manifest) == [
+        "arch-amd64",
         "deb-amd64",
         "deb-arm64",
         "msi-amd64",
@@ -241,9 +242,25 @@ def test_a_cn_release_names_and_carries_the_cn_agent_packages_alone(
     assert {key: entry["name"] for key, entry in _manifest(data).items()} == {
         "deb-amd64": "neutrino-agent_0.1.0_amd64-cn.deb",
         "rpm-amd64": "neutrino-agent-0.1.0-1.x86_64-cn.rpm",
+        "arch-amd64": "neutrino-agent-0.1.0-1-x86_64-cn.pkg.tar.zst",
         "msi-amd64": "neutrino-agent-0.1.0-windows-amd64-cn.msi",
     }
     assert _cached(tree) == ["neutrino-agent_0.1.0_amd64-cn.deb"]
+
+
+def test_a_debian_hub_names_the_arch_agent_and_carries_its_own(tmp_path, monkeypatch):
+    """A hub of any family serves an Arch machine from the release sites."""
+    tree, staged_python, data = _staging(
+        tmp_path, monkeypatch, prebuilt=True, has_release_sites=True
+    )
+
+    venv_tree.stage_agent_cache(tree, staged_python, "amd64", family="deb")
+
+    assert (
+        _manifest(data)["arch-amd64"]["name"]
+        == "neutrino-agent-0.1.0-1-x86_64.pkg.tar.zst"
+    )
+    assert _cached(tree) == [DEB_NAME]
 
 
 def test_a_build_with_no_release_sites_names_the_carried_package_alone(

@@ -61,9 +61,20 @@ AGENT_PACKAGE_ARCHITECTURES = {
 }
 
 # The suffix each family's files carry.
-AGENT_PACKAGE_FAMILIES = {".deb": "deb", ".rpm": "rpm", ".msi": "msi", ".pkg": "pkg"}
+AGENT_PACKAGE_FAMILIES = {
+    ".deb": "deb",
+    ".rpm": "rpm",
+    ".zst": "arch",
+    ".msi": "msi",
+    ".pkg": "pkg",
+}
 # Which package family a machine's platform family installs.
-AGENT_PACKAGE_FAMILY_OF_PLATFORM = {"debian": "deb", "rhel": "rpm", "suse": "rpm"}
+AGENT_PACKAGE_FAMILY_OF_PLATFORM = {
+    "debian": "deb",
+    "rhel": "rpm",
+    "suse": "rpm",
+    "arch": "arch",
+}
 # Which package family a machine installs by its operating system alone,
 # where the platform tuple names no distribution family.
 AGENT_PACKAGE_FAMILY_OF_OS = {"windows": "msi", "darwin": "pkg"}
@@ -73,7 +84,7 @@ def platform_key(family: str, architecture: str) -> str:
     """What addresses one platform in the manifest.
 
     Args:
-        family: ``deb`` or ``rpm``.
+        family: ``deb``, ``rpm``, ``arch``, ``msi`` or ``pkg``.
         architecture: The machine, named the way the agent's platform tuple
             names it.
 
@@ -125,7 +136,8 @@ def package_family(name: str) -> str:
         name: The file name.
 
     Returns:
-        ``deb``, ``rpm``, ``msi`` or ``pkg``, or empty for anything else.
+        ``deb``, ``rpm``, ``arch``, ``msi`` or ``pkg``, or empty for anything
+        else.
     """
     return AGENT_PACKAGE_FAMILIES.get(Path(name).suffix, "")
 
@@ -137,9 +149,9 @@ def platform_family(platform: dict) -> str:
         platform: ``{os, family, arch}`` as the agent reported it.
 
     Returns:
-        ``msi`` on Windows, ``pkg`` on macOS, else ``deb`` or ``rpm`` by the
-        distribution family, or empty when no agent package is built for
-        the machine.
+        ``msi`` on Windows, ``pkg`` on macOS, else ``deb``, ``rpm`` or
+        ``arch`` by the distribution family, or empty when no agent package
+        is built for the machine.
     """
     by_os = AGENT_PACKAGE_FAMILY_OF_OS.get(str(platform.get("os", "")), "")
     if by_os:
@@ -205,7 +217,7 @@ class AgentPackageCache:
         """Whether one platform can be produced without being asked twice.
 
         Args:
-            family: ``deb`` or ``rpm``.
+            family: ``deb``, ``rpm``, ``arch``, ``msi`` or ``pkg``.
             architecture: The machine the device reported.
 
         Returns:
@@ -223,7 +235,7 @@ class AgentPackageCache:
         """The agent package for one family and machine.
 
         Args:
-            family: ``deb`` or ``rpm``.
+            family: ``deb``, ``rpm``, ``arch``, ``msi`` or ``pkg``.
             architecture: The machine the device reported.
 
         Returns:
@@ -322,7 +334,7 @@ class AgentPackageCache:
         """A build dropped under ``config/devices/packages`` for one platform.
 
         Args:
-            family: ``deb`` or ``rpm``.
+            family: ``deb``, ``rpm``, ``arch``, ``msi`` or ``pkg``.
             architecture: The machine the device reported.
 
         Returns:

@@ -146,9 +146,8 @@ AGENT_PLATFORM_KEY = _runtime(_AGENT_PACKAGE_MODULE, "platform_key")
 AGENT_PACKAGE_FAMILY = _runtime(_AGENT_PACKAGE_MODULE, "package_family")
 AGENT_PACKAGE_MACHINE = _runtime(_AGENT_PACKAGE_MODULE, "package_architecture")
 # The agent package family each hub package carries one file of, by the
-# hub package's own kind. The Arch package carries none, because no agent
-# package is published for Arch.
-AGENT_FAMILY_OF_HUB_KIND = {"deb": "deb", "rpm": "rpm", "pkg": ""}
+# hub package's own kind.
+AGENT_FAMILY_OF_HUB_KIND = {"deb": "deb", "rpm": "rpm", "pkg": "arch"}
 
 # The licences under licenses/ of what the panel's built page carries: the
 # terminal, the QR code drawing and the three fonts; and the notice file for
@@ -167,7 +166,11 @@ PANEL_LICENSES = (
 AGENT_PACKAGE_LICENSES = ("rustdesk.txt", "go_notices.txt")
 # What builds the agent's own package of each family, when no directory of
 # packages already built is given.
-AGENT_BUILD_SCRIPTS = {"deb": "build_deb.py", "rpm": "build_rpm.py"}
+AGENT_BUILD_SCRIPTS = {
+    "deb": "build_deb.py",
+    "rpm": "build_rpm.py",
+    "arch": "build_pkg.py",
+}
 
 # A directory of agent packages already built, every family and machine the
 # release makes. The build reads every one into the manifest and seeds the
@@ -536,8 +539,8 @@ def stage_agent_cache(
         staged_python: The interpreter tree the hub was installed into.
         machine: The architecture, named however the packaging format names
             it.
-        family: ``deb`` or ``rpm``, the agent package this hub package
-            carries; empty carries none.
+        family: ``deb``, ``rpm`` or ``arch``, the agent package this hub
+            package carries.
 
     Raises:
         SystemExit: When a file's platform cannot be read from its name,

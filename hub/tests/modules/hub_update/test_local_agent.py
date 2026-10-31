@@ -47,6 +47,10 @@ def test_every_familys_file_names_its_version(path):
     assert package_version(path.name) == "0.6.0"
 
 
+def test_the_arch_file_names_its_version():
+    assert package_version("neutrino-agent-0.6.0-1-x86_64.pkg.tar.zst") == "0.6.0"
+
+
 def test_a_file_of_no_agent_package_names_no_version():
     assert package_version("neutrino-hub_0.6.0_amd64.deb") == ""
 
@@ -76,7 +80,16 @@ def test_the_local_agent_is_the_systems_own_family_outside_linux(monkeypatch):
     monkeypatch.setattr(local_agent_module, "distribution_family", lambda: "debian")
 
     assert local_agent_module.local_agent_package() == "/cache/deb-arm64"
-    assert FakeAgentCache.asked == [("pkg", "arm64"), ("deb", "arm64")]
+
+    monkeypatch.setattr(local_agent_module, "machine_architecture", lambda: "amd64")
+    monkeypatch.setattr(local_agent_module, "distribution_family", lambda: "arch")
+
+    assert local_agent_module.local_agent_package() == "/cache/arch-amd64"
+    assert FakeAgentCache.asked == [
+        ("pkg", "arm64"),
+        ("deb", "arm64"),
+        ("arch", "amd64"),
+    ]
 
 
 def test_each_system_names_its_script():
