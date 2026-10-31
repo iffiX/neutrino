@@ -26,11 +26,13 @@ from neutrino_hub.modules.devices.manifests import (
     artifact_sources,
     entry_artifacts,
     entry_params,
+    entry_requires,
     entry_version,
     guest_login_of,
     load_module_manifests,
     load_tool_manifests,
     manifest_methods,
+    missing_requirement,
     module_recipe,
     platform_keys,
     resolve_platform_entry,
@@ -1708,6 +1710,120 @@ def test_a_memory_named_by_a_module_without_a_container_entry_is_refused(
         load_module_manifests()
 
     assert "container module alone" in str(refusal.value)
+
+
+# --- the modules an entry requires ---
+
+# The platforms the agent reports: a Linux of the Debian or RHEL family or
+# of none, Windows and macOS.
+REPORTED_PLATFORMS = [
+    {"os": "linux", "family": family, "arch": arch}
+    for family in ("debian", "rhel", "")
+    for arch in ("amd64", "arm64")
+] + [
+    {"os": os_name, "family": "", "arch": arch}
+    for os_name in ("windows", "darwin")
+    for arch in ("amd64", "arm64")
+]
+
+
+def requiring_manifest(requires) -> dict:
+    """The sample container module, its entry naming ``requires``."""
+    manifest = container_manifest()
+    manifest["platforms"]["linux"]["requires"] = requires
+    return manifest
+
+
+def test_an_entry_s_requires_reaches_its_recipe(manifests_dir):
+    write_manifest(manifests_dir, "sample", requiring_manifest(["podman"]))
+    write_manifest(manifests_dir, "plain", dict(container_manifest(), name="plain"))
+
+    loaded = load_module_manifests()
+
+    assert module_recipe(loaded["sample"]["platforms"]["linux"])["requires"] == [
+        "podman"
+    ]
+    assert "requires" not in module_recipe(loaded["plain"]["platforms"]["linux"])
+
+
+@pytest.mark.parametrize(
+    "requires, said",
+    [
+        ([], "list of strings"),
+        ("podman", "list of strings"),
+        ([""], "not empty"),
+        (["podman", "podman"], "twice"),
+        (["sample"], "its own module"),
+    ],
+)
+def test_a_requires_of_another_shape_is_refused(manifests_dir, requires, said):
+    write_manifest(manifests_dir, "sample", requiring_manifest(requires))
+
+    with pytest.raises(ValueError) as refusal:
+        load_module_manifests()
+
+    assert "requires" in str(refusal.value)
+    assert said in str(refusal.value)
+
+
+def test_every_shipped_container_entry_requires_containers_and_no_other_anything():
+    for name, manifest in load_module_manifests().items():
+        for key, entry in manifest["platforms"].items():
+            is_container = entry["install"]["method"] == "container"
+            assert entry_requires(entry) == (["podman"] if is_container else []), (
+                name,
+                key,
+            )
+
+
+def test_every_required_module_is_in_the_catalog_and_runs_where_it_is_required():
+    from neutrino_hub.modules.devices.constants import DEVICE_MODULE_CATALOG_PATH
+
+    manifests = load_module_manifests()
+    catalog = json.loads(DEVICE_MODULE_CATALOG_PATH.read_text(encoding="utf-8"))
+    listed = {item["name"] for item in catalog["modules"]}
+    for platform in REPORTED_PLATFORMS:
+        for name, manifest in manifests.items():
+            _, entry = resolve_platform_entry(manifest, platform)
+            for required in entry_requires(entry):
+                assert required in listed and required in manifests, (name, required)
+            if platform["os"] != "linux" or platform["family"]:
+                assert missing_requirement(manifests, entry, platform) == "", (
+                    name,
+                    platform,
+                )
+
+
+@pytest.mark.parametrize("name", ["ayakaleaf", "hermes_webui"])
+def test_a_container_module_cannot_run_on_a_linux_of_no_family(name):
+    manifests = load_module_manifests()
+    platform = {"os": "linux", "family": "", "arch": "amd64"}
+
+    _, entry = resolve_platform_entry(manifests[name], platform)
+
+    assert entry is not None
+    assert missing_requirement(manifests, entry, platform) == "podman"
+
+
+def test_the_shipped_requires_form_no_cycle():
+    manifests = load_module_manifests()
+    edges = {
+        name: {
+            required
+            for entry in manifest["platforms"].values()
+            for required in entry_requires(entry)
+        }
+        for name, manifest in manifests.items()
+    }
+    for start in edges:
+        reached: set = set()
+        pending = list(edges[start])
+        while pending:
+            name = pending.pop()
+            if name not in reached:
+                reached.add(name)
+                pending += list(edges.get(name, ()))
+        assert start not in reached, start
 
 
 def _npm_with_sources(manifest):

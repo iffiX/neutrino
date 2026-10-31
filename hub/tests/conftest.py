@@ -1872,6 +1872,7 @@ DEMO_WEB_DIGEST = "sha256:" + "d" * 64
 DEMO_WORKER_DIGEST = "sha256:" + "e" * 64
 DEMO_ENTRY = {
     "runner": "container",
+    "requires": ["podman"],
     "install": {
         "method": "container",
         "params": {

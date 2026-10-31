@@ -15,6 +15,7 @@
   "platforms": {
     "linux": {
       "runner": "container",
+      "requires": ["podman"],
       "install": {
         "method": "container",
         "params": {
@@ -46,6 +47,7 @@
     },
     "windows-amd64": {
       "runner": "container",
+      "requires": ["podman"],
       "install": {
         "method": "container",
         "params": {
@@ -77,6 +79,7 @@
     },
     "darwin-arm64": {
       "runner": "container",
+      "requires": ["podman"],
       "install": {
         "method": "container",
         "params": {
@@ -108,6 +111,7 @@
     },
     "darwin-amd64": {
       "runner": "container",
+      "requires": ["podman"],
       "install": {
         "method": "container",
         "params": {

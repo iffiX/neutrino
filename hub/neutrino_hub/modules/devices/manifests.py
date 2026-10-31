@@ -3,7 +3,8 @@
 The manifests under ``manifests/`` are the one record of where a module's
 software comes from and how a machine checks for it: the module's identity
 at the top, and one entry per platform, ``{runner, min_version, install:
-{method, params}}``, the ``params`` shaped by the method. A manifest that
+{method, params}, requires}``, the ``params`` shaped by the method and
+``requires`` naming the modules the entry runs on. A manifest that
 says ``is_module: false`` names a program the agent runs itself, cc-switch,
 with its version at the top and ``artifacts`` alone in each entry. The
 loader refuses a manifest whose keys or ``params`` fall outside those shapes,
@@ -85,7 +86,7 @@ UNINSTALL_DATA_KEYS = {"is_deleted", "text"}
 UNINSTALL_DATA_LANGUAGES = {"en", "zh-CN"}
 # What ``web_share`` holds.
 WEB_SHARE_KEYS = {"guest_login"}
-ENTRY_KEYS = {"runner", "min_version", "install"}
+ENTRY_KEYS = {"runner", "min_version", "install", "requires"}
 # What each method's params hold: the keys it must name, and those it may.
 PARAMS_REQUIRED = {
     DEVICE_METHOD_AGENT: set(),
@@ -294,6 +295,33 @@ def entry_version(manifest: dict, entry: "dict | None") -> str:
     return str(entry_params(entry).get("version", "") or "")
 
 
+def entry_requires(entry: "dict | None") -> list:
+    """The modules one platform entry requires, empty for no entry."""
+    if not isinstance(entry, dict):
+        return []
+    return [str(name) for name in entry.get("requires") or []]
+
+
+def missing_requirement(manifests: dict, entry: "dict | None", platform: dict) -> str:
+    """The first module an entry requires that resolves no entry for a platform.
+
+    Args:
+        manifests: The module manifests, as :func:`load_module_manifests`
+            returns them.
+        entry: The requiring module's entry for the platform.
+        platform: The tuple the agent reported.
+
+    Returns:
+        The module's name; empty when every required module resolves an
+        entry, or the entry requires none.
+    """
+    for name in entry_requires(entry):
+        _, held = resolve_platform_entry(manifests.get(name) or {}, platform)
+        if held is None:
+            return name
+    return ""
+
+
 def entry_artifacts(manifest: dict, entry: "dict | None") -> list:
     """The artifacts one platform entry installs.
 
@@ -371,7 +399,8 @@ def module_recipe(entry: "dict | None") -> dict:
         ``{runner, method, params}``: the params without ``releases``, each
         artifact the agent takes from the package stream without its file
         and sources, and an ``npm`` or ``image`` artifact with its sources;
-        empty for no entry.
+        ``requires`` beside them where the entry names it; empty for no
+        entry.
     """
     if not isinstance(entry, dict):
         return {}
@@ -381,11 +410,14 @@ def module_recipe(entry: "dict | None") -> dict:
     }
     if "artifacts" in params:
         params["artifacts"] = [_recipe_artifact(item) for item in params["artifacts"]]
-    return {
+    recipe = {
         "runner": str(entry.get("runner", "") or ""),
         "method": method,
         "params": params,
     }
+    if entry_requires(entry):
+        recipe["requires"] = entry_requires(entry)
+    return recipe
 
 
 def manifest_methods(manifest: dict) -> list:
@@ -616,6 +648,21 @@ def _check_module(file_name: str, manifest: dict) -> None:
                 file_name, f"{where} method", f"is no install method, not {method!r}"
             )
         _check_params(file_name, where, method, install["params"])
+        if "requires" in entry:
+            _check_requires(file_name, where, manifest["name"], entry["requires"])
+
+
+def _check_requires(file_name: str, where: str, module: str, requires) -> None:
+    """Refuse a ``requires`` that is no list of module names, names one twice or names its own module.
+
+    Raises:
+        ValueError: Naming the place and what is wrong.
+    """
+    _check_texts(file_name, f"{where} requires", requires, is_empty_allowed=False)
+    if len(set(requires)) != len(requires):
+        _refuse(file_name, f"{where} requires", "names a module twice")
+    if module in requires:
+        _refuse(file_name, f"{where} requires", "names its own module")
 
 
 def _check_web_share(file_name: str, web_share) -> None:
