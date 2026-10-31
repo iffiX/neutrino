@@ -25,12 +25,12 @@ shows it.
 # client still imports on Python 3.9.
 from __future__ import annotations
 
-import functools
 import os
 import re
 import shutil
 import threading
 
+from neutrino_client.core import files
 from neutrino_client.exceptions import (
     GatewayRefusedDetail,
     GatewayUnreachable,
@@ -253,8 +253,14 @@ class SshConfigWriter:
         self._on_change = on_change if on_change is not None else _nobody
         self._start_thread = start_thread if start_thread is not None else _in_thread
         self._lock = threading.Lock()
+        # One rewrite or clear at a time. A rewrite deletes every file under
+        # the keys directory it did not write. A rewrite keeps it locked
+        # across a hub's replies, so ``refresh`` never takes it.
+        self._rewrite_lock = threading.Lock()
         # What the last rewrite was made from; a rewrite runs when it changes.
         self._written: "tuple | None" = None
+        # The newest refresh's machines, until a rewrite takes them.
+        self._newest: "list | None" = None
 
     @property
     def config_path(self) -> str:
@@ -307,18 +313,21 @@ class SshConfigWriter:
             if shape == self._written:
                 return
             self._written = shape
-        self._start_thread(functools.partial(self._rewrite, machines))
+            self._newest = machines
+        self._start_thread(self._rewrite_newest)
 
     def clear(self) -> None:
         """Delete the configuration, the keys and the known_hosts: no hub is left."""
-        with self._lock:
-            self._written = None
-        for path in (self.config_path,):
-            try:
-                os.unlink(path)
-            except OSError:
-                pass
-        shutil.rmtree(self.keys_dir, ignore_errors=True)
+        with self._rewrite_lock:
+            with self._lock:
+                self._written = None
+                self._newest = None
+            for path in (self.config_path,):
+                try:
+                    os.unlink(path)
+                except OSError:
+                    pass
+            shutil.rmtree(self.keys_dir, ignore_errors=True)
         self._log("removed the SSH configuration: no hub is joined")
         self._on_change()
 
@@ -366,6 +375,14 @@ class SshConfigWriter:
             else "took the Include line out of ~/.ssh/config"
         )
         self._on_change()
+
+    def _rewrite_newest(self) -> None:
+        """Rewrite for the newest refresh's machines, unless a rewrite took them."""
+        with self._rewrite_lock:
+            with self._lock:
+                machines, self._newest = self._newest, None
+            if machines is not None:
+                self._rewrite(machines)
 
     def _rewrite(self, machines: list) -> None:
         """Write the keys, the known_hosts and the configuration for these machines."""
@@ -455,16 +472,8 @@ class SshConfigWriter:
 
 
 def _write_private(path: str, text: str) -> None:
-    """Write a file whole at 0600, through a temporary file beside it."""
-    temporary = path + ".tmp"
-    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-        stream.write(text)
-    os.replace(temporary, path)
-    try:
-        os.chmod(path, 0o600)
-    except OSError:
-        pass
+    """Write a file whole at 0600, through a temporary file of its own beside it."""
+    files.write_text(path, text, mode=0o600)
 
 
 def _in_thread(target) -> None:
