@@ -1174,6 +1174,20 @@ gateway reports the flow `complete` or `failed`.
 | When the hub's session for the flow ends before the gateway reports either, the route returns `login_expired`, and the dialog stays open on the screen it was showing, with the code's words under it. It never resets to its first screen. | A person who sees the first screen again cannot tell a timeout from a click that did nothing. |
 | A flow that ends `failed` shows the gateway's own reason, the view's `message`, under the code's words when the gateway sent one. | The gateway's reason names the provider's refusal, which the code alone cannot. |
 
+## The hub's faces
+
+The panel draws the hub's wolf from `images/icons/neutrino_hub/`, as an SVG in
+the page and as PNG files in the favicon. A face is drawn where a screen names
+it, and no other screen gets one.
+
+| Where | Face |
+| --- | --- |
+| The sidebar's brand box, the login page's brand box, the favicon | `open`; the favicon at 16 px is the hand-drawn `wolf_open_16.png` and at 32 px is scaled from the large file |
+| The login page's brand box during a lockdown, with the `lock` beside the clock kept | `angry` |
+| The session check | `waiting`, breathing with `splash_breathe` |
+| The not-found page, above its title | `sad` |
+| The setup's finished page, above its title, with `setup_wolf.webp` kept on the right | `happy` |
+
 ## An interaction this document does not cover
 
 Before designing one, establish that it is not generic. **Where an established

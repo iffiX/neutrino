@@ -385,8 +385,8 @@ on a miss, XcodeGen
 generates the project, `xcodebuild` builds the app for `generic/platform=iOS`
 with code signing off (`CODE_SIGNING_ALLOWED=NO`), the build fails when the
 app does not define `_nd_start`, the app takes its icon from
-`images/icons/neutrino_ios.png`, the mark on an opaque square with square
-corners, which iOS rounds, and the `.app` is zipped
+`images/icons/neutrino_client/wolf_wink_1024.png`, scaled to 992 px and centred
+on a 1024 px opaque black square, which iOS rounds, and the `.app` is zipped
 under `Payload/`. The build passes the release's version to `xcodebuild`, as
 the Android build passes it to Gradle.
 

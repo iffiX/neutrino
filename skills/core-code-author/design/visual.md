@@ -27,6 +27,13 @@ In practice: `.button--primary` carries the accent; the glow comes from
 sitting in `.page_actions`, `.apply_bar` or `.settings_group_actions`, or
 from `.button--commit` where a footer's save button needs it by name.
 
+## A face is its own frame
+
+A face of the wolf (`images/icons/neutrino_hub/`) brings its own black square,
+ring and corners. The box that holds it draws no border, no wash and no glow:
+an accent frame around the ring is two frames in two colours. Faces keep their
+colours in both themes.
+
 ## Colour carries one meaning each
 
 - **accent (cyan)** — what this page is for, and what is currently selected

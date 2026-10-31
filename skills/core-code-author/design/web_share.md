@@ -110,25 +110,25 @@ cookie or secret of the app or of the visitor.
 Six screens fill the window: loading before the app shows, the
 introduction, and four refusals. A refusal covers the app's frame when the
 app cannot be reached, the frame kept under it. Each screen is centred on
-the page background: the mark the panel shows while it checks a session,
-with one or two lines of text under it. Their words are in
+the page background: a face of the client's wolf, with one or two lines of
+text under it. Their words are in
 [ui_text.md](ui_text.md), "The App share page's words", Chinese when the
 browser's language starts with `zh` and English otherwise.
 
-| Screen | Shown | Under the mark |
-| --- | --- | --- |
-| Loading | from the page's start until the app's first page | the mark breathes; one line, `Opening <app title>…`, in 12 px monospace, muted, which after 10 seconds reads `The line is slow, still connecting…` before the admission and `The line is slow, still loading…` after it |
-| The introduction | the site itself is opened: the address has no `#` part, and the tab has neither kept facts nor an opener | the mark still; the first line in 14 px regular text in the main text colour, and a second line in 12 px muted text |
-| The link is incomplete | the address has a `#` part whose facts do not read, and the tab has no kept facts, a link cut short when it was copied among them | the same |
-| The link no longer works | the share is refused, the page is opened inside another page's frame, or a tab the app opened gets no facts from its opener | the same |
-| The hub is offline | no channel and admission within 30 seconds of the page's start, a link of an ended share among them, or a dropped one not back within about 10 | the same |
-| The app is unavailable | `agent_offline` or `service_unknown` for the share's entry, or `connect_failed` or `port_not_published` from the shared app | the same |
+| Screen | Face | Shown | Under the face |
+| --- | --- | --- | --- |
+| Loading | `waiting` | from the page's start until the app's first page | the face breathes; one line, `Opening <app title>…`, in 12 px monospace, muted, which after 10 seconds reads `The line is slow, still connecting…` before the admission and `The line is slow, still loading…` after it |
+| The introduction | `wink` | the site itself is opened: the address has no `#` part, and the tab has neither kept facts nor an opener | the face still; the first line in 14 px regular text in the main text colour, and a second line in 12 px muted text |
+| The link is incomplete | `sad` | the address has a `#` part whose facts do not read, and the tab has no kept facts, a link cut short when it was copied among them | the same |
+| The link no longer works | `sad` | the share is refused, the page is opened inside another page's frame, or a tab the app opened gets no facts from its opener | the same |
+| The hub is offline | `sleep` | no channel and admission within 30 seconds of the page's start, a link of an ended share among them, or a dropped one not back within about 10 | the same |
+| The app is unavailable | `error` | `agent_offline` or `service_unknown` for the share's entry, or `connect_failed` or `port_not_published` from the shared app | the same |
 
 | Rule | Reason |
 | --- | --- |
-| The mark is the panel's: a 46 px rounded square with an accent border and the accent's wash, the N logo inside as an inline SVG. While loading it breathes as the panel's does, `splash_breathe`, 2.2 seconds. | A visitor who opens the panel later meets the same mark, and the page loads no image. |
-| The colours are the panel's dark and light tokens, `--color-bg`, `--color-text`, `--color-text-muted`, `--color-accent` and its wash, with their values, chosen by the system's setting. | The page has no Settings of its own, and reads as the panel does. |
-| A screen shows no mascot, no button and no link. | A visitor has nothing to do on a refusal but ask the person who shared the link, and nothing to do on the introduction but open the link they were sent. |
+| The faces are the client's, from `images/icons/neutrino_client/`, 46 px, the five inline as SVG symbols that share their gradients and paths. While loading the face breathes as the panel's session check does, `splash_breathe`, 2.2 seconds. | The page belongs to the client's family, and it loads no image. |
+| The colours are the panel's dark and light tokens, `--color-bg`, `--color-text`, `--color-text-muted` and `--color-accent`, with their values, chosen by the system's setting. | The page has no Settings of its own, and reads as the panel does. |
+| A screen shows no button and no link. | A visitor has nothing to do on a refusal but ask the person who shared the link, and nothing to do on the introduction but open the link they were sent. |
 | From 10 seconds after the page's start until the app's first page shows, the loading line reads that the line is slow. It names the connection until the session is admitted and the app's load after the admission, and a line that reads `still connecting` changes to `still loading` at the admission. | In Safari on an iPhone through SakuraFrp, every page was admitted within 6 seconds. code-server's first page then showed at 50 to 63 seconds and Ayakaleaf's at 37 to 46, under a line that read `Opening`. |
-| While a screen shows, the tab's title is the screen's first line, the slow line among them. The introduction's tab shows the N icon of `images/icons/neutrino.png`, drawn as an inline SVG, and every other screen's tab has no icon. The app's title and icon come back with the app. | The tab reads as what the window shows, and a share that ended leaves nothing of its app on the tab. The introduction belongs to no share, and its tab reads as Neutrino. |
+| While a screen shows, the tab's title is the screen's first line, the slow line among them. The introduction's tab shows the wink, `wolf_wink_16.png` inline at 16 px and the SVG above it, and every other screen's tab has no icon. The app's title and icon come back with the app. | The tab reads as what the window shows, and a share that ended leaves nothing of its app on the tab. The introduction belongs to no share, and its tab reads as Neutrino. |
 | The app-unavailable screen has one wording for a machine that is offline and for a shared app that is down. | The visitor waits in both cases, and the page shows the app once it is back. |

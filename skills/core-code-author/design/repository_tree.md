@@ -53,9 +53,11 @@ skills/              core-code-author/, this standard: design/ the design
                      artifacts, sources and versions of a module's
                      software, and modules/ one page per device module;
                      doc-author/, how every .md is written.
-images/              Source artwork: icons/ the one icon source the packaging
-                     builds copy from, original/ the raw artwork, web/ and
-                     screenshots/ the README's images, guide/ the site's.
+images/              Source artwork: icons/ the one icon source, the wolf's faces
+                     in neutrino_hub/ and neutrino_client/ and the device
+                     modules' glyphs in modules/, original/ the raw artwork,
+                     web/ and screenshots/ the README's images, guide/ the
+                     site's.
 licenses/            The upstream licences of the software the packages carry.
 .github/workflows/   Continuous integration, the release build, and the
                      documentation site.
