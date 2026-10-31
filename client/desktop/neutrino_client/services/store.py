@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 import threading
 import time
 import uuid
@@ -39,6 +40,7 @@ from neutrino_client.constants import (
     CLIENT_TERMINAL_FONT_SIZE_MIN,
     CLIENT_THEMES,
 )
+from neutrino_client.core import files
 
 # Mount record fields. They include whether the share was on this machine at
 # its last mount, and on Windows the server name a share of this machine is
@@ -533,10 +535,13 @@ class ClientServiceStore:
                 return
             directory = os.path.dirname(self._path) or "."
             os.makedirs(directory, exist_ok=True)
-            temporary = f"{self._path}.tmp"
-            descriptor = os.open(
-                temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600
-            )
-            with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-                json.dump(data, stream, indent=2)
-            _replace(temporary, self._path)
+            # A name per write. Several store objects write this file, each with
+            # a lock of its own.
+            descriptor, temporary = tempfile.mkstemp(dir=directory)
+            try:
+                with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+                    json.dump(data, stream, indent=2)
+                _replace(temporary, self._path)
+            except BaseException:
+                files.remove_file(temporary)
+                raise

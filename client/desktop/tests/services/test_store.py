@@ -6,7 +6,8 @@ records, and the one thing it makes itself: the
 installation's id, generated on the first read and stable after. Nothing
 about a service standing on is in it, a file an older build wrote reads
 without the keys it had, and a mount record that names no hub is dropped
-on request.
+on request. Each write takes a temporary name of its own, so many store
+objects on one file all finish and a failed write leaves no temporary file.
 """
 
 import json
@@ -19,6 +20,9 @@ from neutrino_client.constants import CLIENT_DEFAULT_LANGUAGE, CLIENT_DEFAULT_TH
 import neutrino_client.services.store as store_module
 from neutrino_client.services.store import ClientServiceStore
 
+# Store objects writing one file at once, and the writes of each.
+STORES_AT_ONCE = 16
+STORE_WRITES_EACH = 40
 RECORD = {
     "hub_id": "h1",
     "entry_id": "share_media",
@@ -211,12 +215,13 @@ def test_passwords_never_reach_the_file(store, tmp_path):
     assert "password" not in store.mounts()["r1"]
 
 
-def test_the_file_is_written_0600_and_atomically(store, tmp_path):
-    store.set_mount("r1", RECORD)
+def test_the_file_is_written_0600_and_atomically(tmp_path):
+    path = tmp_path / "folder" / "state.json"
 
-    path = tmp_path / "state.json"
+    ClientServiceStore(path=str(path)).set_mount("r1", RECORD)
+
     assert oct(path.stat().st_mode & 0o777) == "0o600"
-    assert not os.path.exists(str(path) + ".tmp")
+    assert os.listdir(path.parent) == ["state.json"]
 
 
 def test_an_unreadable_file_reads_as_empty(tmp_path):
@@ -365,10 +370,57 @@ def test_a_file_held_past_every_try_fails_the_write(tmp_path, monkeypatch):
         raise PermissionError(5, "Access is denied")
 
     monkeypatch.setattr(store_module.os, "replace", replace)
-    store = ClientServiceStore(path=str(tmp_path / "state.json"))
+    path = tmp_path / "folder" / "state.json"
+    store = ClientServiceStore(path=str(path))
 
     with pytest.raises(PermissionError):
         store.set_mount("r1", RECORD)
+
+    assert os.listdir(path.parent) == []
+
+
+def test_each_write_takes_a_temporary_name_of_its_own(tmp_path, monkeypatch):
+    path = str(tmp_path / "state.json")
+    names = []
+    real_replace = store_module.os.replace
+
+    def replace(source, target):
+        names.append(source)
+        real_replace(source, target)
+
+    monkeypatch.setattr(store_module.os, "replace", replace)
+
+    ClientServiceStore(path=path).set_language("en")
+    ClientServiceStore(path=path).set_language("zh-CN")
+
+    assert len(set(names)) == 2
+
+
+def test_many_stores_on_one_file_all_finish_and_leave_no_temporary_file(tmp_path):
+    folder = tmp_path / "many"
+    path = folder / "state.json"
+    failures = []
+
+    def write(number: int) -> None:
+        store = ClientServiceStore(path=str(path))
+        for count in range(STORE_WRITES_EACH):
+            try:
+                store.set_ai_tool_configs({"claude": {"default": f"{number}_{count}"}})
+            except OSError as error:
+                failures.append(error)
+
+    writers = [
+        threading.Thread(target=write, args=(number,))
+        for number in range(STORES_AT_ONCE)
+    ]
+    for writer in writers:
+        writer.start()
+    for writer in writers:
+        writer.join(timeout=60)
+
+    assert failures == []
+    assert sorted(os.listdir(folder)) == ["state.json"]
+    assert "claude" in json.loads(path.read_text())["ai"]["tool_configs"]
 
 
 def test_a_read_waits_for_a_write_in_progress(tmp_path):
