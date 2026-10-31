@@ -1,5 +1,6 @@
 import { NavLink } from "react-router-dom";
 
+import { HubFace } from "./hub_face";
 import { Icon } from "./icon";
 import { StatusDot } from "./status_dot";
 import { toDeviceLabel } from "../device_level";
@@ -9,7 +10,6 @@ import { useApiResource } from "../use_api_resource";
 import { HUB_EVENT_DEVICES } from "../use_hub_events";
 import type { DevicesResponse, DeviceView } from "../api_types";
 import "./sidebar_nav.css";
-import neutrinoMark from "../images/neutrino_mark.png";
 
 /**
  * The fixed left rail.
@@ -46,7 +46,7 @@ export function SidebarNav({ onLogout }: SidebarNavProps) {
     <nav className="sidebar_nav" aria-label={t("ui.shell.nav_label")}>
       <div className="sidebar_brand">
         <span className="sidebar_brand_mark">
-          <img className="brand_mark_image" src={neutrinoMark} alt="" />
+          <HubFace face="open" />
         </span>
         <span className="sidebar_brand_text">
           <span className="sidebar_brand_name">{t("ui.brand.hub")}</span>

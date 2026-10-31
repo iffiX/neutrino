@@ -2,7 +2,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import type { ReactNode } from "react";
 
 import { AppShell } from "./components/app_shell";
-import { Icon } from "./components/icon";
+import { HubFace } from "./components/hub_face";
 import { UpdateDialog } from "./components/update_dialog";
 import { AiPage } from "./pages/ai_page";
 import { ClientsPage } from "./pages/clients_page";
@@ -50,7 +50,7 @@ function gatedContent(
       <div className="app_splash">
         <div className="app_splash_inner">
           <span className="app_splash_mark">
-            <Icon name="proxy" size={22} />
+            <HubFace face="waiting" />
           </span>
           <span className="app_splash_text">checking session…</span>
         </div>

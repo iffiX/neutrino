@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 
+import { HubFace } from "../components/hub_face";
 import { Icon } from "../components/icon";
 import { apiGet, describeError } from "../api_client";
 import { PasswordInput } from "../components/password_input";
@@ -12,7 +13,6 @@ import type { AuthState } from "../api_types";
 import { httpsOrigin } from "../origins";
 
 import "./login_page.css";
-import neutrinoMark from "../images/neutrino_mark.png";
 
 /**
  * The gate in front of everything else.
@@ -134,11 +134,7 @@ export function LoginPage() {
       <div className="login_card">
         <div className="login_brand">
           <span className="login_brand_mark">
-            {isLocked ? (
-              <Icon name="proxy" size={20} />
-            ) : (
-              <img className="brand_mark_image" src={neutrinoMark} alt="" />
-            )}
+            <HubFace face={isLocked ? "angry" : "open"} />
           </span>
           <span className="login_brand_text">
             <span className="login_brand_name">{t("ui.brand.hub")}</span>

@@ -277,6 +277,12 @@
   text-transform: uppercase;
 }
 
+.setup_face {
+  display: block;
+  width: 64px;
+  height: 64px;
+}
+
 .setup_title {
   margin: 0;
   font-size: 19px;

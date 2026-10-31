@@ -13,14 +13,9 @@
 }
 
 .app_splash_mark {
-  display: grid;
-  place-items: center;
   width: 46px;
   height: 46px;
-  border: 1px solid var(--color-accent);
   border-radius: var(--radius-md);
-  background: var(--color-accent-wash);
-  color: var(--color-accent);
   animation: splash_breathe 2.2s ease-in-out infinite;
 }
 
@@ -30,11 +25,10 @@
   letter-spacing: 0.08em;
 }
 
-.app_not_found {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  align-items: flex-start;
+.not_found_face {
+  display: block;
+  width: 96px;
+  height: 96px;
 }
 
 @keyframes splash_breathe {

@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 
 import { describeError } from "../api_client";
 import { AuthorityInstall } from "../components/authority_install";
+import { HubFace } from "../components/hub_face";
 import { Icon } from "../components/icon";
 import { PasswordField } from "../components/password_field";
 import { Picker } from "../components/picker";
@@ -845,6 +846,7 @@ function SetupFrame({
   step,
   total,
   title,
+  face,
   isLit = false,
   actions,
   children,
@@ -852,6 +854,7 @@ function SetupFrame({
   step?: number;
   total?: number;
   title?: string;
+  face?: ReactNode;
   isLit?: boolean;
   actions?: ReactNode;
   children: ReactNode;
@@ -877,6 +880,7 @@ function SetupFrame({
                   : t("ui.setup.counter", { step, total: total ?? 0 })}
               </span>
             </div>
+            {face !== undefined && <span className="setup_face">{face}</span>}
             {title !== undefined && <h2 className="setup_title">{title}</h2>}
           </div>
           <div className="setup_scroll">{children}</div>
@@ -955,6 +959,7 @@ function SetupRunning({
     <SetupFrame
       isLit={isLit}
       title={isDone ? t("ui.setup.done_title") : t("ui.setup.running_title")}
+      face={isDone ? <HubFace face="happy" /> : undefined}
       actions={
         isDone ? (
           <div className="setup_handover">

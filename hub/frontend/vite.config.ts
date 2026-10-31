@@ -14,12 +14,17 @@ const BACKEND_ORIGIN = "http://127.0.0.1:8080";
 const MODULE_ICONS_DIR = fileURLToPath(
   new URL("../../images/icons/modules", import.meta.url),
 );
+// The hub's wolf faces, which the panel imports through the `@hub_icons` alias.
+const HUB_ICONS_DIR = fileURLToPath(
+  new URL("../../images/icons/neutrino_hub", import.meta.url),
+);
 
 export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
       "@module_icons": MODULE_ICONS_DIR,
+      "@hub_icons": HUB_ICONS_DIR,
     },
   },
   build: {
@@ -41,7 +46,11 @@ export default defineConfig({
   },
   server: {
     fs: {
-      allow: [searchForWorkspaceRoot(process.cwd()), MODULE_ICONS_DIR],
+      allow: [
+        searchForWorkspaceRoot(process.cwd()),
+        MODULE_ICONS_DIR,
+        HUB_ICONS_DIR,
+      ],
     },
     proxy: {
       "/api": {

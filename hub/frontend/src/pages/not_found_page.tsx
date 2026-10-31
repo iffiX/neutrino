@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 
+import { HubFace } from "../components/hub_face";
 import { Icon } from "../components/icon";
 import { t, useLanguage } from "../i18n";
 
@@ -15,6 +16,9 @@ export function NotFoundPage() {
   useLanguage();
   return (
     <div className="page">
+      <span className="not_found_face">
+        <HubFace face="sad" />
+      </span>
       <h1>{t("ui.not_found.title")}</h1>
       <div>
         <Link className="button button--primary" to="/">

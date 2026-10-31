@@ -72,16 +72,9 @@
 }
 
 .login_brand_mark {
-  display: grid;
   flex: none;
-  place-items: center;
   width: 40px;
   height: 40px;
-  border: 1px solid var(--color-accent);
-  border-radius: var(--radius-md);
-  background: var(--color-accent-wash);
-  color: var(--color-accent);
-  box-shadow: 0 0 26px -8px var(--color-accent);
 }
 
 .login_brand_text {
@@ -149,13 +142,6 @@
 .login_page--lockdown .login_card {
   border-color: rgb(255 66 82 / 45%);
   background: #000;
-}
-
-.login_page--lockdown .login_brand_mark {
-  border-color: var(--color-error);
-  background: rgb(255 66 82 / 10%);
-  color: var(--color-error);
-  box-shadow: 0 0 26px -8px var(--color-error);
 }
 
 @keyframes login_lockdown_pulse {
