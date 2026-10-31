@@ -9,7 +9,8 @@ and the seven fields, its answer's ``binding_id`` and ``token`` stored with ever
 the link carried. A file missing any field but the address list, or
 holding a key that is not 64 hex characters, is an unbound agent. The
 addresses of a round, the hub's name on a stored address's port, and the
-two notes a running agent writes onto the file are pinned here too.
+two notes a running agent writes onto the file are pinned here too, with
+a write of the file waiting for a read that holds it open.
 Leaving sends ``leave`` with the binding's keys and psk and deletes the
 file whether or not the hub answered.
 """
@@ -21,6 +22,7 @@ import os
 import stat
 import subprocess
 import sys
+import threading
 import zlib
 
 import pytest
@@ -420,6 +422,34 @@ def test_an_unreadable_file_is_unbound(config_path, text):
 def test_no_file_is_unbound_and_stamps_zero():
     assert enrollment.load_binding() == {}
     assert enrollment.config_stamp() == 0
+
+
+def test_a_write_waits_for_a_read_that_holds_the_file_open(config_path, monkeypatch):
+    enrollment.save_config({"gateway_url": "tcp://a:8443"})
+    reading, released = threading.Event(), threading.Event()
+    loaded = json.load
+
+    def slow_load(stream):
+        reading.set()
+        released.wait(5)
+        return loaded(stream)
+
+    monkeypatch.setattr(enrollment.json, "load", slow_load)
+    reader = threading.Thread(target=enrollment.load_config)
+    reader.start()
+    assert reading.wait(5)
+    writer = threading.Thread(
+        target=enrollment.save_config, args=({"gateway_url": "tcp://b:8443"},)
+    )
+    writer.start()
+    writer.join(0.2)
+
+    assert writer.is_alive()
+    released.set()
+    reader.join(5)
+    writer.join(5)
+    monkeypatch.setattr(enrollment.json, "load", loaded)
+    assert json.loads(config_path.read_text()) == {"gateway_url": "tcp://b:8443"}
 
 
 def test_the_psk_is_the_tokens_sha256():

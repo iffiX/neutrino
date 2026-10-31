@@ -36,6 +36,7 @@ import ipaddress
 import json
 import os
 import socket
+import threading
 import urllib.parse
 import zlib
 
@@ -59,6 +60,8 @@ from neutrino_agent.transport.process import one_shot_transport
 
 # The binding file, under this platform's own data root.
 AGENT_CONFIG_PATH = os.path.join(detect_platform().agent_data_dir(), AGENT_CONFIG_NAME)
+# One open of the binding file at a time.
+_CONFIG_LOCK = threading.Lock()
 
 LINK_PREFIX = "neutrino://enroll/"
 # What the binding file holds: every field a string but the list of every
@@ -169,11 +172,12 @@ def load_config() -> dict:
         The stored object, or an empty one when the file is absent or
         unreadable.
     """
-    try:
-        with open(AGENT_CONFIG_PATH, "r", encoding="utf-8") as stream:
-            config = json.load(stream)
-    except (OSError, ValueError):
-        return {}
+    with _CONFIG_LOCK:
+        try:
+            with open(AGENT_CONFIG_PATH, "r", encoding="utf-8") as stream:
+                config = json.load(stream)
+        except (OSError, ValueError):
+            return {}
     return config if isinstance(config, dict) else {}
 
 
@@ -233,15 +237,17 @@ def save_config(config: dict) -> None:
         os.chmod(temporary, 0o600)
     except OSError:
         pass
-    os.replace(temporary, AGENT_CONFIG_PATH)
+    with _CONFIG_LOCK:
+        os.replace(temporary, AGENT_CONFIG_PATH)
 
 
 def remove_binding() -> None:
     """Delete the binding file; a file already gone is no error."""
-    try:
-        os.unlink(AGENT_CONFIG_PATH)
-    except FileNotFoundError:
-        pass
+    with _CONFIG_LOCK:
+        try:
+            os.unlink(AGENT_CONFIG_PATH)
+        except FileNotFoundError:
+            pass
 
 
 def note_url(gateway_url: str) -> None:
@@ -407,11 +413,12 @@ def config_stamp() -> int:
     Returns:
         A digest of the file's bytes, or 0 when it does not exist.
     """
-    try:
-        with open(AGENT_CONFIG_PATH, "rb") as stream:
-            data = stream.read()
-    except OSError:
-        return 0
+    with _CONFIG_LOCK:
+        try:
+            with open(AGENT_CONFIG_PATH, "rb") as stream:
+                data = stream.read()
+        except OSError:
+            return 0
     return int.from_bytes(hashlib.blake2b(data, digest_size=8).digest(), "big")
 
 
