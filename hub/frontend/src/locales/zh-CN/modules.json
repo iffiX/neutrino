@@ -314,6 +314,7 @@
   "ui.module_catalog.podman": "用 Podman 运行容器。",
   "ui.module_catalog.qinglong": "带网页的定时脚本面板。",
   "ui.module_catalog.remote_desktop": "用 RustDesk 共享这台机器的桌面。",
+  "ui.module_catalog.requires": "需要：{modules}",
   "ui.module_catalog.samba": "每个账户一个共享，每个客户端都能挂载。",
   "ui.module_catalog.search": "搜索名称或说明",
   "ui.module_catalog.siyuan": "笔记和知识库，存在这台机器上。",

@@ -100,6 +100,12 @@
   font-size: 12px;
 }
 
+/* The modules it requires, under its line. */
+.module_catalog_requires {
+  color: var(--color-text-muted);
+  font-size: 11px;
+}
+
 .module_catalog_tag {
   align-self: flex-start;
   margin-top: auto;

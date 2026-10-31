@@ -314,6 +314,7 @@
   "ui.module_catalog.podman": "Containers run with Podman.",
   "ui.module_catalog.qinglong": "Scheduled scripts with a web page.",
   "ui.module_catalog.remote_desktop": "This machine's desktop, shared with RustDesk.",
+  "ui.module_catalog.requires": "Needs: {modules}",
   "ui.module_catalog.samba": "One share per account, mounted on every client.",
   "ui.module_catalog.search": "Search names and descriptions",
   "ui.module_catalog.siyuan": "Notes and a knowledge base, kept on this machine.",

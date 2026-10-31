@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { DialogFrame } from "./dialog_frame";
+import { codeParams } from "../code_params";
 import { ErrorPanel } from "./error_panel";
 import { Icon } from "./icon";
 import { ModuleIcon } from "./module_icon";
@@ -21,8 +22,9 @@ import "./module_catalog_modal.css";
  * **+ Add module**: the module catalog, a dialog in the install dialog's
  * frame, wider. A search box beside the title and a row of activity filters
  * narrow a grid of cards; each card is a module's icon, its name, one line
- * on it, its activity and a check at its top right. Checking a card adds
- * its tab to the machine page and unchecking takes it away, at once.
+ * on it, the modules it requires, its activity and a check at its top
+ * right. Checking a card adds its tab to the machine page and unchecking
+ * takes it away, at once.
  *
  * The modules the agent carries are checked and locked, and so is a module
  * the machine has; a module the machine cannot run is greyed out, and one
@@ -220,6 +222,14 @@ function CatalogCard({ entry, isBusy, onToggle }: CatalogCardProps) {
       </span>
       {hasWord(lineKey) && (
         <span className="module_catalog_line">{t(lineKey)}</span>
+      )}
+      {entry.requires.length > 0 && (
+        <span className="module_catalog_requires">
+          {t(
+            "ui.module_catalog.requires",
+            codeParams({ modules: entry.requires }),
+          )}
+        </span>
       )}
       <span className="module_catalog_tag badge">
         {t(`ui.module_catalog.category_${entry.category}`)}

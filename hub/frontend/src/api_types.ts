@@ -1302,12 +1302,15 @@ export interface ModuleCatalogEntry {
   category: string;
   /** False for a module the hub has no manifest of yet. */
   is_available: boolean;
-  /** Whether the machine's platform has an entry. */
+  /** Whether the machine's platform has an entry, and each module that
+   * entry requires has one too. */
   is_supported: boolean;
   is_carried: boolean;
   is_shown: boolean;
   /** As last reported. */
   state: string;
+  /** The modules its entry for the machine's platform requires. */
+  requires: string[];
 }
 
 export interface ModuleCatalogView {
