@@ -31,29 +31,52 @@ service names:
    machine's own loopback, `127.0.0.1`, because an empty value means
    upstream's public server; and the seat password as `password = '<p>'` in
    the service's own `RustDesk.toml`, since `--password` from a copy outside
-   the standard place sets nothing. The agent writes no password into the
-   seat's `RustDesk.toml`. Every file it writes is copied to `kept/` before
-   its first write and put back when the switch goes off.
+   the standard place sets nothing. On Linux and macOS that file also gets an
+   id and a key pair when it holds none, whoever is at the screen. The options
+   also go into the `RustDesk2.toml` of every account that can come to the
+   screen. The agent writes no password into an account's `RustDesk.toml`.
+   Every file it writes is copied to `kept/` before its first write and put
+   back when the switch goes off.
 1. It registers and starts its copy under RustDesk's names, as the
    platform table's "RustDesk" row says for each system, so the system's own
    service manager brings the host back after a restart and at each login.
-1. On Linux and macOS, with somebody at the screen, it reads the service's
-   `RustDesk.toml` until RustDesk has written an id and a key pair there.
-   It reads every half second, for at most 30 seconds. When that file then
-   holds an empty password or another one, the agent stops the host, writes
-   the seat password again and starts the host.
 
-**RustDesk writes the seat's settings over the service's.** On Linux and
-macOS the seat's host copies the service's settings, password included,
-only when the service's `RustDesk.toml` holds an id and a key pair. Before
-that, the seat's host makes its own key pair and sends its settings to the
-service, which writes them over that file. Those settings hold the seat's
-own password, empty on a machine where RustDesk never ran.
+**A session's host takes the service's settings or sends its own.** On Linux
+and macOS RustDesk's service starts a second process, the session's host, as
+the account that holds the machine's active session. That account is a person
+at the screen, a display manager's greeter, or on Linux, with nobody at the
+screen, an account signed in over SSH. Before the session's host dials anything
+it asks the service for the service's settings. It takes them, password
+included, when the service's `RustDesk.toml` holds an id and a key pair.
+Otherwise it keeps its own file, and no options there mean upstream's public
+server. It then sends its settings to the service, which writes them over its
+own files, options and password included.
 
-While the switch is on, the agent reads the service's `RustDesk.toml` again
-at each report. When that file holds an id and a key pair but not the seat
-password, the agent rewrites the password the same way. While the password
-is the seat password, the check is one file read.
+So the agent writes an id and a key pair into that file before the first start.
+The id is nine random digits and the key pair is an Ed25519 pair
+(`rdp/ed25519.py`). An id and a key pair already there stay. Any account that
+arrives after the switch then takes the loopback from the service, with no
+second press and no packet to the public server.
+
+The session's host waits 3 seconds for the service's answer and then goes on
+with its own file, so the options are also written ahead for each account that
+can come to the screen. Those accounts are each from uid 1000 (501 on a Mac)
+with a shell other than `nologin` or `false`, and on Linux each display
+manager's greeter: `gdm`, `Debian-gdm`, `gdm-greeter`, `sddm`, `lightdm`,
+`greetd`. Both of the account's settings files are copied to `kept/` first,
+because a session's host that takes the service's settings writes them over
+that account's own. An account is skipped when its home is no folder it owns,
+when the path to its settings passes through a symbolic link, and, with a line
+in the log, when its home refuses the write. An account made after the switch
+went on holds no such file and takes the service's settings alone.
+
+While the switch is on, the agent reads the service's two settings files when
+it starts, before any host starts, and at each report. When `RustDesk2.toml`
+no longer holds the two servers at the loopback, or `RustDesk.toml` no longer
+holds an id and a key pair or holds another password, the agent stops the host,
+writes both files and starts the host. A file of no bytes is RustDesk in the
+middle of a write and is read again at the next look. While the files hold all
+of it, the check is two file reads.
 
 RustDesk stores the password sealed: `00`, then base64 of the format byte 1,
 a 24-byte nonce and the secretbox ciphertext. The key is the machine id, cut
@@ -112,8 +135,10 @@ copy listening on 21118; it opens no connection to the host. So a machine
 with nobody logged in has nothing listening, which `rdp_nobody_seated`
 refuses in front of, and a Wayland session that has not granted screen
 capture reports `rdp_screen_not_allowed` instead of a desktop nobody can
-see. Whose desktop a peer sees is whoever sits at the screen; the report's
-`account` names them and decides nothing.
+see. An account signed in over SSH on a machine with nobody at the screen also
+starts that process, so the share listens with `rdp_nobody_seated` until that
+session ends. Whose desktop a peer sees is whoever sits at the screen; the
+report's `account` names them and decides nothing.
 
 **An upgrade replaces the copy under a running host.** The package lays
 the new copy over the old one while the host registered under RustDesk's
