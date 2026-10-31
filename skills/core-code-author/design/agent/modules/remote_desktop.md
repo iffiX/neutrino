@@ -202,8 +202,10 @@ agent's own the host logs that it cannot reach `ipc_service`. The session
 plist's `KeepAlive` is true, so the host comes back after macOS quits and
 reopens it for the Screen Recording grant, and launchd starts both at boot
 and at each login from `/Library/LaunchDaemons` and `/Library/LaunchAgents`,
-the only folders it reads. The share is declared only once the direct port
-listens, as everywhere.
+the only folders it reads. launchd also loads the session job at the login
+window, as root. The switch off boots the job out of each session its copy
+runs in, because `KeepAlive` starts a job that is only ended. The share is
+declared only once the direct port listens, as everywhere.
 
 A Mac shows a peer nothing until RustDesk holds both screen recording and
 accessibility, which only somebody at that Mac grants, and the privacy
