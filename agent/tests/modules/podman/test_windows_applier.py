@@ -311,6 +311,20 @@ def test_an_artifact_that_is_not_an_msi_is_refused(rig):
 # --- the reboot mark across a boot ---
 
 
+def test_the_kept_image_takes_the_module_directorys_access_list(rig):
+    seen: list = []
+
+    def icacls(command, *, is_checked=True, **_):
+        seen.append(list(command))
+        return CommandResult(list(command), 0, "", "")
+
+    rig.applier._run = icacls
+
+    rig.applier.open_image("D:\\state\\podman\\image\\image.tar.zst", "lab2")
+
+    assert seen == [["icacls.exe", "D:\\state\\podman\\image\\image.tar.zst", "/reset"]]
+
+
 def test_no_mark_owes_no_restart_whatever_servicing_holds(rig):
     rig.is_key = True
 

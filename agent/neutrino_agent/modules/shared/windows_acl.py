@@ -92,6 +92,21 @@ def open_to_users(run, directory: str) -> None:
         raise OSError(f"icacls exited {code}")
 
 
+def inherit_access(run, path: str) -> None:
+    """Replace one file's access list with the one its directory hands down.
+
+    Args:
+        run: Runs one command as :func:`subprocess_run.run` does.
+        path: The file.
+
+    Raises:
+        OSError: When icacls refuses or cannot run.
+    """
+    code = icacls(run, [path, "/reset"])
+    if code != 0:
+        raise OSError(f"icacls refused {path}")
+
+
 def let_users_through(run, directory: str) -> None:
     """Let the Users group pass through one directory and read its attributes.
 

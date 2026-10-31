@@ -5,7 +5,8 @@ grants the account its right, SYSTEM and the administrators full control,
 each by its well-known SID, the grants reaching a directory's contents
 when it is a tree; the Users group is granted read and run on a tree, and
 passing through a directory with its attributes read and nothing inherited;
-a refusal or a tool that does not finish is ``OSError``.
+a file takes back the list its directory hands down; a refusal or a tool
+that does not finish is ``OSError``.
 """
 
 import subprocess
@@ -16,6 +17,7 @@ from neutrino_agent.modules.shared.subprocess_run import CommandResult
 from neutrino_agent.modules.shared.windows_acl import (
     grant_account_alone,
     icacls,
+    inherit_access,
     leave_to_system,
     let_users_through,
     open_to_users,
@@ -110,6 +112,18 @@ def test_a_record_is_left_to_system_and_the_administrators_alone():
     ]
     with pytest.raises(OSError, match="icacls refused"):
         leave_to_system(Icacls(5), "D:\\x")
+
+
+def test_a_file_takes_the_access_list_its_directory_hands_down():
+    run = Icacls()
+
+    inherit_access(run, "D:\\state\\podman\\image\\image.tar.zst")
+
+    assert run.calls == [
+        ["icacls.exe", "D:\\state\\podman\\image\\image.tar.zst", "/reset"]
+    ]
+    with pytest.raises(OSError, match="icacls refused"):
+        inherit_access(Icacls(5), "D:\\x")
 
 
 def test_a_refusal_or_a_tool_that_does_not_finish_is_an_os_error():

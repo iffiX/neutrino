@@ -63,6 +63,7 @@ from neutrino_agent.modules.podman.machine_runner import PodmanSystemApplier
 from neutrino_agent.modules.shared import installers
 from neutrino_agent.modules.shared.subprocess_run import command_detail
 from neutrino_agent.modules.shared.subprocess_run import run as run_command
+from neutrino_agent.modules.shared.windows_acl import inherit_access
 from neutrino_agent.platforms import win32
 
 try:
@@ -473,6 +474,21 @@ class PodmanWindowsApplier(PodmanSystemApplier):
         self._log(f"podman: installed {name}")
         if is_owed:
             self._mark_restart(f"the {name} msi")
+
+    def open_image(self, path: str, account: str) -> None:
+        """Give the kept image the module directory's access list, open to every account.
+
+        A received file keeps the list of the folder it was written in. That
+        list shuts out an ordinary account.
+
+        Args:
+            path: The kept machine image.
+            account: The machine's account.
+
+        Raises:
+            OSError: When icacls refuses or cannot run.
+        """
+        inherit_access(self._run, path)
 
     def is_reboot_pending(self) -> bool:
         """Whether the computer still owes the restart an install step asked for.
