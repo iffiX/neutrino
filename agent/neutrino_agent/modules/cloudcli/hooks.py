@@ -81,6 +81,7 @@ from neutrino_agent.modules.cloudcli.constants import (
     CLOUDCLI_NPM_CACHE_NAME,
     CLOUDCLI_NPM_PARTS,
     CLOUDCLI_NPM_USERCONFIG_NAME,
+    CLOUDCLI_NPM_WRITTEN_NAMES,
     CLOUDCLI_OOM_RESULT,
     CLOUDCLI_SYSTEM_STOPPING,
     CLOUDCLI_UNIT_LOADED_TEXT,
@@ -148,11 +149,19 @@ NATIVE_CHECK_SCRIPT = (
     % (",".join("'%s'" % name for name in CLOUDCLI_NATIVE_MODULES), NATIVE_CHECK_EXIT)
 )
 # What an account's install runs under ``sh``: the app directory and the
-# empty npm configuration made as the account, then npm.
-INSTALL_SHELL = (
-    'mkdir -p "$0" && rm -rf "$0/node_modules" && : > "$0/.npmrc" && exec "$@"'
+# empty npm configuration made as the account, what an earlier npm wrote
+# removed, then npm.
+INSTALL_SHELL = 'mkdir -p "$0" && rm -rf %s && : > "$0/.npmrc" && exec "$@"' % " ".join(
+    f'"$0/{name}"' for name in CLOUDCLI_NPM_WRITTEN_NAMES
 )
 CHECK_SHELL = 'cd "$0" && exec "$@"'
+# What each attempt on Windows runs first in the app directory, under Node.js.
+# Node.js removes paths past 260 characters and tries again on a file in use.
+CLEAN_SCRIPT = (
+    "for (const name of [%s]) require('fs').rmSync(name, "
+    "{recursive: true, force: true, maxRetries: 5, retryDelay: 1000})"
+    % ",".join("'%s'" % name for name in CLOUDCLI_NPM_WRITTEN_NAMES)
+)
 # What a Windows install script exits with when npm failed; a native
 # module's failure exits with the native check's own status. The variable
 # the script keeps the last attempt's result in, and the label each attempt
@@ -473,15 +482,19 @@ def render_install_script(
     Returns:
         The ``.cmd`` text, CRLF line ends: the app directory and the empty
         npm configuration made, Node's directory leading ``PATH``, then per
-        attempt its settings, npm and the native check, ending 0 at the
-        first that takes and with the last one's failure otherwise: npm's,
-        or the check's.
+        attempt its settings, what an earlier npm wrote removed, npm and
+        the native check, ending 0 at the first that takes and with the
+        last one's failure otherwise: npm's, or the check's.
     """
     environment = {
         "PATH": ";".join([ntpath.dirname(node), *CLOUDCLI_WINDOWS_NPM_PATH]),
         **npm_environment(app, join=ntpath.join),
     }
-    lines = ["@echo off", f'if not exist "{app}" mkdir "{app}"']
+    lines = [
+        "@echo off",
+        f'if not exist "{app}" mkdir "{app}"',
+        f'cd /d "{app}" || exit /b {NPM_FAILED_EXIT}',
+    ]
     lines.append(f'type nul > "{environment["npm_config_userconfig"]}"')
     lines += [f'set "{name}={value}"' for name, value in environment.items()]
     for index, (registry, settings) in enumerate(attempts):
@@ -489,6 +502,7 @@ def render_install_script(
         lines.append(f":{INSTALL_ATTEMPT_LABEL}{index}")
         lines += [f'set "{name}={value}"' for name, value in settings.items()]
         lines.append(f'set "{INSTALL_RESULT_VARIABLE}={NPM_FAILED_EXIT}"')
+        lines.append(f'"{node}" -e "{CLEAN_SCRIPT}" || goto {following}')
         lines.append(
             subprocess.list2cmdline(
                 [
@@ -501,7 +515,6 @@ def render_install_script(
             )
             + f" || goto {following}"
         )
-        lines.append(f'cd /d "{app}"')
         lines.append(f'"{node}" -e "{NATIVE_CHECK_SCRIPT}" && exit /b 0')
         lines.append(f'set "{INSTALL_RESULT_VARIABLE}={NATIVE_CHECK_EXIT}"')
     lines.append(f":{INSTALL_ATTEMPT_LABEL}{len(attempts)}")

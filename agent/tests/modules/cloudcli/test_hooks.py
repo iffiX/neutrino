@@ -62,6 +62,7 @@ from neutrino_agent.modules.cloudcli.hooks import (
     npm_arguments,
     npm_environment,
     npm_failure,
+    render_install_script,
     service_environment,
 )
 from neutrino_agent.modules.shared.account_service import (
@@ -525,7 +526,10 @@ def test_an_install_runs_npm_as_the_account_in_a_transient_service(linux, tmp_pa
         "--registry",
         REGISTRY,
     ]
-    assert 'rm -rf "$0/node_modules"' in install[install.index("sh") + 2]
+    assert (
+        'rm -rf "$0/package-lock.json" "$0/package.json" "$0/node_modules"'
+        in install[install.index("sh") + 2]
+    )
     assert machine.installing_seen == [frozenset({"ann"})]
     assert hooks.installing == frozenset()
     assert notes == ["installed CloudCLI for ann"]
@@ -983,6 +987,29 @@ def test_a_running_install_starts_nothing_and_keeps_waiting(windows, state):
 
     assert host.ops() == ["task_states"]
     assert hooks.installing == frozenset({"ann"})
+
+
+def test_each_windows_attempt_removes_what_an_earlier_npm_wrote_before_its_npm():
+    node = "C:\\node\\node.exe"
+    text = render_install_script(
+        app="C:\\app",
+        node=node,
+        npm="C:\\node\\npm-cli.js",
+        package="@cloudcli-ai/cloudcli",
+        version="1.37.3",
+        attempts=[("https://a.example", {}), ("https://b.example", {})],
+    )
+
+    lines = text.split("\r\n")
+    cleans = [i for i, line in enumerate(lines) if "rmSync" in line]
+    npms = [i for i, line in enumerate(lines) if " install " in line]
+    assert len(cleans) == 2
+    assert [clean + 1 for clean in cleans] == npms
+    assert lines[cleans[0]].endswith("|| goto :attempt_1")
+    assert lines[cleans[1]].endswith("|| goto :attempt_2")
+    assert lines[cleans[0]].startswith(f'"{node}" -e "for (const name of [')
+    assert "'package-lock.json','package.json','node_modules'" in lines[cleans[0]]
+    assert lines.index('cd /d "C:\\app" || exit /b 1') < cleans[0]
 
 
 def test_an_ended_install_is_unregistered_and_judged(windows, ready):

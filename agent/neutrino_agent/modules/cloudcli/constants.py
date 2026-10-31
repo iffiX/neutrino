@@ -47,6 +47,11 @@ CLOUDCLI_FRESH_STAMP_FORMAT = "%Y%m%dT%H%M%SZ"
 # account's configuration instead of ``~/.npmrc``.
 CLOUDCLI_NPM_CACHE_NAME = ".npm"
 CLOUDCLI_NPM_USERCONFIG_NAME = ".npmrc"
+# What npm writes into an app directory besides its cache. The lockfile goes
+# first and npm writes it last, so a directory with a lockfile has a whole
+# install.
+CLOUDCLI_NPM_LOCK_NAME = "package-lock.json"
+CLOUDCLI_NPM_WRITTEN_NAMES = (CLOUDCLI_NPM_LOCK_NAME, "package.json", "node_modules")
 # How long one account's install may take where the apply waits on it,
 # and how long the task that runs it on Windows, where nothing waits, may run.
 CLOUDCLI_INSTALL_TIMEOUT_S = 1800
