@@ -928,7 +928,7 @@ class PanelRuntime:
             address=self.device_address.get(key, ""),
             urls=self._device_urls(key),
             is_hub_machine=self.is_hub_machine(key),
-            ai_models=self._gateway_models_for(key),
+            ai_models=self._gateway_models_for(key, wanted=wanted),
             retry_marks=marks,
             wanted=wanted,
             account_details=self.account_details(key),
@@ -975,16 +975,18 @@ class PanelRuntime:
             releases=self.module_releases,
         )
 
-    def _gateway_models_for(self, key: str) -> list:
+    def _gateway_models_for(self, key: str, *, wanted: "dict | None" = None) -> list:
         """The names the gateway serves, for a device whose AI tools, SiYuan accounts or Ayakaleaf call it.
 
         Args:
             key: The device.
+            wanted: The modules ``modules.json`` names, as the state's one
+                read gave them; None reads the file.
 
         Returns:
             The served names; none for a device whose state needs none.
         """
-        if self.desired_states.uses_gateway_models(key):
+        if self.desired_states.uses_gateway_models(key, wanted=wanted):
             return gateway_models(self.served_models)
         return []
 

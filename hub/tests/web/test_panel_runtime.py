@@ -316,7 +316,7 @@ class ComposingStates:
     def is_ai_tools_enabled(self, key):
         return False
 
-    def uses_gateway_models(self, key):
+    def uses_gateway_models(self, key, wanted=None):
         return False
 
     def modules(self, key):
@@ -424,7 +424,9 @@ def test_a_state_composed_during_a_press_carries_the_want_with_its_mark(
     monkeypatch.setattr(runtime_module, "machine_id", lambda: "hub-machine")
     monkeypatch.setattr(runtime_module, "channel_urls", lambda runtime: [])
     monkeypatch.setattr(runtime_module, "own_agent_urls", lambda runtime: [])
-    monkeypatch.setattr(panel, "_gateway_models_for", lambda key: [], raising=False)
+    monkeypatch.setattr(
+        panel, "_gateway_models_for", lambda key, **kwargs: [], raising=False
+    )
     composed: list = []
     reader = threading.Thread(
         target=lambda: composed.append(panel.desired_state_for("other"))

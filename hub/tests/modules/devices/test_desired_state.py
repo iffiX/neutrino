@@ -438,6 +438,22 @@ def test_a_machine_with_ayakaleaf_reads_the_gateway_s_models_until_it_goes(unloc
     assert not store.uses_gateway_models(DEVICE)
 
 
+def test_the_ai_tools_section_reads_the_gateway_modules_from_the_one_read(unlocked):
+    """A press written after the state's one read of the wants reaches no
+    part of the state composed from that read."""
+    store = DesiredStateStore()
+    store.set_want(DEVICE, "hermes_webui", "absent")
+    wanted = store.modules(DEVICE)
+    store.set_want(DEVICE, "hermes_webui", "running")
+    store.set_want(DEVICE, "ayakaleaf", "running")
+
+    desired, _ = store.compose(DEVICE, PLATFORM, wanted=wanted)
+
+    assert desired["ai_tools"]["is_forwarded"] is False
+    assert not store.uses_gateway_models(DEVICE, wanted=wanted)
+    assert store.uses_gateway_models(DEVICE)
+
+
 @pytest.fixture
 def shares(monkeypatch):
     """A Web share module holding the guests the test sets, by machine and app id."""

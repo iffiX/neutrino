@@ -1236,18 +1236,22 @@ class DesiredStateStore:
             return CHANNEL_MODULE_STATE_STOPPED
         return CHANNEL_MODULE_STATE_RUNNING
 
-    def has_gateway_module(self, key: str, *, is_container: bool = False) -> bool:
+    def has_gateway_module(
+        self, key: str, *, is_container: bool = False, wanted: "dict | None" = None
+    ) -> bool:
         """Whether a module that uses the AI gateway is installed on one device.
 
         Args:
             key: The device key.
             is_container: Whether only a container module counts.
+            wanted: The modules ``modules.json`` names, as the state's one
+                read gave them; None reads the file.
 
         Returns:
             True while ``modules.json`` names such a module with a ``want``
             other than ``absent``.
         """
-        modules = self.modules(key)
+        modules = self.modules(key) if wanted is None else wanted
         names = gateway_container_names() if is_container else gateway_module_names()
         return any(
             modules[name]["want"] != CHANNEL_MODULE_STATE_ABSENT
@@ -1261,11 +1265,13 @@ class DesiredStateStore:
             self.enabled_accounts(key, name) for name in gateway_instance_names()
         )
 
-    def uses_gateway_models(self, key: str) -> bool:
+    def uses_gateway_models(self, key: str, *, wanted: "dict | None" = None) -> bool:
         """Whether one device's state names the models the gateway serves.
 
         Args:
             key: The device key.
+            wanted: The modules ``modules.json`` names, as the state's one
+                read gave them; None reads the file.
 
         Returns:
             True while an account's AI tools switch is on, a module that
@@ -1273,10 +1279,11 @@ class DesiredStateStore:
             Ayakaleaf module, whose app reads its model from the state, is
             installed.
         """
+        modules = self.modules(key) if wanted is None else wanted
         return (
             self.is_ai_tools_enabled(key)
             or self.has_gateway_instances(key)
-            or self.want_of(key, DEVICE_AYAKALEAF_MODULE)
+            or modules.get(DEVICE_AYAKALEAF_MODULE, {}).get("want", "")
             not in ("", CHANNEL_MODULE_STATE_ABSENT)
         )
 
@@ -1496,8 +1503,10 @@ class DesiredStateStore:
             if marks.get(name):
                 modules[name][DEVICE_RETRY_MARK_KEY] = marks[name]
         switcher = load_tool_manifests().get(DEVICE_AI_SWITCHER_NAME, {})
-        is_gateway_module = self.has_gateway_module(key)
-        is_gateway_container = self.has_gateway_module(key, is_container=True)
+        is_gateway_module = self.has_gateway_module(key, wanted=wanted)
+        is_gateway_container = self.has_gateway_module(
+            key, is_container=True, wanted=wanted
+        )
         desired = {
             "modules": modules,
             "desktop": {"seat_password": self.seat_password(key)},
