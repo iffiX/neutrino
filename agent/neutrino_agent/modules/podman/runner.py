@@ -275,11 +275,8 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
         return unit_state(PODMAN_UNIT) == "active"
 
     def journal_units(self) -> list:
-        """The engine's unit and one per declared and hub container."""
-        names = list(self._declared_names())
-        for module_names in self.hub_names().values():
-            names += module_names
-        return [PODMAN_UNIT] + [f"{name}.service" for name in names]
+        """The engine's unit and one per declared container."""
+        return [PODMAN_UNIT] + [f"{name}.service" for name in self._declared_names()]
 
     def details(self, recipe: dict) -> dict:
         """Every container podman knows, and the engine's own state.

@@ -715,11 +715,13 @@ def test_the_record_names_the_declared_and_hub_containers_after_a_start(
 
     assert restarted._declared_names() == ["web"]
     assert restarted.hub_names() == {"demo": ["neutrino_demo"]}
-    assert restarted.journal_units() == [
-        "podman.socket",
-        "web.service",
-        "neutrino_demo.service",
-    ]
+    assert restarted.journal_units() == ["podman.socket", "web.service"]
+
+
+def test_the_module_s_journal_leaves_out_a_container_module_s_units(hub_runner):
+    hub_runner.apply(HUB_CONFIG)
+
+    assert hub_runner.journal_units() == ["podman.socket", "web.service"]
 
 
 def test_dropping_a_module_removes_its_units_and_forgets_it(hub_runner):
