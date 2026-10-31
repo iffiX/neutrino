@@ -5,6 +5,8 @@ existing one is left as it is; ``smb.conf`` stays the person's and gets
 the module's include line once, after its ``[global]`` header; adding and
 taking out that line keeps every other byte of the file, a comment in Latin-1,
 CRLF lines and a missing last newline among them, and Samba checks those bytes;
+that file keeps its mode and its owner, a symlink at its path stays and its target
+takes the bytes, and the module's own file is world-readable and replaces a symlink;
 the person's lines after that line stay where they were once the module's file
 is read in its place; a missing ``smb.conf`` is the distribution's stock file with the
 line; a whole ``smb.conf`` an earlier version rendered is the person's and
@@ -36,6 +38,7 @@ from neutrino_agent.modules.samba.applier import (
     SambaStatusReader,
     SambaUserManager,
     check_person_config,
+    has_include_line,
     is_include_line,
     password_digest,
     plan_smb_conf,
@@ -102,6 +105,9 @@ PERSONS_BYTES = (
     b"[media]\r\n"
     b"   path = /srv/media"
 )
+# The owner of a person's file, another account than the one running the tests.
+PERSONS_UID = 1234
+PERSONS_GID = 5678
 # Pieces of the generated files.
 FILE_PIECES = (b"[global]", b"# \xe9\x85\x0c", b"   a = b", b"\r", b"\n")
 FILE_PIECES_MAX = 4
@@ -375,6 +381,94 @@ def test_adding_and_taking_out_the_line_keeps_every_other_byte_of_the_persons_fi
     assert included == PERSONS_BYTES.replace(b"[global]\r\n", b"[global]\r\n" + line)
     assert removed == PERSONS_BYTES
     assert unserved == PERSONS_BYTES
+
+
+def test_the_persons_file_keeps_its_mode_and_its_owner(box, monkeypatch):
+    _, tmp_path = box
+    (tmp_path / "etc").mkdir()
+    smb_conf = tmp_path / "etc/smb.conf"
+    smb_conf.write_bytes(PERSONS_BYTES)
+    os.chmod(smb_conf, 0o640)
+    real_stat = os.stat
+    owners = []
+
+    def stat_of_another_owner(path, *arguments, **keywords):
+        found = real_stat(path, *arguments, **keywords)
+        if str(path) != str(smb_conf):
+            return found
+        fields = list(found[:10])
+        fields[4:6] = [PERSONS_UID, PERSONS_GID]
+        return os.stat_result(fields)
+
+    def chown(path, uid, gid):
+        owners.append((uid, gid))
+
+    monkeypatch.setattr(applier_module.os, "stat", stat_of_another_owner)
+    monkeypatch.setattr(applier_module.os, "chown", chown)
+    applier = SambaConfigApplier(unit="smbd.service")
+
+    applier.apply(f"{MARKER}\n", config=one_share(tmp_path))
+    is_included = has_include_line(smb_conf.read_bytes())
+    applier.remove()
+
+    assert is_included
+    assert stat.S_IMODE(real_stat(smb_conf).st_mode) == 0o640
+    assert owners == [(PERSONS_UID, PERSONS_GID)] * 2
+    assert smb_conf.read_bytes() == PERSONS_BYTES
+
+
+def test_a_symlink_at_the_persons_file_stays_and_its_target_takes_the_bytes(box):
+    _, tmp_path = box
+    (tmp_path / "etc").mkdir()
+    (tmp_path / "persons").mkdir()
+    target = tmp_path / "persons/smb.conf"
+    target.write_bytes(PERSONS_BYTES)
+    os.chmod(target, 0o600)
+    smb_conf = tmp_path / "etc/smb.conf"
+    smb_conf.symlink_to(target)
+    applier = SambaConfigApplier(unit="smbd.service")
+
+    applier.apply(f"{MARKER}\n", config=one_share(tmp_path))
+    included = target.read_bytes()
+    is_link_kept = smb_conf.is_symlink()
+    applier.remove()
+
+    assert is_link_kept and smb_conf.is_symlink()
+    assert os.readlink(smb_conf) == str(target)
+    assert has_include_line(included)
+    assert target.read_bytes() == PERSONS_BYTES
+    assert stat.S_IMODE(target.stat().st_mode) == 0o600
+    assert sorted(os.listdir(tmp_path / "persons")) == ["smb.conf"]
+
+
+def test_a_symlink_to_nothing_at_the_persons_file_stays_and_its_target_is_made(box):
+    _, tmp_path = box
+    (tmp_path / "etc").mkdir()
+    target = tmp_path / "persons/smb.conf"
+    smb_conf = tmp_path / "etc/smb.conf"
+    smb_conf.symlink_to(target)
+    applier = SambaConfigApplier(unit="smbd.service")
+
+    applier.apply(f"{MARKER}\n", config=one_share(tmp_path))
+
+    assert smb_conf.is_symlink()
+    assert has_include_line(target.read_bytes())
+    assert stat.S_IMODE(target.stat().st_mode) == 0o644
+
+
+def test_the_modules_own_file_is_world_readable_and_replaces_a_symlink(box):
+    _, tmp_path = box
+    (tmp_path / "etc").mkdir()
+    (tmp_path / "elsewhere").write_text("kept\n")
+    (tmp_path / "etc/neutrino.conf").symlink_to(tmp_path / "elsewhere")
+    applier = SambaConfigApplier(unit="smbd.service")
+
+    applier.apply(f"{MARKER}\n", config=one_share(tmp_path))
+
+    module_file = tmp_path / "etc/neutrino.conf"
+    assert not module_file.is_symlink()
+    assert stat.S_IMODE(module_file.stat().st_mode) == 0o644
+    assert (tmp_path / "elsewhere").read_text() == "kept\n"
 
 
 def test_samba_checks_the_persons_own_bytes(box):

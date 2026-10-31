@@ -31,6 +31,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import tempfile
 from dataclasses import dataclass
@@ -681,7 +682,7 @@ class SambaConfigApplier:
         if not is_served:
             self._remove_own()
             if smb_conf != (current or b""):
-                _write_file(SAMBA_CONF_PATH, smb_conf)
+                _write_smb_conf(smb_conf)
             if notes and is_started and unit_state(self._unit) == "active":
                 run(["systemctl", "reload", self._unit])
                 notes.append("reloaded")
@@ -691,7 +692,7 @@ class SambaConfigApplier:
         self._write_user_files(dict(user_files or {}))
         _write_file(SAMBA_MODULE_CONF_PATH, rendered.encode("utf-8"))
         if smb_conf != current:
-            _write_file(SAMBA_CONF_PATH, smb_conf)
+            _write_smb_conf(smb_conf)
         if not is_started:
             return "; ".join(notes + ["written"])
         if unit_state(self._unit) == "active":
@@ -705,7 +706,7 @@ class SambaConfigApplier:
         self._remove_own()
         data = read_bytes(SAMBA_CONF_PATH)
         if data is not None and has_include_line(data):
-            _write_file(SAMBA_CONF_PATH, without_include_line(data))
+            _write_smb_conf(without_include_line(data))
 
     def _remove_own(self) -> None:
         with contextlib.suppress(OSError):
@@ -761,15 +762,39 @@ def share_owner(share, config: SambaConfig) -> str:
     return ""
 
 
-def _write_file(path: str, data: bytes) -> None:
-    """Write a world-readable file in one move, in place of a symlink too."""
+def _write_smb_conf(data: bytes) -> None:
+    """Write ``smb.conf`` through a symlink to its target, keeping the target's mode and owner."""
+    target = os.path.realpath(SAMBA_CONF_PATH)
+    try:
+        kept = os.stat(target)
+    except FileNotFoundError:
+        kept = None
+    _write_file(target, data, kept=kept)
+
+
+def _write_file(
+    path: str, data: bytes, *, kept: "os.stat_result | None" = None
+) -> None:
+    """Write a file in one move, in place of a symlink too.
+
+    Args:
+        path: The file.
+        data: Its bytes.
+        kept: The mode and the owner it takes; None makes it world-readable
+            and the agent's.
+    """
     directory = os.path.dirname(path)
     os.makedirs(directory, exist_ok=True)
     handle, temporary = tempfile.mkstemp(dir=directory, prefix=".neutrino_")
     try:
         with os.fdopen(handle, "wb") as stream:
             stream.write(data)
-        os.chmod(temporary, 0o644)
+        if kept is None:
+            os.chmod(temporary, 0o644)
+        else:
+            # A chown clears the setuid and setgid bits, so the mode comes after it.
+            os.chown(temporary, kept.st_uid, kept.st_gid)
+            os.chmod(temporary, stat.S_IMODE(kept.st_mode))
         if os.path.islink(path):
             os.unlink(path)
         os.replace(temporary, path)
