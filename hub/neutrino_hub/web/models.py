@@ -2287,6 +2287,8 @@ class DeviceModuleView(BaseModel):
     # The line the uninstall dialog shows under its body. None for a module
     # the agent carries.
     uninstall_data: ModuleUninstallDataView | None = None
+    # The modules the entry for the device's platform requires.
+    requires: list[str] = Field(default_factory=list)
     # Who publishes the software.
     publisher: str = ""
     # The licence and the address of the source it asks for, for a hub or a
@@ -2383,13 +2385,16 @@ class ModuleCatalogEntryView(BaseModel):
     category: str
     # False for a module the hub has no manifest of yet.
     is_available: bool = True
-    # Whether the machine's platform has an entry.
+    # Whether the machine's platform has an entry, and each module that
+    # entry requires has one too.
     is_supported: bool = True
     # Whether the agent's package carries it, its card locked checked.
     is_carried: bool = False
     # Whether its tab is on the machine page.
     is_shown: bool = False
     state: str = "unknown"
+    # The modules the entry for the machine's platform requires.
+    requires: list[str] = Field(default_factory=list)
 
 
 class ModuleCatalogView(BaseModel):

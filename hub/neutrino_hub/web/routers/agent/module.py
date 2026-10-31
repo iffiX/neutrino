@@ -72,15 +72,16 @@ from neutrino_hub.modules.clients.ai_keys import (
 )
 from neutrino_hub.modules.devices.catalog import resolve_module
 from neutrino_hub.modules.devices import ayakaleaf, hermes_webui
-from neutrino_hub.modules.devices.hub_containers import container_modules
 from neutrino_hub.modules.devices.machine_memory import memory_need
 from neutrino_hub.modules.devices.module_table import (
     gateway_instance_names,
     gateway_module_names,
 )
 from neutrino_hub.modules.devices.manifests import (
+    entry_requires,
     load_module_manifests,
     manifest_methods,
+    missing_requirement,
     platform_keys,
     resolve_platform_entry,
     uninstall_line,
@@ -213,8 +214,9 @@ def list_modules(
     key = device.id
     platform = runtime.device_platform.get(key, {})
     keys = platform_keys(platform)
+    manifests = load_module_manifests()
     modules = []
-    for name, manifest in load_module_manifests().items():
+    for name, manifest in manifests.items():
         _, entry = resolve_platform_entry(manifest, platform)
         resolved = resolve_module(manifest, platform)
         is_carried = DEVICE_METHOD_AGENT in manifest_methods(manifest)
@@ -228,8 +230,13 @@ def list_modules(
                 method=resolved["method"],
                 # With no platform reported yet, nothing is ruled out: the
                 # agent will say what it cannot do once it beats.
-                is_supported=(entry is not None if keys and not is_carried else True),
+                is_supported=(
+                    is_runnable(manifests, entry, platform)
+                    if keys and not is_carried
+                    else True
+                ),
                 uninstall_data=uninstall_line(manifest, platform),
+                requires=entry_requires(entry),
                 publisher=resolved["publisher"],
                 license=resolved["license"],
                 corresponding_source=resolved["corresponding_source"],
@@ -251,6 +258,12 @@ def list_modules(
         is_agent_online=runtime.agent_sessions.is_online(key),
         memory_need=podman_memory_need(runtime, key),
     )
+
+
+def is_runnable(manifests: dict, entry: "dict | None", platform: dict) -> bool:
+    """Whether a machine runs a module: its platform has the module's entry,
+    and each module the entry requires has one too."""
+    return entry is not None and not missing_requirement(manifests, entry, platform)
 
 
 def is_shown(device: ManagedDevice, name: str, state: str, is_carried: bool) -> bool:
@@ -321,10 +334,15 @@ def module_catalog(
                 title=str(manifest.get("title", "") or name),
                 category=str(item.get("category", "") or ""),
                 is_available=True,
-                is_supported=(entry is not None if keys and not is_carried else True),
+                is_supported=(
+                    is_runnable(manifests, entry, platform)
+                    if keys and not is_carried
+                    else True
+                ),
                 is_carried=is_carried,
                 is_shown=is_shown(device, name, state, is_carried),
                 state=state,
+                requires=entry_requires(entry),
             )
         )
     return ModuleCatalogView(
@@ -459,9 +477,9 @@ def install_module(
             409 ``agent_offline`` when the device has no socket.
 
     Note:
-        A container module's install wants Containers ``running`` first,
-        and gives the module its configuration and its gateway key where it
-        has none.
+        An install first wants each module the entry requires ``running``,
+        and gives a container module its configuration and its gateway key
+        where it has none.
     """
     return _set_want(runtime, request, CHANNEL_MODULE_STATE_INSTALLED)
 
@@ -519,7 +537,7 @@ def uninstall_module(
 
     Raises:
         HTTPException: As :func:`install_module`, and 409 ``module_in_use
-            {modules}`` on Containers while a container module is installed.
+            {modules}`` while an installed module requires the module.
 
     Note:
         A container module's gateway key is voided.
@@ -1078,10 +1096,10 @@ def _set_want(
     On a module whose last report is ``failed`` or ``install_failed``, or a
     steady state other than the ``want`` written, the press also puts a
     fresh retry mark into the state, so the agent applies the module again.
-    A container module's install or start first wants Containers
-    ``running``, whose Podman runs it, and gives the module its
-    configuration and its gateway key where it has none; its uninstall
-    voids the key.
+    An install or a start first wants each module the entry requires
+    ``running``, with the same mark, and gives a container module its
+    configuration and its gateway key where it has none; a container
+    module's uninstall voids the key.
 
     Args:
         runtime: The shared runtime.
@@ -1095,15 +1113,17 @@ def _set_want(
         HTTPException: 404 ``module_unknown`` for a module with no manifest,
             404 ``device_unknown`` for an id no device has, 400
             ``module_not_optional`` for a module the agent carries, 409
-            ``no_platform_build`` when the manifest offers the device's
-            platform nothing, 409 ``terms_not_accepted`` when installing or
-            starting VS Code on a machine whose terms are not accepted, 409
-            ``module_in_use {modules}`` when uninstalling Containers while a
-            container module is installed, 409 ``agent_offline`` when the
-            device has no socket, 502 when the socket did not take the state
-            in time.
+            ``no_platform_build {module}`` when the manifest offers the
+            device's platform nothing or a module it requires has no entry
+            there, 409 ``terms_not_accepted`` when installing or starting
+            VS Code on a machine whose terms are not accepted, 409
+            ``module_in_use {modules}`` when uninstalling a module an
+            installed module requires, 409 ``agent_offline`` when the device
+            has no socket, 502 when the socket did not take the state in
+            time.
     """
-    manifest = load_module_manifests().get(request.module)
+    manifests = load_module_manifests()
+    manifest = manifests.get(request.module)
     module = request.module
     if manifest is None:
         raise _refusal(status.HTTP_404_NOT_FOUND, CODE_MODULE_UNKNOWN, name=module)
@@ -1116,17 +1136,20 @@ def _set_want(
     _, entry = resolve_platform_entry(manifest, platform)
     if entry is None and platform:
         raise _refusal(status.HTTP_409_CONFLICT, CODE_NO_PLATFORM_BUILD, module=module)
-    if want in (CHANNEL_MODULE_STATE_INSTALLED, CHANNEL_MODULE_STATE_RUNNING):
+    is_present = want in (CHANNEL_MODULE_STATE_INSTALLED, CHANNEL_MODULE_STATE_RUNNING)
+    if is_present:
         require_terms(runtime, key, module)
-    if module == DEVICE_PODMAN_MODULE and want == CHANNEL_MODULE_STATE_ABSENT:
-        _refuse_containers_in_use(runtime, key)
+        missing = missing_requirement(manifests, entry, platform)
+        if missing:
+            raise _refusal(
+                status.HTTP_409_CONFLICT, CODE_NO_PLATFORM_BUILD, module=missing
+            )
+    if want == CHANNEL_MODULE_STATE_ABSENT:
+        _refuse_in_use(runtime, key, module, manifests)
     if not runtime.agent_sessions.is_online(key):
         raise _refusal(status.HTTP_409_CONFLICT, CODE_AGENT_OFFLINE, device_id=key)
     is_container = DEVICE_METHOD_CONTAINER in manifest_methods(manifest)
-    is_engine_wanted = is_container and want in (
-        CHANNEL_MODULE_STATE_INSTALLED,
-        CHANNEL_MODULE_STATE_RUNNING,
-    )
+    required = entry_requires(entry) if is_present else []
     is_retried = _is_retried(runtime, key, module, want)
     minted = ""
     try:
@@ -1144,8 +1167,8 @@ def _set_want(
         # The wants, their marks and the module's file in one hold of the
         # lock, so no state is composed between them.
         with CONFIG_WRITE_LOCK:
-            if is_engine_wanted:
-                _want_containers_running(runtime, key)
+            _want_required_running(runtime, key, required)
+            if is_container and is_present:
                 minted = _prepare_container_module(runtime, key, module)
             runtime.desired_states.set_want(key, module, want)
             if is_retried:
@@ -1159,29 +1182,29 @@ def _set_want(
     return list_modules(request.device_id, runtime)
 
 
-def _want_containers_running(runtime: PanelRuntime, key: str) -> None:
-    """Want Containers running ahead of a container module's install or start.
+def _want_required_running(runtime: PanelRuntime, key: str, required: list) -> None:
+    """Want each required module running ahead of the module's install or start.
 
-    A Containers module that reads anything but its new ``want`` takes a
-    retry mark, as a press of its own **Start** would.
+    A required module that reads anything but its new ``want`` takes a
+    retry mark, as a press of its own **Start** would. Call under
+    ``CONFIG_WRITE_LOCK``.
 
     Args:
         runtime: The shared runtime.
         key: The device.
+        required: The modules the module's entry requires.
 
     Raises:
-        OSError: When the want or the mark cannot be written.
+        OSError: When a want or a mark cannot be written.
     """
     store = runtime.desired_states
-    if store.want_of(key, DEVICE_PODMAN_MODULE) == CHANNEL_MODULE_STATE_RUNNING:
-        return
-    is_retried = _is_retried(
-        runtime, key, DEVICE_PODMAN_MODULE, CHANNEL_MODULE_STATE_RUNNING
-    )
-    with CONFIG_WRITE_LOCK:
-        store.set_want(key, DEVICE_PODMAN_MODULE, CHANNEL_MODULE_STATE_RUNNING)
+    for name in required:
+        if store.want_of(key, name) == CHANNEL_MODULE_STATE_RUNNING:
+            continue
+        is_retried = _is_retried(runtime, key, name, CHANNEL_MODULE_STATE_RUNNING)
+        store.set_want(key, name, CHANNEL_MODULE_STATE_RUNNING)
         if is_retried:
-            DeviceRetryMarks().mark(key, DEVICE_PODMAN_MODULE)
+            DeviceRetryMarks().mark(key, name)
 
 
 def _prepare_container_module(runtime: PanelRuntime, key: str, module: str) -> str:
@@ -1219,19 +1242,31 @@ def _prepare_container_module(runtime: PanelRuntime, key: str, module: str) -> s
     return mint_module_key(store, key, module, device.name if device else "")
 
 
-def _refuse_containers_in_use(runtime: PanelRuntime, key: str) -> None:
-    """Refuse Containers' uninstall while a container module is installed.
+def _refuse_in_use(
+    runtime: PanelRuntime, key: str, module: str, manifests: dict
+) -> None:
+    """Refuse a module's uninstall while an installed module requires it.
 
     Args:
         runtime: The shared runtime.
         key: The device.
+        module: The module being uninstalled.
+        manifests: The module manifests.
 
     Raises:
         HTTPException: 409 ``module_in_use {modules}``, ``modules`` the
-            container modules ``modules.json`` names with a ``want`` other
-            than ``absent``.
+            modules ``modules.json`` names with a ``want`` other than
+            ``absent`` whose entry for the machine requires ``module``, in
+            the file's order.
     """
-    users = container_modules(runtime.desired_states.modules(key))
+    platform = runtime.device_platform.get(key, {})
+    users = []
+    for name, held in runtime.desired_states.modules(key).items():
+        if name == module or held["want"] == CHANNEL_MODULE_STATE_ABSENT:
+            continue
+        _, entry = resolve_platform_entry(manifests.get(name) or {}, platform)
+        if module in entry_requires(entry):
+            users.append(name)
     if users:
         raise _refusal(status.HTTP_409_CONFLICT, CODE_MODULE_IN_USE, modules=users)
 

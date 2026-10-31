@@ -1396,6 +1396,48 @@ def test_containers_cannot_be_uninstalled_while_a_container_module_is_installed(
     assert modules_file(tmp_path)["podman"]["want"] == "absent"
 
 
+def test_a_module_s_rows_name_the_modules_its_entry_requires(containers_api):
+    client, runtime = containers_api
+
+    rows = client.get(MODULE_PATH, params={"device_id": DEVICE}).json()["modules"]
+    catalog = client.get(f"{MODULE_PATH}/catalog", params={"device_id": DEVICE}).json()[
+        "modules"
+    ]
+
+    by_name = {row["name"]: row for row in rows}
+    assert by_name["demo"]["requires"] == ["podman"]
+    assert by_name["hermes_webui"]["requires"] == ["podman"]
+    assert by_name["samba"]["requires"] == []
+    cards = {card["name"]: card for card in catalog}
+    assert cards["ayakaleaf"]["requires"] == ["podman"]
+    assert cards["ayakaleaf"]["is_supported"] is True
+
+
+def test_a_module_whose_required_module_has_no_entry_cannot_run(containers_api):
+    """Containers has no entry for a Linux whose agent reports no family,
+    and Hermes WebUI's one ``linux`` entry resolves there."""
+    client, runtime = containers_api
+    runtime.device_platform[DEVICE] = {"os": "linux", "family": "", "arch": "amd64"}
+
+    rows = client.get(MODULE_PATH, params={"device_id": DEVICE}).json()["modules"]
+    catalog = client.get(f"{MODULE_PATH}/catalog", params={"device_id": DEVICE}).json()[
+        "modules"
+    ]
+    refused = client.post(
+        f"{MODULE_PATH}/install", json={"device_id": DEVICE, "module": "hermes_webui"}
+    )
+
+    assert {row["name"]: row for row in rows}["hermes_webui"]["is_supported"] is False
+    assert {card["name"]: card for card in catalog}["hermes_webui"][
+        "is_supported"
+    ] is False
+    assert refused.status_code == 409
+    assert refused.json()["detail"] == {
+        "code": "no_platform_build",
+        "params": {"module": "podman"},
+    }
+
+
 def test_a_container_module_s_start_writes_its_wants_and_its_file_in_one_hold(
     containers_api, monkeypatch
 ):
