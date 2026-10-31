@@ -1652,6 +1652,24 @@ def test_a_container_module_fails_when_containers_task_ends_not_running(tmp_path
     )
 
 
+def test_a_retry_mark_on_both_runs_containers_again_and_the_module_follows(tmp_path):
+    containers = FakeRunner(failure=ModuleApplyError("machine_unreachable"))
+    runners = {"podman": containers, "demo": FakeRunner()}
+    engine = FakeEngine(runners, absent=("demo",))
+    held, _ = applier(runners, engine=engine, tmp_path=tmp_path)
+    run(held, container_state(demo="running"))
+    assert engine.results["demo"][0] == "module_needed"
+    containers.failure = None
+
+    document = container_state("h2", demo="running")
+    for entry in document["modules"].values():
+        entry["retry_mark"] = "fresh"
+    run(held, document)
+
+    assert engine.results["podman"] == ("", {})
+    assert engine.results["demo"] == ("", {})
+
+
 def test_an_installed_container_module_ends_quietly_while_containers_is_stopped(
     tmp_path,
 ):

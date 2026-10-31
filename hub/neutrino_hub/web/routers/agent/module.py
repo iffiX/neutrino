@@ -1221,10 +1221,9 @@ def _want_required_running(runtime: PanelRuntime, key: str, required: list) -> N
     """
     store = runtime.desired_states
     for name in required:
-        if store.want_of(key, name) == CHANNEL_MODULE_STATE_RUNNING:
-            continue
         is_retried = _is_retried(runtime, key, name, CHANNEL_MODULE_STATE_RUNNING)
-        store.set_want(key, name, CHANNEL_MODULE_STATE_RUNNING)
+        if store.want_of(key, name) != CHANNEL_MODULE_STATE_RUNNING:
+            store.set_want(key, name, CHANNEL_MODULE_STATE_RUNNING)
         if is_retried:
             DeviceRetryMarks().mark(key, name)
 

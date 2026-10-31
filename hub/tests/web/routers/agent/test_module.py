@@ -1385,6 +1385,25 @@ def test_containers_already_wanted_running_is_left_as_it_is(containers_api, tmp_
     assert "podman" not in retry_marks()
 
 
+@pytest.mark.parametrize("state", ["failed", "install_failed"])
+@pytest.mark.parametrize("press", ["install", "start"])
+def test_a_press_retries_a_failed_containers_already_wanted_running(
+    containers_api, tmp_path, press, state
+):
+    client, runtime = containers_api
+    runtime.desired_states.set_want(DEVICE, "podman", "running")
+    runtime.device_modules[DEVICE] = {
+        "podman": {"state": state},
+        "demo": {"state": "install_failed", "code": "module_needed"},
+    }
+
+    client.post(f"{MODULE_PATH}/{press}", json={"device_id": DEVICE, "module": "demo"})
+
+    assert modules_file(tmp_path)["podman"]["want"] == "running"
+    assert set(retry_marks()) == {"podman", "demo"}
+    assert len(runtime.agent_sessions.pushes) == 1
+
+
 def test_stopping_a_container_module_leaves_containers_as_it_is(
     containers_api, tmp_path
 ):
