@@ -43,7 +43,9 @@ packages").
 | Where Podman's network backend is CNI, as with Podman 3.4, the agent sets `cniVersion` to `0.4.0` in `/etc/cni/net.d/<network>.conflist` right after its `podman network create`. | Ubuntu 22.04's Podman 3.4.4 writes `1.0.0`, which its CNI plugins 0.9.1 reject: a container on the network then fails with `CNI network "<network>" not found`. The distribution's own default network says `0.4.0`. |
 
 The report reads `podman ps -a --format json` and `podman inspect`, and a
-container's journal is `journalctl -u <name>.service`.
+container's journal is `journalctl -u <name>.service`. The module's own
+journal reads `podman.socket` and the declared containers' units, and a
+container module's units are in that module's journal alone.
 
 The Podman report gives each container's `host_bindings` as one `{address,
 port, protocol, detected}` per published host port, on TCP and UDP alike,
@@ -258,7 +260,8 @@ script of an account waits for the one before it, about 4 s each on
 Windows. The module's journal reads the keeper's log first and
 then the agent's own lines that name the module, as every module on Windows
 and macOS reads its sources ([agent.md](../../agent.md), "Which modules
-each system runs"). The keeper's log is `<account>.log` under `podman\` in
+each system runs"). With no record of an apply, it reads the log of the keeper
+of the account the configuration names. The keeper's log is `<account>.log` under `podman\` in
 the state root on Windows, made by the agent with modify granted to the
 account, and `/Library/Logs/Neutrino/agent/podman_<account>.log`, the
 LaunchDaemon's `StandardOutPath` and `StandardErrorPath`, on macOS.
