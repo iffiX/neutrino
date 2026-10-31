@@ -12,7 +12,7 @@ app for ``generic/platform=iOS`` with code signing off, the app's binary must
 define ``_nd_start``, and the ``.app`` is zipped under ``Payload/`` as
 ``neutrino-client-<version>-ios.ipa``, ``-cn`` before ``.ipa`` in a ``cn``
 build. Before the zip,
-the app's icon, ``images/icons/neutrino_ios.png``, is put into an asset
+the app's icon, the client's wink on opaque black, is put into an asset
 catalog under ``client/ios/build/icon`` and compiled into the ``.app`` by
 ``actool``, its keys merged into the app's ``Info.plist``. The version, read
 off the hub's pyproject, and the edition reach the app as the build settings
@@ -37,7 +37,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "packaging"))
-from shared import edition_build  # noqa: E402
+from shared import edition_build, icons  # noqa: E402
 
 IOS_DIR = REPO_ROOT / "client" / "ios"
 BUILD_DIR = Path(__file__).resolve().parent
@@ -58,7 +58,6 @@ PACKAGE_NAME = "neutrino-client"
 IOS_BUILD_DIR = IOS_DIR / "build"
 IOS_ICON_CATALOG = IOS_BUILD_DIR / "icon" / "Assets.xcassets"
 IOS_ICON_PLIST = IOS_BUILD_DIR / "icon" / "partial.plist"
-IOS_ICON_SOURCE = REPO_ROOT / "images" / "icons" / "neutrino_ios.png"
 
 # The catalog naming the one icon size iOS takes from Xcode 14 on.
 IOS_ICON_CONTENTS = (
@@ -167,6 +166,8 @@ def _add_icon(app: Path) -> None:
         app: The built ``.app`` directory.
 
     Raises:
+        SystemExit: When the icon's source is missing or is not a PNG of its
+            size.
         subprocess.CalledProcessError: When actool fails.
     """
     icon_set = IOS_ICON_CATALOG / "AppIcon.appiconset"
@@ -175,7 +176,7 @@ def _add_icon(app: Path) -> None:
         '{"info":{"author":"xcode","version":1}}'
     )
     (icon_set / "Contents.json").write_text(IOS_ICON_CONTENTS)
-    shutil.copyfile(IOS_ICON_SOURCE, icon_set / "icon.png")
+    icons.write_opaque_png(icon_set / "icon.png")
     subprocess.run(
         [
             "xcrun",
