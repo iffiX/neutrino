@@ -733,6 +733,13 @@ def test_every_dialog_is_the_top_layer():
     assert "layers[layers.length - 1].click();" in PAGE_JS
 
 
+def test_the_launcher_names_the_client_as_the_window_does():
+    launcher = pathlib.Path(neutrino_client.__file__).parent.joinpath(
+        "data", "desktop", "neutrino_client.desktop"
+    )
+    assert f"Name={EN_WORDS['ui.window.title']}\n" in launcher.read_text("utf-8")
+
+
 # --- the redraw guards ---
 
 

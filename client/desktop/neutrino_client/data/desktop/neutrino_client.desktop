@@ -1,6 +1,6 @@
 [Desktop Entry]
 Type=Application
-Name=Neutrino Client
+Name=Neutrino client
 GenericName=Hub client
 Comment=Use the services a Neutrino Hub publishes for you
 Exec=nclient gui
