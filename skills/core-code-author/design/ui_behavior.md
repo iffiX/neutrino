@@ -1016,6 +1016,11 @@ shows `ErrorPanel` with its retry in place of the fields, and **Install** stays
 disabled. On Windows one press is one logon on the machine
 ([agent/modules/containers.md](agent/modules/containers.md), "The account and its machine").
 
+**Stop** on the File share asks through `useConfirm` first, with the title
+`ui.samba.stop_title`, the body `ui.samba.stop_body`, and the buttons
+`ui.confirm.cancel` and `ui.modules.stop`, and **Stop** on any other module acts
+at once.
+
 **Uninstall** asks through `useConfirm`, one dialog for every module: the
 title `ui.modules.uninstall_title`, the body `ui.modules.uninstall_body`, and
 under it the module's own line, the row's `uninstall_data` text in the
