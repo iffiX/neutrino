@@ -28,6 +28,13 @@ def test_the_bar_and_the_frame_are_lit_while_the_module_reads_failed():
     assert "<ApplyBar isDirty={isPending} hasChanges={isDirty}" in panel
 
 
+def test_remote_desktop_s_frame_is_lit_with_its_bar_on_a_failed_row():
+    panel = flat("components/remote_desktop_panels.tsx")
+
+    assert 'isDirty || isFailed ? "settings_group--dirty" : ""' in panel
+    assert "<ApplyBar isDirty={isDirty || isFailed} hasChanges={isDirty}" in panel
+
+
 def test_reset_is_dead_on_a_bar_lit_with_nothing_changed():
     bar = flat("components/apply_bar.tsx")
 

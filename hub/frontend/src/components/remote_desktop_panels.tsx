@@ -92,7 +92,7 @@ export function RemoteDesktopPanels({
   return (
     <>
       <section
-        className={`settings_group ${isDirty ? "settings_group--dirty" : ""}`}
+        className={`settings_group ${isDirty || isFailed ? "settings_group--dirty" : ""}`}
       >
         <ToggleSwitch
           isOn={draft.is_enabled}
