@@ -1855,6 +1855,35 @@ def test_a_module_that_requires_nothing_stopping_touches_no_other_module(tmp_pat
     assert "demo" in held._store.read_tried()
 
 
+def test_tasks_ending_together_never_put_an_older_set_of_hashes_back(tmp_path):
+    held, _ = applier({"samba": FakeRunner()}, tmp_path=tmp_path)
+    writing = threading.Event()
+    release = threading.Event()
+    written = []
+    real_write = held._store.write_tried
+
+    def slow_first_write(tried):
+        written.append(dict(tried))
+        if len(written) == 1:
+            writing.set()
+            assert release.wait(SETTLE_S)
+        real_write(tried)
+
+    held._store.write_tried = slow_first_write
+    held._tried["first"] = "1"
+    first = threading.Thread(target=held._write_tried)
+    first.start()
+    assert writing.wait(SETTLE_S)
+    held._tried["second"] = "2"
+    second = threading.Thread(target=held._write_tried)
+    second.start()
+    release.set()
+    first.join(SETTLE_S)
+    second.join(SETTLE_S)
+
+    assert held._store.read_tried() == {"first": "1", "second": "2"}
+
+
 def test_a_stop_waiting_for_containers_ends_quietly_when_containers_is_stopped_too(
     tmp_path,
 ):

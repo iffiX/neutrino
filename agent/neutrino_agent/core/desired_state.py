@@ -344,6 +344,7 @@ class DesiredStateApplier:
         self._locks = locks if locks is not None else StepLocks()
         self._recheck_s = recheck_s
         self._lock = threading.Lock()
+        self._tried_write_lock = threading.Lock()
         self._idle = threading.Condition(self._lock)
         self._pending: "dict | None" = None
         self._is_dispatching = False
@@ -651,11 +652,10 @@ class DesiredStateApplier:
                 self._tried[name] = task.planned_hash
             else:
                 self._tried.pop(name, None)
-            tried = dict(self._tried)
             if name != AI_TOOLS_SECTION and not is_stopped:
                 self._outcomes[name] = dict(outcome) if outcome else None
         try:
-            self._write_tried(tried)
+            self._write_tried()
             if is_stopped:
                 self._log(task_line(name, "ended by the agent's stop; nothing kept"))
             elif name != AI_TOOLS_SECTION:
@@ -874,8 +874,7 @@ class DesiredStateApplier:
                     running = self._tasks.get(name)
                     if running is not None and running.is_running:
                         running.offer(self._modules[name], self._hashes.get(name, ""))
-            tried = dict(self._tried)
-        self._write_tried(tried)
+        self._write_tried()
         for name in requiring:
             runner = self._runner_of(name)
             if runner is None:
@@ -985,12 +984,19 @@ class DesiredStateApplier:
             return
         self._rdp.take_seat_password(str(wanted.get("seat_password", "")))
 
-    def _write_tried(self, tried: dict) -> None:
-        """Keep the hashes last tried on disk. A failure is a line in the log."""
-        try:
-            self._store.write_tried(tried)
-        except OSError as error:
-            self._log(f"could not keep the tried state: {error}")
+    def _write_tried(self) -> None:
+        """Keep the hashes last tried on disk. A failure is a line in the log.
+
+        Tasks end together, so each write reads the hashes after the one before
+        it has landed, and none puts an older set back.
+        """
+        with self._tried_write_lock:
+            with self._lock:
+                tried = dict(self._tried)
+            try:
+                self._store.write_tried(tried)
+            except OSError as error:
+                self._log(f"could not keep the tried state: {error}")
 
     def _settle_hash(self) -> None:
         """Move the applied hash and the state error by every mentioned module's task. Call under the lock."""
