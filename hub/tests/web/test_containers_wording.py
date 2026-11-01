@@ -158,7 +158,7 @@ def test_the_run_settings_hint_names_the_next_start_while_the_module_is_not_runn
     hint = re.search(r"\n\s*hint=\{([^{}]*)\}\n", bar)
     assert hint is not None
     assert " ".join(hint.group(1).split()) == (
-        'want === WANT_STOPPED ? t("ui.modules.stopped_hint")'
+        'want !== WANT_RUNNING ? t("ui.modules.stopped_hint")'
         ' : t("ui.containers.run_apply_hint")'
     )
     assert 'const WANT_RUNNING = "running";' in source
