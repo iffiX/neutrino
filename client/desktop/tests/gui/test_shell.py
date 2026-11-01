@@ -886,8 +886,29 @@ class FakeCocoaAppKit(FakeAppKit):
     NSTerminateNow = 1
 
 
+class FakeProcessInfo:
+    """This process's record with the system, and each activity it began.
+
+    Attributes:
+        activities: Each activity's options and reason.
+    """
+
+    activities: list = []
+
+    @classmethod
+    def processInfo(cls):
+        return cls
+
+    @classmethod
+    def beginActivityWithOptions_reason_(cls, options, reason):
+        cls.activities.append((options, reason))
+        return object()
+
+
 class FakeFoundation:
     NSOperationQueue = FakeOperationQueue
+    NSProcessInfo = FakeProcessInfo
+    NSActivityUserInitiatedAllowingIdleSystemSleep = 15728639
 
     @staticmethod
     def NSMakeRect(x, y, width, height):
@@ -909,6 +930,7 @@ def macos_toolkit(monkeypatch) -> FakeApplication:
     FakeCocoaWindow.made = []
     FakeWKWebView.made = []
     FakeOperationQueue.blocks = []
+    FakeProcessInfo.activities = []
     FakeStatusBar.items = []
     monkeypatch.setattr(
         wkwebview, "_toolkit", lambda: (FakeCocoaAppKit, FakeFoundation, FakeWebKit)
@@ -951,6 +973,17 @@ def test_the_macos_window_is_a_regular_app_with_the_page_in_a_web_view(monkeypat
     assert window.is_centered is True
     assert view.loaded == ("<html>page</html>", None)
     assert view.mask == 18
+
+
+def test_the_macos_shell_keeps_the_system_from_napping_the_client(monkeypatch):
+    """A napped client's timers run late, and its menu bar icon with them."""
+    macos_toolkit(monkeypatch)
+
+    wkwebview.open_window(title="t", html="<html>", bridge=None, is_hidden=True)
+
+    assert [options for options, _reason in FakeProcessInfo.activities] == [
+        FakeFoundation.NSActivityUserInitiatedAllowingIdleSystemSleep
+    ]
 
 
 def test_the_macos_shell_registers_the_handler_the_page_posts_to(monkeypatch):

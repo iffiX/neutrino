@@ -32,6 +32,8 @@ from neutrino_client.gui.tray_macos import MacosTrayIcon
 PYOBJC_PACKAGES = "pyobjc-framework-Cocoa pyobjc-framework-WebKit"
 # The name the page posts to: ``window.webkit.messageHandlers.neutrino``.
 MESSAGE_HANDLER_NAME = "neutrino"
+# The reason of the activity that keeps macOS from napping the client.
+NAP_ACTIVITY_REASON = "the menu bar icon follows the hubs' connections"
 
 
 def open_window(
@@ -181,6 +183,12 @@ def open_window(
             on_main(window.setTitle_, text)
 
         on_title_ready(set_window_title)
+    # macOS naps an app behind others that drew nothing lately, and a napped
+    # app's timers run up to 10 seconds late. This local keeps the activity
+    # held for as long as the loop runs.
+    activity = Foundation.NSProcessInfo.processInfo().beginActivityWithOptions_reason_(
+        Foundation.NSActivityUserInitiatedAllowingIdleSystemSleep, NAP_ACTIVITY_REASON
+    )
     app.run()
 
 
