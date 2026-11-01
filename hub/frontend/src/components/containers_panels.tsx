@@ -831,7 +831,7 @@ function ContainerEditor({
             ))}
         </div>
       )}
-      <div className="container_editor_lists">
+      <div className="container_editor_lists string_list_row">
         <StringListEditor
           label={t("ui.containers.ports")}
           values={container.ports}

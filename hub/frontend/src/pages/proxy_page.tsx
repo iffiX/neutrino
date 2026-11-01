@@ -345,7 +345,7 @@ export function ProxyPage() {
               <h2>{t("ui.proxy.dns_title")}</h2>
             </div>
           </div>
-          <div className="proxy_dns_grid">
+          <div className="string_list_row">
             <StringListEditor
               label={t("ui.proxy.remote_dns_label")}
               description={t("ui.proxy.remote_dns_hint")}

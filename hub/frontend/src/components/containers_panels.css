@@ -33,9 +33,8 @@
 }
 
 .container_editor_lists {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
+  column-gap: var(--space-3);
 }
 
 /* The Services row: one line per host port the Ports rows publish. */

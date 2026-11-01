@@ -4,6 +4,20 @@
   gap: var(--space-3);
 }
 
+/* Editors side by side share their rows, so a longer hint moves no list. */
+.string_list_row {
+  display: grid;
+  column-gap: var(--space-4);
+  row-gap: var(--space-3);
+  grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
+}
+
+.string_list_row > .string_list_editor {
+  display: grid;
+  grid-row: span 3;
+  grid-template-rows: subgrid;
+}
+
 .string_list_editor_chips {
   display: flex;
   flex-wrap: wrap;

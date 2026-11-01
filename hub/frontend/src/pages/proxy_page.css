@@ -73,12 +73,6 @@
   grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
 }
 
-.proxy_dns_grid {
-  display: grid;
-  gap: var(--space-4);
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-}
-
 .proxy_info_rows {
   display: flex;
   flex-direction: column;
@@ -119,4 +113,16 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+}
+
+.proxy_lists > .proxy_subcard {
+  display: grid;
+  grid-row: span 4;
+  grid-template-rows: subgrid;
+}
+
+.proxy_lists > .proxy_subcard > .string_list_editor {
+  display: grid;
+  grid-row: span 3;
+  grid-template-rows: subgrid;
 }
