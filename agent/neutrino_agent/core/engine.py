@@ -1543,7 +1543,8 @@ def _run_start(runner, context) -> None:
 
 
 def _run_stop(runner, context) -> None:
-    """The ``stop`` step: the runner's stop."""
+    """The ``stop`` step: what each module requiring this one serves taken down, then the runner's stop."""
+    context.stop_requiring_modules()
     runner.stop()
 
 

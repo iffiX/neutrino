@@ -11,8 +11,9 @@ its record and its forwarder; one forwarder runs per record and follows
 it; a task's steps are ``configure``, then per enabled account the step
 the hooks name for its preparation and ``account``, each account step
 starting its own instance, with no account step under ``stopped``; a
-stop closes the forwarders and keeps the records; a restarted agent
-starts the forwarders from the records; a row runs only while its service
+stop closes the forwarders, keeps the records and marks them stopped; a
+restarted agent starts the forwarders of the records no stop marked, on every
+system, and an account's step starts its own forwarder at its kept port; a row runs only while its service
 runs and its forwarder listens, a reading that finds a service stopped just
 after an apply read again at the next report; the forwarder ports the relays carry are
 those of the forwarders that listen; the details carry what the hooks add; the
@@ -36,6 +37,9 @@ from dataclasses import dataclass
 import pytest
 
 from neutrino_agent.exceptions import ModuleApplyError, ModuleInstallPending
+from neutrino_agent.modules.cloudcli.hooks import CloudcliHooks
+from neutrino_agent.modules.code_server.hooks import CodeServerHooks
+from neutrino_agent.modules.codeg.hooks import CodegHooks
 import neutrino_agent.modules.shared.instances as instances_module
 from neutrino_agent.modules.shared.account_service import (
     AccountEntry,
@@ -50,6 +54,9 @@ from neutrino_agent.modules.shared.instances import (
 )
 from neutrino_agent.modules.shared.base import ModuleStep
 from neutrino_agent.modules.shared.subprocess_run import CommandResult
+from neutrino_agent.modules.siyuan.hooks import SiyuanHooks
+from neutrino_agent.modules.ssh_server.hooks import SshServerHooks
+from neutrino_agent.modules.vscode.hooks import VscodeHooks
 from neutrino_agent.platforms.base import AgentPlatform
 
 INSTANCE = {"account": "ann", "secret": "s"}
@@ -285,6 +292,18 @@ def make_runner(machine, platform, log=None):
 @pytest.fixture
 def runner(machine, platform):
     return make_runner(machine, platform)
+
+
+def configure_step():
+    return ModuleStep(name="configure", run=None)
+
+
+def start_step():
+    return ModuleStep(name="start", run=lambda context: None)
+
+
+def stop_step():
+    return ModuleStep(name="stop", run=lambda context: None)
 
 
 # --- an apply ---
@@ -629,6 +648,224 @@ def test_a_restarted_agent_starts_the_forwarders_from_the_records(
 
     (forwarder,) = FakeForwarder.made
     assert forwarder.is_started and forwarder.record["account"] == "ann"
+
+
+def test_a_stop_keeps_the_stopped_mark_in_the_record(runner, tmp_path):
+    runner.apply(CONFIG)
+
+    runner.stop()
+
+    path = tmp_path / "config" / "demo" / "ann.json"
+    assert json.loads(path.read_text())["is_stopped"] is True
+
+
+def test_a_restarted_agent_starts_no_forwarder_of_a_stopped_module(
+    runner, machine, platform
+):
+    runner.apply(CONFIG)
+    runner.stop()
+    again = make_runner(machine, platform)
+
+    details = again.details({})
+
+    assert FakeForwarder.made == []
+    assert again.forwarder_ports() == ()
+    assert details["instances"][0]["is_running"] is False
+    assert details["instances"][0]["port"] == 8443
+
+
+def test_a_stop_whose_mark_cannot_be_written_still_stops_the_module(
+    runner, systemd, monkeypatch
+):
+    lines: list = []
+    runner._log = lines.append
+    runner.apply(CONFIG)
+    systemd.calls.clear()
+
+    def refused(account):
+        raise PermissionError(13, "read-only")
+
+    monkeypatch.setattr(runner._records, "mark_stopped", refused)
+    runner.stop()
+
+    assert FakeForwarder.made[0].is_closed
+    assert systemd.units("disable")
+    assert any("ann" in line and "read-only" in line for line in lines)
+
+
+def test_a_configure_under_stopped_after_a_restart_starts_no_forwarder(
+    runner, machine, platform
+):
+    runner.apply(CONFIG)
+    runner.stop()
+    again = make_runner(machine, platform)
+
+    steps = again.configure_steps(CONFIG, "stopped", [configure_step(), stop_step()])
+    steps[0].run(None)
+
+    assert FakeForwarder.made == []
+
+
+def test_a_start_after_a_restart_brings_the_forwarder_back_at_its_kept_port(
+    runner, machine, platform, tmp_path
+):
+    runner.apply(CONFIG)
+    runner.stop()
+    again = make_runner(machine, platform)
+    again.details({})
+
+    for step in again.configure_steps(
+        CONFIG, "running", [configure_step(), start_step()]
+    ):
+        step.run(None)
+
+    (forwarder,) = FakeForwarder.made
+    assert forwarder.is_started
+    assert forwarder.record["port"] == 8443
+    assert forwarder.record["upstream_port"] == 41000
+    path = tmp_path / "config" / "demo" / "ann.json"
+    assert "is_stopped" not in json.loads(path.read_text())
+
+
+def test_each_account_s_step_starts_its_own_forwarder_after_a_stop(
+    runner, machine, platform
+):
+    both = {"instances": [INSTANCE, {"account": "bob", "secret": "s"}]}
+    runner.apply(both)
+    runner.stop()
+    again = make_runner(machine, platform)
+    steps = {
+        (step.name, step.params.get("account")): step
+        for step in again.configure_steps(
+            both, "running", [configure_step(), start_step()]
+        )
+    }
+
+    steps[("configure", None)].run(None)
+    assert FakeForwarder.made == []
+
+    steps[("account", "ann")].run(None)
+    assert [made.record["account"] for made in FakeForwarder.made] == ["ann"]
+
+    steps[("account", "bob")].run(None)
+    assert [made.record["account"] for made in FakeForwarder.made] == ["ann", "bob"]
+    assert [made.record["port"] for made in FakeForwarder.made] == [8443, 8444]
+
+
+def test_a_second_stop_after_a_restart_leaves_the_mark(
+    runner, machine, platform, tmp_path
+):
+    runner.apply(CONFIG)
+    runner.stop()
+    again = make_runner(machine, platform)
+
+    again.stop()
+
+    path = tmp_path / "config" / "demo" / "ann.json"
+    assert json.loads(path.read_text())["is_stopped"] is True
+    assert FakeForwarder.made == []
+
+
+class FakeAccountLayer:
+    """The account service layer of any system: every service runs once started."""
+
+    def __init__(self):
+        self.running: set = set()
+
+    def define(self, service, machine):
+        return False
+
+    def write(self, service, machine):
+        return False
+
+    def start(self, service, machine, *, is_restart):
+        self.running.add(service.account)
+
+    def stop(self, service, machine):
+        self.running.discard(service.account)
+
+    def states(self, services, machine):
+        return {
+            service.account: {"is_running": service.account in self.running}
+            for service in services
+        }
+
+
+@pytest.mark.parametrize("os_name", ["linux", "windows", "darwin"])
+def test_on_every_system_a_stopped_forwarder_stays_down_until_the_start(
+    os_name, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(instances_module, "account_service", FakeAccountLayer())
+    the_machine = ServiceMachine(
+        os_name=os_name,
+        module_dir=str(tmp_path / "state" / "demo"),
+        record_dir=str(tmp_path / "state" / "demo"),
+        lookup_account=lookup,
+        run=lambda command, **fields: CommandResult(list(command), 0, "", ""),
+    )
+    the_platform = Platform(os_name=os_name, root=str(tmp_path))
+    first = make_runner(the_machine, the_platform)
+    first.apply(CONFIG)
+    first.stop()
+
+    again = make_runner(the_machine, the_platform)
+    again.details({})
+    assert FakeForwarder.made == []
+
+    again.apply(CONFIG)
+    (forwarder,) = FakeForwarder.made
+    assert forwarder.is_started and forwarder.record["port"] == 8443
+
+
+@pytest.mark.parametrize(
+    ("hooks_class", "is_forwarded"),
+    [
+        (CloudcliHooks, True),
+        (CodeServerHooks, True),
+        (CodegHooks, True),
+        (SiyuanHooks, True),
+        (SshServerHooks, False),
+        (VscodeHooks, False),
+    ],
+)
+def test_the_stopped_mark_covers_each_module_with_a_forwarder(
+    hooks_class, is_forwarded, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(instances_module, "account_service", FakeAccountLayer())
+    FakeForwarder.made = []
+    the_machine = ServiceMachine(
+        os_name="linux",
+        module_dir=str(tmp_path / "state" / "module"),
+        record_dir=str(tmp_path / "state" / "module"),
+        lookup_account=lookup,
+    )
+    the_platform = Platform(root=str(tmp_path))
+
+    def made():
+        made_runner = InstancesModuleRunner(
+            hooks_class=hooks_class,
+            platform=the_platform,
+            log=lambda line: None,
+            machine=the_machine,
+            forwarder_factory=FakeForwarder,
+            is_port_free=lambda port: True,
+        )
+        made_runner.hooks.service = lambda instance, entry, record: instance
+        return made_runner
+
+    store = made()._records
+    store.write({"account": "ann", "port": 3101})
+    first = made()
+    first.details({})
+    assert len(FakeForwarder.made) == int(is_forwarded)
+    assert first.hooks.is_forwarded is is_forwarded
+
+    first.stop()
+    FakeForwarder.made = []
+    made().details({})
+
+    assert FakeForwarder.made == []
+    assert bool(store.read_running()) is not is_forwarded
 
 
 def test_a_row_runs_only_while_its_unit_runs_and_its_forwarder_listens(runner, systemd):

@@ -848,6 +848,43 @@ class DesiredStateApplier:
         if self._state_of(CONTAINERS_MODULE) != AGENT_WANT_RUNNING:
             raise self._module_needed(CONTAINERS_MODULE)
 
+    def stop_requiring_modules(self, task) -> None:
+        """Take down what each module requiring a stopping module serves.
+
+        Each one whose ``want`` is ``running`` loses its tried hash, and its
+        running task plans again, so the state that starts the required
+        module again plans its start. A latest state with the stopping
+        module's ``want`` at ``running`` changes nothing, since no start
+        follows it.
+
+        Args:
+            task: The stopping module's task.
+        """
+        with self._lock:
+            if self._want_of(task.name) == AGENT_WANT_RUNNING:
+                return
+            requiring = [
+                name
+                for name, entry in self._modules.items()
+                if task.name in _requires_of(entry)
+            ]
+            for name in requiring:
+                if self._want_of(name) == AGENT_WANT_RUNNING:
+                    self._tried.pop(name, None)
+                    running = self._tasks.get(name)
+                    if running is not None and running.is_running:
+                        running.offer(self._modules[name], self._hashes.get(name, ""))
+            tried = dict(self._tried)
+        self._write_tried(tried)
+        for name in requiring:
+            runner = self._runner_of(name)
+            if runner is None:
+                continue
+            try:
+                runner.required_module_stopped()
+            except OSError as error:
+                self._log(task_line(name, f"not taken down: {error}"))
+
     def _keep_outcome(self, task, entry: dict, outcome, *, is_cut: bool) -> None:
         """Mark a module configured once its task took, keep its failure, and read its row again."""
         name = task.name

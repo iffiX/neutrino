@@ -480,6 +480,10 @@ class ContainerModuleRunner(ModuleRunner):
                 "apply_failed", {"detail": command_detail(error)[:500]}
             ) from error
 
+    def required_module_stopped(self) -> None:
+        """Take down what the hooks serve; Containers' stop stops the containers."""
+        self._hooks.stop()
+
     def is_installing(self) -> bool:
         """Whether the module's hooks wait on its containers' first start."""
         return bool(self._hooks.is_installing())

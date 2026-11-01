@@ -383,6 +383,9 @@ class ModuleRunner:
     def stop(self) -> None:
         """Take the module's service down, leaving its data in place."""
 
+    def required_module_stopped(self) -> None:
+        """Take down what this module serves beside a module it requires, at that module's stop."""
+
     def remove_configuration(self) -> None:
         """Delete what the hub's applies wrote, leaving the module's data.
 

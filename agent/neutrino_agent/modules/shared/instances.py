@@ -8,7 +8,7 @@ instance's port itself, the first free port on loopback from the module's
 instance's root-only record, a retired one while the account is not
 enabled; a kept port another program holds at a start is replaced by the
 next free one. The record lets a forwarder start again after the agent
-restarts. A task applies the module in steps: ``configure`` for what every
+restarts, unless it keeps the mark of the module's stop. A task applies the module in steps: ``configure`` for what every
 instance shares, then one ``account {account}`` per enabled account, after
 its ``npm {account}`` where the module installs per account. A record the
 hooks change is applied by a configure task the runner asks for. The runner
@@ -644,7 +644,7 @@ class InstancesModuleRunner(ModuleRunner):
         return planned
 
     def stop(self) -> None:
-        """Stop every instance and its forwarder; the software and the records stay.
+        """Stop every instance and its forwarder; the software and the records stay, each with the stopped mark.
 
         Raises:
             OSError: When the system will not stop one.
@@ -652,6 +652,7 @@ class InstancesModuleRunner(ModuleRunner):
         with self._lock:
             self._is_resumed = True
             self._is_stopped = True
+        self._mark_stopped()
         self._close_forwarders()
         try:
             for record in self._records.read_all():
@@ -1147,12 +1148,24 @@ class InstancesModuleRunner(ModuleRunner):
             self._is_resumed = True
         self._sync_forwarders()
 
+    def _mark_stopped(self) -> None:
+        """Keep the stopped mark in every record with a forwarder; a failed write is a line in the log."""
+        if not self._hooks.is_forwarded:
+            return
+        with self._apply_lock:
+            for record in self._records.read_all():
+                account = str(record["account"])
+                try:
+                    self._records.mark_stopped(account)
+                except OSError as error:
+                    self._log(f"{self.name}: {account} not marked stopped: {error}")
+
     def _sync_forwarders(self) -> None:
-        """Make one running forwarder per record, as the record stands."""
+        """Make one running forwarder per record with no stopped mark, as the record stands."""
         if not self._hooks.is_forwarded:
             return
         records = {
-            str(record["account"]): record for record in self._records.read_all()
+            str(record["account"]): record for record in self._records.read_running()
         }
         with self._lock:
             if self._is_stopped:

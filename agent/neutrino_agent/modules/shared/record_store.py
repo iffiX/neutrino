@@ -8,7 +8,8 @@ reads; on Windows, where the module's directory is open to every account,
 each file is left to SYSTEM and the administrators alone before anything is
 written into it. An instance whose account is no longer enabled keeps a retired
 record of its port alone, so the account takes the same port when it is
-enabled again.
+enabled again. A module's stop marks each record, so no forwarder starts from
+it after the agent restarts; the next write of the record drops the mark.
 
 Not pure: writes files.
 """
@@ -28,6 +29,8 @@ RECORD_SUFFIX = ".json"
 # What a retired record holds beside the account: its port, and the mark.
 RECORD_PORT_FIELD = "port"
 RECORD_RETIRED_FIELD = "is_retired"
+# The mark a module's stop leaves in a record.
+RECORD_STOPPED_FIELD = "is_stopped"
 
 
 class InstanceRecordStore:
@@ -58,6 +61,18 @@ class InstanceRecordStore:
             {name: held.get(name) for name in self._fields}
             for held in self._read_files()
             if not held.get(RECORD_RETIRED_FIELD)
+        ]
+
+    def read_running(self) -> list:
+        """Every record held, by account; a retired one and one with the stopped mark left out.
+
+        Returns:
+            The records, an unreadable one left out.
+        """
+        return [
+            {name: held.get(name) for name in self._fields}
+            for held in self._read_files()
+            if not held.get(RECORD_RETIRED_FIELD) and not held.get(RECORD_STOPPED_FIELD)
         ]
 
     def kept_ports(self) -> dict:
@@ -120,6 +135,20 @@ class InstanceRecordStore:
             account,
             {"account": account, RECORD_PORT_FIELD: port, RECORD_RETIRED_FIELD: True},
         )
+
+    def mark_stopped(self, account: str) -> None:
+        """Keep the stopped mark in one account's live record.
+
+        Args:
+            account: The account; a retired record and no record stay as they are.
+
+        Raises:
+            OSError: When the file cannot be written.
+        """
+        for held in self._read_files():
+            if held.get("account") == account and not held.get(RECORD_RETIRED_FIELD):
+                self._write_file(account, {**held, RECORD_STOPPED_FIELD: True})
+                return
 
     def remove(self, account: str) -> None:
         """Forget one account's record, a retired one's port included.

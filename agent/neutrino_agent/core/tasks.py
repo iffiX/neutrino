@@ -383,6 +383,10 @@ class ModuleTask:
         """
         self._owner.render_containers(self)
 
+    def stop_requiring_modules(self) -> None:
+        """Take down what each module requiring this task's module serves, ahead of its stop."""
+        self._owner.stop_requiring_modules(self)
+
     def wait_for_task(self, other: "ModuleTask") -> None:
         """Wait until another module's task has ended, looking at this task's newer entry meanwhile.
 

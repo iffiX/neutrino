@@ -298,6 +298,7 @@ def _start(runner, context):
 
 
 def _stop(runner, context):
+    context.stop_requiring_modules()
     runner.stop()
 
 
@@ -319,6 +320,7 @@ class FakeRunner:
         self.journal = journal if journal is not None else []
         self.applied: list = []
         self.stops = 0
+        self.required_stops = 0
         self.wait = wait or {}
 
     def apply(self, config):
@@ -333,6 +335,10 @@ class FakeRunner:
     def stop(self):
         self.stops += 1
         self.journal.append(("stop", id(self)))
+
+    def required_module_stopped(self):
+        self.required_stops += 1
+        self.journal.append(("required_stopped", id(self)))
 
     def install_wait(self):
         return dict(self.wait)
@@ -1736,6 +1742,119 @@ def test_an_installed_container_module_ends_quietly_while_containers_is_stopped(
     assert runners["demo"].applied == [{"n": "demo"}]
 
 
+def test_containers_stop_takes_a_module_down_and_the_next_start_plans_its_start(
+    tmp_path,
+):
+    """A module that wants to run keeps its hash until Containers' Stop. The stop
+    takes down what the module serves, and the state that starts Containers
+    again plans the module's start with no other press."""
+    journal: list = []
+    containers = FakeRunner(journal=journal)
+    demo = FakeRunner(journal=journal)
+    runners = {"podman": containers, "demo": demo}
+    held, engine = applier(runners, tmp_path=tmp_path)
+    run(held, container_state(demo="running"))
+    assert "demo" in held._store.read_tried()
+    demo.applied.clear()
+    journal.clear()
+
+    run(held, container_state("h2", podman="stopped", demo="running"))
+
+    assert journal == [
+        ("apply", id(containers)),
+        ("required_stopped", id(demo)),
+        ("stop", id(containers)),
+    ]
+    assert "demo" not in held._store.read_tried()
+    assert demo.applied == []
+    assert demo.stops == 0
+
+    run(held, container_state("h3", podman="running", demo="running"))
+
+    assert demo.applied == [{"n": "demo"}]
+    assert ("start", id(demo)) in journal
+    assert "demo" in held._store.read_tried()
+
+
+def test_a_module_stopped_by_hand_stays_stopped_when_containers_starts_again(tmp_path):
+    runners = {"podman": FakeRunner(), "demo": FakeRunner()}
+    held, _ = applier(runners, tmp_path=tmp_path)
+    run(held, container_state(demo="stopped"))
+    assert runners["demo"].stops == 1
+
+    run(held, container_state("h2", podman="stopped", demo="stopped"))
+
+    assert runners["demo"].required_stops == 1
+    assert "demo" in held._store.read_tried()
+
+    run(held, container_state("h3", podman="running", demo="stopped"))
+
+    assert runners["demo"].stops == 1
+    assert runners["demo"].applied == [{"n": "demo"}]
+
+
+def test_a_task_of_the_module_at_containers_stop_plans_again_and_ends_quietly(tmp_path):
+    """An install still running at Containers' Stop plans again; once the module
+    is installed its task ends with no tried hash, so the state that starts
+    Containers again runs its start."""
+    gate = threading.Event()
+    containers = FakeRunner()
+    demo = FakeRunner()
+    runners = {"podman": containers, "demo": demo}
+    engine = FakeEngine(runners, absent=("demo",))
+    engine.containers_state = "running"
+    engine.install_gates["demo"] = gate
+    held, _ = applier(runners, engine=engine, tmp_path=tmp_path)
+    held.apply(container_state(demo="running"))
+    assert wait_until(lambda: engine.last("demo")[0].get("index") == 2)
+
+    held.apply(container_state("h2", podman="stopped", demo="running"))
+    assert wait_until(lambda: containers.stops == 1)
+    engine.installed.add("demo")
+    gate.set()
+    assert held.settle("", SETTLE_S)
+
+    assert demo.required_stops == 1
+    assert "demo" not in held._store.read_tried()
+    assert demo.applied == []
+
+
+def test_containers_started_again_before_its_stop_step_leaves_the_module_up(tmp_path):
+    """A state that wants Containers running again before its stop step runs
+    leaves what the module serves as it is: the module's hash stays, so no
+    start would bring it back."""
+    containers = FakeRunner()
+    demo = FakeRunner()
+    runners = {"podman": containers, "demo": demo}
+    held, engine = applier(runners, tmp_path=tmp_path)
+    run(held, container_state(demo="running"))
+    with held._lock:
+        held._modules = container_state("h2", podman="running", demo="running")[
+            "modules"
+        ]
+    tried = dict(held._tried)
+
+    class Task:
+        name = "podman"
+
+    held.stop_requiring_modules(Task())
+
+    assert demo.required_stops == 0
+    assert held._tried == tried
+
+
+def test_a_module_that_requires_nothing_stopping_touches_no_other_module(tmp_path):
+    runners = {"samba": FakeRunner(), "podman": FakeRunner(), "demo": FakeRunner()}
+    held, _ = applier(runners, tmp_path=tmp_path)
+    document = container_state(demo="running")
+    document["modules"]["samba"] = state(samba="stopped")["modules"]["samba"]
+    run(held, document)
+
+    assert runners["samba"].stops == 1
+    assert runners["demo"].required_stops == 0
+    assert "demo" in held._store.read_tried()
+
+
 def test_a_stop_waiting_for_containers_ends_quietly_when_containers_is_stopped_too(
     tmp_path,
 ):
@@ -1762,6 +1881,7 @@ def test_a_stop_waiting_for_containers_ends_quietly_when_containers_is_stopped_t
     assert "demo" not in engine.failures
     assert "demo" not in held._store.read_tried()
     assert runners["demo"].stops == 0
+    assert runners["demo"].required_stops == 1
 
 
 def test_render_asks_during_one_containers_task_make_one_more_configure(tmp_path):

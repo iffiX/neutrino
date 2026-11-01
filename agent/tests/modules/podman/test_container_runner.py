@@ -303,6 +303,25 @@ def test_stopped_containers_ask_for_nothing(store, monkeypatch):
     assert runner.notice() == {}
 
 
+def test_a_required_module_s_stop_takes_down_what_the_hooks_serve(store, monkeypatch):
+    stops: list = []
+
+    class StoppedHooks(ContainerHooks):
+        def stop(self):
+            stops.append("stop")
+
+    monkeypatch.setitem(
+        container_runner_module.CONTAINER_MODULE_HOOKS, "demo", StoppedHooks
+    )
+    containers = FakeContainers(hub_names={"demo": ["neutrino_demo"]})
+    runner = runner_for(containers, FakePodman(running=["neutrino_demo"]))
+
+    runner.required_module_stopped()
+
+    assert stops == ["stop"]
+    assert containers.driven == []
+
+
 def test_a_page_that_stays_silent_says_why_on_its_row(paged):
     runner, _, _, now = paged
 

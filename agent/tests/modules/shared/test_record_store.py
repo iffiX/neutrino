@@ -3,7 +3,8 @@
 What these pin: a record is written whole, mode 0600, in a directory only
 the agent reads; only the fields the store names are kept; an unreadable
 file is left out; a record is forgotten by account; a retired record
-keeps its port alone, read by nobody but the kept ports; and a write waits
+keeps its port alone, read by nobody but the kept ports; a stopped mark keeps
+a record out of the running ones until the next write of it; and a write waits
 for a read that holds the record open.
 """
 
@@ -100,6 +101,42 @@ def test_a_sealed_store_seals_each_file_before_writing_into_it(tmp_path):
     assert sealed[0][0].startswith(".record_")
     assert sealed[0][1] == 0
     assert store.read("ann") == {"account": "ann", "port": 6810, "secret": "s"}
+
+
+def test_a_stopped_mark_keeps_a_record_out_of_the_running_ones(tmp_path):
+    store = InstanceRecordStore(directory=str(tmp_path), fields=FIELDS)
+    store.write({"account": "ann", "port": 3101, "secret": "s"})
+    store.write({"account": "bob", "port": 3102, "secret": "s"})
+
+    store.mark_stopped("ann")
+
+    assert [record["account"] for record in store.read_running()] == ["bob"]
+    assert [record["account"] for record in store.read_all()] == ["ann", "bob"]
+    assert store.read("ann") == {"account": "ann", "port": 3101, "secret": "s"}
+    assert store.kept_ports() == {"ann": 3101, "bob": 3102}
+
+
+def test_the_next_write_of_a_record_drops_its_stopped_mark(tmp_path):
+    store = InstanceRecordStore(directory=str(tmp_path), fields=FIELDS)
+    store.write({"account": "ann", "port": 3101, "secret": "s"})
+    store.mark_stopped("ann")
+
+    store.write(store.read("ann"))
+
+    assert [record["account"] for record in store.read_running()] == ["ann"]
+
+
+def test_a_stopped_mark_leaves_a_retired_record_and_no_record_as_they_are(tmp_path):
+    store = InstanceRecordStore(directory=str(tmp_path), fields=FIELDS)
+    store.write({"account": "ann", "port": 3101, "secret": "s"})
+    store.retire("ann")
+
+    store.mark_stopped("ann")
+    store.mark_stopped("ghost")
+
+    assert store.read_running() == []
+    assert store.kept_ports() == {"ann": 3101}
+    assert store.accounts() == ["ann"]
 
 
 def test_a_write_waits_for_a_read_that_holds_the_record_open(tmp_path, monkeypatch):

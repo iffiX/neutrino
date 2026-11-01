@@ -30,6 +30,7 @@ module read stopped after its start task read again until it runs; and
 that nothing in it ever retries anything.
 """
 
+import functools
 import json
 import os
 import threading
@@ -194,6 +195,9 @@ class StepContext:
 
     def render_containers(self):
         self.waits.append("render")
+
+    def stop_requiring_modules(self):
+        self.waits.append("stop_requiring")
 
 
 def run_task(engine, name, steps, *, receive=None, on_line=None) -> dict:
@@ -2293,6 +2297,27 @@ def test_containers_on_linux_plans_its_steps_under_containers_alone(tmp_path):
         ("configure", {}, (CONTAINERS_ALONE,)),
         ("stop", {}, (CONTAINERS_ALONE,)),
     ]
+
+
+def test_a_stop_step_takes_down_the_modules_requiring_it_before_the_stop(
+    tmp_path, monkeypatch
+):
+    engine = ModuleEngine(
+        platform=StateRootPlatform(str(tmp_path)), configured_dir=str(tmp_path / "c")
+    )
+    entry = podman_entry(engine)
+    context = StepContext("podman")
+    monkeypatch.setattr(
+        engine.runner_of("podman"),
+        "stop",
+        functools.partial(context.waits.append, "stop"),
+    )
+
+    *_, stop = engine.configure_steps("podman", entry, "stopped")
+    stop.run(context)
+
+    assert stop.name == "stop"
+    assert context.waits == ["stop_requiring", "stop"]
 
 
 def test_containers_on_windows_plans_the_features_and_the_restart_first(tmp_path):

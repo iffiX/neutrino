@@ -580,6 +580,40 @@ def test_a_stopped_module_s_forwarder_stays_down_after_a_restart(box):
     assert len(box.forwarders) == 1
 
 
+def test_a_stopped_module_does_not_run_while_its_webui_answers(box):
+    box.status = 200
+    box.podman.has_config = True
+    box.hooks.installed("0.52.492")
+    box.hooks.apply(CONFIG)
+    box.start()
+    assert box.hooks.is_running() is True
+
+    box.hooks.stop()
+
+    assert box.hooks.is_running() is False
+
+
+def test_a_start_after_containers_stop_and_a_restart_brings_the_same_ports_back(box):
+    box.podman.has_config = True
+    box.status = 200
+    box.hooks.installed("0.52.492")
+    box.hooks.apply(CONFIG)
+    box.start()
+    box.hooks.stop()
+    restarted = box.make()
+    restarted.is_running()
+    assert len(box.forwarders) == 1
+
+    restarted.apply(CONFIG)
+    restarted.start()
+
+    assert box.forwarders[1].is_started
+    assert box.forwarders[1].record["port"] == 8787
+    assert box.forwarders[1].record["upstream_port"] == box.containers.upstream
+    assert box.record()["is_stopped"] is False
+    assert restarted.is_running() is True
+
+
 @pytest.mark.parametrize(
     "path",
     ["/api/auth/login", "//api/auth/login", "/api/auth/login/", "/x/../api/auth/login"],

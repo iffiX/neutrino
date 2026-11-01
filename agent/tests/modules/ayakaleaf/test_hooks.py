@@ -258,6 +258,45 @@ def ready(box) -> None:
     box.start()
 
 
+# --- the forwarder of a stopped module ---
+
+
+def test_a_stopped_module_does_not_run_while_its_app_answers(box):
+    ready(box)
+    assert box.hooks.is_running() is True
+
+    box.hooks.stop()
+
+    assert box.hooks.is_running() is False
+
+
+def test_a_stopped_module_s_forwarder_stays_down_after_a_restart(box):
+    ready(box)
+    box.hooks.stop()
+
+    box.make().is_running()
+
+    assert len(box.forwarders) == 1
+
+
+def test_a_start_after_containers_stop_and_a_restart_brings_the_same_ports_back(box):
+    ready(box)
+    (first,) = box.forwarders
+    box.hooks.stop()
+    restarted = box.make()
+    restarted.is_running()
+    assert first.is_closed
+
+    restarted.apply(CONFIG)
+    restarted.start()
+
+    assert box.forwarders[1].is_started
+    assert box.forwarders[1].record["port"] == first.record["port"] == 8900
+    assert box.forwarders[1].record["upstream_port"] == first.record["upstream_port"]
+    assert box.record()["is_stopped"] is False
+    assert restarted.is_running() is True
+
+
 # --- the first start ---
 
 

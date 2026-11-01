@@ -400,11 +400,14 @@ class HermesWebuiHooks(ContainerHooks):
         """Whether the webui's ``/health`` answers 200 at its published port.
 
         Returns:
-            False before the webui has a published port.
+            False before the webui has a published port, and while the record
+            keeps the stopped mark.
         """
         record = self._resume()
         port = int(record.get("upstream_port", 0) or 0)
-        return bool(port) and self._health(port) == 200
+        if not port or record.get("is_stopped"):
+            return False
+        return self._health(port) == 200
 
     def upstream_port(self) -> int:
         """The published port the record names.
