@@ -1,12 +1,13 @@
-"""The hint a stopped module's account and folder share panels show, held against ui_text.md.
+"""The hint of a module's panels until its next Start, held against ui_text.md.
 
 What these pin: ``ui.modules.stopped_hint`` says in both languages what
 ui_text.md writes; the account layer's apply bar shows it in place of the
-module's own hint while the module's want is ``stopped``, and its apply
-then waits for ``stopped``; Terminal's and the SSH server's tabs, which the
-agent's package carries, never show it; and the folder shares show it under
-their hint while the file share is stopped. Configure on a stopped module
-opens its panel after the first import and posts no Start.
+module's own hint while the module's want is not ``running``, an ``installed``
+row never started among them, and its apply then waits for the want it has;
+Terminal's and the SSH server's tabs, which the agent's package carries, never
+show it; the folder shares and Containers' Run settings show it the same way.
+Configure on any module opens its panel after the first import and posts no
+Start, and Ayakaleaf's bar waits for ``running`` only under ``running``.
 """
 
 import json
@@ -40,42 +41,60 @@ def test_the_stopped_hint_says_what_ui_text_writes(language):
     assert "ui.containers.run_stopped_hint" not in words
 
 
-def test_the_account_layer_s_apply_bar_shows_it_and_waits_for_stopped():
+def test_the_account_layer_s_apply_bar_shows_it_and_waits_for_the_want_it_has():
     panel = flat(source("instances_panel.tsx"))
 
     assert (
-        'hint={ isStopped ? t("ui.modules.stopped_hint") : t(descriptor.applyHint) }'
-        in panel
+        'hint={ isWaitingForStart ? t("ui.modules.stopped_hint") '
+        ": t(descriptor.applyHint) }" in panel
     )
     assert (
-        "useSettledApply( reportOf(saved), isStopped ? WANT_STOPPED : WANT_RUNNING, )"
+        "useSettledApply( reportOf(saved), isWaitingForStart ? want : WANT_RUNNING, )"
         in panel
     )
-    assert 'const WANT_STOPPED = "stopped";' in panel
 
 
-def test_a_carried_module_never_reads_stopped_and_the_folder_shares_do():
+def test_a_carried_module_never_shows_it_and_the_folder_shares_do():
     page = flat(source("machine_modules.tsx"))
     shares = flat(source("folder_shares_panel.tsx"))
 
-    assert "isStopped={!target.isCarried && target.want === WANT_STOPPED}" in page
-    assert "isStopped={target.want === WANT_STOPPED}" in page
+    assert (
+        "isWaitingForStart={!target.isCarried && target.want !== WANT_RUNNING}" in page
+    )
+    assert "isWaitingForStart={target.want !== WANT_RUNNING}" in page
     assert "isCarried: isCarriedRow," in page
     assert re.search(
-        r'\{isStopped && \( <p className="field_hint">'
+        r'\{isWaitingForStart && \( <p className="field_hint">'
         r'\{t\("ui\.modules\.stopped_hint"\)\}</p> \)\}',
         shares,
     )
 
 
-def test_configure_on_a_stopped_module_posts_no_start():
+def test_the_run_settings_show_it_on_any_want_but_running():
+    settings = flat(source("containers_run_settings.tsx"))
+
+    assert 'want !== WANT_RUNNING ? t("ui.modules.stopped_hint")' in settings
+
+
+def test_configure_on_any_module_opens_its_panel_and_posts_no_start():
     page = source("machine_modules.tsx")
     configure = page[page.index("const configure = async") :]
     configure = configure[: configure.index("\n  };\n")]
 
-    imported = configure.index("/import`")
-    guarded = configure.index("if (activeRow.want !== WANT_STOPPED) {")
-    started = configure.index('"/agent/module/start"')
-    opened = configure.index("setConfigured(", started)
-    assert imported < guarded < started < opened
-    assert configure.count('"/agent/module/start"') == 1
+    assert configure.index("/import`") < configure.rindex("setConfigured(")
+    assert "/agent/module/start" not in configure
+    assert "notePress" not in configure
+    assert '"configure"' not in flat(page).split("const PRESSED_STATES")[1][:200]
+
+
+def test_a_new_ayakaleaf_model_waits_for_running_only_under_running():
+    panel = flat(source("ayakaleaf_panels.tsx"))
+
+    assert "const isRestarted = want === WANT_RUNNING;" in panel
+    assert (
+        "if (isRestarted) { setWait({ at: Date.now(), hasLeftRunning: false }); }"
+        in panel
+    )
+    assert (
+        'warning={isRestarted ? t("ui.ayakaleaf.apply_warning") : undefined}' in panel
+    )

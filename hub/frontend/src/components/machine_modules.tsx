@@ -79,7 +79,8 @@ interface PanelTarget {
   isEditable: boolean;
   /** The system the machine's agent reports: `linux`, `windows`, `darwin`. */
   platformOs: string;
-  /** What the hub asks of the module: `running`, `stopped`, or empty. */
+  /** What the hub asks of the module: `running`, `stopped`, `installed`, or
+   * empty. */
   want: string;
   /** Whether the agent's package carries the module, with no Start of its
    * own. */
@@ -88,7 +89,11 @@ interface PanelTarget {
   manifestTitles: Record<string, string>;
 }
 
-/** The want of a module the person stopped; an apply keeps it stopped. */
+/** The want of a module a person pressed Start on. An apply on any other
+ * takes effect at its next Start. */
+const WANT_RUNNING = "running";
+
+/** The want of a module the person stopped. */
 const WANT_STOPPED = "stopped";
 
 /** The want of a module the person uninstalled, or whose install they
@@ -106,7 +111,8 @@ const ACCOUNT_LAYER_PANELS: Record<string, (target: PanelTarget) => ReactNode> =
           deviceId={target.deviceId}
           basePath={target.basePath}
           isEditable={target.isEditable}
-          isStopped={!target.isCarried && target.want === WANT_STOPPED}
+          isWaitingForStart={!target.isCarried && target.want !== WANT_RUNNING}
+          want={target.want}
         />
       ),
     ]),
@@ -122,7 +128,7 @@ const MODULE_PANELS: Record<string, (target: PanelTarget) => ReactNode> = {
         deviceId={target.deviceId}
         basePath={target.basePath}
         isEditable={target.isEditable}
-        isStopped={target.want === WANT_STOPPED}
+        isWaitingForStart={target.want !== WANT_RUNNING}
       />
       <SambaStatusPanel deviceId={target.deviceId} basePath={target.basePath} />
     </>
@@ -156,6 +162,7 @@ const MODULE_PANELS: Record<string, (target: PanelTarget) => ReactNode> = {
       deviceId={target.deviceId}
       basePath={target.basePath}
       isEditable={target.isEditable}
+      want={target.want}
     />
   ),
 };
@@ -261,12 +268,11 @@ const FRESH_START_LONG_STEPS = ["replica_set", "tex"];
 const CANCEL_BUSY = "cancel";
 
 /** The transient a press shows until the machine reports otherwise. */
-const PRESSED_STATES: Record<ModuleAction | "configure", string> = {
+const PRESSED_STATES: Record<ModuleAction, string> = {
   install: "installing",
   uninstall: "uninstalling",
   start: "queued",
   stop: "queued",
-  configure: "queued",
 };
 
 /** The states whose code the tab words as a notice at its top: what holds
@@ -404,12 +410,8 @@ export function MachineModules({
     };
   }, [presses]);
 
-  const notePress = (module: string, action: ModuleAction | "configure") => {
+  const notePress = (module: string, action: ModuleAction) => {
     const from = reportedRows[module]?.state ?? "";
-    // Configure on a running module changes no state the tab could wait on.
-    if (action === "configure" && from === "running") {
-      return;
-    }
     setPresses((current) => ({
       ...current,
       [module]: { state: PRESSED_STATES[action], from, at: Date.now() },
@@ -444,10 +446,9 @@ export function MachineModules({
     }
   };
 
-  // Configure wants the module running, and imports what the machine has
-  // first where the hub holds nothing for it yet. On a stopped module it
-  // opens the section and keeps the module stopped. Pressed while its
-  // section is open, it closes the section and asks nothing of the machine.
+  // Configure opens the section, and imports what the machine has first where
+  // the hub holds nothing for it yet. It writes no want. Pressed while its
+  // section is open, it closes the section.
   const configure = async () => {
     if (activeModule === null || activeRow === undefined) {
       return;
@@ -460,10 +461,6 @@ export function MachineModules({
     }
     setBusyAction("configure");
     setActionError(null);
-    const request: DeviceModuleRequest = {
-      device_id: deviceId,
-      module: activeModule,
-    };
     try {
       if (
         !activeRow.is_configured &&
@@ -471,14 +468,6 @@ export function MachineModules({
       ) {
         const imported: DeviceRequest = { device_id: deviceId };
         await apiPost(`/agent/module/${activeModule}/import`, imported);
-      }
-      if (activeRow.want !== WANT_STOPPED) {
-        const answer = await apiPost<DeviceModuleListView>(
-          "/agent/module/start",
-          request,
-        );
-        notePress(activeModule, "configure");
-        modules.setData(answer);
       }
       setConfigured((current) =>
         current.includes(activeModule) ? current : [...current, activeModule],

@@ -35,8 +35,8 @@ import "./containers_run_settings.css";
 /** What an agent older than the module reports for it. */
 const STATE_UNSUPPORTED = "unsupported";
 
-/** The `want` of a module the person stopped. */
-const WANT_STOPPED = "stopped";
+/** The `want` of a module a person pressed Start on. */
+const WANT_RUNNING = "running";
 
 /** The disk limit a Windows machine with none stored starts at, in GiB. */
 const WINDOWS_NEW_DISK_GIB = 100;
@@ -168,7 +168,7 @@ export function ContainersRunSettings({
         isBusy={isBusy || settle.isSettling}
         label={t("ui.containers.run_apply")}
         hint={
-          want === WANT_STOPPED
+          want !== WANT_RUNNING
             ? t("ui.modules.stopped_hint")
             : t("ui.containers.run_apply_hint")
         }

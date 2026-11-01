@@ -16,9 +16,9 @@ import type { PickerOption } from "./picker";
  * uses, from the models the gateway serves, its first row the gateway's
  * first model.
  *
- * A new model rewrites the app's environment and restarts the app. The bar
- * stays busy after its press until the machine reports the module running
- * again, at most two minutes.
+ * While the module runs, a new model rewrites the app's environment and
+ * restarts the app. The bar then stays busy after its press until the machine
+ * reports the module running again, at most two minutes.
  */
 
 interface AyakaleafPanelsProps {
@@ -27,6 +27,9 @@ interface AyakaleafPanelsProps {
   /** Where the module answers: `/agent/module/ayakaleaf`. */
   basePath: string;
   isEditable: boolean;
+  /** What the hub asks of the module: `running`, `stopped`, `installed`, or
+   * empty. */
+  want: string;
 }
 
 /** The form's own field; the machine it is written to is the page's. */
@@ -37,6 +40,9 @@ const GATEWAY_DEFAULT = "";
 
 /** How long the bar waits for the app to run again after a press. */
 const RESTART_HOLD_MS = 2 * 60 * 1000;
+
+/** The want under which a new model restarts the app. */
+const WANT_RUNNING = "running";
 
 /** The press the bar waits on: when it was, and whether the module has read
  * anything but `running` since. */
@@ -49,6 +55,7 @@ export function AyakaleafPanels({
   deviceId,
   basePath,
   isEditable,
+  want,
 }: AyakaleafPanelsProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
@@ -101,6 +108,7 @@ export function AyakaleafPanels({
 
   // An agent older than the module: the picker and the bar stay off.
   const isUnsupported = saved.state === "unsupported";
+  const isRestarted = want === WANT_RUNNING;
   const options: PickerOption[] = [
     { id: GATEWAY_DEFAULT, name: t("ui.ai_tools.gateway_default") },
     ...saved.models.map((model) => ({ id: model, name: model })),
@@ -114,7 +122,9 @@ export function AyakaleafPanels({
       resource.setData(
         await apiPost<AyakaleafDeviceView>(`${basePath}/set`, request),
       );
-      setWait({ at: Date.now(), hasLeftRunning: false });
+      if (isRestarted) {
+        setWait({ at: Date.now(), hasLeftRunning: false });
+      }
     } catch (cause: unknown) {
       setError(describeError(cause));
     } finally {
@@ -147,7 +157,7 @@ export function AyakaleafPanels({
         isBusy={isBusy || wait !== null}
         label={t("ui.ayakaleaf.apply")}
         hint={t("ui.ayakaleaf.model_hint")}
-        warning={t("ui.ayakaleaf.apply_warning")}
+        warning={isRestarted ? t("ui.ayakaleaf.apply_warning") : undefined}
         blockedHint={isEditable ? null : t("ui.modules.agent_offline")}
         isApplyDisabled={isUnsupported}
         error={error}

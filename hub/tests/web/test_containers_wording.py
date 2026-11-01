@@ -151,7 +151,7 @@ def test_the_not_installed_notice_shows_for_an_absent_module_alone(panel, key):
     assert 'const ABSENT_STATE = "absent";' in source
 
 
-def test_the_run_settings_hint_names_the_next_start_while_the_module_is_stopped():
+def test_the_run_settings_hint_names_the_next_start_while_the_module_is_not_running():
     source = RUN_SETTINGS_PATH.read_text(encoding="utf-8")
     bar = source[source.index("<ApplyBar") :]
 
@@ -161,4 +161,4 @@ def test_the_run_settings_hint_names_the_next_start_while_the_module_is_stopped(
         'want === WANT_STOPPED ? t("ui.modules.stopped_hint")'
         ' : t("ui.containers.run_apply_hint")'
     )
-    assert 'const WANT_STOPPED = "stopped";' in source
+    assert 'const WANT_RUNNING = "running";' in source

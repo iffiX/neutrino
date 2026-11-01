@@ -31,7 +31,7 @@ import "./instances_panel.css";
  * One check row per available account; an account checked goes to the end
  * of the order, and the apply bar writes the whole list. While the module
  * reads failed the bar is lit, and its apply with nothing changed tries the
- * module again. A row shows the module's own field of the account, whether
+ * module again. An apply writes no want. A row shows the module's own field of the account, whether
  * its instance runs, and its code's words. The SSH server shows the machine's
  * host key under the rows. The module's words come from its descriptor.
  */
@@ -42,9 +42,8 @@ const STATE_UNSUPPORTED = "unsupported";
 /** The module whose rows end with the machine's host key. */
 const SSH_SERVER_MODULE = "ssh_server";
 
-/** What the apply asks of the module: running, or stopped while it is. */
+/** What an apply on a module the agent carries waits for. */
 const WANT_RUNNING = "running";
-const WANT_STOPPED = "stopped";
 
 /** The words a row's field shows while it is empty and the default holds. */
 const FIELD_DEFAULT_KEYS: Record<string, string> = {
@@ -65,9 +64,11 @@ interface InstancesPanelProps {
   /** Where the module answers: `/agent/module/<module>`. */
   basePath: string;
   isEditable: boolean;
-  /** Whether the module is stopped: an apply keeps it stopped, and the
-   * change takes effect at its next Start. */
-  isStopped: boolean;
+  /** Whether the change takes effect at the module's next Start. */
+  isWaitingForStart: boolean;
+  /** What the hub asks of the module: `running`, `stopped`, `installed`, or
+   * empty. */
+  want: string;
 }
 
 export function InstancesPanel({
@@ -75,7 +76,8 @@ export function InstancesPanel({
   deviceId,
   basePath,
   isEditable,
-  isStopped,
+  isWaitingForStart,
+  want,
 }: InstancesPanelProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
@@ -94,7 +96,7 @@ export function InstancesPanel({
   const [error, setError] = useState<string | null>(null);
   const settle = useSettledApply(
     reportOf(saved),
-    isStopped ? WANT_STOPPED : WANT_RUNNING,
+    isWaitingForStart ? want : WANT_RUNNING,
   );
 
   if (resource.error !== null && saved === null) {
@@ -192,7 +194,9 @@ export function InstancesPanel({
           isBusy={isBusy || settle.isSettling}
           label={t(descriptor.apply)}
           hint={
-            isStopped ? t("ui.modules.stopped_hint") : t(descriptor.applyHint)
+            isWaitingForStart
+              ? t("ui.modules.stopped_hint")
+              : t(descriptor.applyHint)
           }
           blockedHint={isEditable ? null : t("ui.modules.agent_offline")}
           isApplyDisabled={isUnsupported}
