@@ -332,7 +332,7 @@ walk theirs. A new code and its wording are one change.
 | `waiting_for_module` | `{module}` | a task's `wait`, and the `code` of an `installing` row: a `wait_module` or `render` step waiting for the task of a module its module requires | added |
 | `waiting_for_check` | `{seconds}` | a task's `wait`, and the `code` of an `installing` row: a step that checks something outside the agent every `seconds`, 30 | added |
 | `module_needed` | `{module, state}` | the `code` of an `install_failed` or `failed` row: its `wait_module {module}` ended while the required `module` read `state` and not `running`, or while that module's `want` was not `running` in an install ([agent.md](agent.md), "A step that brings up another module") | added |
-| `page_silent` | `{port}` | the `code` of a `stopped` row of a container module, once its page stays silent for 5 minutes behind running containers | added |
+| `page_silent` | `{port}` | the `code` of a `stopped` row of a container module, once its page stays silent for 5 minutes behind running containers, or of a program run as an account, once an instance with no stopped mark stays down for 5 minutes | added |
 | `module_in_use` | `{modules}` | 409 of `module/uninstall`, a module that the installed `modules` require ([agent/module_install.md](agent/module_install.md), "Dependencies") | added |
 | `package_manager_busy` | `{holder}` | the `code` of an `install_failed` or `failed` row: a step whose package helper waited 300 seconds for the system's own lock ([agent.md](agent.md), "The system's own lock") | added |
 | `ayakaleaf_setup_failed` | `{step, detail}` | an Ayakaleaf install whose first-start step failed, `step` being `replica_set`, `admin` or `tex` ([agent/modules/ayakaleaf.md](agent/modules/ayakaleaf.md), "The first start") | added |
@@ -1294,7 +1294,7 @@ from the same facts, whoever installed the software:
 | `installed` | the software is present and the hub has never configured it; `is_active` says whether it runs |
 | `install_failed` | the last install failed with `{code, params}`, whatever it left on the machine |
 | `stopped` | the hub has configured it and the unit is stopped |
-| `running` | the hub has configured it and the unit is active; a `running` or `stopped` row can hold `{code, params}` a module names beside its state, `share_users_unknown {shares}` ([agent/modules/file_share.md](agent/modules/file_share.md)); a `stopped` row of a container module reads `page_silent {port}` once its page stays silent for 5 minutes behind running containers |
+| `running` | the hub has configured it and the unit is active; a `running` or `stopped` row can hold `{code, params}` a module names beside its state, `share_users_unknown {shares}` ([agent/modules/file_share.md](agent/modules/file_share.md)); a `stopped` row of a container module reads `page_silent {port}` once its page stays silent for 5 minutes behind running containers, and of a program run as an account, once an instance with no stopped mark stays down for 5 minutes |
 | `installing`, `uninstalling` | in transit; an `installing` row can hold `{code, params}`, `reboot_required` while a Windows machine owes the restart an install step asked for ([agent.md](agent.md), "Status is typed") |
 | `queued` | in transit: its task has not run its first step, which waits for a step lock, named by `waiting_for_lock {lock, module}` ([agent.md](agent.md), "Step locks") |
 | `failed`, `unsupported` | the last step failed with `{code, params}`; the agent has no runner for this module |

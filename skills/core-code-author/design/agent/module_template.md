@@ -45,6 +45,8 @@ A stopped instance stays stopped across a reboot, and the module's
 **Start** enables it again ([agent.md](../agent.md), "A stopped module stays
 stopped"). Containers' keeper is an account service like the others, so
 Containers' **Stop** keeps the Podman machine stopped across a reboot too.
+An instance with no stopped mark that stays down for 5 minutes reads
+`page_silent {port}`.
 
 A task under an account's login signs the account in with a batch logon,
 and Windows admits that logon only for an account with "Log on as a batch
