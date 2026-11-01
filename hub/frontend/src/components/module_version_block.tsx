@@ -25,7 +25,8 @@ import "./module_version_block.css";
  * A locked version, a module whose version follows the system or its image,
  * shows the same line with Update dead and the dialog holding its one
  * version, which cannot be pressed. A version older than the one installed,
- * on a module that moves its data forward, asks first.
+ * on a module that moves its data forward, asks first. A failed row with no
+ * version reported shows no line, Update dead and the dialog.
  */
 
 const VERSION_PATH = "/agent/module/version";
@@ -72,7 +73,9 @@ export function ModuleVersionBlock({
     ) : null;
   }
 
-  const isNewer = view.newest !== "" && view.newest !== view.installed;
+  const isReported = view.installed !== "";
+  const isNewer =
+    isReported && view.newest !== "" && view.newest !== view.installed;
   const canUpdate = canPress && isNewer && !view.is_locked;
   const canPick = canPress;
 
@@ -117,15 +120,17 @@ export function ModuleVersionBlock({
 
   return (
     <div className="module_version">
-      <span className="module_version_line mono">
-        {t("ui.modules.version_installed", { version: view.installed })}
-        {isNewer && (
-          <span className="faint">
-            {" · "}
-            {t("ui.modules.version_newest", { version: view.newest })}
-          </span>
-        )}
-      </span>
+      {isReported && (
+        <span className="module_version_line mono">
+          {t("ui.modules.version_installed", { version: view.installed })}
+          {isNewer && (
+            <span className="faint">
+              {" · "}
+              {t("ui.modules.version_newest", { version: view.newest })}
+            </span>
+          )}
+        </span>
+      )}
       <span className="module_version_buttons">
         <button
           type="button"

@@ -28,6 +28,7 @@ from fastapi.testclient import TestClient
 from neutrino_hub.modules.devices.manifests import (
     load_module_manifests as shipped_manifests,
 )
+from neutrino_hub.modules.devices.module_releases import ModuleReleaseStore
 from neutrino_hub.web.channel_serve import module_task_label
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.models import ModuleDeviceFields
@@ -165,6 +166,30 @@ def test_a_row_is_what_the_agent_reported_beside_what_the_hub_asks(api):
     assert row["details"] == {"port": 21118}
     assert row["want"] == "running"
     assert row["task_id"] == ""
+
+
+def test_a_failed_row_can_follow_the_tested_version_again(api, tmp_path, monkeypatch):
+    """The way back from a version that failed: the press writes no version,
+    so the next state's recipe is the tested one."""
+    client, runtime = api
+    monkeypatch.setattr(device_modules, "is_locked", lambda manifest, entry: False)
+    runtime.module_releases = ModuleReleaseStore(path=tmp_path / "releases.json")
+    runtime.agent_sessions.online.add(DEVICE)
+    runtime.device_modules[DEVICE] = {
+        "fakedesk": {"state": "failed", "code": "download_failed", "params": {}}
+    }
+    runtime.desired_states.set_want(DEVICE, "fakedesk", "running")
+    runtime.desired_states.set_version(DEVICE, "fakedesk", "1.37.2")
+
+    answer = client.post(
+        f"{MODULE_PATH}/version/set",
+        json={"device_id": DEVICE, "module": "fakedesk", "version": ""},
+    )
+
+    assert answer.status_code == 200
+    assert answer.json()["chosen"] == ""
+    assert modules_file(tmp_path)["fakedesk"]["version"] == ""
+    assert modules_file(tmp_path)["fakedesk"]["want"] == "running"
 
 
 def test_a_row_s_version_is_the_one_its_reported_details_name(api):

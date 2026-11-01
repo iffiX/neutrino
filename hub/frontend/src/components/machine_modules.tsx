@@ -761,15 +761,16 @@ export function MachineModules({
                   manifestTitles={manifestTitles}
                 />
               )}
-              {isPresent && !isCarriedRow && (
-                <ModuleVersionBlock
-                  key={activeRow.name}
-                  deviceId={deviceId}
-                  module={activeRow.name}
-                  title={moduleTitle(activeRow.name, activeRow.title)}
-                  canPress={isAgentOnline && !isInTransit}
-                />
-              )}
+              {(isPresent || FAILED_STATES.includes(activeRow.state)) &&
+                !isCarriedRow && (
+                  <ModuleVersionBlock
+                    key={activeRow.name}
+                    deviceId={deviceId}
+                    module={activeRow.name}
+                    title={moduleTitle(activeRow.name, activeRow.title)}
+                    canPress={isAgentOnline && !isInTransit}
+                  />
+                )}
               {!isAgentOnline && (
                 <div className="notice notice--warn">
                   <Icon name="alert" size={15} />
