@@ -529,6 +529,22 @@ machine's system.
 | `hermes_webui` | yes | The conversations, settings and workspace files are deleted and cannot be recovered. | 对话、设置和工作区里的文件都会删除，无法恢复。 |
 | `ayakaleaf` | yes | The papers and projects are deleted and cannot be recovered. | 论文和项目都会删除，无法恢复。 |
 
+## The Cancel of a first install's words
+
+While a module's first install runs, **Install** reads **Cancel**
+([ui_behavior.md](ui_behavior.md), "The machine page"). The keys are in
+`locales/<language>/modules.json`. The line under the dialog's body is the
+module's own `uninstall_data` line above.
+
+| Key | English | Chinese |
+| --- | --- | --- |
+| `ui.modules.cancel`, on the tab | Cancel | 取消 |
+| `ui.modules.cancelling`, on the tab, disabled | Cancelling | 正在取消 |
+| `ui.modules.cancel_title` | Cancel the install of {module} on {device} | 取消在 {device} 上安装 {module} |
+| `ui.modules.cancel_body` | The running step ends first, no further step runs, and what the install left is removed. | 正在运行的这一步先走完，之后的步骤不再运行，安装留下的内容都会移除。 |
+| `ui.modules.cancel_confirm`, the button that cancels | Cancel install | 取消安装 |
+| `ui.modules.cancel_keep`, the button that closes the dialog | Keep installing | 继续安装 |
+
 ## The Terminal and Remote desktop tabs' words
 
 The tabs' names are the module titles of "Names that are fixed":

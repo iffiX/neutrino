@@ -166,7 +166,7 @@ only while the device reports it running.
 
 **An uninstall stops what still installs before it deletes anything.**
 
-| System | An **Uninstall** pressed during npm |
+| System | An **Uninstall** or a **Cancel** pressed during npm |
 | --- | --- |
 | Windows | npm is a task the step checks, so the uninstall starts at once. It ends the process tree of each install task, whose root's command line names the script, unregisters the task and releases its batch logon right. Windows refuses to delete `node.exe` for a moment after its process ended, so the uninstall deletes the module's directory again, once a second for at most 30 seconds. In the lab the row read `absent` 20 and 25 seconds after the press. An uninstall that left npm running ended `uninstall_unconfirmed` in 6 seconds. |
 | Linux | npm's step blocks the task, and "No button cancels a step" ([agent.md](../../agent.md), "A newer entry while a task runs"): the uninstall waits for npm's end, 2 to 3.5 minutes in the lab and at most 30, and the row reads `installing` until then. The uninstall stops every `neutrino_cloudcli_install_*.service` first, since one outlives an agent that restarted during npm: pressed before such a restart, the row read `absent` 3 seconds after the agent came back. |

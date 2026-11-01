@@ -221,9 +221,9 @@ the API returns.
 
 The confirming button is `button--primary` and wears the action's verb; the red
 is spent on the button that opened the dialog, not on the one that closes it.
-A module's **Uninstall** whose data goes with it is the one exception: its
-line is red and its confirming button is `button--danger` ("The machine
-page").
+A module's **Uninstall** whose data goes with it, and the **Cancel** of such a
+module's first install, are the one exception: the line is red and the
+confirming button is `button--danger` ("The machine page").
 
 Settings are not confirmed here. A group of them ends in an apply bar, and the
 bar's `warning` is where its cost is stated. Deleting data that cannot be
@@ -896,6 +896,7 @@ A module the machine reports `queued` is in transit, as `installing` and
 reports another state, and the tab names what it waits for by the row's
 code ([agent.md](agent.md), "Step locks"). Every button of a module's tab is
 also disabled while its row's `task` runs, a configure task's among them.
+The **Cancel** of a first install, below, is the one exception to both.
 After a press, the tab's optimistic step holds until the machine reports the
 module in a state other than the one it showed at the press, at most two
 minutes.
@@ -928,11 +929,30 @@ code's words as a `failed` module does. **Install** and **Uninstall** are
 live, and **Start**, **Stop** and **Configure** are not:
 **Install** runs the install again, and **Uninstall** removes what the
 install left ([agent.md](agent.md), "An install that fails ends
-install_failed"). No module has a **Cancel** button.
+install_failed"). That install has ended, so the row has no **Cancel**.
+
+While a module's first install runs, **Install** reads **Cancel**
+(`ui.modules.cancel`) in the same place, in `button--danger`, the tier of a
+button that removes something ([visual.md](visual.md), "Colour carries one
+meaning each"). A first install is a row reading `installing` or `queued`
+whose `task` runs and whose plan holds a `verify` step. The row names no kind
+of plan, and only an install plan holds `verify` ([agent.md](agent.md), "The
+steps"). Every module has this one behaviour:
+
+| Rule | Reason |
+| --- | --- |
+| **Cancel** shows while the task waits for a step lock or a required module, and on a `reboot_required` row beside **Restart now**. A Cancel restarts nothing, and the Windows features stay on, as an uninstall leaves them. | An install that waits is one a person can leave. |
+| A version switch, and any task on a module already installed, shows no **Cancel**, and its buttons stay disabled. | The machine holds the module's data then. |
+| **Cancel** asks through `useConfirm`: the title `ui.modules.cancel_title`, the body `ui.modules.cancel_body`, under it the row's `uninstall_data` line, and the buttons `ui.modules.cancel_confirm` and `ui.modules.cancel_keep`. The line's tone and the confirming button follow `is_deleted`, as in the **Uninstall** table below. Escape and the backdrop keep installing. | Two buttons that both read as cancelling leave the person guessing, and outside a dialog means cancel the dialog. |
+| The confirming button sends `POST /api/agent/module/uninstall`, the route and the `want` of **Uninstall**. The running step ends as it would, no further step runs, and the new plan removes what the install left ([agent.md](agent.md), "A newer entry while a task runs"). | **Cancel** waits for the running step, since a step cut in the middle leaves its work half done. |
+| A row whose `want` is `absent` while its first install still runs reads `ui.modules.cancelling` on the same button, disabled. The page reads this from the row, and a reload shows it. | A press's memory ends with the page. |
+| The step list follows the report until the row reads `absent`. The new plan's one `uninstall` step reads as any uninstall on the row, so a page that showed `ui.modules.cancelling` keeps it until the uninstall ends, and a page opened during that step shows any uninstall's buttons. | The row names no first install once the plan is the uninstall. |
+| **Uninstall** is disabled while a first install runs. | Before the install ends, **Cancel** is what removes it. |
+| A **Cancel** of a module leaves the modules it requires as they are. A **Cancel** of a module that another module whose `want` is not `absent` requires is refused `module_in_use {modules}`, as an **Uninstall** of it is. The words show as a notice under the buttons, and **Cancel** stays live. | The other module's task waits for it, and a Containers started for a container module may serve others. |
 
 A module reported `installing` with a code shows the code's words under its
 waiting step, `reboot_required` excepted, and its buttons stay disabled as
-for any module in transit. A
+for any module in transit, the **Cancel** of a first install excepted. A
 module reported `absent` with a code shows the code's words as a notice at
 the top of its tab, and its buttons are those of any `absent` module. A
 `reboot_required` row shows the same notice with **Restart now**
