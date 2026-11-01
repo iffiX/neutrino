@@ -8,7 +8,7 @@ A window and a tray icon on Linux, Windows or macOS make up the desktop client. 
 
 ## Hubs
 
-The window, titled **Neutrino Client**, has a sidebar with **Hubs**, **Web**, **Ports**, **AI**, **Files**, **Terminals** and **Remote desktops**, then **Settings** under a rule. The **Hubs** page holds one row per hub: its name, its state line, its address and the package it runs.
+The window, titled **Neutrino client**, has a sidebar with **Hubs**, **Web**, **Ports**, **AI**, **Files**, **Terminals** and **Remote desktops**, then **Settings** under a rule. The **Hubs** page holds one row per hub: its name, its state line, its address and the package it runs.
 
 The **↻** button at the top right refreshes every hub, and each row reads **Refreshing…** until the hub's new state arrives. For a hub that is not connected, a refresh starts a new connection attempt at once. A row reading **Replaced by another client** or **Disabled by the hub** stays as it is.
 
