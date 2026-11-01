@@ -160,7 +160,8 @@ pulled, so Containers read `stopped`.
 A module installed is a service: **Start** starts it and **Stop** stops it,
 whatever instances it has. An account, a share, a setting and **Configure**
 never start one. Terminal, Remote desktop and the SSH server have no **Start**
-or **Stop**: their panel's apply runs them.
+or **Stop**: their panel's apply runs them. **Install** on a module that
+requires another starts that one too, since its install needs it running.
 
 **A stopped module stays stopped.** A module's **Stop** keeps what it
 stopped from starting again at the next boot, and its **Start** undoes
