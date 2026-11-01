@@ -2,9 +2,11 @@
 
 A publisher's new release is no write anybody makes on the hub, so nothing
 else would list it. This reads every manifest's feeds through the fetcher,
-once at the panel's start and then every ``DEVICE_MODULE_RELEASES_INTERVAL_S``,
-into the module releases store the version routes read (module_install.md,
-"Module versions"). A read that fails leaves the last list.
+every ``DEVICE_MODULE_RELEASES_INTERVAL_S``, into the module releases store the
+version routes read (module_install.md, "Module versions"). A panel's start
+reads only when the store lists no version or its last good read is that old,
+and otherwise waits out what is left of it. A read that fails leaves the last
+list.
 """
 
 import logging
@@ -34,6 +36,7 @@ class PanelReleaseSampler:
                 makes one.
             interval_s: Seconds between reads.
         """
+        self._store = store
         self._reader = ModuleReleaseReader(
             fetcher=fetcher if fetcher is not None else SourceFetcher(), store=store
         )
@@ -68,6 +71,7 @@ class PanelReleaseSampler:
         return True
 
     def _loop(self) -> None:
-        while not self._is_stopped.is_set():
+        wait_s = self._store.seconds_until_due(self._interval_s)
+        while not self._is_stopped.wait(wait_s):
             self.read_once()
-            self._is_stopped.wait(self._interval_s)
+            wait_s = self._interval_s

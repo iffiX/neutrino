@@ -293,6 +293,52 @@ def test_a_feed_that_failed_is_read_and_warned_of_once_in_one_read(
     ]
 
 
+def app_manifest() -> dict:
+    """A module whose one entry reads one GitHub feed."""
+    feed = {
+        "kind": "github",
+        "sources": ["https://api.github.com"],
+        "repository": REPOSITORY,
+        "tag": "v{version}",
+    }
+    entry = {
+        "runner": "app",
+        "install": {
+            "method": "hub",
+            "params": {"version": "1.2.0", "releases": [feed], "artifacts": []},
+        },
+    }
+    return {"name": "app", "platforms": {"linux": entry}}
+
+
+def test_a_read_in_which_no_feed_answers_leaves_the_last_good_read_and_its_list(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(
+        module_releases, "load_module_manifests", lambda: {"app": app_manifest()}
+    )
+    store = ModuleReleaseStore(path=tmp_path / "module_releases.json")
+    listed = {"app": {"linux": [{"version": "1.2.0", "artifacts": {}}]}}
+    store.replace(listed, read_at="2026-10-30T01:02:03+00:00")
+
+    ModuleReleaseReader(fetcher=RefusingFeed(), store=store).read()
+
+    assert store.read_at() == "2026-10-30T01:02:03+00:00"
+    assert store.listed_by_key("app", "linux") == listed["app"]["linux"]
+
+
+def test_a_first_read_in_which_no_feed_answers_writes_no_time(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        module_releases, "load_module_manifests", lambda: {"app": app_manifest()}
+    )
+    store = ModuleReleaseStore(path=tmp_path / "module_releases.json")
+
+    ModuleReleaseReader(fetcher=RefusingFeed(), store=store).read()
+
+    assert store.read_at() == ""
+    assert store.seconds_until_due(100.0) == 0.0
+
+
 def test_an_index_digest_is_the_sha256_of_the_bytes_served():
     body = index("2.0.0")
 

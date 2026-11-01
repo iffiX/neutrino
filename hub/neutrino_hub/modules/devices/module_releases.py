@@ -310,6 +310,31 @@ class ModuleReleaseStore:
         """When the feeds were last read, in ISO 8601; empty before the first."""
         return str(self._read().get("read_at", "") or "")
 
+    def seconds_until_due(self, interval_s: float) -> float:
+        """How long until the feeds are to be read again.
+
+        Args:
+            interval_s: The seconds between reads.
+
+        Returns:
+            0 while the store lists no version or its last read is
+            ``interval_s`` old or has no readable time; else what is left,
+            ``interval_s`` at most.
+        """
+        held = self._read()
+        modules = held.get("modules")
+        if not isinstance(modules, dict) or not any(
+            isinstance(entries, dict) and any(entries.values())
+            for entries in modules.values()
+        ):
+            return 0.0
+        try:
+            read_at = datetime.fromisoformat(str(held.get("read_at", "") or ""))
+            age_s = (datetime.now(timezone.utc) - read_at).total_seconds()
+        except (TypeError, ValueError):
+            return 0.0
+        return max(0.0, min(interval_s - age_s, interval_s))
+
     def listed(self, module: str, platform: dict) -> list:
         """The versions the feeds listed for one module on one platform.
 
@@ -487,15 +512,18 @@ class ModuleReleaseReader:
         """Read every feed once and write what it listed.
 
         An entry whose feeds cannot be read keeps nothing new; the store is
-        written with every entry that read, the others as they were.
+        written with every entry that read, the others as they were. A read
+        in which no entry read writes nothing, so the time of the last good
+        read stands.
 
         Returns:
-            Module to platform key to its version list, as written.
+            Module to platform key to its version list, as kept.
         """
         previous = self._store._read().get("modules") or {}
         self._answers = {}
         modules: dict = {}
         warned: set = set()
+        is_any_read = False
         for name, manifest in load_module_manifests().items():
             for platform_key, entry in (manifest.get("platforms") or {}).items():
                 if is_locked(manifest, entry):
@@ -512,7 +540,9 @@ class ModuleReleaseReader:
                         modules.setdefault(name, {})[platform_key] = kept
                     continue
                 modules.setdefault(name, {})[platform_key] = listed
-        self._store.replace(modules)
+                is_any_read = True
+        if is_any_read:
+            self._store.replace(modules)
         return modules
 
     def read_entry(self, manifest: dict, entry: dict) -> list:
