@@ -98,8 +98,8 @@ def test_the_account_layer_s_apply_bar_shows_it_and_waits_for_the_want_it_has():
         ": t(descriptor.applyHint) }" in panel
     )
     assert (
-        "useSettledApply( reportOf(saved), isWaitingForStart ? want : WANT_RUNNING, )"
-        in panel
+        "useSettledApply( reportOf(saved, descriptor), "
+        "isWaitingForStart ? want : WANT_RUNNING, )" in panel
     )
 
 

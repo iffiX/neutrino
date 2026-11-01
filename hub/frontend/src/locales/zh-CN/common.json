@@ -9,6 +9,7 @@
   "state.no_address": "无地址",
   "state.not_used": "未使用",
   "state.nothing": "无",
+  "state.ready": "可用",
   "state.running": "运行中",
   "state.running_no_accounts": "运行中，没有账户",
   "state.stopped": "已停止",

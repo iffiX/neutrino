@@ -27,6 +27,8 @@ export interface ModuleDescriptor {
    * and the same once the machine reports the installed `{version}`. */
   ownerNotice?: string;
   ownerNoticeVersion?: string;
+  /** Whether the module runs no program until a person opens one. */
+  isWithoutProgram?: boolean;
 }
 
 export const MODULE_DESCRIPTORS: Record<string, ModuleDescriptor> = {
@@ -43,6 +45,7 @@ export const MODULE_DESCRIPTORS: Record<string, ModuleDescriptor> = {
     apply: "ui.terminal_module.apply",
     applyHint: "ui.terminal_module.apply_hint",
     field: "shell_path",
+    isWithoutProgram: true,
   },
   ssh_server: {
     name: "ssh_server",

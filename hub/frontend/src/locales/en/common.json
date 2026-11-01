@@ -9,6 +9,7 @@
   "state.no_address": "no address",
   "state.not_used": "not used",
   "state.nothing": "nothing",
+  "state.ready": "ready",
   "state.running": "running",
   "state.running_no_accounts": "running, no accounts",
   "state.stopped": "stopped",

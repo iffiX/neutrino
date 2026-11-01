@@ -39,6 +39,9 @@ import "./instances_panel.css";
 /** What an agent older than the module reports for it. */
 const STATE_UNSUPPORTED = "unsupported";
 
+/** What a module that runs reports. */
+const STATE_RUNNING = "running";
+
 /** The module whose rows end with the machine's host key. */
 const SSH_SERVER_MODULE = "ssh_server";
 
@@ -95,7 +98,7 @@ export function InstancesPanel({
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const settle = useSettledApply(
-    reportOf(saved),
+    reportOf(saved, descriptor),
     isWaitingForStart ? want : WANT_RUNNING,
   );
 
@@ -109,6 +112,8 @@ export function InstancesPanel({
   const isUnsupported = saved.state === STATE_UNSUPPORTED;
   const isLocked = !isEditable || isUnsupported;
   const isPending = isDirty || FAILED_STATES.includes(saved.state);
+  const isReady =
+    descriptor.isWithoutProgram === true && saved.state === STATE_RUNNING;
   const version = saved.version ?? "";
 
   const toggle = (account: string, isOn: boolean) => {
@@ -144,7 +149,7 @@ export function InstancesPanel({
     }
   };
 
-  const report = reportOf(saved);
+  const report = reportOf(saved, descriptor);
   return (
     <>
       {descriptor.ownerNotice !== undefined && (
@@ -172,6 +177,7 @@ export function InstancesPanel({
                 key={row.account}
                 row={row}
                 descriptor={descriptor}
+                isReady={isReady}
                 isChecked={draft.accounts.includes(row.account)}
                 isDisabled={isLocked}
                 onToggle={(isOn) => {
@@ -222,6 +228,8 @@ export function InstancesPanel({
 interface AccountRowProps {
   row: EnabledAccountView;
   descriptor: ModuleDescriptor;
+  /** Whether the row shows `state.ready` in place of its running dot. */
+  isReady: boolean;
   isChecked: boolean;
   isDisabled: boolean;
   onToggle: (isOn: boolean) => void;
@@ -231,6 +239,7 @@ interface AccountRowProps {
 function AccountRow({
   row,
   descriptor,
+  isReady,
   isChecked,
   isDisabled,
   onToggle,
@@ -259,12 +268,15 @@ function AccountRow({
           )}
         </span>
       )}
-      {row.is_enabled && (
-        <StatusDot
-          tone={row.is_running ? "ok" : "idle"}
-          label={t(row.is_running ? "state.running" : "state.stopped")}
-        />
-      )}
+      {row.is_enabled &&
+        (isReady ? (
+          <StatusDot tone="ok" label={t("state.ready")} isPulsing={false} />
+        ) : (
+          <StatusDot
+            tone={row.is_running ? "ok" : "idle"}
+            label={t(row.is_running ? "state.running" : "state.stopped")}
+          />
+        ))}
       {row.code !== "" && (
         <span className="field_error instances_row_error">
           {describeCode(row)}
@@ -283,8 +295,12 @@ function draftOf(view: EnabledAccountsView): EnabledDraft {
   };
 }
 
-/** The module as an apply waits on it: its state and its enabled rows. */
-function reportOf(view: EnabledAccountsView | null): ReportedModule | null {
+/** The module as an apply waits on it: its state and its enabled rows. A
+ * module without a program waits for its state alone. */
+function reportOf(
+  view: EnabledAccountsView | null,
+  descriptor: ModuleDescriptor,
+): ReportedModule | null {
   if (view === null) {
     return null;
   }
@@ -292,7 +308,10 @@ function reportOf(view: EnabledAccountsView | null): ReportedModule | null {
     state: view.state,
     instances: view.accounts
       .filter((row) => row.is_enabled)
-      .map((row) => ({ is_running: row.is_running, code: row.code })),
+      .map((row) => ({
+        is_running: row.is_running || descriptor.isWithoutProgram === true,
+        code: row.code,
+      })),
   };
 }
 
