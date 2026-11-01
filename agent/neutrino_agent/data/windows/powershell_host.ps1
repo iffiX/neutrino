@@ -515,6 +515,7 @@ function Get-NeutrinoShareServer($Request) {
 # Stops the SMB server and every service that depends on it, and disables it.
 # Answers the names of those services that ran.
 function Stop-NeutrinoShareServer {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'Request')]
     [CmdletBinding(SupportsShouldProcess = $true)]
     [OutputType([hashtable])]
     param($Request)
