@@ -176,7 +176,13 @@ An account's app directory stays, with the rest of its own data, and the next
 install's first attempt cleans it.
 
 **The agent's forwarder stands in front of CloudCLI.** CloudCLI listens on
-loopback alone. A thin HTTP forwarder of the agent's listens on
+loopback alone, at the port the agent picks for `SERVER_PORT` at the instance's
+first start and keeps in the instance's record. The agent picks it from 15000
+up, past the ports any module keeps. A start picks again when the system
+refuses the kept port, as Windows does for a port it reserved at boot, and an
+instance that does not run at such a port plans a configure task, with no
+press. A kept port the system accepts stays, whatever its number and whoever
+listens on it. A thin HTTP forwarder of the agent's listens on
 `127.0.0.1` at the instance's port, where the agent's end of a `connect`
 stream reaches it. The hub generates each
 instance's password and keeps it in its vault; on CloudCLI's first start the

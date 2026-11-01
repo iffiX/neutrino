@@ -74,8 +74,12 @@ port from the instance's environment as `${NEUTRINO_SIYUAN_WORKSPACE}`,
 
 `<resources>` is `app/resources` under the module's directory on Linux and
 Windows and `app` on macOS. `<kernel port>` is a free loopback port the agent
-picks at the instance's first start and keeps in the instance's record; the instance's port is the
-forwarder's. The kernel reads one variable, `SIYUAN_ACCESS_AUTH_CODE`, the
+picks at the instance's first start, from 15000 up past the ports any module
+keeps, and keeps in the instance's record; the instance's port is the
+forwarder's. A start picks again when the system refuses the kept port, as
+Windows does for a port it reserved at boot, and an instance that does not run
+at such a port plans a configure task, with no press. A kept port the system
+accepts stays, whatever its number and whoever listens on it. The kernel reads one variable, `SIYUAN_ACCESS_AUTH_CODE`, the
 instance's access code, from the service's environment, which the layer
 writes root-only as it writes Codeg's token. The entry's `verify` is the
 kernel with `--version`, which prints `SiYuan-Kernel version <version>` and

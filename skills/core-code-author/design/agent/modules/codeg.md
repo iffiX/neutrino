@@ -37,7 +37,7 @@ layer ([module_template.md](../module_template.md), "The run"):
 | Variable | Value |
 | --- | --- |
 | `CODEG_HOST` | `127.0.0.1` |
-| `CODEG_PORT` | an internal loopback port the agent picks and records in the instance's record; the instance's port is the forwarder's |
+| `CODEG_PORT` | an internal loopback port the agent picks from 15000 up, past the ports any module keeps, and records in the instance's record; the instance's port is the forwarder's. A start picks again when the system refuses the kept port, as Windows does for a port it reserved at boot, and an instance that does not run at such a port plans a configure task, with no press. A kept port the system accepts stays, whatever its number and whoever listens on it |
 | `CODEG_TOKEN` | derived from the instance's secret, `base64url(HMAC-SHA256(secret, label))`, `label` a fixed string in the module's `constants.py` |
 | `CODEG_DATA_DIR` | the data directory |
 | `CODEG_STATIC_DIR` | `web/` inside the server artifact's directory |
