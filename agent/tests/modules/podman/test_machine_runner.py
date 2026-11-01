@@ -1936,7 +1936,7 @@ def test_the_machine_gets_the_hub_containers_whose_images_its_store_holds(
             {"pypi": ["PIP_INDEX_URL"]},
         ),
     )
-    rig.runner._page_ports._pick = lambda: 40999
+    rig.runner._page_ports._pick = lambda taken: 40999
     rig.keep_image()
 
     rig.runner.apply(HUB_CONFIG)
@@ -1960,6 +1960,50 @@ def test_the_machine_gets_the_hub_containers_whose_images_its_store_holds(
     assert rig.make_runner().hub_names() == {"demo": ["neutrino_demo"]}
 
 
+def test_a_render_after_a_boot_that_reserved_a_page_port_publishes_a_new_port(
+    rig, monkeypatch
+):
+    monkeypatch.setattr(
+        machine_runner_module,
+        "image_references",
+        lambda *, podman: {"ghcr.io/acme/demo@" + HUB_DIGEST},
+    )
+    monkeypatch.setattr(
+        machine_runner_module, "ensure_network", lambda name, *, podman: False
+    )
+    monkeypatch.setattr(
+        machine_runner_module, "fastest_sources", lambda names, sets: ({}, {})
+    )
+    rendered = PodmanConfig.from_dict(HUB_CONFIG)
+
+    def script_at(port: int) -> str:
+        return PodmanMachineScriptRenderer(
+            config=rendered.with_hub_containers(rendered.hub_containers[:1]),
+            os_name="darwin",
+            context=PodmanRenderContext(
+                images={"neutrino_demo": "ghcr.io/acme/demo@" + HUB_DIGEST},
+                page_ports={"neutrino_demo": port},
+            ),
+        ).render()
+
+    rig.runner._page_ports._pick = lambda taken: 64586
+    rig.runner._page_ports._is_refused = lambda port: False
+    rig.keep_image()
+    rig.runner.apply(HUB_CONFIG)
+    assert rig.world.scripts[-1][2] == script_at(64586)
+
+    rig.runner._page_ports._is_refused = {64586}.__contains__
+    rig.runner._page_ports._pick = lambda taken: 15000
+    assert rig.runner.refused_page_ports("demo") == [64586]
+
+    rig.runner.apply(HUB_CONFIG)
+
+    assert rig.world.scripts[-1][2] == script_at(15000)
+    assert rig.runner.page_port("demo", "neutrino_demo") == 15000
+    assert rig.runner.page_ports("demo") == {"neutrino_demo": 15000}
+    assert rig.runner.refused_page_ports("demo") == []
+
+
 def test_a_module_s_containers_are_applied_once_the_root_script_wrote_them(
     rig, monkeypatch
 ):
@@ -1974,7 +2018,7 @@ def test_a_module_s_containers_are_applied_once_the_root_script_wrote_them(
     monkeypatch.setattr(
         machine_runner_module, "fastest_sources", lambda names, sets: ({}, {})
     )
-    rig.runner._page_ports._pick = lambda: 40999
+    rig.runner._page_ports._pick = lambda taken: 40999
     rig.keep_image()
     changed = json.loads(json.dumps(HUB_CONFIG))
     changed["hub_containers"][0]["environment"] = ["COOKIE_NAME=new"]

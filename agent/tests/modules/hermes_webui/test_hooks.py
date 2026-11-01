@@ -476,6 +476,19 @@ def test_the_first_install_and_the_same_version_again_reset_nothing(box):
     assert box.podman.calls == []
 
 
+def test_a_start_after_containers_moved_the_port_serves_the_new_port(box):
+    assert box.hooks.upstream_port() == 0
+    box.hooks.apply(CONFIG)
+    box.hooks.start()
+    assert box.hooks.upstream_port() == 41234
+
+    box.containers.upstream = 15000
+    box.hooks.start()
+
+    assert box.hooks.upstream_port() == 15000
+    assert box.forwarders[-1].record["upstream_port"] == 15000
+
+
 def test_running_is_health_answering_200_at_the_published_port(box):
     box.hooks.apply(CONFIG)
     with pytest.raises(ModuleInstallPending):

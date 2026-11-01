@@ -3,7 +3,8 @@
 A hub container whose module has a page publishes its ``page_port`` on
 ``127.0.0.1`` at a port the agent picks the first time and keeps, so the
 container's file stays the same across applies, and the module's forwarder
-reads the same port. The record is ``page_ports.json`` in the module's
+reads the same port. A port the system refuses after a boot is picked again
+at the next render. The record is ``page_ports.json`` in the module's
 directory under the state root, root-only: one port per container name.
 
 Not pure: binds a socket and writes files.
@@ -16,42 +17,54 @@ from __future__ import annotations
 import contextlib
 import json
 import os
-import socket
 import tempfile
 import threading
 
 from neutrino_agent.modules.podman.constants import (
-    PODMAN_PAGE_ADDRESS,
+    PODMAN_PAGE_PORT_BASE,
     PODMAN_PAGE_PORTS_NAME,
 )
+from neutrino_agent.modules.shared.loopback_port import is_port_refused, pick_port
 
 
-def free_loopback_port() -> int:
-    """A TCP port nothing listens on at ``127.0.0.1`` now.
+def free_loopback_port(taken=()) -> int:
+    """A TCP port nothing listens on at ``127.0.0.1`` now, below the dynamic ports.
+
+    Args:
+        taken: Ports kept for other containers, which may not listen yet.
 
     Returns:
-        The port the system hands a socket bound to port 0.
+        The first free port from ``PODMAN_PAGE_PORT_BASE`` up.
 
     Raises:
-        OSError: When no socket can be bound.
+        OSError: When no port from there up is free.
     """
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
-        probe.bind((PODMAN_PAGE_ADDRESS, 0))
-        return int(probe.getsockname()[1])
+    return pick_port(PODMAN_PAGE_PORT_BASE, taken=taken)
 
 
 class PodmanPagePortStore:
     """The picked page ports of every container module, one record per module."""
 
-    def __init__(self, *, directory: str, pick=free_loopback_port):
+    def __init__(
+        self,
+        *,
+        directory: str,
+        pick=free_loopback_port,
+        is_refused=is_port_refused,
+        log=print,
+    ):
         """
         Args:
             directory: The state root; each module's record is in its own
                 directory under it.
-            pick: Returns a free loopback port.
+            pick: Returns a free loopback port, given the ports kept already.
+            is_refused: Answers whether the system refuses a port now.
+            log: Called with the line of a port picked again.
         """
         self._directory = directory
         self._pick = pick
+        self._is_refused = is_refused
+        self._log = log
         self._lock = threading.Lock()
 
     def ports(self, module: str) -> dict:
@@ -94,9 +107,49 @@ class PodmanPagePortStore:
             held = self.ports(module)
             if name in held:
                 return held[name]
-            held[name] = self._pick()
+            held[name] = self._pick(self._kept_ports())
             self._write(module, held)
             return held[name]
+
+    def rendered_port_for(self, module: str, name: str) -> int:
+        """The port a render publishes one container's page at, picked again when refused.
+
+        Args:
+            module: The container module.
+            name: The hub container.
+
+        Returns:
+            The kept port while the system accepts it, or a free one just
+            picked and kept.
+
+        Raises:
+            OSError: When no port can be picked or the record cannot be
+                written.
+        """
+        with self._lock:
+            held = self.ports(module)
+            kept = held.get(name, 0)
+            if kept and not self._is_refused(kept):
+                return kept
+            held[name] = self._pick(self._kept_ports())
+            self._write(module, held)
+        if kept:
+            self._log(
+                f"podman: the system refuses port {kept} of {name}, "
+                f"published at {held[name]} now"
+            )
+        return held[name]
+
+    def refused_ports(self, module: str) -> list:
+        """The ports one module keeps that the system refuses now.
+
+        Args:
+            module: The container module.
+
+        Returns:
+            The refused ports, in the record's order.
+        """
+        return [port for port in self.ports(module).values() if self._is_refused(port)]
 
     def remove(self, module: str) -> None:
         """Forget one module's ports, with its directory when nothing else is in it.
@@ -109,6 +162,17 @@ class PodmanPagePortStore:
                 os.unlink(self._path(module))
             with contextlib.suppress(OSError):
                 os.rmdir(os.path.dirname(self._path(module)))
+
+    def _kept_ports(self) -> set:
+        """Every port kept for a container of any module."""
+        try:
+            modules = os.listdir(self._directory)
+        except OSError:
+            return set()
+        kept: set = set()
+        for module in modules:
+            kept.update(self.ports(module).values())
+        return kept
 
     def _write(self, module: str, held: dict) -> None:
         """Keep one module's ports whole, mode 0600, in a directory of mode 0700."""

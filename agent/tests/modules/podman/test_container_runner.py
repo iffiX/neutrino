@@ -14,6 +14,7 @@ from neutrino_agent.modules.podman.container_runner import (
     ContainerModuleRunner,
     recipe_images,
 )
+from neutrino_agent.modules.shared.base import ModuleStep
 from neutrino_agent.modules.shared.source_fetch import SourceProbe
 from neutrino_agent.modules.shared.subprocess_run import CommandResult
 from neutrino_agent.platforms.base import AgentPlatform
@@ -59,9 +60,18 @@ class FakeContainers:
         self.is_awake = False
         # Whether the engine was held awake at each drop.
         self.awake_at_drop: list = []
+        # The module's kept page ports by container, and the refused ones.
+        self.kept_pages: dict = {}
+        self.refused_pages: list = []
 
     def podman_command(self):
         return self.command
+
+    def page_ports(self, module):
+        return dict(self.kept_pages)
+
+    def refused_page_ports(self, module):
+        return list(self.refused_pages)
 
     def hub_names(self):
         return dict(self.names)
@@ -174,6 +184,160 @@ def runner_for(containers, podman, probe_one=None, lines=None):
         probe_one=probe_one or answering({}),
         run_command=podman,
     )
+
+
+class PagedHooks(ContainerHooks):
+    """A module with a page: its check's answer, and the port its record names."""
+
+    answers = False
+    port = 64586
+
+    def is_running(self):
+        return type(self).answers
+
+    def upstream_port(self):
+        return type(self).port
+
+
+@pytest.fixture
+def paged(store, monkeypatch):
+    """A running module with a page, its asks for a configure task and its clock."""
+    PagedHooks.answers = False
+    PagedHooks.port = 64586
+    monkeypatch.setitem(
+        container_runner_module.CONTAINER_MODULE_HOOKS, "demo", PagedHooks
+    )
+    containers = FakeContainers(hub_names={"demo": ["neutrino_demo"]})
+    containers.kept_pages = {"neutrino_demo": 64586}
+    runner = runner_for(containers, FakePodman(running=["neutrino_demo"]))
+    asks: list = []
+    runner.bind_configure_asker(functools.partial(asks.append, "demo"))
+    now = [1000.0]
+    runner._clock = functools.partial(now.__getitem__, 0)
+    return runner, containers, asks, now
+
+
+def start_plan(runner) -> list:
+    steps = [
+        ModuleStep(name="configure", run=None),
+        ModuleStep(name="start", run=None),
+    ]
+    return [step.name for step in runner.configure_steps({}, "running", steps)]
+
+
+def test_a_start_renders_first_while_the_system_refuses_a_kept_port(paged):
+    runner, containers, _, _ = paged
+
+    assert start_plan(runner) == ["start"]
+
+    containers.refused_pages = [64586]
+
+    assert start_plan(runner) == ["render", "start"]
+
+
+def test_the_render_step_asks_containers_for_a_configure_task(paged):
+    runner, containers, _, _ = paged
+    containers.refused_pages = [64586]
+    asked: list = []
+
+    class Context:
+        def render_containers(self):
+            asked.append("render")
+
+    steps = [ModuleStep(name="start", run=None)]
+    planned = runner.configure_steps({}, "running", steps)
+    planned[0].run(Context())
+
+    assert asked == ["render"]
+
+
+def test_a_refused_port_behind_running_containers_asks_for_one_configure_task(paged):
+    runner, containers, asks, _ = paged
+    containers.refused_pages = [64586]
+
+    runner.is_active()
+    runner.is_active()
+    runner.is_active()
+
+    assert asks == ["demo"]
+
+
+def test_a_port_containers_moved_asks_for_one_configure_task(paged):
+    runner, containers, asks, _ = paged
+    containers.kept_pages = {"neutrino_demo": 15000}
+
+    runner.is_active()
+    runner.is_active()
+
+    assert asks == ["demo"]
+
+
+def test_a_silent_page_at_an_accepted_port_asks_for_nothing(paged):
+    runner, _, asks, _ = paged
+
+    assert runner.is_active() is False
+    assert asks == []
+
+
+def test_a_page_that_answers_asks_for_nothing_even_at_a_refused_port(paged):
+    runner, containers, asks, _ = paged
+    PagedHooks.answers = True
+    containers.refused_pages = [64586]
+
+    assert runner.is_active() is True
+    assert asks == []
+
+
+def test_stopped_containers_ask_for_nothing(store, monkeypatch):
+    monkeypatch.setitem(
+        container_runner_module.CONTAINER_MODULE_HOOKS, "demo", PagedHooks
+    )
+    containers = FakeContainers(hub_names={"demo": ["neutrino_demo"]})
+    containers.refused_pages = [64586]
+    runner = runner_for(containers, FakePodman(stopped=["neutrino_demo"]))
+    asks: list = []
+    runner.bind_configure_asker(functools.partial(asks.append, "demo"))
+
+    assert runner.is_active() is False
+    assert asks == []
+    assert runner.notice() == {}
+
+
+def test_a_page_that_stays_silent_says_why_on_its_row(paged):
+    runner, _, _, now = paged
+
+    runner.is_active()
+    assert runner.notice() == {}
+
+    now[0] += container_runner_module.PAGE_SILENT_S - 1
+    runner.is_active()
+    assert runner.notice() == {}
+
+    now[0] += 1
+    runner.is_active()
+    notice = runner.notice()
+    assert notice["code"] == "apply_failed"
+    assert "64586" in notice["params"]["detail"]
+
+
+def test_a_page_that_answers_again_says_nothing(paged):
+    runner, _, _, now = paged
+    runner.is_active()
+    now[0] += container_runner_module.PAGE_SILENT_S
+    assert runner.notice()["code"] == "apply_failed"
+
+    PagedHooks.answers = True
+
+    assert runner.is_active() is True
+    assert runner.notice() == {}
+
+
+def test_a_module_with_no_page_never_says_so(store):
+    containers = FakeContainers(hub_names={"demo": ["neutrino_demo"]})
+    runner = runner_for(containers, FakePodman(running=["neutrino_demo"]))
+
+    assert runner.is_active() is True
+    assert runner.notice() == {}
 
 
 def test_the_recipe_s_images_are_its_image_artifacts():

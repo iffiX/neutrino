@@ -703,6 +703,18 @@ def test_the_forwarder_takes_the_first_free_port_from_8900_and_keeps_it(box):
     assert box.hooks.details() == {"port": 8900, "guests": []}
 
 
+def test_a_start_after_containers_moved_the_port_serves_the_new_port(box):
+    assert box.hooks.upstream_port() == 0
+    ready(box)
+    assert box.hooks.upstream_port() == box.app.port
+
+    box.containers.upstream = 15000
+    box.hooks.start()
+
+    assert box.hooks.upstream_port() == 15000
+    assert box.forwarders[-1].record["upstream_port"] == 15000
+
+
 def test_stop_closes_the_forwarder_and_remove_forgets_the_record(box):
     ready(box)
 

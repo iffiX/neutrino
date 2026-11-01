@@ -25,10 +25,12 @@ import dataclasses
 import functools
 import json
 import subprocess
+import time
 
 from neutrino_agent.constants import (
     AGENT_MODULE_STATE_INSTALL_FAILED,
     AGENT_STEP_CONFIGURE,
+    AGENT_STEP_RENDER,
     AGENT_STEP_START,
 )
 from neutrino_agent.exceptions import ModuleApplyError, ModuleInstallPending
@@ -51,6 +53,8 @@ from neutrino_agent.modules.shared.subprocess_run import command_detail, run
 IMAGE_KIND = "image"
 # How much of a failed pull's words a source's ``detail`` keeps.
 DETAIL_CHARS = 200
+# How long a page stays silent behind running containers before its row says so.
+PAGE_SILENT_S = 300
 
 
 def recipe_images(recipe: dict) -> list:
@@ -116,6 +120,11 @@ def module_references(images: list, references: set) -> list:
             if repository in sources and reference not in found:
                 found.append(reference)
     return found
+
+
+def _run_render(context) -> None:
+    """The ``render`` step of a module's start: a configure task of Containers, waited for."""
+    context.render_containers()
 
 
 class ContainerHooks:
@@ -201,6 +210,14 @@ class ContainerHooks:
         """
         return False
 
+    def upstream_port(self) -> int:
+        """The published port the module's own check and its forwarder read.
+
+        Returns:
+            0 for a module with no page, and before its first start.
+        """
+        return 0
+
     def details(self) -> dict:
         """What the module adds to its row's details.
 
@@ -232,6 +249,7 @@ class ContainerModuleRunner(ModuleRunner):
         publish=None,
         probe_one=source_fetch.probe,
         run_command=run,
+        clock=time.monotonic,
     ):
         """
         Args:
@@ -242,18 +260,25 @@ class ContainerModuleRunner(ModuleRunner):
                 :meth:`is_applied`, :meth:`is_engine_active`,
                 :meth:`engine_awake`, :meth:`drive_hub_containers`,
                 :meth:`drop_hub_containers` and :meth:`hub_journal` reach
-                Podman through it.
+                Podman through it; :meth:`page_ports` and
+                :meth:`refused_page_ports` read the module's published ports.
             log: Callable used for progress messages.
             publish: Called with ``(name, status)`` for transient states.
             probe_one: Probes one source, as :func:`source_fetch.probe`.
             run_command: Runs one command, as :func:`subprocess_run.run`.
+            clock: Returns the time a silent page is counted by.
         """
         super().__init__(platform=platform, log=log, publish=publish)
         self.name = name
         self._containers = containers
         self._probe_one = probe_one
         self._run = run_command
+        self._clock = clock
         self._version = ""
+        # When the page first read silent behind running containers.
+        self._page_silent_since: "float | None" = None
+        # The published port the last configure task was asked for.
+        self._asked_port = 0
         hooks_class = CONTAINER_MODULE_HOOKS.get(name, ContainerHooks)
         self._hooks = hooks_class(
             platform=platform, name=name, containers=containers, log=self._log
@@ -384,7 +409,8 @@ class ContainerModuleRunner(ModuleRunner):
 
         Returns:
             The steps; ``start`` hands the hooks the configuration before
-            it starts the containers.
+            it starts the containers, after a ``render`` while the system
+            refuses a port the module keeps.
         """
         planned = []
         for step in steps:
@@ -393,6 +419,8 @@ class ContainerModuleRunner(ModuleRunner):
             if step.name != AGENT_STEP_START:
                 planned.append(step)
                 continue
+            if self._containers.refused_page_ports(self.name):
+                planned.append(ModuleStep(name=AGENT_STEP_RENDER, run=_run_render))
             planned.append(
                 dataclasses.replace(
                     step, run=functools.partial(self._run_start, dict(config))
@@ -457,12 +485,36 @@ class ContainerModuleRunner(ModuleRunner):
         return bool(self._hooks.is_installing())
 
     def is_active(self) -> bool:
-        """Whether every container of the module runs and its hooks' check passes."""
+        """Whether every container of the module runs and its hooks' check passes.
+
+        A silent page behind running containers asks for one configure task
+        while the system refuses its port or Containers moved it.
+        """
         names = self._names()
-        if not names:
+        states = self._states(self._command()) if names else {}
+        if not names or not all(states.get(name) for name in names):
+            self._page_silent_since = None
             return False
-        states = self._states(self._command())
-        return all(states.get(name) for name in names) and self._hooks.is_running()
+        if self._hooks.is_running():
+            self._page_silent_since = None
+            self._asked_port = 0
+            return True
+        self._note_silent_page()
+        return False
+
+    def notice(self) -> dict:
+        """``apply_failed {detail}`` once the page stays silent behind running containers."""
+        since = self._page_silent_since
+        if since is None or self._clock() - since < PAGE_SILENT_S:
+            return {}
+        port = self._hooks.upstream_port()
+        return {
+            "code": "apply_failed",
+            "params": {
+                "detail": f"the page at port {port} does not answer; "
+                "check what else listens on that port"
+            },
+        }
 
     def details(self, recipe: dict) -> dict:
         """The version the recipe pins, and what the hooks add.
@@ -493,6 +545,20 @@ class ContainerModuleRunner(ModuleRunner):
         """The ``start`` step: the configuration handed to the hooks, then the start."""
         self.apply(config)
         self.start()
+
+    def _note_silent_page(self) -> None:
+        """Start counting a silent page, and ask once for a configure task of a port that moved or is refused."""
+        if self._page_silent_since is None:
+            self._page_silent_since = self._clock()
+        port = self._hooks.upstream_port()
+        if not port or port == self._asked_port:
+            return
+        kept = self._containers.page_ports(self.name).values()
+        if port in kept and not self._containers.refused_page_ports(self.name):
+            return
+        self._asked_port = port
+        self._log(f"{self.name}: the page's port {port} changes, a start follows")
+        self.ask_configure()
 
     def _pull(self, command: tuple, image: dict) -> None:
         """Pull one image from the fastest source that serves it, a source the probe missed last.

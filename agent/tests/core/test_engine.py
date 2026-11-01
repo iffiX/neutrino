@@ -1897,6 +1897,9 @@ class ContainersRunner(ModuleRunner):
     def take_config(self, config):
         self.configs.append(config)
 
+    def refused_page_ports(self, module):
+        return []
+
 
 def container_engine(tmp_path):
     """A bare engine with a Containers runner, the state naming one container module."""

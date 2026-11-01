@@ -418,7 +418,9 @@ class PodmanMachineModuleRunner(ModuleRunner):
         self._written: "PodmanConfig | None" = None
         self._wanted: "PodmanConfig | None" = None
         self._source_sets: dict = {}
-        self._page_ports = PodmanPagePortStore(directory=platform.agent_var_dir())
+        self._page_ports = PodmanPagePortStore(
+            directory=platform.agent_var_dir(), log=self._log
+        )
         # The last reading of the machine: ``(at, account, command, info)``,
         # ``info`` None when the machine did not answer.
         self._reading: "tuple | None" = None
@@ -1128,6 +1130,28 @@ class PodmanMachineModuleRunner(ModuleRunner):
         """
         return self._page_ports.port_for(module, name)
 
+    def page_ports(self, module: str) -> dict:
+        """The loopback ports one module's pages are published at.
+
+        Args:
+            module: The container module.
+
+        Returns:
+            Container name to its kept port.
+        """
+        return self._page_ports.ports(module)
+
+    def refused_page_ports(self, module: str) -> list:
+        """The ports one module keeps that the system refuses now.
+
+        Args:
+            module: The container module.
+
+        Returns:
+            The refused ports; empty on a system that reserves none.
+        """
+        return self._page_ports.refused_ports(module)
+
     def _run_features(self, context) -> None:
         """The ``windows_features`` step."""
         self._system.enable_features()
@@ -1835,7 +1859,9 @@ class PodmanMachineModuleRunner(ModuleRunner):
             if ensure_network(network, podman=command):
                 self._log(f"podman: made the network {network}")
         page_ports = {
-            container.name: self.page_port(container.module, container.name)
+            container.name: self._page_ports.rendered_port_for(
+                container.module, container.name
+            )
             for container in ready
             if container.page_port
         }

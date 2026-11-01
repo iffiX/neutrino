@@ -647,7 +647,7 @@ def hub_runner(runner, monkeypatch):
             {name: sets[name]["variables"] for name in names if name in sets},
         ),
     )
-    runner._page_ports._pick = lambda: 40123
+    runner._page_ports._pick = lambda taken: 40123
     runner.made = made
     return runner
 
@@ -683,7 +683,7 @@ def test_a_module_s_containers_are_rendered_once_its_images_are_in_the_store(
 
 def test_the_page_port_is_picked_once_and_kept_in_the_module_s_record(hub_runner):
     hub_runner.apply(HUB_CONFIG)
-    hub_runner._page_ports._pick = lambda: 50000
+    hub_runner._page_ports._pick = lambda taken: 50000
     hub_runner.apply(HUB_CONFIG)
 
     assert FakeRenderer.seen[-1][1].page_ports == {"neutrino_demo": 40123}

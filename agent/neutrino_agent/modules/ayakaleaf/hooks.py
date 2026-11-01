@@ -810,6 +810,14 @@ class AyakaleafHooks(ContainerHooks, GuestAccountHooks):
         port = int(record.get("upstream_port", 0) or 0)
         return bool(port) and self._status(port) == 200
 
+    def upstream_port(self) -> int:
+        """The published port the record names.
+
+        Returns:
+            0 before the first start.
+        """
+        return int(self._record().get("upstream_port", 0) or 0)
+
     def is_installing(self) -> bool:
         """Whether the module's start waits on its first start, after the install or a version change."""
         with self._lock:

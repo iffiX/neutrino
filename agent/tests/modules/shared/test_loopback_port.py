@@ -2,18 +2,21 @@
 
 What these pin: a port another program listens on is not free and one
 nobody holds is; a port with a listener accepts a connection and one
-without does not; a pick is the first free port from the base up, past the
-ports taken; a base outside the port range is refused; and a pick that
-finds nothing free fails.
+without does not; a bind the system answers with a permission error is a
+refused port, and a port another program listens on is not; a pick is the
+first free port from the base up, past the ports taken; a base outside the
+port range is refused; and a pick that finds nothing free fails.
 """
 
 import socket
 
 import pytest
 
+from neutrino_agent.modules.shared import loopback_port as loopback_port_module
 from neutrino_agent.modules.shared.loopback_port import (
     is_listening,
     is_port_free,
+    is_port_refused,
     pick_port,
 )
 
@@ -42,6 +45,38 @@ def test_a_port_with_a_listener_accepts_a_connection_and_one_without_does_not():
         holder.close()
 
     assert is_listening(port) is False
+
+
+class RefusedSocket:
+    """A socket whose bind Windows answers as it does for a port it reserved."""
+
+    def __init__(self, *arguments):
+        pass
+
+    def bind(self, address):
+        raise PermissionError(13, "forbidden by its access permissions")
+
+    def close(self):
+        pass
+
+
+def test_a_bind_the_system_refuses_reads_as_a_refused_port(monkeypatch):
+    monkeypatch.setattr(loopback_port_module.socket, "socket", RefusedSocket)
+
+    assert is_port_refused(64586) is True
+
+
+def test_a_free_port_and_a_port_in_use_are_not_refused():
+    holder = socket.socket()
+    holder.bind(("127.0.0.1", 0))
+    holder.listen(1)
+    port = holder.getsockname()[1]
+    try:
+        assert is_port_refused(port) is False
+    finally:
+        holder.close()
+
+    assert is_port_refused(port) is False
 
 
 def test_a_pick_is_the_first_free_port_from_the_base_past_the_taken():

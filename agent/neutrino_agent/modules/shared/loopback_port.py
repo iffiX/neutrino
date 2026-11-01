@@ -50,6 +50,31 @@ def is_port_free(port: int, host: str = AGENT_FORWARD_LISTEN_HOST) -> bool:
     return True
 
 
+def is_port_refused(port: int, host: str = AGENT_FORWARD_LISTEN_HOST) -> bool:
+    """Whether the system refuses every listener on one loopback port now.
+
+    A bind on a port Windows reserved fails with a permission error. A bind on a
+    port another program listens on fails with a port in use.
+
+    Args:
+        port: The port.
+        host: The address to bind.
+
+    Returns:
+        True when the bind fails with a permission error.
+    """
+    probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        probe.bind((host, int(port)))
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    finally:
+        probe.close()
+    return False
+
+
 def is_listening(port: int, host: str = AGENT_FORWARD_LISTEN_HOST) -> bool:
     """Whether a listener on loopback accepts a connection on one port now.
 
