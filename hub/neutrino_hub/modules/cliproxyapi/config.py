@@ -123,7 +123,7 @@ class CliproxyApiConfig:
     """Everything ``config/cliproxyapi/cliproxyapi.json`` holds.
 
     Attributes:
-        listen_port: Port the AI gateway answers on, LAN- and overlay-wide.
+        listen_port: Port the AI gateway listens on, on the hub's loopback.
         client_keys: The keys devices authenticate with. A stored record
             without a seal is dropped on load, and whatever held it is issued
             a fresh key.
