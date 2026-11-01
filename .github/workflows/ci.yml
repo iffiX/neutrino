@@ -6,6 +6,9 @@ on:
   pull_request:
   workflow_dispatch:
 
+env:
+  CODACY_REPORTER_VERSION: 13.10.15
+
 jobs:
   python:
     name: black, secret scan, tests
@@ -64,6 +67,17 @@ jobs:
           disable_search: true
           use_oidc: true
 
+      # Codacy, too, needs each package's prefix for the names the three share.
+      - name: Codacy coverage, hub
+        env:
+          CODACY_PROJECT_TOKEN: ${{ secrets.CODACY_PROJECT_TOKEN }}
+        run: bash <(curl -Ls https://coverage.codacy.com/get.sh) report --skip --partial -l Python -r hub/coverage.xml --prefix hub/neutrino_hub/
+
+      - name: Codacy coverage, agent
+        env:
+          CODACY_PROJECT_TOKEN: ${{ secrets.CODACY_PROJECT_TOKEN }}
+        run: bash <(curl -Ls https://coverage.codacy.com/get.sh) report --skip --partial -l Python -r agent/coverage.xml --prefix agent/neutrino_agent/
+
   client:
     name: client tests
     runs-on: ubuntu-24.04
@@ -91,6 +105,21 @@ jobs:
           network_filter: client/desktop/neutrino_client/
           disable_search: true
           use_oidc: true
+
+      - name: Codacy coverage, client
+        env:
+          CODACY_PROJECT_TOKEN: ${{ secrets.CODACY_PROJECT_TOKEN }}
+        run: bash <(curl -Ls https://coverage.codacy.com/get.sh) report --skip --partial -l Python -r client/desktop/coverage.xml --prefix client/desktop/neutrino_client/
+
+  coverage_final:
+    name: Codacy coverage, final
+    needs: [python, client]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - env:
+          CODACY_PROJECT_TOKEN: ${{ secrets.CODACY_PROJECT_TOKEN }}
+        run: bash <(curl -Ls https://coverage.codacy.com/get.sh) final --skip
 
   android:
     name: android tests, lint and ktlint
