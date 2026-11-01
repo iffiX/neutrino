@@ -16,7 +16,9 @@ restarted agent starts the forwarders of the records no stop marked, on every
 system, and an account's step starts its own forwarder at its kept port; the
 port of the page behind a forwarder is picked from 15000 up and kept, picked
 again when the system refuses it and kept when another program holds it, an
-instance that does not run on a refused port asking for one configure task; a row runs only while its service
+instance that does not run on a refused port asking for one configure task; an
+instance with a page port and no stopped mark that stays down for 5 minutes
+reading ``page_silent {port}``, and a **Stop** never producing it; a row runs only while its service
 runs and its forwarder listens, a reading that finds a service stopped just
 after an apply read again at the next report; the forwarder ports the relays carry are
 those of the forwarders that listen; the details carry what the hooks add; the
@@ -40,7 +42,7 @@ from dataclasses import dataclass
 
 import pytest
 
-from neutrino_agent.constants import AGENT_PAGE_PORT_FIELDS
+from neutrino_agent.constants import AGENT_PAGE_PORT_FIELDS, AGENT_PAGE_SILENT_S
 from neutrino_agent.exceptions import ModuleApplyError, ModuleInstallPending
 from neutrino_agent.modules.cloudcli.hooks import CloudcliHooks
 from neutrino_agent.modules.code_server.hooks import CodeServerHooks
@@ -1113,6 +1115,128 @@ def test_a_stopped_module_asks_for_nothing_at_a_refused_port(paged, tmp_path):
 
     assert runner.is_active() is False
     assert asks == []
+
+
+@pytest.fixture
+def silent(paged):
+    """A running instance of a module with a page port, what makes another, and its clock."""
+    made_runner, _, _ = paged
+    now = [100.0]
+
+    def made():
+        runner = made_runner()
+        runner._clock = lambda: now[0]
+        return runner
+
+    runner = made()
+    runner.apply(CONFIG)
+    FakeForwarder.made[0].is_listening = True
+    return made, runner, now
+
+
+def advance(runner, now, seconds):
+    """Let the reading go stale, then read the row as the engine does."""
+    now[0] += seconds
+    return runner.is_active()
+
+
+def test_an_instance_down_on_its_page_port_reads_page_silent_after_5_minutes(
+    silent, tmp_path, systemd
+):
+    _, runner, now = silent
+    port = kept_record(tmp_path)["upstream_port"]
+    systemd.active.clear()
+
+    assert advance(runner, now, instances_module.STATUS_TTL_S) is False
+    assert runner.notice() == {}
+
+    assert advance(runner, now, AGENT_PAGE_SILENT_S - 1) is False
+    assert runner.notice() == {}
+
+    assert advance(runner, now, 1) is False
+    assert runner.notice() == {"code": "page_silent", "params": {"port": port}}
+
+
+def test_an_instance_that_runs_again_reads_no_page_silent(silent, systemd):
+    _, runner, now = silent
+    systemd.active.clear()
+    advance(runner, now, instances_module.STATUS_TTL_S)
+    advance(runner, now, AGENT_PAGE_SILENT_S)
+    assert runner.notice()["code"] == "page_silent"
+
+    systemd.active.add("neutrino_demo@ann.service")
+
+    assert advance(runner, now, instances_module.STATUS_TTL_S) is True
+    assert runner.notice() == {}
+
+
+def test_a_stop_never_produces_page_silent(silent, systemd):
+    _, runner, now = silent
+    systemd.active.clear()
+    advance(runner, now, instances_module.STATUS_TTL_S)
+
+    runner.stop()
+
+    assert advance(runner, now, AGENT_PAGE_SILENT_S + 1) is False
+    assert advance(runner, now, AGENT_PAGE_SILENT_S + 1) is False
+    assert runner.notice() == {}
+
+
+def test_a_stop_whose_mark_cannot_be_written_never_produces_page_silent(
+    silent, systemd, monkeypatch
+):
+    _, runner, now = silent
+
+    def refused(account):
+        raise OSError("read-only file system")
+
+    monkeypatch.setattr(runner._records, "mark_stopped", refused)
+    runner.stop()
+    systemd.active.clear()
+
+    assert advance(runner, now, AGENT_PAGE_SILENT_S + 1) is False
+    assert advance(runner, now, AGENT_PAGE_SILENT_S + 1) is False
+    assert runner.notice() == {}
+
+
+def test_a_stopped_instance_reads_no_page_silent_after_the_agent_restarts(
+    silent, systemd
+):
+    made, runner, now = silent
+    runner.stop()
+    systemd.active.clear()
+
+    again = made()
+
+    assert advance(again, now, AGENT_PAGE_SILENT_S + 1) is False
+    assert advance(again, now, AGENT_PAGE_SILENT_S + 1) is False
+    assert again.notice() == {}
+
+
+def test_a_start_counts_the_5_minutes_from_the_start(silent, systemd):
+    _, runner, now = silent
+    systemd.active.clear()
+    advance(runner, now, instances_module.STATUS_TTL_S)
+    advance(runner, now, AGENT_PAGE_SILENT_S)
+    assert runner.notice()["code"] == "page_silent"
+
+    runner.apply(CONFIG)
+    systemd.active.clear()
+
+    assert runner.notice() == {}
+    assert advance(runner, now, instances_module.STATUS_TTL_S) is False
+    assert runner.notice() == {}
+
+
+def test_a_module_with_no_page_port_reads_no_page_silent(runner, systemd):
+    runner.apply(CONFIG)
+    systemd.active.clear()
+
+    assert runner.is_active() is False
+    runner._clock = lambda: float("inf")
+
+    assert runner.is_active() is False
+    assert runner.notice() == {}
 
 
 def test_a_module_with_no_page_port_asks_for_nothing(runner, tmp_path):

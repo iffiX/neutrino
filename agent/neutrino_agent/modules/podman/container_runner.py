@@ -29,6 +29,7 @@ import time
 
 from neutrino_agent.constants import (
     AGENT_MODULE_STATE_INSTALL_FAILED,
+    AGENT_PAGE_SILENT_S,
     AGENT_STEP_CONFIGURE,
     AGENT_STEP_RENDER,
     AGENT_STEP_START,
@@ -55,8 +56,6 @@ from neutrino_agent.modules.shared.subprocess_run import command_detail, run
 IMAGE_KIND = "image"
 # How much of a failed pull's words a source's ``detail`` keeps.
 DETAIL_CHARS = 200
-# How long a page stays silent behind running containers before its row says so.
-PAGE_SILENT_S = 300
 
 
 def recipe_images(recipe: dict) -> list:
@@ -513,7 +512,7 @@ class ContainerModuleRunner(ModuleRunner):
     def notice(self) -> dict:
         """``page_silent {port}`` once the page stays silent behind running containers."""
         since = self._page_silent_since
-        if since is None or self._clock() - since < PAGE_SILENT_S:
+        if since is None or self._clock() - since < AGENT_PAGE_SILENT_S:
             return {}
         return {"code": "page_silent", "params": {"port": self._hooks.upstream_port()}}
 

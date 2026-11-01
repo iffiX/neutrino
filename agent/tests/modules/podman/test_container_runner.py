@@ -7,6 +7,7 @@ import subprocess
 
 import pytest
 
+from neutrino_agent.constants import AGENT_PAGE_SILENT_S
 from neutrino_agent.exceptions import ModuleApplyError, ModuleInstallPending
 from neutrino_agent.modules.podman import applier as applier_module
 from neutrino_agent.modules.podman import container_runner as container_runner_module
@@ -343,7 +344,7 @@ def test_a_page_that_stays_silent_says_why_on_its_row(paged):
     runner.is_active()
     assert runner.notice() == {}
 
-    now[0] += container_runner_module.PAGE_SILENT_S - 1
+    now[0] += AGENT_PAGE_SILENT_S - 1
     runner.is_active()
     assert runner.notice() == {}
 
@@ -355,7 +356,7 @@ def test_a_page_that_stays_silent_says_why_on_its_row(paged):
 def test_a_page_that_answers_again_says_nothing(paged):
     runner, _, _, now = paged
     runner.is_active()
-    now[0] += container_runner_module.PAGE_SILENT_S
+    now[0] += AGENT_PAGE_SILENT_S
     assert runner.notice()["code"] == "page_silent"
 
     PagedHooks.answers = True

@@ -36,6 +36,7 @@ import threading
 import time
 
 from neutrino_agent.constants import (
+    AGENT_PAGE_SILENT_S,
     AGENT_STEP_ACCOUNT,
     AGENT_STEP_CONFIGURE,
     AGENT_WANT_RUNNING,
@@ -506,6 +507,9 @@ class InstancesModuleRunner(ModuleRunner):
         self._recipe: dict = {}
         # The refused page ports a configure task was asked for.
         self._asked_ports: set = set()
+        # Each instance with a page port and no stopped mark that reads down,
+        # by account: ``(when it first read down, its page port)``.
+        self._down_since: dict = {}
 
     @property
     def hooks(self) -> InstanceHooks:
@@ -706,10 +710,20 @@ class InstancesModuleRunner(ModuleRunner):
         system refuses a page port a record with no stopped mark keeps.
         """
         states = self._read_states()
+        self._note_down_instances(states)
         if states and all(state["is_running"] for state in states):
             return True
         self._note_refused_page_ports()
         return False
+
+    def notice(self) -> dict:
+        """``page_silent {port}`` once an instance with no stopped mark stays down for 5 minutes."""
+        with self._lock:
+            down = list(self._down_since.values())
+        for since, port in down:
+            if self._clock() - since >= AGENT_PAGE_SILENT_S:
+                return {"code": "page_silent", "params": {"port": port}}
+        return {}
 
     def is_installing(self) -> bool:
         """Whether an account's install runs or is waited on."""
@@ -1067,6 +1081,32 @@ class InstancesModuleRunner(ModuleRunner):
             )
         return {field: port}
 
+    def _note_down_instances(self, states: list) -> None:
+        """Keep when each instance with a page port and no stopped mark first read down.
+
+        An instance of a stopped module, one that runs and one no longer
+        named are forgotten.
+
+        Args:
+            states: The instances as :meth:`_read_states` read them.
+        """
+        field = self._hooks.page_port_field
+        if not field:
+            return
+        running = {state["account"] for state in states if state["is_running"]}
+        ports = {
+            str(record["account"]): int(record.get(field) or 0)
+            for record in self._records.read_running()
+        }
+        now = self._clock()
+        with self._lock:
+            held = self._down_since
+            self._down_since = {
+                account: (held.get(account, (now, port))[0], port)
+                for account, port in ports.items()
+                if port and account not in running and not self._is_stopped
+            }
+
     def _note_refused_page_ports(self) -> None:
         """Ask once for a configure task of a page port the system refuses."""
         field = self._hooks.page_port_field
@@ -1304,3 +1344,4 @@ class InstancesModuleRunner(ModuleRunner):
         with self._lock:
             self._applied = None
             self._changed_at = self._clock()
+            self._down_since = {}

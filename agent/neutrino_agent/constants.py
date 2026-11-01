@@ -468,6 +468,8 @@ AGENT_PAGE_PORT_BASE = 15000
 # container's file, and the fields of an instance's or a module's record.
 AGENT_PAGE_PORTS_NAME = "page_ports.json"
 AGENT_PAGE_PORT_FIELDS = ("upstream_port", "kernel_port")
+# How long a page stays silent before its row reads ``page_silent``.
+AGENT_PAGE_SILENT_S = 300
 # The token a client opens such a page with: ``?tkn=`` holding
 # ``base64url(expiry || nonce || HMAC-SHA256(secret, expiry || nonce))``,
 # the expiry eight bytes big-endian in seconds since the epoch. A token
