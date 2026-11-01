@@ -38,11 +38,7 @@ from neutrino_client.constants import (
     CLIENT_MOUNT_HELPER_PATH,
     CLIENT_PKEXEC_REFUSAL_EXIT_CODES,
 )
-from neutrino_client.exceptions import (
-    ControlSocketUnavailableError,
-    PlatformUnsupportedError,
-    ShareAttachError,
-)
+from neutrino_client.exceptions import ControlSocketUnavailableError, ShareAttachError
 from neutrino_client.platforms.base import (
     ClientPlatform,
     ip_json_networks,

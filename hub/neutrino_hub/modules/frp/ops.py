@@ -30,7 +30,6 @@ from neutrino_hub.modules.frp.constants import (
     FRP_CHANGE_STARTED,
     FRP_CHANGE_STOPPED,
     FRP_CHECK_FIRST_S,
-    FRP_CHECK_FOREIGN,
     FRP_CHECK_INTERVAL_S,
     FRP_CHECK_NO_ANSWER,
     FRP_CHECK_TIMEOUT_S,

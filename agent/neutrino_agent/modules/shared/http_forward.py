@@ -57,7 +57,6 @@ from neutrino_agent.constants import (
     AGENT_FORWARD_TOKEN_MAC_BYTES,
     AGENT_FORWARD_TOKEN_NONCE_BYTES,
     AGENT_FORWARD_TOKEN_PARAMETER,
-    AGENT_FORWARD_UPSTREAM_TIMEOUT_S,
 )
 from neutrino_agent.modules.shared.hub_clock import hub_time
 

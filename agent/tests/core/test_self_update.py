@@ -21,7 +21,6 @@ from pathlib import Path
 
 import pytest
 
-import neutrino_agent.core.loop as loop_module
 import neutrino_agent.core.self_update as self_update
 from neutrino_agent.constants import AGENT_REINSTALL_OUTPUT_LIMIT_BYTES
 from neutrino_agent.exceptions import GatewayUnreachable, SelfUpdateError

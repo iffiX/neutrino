@@ -96,7 +96,6 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_AYAKALEAF_MODULE,
     DEVICE_HERMES_WEBUI_MODULE,
     DEVICE_INSTANCE_GATEWAY_FORWARD_URL,
-    DEVICE_INSTANCE_GATEWAY_KEY,
     DEVICE_INSTANCE_LOGIN_KEY,
     DEVICE_MODULES_FILE,
     DEVICE_PACKAGES_DIR_NAME,
@@ -116,7 +115,6 @@ from neutrino_hub.modules.devices.folder_shares import (
     with_accounts_only,
 )
 from neutrino_hub.modules.devices.hub_containers import compose_hub_containers
-from neutrino_hub.modules.devices.module_releases import ModuleReleaseStore
 from neutrino_hub.modules.devices.source_sets import state_source_sets
 from neutrino_hub.modules.devices.ssh_account_keys import (
     fingerprint_of,

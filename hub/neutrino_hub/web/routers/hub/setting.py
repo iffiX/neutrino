@@ -25,7 +25,7 @@ from fastapi import (
     UploadFile,
     status,
 )
-from fastapi.responses import Response, StreamingResponse
+from fastapi.responses import StreamingResponse
 from cryptography import x509
 
 from neutrino_hub import edition

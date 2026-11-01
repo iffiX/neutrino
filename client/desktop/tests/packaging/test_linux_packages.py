@@ -22,7 +22,6 @@ import netbird_payload
 import payload
 
 from neutrino_client.constants import (
-    CLIENT_CONTROL_SOCKET_NAME,
     CLIENT_EASYTIER_DAEMON_VERB,
     CLIENT_EASYTIER_SERVICE_LINUX,
     CLIENT_INSTALL_PREFIX_LINUX,

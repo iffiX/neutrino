@@ -26,11 +26,7 @@ import time
 
 import pytest
 
-from neutrino_agent.exceptions import (
-    ModuleApplyError,
-    ModuleInstallPending,
-    ModuleSetupError,
-)
+from neutrino_agent.exceptions import ModuleInstallPending, ModuleSetupError
 from neutrino_agent.modules.ayakaleaf import hooks as hooks_module
 from neutrino_agent.modules.ayakaleaf.constants import AYAKALEAF_FORWARDER_FIELDS
 from neutrino_agent.modules.ayakaleaf.hooks import (

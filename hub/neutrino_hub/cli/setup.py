@@ -118,8 +118,6 @@ from neutrino_hub.utils.source_fetch import SourceFetcher
 from neutrino_hub.system import package_manager
 from neutrino_hub.utils.subprocess_run import command_failure_text, run
 
-from neutrino_hub.modules.router import links
-from neutrino_hub.modules.router.link_status import RouterLinkStatus
 from neutrino_hub.modules.transport.constants import TRANSPORT_BINARY_PATH
 from neutrino_hub.modules.transport.ops import TransportApplier
 from neutrino_hub.web.constants import (
@@ -1555,10 +1553,8 @@ def _step_panel_tls(reporter: InstallReporter) -> str:
 
 def _step_systemd_units(reporter: InstallReporter) -> str:
     written = SystemdUnitInstaller().install()
-    is_changed = bool(written)
     for unit, note in DISTRIBUTION_UNITS_MASKED.items():
-        if _mask_distribution_unit(reporter, unit, note):
-            is_changed = True
+        _mask_distribution_unit(reporter, unit, note)
     return f"wrote {', '.join(written)}" if written else "unchanged"
 
 

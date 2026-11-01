@@ -29,7 +29,6 @@ from neutrino_agent.modules.shared.account_service import (
 )
 from neutrino_agent.modules.shared.instances import InstancesModuleRunner
 from neutrino_agent.modules.shared.subprocess_run import CommandResult
-from neutrino_agent.modules.vscode.config import VscodeConfig
 from neutrino_agent.modules.shared.package import unpack_artifact
 from neutrino_agent.modules.vscode.hooks import VscodeHooks
 from neutrino_agent.platforms.base import AgentPlatform

@@ -36,7 +36,6 @@ from neutrino_hub.modules.devices.retry_marks import DeviceRetryMarks
 from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.modules.devices.constants import (
     DEVICE_MODULE_COMMAND_TIMEOUT_S,
-    DEVICE_MODULE_STATE_ABSENT,
     DEVICE_RDP_MODULE,
     DEVICE_REMOTE_DESKTOP_PRODUCTS,
 )

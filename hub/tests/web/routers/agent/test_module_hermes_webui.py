@@ -15,7 +15,7 @@ from neutrino_hub.modules.cliproxyapi.ops import CliproxyApiConfigApplier
 from neutrino_hub.web.routers.agent import module as device_modules
 from neutrino_hub.web.routers.agent import module_hermes_webui
 from tests.conftest import unlock_vault
-from tests.web.module_api_box import DEVICE, OFFLINE, module_box
+from tests.web.module_api_box import DEVICE, module_box
 
 BASE = "/api/agent/module/hermes_webui"
 MODULE_PATH = "/api/agent/module"

@@ -7,7 +7,6 @@ by itself.
 """
 
 import asyncio
-import ipaddress
 import logging
 import re
 import subprocess

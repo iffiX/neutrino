@@ -14,13 +14,10 @@ import datetime
 import hashlib
 import os
 import shutil
-import socket
-import ssl
 import subprocess
 import threading
 import time
 from pathlib import Path
-from typing import Callable
 
 import asyncssh
 
@@ -36,7 +33,6 @@ from neutrino_hub.modules.overlay.constants import (
     OVERLAY_RELAY_CHANGE_STARTED,
     OVERLAY_RELAY_CHANGE_STOPPED,
     OVERLAY_RELAY_CHECK_FIRST_S,
-    OVERLAY_RELAY_CHECK_FOREIGN,
     OVERLAY_RELAY_CHECK_INTERVAL_S,
     OVERLAY_RELAY_CHECK_NO_ANSWER,
     OVERLAY_RELAY_CHECK_TIMEOUT_S,

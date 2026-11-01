@@ -1,6 +1,7 @@
 """Which nhub commands demand root, and how the refusal reads."""
 
 import io
+import os
 import sys
 import types
 
@@ -9,7 +10,7 @@ import neutrino_hub.utils.constants as constants
 
 
 def test_an_unprivileged_apply_is_refused_with_the_command(monkeypatch, capsys):
-    monkeypatch.setattr(entry.os, "geteuid", lambda: 1000)
+    monkeypatch.setattr(os, "geteuid", lambda: 1000)
     monkeypatch.setattr(constants, "is_dev_root_set", lambda: False)
     monkeypatch.setattr(entry.sys, "argv", ["nhub", "apply"])
 
@@ -19,12 +20,12 @@ def test_an_unprivileged_apply_is_refused_with_the_command(monkeypatch, capsys):
 
 
 def test_scan_secrets_is_never_gated(monkeypatch):
-    monkeypatch.setattr(entry.os, "geteuid", lambda: 1000)
+    monkeypatch.setattr(os, "geteuid", lambda: 1000)
     assert "scan-secrets" in entry.COMMANDS
 
 
 def test_run_is_never_gated(monkeypatch, capsys):
-    monkeypatch.setattr(entry.os, "geteuid", lambda: 1000)
+    monkeypatch.setattr(os, "geteuid", lambda: 1000)
     monkeypatch.setattr(constants, "is_dev_root_set", lambda: False)
     monkeypatch.setattr(entry.sys, "argv", ["nhub", "run"])
     module = types.ModuleType("fake_run")
@@ -52,7 +53,7 @@ def test_windows_asks_for_an_administrator_powershell(monkeypatch, capsys):
 
 
 def test_status_is_never_gated(monkeypatch, capsys):
-    monkeypatch.setattr(entry.os, "geteuid", lambda: 1000)
+    monkeypatch.setattr(os, "geteuid", lambda: 1000)
     monkeypatch.setattr(constants, "is_dev_root_set", lambda: False)
     monkeypatch.setattr(entry.sys, "argv", ["nhub", "status"])
     module = types.ModuleType("fake_status")

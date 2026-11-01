@@ -16,7 +16,6 @@ import select
 import sys
 import textwrap
 import threading
-from pathlib import Path
 from dataclasses import dataclass, field
 
 from neutrino_hub import edition

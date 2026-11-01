@@ -25,7 +25,6 @@ from neutrino_hub.modules.clients.constants import (
     CLIENTS_CONFIG_PATH,
 )
 from neutrino_hub.modules.clients.permissions import (
-    ClientPermission,
     is_row_of_device,
     permission_devices,
     permission_entries,

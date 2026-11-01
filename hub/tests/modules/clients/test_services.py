@@ -28,11 +28,7 @@ from neutrino_hub.modules.clients.services import (
 )
 from neutrino_hub.modules.services.device_shares import DeviceShareRegistry
 from neutrino_hub.modules.services.collector import resolve_entries
-from neutrino_hub.modules.services.host_scope import (
-    HostScope,
-    device_host_for,
-    link_scope,
-)
+from neutrino_hub.modules.services.host_scope import HostScope, device_host_for
 
 ENTRY = {
     "id": "web_gitea",

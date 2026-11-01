@@ -20,7 +20,6 @@ from dataclasses import dataclass, field
 from neutrino_hub.modules.router.constants import (
     ROUTER_KEY_MGMT_NONE,
     ROUTER_KEY_MGMT_PSK,
-    ROUTER_KEY_MGMT_SAE,
     ROUTER_KEY_MGMTS,
     ROUTER_SOURCE_PANEL,
 )

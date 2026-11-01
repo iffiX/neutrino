@@ -40,7 +40,6 @@ from dataclasses import dataclass
 from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.samba.config import SambaConfig
 from neutrino_agent.modules.samba.constants import (
-    SAMBA_CONF_MARKER,
     SAMBA_CONF_PATH,
     SAMBA_DOMAIN_SECURITY_MODES,
     SAMBA_DOMAIN_SERVER_ROLES,
@@ -56,7 +55,7 @@ from neutrino_agent.modules.samba.constants import (
     SAMBA_USERS_DIR,
     SAMBA_USERS_FILE_SUFFIX,
 )
-from neutrino_agent.modules.shared.subprocess_run import CommandResult, run, unit_state
+from neutrino_agent.modules.shared.subprocess_run import run, unit_state
 
 try:
     import pwd

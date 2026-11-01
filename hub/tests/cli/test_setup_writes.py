@@ -8,7 +8,7 @@ install rather than by anything here.
 
 import pytest
 
-from neutrino_hub.cli import setup, wizard
+from neutrino_hub.cli import setup
 
 # --- a step that fails without ending the run ---
 

@@ -19,7 +19,6 @@ import types
 
 import pytest
 
-from neutrino_hub.modules.credentials.vault import unseal_bytes
 from neutrino_hub.modules.devices import desired_state as desired_state_module
 from neutrino_hub.modules.devices.accounts import DeviceAccount, DeviceAccountStore
 from neutrino_hub.modules.devices.desired_state import (

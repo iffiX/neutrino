@@ -7,7 +7,6 @@ The shape is settled in [../../../../docs/cli.md](../../../../docs/cli.md).
 """
 
 import argparse
-import os
 import shlex
 import sys
 

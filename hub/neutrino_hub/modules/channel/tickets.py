@@ -11,7 +11,6 @@ import logging
 import secrets
 import threading
 import time
-from pathlib import Path
 
 from neutrino_hub.modules.channel.constants import (
     CHANNEL_ROLE_AGENT,

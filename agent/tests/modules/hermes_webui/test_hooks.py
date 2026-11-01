@@ -24,7 +24,7 @@ import time
 
 import pytest
 
-from neutrino_agent.exceptions import ModuleApplyError, ModuleInstallPending
+from neutrino_agent.exceptions import ModuleInstallPending
 from neutrino_agent.modules.hermes_webui import hooks as hooks_module
 from neutrino_agent.modules.hermes_webui.constants import (
     HERMES_WEBUI_FORWARDER_FIELDS,

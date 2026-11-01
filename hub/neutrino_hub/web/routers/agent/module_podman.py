@@ -18,13 +18,11 @@ from neutrino_hub.modules.channel.constants import (
     CHANNEL_MODULE_STATE_INSTALLED,
     CHANNEL_VERB_MACHINE_READ,
 )
-from neutrino_hub.modules.credentials.vault import SecretVault
 from neutrino_hub.modules.devices.constants import (
     DEVICE_CONTAINER_SOURCE_DECLARED,
     DEVICE_CONTAINER_SOURCE_HUB,
     DEVICE_CONTAINER_SOURCE_MANUAL,
     DEVICE_HUB_CONTAINER_PREFIX,
-    DEVICE_INSTANCE_LOGIN_KEY,
     DEVICE_PODMAN_MACHINE_KEY,
     DEVICE_PODMAN_MACHINE_OS,
 )

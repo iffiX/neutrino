@@ -21,10 +21,7 @@ import shutil
 import subprocess
 
 from neutrino_agent.constants import AGENT_OUTPUT_LIMIT_BYTES
-from neutrino_agent.modules.remote_desktop.constants import (
-    REMOTE_DESKTOP_PRODUCTS,
-    REMOTE_DESKTOP_SUPPORTED_PRODUCTS,
-)
+from neutrino_agent.modules.remote_desktop.constants import REMOTE_DESKTOP_PRODUCTS
 from neutrino_agent.modules.shared.subprocess_run import command_detail, run
 from neutrino_agent.modules.remote_desktop.rdp.linux_seat import (
     graphical_accounts,

@@ -20,7 +20,6 @@ from neutrino_hub.modules.router.constants import (
     ROUTER_FWMARK_XRAY_EGRESS,
 )
 from neutrino_hub.modules.xray.constants import (
-    XRAY_GEODATA_DIR,
     XRAY_SERVICE_USER,
     XRAY_DNS_LISTEN,
     XRAY_DNS_PORT,

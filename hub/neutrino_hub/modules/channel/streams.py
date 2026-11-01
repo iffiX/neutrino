@@ -16,7 +16,6 @@ import struct
 
 from neutrino_hub.exceptions import AgentOfflineError, StreamRefusedError
 from neutrino_hub.modules.channel.constants import (
-    CHANNEL_CALL_TIMEOUT_S,
     CHANNEL_CODE_NEVER_REPORTED,
     CHANNEL_ITEM_DATA,
     CHANNEL_ITEM_DATAGRAM,

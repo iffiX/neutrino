@@ -9,7 +9,6 @@ and ``open`` connections carry records, kept for the test to drive.
 
 import json
 import os
-import queue
 import shutil
 import socket
 import tempfile

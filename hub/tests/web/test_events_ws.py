@@ -273,11 +273,10 @@ def test_a_report_with_a_new_module_state_says_so_for_that_device(box, device):
     agent = agent_of(runtime, panel, device)
 
     agent.send(report())
-    frame = panel.receive_json()
+    frames = frames_until(panel, WEB_EVENT_DEVICE_REPORT)
     closed(agent, panel)
 
-    assert frame["type"] == WEB_EVENT_DEVICE_REPORT
-    assert frame["key"] == device
+    assert frames[-1]["key"] == device
 
 
 def vitals(**metrics) -> dict:

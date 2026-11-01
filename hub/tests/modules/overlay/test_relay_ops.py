@@ -11,10 +11,7 @@ address is ``connected``.
 import base64
 import hashlib
 import json
-import socket
-import ssl
 import stat
-import threading
 
 import asyncssh
 import pytest
@@ -32,7 +29,7 @@ from neutrino_hub.modules.overlay.relay_ops import (
 )
 from neutrino_hub.system.process_control import ServiceStatus
 from neutrino_hub.system.systemd_ctl import start_line_dropin
-from tests.conftest import FakeClock, self_signed_pair, unlock_vault
+from tests.conftest import FakeClock, unlock_vault
 
 PASSPHRASE = "opens-the-key"
 OWN_FINGERPRINT = "a" * 64

@@ -51,6 +51,7 @@ from neutrino_agent.modules.samba.applier import (
     without_include_line,
 )
 from neutrino_agent.modules.samba.config import SambaConfig
+from neutrino_agent.modules.samba.constants import SAMBA_CONF_MARKER
 from neutrino_agent.modules.samba.renderer import SambaConfigRenderer
 from neutrino_agent.modules.shared.subprocess_run import CommandResult
 
@@ -96,7 +97,7 @@ def one_share(tmp_path) -> SambaConfig:
 
 
 INCLUDE = "   include = "
-MARKER = applier_module.SAMBA_CONF_MARKER
+MARKER = SAMBA_CONF_MARKER
 MEDIA = b"[media]\n   path = /srv/media\n"
 INCLUDE_LINE = f"{INCLUDE}{applier_module.SAMBA_MODULE_CONF_PATH}\n".encode("utf-8")
 # A person's file: a comment in Latin-1, CRLF lines, no last newline.

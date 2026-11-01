@@ -1,6 +1,5 @@
 """``nagent join``: join the hub an enrollment link names."""
 
-import os
 import sys
 
 from neutrino_agent.cli.start import is_confirmed

@@ -15,7 +15,6 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
-from typing import Callable
 
 from neutrino_hub.exceptions import FrpVendorError
 from neutrino_hub.modules.frp.constants import (
