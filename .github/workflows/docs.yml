@@ -35,14 +35,6 @@ jobs:
           node-version-file: docs/guide/.nvmrc
           cache: npm
           cache-dependency-path: docs/guide/package-lock.json
-      - name: Read Pages configuration
-        id: pages
-        if: >-
-          github.event_name != 'pull_request'
-          && (startsWith(github.ref, 'refs/tags/v')
-              || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
-          && vars.DOCS_PAGES_ENABLED == 'true'
-        uses: actions/configure-pages@v5
       # The READMEs' tests badge reads badges/tests.json from the site.
       - uses: actions/setup-python@v7
         with:
@@ -55,38 +47,18 @@ jobs:
       - name: Count the tests
         working-directory: ${{ github.workspace }}
         run: python packaging/ci/count_tests.py . docs/guide/public/badges/tests.json
-      # A pull request also builds for the repository's own subpath, the
-      # one the site is served under on GitHub Pages without a domain.
       - name: Check and build website
-        run: >
-          python3 ../../packaging/build/build_docs.py --install
-          ${{ github.event_name == 'pull_request' && '--base /neutrino/' || '' }}
-          --base '${{ steps.pages.outputs.base_path || '/' }}'
-      - name: Upload website
+        run: python3 ../../packaging/build/build_docs.py --install
+      # main is the Pages project's production branch.
+      - name: Deploy the website to Cloudflare Pages
         if: >-
           github.event_name != 'pull_request'
           && (startsWith(github.ref, 'refs/tags/v')
               || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
           && vars.DOCS_PAGES_ENABLED == 'true'
-        uses: actions/upload-pages-artifact@v4
-        with:
-          path: docs/guide/.vitepress/dist
-
-  deploy:
-    if: >-
-      github.event_name != 'pull_request'
-      && (startsWith(github.ref, 'refs/tags/v')
-          || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
-      && vars.DOCS_PAGES_ENABLED == 'true'
-    needs: build
-    runs-on: ubuntu-24.04
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Publish to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: >-
+          npx --yes wrangler@4.150.0 pages deploy .vitepress/dist
+          --project-name neutrinohub --branch main
