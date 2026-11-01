@@ -95,7 +95,7 @@ export function AccountsPanel({ deviceId, isEditable }: AccountsPanelProps) {
     }
   };
 
-  const askRemove = (account: AvailableAccountView) =>
+  const askRemove = (account: AvailableAccountView) => {
     confirm.ask({
       title: t("ui.accounts.remove_title", { account: account.account }),
       body:
@@ -108,6 +108,7 @@ export function AccountsPanel({ deviceId, isEditable }: AccountsPanelProps) {
       confirmLabel: t("ui.accounts.remove"),
       onConfirm: () => void remove(account),
     });
+  };
 
   return (
     <section className="settings_group">
@@ -117,7 +118,9 @@ export function AccountsPanel({ deviceId, isEditable }: AccountsPanelProps) {
           type="button"
           className="button button--small"
           disabled={!isEditable || view === null || editing !== null}
-          onClick={() => setEditing(NEW_ACCOUNT)}
+          onClick={() => {
+            setEditing(NEW_ACCOUNT);
+          }}
         >
           <Icon name="plus" size={13} />
           {t("ui.accounts.add")}
@@ -147,7 +150,9 @@ export function AccountsPanel({ deviceId, isEditable }: AccountsPanelProps) {
                     account={account}
                     isEditable={isEditable}
                     onSaved={handleSaved}
-                    onCancel={() => setEditing(null)}
+                    onCancel={() => {
+                      setEditing(null);
+                    }}
                   />
                 ) : (
                   <div key={account.account} className="accounts_row">
@@ -165,7 +170,9 @@ export function AccountsPanel({ deviceId, isEditable }: AccountsPanelProps) {
                         type="button"
                         className="button button--ghost button--small"
                         disabled={!isEditable || editing !== null}
-                        onClick={() => setEditing(account.account)}
+                        onClick={() => {
+                          setEditing(account.account);
+                        }}
                       >
                         {t("ui.accounts.edit")}
                       </button>
@@ -175,7 +182,9 @@ export function AccountsPanel({ deviceId, isEditable }: AccountsPanelProps) {
                         disabled={
                           !isEditable || busyAccount === account.account
                         }
-                        onClick={() => askRemove(account)}
+                        onClick={() => {
+                          askRemove(account);
+                        }}
                       >
                         {t("ui.accounts.remove")}
                       </button>
@@ -192,7 +201,9 @@ export function AccountsPanel({ deviceId, isEditable }: AccountsPanelProps) {
               account={null}
               isEditable={isEditable}
               onSaved={handleSaved}
-              onCancel={() => setEditing(null)}
+              onCancel={() => {
+                setEditing(null);
+              }}
             />
           )}
           {error !== null && <span className="field_error">{error}</span>}

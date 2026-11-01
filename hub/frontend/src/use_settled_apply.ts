@@ -89,22 +89,24 @@ export function useSettledApply(
     if (!isFailureOld) {
       return;
     }
-    const timer = window.setTimeout(
-      () => setIsFailureOld(false),
-      OLD_FAILURE_LIMIT_MS,
-    );
-    return () => window.clearTimeout(timer);
+    const timer = window.setTimeout(() => {
+      setIsFailureOld(false);
+    }, OLD_FAILURE_LIMIT_MS);
+    return () => {
+      window.clearTimeout(timer);
+    };
   }, [isFailureOld]);
 
   useEffect(() => {
     if (!isSettling) {
       return;
     }
-    const timer = window.setTimeout(
-      () => setIsSettling(false),
-      SETTLE_LIMIT_MS,
-    );
-    return () => window.clearTimeout(timer);
+    const timer = window.setTimeout(() => {
+      setIsSettling(false);
+    }, SETTLE_LIMIT_MS);
+    return () => {
+      window.clearTimeout(timer);
+    };
   }, [isSettling]);
 
   const begin = useCallback(() => {

@@ -140,8 +140,12 @@ export function ProxyPage() {
     resetDraft();
   };
 
-  const updateResolvers = (key: "remote_dns" | "direct_dns", rows: string[]) =>
+  const updateResolvers = (
+    key: "remote_dns" | "direct_dns",
+    rows: string[],
+  ) => {
     updateDraft({ [key]: resolversOf(rows) });
+  };
 
   if (resource.error !== null && resource.data === null) {
     return (
@@ -222,27 +226,35 @@ export function ProxyPage() {
         {mode !== "server" && (
           <ToggleSwitch
             isOn={draft.is_proxy_enabled}
-            onChange={(isOn) => updateDraft({ is_proxy_enabled: isOn })}
+            onChange={(isOn) => {
+              updateDraft({ is_proxy_enabled: isOn });
+            }}
             label={t("ui.proxy.lan_toggle")}
             description={t("ui.proxy.lan_toggle_description")}
           />
         )}
         <ToggleSwitch
           isOn={draft.is_overlay_proxy_enabled}
-          onChange={(isOn) => updateScope("is_overlay_proxy_enabled", isOn)}
+          onChange={(isOn) => {
+            updateScope("is_overlay_proxy_enabled", isOn);
+          }}
           label={t("ui.proxy.overlay_toggle")}
           description={describeScope("ui.proxy.overlay_toggle_description")}
         />
         <ToggleSwitch
           isOn={draft.is_local_proxy_enabled}
-          onChange={(isOn) => updateScope("is_local_proxy_enabled", isOn)}
+          onChange={(isOn) => {
+            updateScope("is_local_proxy_enabled", isOn);
+          }}
           label={t("ui.proxy.local_toggle")}
           description={describeScope("ui.proxy.local_toggle_description")}
         />
 
         <ToggleSwitch
           isOn={draft.is_direct_fallback_enabled}
-          onChange={(isOn) => updateDraft({ is_direct_fallback_enabled: isOn })}
+          onChange={(isOn) => {
+            updateDraft({ is_direct_fallback_enabled: isOn });
+          }}
           label={t("ui.proxy.fallback_toggle")}
           description={t("ui.proxy.fallback_toggle_description")}
         />
@@ -258,9 +270,9 @@ export function ProxyPage() {
               </span>
               <ToggleSwitch
                 isOn={draft.is_geoip_split_enabled}
-                onChange={(isOn) =>
-                  updateDraft({ is_geoip_split_enabled: isOn })
-                }
+                onChange={(isOn) => {
+                  updateDraft({ is_geoip_split_enabled: isOn });
+                }}
                 ariaLabel={t("ui.proxy.geoip_title")}
               />
             </div>
@@ -302,7 +314,9 @@ export function ProxyPage() {
               description={t("ui.proxy.direct_domains_description")}
               placeholder="geosite:cn"
               values={draft.direct_domains}
-              onChange={(values) => updateDraft({ direct_domains: values })}
+              onChange={(values) => {
+                updateDraft({ direct_domains: values });
+              }}
             />
           </section>
 
@@ -318,7 +332,9 @@ export function ProxyPage() {
               description={t("ui.proxy.direct_ips_description")}
               placeholder="geoip:cn"
               values={draft.direct_ips}
-              onChange={(values) => updateDraft({ direct_ips: values })}
+              onChange={(values) => {
+                updateDraft({ direct_ips: values });
+              }}
             />
           </section>
         </div>
@@ -336,7 +352,9 @@ export function ProxyPage() {
               placeholder="1.1.1.1"
               emptyText={t("ui.proxy.remote_dns_required")}
               values={draft.remote_dns.map(resolverRow)}
-              onChange={(rows) => updateResolvers("remote_dns", rows)}
+              onChange={(rows) => {
+                updateResolvers("remote_dns", rows);
+              }}
             />
             <StringListEditor
               label={t("ui.proxy.direct_dns_label")}
@@ -344,7 +362,9 @@ export function ProxyPage() {
               placeholder="223.5.5.5"
               emptyText={t("ui.proxy.direct_dns_follows_network")}
               values={draft.direct_dns.map(resolverRow)}
-              onChange={(rows) => updateResolvers("direct_dns", rows)}
+              onChange={(rows) => {
+                updateResolvers("direct_dns", rows);
+              }}
             />
           </div>
         </section>

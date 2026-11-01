@@ -68,9 +68,9 @@ export function StringListEditor({
   };
 
   const handleBrowse = () => {
-    onBrowse?.(rowFolder(draft.trim()), (folder) =>
-      setDraft((current) => withRowFolder(current.trim(), folder)),
-    );
+    onBrowse?.(rowFolder(draft.trim()), (folder) => {
+      setDraft((current) => withRowFolder(current.trim(), folder));
+    });
   };
 
   return (
@@ -95,7 +95,9 @@ export function StringListEditor({
               type="button"
               className="string_list_editor_remove"
               aria-label={t("ui.list.remove", { name: value })}
-              onClick={() => handleRemove(value)}
+              onClick={() => {
+                handleRemove(value);
+              }}
             >
               <Icon name="close" size={11} />
             </button>
@@ -113,7 +115,9 @@ export function StringListEditor({
           className="input"
           value={draft}
           placeholder={placeholder ?? t("ui.list.add_placeholder")}
-          onChange={(event) => setDraft(event.target.value)}
+          onChange={(event) => {
+            setDraft(event.target.value);
+          }}
         />
         <div className="string_list_editor_buttons">
           <button type="submit" className="button button--small">

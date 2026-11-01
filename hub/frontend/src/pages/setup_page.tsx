@@ -187,10 +187,11 @@ export function SetupPage({ token, context }: SetupPageProps) {
     setUpstream(port?.upstream_gateway ?? "");
   }, [lan, mode, context.interfaces, context.defaults]);
 
-  const replaceLink = (position: number, next: DraftLink) =>
+  const replaceLink = (position: number, next: DraftLink) => {
     setLinks((current) =>
       current.map((link, at) => (at === position ? next : link)),
     );
+  };
 
   // The hub reads the link, not this page: a second parser for one format is
   // a second thing to keep in step. A link it reads becomes a chip named
@@ -300,9 +301,13 @@ export function SetupPage({ token, context }: SetupPageProps) {
           setState(answer);
           setMissedPolls(0);
         })
-        .catch(() => setMissedPolls((count) => count + 1));
+        .catch(() => {
+          setMissedPolls((count) => count + 1);
+        });
     }, POLL_INTERVAL_MS);
-    return () => window.clearInterval(handle);
+    return () => {
+      window.clearInterval(handle);
+    };
   }, [state, token]);
 
   const isRejected = state?.state === "rejected";
@@ -463,7 +468,9 @@ export function SetupPage({ token, context }: SetupPageProps) {
                 type="button"
                 key={entry.key}
                 className={`setup_mode ${entry.key === mode ? "setup_mode--chosen" : ""}`}
-                onClick={() => setMode(entry.key)}
+                onClick={() => {
+                  setMode(entry.key);
+                }}
               >
                 <span className="setup_mode_name">
                   {t(`ui.setup.mode_${entry.key}`)}
@@ -537,9 +544,9 @@ export function SetupPage({ token, context }: SetupPageProps) {
                 className="input"
                 value={vlanId}
                 inputMode="numeric"
-                onChange={(event) =>
-                  setVlanId(Number(event.target.value.replace(/\D/g, "")) || 0)
-                }
+                onChange={(event) => {
+                  setVlanId(Number(event.target.value.replace(/\D/g, "")) || 0);
+                }}
               />
             </label>
           )}
@@ -550,7 +557,9 @@ export function SetupPage({ token, context }: SetupPageProps) {
                 className="input"
                 value={address}
                 placeholder="192.168.8.1"
-                onChange={(event) => setAddress(event.target.value.trim())}
+                onChange={(event) => {
+                  setAddress(event.target.value.trim());
+                }}
               />
             </label>
             <label className="field setup_field--narrow">
@@ -559,11 +568,11 @@ export function SetupPage({ token, context }: SetupPageProps) {
                 className="input"
                 value={prefixLen}
                 inputMode="numeric"
-                onChange={(event) =>
+                onChange={(event) => {
                   setPrefixLen(
                     Number(event.target.value.replace(/\D/g, "")) || 0,
-                  )
-                }
+                  );
+                }}
               />
             </label>
           </div>
@@ -576,7 +585,9 @@ export function SetupPage({ token, context }: SetupPageProps) {
                 className="input"
                 value={upstream}
                 placeholder="192.168.1.1"
-                onChange={(event) => setUpstream(event.target.value.trim())}
+                onChange={(event) => {
+                  setUpstream(event.target.value.trim());
+                }}
               />
             </label>
           )}
@@ -620,13 +631,13 @@ export function SetupPage({ token, context }: SetupPageProps) {
                         value={link.value}
                         autoFocus={position > 0}
                         placeholder={t("ui.setup.link_placeholder")}
-                        onChange={(event) =>
+                        onChange={(event) => {
                           replaceLink(position, {
                             ...link,
                             value: event.target.value,
                             detail: "",
-                          })
-                        }
+                          });
+                        }}
                         onBlur={() => void readLink(position)}
                       />
                     ) : (
@@ -634,9 +645,9 @@ export function SetupPage({ token, context }: SetupPageProps) {
                         type="button"
                         className="button setup_chip"
                         title={link.value}
-                        onClick={() =>
-                          replaceLink(position, { ...link, isEditing: true })
-                        }
+                        onClick={() => {
+                          replaceLink(position, { ...link, isEditing: true });
+                        }}
                       >
                         <Icon name="nodes" size={14} />
                         <span className="setup_chip_name">{link.name}</span>
@@ -649,9 +660,9 @@ export function SetupPage({ token, context }: SetupPageProps) {
                         number: position + 1,
                       })}
                       disabled={links.length === 1}
-                      onClick={() =>
-                        setLinks(links.filter((_, at) => at !== position))
-                      }
+                      onClick={() => {
+                        setLinks(links.filter((_, at) => at !== position));
+                      }}
                     >
                       <Icon name="close" size={14} />
                     </button>
@@ -665,7 +676,9 @@ export function SetupPage({ token, context }: SetupPageProps) {
                 <button
                   type="button"
                   className="button button--small setup_link_add"
-                  onClick={() => setLinks([...links, emptyLink()])}
+                  onClick={() => {
+                    setLinks([...links, emptyLink()]);
+                  }}
                 >
                   <Icon name="plus" size={14} />
                   {t("ui.setup.link_add")}
@@ -919,9 +932,13 @@ function SetupRunning({
       return;
     }
     const outer = requestAnimationFrame(() => {
-      requestAnimationFrame(() => setIsLit(true));
+      requestAnimationFrame(() => {
+        setIsLit(true);
+      });
     });
-    return () => cancelAnimationFrame(outer);
+    return () => {
+      cancelAnimationFrame(outer);
+    };
   }, [isDone]);
 
   // A run that finished is worth a moment to read before the page is taken
@@ -945,14 +962,18 @@ function SetupRunning({
         // The wizard held the panel's own port, so the panel is this page's
         // origin: a session probe answering means it is up.
         fetch("/api/hub/auth/session")
-          .then(() => window.location.assign(panelUrl))
+          .then(() => {
+            window.location.assign(panelUrl);
+          })
           .catch(() => {
             // Still starting; the next tick asks again.
           });
         return 0;
       });
     }, 1000);
-    return () => window.clearInterval(handle);
+    return () => {
+      window.clearInterval(handle);
+    };
   }, [isDone, isLost, panelUrl, authority]);
 
   return (
@@ -1022,7 +1043,12 @@ function SetupAuthorityInstall({ authority }: { authority: SetupAuthority }) {
       new Blob([bytes], { type: AUTHORITY_MEDIA_TYPE }),
     );
   }, [authority.der]);
-  useEffect(() => () => URL.revokeObjectURL(href), [href]);
+  useEffect(
+    () => () => {
+      URL.revokeObjectURL(href);
+    },
+    [href],
+  );
 
   return (
     <section className="setup_install">
@@ -1066,7 +1092,9 @@ function PortChoice({
             key={port.name}
             disabled={port.name === refused}
             className={`setup_port ${port.name === chosen ? "setup_port--chosen" : ""}`}
-            onClick={() => onChoose(port.name)}
+            onClick={() => {
+              onChoose(port.name);
+            }}
           >
             <span className="setup_port_name">{port.name}</span>
             <span className="setup_port_kind">
@@ -1130,9 +1158,9 @@ function PortField({
         className="input"
         value={value}
         inputMode="numeric"
-        onChange={(event) =>
-          onChange(Number(event.target.value.replace(/\D/g, "")) || 0)
-        }
+        onChange={(event) => {
+          onChange(Number(event.target.value.replace(/\D/g, "")) || 0);
+        }}
       />
     </label>
   );

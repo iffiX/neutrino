@@ -241,7 +241,9 @@ export function ContainersAccountModal({
             isWindows={isWindows}
             memoryNeedGib={needGib > memoryNow ? needGib : null}
             isDisabled={isSaving}
-            onChange={(change) => setEdits({ ...edits, ...change })}
+            onChange={(change) => {
+              setEdits({ ...edits, ...change });
+            }}
           />
         </>
       )}

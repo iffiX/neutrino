@@ -117,7 +117,9 @@ export function ModuleCatalogModal({
           placeholder={t("ui.module_catalog.search")}
           aria-label={t("ui.module_catalog.search")}
           value={search}
-          onChange={(event) => setSearch(event.target.value)}
+          onChange={(event) => {
+            setSearch(event.target.value);
+          }}
         />
       }
       foot={
@@ -139,7 +141,9 @@ export function ModuleCatalogModal({
                 key={id}
                 type="button"
                 className={`module_catalog_filter ${category === id ? "module_catalog_filter--on" : ""}`}
-                onClick={() => setCategory(id)}
+                onClick={() => {
+                  setCategory(id);
+                }}
               >
                 {t(`ui.module_catalog.category_${id}`)}
                 {id !== ALL_CATEGORIES &&

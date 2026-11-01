@@ -104,12 +104,13 @@ export function DeclareServiceModal({
     Object.keys(TYPE_KEYS) as DeclaredEntryType[]
   ).map((type) => ({ id: type, name: t(TYPE_KEYS[type]) }));
 
-  const patch = (index: number, change: Partial<EntryDraft>) =>
+  const patch = (index: number, change: Partial<EntryDraft>) => {
     setEntries((current) =>
       current.map((entry, at) =>
         at === index ? { ...entry, ...change } : entry,
       ),
     );
+  };
 
   const isReady =
     name.trim() !== "" &&
@@ -171,7 +172,9 @@ export function DeclareServiceModal({
             className="input"
             value={name}
             autoFocus
-            onChange={(event) => setName(event.target.value)}
+            onChange={(event) => {
+              setName(event.target.value);
+            }}
           />
         </label>
         <label className="field">
@@ -180,7 +183,9 @@ export function DeclareServiceModal({
             className="input mono"
             value={host}
             spellCheck={false}
-            onChange={(event) => setHost(event.target.value)}
+            onChange={(event) => {
+              setHost(event.target.value);
+            }}
           />
           <span className="field_hint">{t("ui.services.host_hint")}</span>
         </label>
@@ -192,7 +197,9 @@ export function DeclareServiceModal({
         <input
           className="input"
           value={description}
-          onChange={(event) => setDescription(event.target.value)}
+          onChange={(event) => {
+            setDescription(event.target.value);
+          }}
         />
       </label>
 
@@ -203,9 +210,9 @@ export function DeclareServiceModal({
             <Picker
               options={typeOptions}
               value={entry.type}
-              onChange={(type) =>
-                patch(index, { type: type as DeclaredEntryType })
-              }
+              onChange={(type) => {
+                patch(index, { type: type as DeclaredEntryType });
+              }}
               label={t("ui.services.entry_type")}
             />
             <label className="field declare_entry_port">
@@ -215,7 +222,9 @@ export function DeclareServiceModal({
                 value={entry.port}
                 inputMode="numeric"
                 placeholder={entry.type === "file" ? FILE_PORT : ""}
-                onChange={(event) => patch(index, { port: event.target.value })}
+                onChange={(event) => {
+                  patch(index, { port: event.target.value });
+                }}
               />
             </label>
             {entry.type === "web" && (
@@ -223,7 +232,9 @@ export function DeclareServiceModal({
                 <Picker
                   options={SCHEME_OPTIONS}
                   value={entry.scheme}
-                  onChange={(scheme) => patch(index, { scheme })}
+                  onChange={(scheme) => {
+                    patch(index, { scheme });
+                  }}
                   label={t("ui.services.field_scheme")}
                 />
                 <label className="field">
@@ -234,9 +245,9 @@ export function DeclareServiceModal({
                     className="input mono"
                     value={entry.path}
                     spellCheck={false}
-                    onChange={(event) =>
-                      patch(index, { path: event.target.value })
-                    }
+                    onChange={(event) => {
+                      patch(index, { path: event.target.value });
+                    }}
                   />
                 </label>
               </>
@@ -245,9 +256,9 @@ export function DeclareServiceModal({
               <Picker
                 options={PROTOCOL_OPTIONS}
                 value={entry.protocol}
-                onChange={(protocol) =>
-                  patch(index, { protocol: protocol as "tcp" | "udp" })
-                }
+                onChange={(protocol) => {
+                  patch(index, { protocol: protocol as "tcp" | "udp" });
+                }}
                 label={t("ui.services.field_protocol")}
               />
             )}
@@ -260,9 +271,9 @@ export function DeclareServiceModal({
                   className="input mono"
                   value={entry.share}
                   spellCheck={false}
-                  onChange={(event) =>
-                    patch(index, { share: event.target.value })
-                  }
+                  onChange={(event) => {
+                    patch(index, { share: event.target.value });
+                  }}
                 />
               </label>
             )}
@@ -270,9 +281,11 @@ export function DeclareServiceModal({
               type="button"
               className="button button--ghost button--small declare_entry_remove"
               disabled={entries.length === 1}
-              onClick={() =>
-                setEntries((current) => current.filter((_, at) => at !== index))
-              }
+              onClick={() => {
+                setEntries((current) =>
+                  current.filter((_, at) => at !== index),
+                );
+              }}
             >
               {t("ui.services.entry_remove")}
             </button>
@@ -282,7 +295,9 @@ export function DeclareServiceModal({
           <button
             type="button"
             className="button button--small"
-            onClick={() => setEntries((current) => [...current, NEW_ENTRY])}
+            onClick={() => {
+              setEntries((current) => [...current, NEW_ENTRY]);
+            }}
           >
             <Icon name="plus" size={13} />
             {t("ui.services.add_entry")}

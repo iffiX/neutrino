@@ -90,7 +90,9 @@ function SshKeysSection() {
           <button
             type="button"
             className="button credentials_section_action"
-            onClick={() => setIsAdding(true)}
+            onClick={() => {
+              setIsAdding(true);
+            }}
           >
             <Icon name="plus" size={14} />
             {t("ui.credentials.add_key")}
@@ -103,7 +105,12 @@ function SshKeysSection() {
       )}
 
       {isAdding && (
-        <AddKeyForm onAdded={handleAdded} onCancel={() => setIsAdding(false)} />
+        <AddKeyForm
+          onAdded={handleAdded}
+          onCancel={() => {
+            setIsAdding(false);
+          }}
+        />
       )}
 
       {keys.length === 0 && !isAdding ? (
@@ -154,7 +161,9 @@ function LoginsSection() {
           <button
             type="button"
             className="button credentials_section_action"
-            onClick={() => setIsAdding(true)}
+            onClick={() => {
+              setIsAdding(true);
+            }}
           >
             <Icon name="plus" size={14} />
             {t("ui.credentials.add_login")}
@@ -168,7 +177,12 @@ function LoginsSection() {
       )}
 
       {isAdding && (
-        <LoginForm onAdded={handleAdded} onCancel={() => setIsAdding(false)} />
+        <LoginForm
+          onAdded={handleAdded}
+          onCancel={() => {
+            setIsAdding(false);
+          }}
+        />
       )}
 
       {logins.length === 0 && !isAdding ? (
@@ -219,7 +233,9 @@ function TokensSection() {
           <button
             type="button"
             className="button credentials_section_action"
-            onClick={() => setIsAdding(true)}
+            onClick={() => {
+              setIsAdding(true);
+            }}
           >
             <Icon name="plus" size={14} />
             {t("ui.credentials.add_token")}
@@ -233,7 +249,12 @@ function TokensSection() {
       )}
 
       {isAdding && (
-        <TokenForm onAdded={handleAdded} onCancel={() => setIsAdding(false)} />
+        <TokenForm
+          onAdded={handleAdded}
+          onCancel={() => {
+            setIsAdding(false);
+          }}
+        />
       )}
 
       {tokens.length === 0 && !isAdding ? (
@@ -300,7 +321,9 @@ function AddKeyForm({ onAdded, onCancel }: AddKeyFormProps) {
           value={name}
           placeholder={KEY_NAME_PLACEHOLDER}
           autoFocus
-          onChange={(event) => setName(event.target.value)}
+          onChange={(event) => {
+            setName(event.target.value);
+          }}
         />
       </label>
       <label className="field">
@@ -312,7 +335,9 @@ function AddKeyForm({ onAdded, onCancel }: AddKeyFormProps) {
           autoComplete="off"
           rows={8}
           placeholder={privateKeyPlaceholder()}
-          onChange={(event) => setPrivateKey(event.target.value)}
+          onChange={(event) => {
+            setPrivateKey(event.target.value);
+          }}
         />
         <span className="field_hint">{t("ui.credentials.key_hint")}</span>
       </label>
@@ -358,7 +383,7 @@ function KeyCard({ value, onDeleted }: KeyCardProps) {
   const [error, setError] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
 
-  const handleDelete = () =>
+  const handleDelete = () => {
     confirm.ask({
       title: t("ui.credentials.delete_title", { name: value.name }),
       body: value.is_relay_key
@@ -367,6 +392,7 @@ function KeyCard({ value, onDeleted }: KeyCardProps) {
       confirmLabel: t("ui.credentials.delete"),
       onConfirm: () => void deleteKey(),
     });
+  };
 
   const deleteKey = async () => {
     setIsBusy(true);
@@ -481,7 +507,9 @@ function LoginForm({ onAdded, onCancel }: LoginFormProps) {
             value={name}
             placeholder={LOGIN_NAME_PLACEHOLDER}
             autoFocus
-            onChange={(event) => setName(event.target.value)}
+            onChange={(event) => {
+              setName(event.target.value);
+            }}
           />
         </label>
         <label className="field">
@@ -491,7 +519,9 @@ function LoginForm({ onAdded, onCancel }: LoginFormProps) {
             value={username}
             placeholder={LOGIN_USERNAME_PLACEHOLDER}
             spellCheck={false}
-            onChange={(event) => setUsername(event.target.value)}
+            onChange={(event) => {
+              setUsername(event.target.value);
+            }}
           />
           <span className="field_hint">
             {t("ui.credentials.username_hint")}
@@ -540,7 +570,7 @@ function LoginCard({ value, onDeleted }: LoginCardProps) {
   const [error, setError] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
 
-  const handleDelete = () =>
+  const handleDelete = () => {
     confirm.ask({
       title: t("ui.credentials.delete_title", { name: value.name }),
       body: value.is_relay_login
@@ -549,6 +579,7 @@ function LoginCard({ value, onDeleted }: LoginCardProps) {
       confirmLabel: t("ui.credentials.delete"),
       onConfirm: () => void deleteLogin(),
     });
+  };
 
   const deleteLogin = async () => {
     setIsBusy(true);
@@ -655,7 +686,9 @@ function TokenForm({ onAdded, onCancel }: TokenFormProps) {
           value={name}
           placeholder={TOKEN_NAME_PLACEHOLDER}
           autoFocus
-          onChange={(event) => setName(event.target.value)}
+          onChange={(event) => {
+            setName(event.target.value);
+          }}
         />
       </label>
       <label className="field">
@@ -700,13 +733,14 @@ function TokenCard({ value, onDeleted }: TokenCardProps) {
   const [error, setError] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
 
-  const handleDelete = () =>
+  const handleDelete = () => {
     confirm.ask({
       title: t("ui.credentials.delete_title", { name: value.name }),
       body: tokenDeleteBody(value.provider_count, value.node_count),
       confirmLabel: t("ui.credentials.delete"),
       onConfirm: () => void deleteToken(),
     });
+  };
 
   const deleteToken = async () => {
     setIsBusy(true);

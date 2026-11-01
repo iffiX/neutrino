@@ -97,7 +97,9 @@ export function EasyTierSection() {
         reload();
       }
     }, PEER_RELOAD_MS);
-    return () => window.clearInterval(timer);
+    return () => {
+      window.clearInterval(timer);
+    };
   }, [reload]);
 
   const view = resource.data;
@@ -351,7 +353,9 @@ function SettingsPanel({ view, onApplied }: SettingsPanelProps) {
             type="button"
             className={`overlay_choice ${mode === draft.mode ? "overlay_choice--on" : ""}`}
             aria-pressed={mode === draft.mode}
-            onClick={() => change({ mode })}
+            onClick={() => {
+              change({ mode });
+            }}
           >
             <span className="overlay_choice_head">
               <strong>{t(MODE_LABEL_KEYS[mode])}</strong>
@@ -438,18 +442,20 @@ function ConsoleFields({ view, draft, revision, onChange }: FieldsProps) {
         label={t("ui.overlay.config_server_label")}
         isKept={isKept}
         value={draft.configServer}
-        onChange={(value) =>
-          onChange({ configServer: value, isConsoleForgotten: false })
-        }
+        onChange={(value) => {
+          onChange({ configServer: value, isConsoleForgotten: false });
+        }}
         placeholder={t("ui.overlay.config_server_placeholder")}
-        onForget={() =>
-          onChange({ configServer: "", isConsoleForgotten: true })
-        }
+        onForget={() => {
+          onChange({ configServer: "", isConsoleForgotten: true });
+        }}
       />
       <p className="field_hint">{t("ui.overlay.config_server_hint")}</p>
       <ToggleSwitch
         isOn={draft.isSecureMode}
-        onChange={(isOn) => onChange({ isSecureMode: isOn })}
+        onChange={(isOn) => {
+          onChange({ isSecureMode: isOn });
+        }}
         label={t("ui.overlay.secure_mode")}
         description={t("ui.overlay.secure_mode_description")}
       />
@@ -503,7 +509,9 @@ function ManualFields({ view, draft, revision, onChange }: FieldsProps) {
             className="input"
             value={draft.networkName}
             spellCheck={false}
-            onChange={(event) => onChange({ networkName: event.target.value })}
+            onChange={(event) => {
+              onChange({ networkName: event.target.value });
+            }}
           />
         </label>
         <label className="field">
@@ -513,7 +521,9 @@ function ManualFields({ view, draft, revision, onChange }: FieldsProps) {
             value={draft.address}
             spellCheck={false}
             placeholder="10.0.0.1/24"
-            onChange={(event) => onChange({ address: event.target.value })}
+            onChange={(event) => {
+              onChange({ address: event.target.value });
+            }}
           />
         </label>
       </div>
@@ -522,7 +532,9 @@ function ManualFields({ view, draft, revision, onChange }: FieldsProps) {
         label={t("ui.overlay.network_secret")}
         isKept={view.is_secret_set}
         value={draft.networkSecret}
-        onChange={(value) => onChange({ networkSecret: value })}
+        onChange={(value) => {
+          onChange({ networkSecret: value });
+        }}
         placeholder={t("ui.overlay.secret_placeholder")}
       />
 
@@ -535,11 +547,11 @@ function ManualFields({ view, draft, revision, onChange }: FieldsProps) {
             <button
               type="button"
               className="button button--ghost"
-              onClick={() =>
+              onClick={() => {
                 onChange({
                   peers: draft.peers.filter((entry) => entry !== peer),
-                })
-              }
+                });
+              }}
             >
               <Icon name="trash" size={14} />
               {t("ui.overlay.remove")}
@@ -556,7 +568,9 @@ function ManualFields({ view, draft, revision, onChange }: FieldsProps) {
           value={typedPeer}
           spellCheck={false}
           placeholder="tcp://198.51.100.7:11010"
-          onChange={(event) => setTypedPeer(event.target.value)}
+          onChange={(event) => {
+            setTypedPeer(event.target.value);
+          }}
           onKeyDown={(event) => {
             if (event.key === "Enter") {
               event.preventDefault();
@@ -578,9 +592,9 @@ function ManualFields({ view, draft, revision, onChange }: FieldsProps) {
             <input
               type="checkbox"
               checked={draft.exportedNetworks.includes(entry.cidr)}
-              onChange={(event) =>
-                toggleNetwork(entry.cidr, event.target.checked)
-              }
+              onChange={(event) => {
+                toggleNetwork(entry.cidr, event.target.checked);
+              }}
             />
             <span className="easytier_row_text">{entry.cidr}</span>
             <span className="field_hint">{entry.interface}</span>
@@ -592,7 +606,9 @@ function ManualFields({ view, draft, revision, onChange }: FieldsProps) {
             <button
               type="button"
               className="button button--ghost"
-              onClick={() => toggleNetwork(cidr, false)}
+              onClick={() => {
+                toggleNetwork(cidr, false);
+              }}
             >
               <Icon name="trash" size={14} />
               {t("ui.overlay.remove")}
@@ -606,7 +622,9 @@ function ManualFields({ view, draft, revision, onChange }: FieldsProps) {
           value={typedNetwork}
           spellCheck={false}
           placeholder="10.20.0.0/24"
-          onChange={(event) => setTypedNetwork(event.target.value)}
+          onChange={(event) => {
+            setTypedNetwork(event.target.value);
+          }}
           onKeyDown={(event) => {
             if (event.key === "Enter") {
               event.preventDefault();
@@ -724,7 +742,9 @@ function CommandPanel({ view }: { view: EasyTierView }) {
       );
       await copyText(line(secret.network_secret));
       setCopied(kind);
-      window.setTimeout(() => setCopied(null), 1500);
+      window.setTimeout(() => {
+        setCopied(null);
+      }, 1500);
     } catch (cause: unknown) {
       setError(describeError(cause));
     }

@@ -117,7 +117,7 @@ export function ClientPermissionForm({
     onChange?.(wantedOf(kinds, next, nextFineMode));
   };
 
-  const toggle = (kind: string, isOn: boolean) =>
+  const toggle = (kind: string, isOn: boolean) => {
     change(
       {
         ...draft,
@@ -127,6 +127,7 @@ export function ClientPermissionForm({
       },
       isFineMode,
     );
+  };
 
   const toggleDevice = (kind: string, deviceId: string, isOn: boolean) => {
     const chosen = draft.devices[kind] ?? [];
@@ -210,7 +211,9 @@ export function ClientPermissionForm({
               <div className="client_permission_row">
                 <ToggleSwitch
                   isOn={isOn}
-                  onChange={(next) => toggle(kind, next)}
+                  onChange={(next) => {
+                    toggle(kind, next);
+                  }}
                   label={t(`ui.clients.kind_${kind}`)}
                   description={
                     kind === KIND_PANEL
@@ -228,9 +231,9 @@ export function ClientPermissionForm({
                       kind: t(`ui.clients.kind_${kind}`),
                     })}
                     disabled={isKindLocked || !isOn}
-                    onClick={() =>
-                      setFiltering(filtering === kind ? null : kind)
-                    }
+                    onClick={() => {
+                      setFiltering(filtering === kind ? null : kind);
+                    }}
                   >
                     <span className="client_permission_filter_text">
                       {filterLabel(chosen, devices)}
@@ -246,9 +249,9 @@ export function ClientPermissionForm({
                       <input
                         type="checkbox"
                         checked={chosen.includes(device.id)}
-                        onChange={(event) =>
-                          toggleDevice(kind, device.id, event.target.checked)
-                        }
+                        onChange={(event) => {
+                          toggleDevice(kind, device.id, event.target.checked);
+                        }}
                       />
                       <span>{device.name}</span>
                     </label>
@@ -273,7 +276,9 @@ export function ClientPermissionForm({
                       isOn={isRowPermitted(shown, kind, row)}
                       isStored={row.id in shown.entries}
                       isDisabled={isKindLocked}
-                      onSet={(next) => setRow(row.id, next)}
+                      onSet={(next) => {
+                        setRow(row.id, next);
+                      }}
                     />
                   ))}
                 </div>
@@ -355,7 +360,9 @@ function PermissionAppRow({
           type="button"
           className="button button--small button--ghost"
           disabled={isDisabled}
-          onClick={() => onSet(null)}
+          onClick={() => {
+            onSet(null);
+          }}
         >
           {t("ui.clients.follow_kind")}
         </button>

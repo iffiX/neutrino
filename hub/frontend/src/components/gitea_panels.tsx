@@ -130,12 +130,12 @@ export function GiteaPanels({
               min={1}
               max={65535}
               value={draft.listen_port}
-              onChange={(event) =>
+              onChange={(event) => {
                 setDraft({
                   ...draft,
                   listen_port: Number(event.target.value),
-                })
-              }
+                });
+              }}
             />
           </label>
           <label className="field gitea_field_url">
@@ -146,18 +146,18 @@ export function GiteaPanels({
                 url: `http://${host}:${draft.listen_port}/`,
               })}
               value={draft.root_url}
-              onChange={(event) =>
-                setDraft({ ...draft, root_url: event.target.value })
-              }
+              onChange={(event) => {
+                setDraft({ ...draft, root_url: event.target.value });
+              }}
             />
             <span className="field_hint">{t("ui.gitea.root_url_hint")}</span>
           </label>
         </div>
         <ToggleSwitch
           isOn={draft.is_registration_enabled}
-          onChange={(isOn) =>
-            setDraft({ ...draft, is_registration_enabled: isOn })
-          }
+          onChange={(isOn) => {
+            setDraft({ ...draft, is_registration_enabled: isOn });
+          }}
           label={t("ui.gitea.registration")}
           description={t("ui.gitea.registration_hint")}
         />
@@ -272,7 +272,9 @@ function AdminSection({
               className="input"
               placeholder={t("ui.gitea.admin_username")}
               value={username}
-              onChange={(event) => setUsername(event.target.value)}
+              onChange={(event) => {
+                setUsername(event.target.value);
+              }}
             />
             <PasswordInput
               value={password}
@@ -283,7 +285,9 @@ function AdminSection({
               className="input"
               placeholder={t("ui.gitea.admin_email")}
               value={email}
-              onChange={(event) => setEmail(event.target.value)}
+              onChange={(event) => {
+                setEmail(event.target.value);
+              }}
             />
             <button
               type="button"

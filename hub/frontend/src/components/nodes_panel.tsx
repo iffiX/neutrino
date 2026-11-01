@@ -248,13 +248,14 @@ export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
     }
   };
 
-  const handleRemoveNode = (node: NodeView) =>
+  const handleRemoveNode = (node: NodeView) => {
     confirm.ask({
       title: t(TEXT_KEYS.removeTitle, { name: node.name }),
       body: t(TEXT_KEYS.removeBody),
       confirmLabel: t(TEXT_KEYS.removeConfirm),
       onConfirm: () => void removeNode(node),
     });
+  };
 
   const removeNode = async (node: NodeView) => {
     setActionError(null);
@@ -368,7 +369,9 @@ export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
               className="input"
               value={draftBalancer?.probe_url ?? ""}
               disabled={draftBalancer === null}
-              onChange={(event) => handleProbeUrlChange(event.target.value)}
+              onChange={(event) => {
+                handleProbeUrlChange(event.target.value);
+              }}
             />
             <span className="field_hint">{t(TEXT_KEYS.probeUrlHint)}</span>
           </label>
@@ -381,7 +384,9 @@ export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
               className="input"
               value={draftBalancer?.reference_url ?? ""}
               disabled={draftBalancer === null}
-              onChange={(event) => handleReferenceUrlChange(event.target.value)}
+              onChange={(event) => {
+                handleReferenceUrlChange(event.target.value);
+              }}
             />
             <span className="field_hint">{t(TEXT_KEYS.referenceUrlHint)}</span>
           </label>
@@ -395,9 +400,9 @@ export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
               inputMode="numeric"
               value={draftBalancer?.probe_interval_s ?? ""}
               disabled={draftBalancer === null}
-              onChange={(event) =>
-                handleProbeIntervalChange(event.target.value)
-              }
+              onChange={(event) => {
+                handleProbeIntervalChange(event.target.value);
+              }}
             />
             <span className="field_hint">{t(TEXT_KEYS.probeIntervalHint)}</span>
           </label>
@@ -409,7 +414,9 @@ export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
           <button
             type="button"
             className="button"
-            onClick={() => setIsAddOpen((open) => !open)}
+            onClick={() => {
+              setIsAddOpen((open) => !open);
+            }}
           >
             <Icon name="plus" size={14} />
             {t(TEXT_KEYS.nodeAdd)}
@@ -438,7 +445,9 @@ export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
               value={shareLink}
               placeholder="ss://… or vless://…"
               autoFocus
-              onChange={(event) => setShareLink(event.target.value)}
+              onChange={(event) => {
+                setShareLink(event.target.value);
+              }}
             />
             <span className="field_hint">{t(TEXT_KEYS.shareLinkHint)}</span>
           </label>
@@ -493,9 +502,13 @@ export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
               node={node}
               isDirty={applied !== null && isNodeChanged(applied.nodes, node)}
               isTesting={testingIds.includes(node.id)}
-              onToggle={(isEnabled) => handleToggleNode(node.id, isEnabled)}
+              onToggle={(isEnabled) => {
+                handleToggleNode(node.id, isEnabled);
+              }}
               onTest={() => void handleTestNode(node.id)}
-              onRemove={() => handleRemoveNode(node)}
+              onRemove={() => {
+                handleRemoveNode(node);
+              }}
             />
           ))}
         </div>

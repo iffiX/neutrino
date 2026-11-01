@@ -52,7 +52,9 @@ export function useAnimatedNumber(
     };
 
     frame = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(frame);
+    return () => {
+      cancelAnimationFrame(frame);
+    };
   }, [target, durationMs]);
 
   return displayed;

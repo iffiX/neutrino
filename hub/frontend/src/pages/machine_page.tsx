@@ -305,7 +305,9 @@ function AgentPanel({ device, onReinstalled }: AgentPanelProps) {
           type="button"
           className="button"
           disabled={task.isRunning}
-          onClick={() => setIsInstallOpen(true)}
+          onClick={() => {
+            setIsInstallOpen(true);
+          }}
         >
           <Icon name="refresh" size={14} />
           {t("ui.machine.agent_reinstall")}
@@ -339,7 +341,9 @@ function AgentPanel({ device, onReinstalled }: AgentPanelProps) {
       {isInstallOpen && (
         <InstallAgentModal
           device={device}
-          onClose={() => setIsInstallOpen(false)}
+          onClose={() => {
+            setIsInstallOpen(false);
+          }}
           onFinished={onReinstalled}
         />
       )}

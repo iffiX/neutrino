@@ -88,9 +88,9 @@ export function RemoteDesktopPanel({ deviceId, rdp }: RemoteDesktopPanelProps) {
   // Bumped on each report of this machine, so the status reads again after
   // software lands on it.
   const [reportRevision, setReportRevision] = useState(0);
-  useHubEvents([{ type: HUB_EVENT_DEVICE_REPORT, key: deviceId }], () =>
-    setReportRevision((current) => current + 1),
-  );
+  useHubEvents([{ type: HUB_EVENT_DEVICE_REPORT, key: deviceId }], () => {
+    setReportRevision((current) => current + 1);
+  });
 
   const loadStatus = async () => {
     setError(null);
@@ -139,7 +139,9 @@ export function RemoteDesktopPanel({ deviceId, rdp }: RemoteDesktopPanelProps) {
         setError(null);
         void apiPost("/hub/device/desktop/seat_password/reset", {
           device_id: deviceId,
-        }).catch((cause: unknown) => setError(describeResetError(cause)));
+        }).catch((cause: unknown) => {
+          setError(describeResetError(cause));
+        });
       },
     });
   };
@@ -322,13 +324,13 @@ function ProductCard({ status, deviceId, isBusy, onRun }: ProductCardProps) {
                 type="button"
                 className="button button--small"
                 disabled={isBusy || password.length === 0}
-                onClick={() =>
+                onClick={() => {
                   onRun("/hub/device/remote_desktop/password/set", {
                     device_id: deviceId,
                     product: status.product,
                     password,
-                  })
-                }
+                  });
+                }}
               >
                 {t("ui.remote_desktop.set")}
               </button>

@@ -75,7 +75,9 @@ export function RelaySection({ onStateChange }: RelaySectionProps = {}) {
         reload();
       }
     }, RELAY_RELOAD_MS);
-    return () => window.clearInterval(timer);
+    return () => {
+      window.clearInterval(timer);
+    };
   }, [reload]);
 
   const view = resource.data;
@@ -257,7 +259,9 @@ function RelaySettingsPanel({ view, onChanged }: RelayPanelProps) {
             value={draft.host}
             spellCheck={false}
             placeholder="203.0.113.5"
-            onChange={(event) => change({ host: event.target.value })}
+            onChange={(event) => {
+              change({ host: event.target.value });
+            }}
           />
         </label>
         <label className="field">
@@ -266,7 +270,9 @@ function RelaySettingsPanel({ view, onChanged }: RelayPanelProps) {
             className="input"
             inputMode="numeric"
             value={draft.sshPort}
-            onChange={(event) => change({ sshPort: event.target.value })}
+            onChange={(event) => {
+              change({ sshPort: event.target.value });
+            }}
           />
         </label>
         <label className="field">
@@ -275,7 +281,9 @@ function RelaySettingsPanel({ view, onChanged }: RelayPanelProps) {
             className="input"
             value={draft.account}
             spellCheck={false}
-            onChange={(event) => change({ account: event.target.value })}
+            onChange={(event) => {
+              change({ account: event.target.value });
+            }}
           />
         </label>
         <label className="field">
@@ -286,7 +294,9 @@ function RelaySettingsPanel({ view, onChanged }: RelayPanelProps) {
             className="input"
             inputMode="numeric"
             value={draft.publicPort}
-            onChange={(event) => change({ publicPort: event.target.value })}
+            onChange={(event) => {
+              change({ publicPort: event.target.value });
+            }}
           />
         </label>
         <Picker
@@ -295,7 +305,9 @@ function RelaySettingsPanel({ view, onChanged }: RelayPanelProps) {
             { id: "login", name: t("ui.install_agent.kind_login") },
           ]}
           value={draft.credentialKind}
-          onChange={(id) => change({ credentialKind: id as CredentialKind })}
+          onChange={(id) => {
+            change({ credentialKind: id as CredentialKind });
+          }}
           label={t("ui.install_agent.credential")}
           hint={t("ui.overlay.relay_credential_hint")}
         />
@@ -304,7 +316,9 @@ function RelaySettingsPanel({ view, onChanged }: RelayPanelProps) {
         <VaultPicker
           kind="ssh_key"
           value={draft.keyId === "" ? null : draft.keyId}
-          onChange={(id) => change({ keyId: id ?? "" })}
+          onChange={(id) => {
+            change({ keyId: id ?? "" });
+          }}
           label={t("ui.install_agent.key")}
           hint={t("ui.install_agent.key_hint")}
         />
@@ -312,7 +326,9 @@ function RelaySettingsPanel({ view, onChanged }: RelayPanelProps) {
         <VaultPicker
           kind="login"
           value={draft.loginId === "" ? null : draft.loginId}
-          onChange={(id) => change({ loginId: id ?? "" })}
+          onChange={(id) => {
+            change({ loginId: id ?? "" });
+          }}
           label={t("ui.install_agent.login")}
           hint={t("ui.install_agent.login_hint")}
         />

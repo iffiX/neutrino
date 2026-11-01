@@ -172,7 +172,9 @@ export function InstallAgentModal({
           <input
             className="input"
             value={host}
-            onChange={(event) => setHost(event.target.value)}
+            onChange={(event) => {
+              setHost(event.target.value);
+            }}
           />
         </label>
         <label className="field">
@@ -181,7 +183,9 @@ export function InstallAgentModal({
             className={`input ${isPortValid ? "" : "input--invalid"}`}
             value={port}
             inputMode="numeric"
-            onChange={(event) => setPort(event.target.value)}
+            onChange={(event) => {
+              setPort(event.target.value);
+            }}
           />
           {!isPortValid && (
             <span className="field_error">
@@ -194,7 +198,9 @@ export function InstallAgentModal({
           <input
             className="input"
             value={username}
-            onChange={(event) => setUsername(event.target.value)}
+            onChange={(event) => {
+              setUsername(event.target.value);
+            }}
           />
         </label>
         <Picker
@@ -203,7 +209,9 @@ export function InstallAgentModal({
             { id: "login", name: t("ui.install_agent.kind_login") },
           ]}
           value={credentialKind}
-          onChange={(id) => setCredentialKind(id as CredentialKind)}
+          onChange={(id) => {
+            setCredentialKind(id as CredentialKind);
+          }}
           label={t("ui.install_agent.credential")}
           hint={t("ui.install_agent.credential_hint")}
         />

@@ -55,7 +55,9 @@ export function DeviceIconPicker({
         setPlace(null);
       }
     };
-    const closeOnScroll = () => setPlace(null);
+    const closeOnScroll = () => {
+      setPlace(null);
+    };
     document.addEventListener("pointerdown", close);
     document.addEventListener("keydown", closeOnEscape);
     window.addEventListener("scroll", closeOnScroll, true);

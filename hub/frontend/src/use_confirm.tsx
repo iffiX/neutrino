@@ -64,7 +64,9 @@ export function useConfirm(): Confirm {
           setPending(null);
           pending.onConfirm();
         }}
-        onCancel={() => setPending(null)}
+        onCancel={() => {
+          setPending(null);
+        }}
       />
     );
 

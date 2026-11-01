@@ -108,7 +108,7 @@ export function AiAccountsPanel() {
     }
   };
 
-  const askDelete = (account: CliproxyApiAccountView) =>
+  const askDelete = (account: CliproxyApiAccountView) => {
     confirm.ask({
       title: t("ui.ai.account_delete_title", {
         account: accountLabel(account),
@@ -117,6 +117,7 @@ export function AiAccountsPanel() {
       confirmLabel: t("ui.ai.delete"),
       onConfirm: () => void handleDelete(account),
     });
+  };
 
   return (
     <section className="settings_group">
@@ -127,7 +128,9 @@ export function AiAccountsPanel() {
           className="button credentials_section_action"
           disabled={!hasKinds || isBusy}
           title={hasKinds ? undefined : t("ui.ai.no_login_kinds")}
-          onClick={() => setIsSigningIn(true)}
+          onClick={() => {
+            setIsSigningIn(true);
+          }}
         >
           <Icon name="plus" size={14} />
           {t("ui.ai.sign_in")}
@@ -163,7 +166,9 @@ export function AiAccountsPanel() {
                 key={account.name}
                 value={account}
                 isBusy={isBusy}
-                onDelete={() => askDelete(account)}
+                onDelete={() => {
+                  askDelete(account);
+                }}
               />
             ))}
           </div>
@@ -173,7 +178,9 @@ export function AiAccountsPanel() {
         <AccountLoginModal
           kinds={loginKinds}
           onSignedIn={handleSignedIn}
-          onDismiss={() => setIsSigningIn(false)}
+          onDismiss={() => {
+            setIsSigningIn(false);
+          }}
         />
       )}
       {confirm.modal}
@@ -313,11 +320,14 @@ function AccountLoginModal({
       return;
     }
     const deadline = Date.now() + login.expires_in * 1000;
-    const update = () =>
+    const update = () => {
       setSecondsLeft(Math.max(0, Math.round((deadline - Date.now()) / 1000)));
+    };
     update();
     const handle = window.setInterval(update, COUNTDOWN_TICK_MS);
-    return () => window.clearInterval(handle);
+    return () => {
+      window.clearInterval(handle);
+    };
   }, [login]);
 
   const isPasteReady = pasted.trim().length > 0;
@@ -464,7 +474,9 @@ function AccountLoginModal({
                     autoFocus
                     spellCheck={false}
                     placeholder={t("ui.ai.paste_placeholder")}
-                    onChange={(event) => setPasted(event.target.value)}
+                    onChange={(event) => {
+                      setPasted(event.target.value);
+                    }}
                     onKeyDown={(event) => {
                       if (event.key === "Enter" && isPasteReady) {
                         void handleFinish();
@@ -540,7 +552,9 @@ function CopyButton({ value }: CopyButtonProps) {
     try {
       await copyText(value);
       setIsCopied(true);
-      window.setTimeout(() => setIsCopied(false), COPIED_CLEAR_MS);
+      window.setTimeout(() => {
+        setIsCopied(false);
+      }, COPIED_CLEAR_MS);
     } catch {
       // The value is on screen; copying by hand still works.
     }

@@ -150,7 +150,9 @@ export function VaultPicker({
               handleAdded(entry);
               finish(entry.id);
             }}
-            onCancel={() => finish(null)}
+            onCancel={() => {
+              finish(null);
+            }}
           />
         ),
       }}
@@ -195,7 +197,9 @@ function VaultAddForm({ kind, onAdded, onCancel }: VaultAddFormProps) {
           value={name}
           placeholder={t(keys.namePlaceholder)}
           autoFocus
-          onChange={(event) => setName(event.target.value)}
+          onChange={(event) => {
+            setName(event.target.value);
+          }}
         />
       </label>
       <label className="field">
@@ -208,7 +212,9 @@ function VaultAddForm({ kind, onAdded, onCancel }: VaultAddFormProps) {
             autoComplete="off"
             rows={5}
             placeholder={privateKeyPlaceholder()}
-            onChange={(event) => setSecret(event.target.value)}
+            onChange={(event) => {
+              setSecret(event.target.value);
+            }}
           />
         ) : (
           <PasswordInput value={secret} onChange={setSecret} />

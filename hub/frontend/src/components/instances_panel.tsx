@@ -172,7 +172,9 @@ export function InstancesPanel({
                 descriptor={descriptor}
                 isChecked={draft.accounts.includes(row.account)}
                 isDisabled={isLocked}
-                onToggle={(isOn) => toggle(row.account, isOn)}
+                onToggle={(isOn) => {
+                  toggle(row.account, isOn);
+                }}
               />
             ))}
           </div>
@@ -237,7 +239,9 @@ function AccountRow({
           type="checkbox"
           checked={isChecked}
           disabled={isDisabled}
-          onChange={(event) => onToggle(event.target.checked)}
+          onChange={(event) => {
+            onToggle(event.target.checked);
+          }}
         />
         <span className="mono">{row.account}</span>
       </label>

@@ -69,7 +69,9 @@ export function AiToolModels({
           ? valueOf(tool, knob)
           : GATEWAY_DEFAULT
       }
-      onChange={(value) => pick(tool, knob, value)}
+      onChange={(value) => {
+        pick(tool, knob, value);
+      }}
       label={label}
       isDisabled={isDisabled}
     />
@@ -93,7 +95,9 @@ export function AiToolModels({
               ? valueOf("codex", EFFORT_KEY)
               : GATEWAY_DEFAULT
           }
-          onChange={(value) => pick("codex", EFFORT_KEY, value)}
+          onChange={(value) => {
+            pick("codex", EFFORT_KEY, value);
+          }}
           label={t("ui.ai_tools.codex_effort")}
           isDisabled={isDisabled}
         />

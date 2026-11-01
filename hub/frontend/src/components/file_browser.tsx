@@ -162,7 +162,9 @@ export function FileBrowser({
               <button
                 type="button"
                 className={`file_browser_name ${entry.is_dir || entry.is_link ? "file_browser_name--dir" : ""}`}
-                onClick={() => handleOpen(entry)}
+                onClick={() => {
+                  handleOpen(entry);
+                }}
               >
                 {entry.name}
                 {entry.is_link && <span className="faint"> →</span>}
@@ -190,7 +192,9 @@ export function FileBrowser({
             type="button"
             className="button button--primary"
             disabled={listing === null || isDriveList}
-            onClick={() => onPick(path)}
+            onClick={() => {
+              onPick(path);
+            }}
           >
             <Icon name="check" size={14} />
             {t("ui.files.pick_choose")}

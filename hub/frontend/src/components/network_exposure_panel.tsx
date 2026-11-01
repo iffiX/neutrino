@@ -203,19 +203,21 @@ export function NetworkExposurePanel({
                 entry={entry}
                 family={family}
                 isOn={chosen[family].includes(entry.settings.name)}
-                onToggle={() => toggle(family, entry.settings.name)}
+                onToggle={() => {
+                  toggle(family, entry.settings.name);
+                }}
               />
             ))}
             {roleless.includes(entry.settings.name) && (
               <RolePicker
                 entry={entry}
                 role={roles[entry.settings.name]}
-                onPick={(role) =>
+                onPick={(role) => {
                   setRoles((current) => ({
                     ...current,
                     [entry.settings.name]: role,
-                  }))
-                }
+                  }));
+                }}
               />
             )}
           </div>
@@ -225,7 +227,9 @@ export function NetworkExposurePanel({
             key={overlay.provider}
             overlay={overlay}
             isOn={chosenOverlays.includes(overlay.provider)}
-            onToggle={() => toggleOverlay(overlay.provider)}
+            onToggle={() => {
+              toggleOverlay(overlay.provider);
+            }}
           />
         ))}
       </div>
@@ -315,7 +319,9 @@ function RolePicker({ entry, role, onPick }: RolePickerProps) {
           type="button"
           className={`exposure_role ${role === value ? "exposure_role--on" : ""}`}
           aria-pressed={role === value}
-          onClick={() => onPick(value)}
+          onClick={() => {
+            onPick(value);
+          }}
         >
           {t(`ui.network.role_${value}`)}
         </button>

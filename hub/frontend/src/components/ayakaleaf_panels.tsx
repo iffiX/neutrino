@@ -81,8 +81,15 @@ export function AyakaleafPanels({
       return;
     }
     const left = wait.at + RESTART_HOLD_MS - Date.now();
-    const timer = window.setTimeout(() => setWait(null), Math.max(0, left));
-    return () => window.clearTimeout(timer);
+    const timer = window.setTimeout(
+      () => {
+        setWait(null);
+      },
+      Math.max(0, left),
+    );
+    return () => {
+      window.clearTimeout(timer);
+    };
   }, [state, wait]);
 
   if (resource.error !== null && saved === null) {
@@ -124,7 +131,9 @@ export function AyakaleafPanels({
         value={
           saved.models.includes(draft.model) ? draft.model : GATEWAY_DEFAULT
         }
-        onChange={(model) => setDraft({ model })}
+        onChange={(model) => {
+          setDraft({ model });
+        }}
         label={t("ui.ayakaleaf.model")}
         hint={
           saved.is_gateway_serving

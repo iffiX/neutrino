@@ -50,7 +50,9 @@ export function OverlayPage() {
         reload();
       }
     }, OVERLAY_RELOAD_MS);
-    return () => window.clearInterval(timer);
+    return () => {
+      window.clearInterval(timer);
+    };
   }, [reload]);
 
   const choice = resource.data;

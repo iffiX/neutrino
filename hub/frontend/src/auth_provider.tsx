@@ -32,8 +32,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    setUnauthorizedHandler(() => setIsAuthenticated(false));
-    return () => setUnauthorizedHandler(null);
+    setUnauthorizedHandler(() => {
+      setIsAuthenticated(false);
+    });
+    return () => {
+      setUnauthorizedHandler(null);
+    };
   }, []);
 
   useEffect(() => {

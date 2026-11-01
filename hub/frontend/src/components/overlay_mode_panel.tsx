@@ -152,7 +152,9 @@ export function OverlayModePanel({
                 type="button"
                 className="overlay_choice_select"
                 aria-pressed={kind.key === selected}
-                onClick={() => onSelect(kind.key)}
+                onClick={() => {
+                  onSelect(kind.key);
+                }}
               >
                 <span className="overlay_choice_head">
                   <Icon
@@ -195,7 +197,9 @@ export function OverlayModePanel({
         hint={t("ui.overlay.apply_engine_hint")}
         warning={departureWarning(leaving)}
         error={error}
-        onReset={() => setEnabled(storedEnabled(choice))}
+        onReset={() => {
+          setEnabled(storedEnabled(choice));
+        }}
         onApply={() => void apply()}
       />
     </section>

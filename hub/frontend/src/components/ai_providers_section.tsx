@@ -280,7 +280,9 @@ export function AiProvidersSection({
           <button
             type="button"
             className="button credentials_section_action"
-            onClick={() => setIsAdding(true)}
+            onClick={() => {
+              setIsAdding(true);
+            }}
           >
             <Icon name="plus" size={14} />
             {t("ui.ai.add_provider")}
@@ -296,7 +298,9 @@ export function AiProvidersSection({
       {isAdding && (
         <ProviderForm
           onSaved={handleSaved}
-          onCancel={() => setIsAdding(false)}
+          onCancel={() => {
+            setIsAdding(false);
+          }}
         />
       )}
 
@@ -316,7 +320,9 @@ export function AiProvidersSection({
                 key={provider.id}
                 initial={provider}
                 onSaved={handleSaved}
-                onCancel={() => setEditingId(null)}
+                onCancel={() => {
+                  setEditingId(null);
+                }}
               />
             ) : (
               <ProviderRow
@@ -328,12 +334,18 @@ export function AiProvidersSection({
                 isReorderable={isReorderable}
                 isDragging={drag?.providerId === provider.id}
                 shiftY={rowShiftY(drag, index)}
-                onGripDown={(event) => handleGripDown(provider.id, event)}
+                onGripDown={(event) => {
+                  handleGripDown(provider.id, event);
+                }}
                 onGripMove={handleGripMove}
                 onGripUp={handleGripUp}
                 onGripCancel={handleGripCancel}
-                onToggle={(isEnabled) => handleToggle(provider.id, isEnabled)}
-                onEdit={() => setEditingId(provider.id)}
+                onToggle={(isEnabled) => {
+                  handleToggle(provider.id, isEnabled);
+                }}
+                onEdit={() => {
+                  setEditingId(provider.id);
+                }}
                 onDeleted={handleDeleted}
               />
             ),
@@ -426,7 +438,9 @@ function ProviderForm({ initial, onSaved, onCancel }: ProviderFormProps) {
             value={name}
             placeholder={t("ui.ai.name_placeholder")}
             autoFocus
-            onChange={(event) => setName(event.target.value)}
+            onChange={(event) => {
+              setName(event.target.value);
+            }}
           />
         </label>
         <Picker
@@ -435,7 +449,9 @@ function ProviderForm({ initial, onSaved, onCancel }: ProviderFormProps) {
             name: t(PROVIDER_KIND_LABEL_KEYS[option]),
           }))}
           value={kind}
-          onChange={(id) => setKind(id as AiProviderKind)}
+          onChange={(id) => {
+            setKind(id as AiProviderKind);
+          }}
           label={t("ui.ai.field_kind")}
         />
       </div>
@@ -446,7 +462,9 @@ function ProviderForm({ initial, onSaved, onCancel }: ProviderFormProps) {
           value={baseUrl}
           placeholder={PROVIDER_URL_PLACEHOLDERS[kind]}
           spellCheck={false}
-          onChange={(event) => setBaseUrl(event.target.value)}
+          onChange={(event) => {
+            setBaseUrl(event.target.value);
+          }}
         />
         <span className="field_hint">{t("ui.ai.base_url_hint")}</span>
       </label>
@@ -458,7 +476,9 @@ function ProviderForm({ initial, onSaved, onCancel }: ProviderFormProps) {
           spellCheck={false}
           placeholder={"claude-fable-5\nrelay-model-name = claude-opus-5"}
           value={modelsText}
-          onChange={(event) => setModelsText(event.target.value)}
+          onChange={(event) => {
+            setModelsText(event.target.value);
+          }}
         />
         <span className="field_hint">{t("ui.ai.models_hint")}</span>
       </label>
@@ -534,13 +554,14 @@ function ProviderRow({
     ? t("ui.ai.serving_label")
     : t("ui.ai.not_serving_label");
 
-  const handleDelete = () =>
+  const handleDelete = () => {
     confirm.ask({
       title: t("ui.ai.provider_delete_title", { name: value.name }),
       body: t("ui.ai.provider_delete_body"),
       confirmLabel: t("ui.ai.delete"),
       onConfirm: () => void deleteProvider(),
     });
+  };
 
   const deleteProvider = async () => {
     setIsBusy(true);

@@ -49,13 +49,14 @@ export function SavedNetworksPanel() {
     };
   }, []);
 
-  const forget = (ssid: string) =>
+  const forget = (ssid: string) => {
     confirm.ask({
       title: t("ui.network.saved_forget_title", { ssid }),
       body: t("ui.network.saved_forget_body"),
       confirmLabel: t("ui.network.saved_forget"),
       onConfirm: () => void forgetNow(ssid),
     });
+  };
 
   const forgetNow = async (ssid: string) => {
     setForgetting(ssid);
@@ -125,7 +126,9 @@ export function SavedNetworksPanel() {
               <button
                 type="button"
                 className="button button--ghost button--small"
-                onClick={() => forget(network.ssid)}
+                onClick={() => {
+                  forget(network.ssid);
+                }}
                 disabled={forgetting !== null}
               >
                 {forgetting === network.ssid ? (

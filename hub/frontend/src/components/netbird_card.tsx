@@ -101,7 +101,9 @@ export function NetbirdCard() {
         reload();
       }
     }, 5000);
-    return () => window.clearInterval(timer);
+    return () => {
+      window.clearInterval(timer);
+    };
   }, [reload]);
 
   const view = resource.data;
@@ -347,7 +349,9 @@ function NetbirdSettingsPanel({
               className="input"
               placeholder={t("ui.overlay.management_url_placeholder")}
               value={managementUrl}
-              onChange={(event) => setManagementUrl(event.target.value)}
+              onChange={(event) => {
+                setManagementUrl(event.target.value);
+              }}
             />
           </div>
           <p className="field_hint">{t("ui.overlay.exposure_hint")}</p>
@@ -444,7 +448,9 @@ function RoutesSection({ view }: { view: NetbirdView }) {
   const copy = (subnet: string) => {
     void copyText(subnet);
     setCopied(subnet);
-    window.setTimeout(() => setCopied(null), 1600);
+    window.setTimeout(() => {
+      setCopied(null);
+    }, 1600);
   };
 
   return (
@@ -460,7 +466,9 @@ function RoutesSection({ view }: { view: NetbirdView }) {
             type="button"
             className="netbird_subnet_chip"
             title={t("ui.overlay.copy")}
-            onClick={() => copy(subnet)}
+            onClick={() => {
+              copy(subnet);
+            }}
           >
             {subnet}
             <Icon name={copied === subnet ? "check" : "link"} size={12} />

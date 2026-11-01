@@ -120,8 +120,12 @@ export function ClientsPage() {
     if (!hasWaiting) {
       return;
     }
-    const timer = window.setInterval(() => setNow(Date.now()), WAITING_TICK_MS);
-    return () => window.clearInterval(timer);
+    const timer = window.setInterval(() => {
+      setNow(Date.now());
+    }, WAITING_TICK_MS);
+    return () => {
+      window.clearInterval(timer);
+    };
   }, [hasWaiting]);
 
   const handleToggle = async (client: ClientView) => {
@@ -213,7 +217,7 @@ export function ClientsPage() {
     setPermissionOf(null);
   };
 
-  const askDelete = (client: ClientView) =>
+  const askDelete = (client: ClientView) => {
     confirm.ask({
       title: t("ui.clients.delete_title", { name: client.name }),
       body:
@@ -223,6 +227,7 @@ export function ClientsPage() {
       confirmLabel: t("ui.clients.delete"),
       onConfirm: () => void handleDelete(client),
     });
+  };
 
   const minutesLeft = (client: ClientView) =>
     Math.max(
@@ -264,7 +269,9 @@ export function ClientsPage() {
             type="button"
             className="button button--primary"
             disabled={listView === null}
-            onClick={() => setIsLinkOpen(true)}
+            onClick={() => {
+              setIsLinkOpen(true);
+            }}
           >
             <Icon name="link" size={14} />
             {t("ui.clients.new_link")}
@@ -273,7 +280,9 @@ export function ClientsPage() {
             type="button"
             className="button button--primary"
             disabled={listView === null}
-            onClick={() => setIsShareOpen(true)}
+            onClick={() => {
+              setIsShareOpen(true);
+            }}
           >
             <Icon name="link" size={14} />
             {t("ui.web_shares.new_link")}
@@ -295,7 +304,9 @@ export function ClientsPage() {
             type="button"
             className="button clients_panel_action"
             disabled={listView === null}
-            onClick={() => setIsDefaultOpen(true)}
+            onClick={() => {
+              setIsDefaultOpen(true);
+            }}
           >
             <Icon name="lock" size={14} />
             {t("ui.clients.default_permission")}
@@ -348,16 +359,22 @@ export function ClientsPage() {
                       isPermissionOpen={permissionOf === client.id}
                       newName={newName}
                       onNewName={setNewName}
-                      onRename={() => startRename(client)}
+                      onRename={() => {
+                        startRename(client);
+                      }}
                       onRenameSave={() => void handleRename(client)}
-                      onRenameCancel={() => setRenamingId(null)}
+                      onRenameCancel={() => {
+                        setRenamingId(null);
+                      }}
                       onToggle={() => void handleToggle(client)}
-                      onPermission={() =>
+                      onPermission={() => {
                         setPermissionOf(
                           permissionOf === client.id ? null : client.id,
-                        )
-                      }
-                      onDelete={() => askDelete(client)}
+                        );
+                      }}
+                      onDelete={() => {
+                        askDelete(client);
+                      }}
                     />
                     {listView !== null && permissionOf === client.id && (
                       <tr className="clients_permission_row">
@@ -371,7 +388,9 @@ export function ClientsPage() {
                             devices={managedDevices}
                             canFollowDefault
                             onSave={(value) => savePermission(client.id, value)}
-                            onCancel={() => setPermissionOf(null)}
+                            onCancel={() => {
+                              setPermissionOf(null);
+                            }}
                           />
                         </td>
                       </tr>
@@ -388,7 +407,9 @@ export function ClientsPage() {
         <WebShareModal
           listView={listView}
           onCreated={resource.reload}
-          onClose={() => setIsShareOpen(false)}
+          onClose={() => {
+            setIsShareOpen(false);
+          }}
         />
       )}
       {listView !== null && isLinkOpen && (
@@ -396,14 +417,18 @@ export function ClientsPage() {
           listView={listView}
           devices={managedDevices}
           onCreated={resource.reload}
-          onClose={() => setIsLinkOpen(false)}
+          onClose={() => {
+            setIsLinkOpen(false);
+          }}
         />
       )}
       {listView !== null && isDefaultOpen && (
         <DialogFrame
           title={t("ui.clients.default_permission_title")}
           icon="lock"
-          onClose={() => setIsDefaultOpen(false)}
+          onClose={() => {
+            setIsDefaultOpen(false);
+          }}
         >
           <p className="field_hint">
             {t("ui.clients.default_permission_hint")}
@@ -417,7 +442,9 @@ export function ClientsPage() {
             devices={managedDevices}
             canFollowDefault={false}
             onSave={saveDefaultPermission}
-            onCancel={() => setIsDefaultOpen(false)}
+            onCancel={() => {
+              setIsDefaultOpen(false);
+            }}
           />
         </DialogFrame>
       )}
@@ -481,7 +508,9 @@ function ClientRow({
               value={newName}
               aria-label={t("ui.clients.header_name")}
               autoFocus
-              onChange={(event) => onNewName(event.target.value)}
+              onChange={(event) => {
+                onNewName(event.target.value);
+              }}
               onKeyDown={(event) => {
                 if (event.key === "Enter") {
                   onRenameSave();

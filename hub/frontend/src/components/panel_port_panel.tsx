@@ -284,7 +284,9 @@ function MovingOverlay({ destination }: MovingOverlayProps) {
         })
         .catch(() => undefined);
     }, MOVE_POLL_MS);
-    return () => window.clearInterval(timer);
+    return () => {
+      window.clearInterval(timer);
+    };
   }, [destination]);
 
   return (
@@ -334,7 +336,9 @@ function PortField({
         className="input"
         value={value === null ? "" : String(value)}
         inputMode="numeric"
-        onChange={(event) => onChange(Number(event.target.value) || 0)}
+        onChange={(event) => {
+          onChange(Number(event.target.value) || 0);
+        }}
       />
       <span className="field_hint">
         {value !== applied

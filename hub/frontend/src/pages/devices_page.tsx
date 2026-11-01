@@ -229,7 +229,7 @@ export function DevicesPage() {
     }
   };
 
-  const askPower = (device: DeviceView, action: PowerAction) =>
+  const askPower = (device: DeviceView, action: PowerAction) => {
     confirm.ask({
       title: t(
         action === "reboot"
@@ -245,6 +245,7 @@ export function DevicesPage() {
       confirmLabel: t(POWER_LABEL_KEYS[action]),
       onConfirm: () => void runPower(device, action),
     });
+  };
 
   const forget = async (device: DeviceView) => {
     setBusyId(device.id);
@@ -267,13 +268,14 @@ export function DevicesPage() {
     }
   };
 
-  const askForget = (device: DeviceView) =>
+  const askForget = (device: DeviceView) => {
     confirm.ask({
       title: t("ui.devices.forget_title", { name: toDeviceLabel(device) }),
       body: t("ui.devices.forget_body"),
       confirmLabel: t("ui.devices.forget"),
       onConfirm: () => void forget(device),
     });
+  };
 
   if (resource.error !== null && resource.data === null) {
     return (
@@ -301,7 +303,9 @@ export function DevicesPage() {
           <button
             type="button"
             className="button button--primary"
-            onClick={() => setIsLinkOpen(true)}
+            onClick={() => {
+              setIsLinkOpen(true);
+            }}
           >
             <Icon name="link" size={14} />
             {t("ui.devices.add_by_link")}
@@ -309,7 +313,9 @@ export function DevicesPage() {
           <button
             type="button"
             className="button button--primary"
-            onClick={() => setIsSshOpen(true)}
+            onClick={() => {
+              setIsSshOpen(true);
+            }}
           >
             <Icon name="terminal" size={14} />
             {t("ui.devices.add_by_ssh")}
@@ -361,13 +367,21 @@ export function DevicesPage() {
                   newName={newName}
                   outcome={outcome?.deviceId === device.id ? outcome : null}
                   onNewName={setNewName}
-                  onRename={() => startRename(device)}
+                  onRename={() => {
+                    startRename(device);
+                  }}
                   onRenameSave={() => void saveRename(device)}
-                  onRenameCancel={() => setRenamingId(null)}
+                  onRenameCancel={() => {
+                    setRenamingId(null);
+                  }}
                   onIcon={(icon) => void write({ device_id: device.id, icon })}
                   onWake={() => void wake(device)}
-                  onPower={(action) => askPower(device, action)}
-                  onForget={() => askForget(device)}
+                  onPower={(action) => {
+                    askPower(device, action);
+                  }}
+                  onForget={() => {
+                    askForget(device);
+                  }}
                   onOutcomeEnded={resource.reload}
                 />
               ))}
@@ -376,11 +390,19 @@ export function DevicesPage() {
         </div>
       )}
 
-      {isLinkOpen && <AgentLinkModal onClose={() => setIsLinkOpen(false)} />}
+      {isLinkOpen && (
+        <AgentLinkModal
+          onClose={() => {
+            setIsLinkOpen(false);
+          }}
+        />
+      )}
       {isSshOpen && (
         <InstallAgentModal
           device={null}
-          onClose={() => setIsSshOpen(false)}
+          onClose={() => {
+            setIsSshOpen(false);
+          }}
           onFinished={resource.reload}
         />
       )}
@@ -447,7 +469,9 @@ function DeviceRow({
                 value={newName}
                 aria-label={t("ui.devices.header_name")}
                 autoFocus
-                onChange={(event) => onNewName(event.target.value)}
+                onChange={(event) => {
+                  onNewName(event.target.value);
+                }}
                 onKeyDown={(event) => {
                   if (event.key === "Enter") {
                     onRenameSave();
@@ -543,7 +567,9 @@ function DeviceRow({
                     type="button"
                     className="button button--small button--ghost"
                     disabled={isBusy || !isOnline}
-                    onClick={() => onPower(action)}
+                    onClick={() => {
+                      onPower(action);
+                    }}
                   >
                     {t(POWER_LABEL_KEYS[action])}
                   </button>

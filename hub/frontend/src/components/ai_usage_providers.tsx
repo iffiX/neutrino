@@ -189,7 +189,9 @@ export function AiUsageProviders({ providers }: AiUsageProvidersProps) {
             type="button"
             className="button button--ghost button--small"
             disabled={currentPage === 0}
-            onClick={() => setPage(currentPage - 1)}
+            onClick={() => {
+              setPage(currentPage - 1);
+            }}
           >
             {t("ui.usage.previous")}
           </button>
@@ -200,7 +202,9 @@ export function AiUsageProviders({ providers }: AiUsageProvidersProps) {
             type="button"
             className="button button--ghost button--small"
             disabled={currentPage >= pageCount - 1}
-            onClick={() => setPage(currentPage + 1)}
+            onClick={() => {
+              setPage(currentPage + 1);
+            }}
           >
             {t("ui.usage.next")}
           </button>

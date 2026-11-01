@@ -139,7 +139,9 @@ export function WifiScanPanel({
               <button
                 type="button"
                 className={`wifi_scan_row ${network.is_active ? "wifi_scan_row--active" : ""}`}
-                onClick={() => handlePick(network)}
+                onClick={() => {
+                  handlePick(network);
+                }}
                 disabled={joiningSsid !== null}
               >
                 <SignalBars percent={network.signal_percent} isLabelled />
@@ -181,7 +183,9 @@ export function WifiScanPanel({
                     <button
                       type="button"
                       className="button button--ghost button--small"
-                      onClick={() => setSelected(null)}
+                      onClick={() => {
+                        setSelected(null);
+                      }}
                     >
                       {t("ui.network.wifi_cancel")}
                     </button>

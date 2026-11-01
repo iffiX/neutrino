@@ -675,7 +675,9 @@ function LanguagePanel() {
           label={t("ui.settings.language_apply")}
           hint={t("ui.settings.language_apply_hint")}
           error={error}
-          onReset={() => setChosen(asLanguage(applied ?? current))}
+          onReset={() => {
+            setChosen(asLanguage(applied ?? current));
+          }}
           onApply={() => void apply()}
         />
       </div>
@@ -754,7 +756,9 @@ function AppearancePanel() {
           label={t("ui.settings.theme_apply")}
           hint={t("ui.settings.theme_apply_hint")}
           error={error}
-          onReset={() => setChosen(asTheme(applied ?? getThemeChoice()))}
+          onReset={() => {
+            setChosen(asTheme(applied ?? getThemeChoice()));
+          }}
           onApply={() => void apply()}
         />
       </div>
@@ -856,8 +860,12 @@ function RestoreArchiveModal({
     // The app-wide identity watch reloads the page when the new panel
     // answers; ninety silent seconds mean it never came.
     setIsReconnecting(true);
-    const handle = window.setTimeout(() => setIsLostAfterApply(true), 90_000);
-    return () => window.clearTimeout(handle);
+    const handle = window.setTimeout(() => {
+      setIsLostAfterApply(true);
+    }, 90_000);
+    return () => {
+      window.clearTimeout(handle);
+    };
   }, [task.isRunning, task.exitCode]);
 
   return (

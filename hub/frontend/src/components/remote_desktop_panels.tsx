@@ -96,7 +96,9 @@ export function RemoteDesktopPanels({
       >
         <ToggleSwitch
           isOn={draft.is_enabled}
-          onChange={(isOn) => setDraft({ is_enabled: isOn })}
+          onChange={(isOn) => {
+            setDraft({ is_enabled: isOn });
+          }}
           label={t("ui.remote_desktop_module.switch")}
           description={t("ui.remote_desktop_module.switch_hint")}
           isDisabled={!isEditable || isUnsupported}

@@ -68,7 +68,9 @@ export function RowMenu({ children, items }: RowMenuProps) {
         setPlace(null);
       }
     };
-    const closeOnScroll = () => setPlace(null);
+    const closeOnScroll = () => {
+      setPlace(null);
+    };
     document.addEventListener("pointerdown", close);
     document.addEventListener("keydown", closeOnEscape);
     window.addEventListener("scroll", closeOnScroll, true);
@@ -124,7 +126,9 @@ export function RowMenu({ children, items }: RowMenuProps) {
                 type="button"
                 role="menuitem"
                 className={`row_menu_item ${item.isDanger ? "row_menu_item--danger" : ""} ${item.isArmed ? "row_menu_item--armed" : ""}`}
-                onClick={() => select(item)}
+                onClick={() => {
+                  select(item);
+                }}
               >
                 <Icon name={item.icon} size={14} />
                 {item.label}

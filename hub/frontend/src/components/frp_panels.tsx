@@ -138,7 +138,9 @@ export function FrpSection({ vendor, onStateChange }: FrpSectionProps) {
       },
       isWaiting ? OPENFRP_LOGIN_RELOAD_MS : FRP_RELOAD_MS,
     );
-    return () => window.clearInterval(timer);
+    return () => {
+      window.clearInterval(timer);
+    };
   }, [reload, isWaiting]);
 
   if (resource.error !== null && view === null) {

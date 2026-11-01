@@ -105,7 +105,7 @@ export function AiAccessPanel({
     }
   };
 
-  const askRevoke = (value: CliproxyApiKeyView, clientName: string | null) =>
+  const askRevoke = (value: CliproxyApiKeyView, clientName: string | null) => {
     confirm.ask({
       title: t("ui.ai.revoke_title", { name: value.name }),
       body:
@@ -115,6 +115,7 @@ export function AiAccessPanel({
       confirmLabel: t("ui.ai.revoke"),
       onConfirm: () => void handleRevoke(value.id),
     });
+  };
 
   return (
     <section className="settings_group">
@@ -125,7 +126,9 @@ export function AiAccessPanel({
             type="button"
             className="button credentials_section_action"
             disabled={isBusy}
-            onClick={() => setIsNaming(true)}
+            onClick={() => {
+              setIsNaming(true);
+            }}
           >
             <Icon name="plus" size={14} />
             {t("ui.ai.generate_key")}
@@ -150,7 +153,9 @@ export function AiAccessPanel({
             placeholder={t("ui.ai.key_name_placeholder")}
             value={name}
             autoFocus
-            onChange={(event) => setName(event.target.value)}
+            onChange={(event) => {
+              setName(event.target.value);
+            }}
             onKeyDown={(event) => {
               if (event.key === "Enter") {
                 void handleGenerate();
@@ -193,7 +198,9 @@ export function AiAccessPanel({
               <FreshKeyRow
                 key={value.id}
                 value={value}
-                onDismiss={() => setFreshKeyId(null)}
+                onDismiss={() => {
+                  setFreshKeyId(null);
+                }}
               />
             ) : (
               <KeyRow
@@ -201,12 +208,12 @@ export function AiAccessPanel({
                 value={value}
                 usage={usageByKeyId.get(value.id) ?? null}
                 isBusy={isBusy}
-                onRevoke={() =>
+                onRevoke={() => {
                   askRevoke(
                     value,
                     usageByKeyId.get(value.id)?.client_name ?? null,
-                  )
-                }
+                  );
+                }}
               />
             ),
           )}
@@ -279,7 +286,9 @@ function KeyRow({ value, usage, isBusy, onRevoke }: KeyRowProps) {
     try {
       await copyText(value.key);
       setIsCopied(true);
-      window.setTimeout(() => setIsCopied(false), COPIED_CLEAR_MS);
+      window.setTimeout(() => {
+        setIsCopied(false);
+      }, COPIED_CLEAR_MS);
     } catch {
       // The value can be revealed and copied by hand.
     }
@@ -307,7 +316,9 @@ function KeyRow({ value, usage, isBusy, onRevoke }: KeyRowProps) {
           className="ai_key_action"
           title={isRevealed ? t("ui.ai.hide") : t("ui.ai.reveal")}
           aria-label={isRevealed ? t("ui.ai.hide") : t("ui.ai.reveal")}
-          onClick={() => setIsRevealed((current) => !current)}
+          onClick={() => {
+            setIsRevealed((current) => !current);
+          }}
         >
           <Icon name={isRevealed ? "eye_off" : "eye"} size={13} />
         </button>
@@ -347,7 +358,9 @@ function CopyRow({ label, value }: CopyRowProps) {
     try {
       await copyText(value);
       setIsCopied(true);
-      window.setTimeout(() => setIsCopied(false), COPIED_CLEAR_MS);
+      window.setTimeout(() => {
+        setIsCopied(false);
+      }, COPIED_CLEAR_MS);
     } catch {
       // The value is visible; copying by hand still works.
     }

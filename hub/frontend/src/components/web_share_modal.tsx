@@ -139,7 +139,9 @@ export function WebShareModal({
               className="input"
               value={name}
               autoFocus
-              onChange={(event) => setName(event.target.value)}
+              onChange={(event) => {
+                setName(event.target.value);
+              }}
               onKeyDown={(event) => {
                 if (event.key === "Enter") {
                   void create();
@@ -187,7 +189,9 @@ export function WebShareModal({
                 value={otherSite}
                 placeholder={SITE_OTHER_PLACEHOLDER}
                 aria-label={t("ui.web_shares.site_other")}
-                onChange={(event) => setOtherSite(event.target.value)}
+                onChange={(event) => {
+                  setOtherSite(event.target.value);
+                }}
               />
               <span className="field_hint">
                 {t("ui.web_shares.site_other_hint")}

@@ -46,7 +46,9 @@ export function TabStrip({ label, tabs, selected, onSelect }: TabStripProps) {
             role="tab"
             aria-selected={isOn}
             className={`tab_strip_tab ${isOn ? "tab_strip_tab--on" : ""}`}
-            onClick={() => onSelect(tab.key)}
+            onClick={() => {
+              onSelect(tab.key);
+            }}
           >
             {tab.icon !== undefined && <Icon name={tab.icon} size={14} />}
             <span className="tab_strip_name">{tab.name}</span>

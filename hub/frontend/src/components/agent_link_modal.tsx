@@ -87,7 +87,9 @@ export function AgentLinkModal({ onClose }: AgentLinkModalProps) {
             className="input"
             value={name}
             autoFocus
-            onChange={(event) => setName(event.target.value)}
+            onChange={(event) => {
+              setName(event.target.value);
+            }}
             onKeyDown={(event) => {
               if (event.key === "Enter" && !isBusy) {
                 void generate();

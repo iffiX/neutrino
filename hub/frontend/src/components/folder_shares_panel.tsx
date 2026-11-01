@@ -91,13 +91,14 @@ export function FolderSharesPanel({
     }
   };
 
-  const askRemove = (share: FolderShareView) =>
+  const askRemove = (share: FolderShareView) => {
     confirm.ask({
       title: t("ui.samba.folder_remove_title", { name: share.name }),
       body: t("ui.samba.folder_remove_body", { path: share.path }),
       confirmLabel: t("ui.samba.folder_remove"),
       onConfirm: () => void remove(share),
     });
+  };
 
   return (
     <section className="settings_group">
@@ -112,7 +113,9 @@ export function FolderSharesPanel({
               ? t("ui.samba.folder_no_accounts")
               : undefined
           }
-          onClick={() => setEditing(NEW_SHARE)}
+          onClick={() => {
+            setEditing(NEW_SHARE);
+          }}
         >
           <Icon name="plus" size={13} />
           {t("ui.samba.folder_add")}
@@ -151,7 +154,9 @@ export function FolderSharesPanel({
                     share={share}
                     isEditable={isEditable}
                     onSaved={handleSaved}
-                    onCancel={() => setEditing(null)}
+                    onCancel={() => {
+                      setEditing(null);
+                    }}
                   />
                 ) : (
                   <div key={share.name} className="folder_shares_row">
@@ -169,7 +174,9 @@ export function FolderSharesPanel({
                         type="button"
                         className="button button--ghost button--small"
                         disabled={!isEditable || editing !== null}
-                        onClick={() => setEditing(share.name)}
+                        onClick={() => {
+                          setEditing(share.name);
+                        }}
                       >
                         {t("ui.samba.folder_edit")}
                       </button>
@@ -177,7 +184,9 @@ export function FolderSharesPanel({
                         type="button"
                         className="button button--ghost button--small button--danger"
                         disabled={!isEditable || busyShare === share.name}
-                        onClick={() => askRemove(share)}
+                        onClick={() => {
+                          askRemove(share);
+                        }}
                       >
                         {t("ui.samba.folder_remove")}
                       </button>
@@ -195,7 +204,9 @@ export function FolderSharesPanel({
               share={null}
               isEditable={isEditable}
               onSaved={handleSaved}
-              onCancel={() => setEditing(null)}
+              onCancel={() => {
+                setEditing(null);
+              }}
             />
           )}
           {error !== null && <span className="field_error">{error}</span>}
@@ -287,7 +298,9 @@ function FolderShareForm({
           value={name}
           spellCheck={false}
           disabled={!isNew}
-          onChange={(event) => setName(event.target.value)}
+          onChange={(event) => {
+            setName(event.target.value);
+          }}
         />
       </label>
       <label className="field">
@@ -297,12 +310,16 @@ function FolderShareForm({
             className="input mono"
             value={folder}
             spellCheck={false}
-            onChange={(event) => setFolder(event.target.value)}
+            onChange={(event) => {
+              setFolder(event.target.value);
+            }}
           />
           <button
             type="button"
             className="button"
-            onClick={() => setIsBrowsing(true)}
+            onClick={() => {
+              setIsBrowsing(true);
+            }}
           >
             <Icon name="folder" size={14} />
             {t("ui.accounts.browse")}
@@ -317,7 +334,9 @@ function FolderShareForm({
               <input
                 type="checkbox"
                 checked={accounts.includes(account)}
-                onChange={(event) => toggle(account, event.target.checked)}
+                onChange={(event) => {
+                  toggle(account, event.target.checked);
+                }}
               />
               <span className="mono">{account}</span>
             </label>
@@ -352,7 +371,9 @@ function FolderShareForm({
             setFolder(picked);
             setIsBrowsing(false);
           }}
-          onCancel={() => setIsBrowsing(false)}
+          onCancel={() => {
+            setIsBrowsing(false);
+          }}
         />
       )}
     </div>

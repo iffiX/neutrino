@@ -33,7 +33,9 @@ export function RangeSwitch<T extends string>({
           className={`range_switch_option ${
             value === option.value ? "range_switch_option--on" : ""
           }`}
-          onClick={() => onChange(option.value)}
+          onClick={() => {
+            onChange(option.value);
+          }}
         >
           {option.label}
           {option.badge !== undefined && (

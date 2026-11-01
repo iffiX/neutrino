@@ -199,7 +199,7 @@ export function UpdatePanel() {
                   <button
                     type="button"
                     className="button button--primary"
-                    onClick={() =>
+                    onClick={() => {
                       openUpdateDialog(
                         {
                           from: scan.current,
@@ -208,8 +208,8 @@ export function UpdatePanel() {
                         },
                         INSTALLER_FAMILIES.has(view.package_family),
                         null,
-                      )
-                    }
+                      );
+                    }}
                     disabled={isDialogOpen}
                   >
                     <Icon name="download" size={14} />

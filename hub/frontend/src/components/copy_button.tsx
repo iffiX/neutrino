@@ -24,8 +24,12 @@ export function CopyButton({ text }: CopyButtonProps) {
     if (!isCopied) {
       return;
     }
-    const timer = window.setTimeout(() => setIsCopied(false), COPIED_CLEAR_MS);
-    return () => window.clearTimeout(timer);
+    const timer = window.setTimeout(() => {
+      setIsCopied(false);
+    }, COPIED_CLEAR_MS);
+    return () => {
+      window.clearTimeout(timer);
+    };
   }, [isCopied]);
 
   const handleCopy = async () => {

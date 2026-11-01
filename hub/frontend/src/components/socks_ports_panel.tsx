@@ -110,7 +110,9 @@ export function SocksPortsPanel({ applied, onApplied }: SocksPortsPanelProps) {
                   type="button"
                   className={`socks_choice ${entry.is_proxied ? "" : "socks_choice--on"}`}
                   aria-pressed={!entry.is_proxied}
-                  onClick={() => setPorts(retarget(ports, index, false))}
+                  onClick={() => {
+                    setPorts(retarget(ports, index, false));
+                  }}
                 >
                   {t("ui.proxy.port_direct")}
                 </button>
@@ -118,7 +120,9 @@ export function SocksPortsPanel({ applied, onApplied }: SocksPortsPanelProps) {
                   type="button"
                   className={`socks_choice ${entry.is_proxied ? "socks_choice--on" : ""}`}
                   aria-pressed={entry.is_proxied}
-                  onClick={() => setPorts(retarget(ports, index, true))}
+                  onClick={() => {
+                    setPorts(retarget(ports, index, true));
+                  }}
                 >
                   {t("ui.proxy.port_exit")}
                 </button>
@@ -132,7 +136,9 @@ export function SocksPortsPanel({ applied, onApplied }: SocksPortsPanelProps) {
                 type="button"
                 className="button button--ghost button--small"
                 aria-label={t("ui.proxy.port_remove", { port: entry.port })}
-                onClick={() => setPorts(ports.filter((_, at) => at !== index))}
+                onClick={() => {
+                  setPorts(ports.filter((_, at) => at !== index));
+                }}
               >
                 <Icon name="close" size={13} />
               </button>
@@ -147,7 +153,9 @@ export function SocksPortsPanel({ applied, onApplied }: SocksPortsPanelProps) {
           value={draftPort}
           placeholder={t("ui.proxy.port_placeholder")}
           inputMode="numeric"
-          onChange={(event) => setDraftPort(event.target.value)}
+          onChange={(event) => {
+            setDraftPort(event.target.value);
+          }}
           onKeyDown={(event) => {
             if (event.key === "Enter") {
               event.preventDefault();

@@ -86,7 +86,9 @@ export function KeptSecretRow({
             type="button"
             className="button button--small"
             disabled={isBusy}
-            onClick={() => setIsReplacing(true)}
+            onClick={() => {
+              setIsReplacing(true);
+            }}
           >
             {t("ui.kept_secret.replace")}
           </button>

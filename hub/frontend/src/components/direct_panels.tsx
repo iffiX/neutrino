@@ -134,7 +134,9 @@ function DirectSettingsPanel({ view, onChanged }: DirectPanelProps) {
             value={draft.publicHost}
             spellCheck={false}
             placeholder="hub.example.org"
-            onChange={(event) => change({ publicHost: event.target.value })}
+            onChange={(event) => {
+              change({ publicHost: event.target.value });
+            }}
           />
         </label>
         <label className="field">
@@ -145,7 +147,9 @@ function DirectSettingsPanel({ view, onChanged }: DirectPanelProps) {
             className="input"
             inputMode="numeric"
             value={draft.publicPort}
-            onChange={(event) => change({ publicPort: event.target.value })}
+            onChange={(event) => {
+              change({ publicPort: event.target.value });
+            }}
           />
         </label>
       </div>

@@ -144,7 +144,9 @@ export function ModuleVersionBlock({
           type="button"
           className="button button--small"
           disabled={!canPick}
-          onClick={() => setIsPicking(true)}
+          onClick={() => {
+            setIsPicking(true);
+          }}
         >
           {t("ui.modules.install_version")}
         </button>
@@ -156,7 +158,9 @@ export function ModuleVersionBlock({
         <DialogFrame
           title={t("ui.modules.install_version_title", { module: title })}
           icon="download"
-          onClose={() => setIsPicking(false)}
+          onClose={() => {
+            setIsPicking(false);
+          }}
         >
           {error !== null && (
             <div className="notice notice--error">
@@ -182,7 +186,9 @@ export function ModuleVersionBlock({
                 type="button"
                 className="module_version_row"
                 disabled={view.is_locked || busyVersion !== null}
-                onClick={() => pick(entry)}
+                onClick={() => {
+                  pick(entry);
+                }}
               >
                 <span className="mono">{entry.version}</span>
                 {entry.is_tested && (

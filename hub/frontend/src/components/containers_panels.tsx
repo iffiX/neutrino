@@ -323,12 +323,14 @@ export function ContainersPanels({
                   onAction={(action) =>
                     void controlContainer(state.name, action)
                   }
-                  onShell={() => setShellTarget(state.name)}
-                  onJournal={() =>
+                  onShell={() => {
+                    setShellTarget(state.name);
+                  }}
+                  onJournal={() => {
                     setJournalTarget(
                       journalTarget === state.name ? null : state.name,
-                    )
-                  }
+                    );
+                  }}
                 />
                 <JournalPanel
                   path={apiPath(`${basePath}/container/journal`, {
@@ -383,7 +385,7 @@ export function ContainersPanels({
                   className="input"
                   placeholder="mirror.ccs.tencentyun.com"
                   value={mirror}
-                  onChange={(event) =>
+                  onChange={(event) => {
                     setMirrors((current) =>
                       current.map((entry, at) =>
                         at === index
@@ -392,17 +394,17 @@ export function ContainersPanels({
                               .replace(/\/+$/, "")
                           : entry,
                       ),
-                    )
-                  }
+                    );
+                  }}
                 />
                 <button
                   type="button"
                   className="button button--ghost button--small"
-                  onClick={() =>
+                  onClick={() => {
                     setMirrors((current) =>
                       current.filter((_, at) => at !== index),
-                    )
-                  }
+                    );
+                  }}
                 >
                   <Icon name="trash" size={13} />
                 </button>
@@ -412,7 +414,9 @@ export function ContainersPanels({
               <button
                 type="button"
                 className="button"
-                onClick={() => setMirrors((current) => [...current, ""])}
+                onClick={() => {
+                  setMirrors((current) => [...current, ""]);
+                }}
               >
                 <Icon name="plus" size={14} />
                 {t("ui.containers.mirror_add")}
@@ -457,27 +461,27 @@ export function ContainersPanels({
                 state={saved.running.find(
                   (state) => state.name === container.name,
                 )}
-                onChange={(patch) =>
+                onChange={(patch) => {
                   setContainers((current) =>
                     current.map((entry, at) =>
                       at === index ? { ...entry, ...patch } : entry,
                     ),
-                  )
-                }
-                onRemove={() =>
+                  );
+                }}
+                onRemove={() => {
                   setContainers((current) =>
                     current.filter((_, at) => at !== index),
-                  )
-                }
+                  );
+                }}
               />
             ))}
             <div>
               <button
                 type="button"
                 className="button"
-                onClick={() =>
-                  setContainers((current) => [...current, EMPTY_CONTAINER])
-                }
+                onClick={() => {
+                  setContainers((current) => [...current, EMPTY_CONTAINER]);
+                }}
               >
                 <Icon name="plus" size={14} />
                 {t("ui.containers.container_add")}
@@ -507,7 +511,9 @@ export function ContainersPanels({
         <ContainerShellModal
           deviceId={deviceId}
           name={shellTarget}
-          onClose={() => setShellTarget(null)}
+          onClose={() => {
+            setShellTarget(null);
+          }}
         />
       )}
     </>
@@ -759,7 +765,9 @@ function ContainerEditor({
             className="input"
             placeholder="redis"
             value={container.name}
-            onChange={(event) => onChange({ name: event.target.value })}
+            onChange={(event) => {
+              onChange({ name: event.target.value });
+            }}
           />
         </label>
         <label className="field">
@@ -768,7 +776,9 @@ function ContainerEditor({
             className="input"
             placeholder="redis:7"
             value={container.image}
-            onChange={(event) => onChange({ image: event.target.value })}
+            onChange={(event) => {
+              onChange({ image: event.target.value });
+            }}
           />
         </label>
       </div>
@@ -799,11 +809,11 @@ function ContainerEditor({
                     ? "container_tag_chip--on"
                     : ""
                 }`}
-                onClick={() =>
+                onClick={() => {
                   onChange({
                     image: `${imageBase(container.image)}:${tag}`,
-                  })
-                }
+                  });
+                }}
               >
                 {tag}
               </button>
@@ -821,19 +831,25 @@ function ContainerEditor({
         <StringListEditor
           label={t("ui.containers.volumes")}
           values={container.volumes}
-          onChange={(volumes) => onChange({ volumes })}
+          onChange={(volumes) => {
+            onChange({ volumes });
+          }}
           placeholder={t(
             VOLUME_PLACEHOLDER_KEYS[platformOs] ??
               VOLUME_PLACEHOLDER_DEFAULT_KEY,
           )}
           emptyText="host_path:container_path"
-          onBrowse={(startPath, pick) => setBrowse({ startPath, pick })}
+          onBrowse={(startPath, pick) => {
+            setBrowse({ startPath, pick });
+          }}
           browseLabel={t("ui.containers.browse")}
         />
         <StringListEditor
           label={t("ui.containers.environment")}
           values={container.environment}
-          onChange={(environment) => onChange({ environment })}
+          onChange={(environment) => {
+            onChange({ environment });
+          }}
           placeholder="KEY=value"
           emptyText="KEY=value"
         />
@@ -853,7 +869,9 @@ function ContainerEditor({
                     name: t(choice.labelKey),
                   }))}
                   value={service.kind}
-                  onChange={(id) => setKind(port, id)}
+                  onChange={(id) => {
+                    setKind(port, id);
+                  }}
                   label={t("ui.containers.services")}
                   isLabelHidden
                 />
@@ -871,7 +889,9 @@ function ContainerEditor({
                       name: t(choice.labelKey),
                     }))}
                     value={service.scheme}
-                    onChange={(id) => setScheme(port, id)}
+                    onChange={(id) => {
+                      setScheme(port, id);
+                    }}
                     label={t("ui.containers.service_web")}
                     isLabelHidden
                   />
@@ -888,9 +908,9 @@ function ContainerEditor({
                           type="checkbox"
                           checked={isOn}
                           disabled={isOn && service.protocols.length === 1}
-                          onChange={(event) =>
-                            setProtocol(port, choice.id, event.target.checked)
-                          }
+                          onChange={(event) => {
+                            setProtocol(port, choice.id, event.target.checked);
+                          }}
                         />
                         {t(choice.labelKey)}
                       </label>
@@ -908,13 +928,17 @@ function ContainerEditor({
           className="input"
           placeholder="python3 -m http.server 8000"
           value={container.command}
-          onChange={(event) => onChange({ command: event.target.value })}
+          onChange={(event) => {
+            onChange({ command: event.target.value });
+          }}
         />
         <span className="field_hint">{t("ui.containers.command_hint")}</span>
       </label>
       <ToggleSwitch
         isOn={container.is_autostart}
-        onChange={(isOn) => onChange({ is_autostart: isOn })}
+        onChange={(isOn) => {
+          onChange({ is_autostart: isOn });
+        }}
         label={t("ui.containers.autostart")}
         description={t("ui.containers.autostart_hint")}
       />
@@ -926,7 +950,9 @@ function ContainerEditor({
             browse.pick(folder);
             setBrowse(null);
           }}
-          onCancel={() => setBrowse(null)}
+          onCancel={() => {
+            setBrowse(null);
+          }}
         />
       )}
     </div>
@@ -986,7 +1012,9 @@ function ContainerRow({
             <button
               type="button"
               className="button button--small"
-              onClick={() => onAction("restart")}
+              onClick={() => {
+                onAction("restart");
+              }}
             >
               <Icon name="refresh" size={12} />
               {t("ui.containers.row_restart")}
@@ -994,7 +1022,9 @@ function ContainerRow({
             <button
               type="button"
               className="button button--small"
-              onClick={() => onAction("stop")}
+              onClick={() => {
+                onAction("stop");
+              }}
             >
               <Icon name="stop" size={12} />
               {t("ui.containers.row_stop")}
@@ -1005,7 +1035,9 @@ function ContainerRow({
           <button
             type="button"
             className="button button--small"
-            onClick={() => onAction("start")}
+            onClick={() => {
+              onAction("start");
+            }}
           >
             <Icon name="play" size={12} />
             {t("ui.containers.row_start")}

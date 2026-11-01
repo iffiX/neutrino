@@ -46,9 +46,9 @@ export function ContainersMachineFields({
           min={0}
           value={size.cpus}
           disabled={isDisabled}
-          onChange={(event) =>
-            onChange({ cpus: wholeNumber(event.target.value) })
-          }
+          onChange={(event) => {
+            onChange({ cpus: wholeNumber(event.target.value) });
+          }}
         />
       </label>
       <label className="field">
@@ -59,9 +59,9 @@ export function ContainersMachineFields({
           min={0}
           value={size.memory_gib}
           disabled={isDisabled}
-          onChange={(event) =>
-            onChange({ memory_gib: wholeNumber(event.target.value) })
-          }
+          onChange={(event) => {
+            onChange({ memory_gib: wholeNumber(event.target.value) });
+          }}
         />
         {memoryNeedGib !== null && (
           <span className="field_hint">
@@ -77,9 +77,9 @@ export function ContainersMachineFields({
           min={leastDisk}
           value={size.disk_gib}
           disabled={isDisabled}
-          onChange={(event) =>
-            onChange({ disk_gib: wholeNumber(event.target.value) })
-          }
+          onChange={(event) => {
+            onChange({ disk_gib: wholeNumber(event.target.value) });
+          }}
         />
         {diskError !== null ? (
           <span className="field_error">{diskError}</span>

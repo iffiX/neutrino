@@ -359,7 +359,9 @@ export function MachineModules({
     const timer = window.setTimeout(() => {
       setPresses((current) => dropExpired(current, Date.now()));
     }, wait);
-    return () => window.clearTimeout(timer);
+    return () => {
+      window.clearTimeout(timer);
+    };
   }, [presses]);
 
   const notePress = (module: string, action: ModuleAction | "configure") => {
@@ -457,13 +459,14 @@ export function MachineModules({
     }
   };
 
-  const askRestart = () =>
+  const askRestart = () => {
     confirm.ask({
       title: t("ui.modules.restart_title", { device: deviceName }),
       body: t("ui.modules.restart_body"),
       confirmLabel: t("ui.modules.restart_confirm"),
       onConfirm: () => void restart(),
     });
+  };
 
   // Whether Install on this row needs the account of Containers' machine.
   const isAccountMissing = async (row: DeviceModuleView) => {
@@ -616,7 +619,9 @@ export function MachineModules({
         <button
           type="button"
           className="button modules_list_add"
-          onClick={() => setIsCatalogOpen(true)}
+          onClick={() => {
+            setIsCatalogOpen(true);
+          }}
         >
           {t("ui.modules.add_module")}
         </button>
@@ -878,7 +883,9 @@ export function MachineModules({
         <ModuleCatalogModal
           deviceId={deviceId}
           onChanged={modules.reload}
-          onClose={() => setIsCatalogOpen(false)}
+          onClose={() => {
+            setIsCatalogOpen(false);
+          }}
         />
       )}
       {isAccountAsked && (
@@ -889,7 +896,9 @@ export function MachineModules({
             setIsAccountAsked(false);
             void act("install");
           }}
-          onCancel={() => setIsAccountAsked(false)}
+          onCancel={() => {
+            setIsAccountAsked(false);
+          }}
         />
       )}
       {confirm.modal}
@@ -1009,7 +1018,9 @@ function ModuleListRow({ row, isOn, onSelect }: ModuleListRowProps) {
       aria-selected={isOn}
       className={`modules_list_row ${isOn ? "modules_list_row--on" : ""}`}
       title={title}
-      onClick={() => onSelect(row.name)}
+      onClick={() => {
+        onSelect(row.name);
+      }}
     >
       <ModuleIcon name={row.name} size={ROW_ICON_PX} />
       <span className="modules_list_row_title">{title}</span>

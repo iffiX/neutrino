@@ -281,7 +281,9 @@ export function ShellTerminal({
     const frame = window.requestAnimationFrame(() => {
       remeasureRef.current();
     });
-    return () => window.cancelAnimationFrame(frame);
+    return () => {
+      window.cancelAnimationFrame(frame);
+    };
   }, [isVisible]);
 
   return (

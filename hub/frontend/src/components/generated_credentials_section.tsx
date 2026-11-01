@@ -67,13 +67,14 @@ export function GeneratedCredentialsSection() {
     }
   };
 
-  const rotate = (deviceId: string, item: GeneratedCredentialItemView) =>
+  const rotate = (deviceId: string, item: GeneratedCredentialItemView) => {
     confirm.ask({
       title: t("ui.credentials.rotate_title", { name: itemLabel(item) }),
       body: t(ROTATE_BODY_KEYS[item.kind] ?? "ui.credentials.rotate_smb_body"),
       confirmLabel: t("ui.credentials.rotate"),
       onConfirm: () => void rotateNow(deviceId, item),
     });
+  };
 
   return (
     <section className="settings_group">
@@ -111,7 +112,9 @@ export function GeneratedCredentialsSection() {
                   key={`${item.kind}:${item.account}`}
                   deviceId={machine.device_id}
                   item={item}
-                  onRotate={() => rotate(machine.device_id, item)}
+                  onRotate={() => {
+                    rotate(machine.device_id, item);
+                  }}
                 />
               ))}
             </div>
@@ -143,8 +146,12 @@ function GeneratedRow({ deviceId, item, onRotate }: GeneratedRowProps) {
     if (!isCopied) {
       return;
     }
-    const timer = window.setTimeout(() => setIsCopied(false), COPIED_CLEAR_MS);
-    return () => window.clearTimeout(timer);
+    const timer = window.setTimeout(() => {
+      setIsCopied(false);
+    }, COPIED_CLEAR_MS);
+    return () => {
+      window.clearTimeout(timer);
+    };
   }, [isCopied]);
 
   const reveal = async (): Promise<string | null> => {

@@ -133,10 +133,9 @@ export function AiPage() {
   const handleCopyModel = async (name: string) => {
     await copyText(name);
     setCopiedModel(name);
-    window.setTimeout(
-      () => setCopiedModel((current) => (current === name ? null : current)),
-      COPIED_FLASH_MS,
-    );
+    window.setTimeout(() => {
+      setCopiedModel((current) => (current === name ? null : current));
+    }, COPIED_FLASH_MS);
   };
 
   const handleApplyPort = async () => {
@@ -203,7 +202,9 @@ export function AiPage() {
                 <button
                   type="button"
                   className="button button--ghost button--small"
-                  onClick={() => setIsServingOpen((isOpen) => !isOpen)}
+                  onClick={() => {
+                    setIsServingOpen((isOpen) => !isOpen);
+                  }}
                 >
                   <Icon
                     name={isServingOpen ? "chevron_down" : "chevron_right"}
@@ -246,7 +247,9 @@ export function AiPage() {
             <button
               type="button"
               className="button button--ghost button--small"
-              onClick={() => setIsJournalOpen((isOpen) => !isOpen)}
+              onClick={() => {
+                setIsJournalOpen((isOpen) => !isOpen);
+              }}
             >
               <Icon
                 name={isJournalOpen ? "chevron_down" : "chevron_right"}
@@ -285,7 +288,9 @@ export function AiPage() {
             <button
               type="button"
               className={`ai_chip ${usageView === "providers" ? "ai_chip--on" : ""}`}
-              onClick={() => setUsageView("providers")}
+              onClick={() => {
+                setUsageView("providers");
+              }}
             >
               {t("ui.ai.view_providers")}
               {usage.data !== null && (
@@ -297,7 +302,9 @@ export function AiPage() {
             <button
               type="button"
               className={`ai_chip ${usageView === "keys" ? "ai_chip--on" : ""}`}
-              onClick={() => setUsageView("keys")}
+              onClick={() => {
+                setUsageView("keys");
+              }}
             >
               {t("ui.ai.view_keys")}
               {usage.data !== null && (
@@ -354,7 +361,9 @@ export function AiPage() {
               className="input"
               inputMode="numeric"
               value={port === null ? "" : String(port)}
-              onChange={(event) => setPort(Number(event.target.value) || 0)}
+              onChange={(event) => {
+                setPort(Number(event.target.value) || 0);
+              }}
             />
             <span className="field_hint">
               {isPortDirty

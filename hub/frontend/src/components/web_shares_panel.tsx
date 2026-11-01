@@ -86,7 +86,9 @@ export function WebSharesPanel({ listView, onChanged }: WebSharesPanelProps) {
           // The next tick reads again; the last good list stays on screen.
         });
     }, WEB_SHARES_POLL_INTERVAL_MS);
-    return () => window.clearInterval(timer);
+    return () => {
+      window.clearInterval(timer);
+    };
   }, []);
 
   const revoke = async (share: WebShareView) => {
@@ -102,13 +104,14 @@ export function WebSharesPanel({ listView, onChanged }: WebSharesPanelProps) {
     }
   };
 
-  const askRevoke = (share: WebShareView) =>
+  const askRevoke = (share: WebShareView) => {
     confirm.ask({
       title: t("ui.web_shares.revoke_title", { name: share.name }),
       body: revokeBody(share),
       confirmLabel: t("ui.web_shares.revoke"),
       onConfirm: () => void revoke(share),
     });
+  };
 
   const shares = listView?.web_shares ?? [];
 
@@ -139,7 +142,9 @@ export function WebSharesPanel({ listView, onChanged }: WebSharesPanelProps) {
               key={share.id}
               share={share}
               isBusy={busyId === share.id}
-              onRevoke={() => askRevoke(share)}
+              onRevoke={() => {
+                askRevoke(share);
+              }}
             />
           ))}
         </div>

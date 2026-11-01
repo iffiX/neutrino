@@ -139,7 +139,9 @@ export function ContainersRunSettings({
             name: account,
           }))}
           value={draft.account}
-          onChange={(account) => setDraft({ ...draft, account })}
+          onChange={(account) => {
+            setDraft({ ...draft, account });
+          }}
           label={t("ui.containers.run_account")}
           hint={t("ui.containers.run_account_hint")}
           emptyText={t("ui.accounts.empty")}
@@ -152,7 +154,9 @@ export function ContainersRunSettings({
         isWindows={isWindows}
         memoryNeedGib={isMemoryShort ? memoryNeed.need_gib : null}
         isDisabled={isUnsupported}
-        onChange={(change) => setDraft({ ...draft, ...change })}
+        onChange={(change) => {
+          setDraft({ ...draft, ...change });
+        }}
       />
       <p className="field_hint">
         {isWindows

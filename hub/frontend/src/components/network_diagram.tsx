@@ -736,7 +736,9 @@ function InterfaceNode({
   return (
     <g
       className={classNames}
-      onClick={() => onSelect(settings.name)}
+      onClick={() => {
+        onSelect(settings.name);
+      }}
       role="button"
       tabIndex={0}
       onKeyDown={(event) => {

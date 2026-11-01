@@ -122,7 +122,9 @@ export function useTaskStream(taskId: string | null): TaskStreamState {
         handleClose();
       }, OPEN_TIMEOUT_MS);
 
-      thisSocket.onopen = () => window.clearTimeout(openTimer);
+      thisSocket.onopen = () => {
+        window.clearTimeout(openTimer);
+      };
 
       thisSocket.onmessage = (event: MessageEvent<unknown>) => {
         if (typeof event.data !== "string") {
@@ -143,7 +145,9 @@ export function useTaskStream(taskId: string | null): TaskStreamState {
         thisSocket.close();
       };
 
-      thisSocket.onclose = () => handleClose();
+      thisSocket.onclose = () => {
+        handleClose();
+      };
     };
 
     open();

@@ -548,9 +548,9 @@ export function NetworkPage() {
                           key={option.value}
                           type="button"
                           className={`network_role ${draft.role === option.value ? "network_role--on" : ""} ${isBlocked ? "network_role--blocked" : ""}`}
-                          onClick={() =>
-                            update((next) => (next.role = option.value))
-                          }
+                          onClick={() => {
+                            update((next) => (next.role = option.value));
+                          }}
                           aria-pressed={draft.role === option.value}
                           disabled={isBlocked}
                           title={
@@ -671,20 +671,20 @@ export function NetworkPage() {
                   </div>
                   <ToggleSwitch
                     isOn={options.uplink_policy === "balance"}
-                    onChange={(isOn) =>
+                    onChange={(isOn) => {
                       setOptions({
                         ...options,
                         uplink_policy: isOn ? "balance" : "failover",
-                      })
-                    }
+                      });
+                    }}
                     label={t("ui.network.balance_label")}
                     description={t("ui.network.balance_description")}
                   />
                   <ToggleSwitch
                     isOn={options.is_inter_lan_allowed}
-                    onChange={(isOn) =>
-                      setOptions({ ...options, is_inter_lan_allowed: isOn })
-                    }
+                    onChange={(isOn) => {
+                      setOptions({ ...options, is_inter_lan_allowed: isOn });
+                    }}
                     label={t("ui.network.inter_lan_label")}
                     description={t("ui.network.inter_lan_description")}
                   />
@@ -695,7 +695,9 @@ export function NetworkPage() {
                     hint={t("ui.network.apply_routing_hint")}
                     error={optionsError}
                     notice={optionsNotice}
-                    onReset={() => setOptions(optionsOf(network.data!))}
+                    onReset={() => {
+                      setOptions(optionsOf(network.data!));
+                    }}
                     onApply={() => void applyOptions()}
                   />
                 </section>
@@ -925,7 +927,9 @@ function WanFields({
               key={option.value}
               type="button"
               className={`network_choice ${draft.wan.intent === option.value ? "network_choice--on" : ""}`}
-              onClick={() => update((next) => (next.wan.intent = option.value))}
+              onClick={() => {
+                update((next) => (next.wan.intent = option.value));
+              }}
               aria-pressed={draft.wan.intent === option.value}
             >
               <strong>{t(option.labelKey)}</strong>
@@ -944,7 +948,9 @@ function WanFields({
             <button
               type="button"
               className={`network_choice ${draft.wan.method === "dhcp" ? "network_choice--on" : ""}`}
-              onClick={() => update((next) => (next.wan.method = "dhcp"))}
+              onClick={() => {
+                update((next) => (next.wan.method = "dhcp"));
+              }}
               aria-pressed={draft.wan.method === "dhcp"}
             >
               <strong>{t("ui.network.method_dhcp")}</strong>
@@ -953,7 +959,9 @@ function WanFields({
             <button
               type="button"
               className={`network_choice ${draft.wan.method === "static" ? "network_choice--on" : ""}`}
-              onClick={() => update((next) => (next.wan.method = "static"))}
+              onClick={() => {
+                update((next) => (next.wan.method = "static"));
+              }}
               aria-pressed={draft.wan.method === "static"}
             >
               <strong>{t("ui.network.method_static")}</strong>
@@ -967,25 +975,25 @@ function WanFields({
                 label={t("ui.network.field_address")}
                 value={draft.wan.address ?? ""}
                 error={errors.wan_address}
-                onChange={(value) =>
-                  update((next) => (next.wan.address = value))
-                }
+                onChange={(value) => {
+                  update((next) => (next.wan.address = value));
+                }}
               />
               <Field
                 label={t("ui.network.field_prefix_len")}
                 value={String(draft.wan.prefix_len)}
                 error={errors.wan_prefix_len}
-                onChange={(value) =>
-                  update((next) => (next.wan.prefix_len = Number(value) || 0))
-                }
+                onChange={(value) => {
+                  update((next) => (next.wan.prefix_len = Number(value) || 0));
+                }}
               />
               <Field
                 label={t("ui.network.field_gateway")}
                 value={draft.wan.gateway ?? ""}
                 error={errors.wan_gateway}
-                onChange={(value) =>
-                  update((next) => (next.wan.gateway = value))
-                }
+                onChange={(value) => {
+                  update((next) => (next.wan.gateway = value));
+                }}
               />
             </div>
           )}
@@ -995,9 +1003,9 @@ function WanFields({
               placeholder="192.168.1.1"
               emptyText={t("ui.network.dns_built_in")}
               values={draft.wan.dns.map(resolverRow)}
-              onChange={(rows) =>
-                update((next) => (next.wan.dns = resolversOf(rows)))
-              }
+              onChange={(rows) => {
+                update((next) => (next.wan.dns = resolversOf(rows)));
+              }}
             />
           ) : (
             leaseHint
@@ -1010,12 +1018,12 @@ function WanFields({
               error={errors.wan_cloned_mac}
               hint={t("ui.network.field_cloned_mac_hint")}
               placeholder="aa:bb:cc:dd:ee:ff"
-              onChange={(value) =>
+              onChange={(value) => {
                 update(
                   (next) =>
                     (next.wan.cloned_mac = value.length > 0 ? value : null),
-                )
-              }
+                );
+              }}
             />
           )}
         </div>
@@ -1037,9 +1045,9 @@ function LanFields({ draft, errors, isWifi, update }: FieldsProps) {
               label={t("ui.network.field_ap_ssid")}
               value={draft.wifi.ap_ssid}
               error={errors.ap_ssid}
-              onChange={(value) =>
-                update((next) => (next.wifi.ap_ssid = value))
-              }
+              onChange={(value) => {
+                update((next) => (next.wifi.ap_ssid = value));
+              }}
             />
             <label className="field">
               <span className="field_label">
@@ -1047,9 +1055,9 @@ function LanFields({ draft, errors, isWifi, update }: FieldsProps) {
               </span>
               <PasswordInput
                 value={draft.wifi.ap_passphrase}
-                onChange={(value) =>
-                  update((next) => (next.wifi.ap_passphrase = value))
-                }
+                onChange={(value) => {
+                  update((next) => (next.wifi.ap_passphrase = value));
+                }}
                 placeholder={t("ui.network.field_ap_passphrase_placeholder")}
               />
               {errors.ap_passphrase === undefined ? (
@@ -1065,7 +1073,7 @@ function LanFields({ draft, errors, isWifi, update }: FieldsProps) {
               value={draft.wifi.ap_country_code}
               error={errors.ap_country_code}
               placeholder="DE"
-              onChange={(value) =>
+              onChange={(value) => {
                 update((next) => {
                   next.wifi.ap_country_code = value
                     .replace(/[^A-Za-z]/g, "")
@@ -1074,8 +1082,8 @@ function LanFields({ draft, errors, isWifi, update }: FieldsProps) {
                   if (!isCountryCode(next.wifi.ap_country_code)) {
                     next.wifi.ap_band = "bg";
                   }
-                })
-              }
+                });
+              }}
             />
             <Picker
               options={[
@@ -1086,7 +1094,9 @@ function LanFields({ draft, errors, isWifi, update }: FieldsProps) {
                   : []),
               ]}
               value={draft.wifi.ap_band}
-              onChange={(band) => update((next) => (next.wifi.ap_band = band))}
+              onChange={(band) => {
+                update((next) => (next.wifi.ap_band = band));
+              }}
               label={t("ui.network.field_band")}
             />
           </div>
@@ -1103,15 +1113,17 @@ function LanFields({ draft, errors, isWifi, update }: FieldsProps) {
             value={draft.lan.address}
             error={errors.lan_address}
             hint={t("ui.network.field_lan_address_hint")}
-            onChange={(value) => update((next) => (next.lan.address = value))}
+            onChange={(value) => {
+              update((next) => (next.lan.address = value));
+            }}
           />
           <Field
             label={t("ui.network.field_prefix_len")}
             value={String(draft.lan.prefix_len)}
             error={errors.lan_prefix_len}
-            onChange={(value) =>
-              update((next) => (next.lan.prefix_len = Number(value) || 0))
-            }
+            onChange={(value) => {
+              update((next) => (next.lan.prefix_len = Number(value) || 0));
+            }}
           />
         </div>
       </div>
@@ -1121,9 +1133,9 @@ function LanFields({ draft, errors, isWifi, update }: FieldsProps) {
         <div className="network_toggles">
           <ToggleSwitch
             isOn={draft.lan.is_dhcp_enabled}
-            onChange={(isOn) =>
-              update((next) => (next.lan.is_dhcp_enabled = isOn))
-            }
+            onChange={(isOn) => {
+              update((next) => (next.lan.is_dhcp_enabled = isOn));
+            }}
             label={t("ui.network.dhcp_toggle")}
             description={t("ui.network.dhcp_toggle_description")}
           />
@@ -1134,25 +1146,25 @@ function LanFields({ draft, errors, isWifi, update }: FieldsProps) {
               label={t("ui.network.field_range_start")}
               value={draft.lan.dhcp_range_start}
               error={errors.dhcp_range_start}
-              onChange={(value) =>
-                update((next) => (next.lan.dhcp_range_start = value))
-              }
+              onChange={(value) => {
+                update((next) => (next.lan.dhcp_range_start = value));
+              }}
             />
             <Field
               label={t("ui.network.field_range_end")}
               value={draft.lan.dhcp_range_end}
               error={errors.dhcp_range_end}
-              onChange={(value) =>
-                update((next) => (next.lan.dhcp_range_end = value))
-              }
+              onChange={(value) => {
+                update((next) => (next.lan.dhcp_range_end = value));
+              }}
             />
             <Field
               label={t("ui.network.field_lease_time")}
               value={draft.lan.dhcp_lease_time}
               error={errors.dhcp_lease_time}
-              onChange={(value) =>
-                update((next) => (next.lan.dhcp_lease_time = value))
-              }
+              onChange={(value) => {
+                update((next) => (next.lan.dhcp_lease_time = value));
+              }}
             />
           </div>
         )}
@@ -1220,7 +1232,9 @@ function VlanSection({
             <button
               type="button"
               className="network_vlan_name mono"
-              onClick={() => onOpen(main.settings.name)}
+              onClick={() => {
+                onOpen(main.settings.name);
+              }}
             >
               {main.settings.name}
             </button>
@@ -1246,7 +1260,9 @@ function VlanSection({
                 <button
                   type="button"
                   className="network_vlan_name mono"
-                  onClick={() => onOpen(child.settings.name)}
+                  onClick={() => {
+                    onOpen(child.settings.name);
+                  }}
                 >
                   {child.settings.name}
                 </button>
@@ -1270,7 +1286,9 @@ function VlanSection({
               <button
                 type="button"
                 className="button button--ghost button--small"
-                onClick={() => onChange(ids.filter((kept) => kept !== id))}
+                onClick={() => {
+                  onChange(ids.filter((kept) => kept !== id));
+                }}
                 aria-label={t("ui.network.vlan_remove", {
                   name: `${parentName}.${id}`,
                 })}
@@ -1361,7 +1379,9 @@ function Field({
         className={`input ${error === undefined ? "" : "input--invalid"}`}
         value={value}
         placeholder={placeholder}
-        onChange={(event) => onChange(event.target.value)}
+        onChange={(event) => {
+          onChange(event.target.value);
+        }}
       />
       {error !== undefined ? (
         <span className="field_error">{error}</span>

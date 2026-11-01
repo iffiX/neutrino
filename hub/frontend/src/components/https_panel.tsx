@@ -96,7 +96,9 @@ export function HttpsPanel() {
     }
     const probeOnReturn = () => void probe();
     window.addEventListener("focus", probeOnReturn);
-    return () => window.removeEventListener("focus", probeOnReturn);
+    return () => {
+      window.removeEventListener("focus", probeOnReturn);
+    };
   }, [isOnHttps, isAwaitingInstall, probe]);
 
   const switchScheme = async (isOn: boolean) => {
@@ -160,13 +162,14 @@ export function HttpsPanel() {
     }
   };
 
-  const askRegenerate = () =>
+  const askRegenerate = () => {
     confirm.ask({
       title: t("ui.settings.https_regenerate_title"),
       body: t("ui.settings.https_regenerate_body"),
       confirmLabel: t("ui.settings.https_regenerate_confirm"),
       onConfirm: () => void regenerate(),
     });
+  };
 
   const isTrustedHere =
     isOnHttps || isForwarded || (trust === "trusted" && !isRegenerated);
@@ -302,7 +305,9 @@ export function HttpsPanel() {
                     className="button"
                     href={AUTHORITY_DOWNLOAD_PATH}
                     download={view.authority_file_name}
-                    onClick={() => setIsAwaitingInstall(true)}
+                    onClick={() => {
+                      setIsAwaitingInstall(true);
+                    }}
                   >
                     <Icon name="download" size={14} />
                     {t("ui.authority.install")}
@@ -433,7 +438,9 @@ function hintKey(
 /** Whether this browser completes a request to the HTTPS port. */
 async function isTrusted(origin: string): Promise<boolean> {
   const controller = new AbortController();
-  const timer = window.setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
+  const timer = window.setTimeout(() => {
+    controller.abort();
+  }, PROBE_TIMEOUT_MS);
   try {
     // no-cors: the answer is unreadable across origins, and a completed
     // request is the whole answer; a certificate the browser rejects fails it.

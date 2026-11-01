@@ -128,7 +128,9 @@ export function NetworkModePanel({
         hint={t("ui.network.apply_mode_hint")}
         warning={handoverWarning(network, becoming)}
         error={error}
-        onReset={() => setChosen(network.mode)}
+        onReset={() => {
+          setChosen(network.mode);
+        }}
         onApply={() => void apply()}
       />
     </section>

@@ -56,12 +56,16 @@ export function PasswordInput({
         data-1p-ignore=""
         data-lpignore="true"
         autoFocus={autoFocus}
-        onChange={(event) => onChange(event.target.value)}
+        onChange={(event) => {
+          onChange(event.target.value);
+        }}
       />
       <button
         type="button"
         className="password_input_toggle"
-        onClick={() => setIsRevealed((current) => !current)}
+        onClick={() => {
+          setIsRevealed((current) => !current);
+        }}
         title={isRevealed ? t("ui.password.hide") : t("ui.password.show")}
         aria-label={
           isRevealed ? t("ui.password.hide_aria") : t("ui.password.show_aria")

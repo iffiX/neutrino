@@ -217,7 +217,9 @@ export function ServicesPage() {
           <button
             type="button"
             className="button button--primary"
-            onClick={() => setIsDeclaring(true)}
+            onClick={() => {
+              setIsDeclaring(true);
+            }}
           >
             <Icon name="plus" size={14} />
             {t("ui.services.declare")}
@@ -258,7 +260,9 @@ export function ServicesPage() {
           listView={clientsResource.data}
           entryId={sharedEntryId}
           onCreated={() => {}}
-          onClose={() => setSharedEntryId(null)}
+          onClose={() => {
+            setSharedEntryId(null);
+          }}
         />
       )}
       {sharedEntryId !== null &&
@@ -267,7 +271,9 @@ export function ServicesPage() {
           <DialogFrame
             title={t("ui.web_shares.new_link")}
             icon="link"
-            onClose={() => setSharedEntryId(null)}
+            onClose={() => {
+              setSharedEntryId(null);
+            }}
           >
             <ErrorPanel
               message={clientsResource.error}
@@ -281,7 +287,9 @@ export function ServicesPage() {
             resource.setData(next);
             setIsDeclaring(false);
           }}
-          onClose={() => setIsDeclaring(false)}
+          onClose={() => {
+            setIsDeclaring(false);
+          }}
         />
       )}
     </div>
@@ -331,13 +339,14 @@ function AppRow({ app, onChanged, onShare }: AppRowProps) {
     }
   };
 
-  const askDelete = () =>
+  const askDelete = () => {
     confirm.ask({
       title: t("ui.services.delete_title", { name: app.title }),
       body: t("ui.services.delete_body"),
       confirmLabel: t("ui.services.delete"),
       onConfirm: () => void post("remove"),
     });
+  };
 
   return (
     <div className="published_row app_row">
@@ -351,7 +360,9 @@ function AppRow({ app, onChanged, onShare }: AppRowProps) {
             <button
               type="button"
               className="button button--ghost button--small"
-              onClick={() => onShare(webEntry.id)}
+              onClick={() => {
+                onShare(webEntry.id);
+              }}
             >
               <Icon name="link" size={13} />
               {t("ui.web_shares.share")}

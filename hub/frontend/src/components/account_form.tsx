@@ -141,7 +141,9 @@ export function AccountForm({
         placeholder={details?.home ?? ""}
         isDisabled={name === ""}
         onChange={setSharePath}
-        onBrowse={() => setBrowsing("share_path")}
+        onBrowse={() => {
+          setBrowsing("share_path");
+        }}
       />
       <PathField
         label={t("ui.accounts.shell")}
@@ -149,7 +151,9 @@ export function AccountForm({
         placeholder={shellPlaceholder}
         isDisabled={name === ""}
         onChange={setShellPath}
-        onBrowse={() => setBrowsing("shell_path")}
+        onBrowse={() => {
+          setBrowsing("shell_path");
+        }}
       />
       <ToggleSwitch
         isOn={isAiToolsEnabled}
@@ -203,7 +207,9 @@ export function AccountForm({
             }
             setBrowsing(null);
           }}
-          onCancel={() => setBrowsing(null)}
+          onCancel={() => {
+            setBrowsing(null);
+          }}
         />
       )}
     </div>
@@ -238,7 +244,9 @@ function PathField({
           placeholder={placeholder}
           spellCheck={false}
           disabled={isDisabled}
-          onChange={(event) => onChange(event.target.value)}
+          onChange={(event) => {
+            onChange(event.target.value);
+          }}
         />
         <button
           type="button"

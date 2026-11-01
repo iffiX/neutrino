@@ -188,7 +188,9 @@ export function Picker({
     if (!isPanelShown) {
       return;
     }
-    const handler = () => escapeRef.current();
+    const handler = () => {
+      escapeRef.current();
+    };
     escapeHandlers.push(handler);
     return () => {
       const at = escapeHandlers.indexOf(handler);
@@ -216,8 +218,9 @@ export function Picker({
       dismiss();
     };
     document.addEventListener("pointerdown", handlePointerDown, true);
-    return () =>
+    return () => {
       document.removeEventListener("pointerdown", handlePointerDown, true);
+    };
   }, [isOpen, isTyped, dismiss]);
 
   useEffect(() => {
@@ -325,7 +328,13 @@ export function Picker({
             setActiveIndex(-1);
             setIsOpen(true);
           }}
-          onClick={() => (isOpen ? dismiss() : handleOpen())}
+          onClick={() => {
+            if (isOpen) {
+              dismiss();
+            } else {
+              handleOpen();
+            }
+          }}
           onKeyDown={handleKeyDown}
           onBlur={onBlur}
         />
@@ -341,7 +350,13 @@ export function Picker({
           aria-haspopup="listbox"
           aria-expanded={isOpen}
           aria-controls={listId}
-          onClick={() => (isOpen ? close() : handleOpen())}
+          onClick={() => {
+            if (isOpen) {
+              close();
+            } else {
+              handleOpen();
+            }
+          }}
           onKeyDown={handleKeyDown}
         >
           <span
@@ -391,7 +406,9 @@ export function Picker({
                       placement.available,
                     ),
                   }}
-                  onMouseDown={(event) => event.preventDefault()}
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                  }}
                 >
                   {rows.map((row, index) => (
                     <button
@@ -403,8 +420,12 @@ export function Picker({
                       className={`picker_row ${
                         index === activeIndex ? "picker_row--active" : ""
                       }`}
-                      onMouseEnter={() => setActiveIndex(index)}
-                      onClick={() => handlePick(row.id)}
+                      onMouseEnter={() => {
+                        setActiveIndex(index);
+                      }}
+                      onClick={() => {
+                        handlePick(row.id);
+                      }}
                     >
                       <span className="picker_row_name">{row.name}</span>
                       {row.detail !== undefined && row.detail.length > 0 && (
@@ -421,8 +442,12 @@ export function Picker({
                       className={`picker_row picker_row--add ${
                         activeIndex === rows.length ? "picker_row--active" : ""
                       }`}
-                      onMouseEnter={() => setActiveIndex(rows.length)}
-                      onClick={() => setIsAdding(true)}
+                      onMouseEnter={() => {
+                        setActiveIndex(rows.length);
+                      }}
+                      onClick={() => {
+                        setIsAdding(true);
+                      }}
                     >
                       <Icon name="plus" size={13} />
                       {addRow.label}

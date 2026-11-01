@@ -153,10 +153,12 @@ export function StaticLeasePanel({
                 <Picker
                   options={knownMacs}
                   value={row.mac_address}
-                  onChange={(mac_address) => edit(index, { mac_address })}
-                  onBlur={() =>
-                    edit(index, { mac_address: normaliseMac(row.mac_address) })
-                  }
+                  onChange={(mac_address) => {
+                    edit(index, { mac_address });
+                  }}
+                  onBlur={() => {
+                    edit(index, { mac_address: normaliseMac(row.mac_address) });
+                  }}
                   label={t("ui.network.static_lease_mac_label")}
                   placeholder="aa:bb:cc:dd:ee:ff"
                   isInvalid={rowErrors.mac_address !== undefined}
@@ -169,9 +171,9 @@ export function StaticLeasePanel({
                   value={row.address}
                   placeholder={leasing[0]?.address ?? ""}
                   spellCheck={false}
-                  onChange={(event) =>
-                    edit(index, { address: event.target.value })
-                  }
+                  onChange={(event) => {
+                    edit(index, { address: event.target.value });
+                  }}
                 />
                 <input
                   className={`input ${rowErrors.name === undefined ? "" : "input--invalid"}`}
@@ -179,9 +181,9 @@ export function StaticLeasePanel({
                   value={row.name}
                   placeholder={t("ui.network.static_lease_name_placeholder")}
                   spellCheck={false}
-                  onChange={(event) =>
-                    edit(index, { name: event.target.value })
-                  }
+                  onChange={(event) => {
+                    edit(index, { name: event.target.value });
+                  }}
                 />
                 <button
                   type="button"

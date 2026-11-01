@@ -111,7 +111,9 @@ export function ClientLinkModal({
               placeholder={t("ui.clients.name_placeholder")}
               value={name}
               autoFocus
-              onChange={(event) => setName(event.target.value)}
+              onChange={(event) => {
+                setName(event.target.value);
+              }}
             />
           </label>
           <div className="field">

@@ -79,8 +79,12 @@ export function LoginPage() {
     if (lockedUntil === null) {
       return;
     }
-    const handle = window.setInterval(() => setNow(Date.now()), 500);
-    return () => window.clearInterval(handle);
+    const handle = window.setInterval(() => {
+      setNow(Date.now());
+    }, 500);
+    return () => {
+      window.clearInterval(handle);
+    };
   }, [lockedUntil]);
 
   const remainingS =
