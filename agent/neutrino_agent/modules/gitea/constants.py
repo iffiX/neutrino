@@ -102,3 +102,7 @@ GITEA_WINDOWS_GIT_FALLBACK = "%ProgramFiles%\\Git\\cmd\\git.exe"
 # How long a service is waited for to stop.
 GITEA_WINDOWS_STOP_TIMEOUT_S = 30
 GITEA_WINDOWS_STOP_POLL_S = 0.5
+# How many times, and how often, an uninstall deletes the module's directory.
+# Windows refuses to delete a program file for a moment after its process ended.
+GITEA_WINDOWS_REMOVE_TRIES = 30
+GITEA_WINDOWS_REMOVE_RETRY_S = 1.0

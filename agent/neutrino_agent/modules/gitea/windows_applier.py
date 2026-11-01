@@ -40,6 +40,8 @@ from neutrino_agent.modules.gitea.constants import (
     GITEA_WINDOWS_GIT_FALLBACK,
     GITEA_WINDOWS_SERVICE,
     GITEA_WINDOWS_STOP_POLL_S,
+    GITEA_WINDOWS_REMOVE_RETRY_S,
+    GITEA_WINDOWS_REMOVE_TRIES,
     GITEA_WINDOWS_STOP_TIMEOUT_S,
 )
 from neutrino_agent.modules.gitea.renderer import GiteaLayout
@@ -238,7 +240,7 @@ class GiteaWindowsApplier:
         self._run(["sc.exe", "delete", GITEA_WINDOWS_SERVICE], is_checked=False)
         with contextlib.suppress(OSError):
             os.unlink(self.conf_path)
-        shutil.rmtree(self.module_dir, ignore_errors=True)
+        self._remove_module_dir()
 
     def apply(self, rendered: str, *, git_path: str, is_started: bool = True) -> str:
         """Install ``app.ini`` and run the service on it.
@@ -419,6 +421,14 @@ class GiteaWindowsApplier:
         raise subprocess.CalledProcessError(
             result.exit_code, ["sc.exe"], output=result.stdout, stderr=result.stderr
         )
+
+    def _remove_module_dir(self) -> None:
+        """Delete the module's directory, trying again while a file of it stays."""
+        for _turn in range(GITEA_WINDOWS_REMOVE_TRIES):
+            shutil.rmtree(self.module_dir, ignore_errors=True)
+            if not os.path.exists(self.module_dir):
+                return
+            self._sleep(GITEA_WINDOWS_REMOVE_RETRY_S)
 
     def _stop_and_wait(self) -> None:
         """Stop the service and wait until it has stopped, at most a while."""

@@ -8,15 +8,19 @@ service made with ``sc.exe`` as LocalSystem, started at boot and again after
 a failure, its binary path quoted; a running server stopped before its
 binary is replaced; an apply that starts, keeps or restarts it, its start
 type ``auto`` before each start; a stop that gives it the start type
-``disabled``; the CLI run by the agent itself; and an uninstall that deletes the service and keeps
-the data.
+``disabled``; the CLI run by the agent itself; an uninstall that deletes the service and keeps
+the data; and an uninstall that deletes the binary Windows holds for a moment after the stop, trying
+again until it goes.
 """
 
 import ntpath
 import os
+import shutil
 
 import pytest
 
+from neutrino_agent.modules.gitea import windows_applier as windows_applier_module
+from neutrino_agent.modules.gitea.constants import GITEA_WINDOWS_REMOVE_TRIES
 from neutrino_agent.modules.gitea.windows_applier import GiteaWindowsApplier
 from neutrino_agent.modules.shared.subprocess_run import CommandResult
 
@@ -257,6 +261,50 @@ def test_an_uninstall_deletes_the_service_and_keeps_the_data(sc, tmp_path, state
     assert sc.sc("delete") == [["sc.exe", "delete", "neutrino_gitea"]]
     assert not (tmp_path / "state" / "gitea").exists()
     assert repository.is_dir()
+
+
+def held_binary(monkeypatch, *, turns: int) -> dict:
+    """``rmtree`` that leaves the tree for some turns, as Windows does with a program file."""
+    calls = {"turns": 0}
+    real_rmtree = shutil.rmtree
+
+    def rmtree(path, ignore_errors=False):
+        calls["turns"] += 1
+        if calls["turns"] > turns:
+            real_rmtree(path, ignore_errors=ignore_errors)
+
+    monkeypatch.setattr(windows_applier_module.shutil, "rmtree", rmtree)
+    return calls
+
+
+def test_an_uninstall_tries_again_while_windows_holds_the_binary(
+    sc, tmp_path, state, monkeypatch
+):
+    binary = tmp_path / "downloaded.exe"
+    binary.write_bytes(b"MZ")
+    applier = make(sc, tmp_path, state=state)
+    applier.install(str(binary))
+    calls = held_binary(monkeypatch, turns=3)
+
+    applier.uninstall()
+
+    assert calls["turns"] == 4
+    assert not (tmp_path / "state" / "gitea").exists()
+
+
+def test_an_uninstall_gives_up_on_a_binary_windows_keeps_holding(
+    sc, tmp_path, state, monkeypatch
+):
+    binary = tmp_path / "downloaded.exe"
+    binary.write_bytes(b"MZ")
+    applier = make(sc, tmp_path, state=state)
+    applier.install(str(binary))
+    calls = held_binary(monkeypatch, turns=GITEA_WINDOWS_REMOVE_TRIES)
+
+    applier.uninstall()
+
+    assert calls["turns"] == GITEA_WINDOWS_REMOVE_TRIES
+    assert (tmp_path / "state" / "gitea" / "gitea.exe").exists()
 
 
 def test_the_port_and_the_root_url_are_read_from_the_installed_app_ini(
