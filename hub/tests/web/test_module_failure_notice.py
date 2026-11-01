@@ -4,8 +4,9 @@ What these pin: ``ui.modules.failed_step`` says in both languages what
 ui_text.md writes; the notice heads the failure's words with the step the row
 names, in the step list's own words; the failure's words keep their line
 breaks in the notice as they do under a step; a module stopped against its
-want words its code in the notice at the top of its tab; and ``module_needed``
-names Start on a ``failed`` row and Install on every other.
+want words its code in the notice at the top of its tab; ``module_needed``
+names Start on a ``failed`` row and Install on every other; and **Stop** is live
+on a ``failed`` Containers row whatever its want.
 """
 
 import json
@@ -94,6 +95,17 @@ def test_a_failed_row_words_module_needed_with_start_and_every_other_with_instal
         'return "code.module_needed_start"; } return `code.${row.code}`;'
     ) in page
     assert "const key = codeKey(row);" in page
+
+
+def test_stop_is_live_on_a_failed_containers_row_and_no_other_failed_row():
+    page = source("machine_modules.tsx")
+
+    assert 'isRetried(activeRow, "stopped") || isKeeperStoppable(activeRow))' in page
+    assert (
+        "function isKeeperStoppable(row: DeviceModuleView): boolean { return "
+        'row.state === "failed" && row.name === CONTAINERS_MODULE; }'
+    ) in page
+    assert 'const CONTAINERS_MODULE = "podman";' in page
 
 
 def test_a_row_waiting_behind_a_required_modules_restart_shows_its_notice():

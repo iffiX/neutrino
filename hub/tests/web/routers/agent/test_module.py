@@ -1395,6 +1395,23 @@ def test_a_container_module_s_install_or_start_wants_containers_running_first(
     assert len(runtime.agent_sessions.pushes) == 1
 
 
+def test_a_stop_of_a_failed_containers_wanted_running_writes_stopped_and_a_retry(
+    containers_api, tmp_path
+):
+    client, runtime = containers_api
+    runtime.desired_states.set_want(DEVICE, "podman", "running")
+    runtime.device_modules[DEVICE] = {"podman": {"state": "failed", "code": "x"}}
+
+    answer = client.post(
+        f"{MODULE_PATH}/stop", json={"device_id": DEVICE, "module": "podman"}
+    )
+
+    assert answer.status_code == 200
+    assert modules_file(tmp_path)["podman"]["want"] == "stopped"
+    assert "podman" in retry_marks()
+    assert len(runtime.agent_sessions.pushes) == 1
+
+
 def test_containers_already_wanted_running_is_left_as_it_is(containers_api, tmp_path):
     client, runtime = containers_api
     runtime.desired_states.set_want(DEVICE, "podman", "running")

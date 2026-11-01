@@ -918,7 +918,8 @@ export function MachineModules({
                       (activeRow.state === "running" ||
                         (activeRow.state === "installed" &&
                           activeRow.is_active) ||
-                        isRetried(activeRow, "stopped"))
+                        isRetried(activeRow, "stopped") ||
+                        isKeeperStoppable(activeRow))
                     }
                     isBusy={busyAction === "stop"}
                     onClick={() => void act("stop")}
@@ -1124,6 +1125,12 @@ function isUnclaimed(row: DeviceModuleView): boolean {
  * asked for. */
 function isRetried(row: DeviceModuleView, want: string): boolean {
   return row.state === "failed" && row.want === want;
+}
+
+/** Whether a failed row's Stop ends what its module retries by itself,
+ * whatever it was asked for: Containers' keeper. */
+function isKeeperStoppable(row: DeviceModuleView): boolean {
+  return row.state === "failed" && row.name === CONTAINERS_MODULE;
 }
 
 interface ModuleListRowProps {
