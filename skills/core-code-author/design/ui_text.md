@@ -577,6 +577,7 @@ account and the shell program it set before.
 | --- | --- | --- |
 | `ui.terminal_module.apply` | Apply terminal | 应用终端设置 |
 | `ui.terminal_module.apply_hint` | Terminals opened from now on use these; open ones keep what they run. | 之后打开的终端用这些设置，已打开的不变。 |
+| `state.ready`, an enabled account's row on the Terminal tab while the module reads `running` | ready | 可用 |
 | `ui.remote_desktop_module.switch` | Share this machine's desktop | 共享这台机器的桌面 |
 | `ui.remote_desktop_module.switch_hint` | Whether this machine runs the agent's RustDesk for this hub's clients. Turning it on stops every other RustDesk host on the machine; turning it off puts back what was there. | 是否让这台机器运行被控端自带的 RustDesk，供这台中枢的客户端连接。打开时会停掉机器上其它的 RustDesk 主机，关闭时还原原来的。 |
 | `ui.remote_desktop_module.apply` | Apply remote desktop | 应用远程桌面 |

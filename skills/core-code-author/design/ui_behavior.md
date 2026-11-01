@@ -845,7 +845,10 @@ account, Terminal's showing each account's shell and the file share's each
 account's share path, and `ui.modules.no_accounts` pointing at **Available
 accounts** while there is none. The panel is configurable, with its apply
 bar; an account checked goes to the end of the order, and each row shows the
-module's own field, its running dot and its code's words. The bar's hint is
+module's own field, its running dot and its code's words. Terminal's row shows
+`state.ready` in place of its running dot while the module reads `running`,
+since a terminal runs no program until a person opens one, and its apply waits
+for the module's state alone. The bar's hint is
 `ui.modules.stopped_hint` while the module's `want` is not `running`, and the
 module's own hint otherwise, on every tab but Terminal's and the SSH
 server's, which have no **Start**. An apply starts nothing on a module not
