@@ -370,7 +370,7 @@ where they fit.
 | `ui.samba.folder_remove_body` | The share goes away. The folder {path} and its files stay. | 共享会移除，文件夹 {path} 和里面的文件都保留。 |
 | `ui.samba.folder_empty` | No folder shares yet. | 还没有文件夹共享。 |
 | `ui.samba.folder_no_accounts` | Enable an account under Home shares first. | 先在“主目录共享”里启用账户。 |
-| `ui.samba.stop_title` | Stop {module} on {device} | 停止 {device} 上的 {module} |
+| `ui.samba.stop_title` | Stop File share on {device} | 停止 {device} 上的文件共享 |
 | `ui.samba.stop_body` | The machine's SMB server stops, with every share on it. | 这台机器的 SMB 服务会停止，上面所有共享都会停。 |
 | `code.share_name_invalid` | {name} cannot name a share: use 1 to 64 letters, digits, -, _ and ., other than global, homes and printers. | {name} 不能用作共享名：只能用 1 到 64 个字母、数字、-、_ 和 .，也不能是 global、homes 或 printers。 |
 | `code.share_account_not_enabled` | {account} is not enabled for this machine's file share. | 这台机器的文件共享没有启用 {account}。 |
