@@ -70,10 +70,11 @@ CODEG_BASE_PORT = 3101
 
 # The text the instance token is derived from the instance's secret by.
 CODEG_TOKEN_LABEL = b"neutrino codeg token"
-# Where Codeg's web UI keeps the token, the page the forwarder sends the
-# browser to once it is kept, and the subprotocol the UI's WebSocket
-# carries it in.
+# Where Codeg's web UI keeps the token, the forwarder's page that keeps it, the
+# page the forwarder sends the browser to once it is kept, and the subprotocol
+# the UI's WebSocket carries it in.
 CODEG_STORAGE_KEY = "codeg_token"
+CODEG_KEEP_TOKEN_PATH = "/neutrino_login"
 CODEG_WORKSPACE_PATH = "/workspace"
 CODEG_SUBPROTOCOL_PREFIX = "codeg-token."
 # The page a token that verifies is answered with; the key, the token and

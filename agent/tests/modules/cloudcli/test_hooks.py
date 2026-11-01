@@ -1788,22 +1788,63 @@ def test_a_request_with_neither_a_token_nor_a_login_is_refused(listening, cloudc
     assert not [request for request in cloudcli.requests if request[1] == "/"]
 
 
-def test_a_token_is_traded_for_cloudclis_login_kept_in_the_browser(listening):
+def test_a_token_is_traded_once_for_a_redirect_an_app_share_can_follow(listening):
+    """An App share's shell spends the token and reads the answer's head alone,
+    so a page in that answer never runs, and the app opens at CloudCLI's login."""
     _forwarder, port = listening
     token = mint_token(SECRET, expiry=int(time.time()) + 60, nonce=os.urandom(16))
 
     answer = ask(port, f"GET /?tkn={token} HTTP/1.1\r\nHost: x\r\n\r\n".encode())
     again = ask(port, f"GET /?tkn={token} HTTP/1.1\r\nHost: x\r\n\r\n".encode())
 
+    assert status_of(answer) == 302
+    head = answer.partition(b"\r\n\r\n")[0]
+    assert b"Location: /neutrino_login\r\n" in head + b"\r\n"
+    assert f"Set-Cookie: {COOKIE}=".encode() in head
+    assert b"HttpOnly" in head
+    assert b"Cache-Control: no-store" in head
+    assert status_of(again) == 401
+
+
+def test_the_redirect_s_page_keeps_cloudclis_login_and_opens_the_page(
+    listening, cloudcli
+):
+    _forwarder, port = listening
+    login = make_login(jwt_secret(SECRET), expiry=int(time.time()) + 60)
+    seen_before = len(cloudcli.requests)
+
+    answer = ask(
+        port,
+        f"GET /neutrino_login HTTP/1.1\r\nHost: x\r\n"
+        f"Cookie: {COOKIE}={login}\r\n\r\n".encode(),
+    )
+
     assert status_of(answer) == 200
     head, _, body = answer.partition(b"\r\n\r\n")
     assert b"Content-Type: text/html; charset=utf-8" in head
+    assert b"Cache-Control: no-store" in head
     assert b"localStorage.setItem(" in body
     assert b'"auth-token"' in body
+    assert json.dumps(login).encode() in body
     assert b"location.replace('/')" in body
-    assert f"Set-Cookie: {COOKIE}=".encode() in head
-    assert b"HttpOnly" in head
-    assert status_of(again) == 401
+    assert cloudcli.requests[seen_before:] == []
+
+
+def test_the_page_holding_the_login_takes_the_login_cookie_alone(listening, cloudcli):
+    _forwarder, port = listening
+    forged = make_login(jwt_secret("other"), expiry=int(time.time()) + 60)
+    seen_before = len(cloudcli.requests)
+
+    bare = ask(port, b"GET /neutrino_login HTTP/1.1\r\nHost: x\r\n\r\n")
+    wrong = ask(
+        port,
+        f"GET /neutrino_login HTTP/1.1\r\nHost: x\r\n"
+        f"Cookie: {COOKIE}={forged}\r\n\r\n".encode(),
+    )
+
+    assert status_of(bare) == 401
+    assert status_of(wrong) == 401
+    assert cloudcli.requests[seen_before:] == []
 
 
 def test_a_token_that_does_not_verify_is_refused(listening):

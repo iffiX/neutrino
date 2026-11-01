@@ -573,14 +573,35 @@ def test_the_forwarder_listens_on_loopback_alone(listening):
     assert forwarder.listen_address[0] == "127.0.0.1"
 
 
-def test_a_token_is_traded_once_for_the_page_that_keeps_the_instance_token(
+def test_a_token_is_traded_once_for_a_redirect_an_app_share_can_follow(
     listening, codeg
 ):
+    """An App share's shell spends the token and reads the answer's head alone,
+    so a page in that answer never runs, and the app opens at Codeg's login."""
     _forwarder, port = listening
     token = fresh_token()
 
     answer = ask(port, f"GET /?tkn={token} HTTP/1.1\r\nHost: x\r\n\r\n".encode())
     again = ask(port, f"GET /?tkn={token} HTTP/1.1\r\nHost: x\r\n\r\n".encode())
+
+    assert status_of(answer) == 302
+    assert header_of(answer, b"location") == "/neutrino_login"
+    assert header_of(answer, b"cache-control") == "no-store"
+    assert header_of(answer, b"referrer-policy") == "no-referrer"
+    assert status_of(again) == 401
+    assert codeg.requests == []
+
+
+def test_the_redirect_s_page_keeps_the_instance_token_and_opens_the_workspace(
+    listening, codeg
+):
+    _forwarder, port = listening
+
+    answer = ask(
+        port,
+        f"GET /neutrino_login HTTP/1.1\r\nHost: x\r\n"
+        f"Cookie: {good_cookie(port)}\r\n\r\n".encode(),
+    )
 
     assert status_of(answer) == 200
     head, _, body = answer.partition(b"\r\n\r\n")
@@ -592,11 +613,30 @@ def test_a_token_is_traded_once_for_the_page_that_keeps_the_instance_token(
         b'<script>localStorage.setItem("codeg_token", "' + TOKEN.encode() + b'");'
         b'location.replace("/workspace");</script>'
     )
-    assert status_of(again) == 401
     assert codeg.requests == []
 
 
-def test_the_page_sets_the_login_cookie_of_the_port_for_seven_days(listening, codeg):
+def test_the_page_holding_the_instance_token_takes_the_login_cookie_alone(
+    listening, codeg
+):
+    _forwarder, port = listening
+
+    bare = ask(port, b"GET /neutrino_login HTTP/1.1\r\nHost: x\r\n\r\n")
+    stale = ask(
+        port,
+        f"GET /neutrino_login HTTP/1.1\r\nHost: x\r\n"
+        f"Cookie: {good_cookie(port, expiry=int(time.time()) - 5)}\r\n\r\n".encode(),
+    )
+
+    assert status_of(bare) == 401
+    assert status_of(stale) == 401
+    assert TOKEN.encode() not in bare + stale
+    assert codeg.requests == []
+
+
+def test_the_redirect_sets_the_login_cookie_of_the_port_for_seven_days(
+    listening, codeg
+):
     _forwarder, port = listening
     before = int(time.time())
 

@@ -89,6 +89,8 @@ CLOUDCLI_REGISTER_PATH = "/api/auth/register"
 CLOUDCLI_LOGIN_PATH = "/api/auth/login"
 CLOUDCLI_BLOCKED_PATHS = (CLOUDCLI_REGISTER_PATH, CLOUDCLI_LOGIN_PATH)
 CLOUDCLI_STORAGE_KEY = "auth-token"
+# The forwarder's page that keeps CloudCLI's login in the browser.
+CLOUDCLI_KEEP_LOGIN_PATH = "/neutrino_login"
 # The query parameter CloudCLI's page sends its login in on a WebSocket.
 CLOUDCLI_QUERY_TOKEN = "token"
 # CloudCLI refuses a username shorter than this.

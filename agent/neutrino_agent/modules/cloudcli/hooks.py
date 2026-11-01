@@ -52,6 +52,7 @@ from neutrino_agent.modules.cloudcli.constants import (
     CLOUDCLI_ACCOUNT_PATH_PARTS,
     CLOUDCLI_APP_DIR_NAME,
     CLOUDCLI_BLOCKED_PATHS,
+    CLOUDCLI_KEEP_LOGIN_PATH,
     CLOUDCLI_COOKIE_PREFIX,
     CLOUDCLI_DATABASE_NAME,
     CLOUDCLI_FAILURE_DETAIL_CHARS,
@@ -991,15 +992,20 @@ class CloudcliHooks(InstanceHooks):
     def admit(self, request, record: dict) -> ForwardDecision:
         """The forwarder's rule: the auth routes are blocked, a token trades for CloudCLI's login, the login passes.
 
+        An App share's shell reads the head of the token's answer alone and
+        opens the app where it redirects, so the page that keeps the login
+        has its own path.
+
         Args:
             request: The request.
             record: The instance's record.
 
         Returns:
             401 for CloudCLI's register and login routes and for a request
-            with neither a token nor a login; the page that keeps CloudCLI's
-            login for a token that verifies, 502 when CloudCLI refuses it;
-            the relay for a login CloudCLI issued.
+            with neither a token nor a login; a redirect to the page that
+            keeps CloudCLI's login for a token that verifies, setting it as
+            the cookie, 502 when CloudCLI refuses it; that page for such a
+            cookie at the page's path; the relay for a login CloudCLI issued.
         """
         if _normal_path(request.path) in CLOUDCLI_BLOCKED_PATHS:
             return refused()
@@ -1012,21 +1018,21 @@ class CloudcliHooks(InstanceHooks):
                 login = ""
             if not login:
                 return answered(502)
-            page = EXCHANGE_PAGE % (json.dumps(CLOUDCLI_STORAGE_KEY), json.dumps(login))
             cookie = (
                 f"{cookie_name(record)}={login}; Path=/; HttpOnly; "
                 f"SameSite=Lax; Max-Age={CLOUDCLI_LOGIN_LIFETIME_S}"
             )
             return answered(
-                200,
-                page.encode("utf-8"),
-                content_type="text/html; charset=utf-8",
+                302,
                 headers=(
+                    ("Location", CLOUDCLI_KEEP_LOGIN_PATH),
                     ("Set-Cookie", cookie),
                     ("Cache-Control", "no-store"),
                     ("Referrer-Policy", "no-referrer"),
                 ),
             )
+        if request.path == CLOUDCLI_KEEP_LOGIN_PATH:
+            return self._keep_login_page(request, record)
         if self._has_login(request, record):
             return RELAY
         return refused()
@@ -1488,6 +1494,27 @@ class CloudcliHooks(InstanceHooks):
             "username": username_of(str(record.get("account", "") or "")),
             "password": str(record.get("web_password", "") or ""),
         }
+
+    def _keep_login_page(self, request, record: dict) -> ForwardDecision:
+        """The page that keeps the login a request's cookie holds; 401 for none CloudCLI issued."""
+        secret = jwt_secret(str(record.get("token_secret", "") or ""))
+        now = self._clock()
+        for login in request.cookie_values(cookie_name(record)):
+            if is_login_valid(login, secret, now):
+                page = EXCHANGE_PAGE % (
+                    json.dumps(CLOUDCLI_STORAGE_KEY),
+                    json.dumps(login),
+                )
+                return answered(
+                    200,
+                    page.encode("utf-8"),
+                    content_type="text/html; charset=utf-8",
+                    headers=(
+                        ("Cache-Control", "no-store"),
+                        ("Referrer-Policy", "no-referrer"),
+                    ),
+                )
+        return refused()
 
     def _has_login(self, request, record: dict) -> bool:
         """Whether a request carries a login CloudCLI issued and still honours."""

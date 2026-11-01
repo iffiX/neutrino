@@ -6,9 +6,9 @@ in the module's own, never on a ``PATH``. Each instance runs ``codeg-server``
 as its account, from an environment written from scratch, on a loopback
 port the agent picks and keeps in the record, with its data directory
 under the account's home and its output discarded on every system. The
-forwarder trades the hub's token for a page that keeps the instance token in
-the browser and for its own login cookie, named by the instance's
-``cookie_name``, and passes on a request carrying that token as its Bearer header or as the
+forwarder trades the hub's token for its own login cookie, named by the
+instance's ``cookie_name``, and a redirect to a page that keeps the instance
+token in the browser, and passes on a request carrying that token as its Bearer header or as the
 subprotocol of Codeg's WebSocket, or carrying a good cookie.
 
 Not pure: writes the data directory and talks to Codeg.
@@ -48,6 +48,7 @@ from neutrino_agent.modules.codeg.constants import (
     CODEG_ENV_PORT,
     CODEG_ENV_STATIC_DIR,
     CODEG_ENV_TOKEN,
+    CODEG_KEEP_TOKEN_PATH,
     CODEG_RUNNER,
     CODEG_LOG_DIR_NAME,
     CODEG_LOG_PREFIX,
@@ -448,17 +449,21 @@ class CodegHooks(InstanceHooks):
         )
 
     def admit(self, request, record: dict) -> ForwardDecision:
-        """The forwarder's rule: a token trades for the page and the login cookie; the instance token or the cookie passes.
+        """The forwarder's rule: a token trades for the login cookie and a redirect to the page; the instance token or the cookie passes.
+
+        An App share's shell reads the head of the token's answer alone and
+        opens the app where it redirects, so the page has its own path.
 
         Args:
             request: The request.
             record: The instance's record.
 
         Returns:
-            The page for a token that verifies, setting the cookie; the relay
-            for a request whose Bearer header is the instance token, whose
-            WebSocket upgrade carries its subprotocol, or whose cookie
-            verifies; 401 otherwise.
+            A redirect to the page for a token that verifies, setting the
+            cookie; the relay for a request whose Bearer header is the
+            instance token, whose WebSocket upgrade carries its subprotocol,
+            or whose cookie verifies; the page for such a cookie at the
+            page's path; 401 otherwise.
         """
         secret = str(record.get("secret", "") or "")
         token = instance_token(secret)
@@ -473,10 +478,9 @@ class CodegHooks(InstanceHooks):
                 f"HttpOnly; SameSite=Lax; Max-Age={CODEG_LOGIN_LIFETIME_S}"
             )
             return answered(
-                200,
-                login_page(token),
-                content_type="text/html; charset=utf-8",
+                302,
                 headers=(
+                    ("Location", CODEG_KEEP_TOKEN_PATH),
                     ("Set-Cookie", cookie),
                     ("Cache-Control", "no-store"),
                     ("Referrer-Policy", "no-referrer"),
@@ -485,11 +489,21 @@ class CodegHooks(InstanceHooks):
         if has_bearer(request, token) or has_subprotocol(request, token):
             return RELAY
         now = self._clock()
-        if any(
+        if not any(
             is_login_valid(value, key, now) for value in request.cookie_values(name)
         ):
+            return refused()
+        if request.path != CODEG_KEEP_TOKEN_PATH:
             return RELAY
-        return refused()
+        return answered(
+            200,
+            login_page(token),
+            content_type="text/html; charset=utf-8",
+            headers=(
+                ("Cache-Control", "no-store"),
+                ("Referrer-Policy", "no-referrer"),
+            ),
+        )
 
     def connect(self, record: dict) -> socket.socket:
         """A connection to Codeg on loopback.
