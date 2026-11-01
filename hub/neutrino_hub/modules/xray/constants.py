@@ -144,21 +144,6 @@ XRAY_TPROXY_LISTEN = "127.0.0.1"
 XRAY_TPROXY_PORT = 12345
 XRAY_TPROXY_TAG = "tproxy_in"
 
-# Where every SOCKS inbound binds. Every address, as every service on this box
-# binds every address: which interfaces they answer on is one firewall answer
-# per interface rather than a listen address each of them gets half right —
-# and a listener pinned to a LAN address is one that vanishes when the LAN
-# address changes under it.
-XRAY_SOCKS_LISTEN = "0.0.0.0"
-
-# A SOCKS5 inbound is a port and one question about it: does what arrives
-# there leave through an exit node, or straight out the WAN. Applications are
-# pointed at one by hand — a box that diverts nothing transparently has this
-# as the whole of its proxy, and a box that does still needs a direct port for
-# the applications that must appear to come from this network.
-XRAY_SOCKS_PORT = 1080
-XRAY_SOCKS_TAG = "socks_{port}_in"
-
 # DNS inbound; dnsmasq forwards every LAN query here. Not 5353: that is the
 # registered mDNS port, and avahi-daemon holds it on every desktop Ubuntu.
 XRAY_DNS_LISTEN = "127.0.0.1"
@@ -186,6 +171,9 @@ XRAY_REMOTE_DNS_FIELD = "remote_dns"
 XRAY_DIRECT_DNS_FIELD = "direct_dns"
 XRAY_REMOTE_DNS_DEFAULT = ({"address": "1.1.1.1", "port": 53},)
 XRAY_FORMER_DIRECT_DNS = "223.5.5.5"
+# The key of the listeners a routing.json from an earlier build holds. Nothing
+# reads it, and the next write of the file drops it.
+XRAY_FORMER_SOCKS_PORTS_FIELD = "socks_ports"
 
 # Statistics and handler API, loopback only.
 XRAY_API_LISTEN = "127.0.0.1"
@@ -242,7 +230,6 @@ XRAY_RULE_TAG_API = "rule_api"
 XRAY_RULE_TAG_PROBE = "rule_probe_{node_id}"
 XRAY_RULE_TAG_DNS_IN = "rule_dns_in"
 XRAY_RULE_TAG_DNS_DIRECT = "rule_dns_direct"
-XRAY_RULE_TAG_SOCKS_DIRECT = "rule_socks_direct"
 XRAY_RULE_TAG_INBOUND_DIRECT = "rule_inbound_direct"
 XRAY_RULE_TAG_SPLIT_DOMAIN = "rule_split_domain"
 XRAY_RULE_TAG_SPLIT_IP = "rule_split_ip"

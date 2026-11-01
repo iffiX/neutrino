@@ -32,9 +32,9 @@ from neutrino_hub.modules.xray.apply import XrayConfigApplier
 from neutrino_hub.modules.xray.apply_part import XrayApplyComponent
 from neutrino_hub.modules.xray.constants import (
     XRAY_BINARY,
-    XRAY_BINARY_NAME,
     XRAY_CONFIG_PATH,
     XRAY_DIRECT_DNS_FIELD,
+    XRAY_FORMER_SOCKS_PORTS_FIELD,
     XRAY_GEODATA,
     XRAY_GEODATA_GEOIP_FILE,
     XRAY_GEODATA_GEOSITE_FILE,
@@ -149,15 +149,11 @@ def update_settings(
     Raises:
         HTTPException: 400 when a proxied scope is switched on with
             nothing to go out through, when the remote resolver list is
-            empty, when a resolver is not an address, when two listeners
-            want one port, when a listener wants a port something on the box
-            already holds, or when a direct list holds a line xray will not
-            load. Each of these reaches the xray config, where a bad value is a
-            proxy that will not start rather than a setting that does nothing.
+            empty, when a resolver is not an address, or when a direct list
+            holds a line xray will not load. Each of these reaches the xray
+            config, where a bad value is a proxy that will not start rather
+            than a setting that does nothing.
     """
-    # The scopes that divert, not the listeners. A proxied port with no exit
-    # is simply not published — the renderer already declines it — and that is
-    # a listener waiting for a node, not a contradiction to refuse.
     is_exit_needed = (
         settings.is_proxy_enabled
         or settings.is_overlay_proxy_enabled
@@ -175,23 +171,6 @@ def update_settings(
     if refusal is not None:
         code, params = refusal
         raise _refusal(code, **params)
-    seen = [entry.port for entry in settings.socks_ports]
-    if len(set(seen)) != len(seen):
-        raise _refusal("socks_ports_share_a_port")
-    for entry in settings.socks_ports:
-        if not WEB_PORT_MIN <= entry.port <= WEB_PORT_MAX:
-            raise _refusal(
-                "port_out_of_range",
-                minimum=WEB_PORT_MIN,
-                maximum=WEB_PORT_MAX,
-                value=entry.port,
-            )
-    # xray's own listeners are excluded: they are the ports this file already
-    # asked for, and counting them would make every second save a conflict.
-    held = runtime.listening_ports.ports(ignoring=XRAY_BINARY_NAME)
-    for entry in settings.socks_ports:
-        if entry.port in held:
-            raise _refusal("port_already_in_use", value=entry.port)
     for entries, check in (
         (settings.direct_domains, check_direct_domain),
         (settings.direct_ips, check_direct_address),
@@ -437,13 +416,15 @@ class ProxyPanelPart:
 
         Returns:
             Parsed ``config/xray/routing.json``, its two resolver fields read
-            as lists.
+            as lists and an earlier build's listeners left out.
 
         Raises:
             FileNotFoundError: When the box is not set up.
             ValueError: When the file is not valid JSON.
         """
-        return with_resolver_lists(read_config(XRAY_ROUTING_FILE))
+        routing = with_resolver_lists(read_config(XRAY_ROUTING_FILE))
+        routing.pop(XRAY_FORMER_SOCKS_PORTS_FIELD, None)
+        return routing
 
     def node_list(self) -> XrayNodeList:
         """Read the current node list.

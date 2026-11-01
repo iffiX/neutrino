@@ -36,7 +36,6 @@ ROUTING = {
     "direct_domains": [],
     "direct_ips": [],
     "is_local_proxy_enabled": False,
-    "socks_ports": [],
     "remote_dns": [{"address": "1.1.1.1", "port": 53}],
     "direct_dns": [{"address": "223.5.5.5", "port": 53}],
 }
@@ -89,7 +88,6 @@ class FakeRuntime:
             "xray/routing.json": dict(ROUTING),
         }
         self.is_config_dirty = False
-        self.listening_ports = _HeldPorts()
         self.tasks = FakeTasks()
         self.exit_controller = _ExitController()
         # What the next Apply raises, for the paths that have to survive one.
@@ -105,11 +103,6 @@ class FakeRuntime:
         if self.apply_failure is not None:
             raise self.apply_failure
         return [{"code": "xray_restarted", "params": {}}]
-
-
-class _HeldPorts:
-    def ports(self, *, ignoring: str = "") -> set:
-        return set()
 
 
 class _ExitController:
@@ -360,3 +353,56 @@ def test_the_proxys_own_lookups_ask_the_first_direct_resolver(monkeypatch):
 
     assert part.routing()["direct_dns"] == []
     assert part.direct_resolver() == ("192.168.1.1", 53)
+
+
+# --- A routing.json from an earlier build ---
+
+
+EARLIER_ROUTING = {
+    "is_proxy_enabled": False,
+    "is_local_proxy_enabled": False,
+    "is_geoip_split_enabled": True,
+    "direct_domains": [],
+    "direct_ips": [],
+    "remote_dns": [{"address": "1.1.1.1", "port": 53}],
+    "direct_dns": [],
+    "socks_ports": [{"port": 1080, "is_proxied": False}],
+}
+
+
+def test_the_page_shows_and_stores_no_listener(client):
+    opened, runtime = client
+    runtime.files["xray/routing.json"] = dict(EARLIER_ROUTING)
+
+    shown = opened.get("/api/hub/proxy").json()
+    saved = opened.post("/api/hub/proxy/set", json=dict(EARLIER_ROUTING))
+
+    assert "socks_ports" not in shown
+    assert saved.status_code == 200
+    assert "socks_ports" not in saved.json()
+    assert "socks_ports" not in runtime.files["xray/routing.json"]
+
+
+def test_the_part_reads_an_earlier_builds_listeners_as_nothing(monkeypatch):
+    monkeypatch.setattr(proxy_router, "read_config", lambda name: dict(EARLIER_ROUTING))
+    part = object.__new__(proxy_router.ProxyPanelPart)
+
+    assert "socks_ports" not in part.routing()
+
+
+def test_settling_the_scopes_writes_an_earlier_builds_listeners_away(monkeypatch):
+    written = {}
+    monkeypatch.setattr(
+        proxy_router,
+        "read_config",
+        lambda name: dict(EARLIER_ROUTING, is_local_proxy_enabled=True),
+    )
+    monkeypatch.setattr(
+        proxy_router, "write_config", lambda name, body: written.update(body)
+    )
+    part = object.__new__(proxy_router.ProxyPanelPart)
+
+    part.settled_routing(XrayNodeList.from_dict({"nodes": [], "balancer": {}}))
+
+    assert written["is_local_proxy_enabled"] is False
+    assert "socks_ports" not in written

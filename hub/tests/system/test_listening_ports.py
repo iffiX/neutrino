@@ -1,9 +1,4 @@
-"""Reading the box's listening sockets out of ss.
-
-What this guards is the exclusion: a service being reconfigured already holds
-the ports its own configuration asks for, so counting them would make every
-second save a conflict with itself.
-"""
+"""Reading the box's listening sockets out of ss."""
 
 from neutrino_hub.system import listening_ports
 from neutrino_hub.system.listening_ports import ListeningPortReader
@@ -32,10 +27,6 @@ def test_every_listening_port_is_read(monkeypatch):
     assert _reading(monkeypatch).ports() == {15353, 1080, 8080, 22}
 
 
-def test_one_process_can_be_left_out(monkeypatch):
-    assert _reading(monkeypatch).ports(ignoring="xray") == {8080, 22}
-
-
 def test_an_address_with_colons_in_it_still_yields_its_port(monkeypatch):
     assert 22 in _reading(monkeypatch).ports()
 
@@ -55,8 +46,6 @@ def test_elsewhere_the_sockets_come_from_psutil(elsewhere, monkeypatch):
         ("udp", "NONE", 15353, False, 11),
         ("udp", "NONE", 51000, True, 12),
     ]
-    machine.process_names = {11: "xray.exe", 12: "nhub"}
     monkeypatch.setattr(listening_ports, "psutil", machine)
 
     assert ListeningPortReader().ports() == {1080, 8080, 15353}
-    assert ListeningPortReader().ports(ignoring="xray") == {8080}

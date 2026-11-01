@@ -552,9 +552,9 @@ def test_a_document_without_a_proxy_skips_it():
 
 
 @pytest.mark.feature("proxy")
-def test_a_serving_mode_routes_its_devices_and_publishes_no_socks():
-    """Everything the devices send goes through; a SOCKS port is a separate
-    ask, and nothing here is worked out from the mode."""
+def test_a_serving_mode_routes_its_devices():
+    """Everything the devices send goes through; the box's own traffic is a
+    separate ask."""
     answers = wizard.from_document(
         {
             "password": "a-long-enough-password",
@@ -565,25 +565,40 @@ def test_a_serving_mode_routes_its_devices_and_publishes_no_socks():
     )
 
     assert answers.proxy.is_enabled
-    assert not answers.proxy.is_socks_proxy_enabled
-    assert not answers.proxy.is_socks_direct_enabled
     assert not answers.proxy.is_local
 
 
 @pytest.mark.feature("proxy")
-def test_a_server_has_a_socks_port_for_its_whole_proxy():
-    """It diverts nothing, so there is no transparent path to be on."""
+def test_a_server_given_nodes_alone_saves_them_and_says_the_proxy_is_off():
+    """It serves no network, so its own traffic is all that can go through.
+    With that left out nothing uses the nodes, and nothing may say otherwise."""
     answers = wizard.from_document(
         {
             "password": "a-long-enough-password",
             "vault_passphrase": VAULT_PASSPHRASE,
-            "network": {"mode": "server", "lan": ["a"], "address": "10.0.0.2"},
-            "proxy": {"links": [SHARE_LINK], "socks_proxy_port": 1081},
+            "network": {"mode": "server"},
+            "proxy": {"links": [SHARE_LINK]},
         }
     )
 
-    assert answers.proxy.is_socks_proxy_enabled
-    assert answers.proxy.socks_proxy_port == 1081
+    assert not answers.proxy.is_enabled
+    assert not answers.proxy.is_local
+    assert len(answers.proxy.nodes) == 1
+
+
+@pytest.mark.feature("proxy")
+def test_a_server_sending_its_own_traffic_has_the_proxy_on():
+    answers = wizard.from_document(
+        {
+            "password": "a-long-enough-password",
+            "vault_passphrase": VAULT_PASSPHRASE,
+            "network": {"mode": "server"},
+            "proxy": {"links": [SHARE_LINK], "is_local": True},
+        }
+    )
+
+    assert answers.proxy.is_enabled
+    assert answers.proxy.is_local
 
 
 @pytest.mark.feature("proxy")
@@ -614,24 +629,58 @@ def test_a_link_that_cannot_be_read_is_refused():
 
 
 @pytest.mark.feature("proxy")
-def test_both_socks_ports_are_asked_for_rather_than_fixed():
-    """One was a constant and the other a question, which read as an
-    oversight because it was one."""
-    answers = wizard.from_document(
-        {
-            "password": "a-long-enough-password",
-            "vault_passphrase": VAULT_PASSPHRASE,
-            "network": {"mode": "router", "wan": ["a"], "lan": ["b"]},
-            "proxy": {
-                "links": [SHARE_LINK],
-                "is_socks_direct_enabled": True,
-                "socks_direct_port": 1088,
-            },
-        }
-    )
+@pytest.mark.parametrize(
+    "former",
+    [
+        {"socks_proxy_port": 1081},
+        {"is_socks_direct_enabled": True, "socks_direct_port": 1088},
+    ],
+    ids=["proxied", "direct"],
+)
+@pytest.mark.parametrize(
+    "network",
+    [{"mode": "server"}, {"mode": "router", "wan": ["a"], "lan": ["b"]}],
+    ids=["server", "router"],
+)
+def test_a_document_naming_an_earlier_builds_ports_reads_as_if_it_did_not(
+    network, former
+):
+    def read(proxy: dict) -> wizard.WizardProxy:
+        return wizard.from_document(
+            {
+                "password": "a-long-enough-password",
+                "vault_passphrase": VAULT_PASSPHRASE,
+                "network": network,
+                "proxy": proxy,
+            }
+        ).proxy
 
-    assert answers.proxy.is_socks_direct_enabled
-    assert answers.proxy.socks_direct_port == 1088
+    plain = read({"links": [SHARE_LINK]})
+    named = read({"links": [SHARE_LINK], **former})
+
+    assert named.is_enabled == plain.is_enabled
+    assert named.is_local == plain.is_local
+    assert len(named.nodes) == len(plain.nodes)
+    assert read(former) == wizard.WizardProxy()
+
+
+@pytest.mark.feature("proxy")
+def test_any_other_proxy_key_a_document_names_is_still_refused():
+    with pytest.raises(WizardAborted, match="socks_port"):
+        wizard.from_document(
+            {
+                "password": "a-long-enough-password",
+                "vault_passphrase": VAULT_PASSPHRASE,
+                "network": {"mode": "server"},
+                "proxy": {"links": [SHARE_LINK], "socks_port": 1081},
+            }
+        )
+
+
+def test_the_browser_is_offered_no_port_for_a_proxy(monkeypatch):
+    monkeypatch.setattr(wizard, "RouterLinkStatus", StubLinks)
+
+    assert not [key for key in wizard.context()["defaults"] if "socks" in key]
 
 
 def test_every_screen_has_the_title_it_is_drawn_with():
@@ -860,7 +909,7 @@ def test_the_proxy_screen_asks_about_this_box_on_every_system(monkeypatch, syste
     monkeypatch.setattr(wizard.sys, "platform", system)
     asked = wizard.SetupWizard(links=StubLinks().all_links())
     asked._mode = "server"
-    typed = iter(["2", SHARE_LINK, "", "", "y"])
+    typed = iter(["2", SHARE_LINK, "", "y"])
     questions = []
 
     def answer(prompt=""):
@@ -873,6 +922,53 @@ def test_the_proxy_screen_asks_about_this_box_on_every_system(monkeypatch, syste
     assert asked._proxy.is_enabled
     assert asked._proxy.is_local
     assert any("own traffic" in question for question in questions)
+    assert not any("SOCKS" in question for question in questions)
+
+
+@pytest.mark.feature("proxy")
+def test_the_proxy_screen_of_a_server_takes_its_own_traffic_by_default(monkeypatch):
+    """The screen opens by offering just that."""
+    asked = wizard.SetupWizard(links=StubLinks().all_links())
+    asked._mode = "server"
+    typed = iter(["2", SHARE_LINK, "", ""])
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(typed))
+
+    assert asked._ask_proxy() == wizard.WIZARD_NEXT
+    assert asked._proxy.is_enabled
+    assert asked._proxy.is_local
+
+
+@pytest.mark.feature("proxy")
+def test_the_proxy_screen_of_a_router_leaves_its_own_traffic_out_by_default(
+    monkeypatch,
+):
+    asked = wizard.SetupWizard(links=StubLinks().all_links())
+    asked._mode = "router"
+    typed = iter(["2", SHARE_LINK, "", ""])
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(typed))
+
+    assert asked._ask_proxy() == wizard.WIZARD_NEXT
+    assert asked._proxy.is_enabled
+    assert not asked._proxy.is_local
+
+
+@pytest.mark.feature("proxy")
+def test_a_server_that_keeps_its_own_traffic_out_is_reviewed_as_not_using_them(
+    monkeypatch, capsys
+):
+    asked = wizard.SetupWizard(links=StubLinks().all_links())
+    asked._mode = "server"
+    typed = iter(["2", SHARE_LINK, "", "n", ""])
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(typed))
+
+    assert asked._ask_proxy() == wizard.WIZARD_NEXT
+    assert not asked._proxy.is_enabled
+    capsys.readouterr()
+    assert asked._review() == wizard.WIZARD_NEXT
+
+    said = capsys.readouterr().out
+    assert "not used, 1 exit nodes saved" in said
+    assert "SOCKS" not in said
 
 
 class _TypedLines:

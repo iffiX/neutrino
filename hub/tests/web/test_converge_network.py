@@ -664,7 +664,6 @@ def _ruleset(network, routing) -> str:
         panel_http_port=8080,
         panel_https_port=8444,
         agent_port=8443,
-        socks_ports=[],
         is_direct=False,
     )
     return RouterNftRenderer(

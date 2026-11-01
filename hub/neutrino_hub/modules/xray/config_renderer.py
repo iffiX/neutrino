@@ -45,11 +45,8 @@ from neutrino_hub.modules.xray.constants import (
     XRAY_RULE_TAG_LOCAL_DNS,
     XRAY_RULE_TAG_LOCAL_RESERVED,
     XRAY_RULE_TAG_PROBE,
-    XRAY_RULE_TAG_SOCKS_DIRECT,
     XRAY_RULE_TAG_SPLIT_DOMAIN,
     XRAY_RULE_TAG_SPLIT_IP,
-    XRAY_SOCKS_LISTEN,
-    XRAY_SOCKS_TAG,
     XRAY_TPROXY_LISTEN,
     XRAY_TPROXY_PORT,
     XRAY_TPROXY_TAG,
@@ -67,8 +64,7 @@ class XrayConfigRenderer:
     """Builds the xray config: inbounds, outbounds, balancer, and routing.
 
     ``tproxy_in`` takes what the router diverts, ``dns_in`` is dnsmasq's only
-    upstream, ``api_in`` answers the panel on loopback, and one SOCKS listener
-    per published port leaves the way its entry says. ``socks_probe_in``
+    upstream, and ``api_in`` answers the panel on loopback. ``socks_probe_in``
     carries one account per resident node, and one rule per account sends that
     account out its own node. Outside Linux nothing marks, so ``tproxy_in``
     and every ``sockopt.mark`` are left out; there the hub's own scope and
@@ -140,14 +136,6 @@ class XrayConfigRenderer:
             routing, has_exit=has_exit
         )
         self._egress_interface = egress_interface if self._is_tunneled else ""
-        # A proxied listener with no exit would answer and send everything out
-        # directly under a name that says the opposite, so it is not published
-        # at all in that state.
-        self._socks_ports = [
-            entry
-            for entry in routing.get("socks_ports", [])
-            if has_exit or not entry.get("is_proxied", False)
-        ]
         self._node_list = node_list
         self._routing = routing
         self._down_tags = frozenset(down_tags)
@@ -161,10 +149,7 @@ class XrayConfigRenderer:
     def _is_anything_proxied(self) -> bool:
         """Whether any scope sends traffic to the balancer at all."""
         return bool(
-            self._is_lan_proxied
-            or self._is_overlay_proxied
-            or self._is_local_proxied
-            or self._socks_tags(is_proxied=True)
+            self._is_lan_proxied or self._is_overlay_proxied or self._is_local_proxied
         )
 
     @property
@@ -283,19 +268,6 @@ class XrayConfigRenderer:
             inbounds.append(self._render_probe_inbound())
         if self._is_tunneled:
             inbounds.append(self._render_local_inbound())
-        # One inbound per published port, tagged by the port so a rule can name
-        # exactly the listeners that leave one way.
-        for entry in self._socks_ports:
-            inbounds.append(
-                {
-                    "tag": XRAY_SOCKS_TAG.format(port=entry["port"]),
-                    "listen": XRAY_SOCKS_LISTEN,
-                    "port": entry["port"],
-                    "protocol": "socks",
-                    "settings": {"udp": True, "auth": "noauth"},
-                    "sniffing": {"enabled": True, "destOverride": ["http", "tls"]},
-                }
-            )
         return inbounds
 
     def _render_transparent_inbound(self) -> dict:
@@ -348,22 +320,6 @@ class XrayConfigRenderer:
                 ],
             },
         }
-
-    def _socks_tags(self, *, is_proxied: bool) -> list[str]:
-        """The inbound tags of the listeners that leave one way.
-
-        Args:
-            is_proxied: True for the ones going out through an exit node,
-                False for the ones leaving directly.
-
-        Returns:
-            One tag per matching listener, in configuration order.
-        """
-        return [
-            XRAY_SOCKS_TAG.format(port=entry["port"])
-            for entry in self._socks_ports
-            if bool(entry.get("is_proxied", False)) is is_proxied
-        ]
 
     def _render_outbounds(self) -> list[dict]:
         # xray sends a connection no rule matched to the first outbound, and a
@@ -506,28 +462,18 @@ class XrayConfigRenderer:
                     "outboundTag": XRAY_DIRECT_TAG,
                 }
             )
-        direct_ports = self._socks_tags(is_proxied=False)
-        if direct_ports:
-            rules.append(
-                {
-                    "type": "field",
-                    "ruleTag": XRAY_RULE_TAG_SOCKS_DIRECT,
-                    "inboundTag": direct_ports,
-                    "outboundTag": XRAY_DIRECT_TAG,
-                }
-            )
-        balanced = self._socks_tags(is_proxied=True)
+        balanced = []
         direct_inbounds = []
         # The transparent inbound carries whatever the firewall diverts: the
         # LAN's traffic, an overlay's, or the hub's own. The DNS inbound is
         # dnsmasq's upstream, and dnsmasq only asks it while the LAN scope is
         # on; with that scope off it answers directly.
         if self._is_transparent_proxied:
-            balanced = [XRAY_TPROXY_TAG] + balanced
+            balanced.append(XRAY_TPROXY_TAG)
         elif self._is_transparent:
             direct_inbounds.append(XRAY_TPROXY_TAG)
         if self._is_tunneled:
-            balanced = [XRAY_LOCAL_SOCKS_TAG] + balanced
+            balanced.append(XRAY_LOCAL_SOCKS_TAG)
         if not self._is_lan_proxied:
             direct_inbounds.append(XRAY_DNS_TAG)
         if direct_inbounds:

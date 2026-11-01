@@ -105,40 +105,6 @@
         ],
         "routeOnly": true
       }
-    },
-    {
-      "tag": "socks_1080_in",
-      "listen": "0.0.0.0",
-      "port": 1080,
-      "protocol": "socks",
-      "settings": {
-        "udp": true,
-        "auth": "noauth"
-      },
-      "sniffing": {
-        "enabled": true,
-        "destOverride": [
-          "http",
-          "tls"
-        ]
-      }
-    },
-    {
-      "tag": "socks_1081_in",
-      "listen": "0.0.0.0",
-      "port": 1081,
-      "protocol": "socks",
-      "settings": {
-        "udp": true,
-        "auth": "noauth"
-      },
-      "sniffing": {
-        "enabled": true,
-        "destOverride": [
-          "http",
-          "tls"
-        ]
-      }
     }
   ],
   "outbounds": [
@@ -262,14 +228,6 @@
       },
       {
         "type": "field",
-        "ruleTag": "rule_socks_direct",
-        "inboundTag": [
-          "socks_1081_in"
-        ],
-        "outboundTag": "direct"
-      },
-      {
-        "type": "field",
         "ruleTag": "rule_inbound_direct",
         "inboundTag": [
           "dns_in"
@@ -297,7 +255,6 @@
         "ruleTag": "rule_balancer",
         "inboundTag": [
           "socks_local_in",
-          "socks_1080_in",
           "dns_internal"
         ],
         "balancerTag": "proxy_balance"

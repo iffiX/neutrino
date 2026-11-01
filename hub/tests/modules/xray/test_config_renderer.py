@@ -64,7 +64,6 @@ def resolved_nodes() -> XrayNodeList:
 def render(*, is_resolved: bool = True, **routing) -> dict:
     settings = {
         "is_proxy_enabled": True,
-        "socks_ports": [{"port": 1080, "is_proxied": False}],
         "is_geoip_split_enabled": True,
         "direct_domains": ["geosite:cn"],
         "direct_ips": ["geoip:cn"],
@@ -90,7 +89,7 @@ def render_with_a_switched_off_node(**routing) -> dict:
     node_list = XrayNodeList.from_dict(nodes)
     for node in node_list.nodes:
         node.password = "secret"
-    settings = {"is_proxy_enabled": True, "socks_ports": [], **routing}
+    settings = {"is_proxy_enabled": True, **routing}
     return XrayConfigRenderer(node_list=node_list, routing=settings).render()
 
 
@@ -101,7 +100,7 @@ def render_two_enabled_nodes(down_tags) -> dict:
     node_list = XrayNodeList.from_dict(nodes)
     for node in node_list.nodes:
         node.password = "secret"
-    settings = {"is_proxy_enabled": True, "socks_ports": []}
+    settings = {"is_proxy_enabled": True}
     return XrayConfigRenderer(
         node_list=node_list, routing=settings, down_tags=frozenset(down_tags)
     ).render()
@@ -153,7 +152,6 @@ def test_the_proxy_off_sends_everything_straight_out():
         "api",
         "direct",
         "direct",
-        "direct",
     ]
     # The DNS inbound is still wired up and still has to answer from somewhere.
     catch_all = rules[-1]
@@ -197,79 +195,24 @@ def test_the_proxy_on_with_no_enabled_node_renders_as_off():
     assert tags(config, "outbounds") == ["direct", "block"]
 
 
-# --- The direct SOCKS listener ----------------------------------------------
+# --- A routing.json from an earlier build ------------------------------------
 
 
-def test_a_listener_is_published_on_the_port_it_names():
-    config = render(socks_ports=[{"port": 1088, "is_proxied": False}])
+@pytest.mark.parametrize("is_transparent", [True, False], ids=["linux", "elsewhere"])
+@pytest.mark.parametrize("is_proxied", [True, False], ids=["proxied", "direct"])
+def test_an_earlier_builds_listeners_render_nothing(is_transparent, is_proxied):
+    routing = {
+        "is_proxy_enabled": False,
+        "socks_ports": [{"port": 1080, "is_proxied": is_proxied}],
+    }
 
-    assert "socks_1088_in" in tags(config, "inbounds")
-    socks = next(
-        entry for entry in config["inbounds"] if entry["tag"] == "socks_1088_in"
-    )
-    assert socks["port"] == 1088
-
-
-def test_a_listener_binds_every_address():
-    """As every service on this box does. Which interfaces it answers on is a
-    firewall answer per interface, and a listener pinned to a LAN address is
-    one that vanishes when that address changes under it."""
-    config = render()
-
-    socks = next(
-        entry for entry in config["inbounds"] if entry["tag"] == "socks_1080_in"
-    )
-    assert socks["listen"] == "0.0.0.0"
-
-
-def test_a_listener_nobody_asked_for_leaves_no_trace():
-    """A second way out of the box should be as revocable as the proxy itself."""
-    config = render(socks_ports=[])
+    config = XrayConfigRenderer(
+        node_list=resolved_nodes(), routing=routing, is_transparent=is_transparent
+    ).render()
 
     assert published_socks_tags(config) == []
-    named = [
-        rule
-        for rule in config["routing"]["rules"]
-        if any(
-            tag.startswith("socks_") and tag != PROBE_TAG
-            for tag in rule.get("inboundTag", [])
-        )
-    ]
-    assert named == []
-
-
-def test_a_direct_listener_never_reaches_an_exit_node():
-    """The whole point of it: never through an exit node, whatever else is set."""
-    config = render()
-
-    rule = next(
-        rule
-        for rule in config["routing"]["rules"]
-        if "socks_1080_in" in rule.get("inboundTag", [])
-    )
-    assert rule["outboundTag"] == "direct"
-
-
-def test_both_kinds_of_listener_stand_side_by_side():
-    """One port an application uses to look local, one it uses to look
-    elsewhere, on the same box at once."""
-    config = render(
-        socks_ports=[
-            {"port": 1080, "is_proxied": False},
-            {"port": 1081, "is_proxied": True},
-        ]
-    )
-
-    direct = next(
-        rule
-        for rule in config["routing"]["rules"]
-        if "socks_1080_in" in rule.get("inboundTag", [])
-    )
-    balanced = next(
-        rule for rule in config["routing"]["rules"] if rule.get("balancerTag")
-    )
-    assert direct["outboundTag"] == "direct"
-    assert "socks_1081_in" in balanced["inboundTag"]
+    assert "1080" not in json.dumps(config)
+    assert "balancerTag" not in json.dumps(config["routing"]["rules"])
 
 
 # --- The split, which is separate from the master switch --------------------
@@ -291,51 +234,17 @@ def test_without_the_split_everything_reaches_the_balancer():
     assert "balancers" in config["routing"]
 
 
-def test_a_socks_port_can_be_the_whole_proxy():
-    """A box that diverts nothing has no transparent path to be on, so the
-    port applications are pointed at is the only way through."""
-    routing = {
-        "is_proxy_enabled": True,
-        "socks_ports": [{"port": 1081, "is_proxied": True}],
-    }
+def test_nodes_no_scope_uses_leave_the_balancer_standing_and_no_rule_on_it():
+    """A server given nodes with its own traffic left out: the hub measures
+    them and has something to override once a scope is switched on."""
+    routing = {"is_proxy_enabled": False, "is_local_proxy_enabled": False}
 
     config = XrayConfigRenderer(node_list=resolved_nodes(), routing=routing).render()
 
-    socks = [i for i in config["inbounds"] if i["tag"] == "socks_1081_in"]
-    balanced = [r for r in config["routing"]["rules"] if r.get("balancerTag")]
-    assert socks and socks[0]["port"] == 1081
-    assert "socks_1081_in" in balanced[0]["inboundTag"]
-
-
-def test_a_proxied_port_outlives_the_lan_switch():
-    """The scopes stand alone: a server keeps its proxied port with the LAN
-    switch off, because it has no LAN for that switch to mean anything on."""
-    routing = {
-        "is_proxy_enabled": False,
-        "socks_ports": [{"port": 1081, "is_proxied": True}],
-    }
-
-    config = XrayConfigRenderer(node_list=resolved_nodes(), routing=routing).render()
-
-    balanced = next(r for r in config["routing"]["rules"] if r.get("balancerTag"))
-    assert [i for i in config["inbounds"] if i["tag"] == "socks_1081_in"]
-    assert balanced["inboundTag"] == ["socks_1081_in", "dns_internal"]
-
-
-def test_a_proxied_port_is_not_published_without_an_exit():
-    """It would answer, and send everything out directly under a name that
-    says the opposite."""
-    routing = {
-        "is_proxy_enabled": False,
-        "socks_ports": [{"port": 1081, "is_proxied": True}],
-    }
-
-    config = XrayConfigRenderer(
-        node_list=XrayNodeList.from_dict({"nodes": [], "balancer": NODES["balancer"]}),
-        routing=routing,
-    ).render()
-
-    assert not [i for i in config["inbounds"] if i["tag"] == "socks_1081_in"]
+    assert config["routing"]["balancers"][0]["selector"] == ["node_hk1"]
+    assert "node_hk1" in tags(config, "outbounds")
+    assert PROBE_TAG in tags(config, "inbounds")
+    assert not [r for r in config["routing"]["rules"] if r.get("balancerTag")]
 
 
 def test_the_hub_scope_stands_alone():
@@ -344,7 +253,6 @@ def test_the_hub_scope_stands_alone():
     routing = {
         "is_proxy_enabled": False,
         "is_local_proxy_enabled": True,
-        "socks_ports": [],
     }
 
     config = XrayConfigRenderer(node_list=resolved_nodes(), routing=routing).render()
@@ -358,18 +266,6 @@ def test_the_hub_scope_stands_alone():
     assert balanced["inboundTag"] == ["tproxy_in", "dns_internal"]
     assert dns is not None
     assert "node_hk1" in tags(config, "outbounds")
-
-
-def test_a_direct_port_is_published_with_the_proxy_off():
-    """It never went through the proxy, so the master switch is nothing to it."""
-    routing = {
-        "is_proxy_enabled": False,
-        "socks_ports": [{"port": 1080, "is_proxied": False}],
-    }
-
-    config = XrayConfigRenderer(node_list=resolved_nodes(), routing=routing).render()
-
-    assert [i for i in config["inbounds"] if i["tag"] == "socks_1080_in"]
 
 
 def test_every_scope_off_is_the_way_out_of_a_bad_direct_entry():
@@ -430,7 +326,6 @@ def test_every_direct_resolver_answers_the_direct_names_in_order():
 def test_an_empty_direct_list_follows_the_networks_resolvers():
     settings = {
         "is_proxy_enabled": True,
-        "socks_ports": [],
         "is_geoip_split_enabled": True,
         "direct_domains": ["geosite:cn"],
         "remote_dns": [{"address": "1.1.1.1", "port": 53}],
@@ -509,7 +404,7 @@ def test_every_node_switched_off_is_still_rendered_and_still_measured():
 
     config = XrayConfigRenderer(
         node_list=node_list,
-        routing={"is_proxy_enabled": True, "socks_ports": []},
+        routing={"is_proxy_enabled": True},
     ).render()
 
     assert "node_hk1" in tags(config, "outbounds")
@@ -674,7 +569,6 @@ def render_with_exit(address: str, **routing) -> dict:
         node.password = "secret"
     settings = {
         "is_proxy_enabled": True,
-        "socks_ports": [],
         "is_geoip_split_enabled": False,
         "remote_dns": [{"address": "1.1.1.1", "port": 53}],
         "direct_dns": [{"address": "223.5.5.5", "port": 53}],
@@ -814,15 +708,11 @@ def render_for_golden(
     is_overlay_proxy_enabled: bool = True,
     is_local_proxy_enabled: bool = True,
 ) -> dict:
-    """Every scope switched on, one SOCKS port each way; the uplink is en0."""
+    """Every scope switched on; the uplink is en0."""
     settings = {
         "is_proxy_enabled": True,
         "is_overlay_proxy_enabled": is_overlay_proxy_enabled,
         "is_local_proxy_enabled": is_local_proxy_enabled,
-        "socks_ports": [
-            {"port": 1080, "is_proxied": True},
-            {"port": 1081, "is_proxied": False},
-        ],
         "is_geoip_split_enabled": True,
         "direct_domains": ["geosite:cn"],
         "direct_ips": ["geoip:cn"],
@@ -863,8 +753,6 @@ def test_outside_linux_nothing_marks_and_the_tun_scopes_arrive_on_loopback():
         "dns_in",
         PROBE_TAG,
         "socks_local_in",
-        "socks_1080_in",
-        "socks_1081_in",
     ]
     assert "tproxy_in" not in json.dumps(config["routing"])
     (local,) = [
@@ -927,7 +815,7 @@ def test_outside_linux_what_leaves_directly_is_bound_to_the_uplink():
             assert outbound["streamSettings"]["sockopt"]["interface"] == "en0"
 
 
-def test_outside_linux_with_both_tun_scopes_off_the_proxy_is_its_socks_ports():
+def test_outside_linux_with_both_tun_scopes_off_nothing_is_tunneled():
     config = render_for_golden(
         is_transparent=False,
         is_overlay_proxy_enabled=False,

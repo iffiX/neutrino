@@ -26,7 +26,6 @@ LAN_ADDRESS = "192.168.90.1"
 ONE_ARM_ADDRESS = "192.168.91.1"
 ONE_ARM_TAG = 3
 DNSMASQ_CONF = Path("/var/lib/neutrino/hub/generated/dnsmasq_neutrino.conf")
-XRAY_CONF = Path("/var/lib/neutrino/hub/generated/xray_config.json")
 LEASE_FILE = Path("/var/lib/misc/dnsmasq.leases")
 STOOD_DOWN = Path("/var/lib/neutrino/hub/stood_down.json")
 SETTLE_LIMIT_S = 30.0
@@ -316,20 +315,15 @@ def test_the_box_arrives_a_server(panel, wiring):
     assert machine_state.is_active(wiring["manager"])
 
 
-def test_a_server_proxies_its_ports_and_itself(panel):
+def test_a_server_proxies_itself(panel):
     """The scopes that do not need a forwarded network work without one."""
     if not panel.read("/hub/proxy/node")["nodes"]:
         assert panel.status("POST", "/hub/proxy/node/add", {"link": NODE_LINK}) == 200
-    put_proxy(
-        panel,
-        is_local_proxy_enabled=True,
-        socks_ports=[{"port": 1091, "is_proxied": True}],
-    )
+    put_proxy(panel, is_local_proxy_enabled=True)
 
     body = firewall()
     assert 'iifname "lo"' in body and "tproxy" in body
     assert "fwmark" in rules()
-    assert "socks_1091_in" in XRAY_CONF.read_text(encoding="utf-8")
     # No network is forwarded, so nothing but loopback is diverted.
     assert "iifname !=" not in body
 
@@ -344,12 +338,7 @@ def test_the_lan_switch_does_nothing_on_a_server(panel):
 
 
 def test_a_server_can_put_its_proxy_away(panel):
-    put_proxy(
-        panel,
-        is_proxy_enabled=False,
-        is_local_proxy_enabled=False,
-        socks_ports=[],
-    )
+    put_proxy(panel, is_proxy_enabled=False, is_local_proxy_enabled=False)
 
     assert "tproxy" not in firewall()
     assert "fwmark" not in rules()

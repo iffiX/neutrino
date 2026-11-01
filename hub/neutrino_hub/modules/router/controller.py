@@ -165,9 +165,7 @@ class RouterStateController:
         devices = overlay_devices(network)
         cgroups = engine_cgroups(routing)
         held = device_held_addresses()
-        exposure = firewall_exposure(
-            network.with_overlay_devices(devices), routing=routing, held=held
-        )
+        exposure = firewall_exposure(network.with_overlay_devices(devices), held=held)
         ruleset = RouterNftRenderer(
             network=network,
             routing=routing,
@@ -230,9 +228,8 @@ class RouterStateController:
             return []
         with router_lock(path=self._lock_path):
             network = RouterNetworkConfig.from_dict(read_config(ROUTER_NETWORK_FILE))
-            routing = read_proxy_routing()
             found = network.with_overlay_devices(overlay_devices(network))
-            return _firewall_steps(found, routing)
+            return _firewall_steps(found)
 
     def _reconcile_firewall(
         self, network: RouterNetworkConfig, routing: dict
@@ -240,7 +237,7 @@ class RouterStateController:
         """The pass on macOS and Windows: the firewall, the proxy's TUN and the overlays."""
         devices = overlay_devices(network)
         found = network.with_overlay_devices(devices)
-        results = _firewall_steps(found, routing)
+        results = _firewall_steps(found)
         for tun_step in edition.hooks("router_tun_step"):
             results.append(tun_step(found, routing))
         write_generated(ROUTER_OVERLAY_DEVICES_PATH, json.dumps(devices))
@@ -425,12 +422,12 @@ def failure_codes(results: list[RouterStepResult]) -> list[dict]:
     ]
 
 
-def _firewall_steps(found: RouterNetworkConfig, routing: dict) -> list:
+def _firewall_steps(found: RouterNetworkConfig) -> list:
     """The system firewall step, and one failed step per rule Windows refused."""
     refused = []
 
     def firewall() -> list:
-        notes, failed = converge_firewall(found, routing=routing)
+        notes, failed = converge_firewall(found)
         refused.extend(failed)
         return notes
 

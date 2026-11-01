@@ -38,7 +38,6 @@ def routing(**overrides) -> dict:
     base = {
         "is_proxy_enabled": True,
         "is_local_proxy_enabled": False,
-        "socks_ports": [],
     }
     base.update(overrides)
     return base
@@ -125,50 +124,31 @@ def test_the_hub_alone_reads_as_hub(monkeypatch, tmp_path):
 
 
 @pytest.mark.feature("proxy")
-def test_a_proxied_port_with_no_diversion_reads_as_ports(monkeypatch, tmp_path):
-    """A server's proxy is its listeners.
+def test_nothing_sent_to_the_proxy_reads_as_unused(monkeypatch, tmp_path):
+    runtime = runtime_with(
+        monkeypatch,
+        tmp_path,
+        routing=routing(),
+        ruleset="chain prerouting {\n}\n",
+    )
 
-    Reporting "direct" there would claim traffic is bypassing a proxy every
-    pointed application is using.
-    """
+    assert runtime.proxy_scope() == "unused"
+
+
+@pytest.mark.feature("proxy")
+@pytest.mark.parametrize("is_proxied", [True, False], ids=["proxied", "direct"])
+def test_an_earlier_builds_listener_reads_as_nothing(monkeypatch, tmp_path, is_proxied):
     runtime = runtime_with(
         monkeypatch,
         tmp_path,
         routing=routing(
             is_proxy_enabled=False,
-            socks_ports=[{"port": 1080, "is_proxied": True}],
+            socks_ports=[{"port": 1080, "is_proxied": is_proxied}],
         ),
         ruleset="chain prerouting {\n}\n",
-        nodes={
-            "nodes": [
-                {
-                    "id": "hk1",
-                    "protocol": "shadowsocks",
-                    "address": "1.2.3.4",
-                    "is_enabled": True,
-                    "shadowsocks": {
-                        "port": 8388,
-                        "method": "aes-256-gcm",
-                        "password": "pw",  # scan: allow
-                    },
-                }
-            ]
-        },
     )
 
-    assert runtime.proxy_scope() == "ports"
-
-
-@pytest.mark.feature("proxy")
-def test_nothing_sent_to_the_proxy_reads_as_unused(monkeypatch, tmp_path):
-    runtime = runtime_with(
-        monkeypatch,
-        tmp_path,
-        routing=routing(socks_ports=[{"port": 1080, "is_proxied": False}]),
-        ruleset="chain prerouting {\n}\n",
-    )
-
-    assert runtime.proxy_scope() == "unused"
+    assert runtime.proxy_scope() == "off"
 
 
 @pytest.mark.feature("proxy")

@@ -32,7 +32,6 @@ from neutrino_hub.modules.firewall.constants import (
     FIREWALL_PURPOSE_PANEL_HTTP,
     FIREWALL_PURPOSE_PANEL_HTTPS,
     FIREWALL_PURPOSE_SETUP,
-    FIREWALL_PURPOSE_SOCKS,
     FIREWALL_RULE_PREFIX,
 )
 from neutrino_hub.modules.overlay.constants import OVERLAY_ENGINES
@@ -144,7 +143,6 @@ def render_exposure(
     panel_http_port: int,
     panel_https_port: int,
     agent_port: int,
-    socks_ports: list,
     is_direct: bool,
 ) -> FirewallExposure:
     """Work out what the hub's firewall answers.
@@ -158,8 +156,6 @@ def render_exposure(
         panel_http_port: The panel's HTTP port.
         panel_https_port: The panel's HTTPS port.
         agent_port: The agent port.
-        socks_ports: Every configured SOCKS port, each a hub port over TCP
-            and UDP.
         is_direct: Whether Direct is on.
 
     Returns:
@@ -180,15 +176,6 @@ def render_exposure(
                 FIREWALL_PURPOSE_DNS.format(protocol=protocol.lower()),
                 protocol,
                 FIREWALL_DNS_PORT,
-            )
-            for protocol in (FIREWALL_PROTOCOL_TCP, FIREWALL_PROTOCOL_UDP)
-        ]
-    for port in sorted({int(port) for port in socks_ports}):
-        hub_ports += [
-            FirewallPort(
-                FIREWALL_PURPOSE_SOCKS.format(port=port, protocol=protocol.lower()),
-                protocol,
-                port,
             )
             for protocol in (FIREWALL_PROTOCOL_TCP, FIREWALL_PROTOCOL_UDP)
         ]
@@ -456,7 +443,6 @@ def firewalld_rule(
 def render_programs(
     *,
     hub_program: str,
-    xray_program: str,
     overlay_programs: dict,
     overlays: list,
 ) -> list:
@@ -464,15 +450,13 @@ def render_programs(
 
     Args:
         hub_program: ``nhub``, which serves the panel and the agent channel.
-        xray_program: xray, which serves the SOCKS ports; empty in a
-            tree without the proxy.
         overlay_programs: Overlay key to the program its daemon runs.
         overlays: The enabled overlays' keys.
 
     Returns:
         The program paths, the hub first.
     """
-    programs = [program for program in (hub_program, xray_program) if program]
+    programs = [hub_program]
     for provider in OVERLAY_ENGINES:
         if provider in overlays and provider in overlay_programs:
             programs.append(overlay_programs[provider])

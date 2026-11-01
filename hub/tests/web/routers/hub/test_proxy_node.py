@@ -59,7 +59,6 @@ class FakeRuntime:
                 "direct_domains": [],
                 "direct_ips": [],
                 "is_local_proxy_enabled": False,
-                "socks_ports": [],
                 "remote_dns": [{"address": "1.1.1.1", "port": 53}],
                 "direct_dns": [{"address": "223.5.5.5", "port": 53}],
             },
@@ -67,20 +66,12 @@ class FakeRuntime:
         self.is_config_dirty = False
         self.stats = _NoTraffic()
         self.exit_controller = _ExitController(self)
-        self.listening_ports = _HeldPorts()
 
     def node_list(self) -> XrayNodeList:
         return XrayNodeList.from_dict(self.files["xray/nodes.json"])
 
     def routing(self) -> dict:
         return dict(self.files["xray/routing.json"])
-
-
-class _HeldPorts:
-    """A box with something already on 8080."""
-
-    def ports(self, *, ignoring: str = "") -> set:
-        return {8080}
 
 
 class _NoTraffic:
@@ -204,34 +195,6 @@ def test_the_switch_cannot_be_turned_on_with_nothing_to_go_out_through(client):
     assert response.json()["detail"]["code"] == "no_exit_node_enabled"
 
 
-def test_two_listeners_cannot_share_a_port(client):
-    opened, runtime = client
-    settings = dict(
-        runtime.files["xray/routing.json"],
-        socks_ports=[
-            {"port": 1080, "is_proxied": False},
-            {"port": 1080, "is_proxied": True},
-        ],
-    )
-
-    response = opened.post("/api/hub/proxy/set", json=settings)
-
-    assert response.status_code == 400
-
-
-@pytest.mark.parametrize("port", [0, -1, 65536])
-def test_a_port_no_listener_can_take_is_refused(client, port):
-    opened, runtime = client
-    settings = dict(
-        runtime.files["xray/routing.json"],
-        socks_ports=[{"port": port, "is_proxied": False}],
-    )
-
-    response = opened.post("/api/hub/proxy/set", json=settings)
-
-    assert response.status_code == 400
-
-
 @pytest.mark.parametrize(
     "settings,label",
     [
@@ -254,21 +217,6 @@ def test_the_balancer_refuses_what_a_round_cannot_keep(client, settings, label):
     response = opened.post("/api/hub/proxy/balancer/set", json=body)
 
     assert response.status_code == 400, label
-
-
-def test_many_listeners_are_kept_in_the_order_they_were_given(client):
-    """Adding a row at a time is how the page works, and a list that reorders
-    itself under that is one nobody can edit."""
-    opened, runtime = client
-    ports = [
-        {"port": 2000 + index, "is_proxied": index % 2 == 0} for index in range(32)
-    ]
-    settings = dict(runtime.files["xray/routing.json"], socks_ports=ports)
-
-    response = opened.post("/api/hub/proxy/set", json=settings)
-
-    assert response.status_code == 200
-    assert runtime.files["xray/routing.json"]["socks_ports"] == ports
 
 
 @pytest.mark.parametrize(
@@ -368,51 +316,6 @@ def test_a_direct_list_of_prefixes_and_databases_is_kept(client):
         "192.0.2.0/24",
         "geoip:cn",
     ]
-
-
-def test_a_listener_cannot_take_a_port_the_box_already_holds(client):
-    """xray validates a configuration without binding it and its unit reports
-    started at fork, so this is found otherwise as a proxy that is simply
-    absent."""
-    opened, runtime = client
-    settings = dict(
-        runtime.files["xray/routing.json"],
-        socks_ports=[{"port": 8080, "is_proxied": False}],
-    )
-
-    response = opened.post("/api/hub/proxy/set", json=settings)
-
-    assert response.status_code == 400
-    assert response.json()["detail"] == {
-        "code": "port_already_in_use",
-        "params": {"value": 8080},
-    }
-
-
-def test_a_free_port_is_still_accepted(client):
-    opened, runtime = client
-    settings = dict(
-        runtime.files["xray/routing.json"],
-        socks_ports=[{"port": 1080, "is_proxied": False}],
-    )
-
-    assert opened.post("/api/hub/proxy/set", json=settings).status_code == 200
-
-
-def test_a_proxied_listener_needs_no_exit_node_to_be_saved(client):
-    """It is a listener waiting for a node, not a contradiction: the renderer
-    declines to publish it while there is nothing to go out through, so the
-    page has nothing to refuse."""
-    opened, runtime = client
-    opened.post("/api/hub/proxy/node/remove", json={"node_id": "hk1"})
-    settings = dict(
-        runtime.files["xray/routing.json"],
-        socks_ports=[{"port": 1081, "is_proxied": True}],
-    )
-
-    response = opened.post("/api/hub/proxy/set", json=settings)
-
-    assert response.status_code == 200
 
 
 def test_the_hubs_own_switch_cannot_be_turned_on_with_nothing_to_go_out_through(client):

@@ -955,8 +955,8 @@ class RouterNetworkConfig:
         """The first LAN, or None when the box serves none.
 
         This is the address services bind to when they need one address rather
-        than all of them — the SOCKS listener, Gitea. A second LAN still
-        reaches them, because the gateway routes between its own networks.
+        than all of them, such as Gitea. A second LAN still reaches them,
+        because the gateway routes between its own networks.
 
         Returns:
             The first LAN interface, or None.
@@ -968,8 +968,8 @@ class RouterNetworkConfig:
     def primary_lan_address(self) -> str:
         """The one address to use where only one will do.
 
-        The SOCKS listener binds here, and the panel names it as its own URL
-        when telling a device where the gateway is.
+        The panel names it as its own URL when telling a device where the
+        gateway is.
 
         Returns:
             The first LAN's address, or loopback when the box serves no network

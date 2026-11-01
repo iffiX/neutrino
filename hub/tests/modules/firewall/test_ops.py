@@ -1,11 +1,11 @@
 """Which firewall a routing pass drives, and what it reads to drive it.
 
-What these pin: the panel's ports come from its settings, the SOCKS ports
-from the proxy, the overlays from the network and the segments from the
-addresses the box holds now, an interface the configuration does not name
-among them; Windows gets one rule per purpose naming the exposed segments
-as remote addresses, macOS the programs of the enabled overlays and the pf
-anchor, and loads the kept anchor again at start; a pass records the
+What these pin: the panel's ports come from its settings, the overlays from
+the network and the segments from the addresses the box holds now, an
+interface the configuration does not name among them; Windows gets one rule
+per purpose naming the exposed segments as remote addresses, macOS the
+programs of the enabled overlays and the pf anchor, takes xray off an earlier
+build's list, and loads the kept anchor again at start; a pass records the
 networks it wrote the rules for, and a network that moved, not an address
 that rotated inside one, runs the pass again; on Linux firewalld gets the
 rules in the zones of the exposed interfaces while it runs, the pass
@@ -33,7 +33,6 @@ NETWORK = RouterNetworkConfig.from_dict(
         "overlays": [{"provider": "netbird", "is_enabled": True}],
     }
 )
-ROUTING = {"socks_ports": [{"port": 1080, "is_proxied": True}, {"note": "none"}]}
 EXPOSURE = RouterNetworkConfig.from_dict(
     {
         "mode": "server",
@@ -111,7 +110,7 @@ def test_windows_opens_the_ports_the_settings_name(on_windows, recorder, monkeyp
     stored = {"web/settings.json": {"listen_port": 9080, "https_listen_port": 9443}}
     monkeypatch.setattr(ops, "read_config", lambda name: stored[name])
 
-    assert ops.converge_firewall(NETWORK, routing=ROUTING) == (["changed"], [])
+    assert ops.converge_firewall(NETWORK) == (["changed"], [])
 
     ((verb, rules),) = recorder.handed
     assert [(rule.name, rule.port) for rule in rules] == [
@@ -121,10 +120,6 @@ def test_windows_opens_the_ports_the_settings_name(on_windows, recorder, monkeyp
         ("neutrino_hub_panel_https_link", 9443),
         ("neutrino_hub_agent", 8443),
         ("neutrino_hub_agent_link", 8443),
-        ("neutrino_hub_socks_1080_tcp", 1080),
-        ("neutrino_hub_socks_1080_tcp_link", 1080),
-        ("neutrino_hub_socks_1080_udp", 1080),
-        ("neutrino_hub_socks_1080_udp_link", 1080),
         ("neutrino_hub_netbird_udp", 51820),
     ]
 
@@ -137,7 +132,7 @@ def test_windows_before_setup_opens_the_default_ports(
 
     monkeypatch.setattr(ops, "read_config", missing)
 
-    ops.converge_firewall(NETWORK, routing={})
+    ops.converge_firewall(NETWORK)
 
     ((_, rules),) = recorder.handed
     assert [rule.port for rule in rules[:6:2]] == [8080, 443, 8443]
@@ -149,7 +144,7 @@ def test_windows_answers_the_exposed_segments_and_overlays_by_remote_address(
 ):
     monkeypatch.setattr(ops, "read_config", lambda name: {})
 
-    ops.converge_firewall(EXPOSURE, routing=ROUTING)
+    ops.converge_firewall(EXPOSURE)
 
     ((_, rules),) = recorder.handed
     by_name = {rule.name: rule for rule in rules}
@@ -167,9 +162,9 @@ def test_macos_passes_the_hub_ports_from_the_segments_and_blocks_the_rest(
 ):
     monkeypatch.setattr(ops, "read_config", lambda name: {})
 
-    ops.converge_firewall(EXPOSURE, routing={})
+    ops.converge_firewall(EXPOSURE)
 
-    _, (verb, anchor) = recorder.handed
+    _, _, (verb, anchor) = recorder.handed
     assert verb == "load_anchor"
     lines = anchor.splitlines()
     assert lines[0] == (
@@ -199,10 +194,13 @@ def test_macos_allows_the_programs_of_the_enabled_overlays(
 
     monkeypatch.setattr(ops, "read_config", lambda name: {})
 
-    ops.converge_firewall(NETWORK, routing=ROUTING)
+    ops.converge_firewall(NETWORK)
 
-    (verb, programs), _ = recorder.handed
-    assert programs[1:] == [XRAY_BINARY, str(NETBIRD_BINARY_PATH)]
+    (verb, programs), (gone, former), _ = recorder.handed
+    assert verb == "apply"
+    assert programs[1:] == [str(NETBIRD_BINARY_PATH)]
+    assert gone == "remove"
+    assert former == [XRAY_BINARY]
 
 
 def test_a_pass_records_the_networks_it_wrote_the_rules_for(
@@ -214,7 +212,7 @@ def test_a_pass_records_the_networks_it_wrote_the_rules_for(
     monkeypatch.setattr(ops, "read_config", lambda name: {})
     assert ops.is_network_set_moved() is True
 
-    ops.converge_firewall(EXPOSURE, routing=ROUTING)
+    ops.converge_firewall(EXPOSURE)
 
     assert ops.is_network_set_moved() is False
     renamed = {**PRESENT, "et_3_abcd": PRESENT["et_2_zqdp"]}
@@ -227,7 +225,7 @@ def test_a_new_ipv6_prefix_moves_the_set_and_a_rotated_address_does_not(
     elsewhere, recorder, monkeypatch
 ):
     monkeypatch.setattr(ops, "read_config", lambda name: {})
-    ops.converge_firewall(EXPOSURE, routing=ROUTING)
+    ops.converge_firewall(EXPOSURE)
     ethernet = "Ethernet Instance 0 2"
 
     rotated = {**PRESENT, ethernet: [*PRESENT[ethernet], "2001:db8:7::9a3/64"]}
@@ -252,9 +250,9 @@ def test_a_reset_takes_everything_away(elsewhere, recorder):
         assert notes == ["removed", "flushed"]
         assert recorder.handed[1] == ("flush_anchor",)
         assert handed[0][1:] == [
-            XRAY_BINARY,
             str(NETBIRD_BINARY_PATH),
             str(ops.EASYTIER_CORE_PATH),
+            XRAY_BINARY,
         ]
     else:
         assert notes == ["removed"]
@@ -271,7 +269,7 @@ def test_direct_opens_the_agent_port_alone_on_windows_enabled_interfaces(
     monkeypatch.setattr(ops, "read_config", lambda name: {})
     monkeypatch.setattr(ops, "direct_agent_port", lambda: 8443)
 
-    ops.converge_firewall(EXPOSURE, routing=ROUTING)
+    ops.converge_firewall(EXPOSURE)
 
     ((_, rules),) = recorder.handed
     by_name = {rule.name: rule for rule in rules}
@@ -287,9 +285,9 @@ def test_direct_passes_the_agent_port_from_any_address_on_macos(
     monkeypatch.setattr(ops, "read_config", lambda name: {})
     monkeypatch.setattr(ops, "direct_agent_port", lambda: 8443)
 
-    ops.converge_firewall(EXPOSURE, routing={})
+    ops.converge_firewall(EXPOSURE)
 
-    _, (_, anchor) = recorder.handed
+    _, _, (_, anchor) = recorder.handed
     assert (
         "pass in quick on { Ethernet Instance 0 2 Wi-Fi Ethernet 3 } "
         "proto tcp from any to any port 8443"
@@ -312,7 +310,6 @@ def linux_exposure():
     )
     return ops.firewall_exposure(
         network,
-        routing={},
         held={"eth0": ["192.168.1.20/24"], "eth1": ["10.1.0.2/24"]},
     )
 
@@ -385,6 +382,20 @@ def test_a_reset_on_linux_takes_the_hubs_rules_out_of_firewalld(firewalld):
     assert firewalld.zones["public"]["runtime"] == []
     assert firewalld.zones["public"]["permanent"] == []
     assert not ops.FIREWALL_FIREWALLD_RECORD_PATH.exists()
+
+
+def test_the_next_pass_takes_an_earlier_builds_listener_out_of_firewalld(firewalld):
+    former = firewalld_rule(
+        family="ipv4", source="192.168.1.0/24", port=1080, protocol="TCP"
+    )
+    firewalld.zones["public"]["runtime"] = [former]
+    firewalld.zones["public"]["permanent"] = [former]
+
+    ops.converge_firewalld(linux_exposure())
+
+    assert former not in firewalld.zones["public"]["runtime"]
+    assert former not in firewalld.zones["public"]["permanent"]
+    assert firewalld.zones["public"]["runtime"]
 
 
 # --- the setup wizard's port ---

@@ -7,7 +7,7 @@
     {
       "_comment": "The uplink. DHCP so that plugging into any network \u2014 campus, hotel, home broadband \u2014 just works.",
       "name": "enp2s0",
-      "_comment_exposure": "Whether the hub's own ports (the panel over HTTP and HTTPS, the agent port, DNS in router and side_gateway, the SOCKS ports) answer the senders inside this interface's IPv4 segment and inside its IPv6 segment: every network of that family it holds an address in. SSH and every other service the hub does not run are the system firewall's. An uplink is closed by default: remote access arrives over an overlay, the relay or Direct.",
+      "_comment_exposure": "Whether the hub's own ports (the panel over HTTP and HTTPS, the agent port, DNS in router and side_gateway) answer the senders inside this interface's IPv4 segment and inside its IPv6 segment: every network of that family it holds an address in. SSH and every other service the hub does not run are the system firewall's. An uplink is closed by default: remote access arrives over an overlay, the relay or Direct.",
       "is_ipv4_exposed": false,
       "is_ipv6_exposed": false,
       "role": "wan",
@@ -42,7 +42,7 @@
       "vlan": null
     },
     {
-      "_comment": "The wired LAN the work machines plug into. Its address is what clients get as their gateway and resolver, and it is where the panel, the SOCKS listener, and the shares are reachable.",
+      "_comment": "The wired LAN the work machines plug into. Its address is what clients get as their gateway and resolver, and it is where the panel and the shares are reachable.",
       "name": "enp1s0",
       "is_ipv4_exposed": true,
       "is_ipv6_exposed": true,

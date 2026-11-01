@@ -231,9 +231,7 @@ def _render(selected: tuple[str, ...]) -> dict:
             network=network,
             routing=routing,
             xray_uid=proxy_uid(),
-            exposure=firewall_exposure(
-                network.with_overlay_devices(devices), routing=routing
-            ),
+            exposure=firewall_exposure(network.with_overlay_devices(devices)),
             overlay_devices=devices,
             engine_cgroups=list(engine_cgroups(routing)),
         ).render()

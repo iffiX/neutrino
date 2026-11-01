@@ -471,8 +471,8 @@ def server_elsewhere(elsewhere, box, monkeypatch):
     def refuse():
         raise AssertionError("looked up the xray account")
 
-    def firewall(network, *, routing):
-        handed.append((network, routing))
+    def firewall(network):
+        handed.append(network)
         return ["firewall opened neutrino_hub_panel_http"], []
 
     def tun(network, routing):
@@ -511,8 +511,7 @@ def test_elsewhere_the_pass_drives_the_firewall_and_the_session_alone(
     assert Interfaces.calls == []
     assert ready == [True]
     assert gates == ["converged"]
-    assert handed[0][1] == ROUTING
-    assert handed[0][0].overlay_device_names == ["utun4"]
+    assert handed[0].overlay_device_names == ["utun4"]
     assert handed[1] == ("tun", ["utun4"], ROUTING)
     assert controller.rendered_overlay_devices() == {"netbird": ["utun4"]}
     assert fake_controller.calls == []
@@ -522,7 +521,7 @@ def test_elsewhere_the_pass_drives_the_firewall_and_the_session_alone(
 def test_elsewhere_a_firewall_that_refuses_fails_its_step_alone(
     server_elsewhere, monkeypatch
 ):
-    def refuse(network, *, routing):
+    def refuse(network):
         raise OSError("powershell exited 1")
 
     monkeypatch.setattr(controller, "converge_firewall", refuse)
@@ -541,7 +540,7 @@ def test_elsewhere_a_refused_rule_is_named_beside_the_firewall_that_applied(
 ):
     detail = "neutrino_hub_easytier_tcp on et_2_tncd: The parameter is incorrect."
 
-    def firewall(network, *, routing):
+    def firewall(network):
         return ["firewall opened neutrino_hub_panel_http"], [
             {"rule": "neutrino_hub_easytier_tcp", "detail": detail}
         ]

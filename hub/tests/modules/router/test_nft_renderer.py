@@ -68,7 +68,6 @@ def render(
     routing=None,
     held=None,
     is_direct=False,
-    socks_ports=(),
     overlay_devices=None,
     engine_cgroups=None,
     **rest,
@@ -90,7 +89,6 @@ def render(
             panel_http_port=PANEL_HTTP_PORT,
             panel_https_port=PANEL_HTTPS_PORT,
             agent_port=AGENT_PORT,
-            socks_ports=list(socks_ports),
             is_direct=is_direct,
         ),
         overlay_devices=overlay_devices,
@@ -324,19 +322,6 @@ def test_dns_is_a_hub_port_where_the_hub_answers_names(mode, is_dns):
     drops = " ".join(line for line in chain if line.endswith(" drop"))
 
     assert (" 53" in drops) is is_dns
-
-
-def test_each_socks_port_is_a_hub_port_over_tcp_and_udp():
-    chain = input_chain(
-        render(
-            lan_entry("enp1s0", address="192.168.100.1"),
-            socks_ports=[1080, 1081],
-            overlays=[],
-        )
-    )
-
-    assert "ct state new tcp dport { 8080, 8444, 8443, 53, 1080, 1081 } drop" in chain
-    assert "ct state new udp dport { 53, 1080, 1081 } drop" in chain
 
 
 def test_nothing_drops_the_peer_ports_or_dhcp():

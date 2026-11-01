@@ -53,10 +53,9 @@ from neutrino_hub.modules.router.modes import (
 )
 
 # --- config ---
-# The proxy screen's defaults and its link reader, from the edition table;
-# None in a tree without the proxy, which asks no proxy screen.
+# The proxy screen's link reader, from the edition table; None in a tree
+# without the proxy, which asks no proxy screen.
 WIZARD_PROXY = edition.hook("wizard_proxy")
-WIZARD_SOCKS_PORT = WIZARD_PROXY.socks_port if WIZARD_PROXY is not None else 0
 WIZARD_WIDTH = 72
 WIZARD_WORDMARK = "NEUTRINO"
 # The headline's rule, and what draws it where the console cannot.
@@ -115,30 +114,16 @@ _STDIN_WAITING = None
 class WizardProxy:
     """What the proxy screen answered.
 
-    Every one of these is asked rather than worked out from the mode. What a
-    box that routes nothing does with a proxy has no obvious answer, and one
-    guessed here is one nobody knows was guessed.
-
     Attributes:
         is_enabled: Whether traffic goes through an exit node at all.
-        nodes: The exit nodes, parsed from the share links pasted in.
+        nodes: The exit nodes, parsed from the share links pasted in. They
+            are saved whether or not traffic goes through them.
         is_local: Whether this box's own traffic goes through as well.
-        is_socks_proxy_enabled: Whether a SOCKS port is published whose
-            traffic goes through the proxy. It is the whole of the proxy on a
-            box that diverts nothing.
-        socks_proxy_port: What port that is.
-        is_socks_direct_enabled: Whether a SOCKS port is published whose
-            traffic deliberately bypasses the proxy.
-        socks_direct_port: What port that is.
     """
 
     is_enabled: bool = False
     nodes: tuple = ()
     is_local: bool = False
-    is_socks_proxy_enabled: bool = False
-    socks_proxy_port: int = WIZARD_SOCKS_PORT
-    is_socks_direct_enabled: bool = False
-    socks_direct_port: int = WIZARD_SOCKS_PORT
 
 
 @dataclass
@@ -194,9 +179,9 @@ WIZARD_DOCUMENT_KEYS = (
 )
 # A document need not answer the proxy screen; skipping it is what an
 # unanswered one means, exactly as it does on the screen.
-WIZARD_PROXY_KEYS = (
-    "links",
-    "is_local",
+WIZARD_PROXY_KEYS = ("links", "is_local")
+# The proxy keys an earlier build's document names, read as if it did not.
+WIZARD_PROXY_FORMER_KEYS = (
     "socks_proxy_port",
     "is_socks_direct_enabled",
     "socks_direct_port",
@@ -359,7 +344,11 @@ def _proxy_from(given, mode: str) -> WizardProxy:
     """
     if not isinstance(given, dict):
         raise WizardAborted("'proxy' must be an object")
-    _reject_unknown(given, WIZARD_PROXY_KEYS, "'proxy'")
+    _reject_unknown(
+        {key: given[key] for key in given if key not in WIZARD_PROXY_FORMER_KEYS},
+        WIZARD_PROXY_KEYS,
+        "'proxy'",
+    )
     links = given.get("links", [])
     if not links:
         return WizardProxy()
@@ -369,18 +358,25 @@ def _proxy_from(given, mode: str) -> WizardProxy:
         nodes = tuple(WIZARD_PROXY.parse_share_link(link) for link in links)
     except ValueError as error:
         raise WizardAborted(str(error)) from error
-    is_serving = mode != ROUTER_MODE_SERVER
-    port = given.get("socks_proxy_port", WIZARD_SOCKS_PORT)
+    return _proxy_answered(nodes, mode, bool(given.get("is_local", False)))
+
+
+def _proxy_answered(nodes: tuple, mode: str, is_local: bool) -> WizardProxy:
+    """The proxy screen's answers once the nodes are given.
+
+    Args:
+        nodes: The exit nodes.
+        mode: The network mode.
+        is_local: Whether this box's own traffic goes through them.
+
+    Returns:
+        The answers. A server serves no network, so its own traffic is all
+        that can go through; with that off the nodes are saved and unused.
+    """
     return WizardProxy(
-        is_enabled=True,
+        is_enabled=mode != ROUTER_MODE_SERVER or is_local,
         nodes=nodes,
-        is_local=bool(given.get("is_local", False)),
-        # A box that diverts nothing has the SOCKS port as its whole proxy,
-        # so naming one is what asking for it means there.
-        is_socks_proxy_enabled=not is_serving,
-        socks_proxy_port=port,
-        is_socks_direct_enabled=bool(given.get("is_socks_direct_enabled", False)),
-        socks_direct_port=given.get("socks_direct_port", WIZARD_SOCKS_PORT),
+        is_local=is_local,
     )
 
 
@@ -829,36 +825,16 @@ class SetupWizard:
             self._proxy = WizardProxy()
             return WIZARD_NEXT
 
-        proxy = WizardProxy(is_enabled=True, nodes=tuple(nodes))
         self._say("")
         if is_serving:
             self._say("Everything your devices send is routed through it, with")
             self._say("Chinese destinations going out directly.")
-            answer = self._yes_no(
-                "Also publish a SOCKS port that bypasses the proxy", default=False
-            )
-            if answer is None:
-                return WIZARD_PREVIOUS
-            proxy.is_socks_direct_enabled = answer
-            if answer:
-                port = self._port("SOCKS port for that", proxy.socks_direct_port)
-                if port is None:
-                    return WIZARD_PREVIOUS
-                proxy.socks_direct_port = port
-        else:
-            answer = self._port(
-                "SOCKS port applications point at", proxy.socks_proxy_port
-            )
-            if answer is None:
-                return WIZARD_PREVIOUS
-            proxy.is_socks_proxy_enabled = True
-            proxy.socks_proxy_port = answer
-
-        answer = self._yes_no("Send this box's own traffic through it", default=False)
+        answer = self._yes_no(
+            "Send this box's own traffic through it", default=not is_serving
+        )
         if answer is None:
             return WIZARD_PREVIOUS
-        proxy.is_local = answer
-        self._proxy = proxy
+        self._proxy = _proxy_answered(tuple(nodes), self._mode, answer)
         return WIZARD_NEXT
 
     def _yes_no(self, question: str, *, default: bool):
@@ -928,15 +904,12 @@ class SetupWizard:
             pass
         elif self._proxy.is_enabled:
             self._say(f"  proxy          {len(self._proxy.nodes)} exit nodes")
-            if self._proxy.is_socks_proxy_enabled:
-                self._say(
-                    f"                 SOCKS {self._proxy.socks_proxy_port}, "
-                    f"through the proxy"
-                )
-            if self._proxy.is_socks_direct_enabled:
-                self._say(f"                 SOCKS {WIZARD_SOCKS_PORT}, direct")
             if self._proxy.is_local:
-                self._say("                 this box's own traffic too")
+                self._say("                 this box's own traffic")
+        elif self._proxy.nodes:
+            self._say(
+                f"  proxy          not used, {len(self._proxy.nodes)} exit nodes saved"
+            )
         else:
             self._say("  proxy          off")
         self._say(f"  language       {WIZARD_LANGUAGE_NAMES[self._language]}")
@@ -1154,8 +1127,6 @@ def context() -> dict:
             "address": ROUTER_MODE_DEFAULT_LAN_ADDRESS,
             "prefix_len": ROUTER_MODE_DEFAULT_PREFIX_LEN,
             "lan_vlan_id": ROUTER_MODE_DEFAULT_LAN_VLAN,
-            "socks_proxy_port": WIZARD_SOCKS_PORT,
-            "socks_direct_port": WIZARD_SOCKS_PORT,
             "listen_port": WEB_DEFAULT_LISTEN_PORT,
             "https_listen_port": WEB_DEFAULT_HTTPS_LISTEN_PORT,
         },

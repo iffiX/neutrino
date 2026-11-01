@@ -43,14 +43,13 @@ def server(*entries, overlays=(), devices=None):
     return network.with_overlay_devices(devices or {"netbird": ["utun4"]})
 
 
-def exposure_of(network, *, held=HELD, socks_ports=(1080,), is_direct=False):
+def exposure_of(network, *, held=HELD, is_direct=False):
     return render_exposure(
         network,
         held=held,
         panel_http_port=80,
         panel_https_port=443,
         agent_port=8443,
-        socks_ports=list(socks_ports),
         is_direct=is_direct,
     )
 
@@ -62,17 +61,13 @@ EN1_CLOSED = {"name": "en1", "role": "disabled", "is_exposed": False}
 # --- The exposure ---
 
 
-def test_the_hubs_ports_are_its_panel_agent_and_socks_ports_and_not_the_gateway():
-    exposure = exposure_of(server(EN0_OPEN), socks_ports=(1081, 1080, 1080))
+def test_the_hubs_ports_are_its_panel_and_agent_and_not_the_gateway():
+    exposure = exposure_of(server(EN0_OPEN))
 
     assert exposure.hub_ports == (
         FirewallPort("panel_http", "TCP", 80),
         FirewallPort("panel_https", "TCP", 443),
         FirewallPort("agent", "TCP", 8443),
-        FirewallPort("socks_1080_tcp", "TCP", 1080),
-        FirewallPort("socks_1080_udp", "UDP", 1080),
-        FirewallPort("socks_1081_tcp", "TCP", 1081),
-        FirewallPort("socks_1081_udp", "UDP", 1081),
     )
     assert 8317 not in {port.port for port in exposure.hub_ports}
 
@@ -81,7 +76,7 @@ def test_the_hubs_ports_are_its_panel_agent_and_socks_ports_and_not_the_gateway(
 def test_dns_is_a_hub_port_where_the_hub_answers_names(mode):
     network = network_config(lan_entry("en0", address="192.168.1.20"), mode=mode)
 
-    ports = exposure_of(network, socks_ports=()).hub_ports
+    ports = exposure_of(network).hub_ports
 
     assert FirewallPort("dns_tcp", "TCP", 53) in ports
     assert FirewallPort("dns_udp", "UDP", 53) in ports
@@ -160,29 +155,19 @@ def test_windows_has_one_rule_per_purpose_naming_the_segments_as_remote_addresse
         FirewallPortRule("neutrino_hub_panel_https_link", "TCP", 443, link, ("en0",)),
         FirewallPortRule("neutrino_hub_agent", "TCP", 8443, remote),
         FirewallPortRule("neutrino_hub_agent_link", "TCP", 8443, link, ("en0",)),
-        FirewallPortRule("neutrino_hub_socks_1080_tcp", "TCP", 1080, remote),
-        FirewallPortRule(
-            "neutrino_hub_socks_1080_tcp_link", "TCP", 1080, link, ("en0",)
-        ),
-        FirewallPortRule("neutrino_hub_socks_1080_udp", "UDP", 1080, remote),
-        FirewallPortRule(
-            "neutrino_hub_socks_1080_udp_link", "UDP", 1080, link, ("en0",)
-        ),
         FirewallPortRule("neutrino_hub_netbird_udp", "UDP", 51820),
     ]
 
 
 def test_windows_with_no_segment_exposed_keeps_no_hub_port_rule():
     """The profile's default inbound block closes a port no rule allows."""
-    rules = render_port_rules(exposure_of(server(EN1_CLOSED), socks_ports=()))
+    rules = render_port_rules(exposure_of(server(EN1_CLOSED)))
 
     assert rules == []
 
 
 def test_windows_direct_takes_any_remote_address_on_the_enabled_interfaces():
-    rules = render_port_rules(
-        exposure_of(server(EN0_OPEN, EN1_CLOSED), socks_ports=(), is_direct=True)
-    )
+    rules = render_port_rules(exposure_of(server(EN0_OPEN, EN1_CLOSED), is_direct=True))
 
     assert rules[-1] == FirewallPortRule(
         "neutrino_hub_agent_direct", "TCP", 8443, (), ("en0", "en1")
@@ -200,24 +185,19 @@ def test_the_pf_anchor_passes_loopback_and_the_segments_and_blocks_the_rest():
     assert anchor.splitlines() == [
         "table <neutrino_hub_ipv4> const { 192.168.1.0/24, 100.92.0.0/16 }",
         "table <neutrino_hub_ipv6> const { 2001:db8:1::/64 }",
-        "pass in quick on lo0 proto tcp from any to any port { 80, 443, 8443, 1080 }",
+        "pass in quick on lo0 proto tcp from any to any port { 80, 443, 8443 }",
         "pass in quick inet proto tcp from <neutrino_hub_ipv4> to any port "
-        "{ 80, 443, 8443, 1080 }",
+        "{ 80, 443, 8443 }",
         "pass in quick inet6 proto tcp from <neutrino_hub_ipv6> to any port "
-        "{ 80, 443, 8443, 1080 }",
+        "{ 80, 443, 8443 }",
         "pass in quick on en0 inet6 proto tcp from fe80::/64 to any port "
-        "{ 80, 443, 8443, 1080 }",
-        "block drop in quick proto tcp from any to any port { 80, 443, 8443, 1080 }",
-        "pass in quick on lo0 proto udp from any to any port 1080",
-        "pass in quick inet proto udp from <neutrino_hub_ipv4> to any port 1080",
-        "pass in quick inet6 proto udp from <neutrino_hub_ipv6> to any port 1080",
-        "pass in quick on en0 inet6 proto udp from fe80::/64 to any port 1080",
-        "block drop in quick proto udp from any to any port 1080",
+        "{ 80, 443, 8443 }",
+        "block drop in quick proto tcp from any to any port { 80, 443, 8443 }",
     ]
 
 
 def test_the_pf_anchor_with_nothing_exposed_passes_loopback_alone():
-    anchor = render_pf_anchor(exposure_of(server(EN1_CLOSED), socks_ports=()))
+    anchor = render_pf_anchor(exposure_of(server(EN1_CLOSED)))
 
     assert anchor.splitlines() == [
         "pass in quick on lo0 proto tcp from any to any port { 80, 443, 8443 }",
@@ -227,7 +207,7 @@ def test_the_pf_anchor_with_nothing_exposed_passes_loopback_alone():
 
 def test_the_pf_anchor_passes_the_agent_port_from_any_address_on_directs_interfaces():
     anchor = render_pf_anchor(
-        exposure_of(server(EN1_CLOSED), socks_ports=(), is_direct=True)
+        exposure_of(server(EN1_CLOSED), is_direct=True)
     ).splitlines()
 
     direct = "pass in quick on { en1 } proto tcp from any to any port 8443"
@@ -237,10 +217,9 @@ def test_the_pf_anchor_passes_the_agent_port_from_any_address_on_directs_interfa
     )
 
 
-def test_macos_allows_the_hub_xray_and_the_enabled_overlays_daemons():
+def test_macos_allows_the_hub_and_the_enabled_overlays_daemons():
     programs = render_programs(
         hub_program="/usr/local/bin/nhub",
-        xray_program="/app/bin/xray",
         overlay_programs={
             "netbird": "/app/bin/netbird",
             "easytier": "/app/bin/easytier-core",
@@ -248,11 +227,7 @@ def test_macos_allows_the_hub_xray_and_the_enabled_overlays_daemons():
         overlays=["easytier"],
     )
 
-    assert programs == [
-        "/usr/local/bin/nhub",
-        "/app/bin/xray",
-        "/app/bin/easytier-core",
-    ]
+    assert programs == ["/usr/local/bin/nhub", "/app/bin/easytier-core"]
 
 
 # --- firewalld ---
@@ -270,7 +245,6 @@ def test_firewalld_gets_a_rich_rule_per_network_and_hub_port_in_each_zone():
         panel_http_port=80,
         panel_https_port=443,
         agent_port=8443,
-        socks_ports=[],
         is_direct=True,
     )
 

@@ -252,12 +252,11 @@ WEB_RESTORE_LOCAL_AGENT_PATH = UTILS_STATE_ROOT / "restore_local_agent"
 
 # What the proxy is actually taking, read from the applied ruleset rather than
 # from `config/`. One word per answer the status strip can give: the master
-# switch is off; on but nothing is sent to it; only the SOCKS ports reach it;
-# or the diverted scopes joined with `+`, out of the served networks, the
-# overlays whose members exit here, and the hub's own traffic.
+# switch is off; on but nothing is sent to it; or the diverted scopes joined
+# with `+`, out of the served networks, the overlays whose members exit here,
+# and the hub's own traffic.
 WEB_PROXY_SCOPE_OFF = "off"
 WEB_PROXY_SCOPE_UNUSED = "unused"
-WEB_PROXY_SCOPE_PORTS = "ports"
 WEB_PROXY_SCOPE_LAN = "lan"
 WEB_PROXY_SCOPE_OVERLAY = "overlay"
 WEB_PROXY_SCOPE_HUB = "hub"

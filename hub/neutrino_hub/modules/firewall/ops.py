@@ -1,10 +1,10 @@
 """The hub's ports in the system's firewall, on every system.
 
 Each routing pass works out what the firewall answers from the panel's
-settings, the proxy's SOCKS ports, the enabled overlays, each segment's
-switch, Direct and the addresses the box holds now. On macOS and Windows it
-hands the answer to the system's applier; on Linux the nftables ruleset
-renders it, and where firewalld runs the pass writes it into firewalld too.
+settings, the enabled overlays, each segment's switch, Direct and the
+addresses the box holds now. On macOS and Windows it hands the answer to the
+system's applier; on Linux the nftables ruleset renders it, and where
+firewalld runs the pass writes it into firewalld too.
 ``nhub reset`` takes it away again.
 
 Not pure: drives the appliers.
@@ -61,15 +61,13 @@ from neutrino_hub.web.constants import (
 
 
 def firewall_exposure(
-    network: RouterNetworkConfig, *, routing: dict, held: "dict | None" = None
+    network: RouterNetworkConfig, *, held: "dict | None" = None
 ) -> FirewallExposure:
     """What the hub's firewall answers now.
 
     Args:
         network: The parsed router configuration, carrying the overlays'
             devices found at run time.
-        routing: The proxy's routing options, for the SOCKS ports; empty
-            in a tree without the proxy.
         held: Device name to every address it holds; read from the system
             when None.
 
@@ -92,23 +90,16 @@ def firewall_exposure(
         agent_port=int(
             settings.get(FIREWALL_SETTING_AGENT_PORT, WEB_DEFAULT_AGENT_LISTEN_PORT)
         ),
-        socks_ports=[
-            entry["port"]
-            for entry in routing.get("socks_ports", [])
-            if isinstance(entry, dict) and entry.get("port")
-        ],
         is_direct=direct_agent_port() is not None,
     )
 
 
-def converge_firewall(network: RouterNetworkConfig, *, routing: dict) -> tuple:
+def converge_firewall(network: RouterNetworkConfig) -> tuple:
     """Make the system firewall on macOS or Windows answer as the exposure says.
 
     Args:
         network: The parsed router configuration, carrying the overlays'
             devices found at run time.
-        routing: The proxy's routing options, for the SOCKS ports; empty
-            in a tree without the proxy.
 
     Returns:
         The notes, one line per rule, program or anchor changed, empty when
@@ -123,12 +114,13 @@ def converge_firewall(network: RouterNetworkConfig, *, routing: dict) -> tuple:
         ValueError: When the panel's settings hold a port that is no number.
     """
     held = device_held_addresses()
-    exposure = firewall_exposure(network, routing=routing, held=held)
+    exposure = firewall_exposure(network, held=held)
     if hub_os() == PLATFORM_OS_WINDOWS:
         notes, refused = FirewallWindowsApplier().apply(render_port_rules(exposure))
     else:
         applier = FirewallDarwinApplier()
         notes = applier.apply(_programs(enabled_providers(network)))
+        notes += applier.remove(_former_programs())
         notes += applier.load_anchor(render_pf_anchor(exposure))
         refused = []
     record_networks(held)
@@ -299,20 +291,26 @@ def hand_back_firewall() -> list:
     if hub_os() == PLATFORM_OS_WINDOWS:
         return FirewallWindowsApplier().remove()
     applier = FirewallDarwinApplier()
-    return applier.remove(_programs(list(OVERLAY_ENGINES))) + applier.flush_anchor()
+    programs = _programs(list(OVERLAY_ENGINES)) + _former_programs()
+    return applier.remove(programs) + applier.flush_anchor()
 
 
 def _programs(overlays: list) -> list:
     """The programs macOS allows for these overlays."""
     return render_programs(
         hub_program=hub_platform().hub_command()[0],
-        xray_program=edition.hook("proxy_program") or "",
         overlay_programs={
             OVERLAY_NETBIRD: str(NETBIRD_BINARY_PATH),
             OVERLAY_EASYTIER: str(EASYTIER_CORE_PATH),
         },
         overlays=overlays,
     )
+
+
+def _former_programs() -> list:
+    """The programs an earlier build allowed on macOS: xray, in a tree with it."""
+    program = edition.hook("proxy_program")
+    return [program] if program else []
 
 
 def _settings(name: str) -> dict:

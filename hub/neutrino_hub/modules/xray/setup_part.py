@@ -18,11 +18,11 @@ from neutrino_hub.modules.xray.constants import (
     XRAY_BINARY_NAME,
     XRAY_DOWNLOAD_URL,
     XRAY_FETCH_LIMIT_BYTES,
+    XRAY_FORMER_SOCKS_PORTS_FIELD,
     XRAY_GEODATA,
     XRAY_NODES_FILE,
     XRAY_ROUTING_FILE,
     XRAY_SHA256,
-    XRAY_SOCKS_PORT,
     XRAY_SUPPORTED_ARCHITECTURES,
     XRAY_VERSION,
 )
@@ -98,16 +98,7 @@ def write_answers(proxy) -> None:
     routing["is_local_proxy_enabled"] = proxy.is_enabled and proxy.is_local
     if not is_linux():
         routing["is_overlay_proxy_enabled"] = routing["is_local_proxy_enabled"]
-    # Two questions, one list: a listener is a port and which way what
-    # arrives there leaves, and the wizard asks about one of each kind.
-    ports = []
-    if proxy.is_socks_proxy_enabled:
-        ports.append({"port": proxy.socks_proxy_port, "is_proxied": True})
-    if proxy.is_socks_direct_enabled and proxy.socks_direct_port != (
-        proxy.socks_proxy_port if proxy.is_socks_proxy_enabled else 0
-    ):
-        ports.append({"port": proxy.socks_direct_port, "is_proxied": False})
-    routing["socks_ports"] = ports
+    routing.pop(XRAY_FORMER_SOCKS_PORTS_FIELD, None)
     write_config(XRAY_ROUTING_FILE, routing)
 
 
@@ -212,13 +203,7 @@ def fetch_pinned(url: str, sha256: str, target: Path, *, fetcher=None) -> None:
 
 
 class XrayWizardPart:
-    """What the proxy screen asks with.
-
-    Attributes:
-        socks_port: The SOCKS port offered first.
-    """
-
-    socks_port = XRAY_SOCKS_PORT
+    """What the proxy screen asks with."""
 
     def parse_share_link(self, link: str):
         """Read one share link into a node.

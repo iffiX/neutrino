@@ -9,7 +9,7 @@ reconfigures a box's network, installs packages, or both.
 | File | What it checks |
 | --- | --- |
 | `test_panel_api_network.py` | Every operation the Network page offers: exposure, the three modes, one interface at a time, VLANs on a trunk, the panel's own port. |
-| `test_panel_api_proxy.py` | The exit-node list, the SOCKS listeners, the direct lists and the resolvers. |
+| `test_panel_api_proxy.py` | The exit-node list, the direct lists and the resolvers. |
 | `test_declared_services.py` | What the Services page is drawn from, and every action it refuses. |
 | `test_panel_api_modules.py` | The Modules page for a device with no agent: the catalog, the tier of every row, the states, and every refusal, the four presses on a module the agent carries among them; and, through the hub's own interpreter, the components a Linux recipe names: `server` and `node` for Codeg, `node` for CloudCLI. |
 | `test_install_a_module.py` | That a module actually installs on a managed machine through the panel — the one check here that runs a package manager; on the same machine, a saved configuration read back as written, its unit's journal, Codeg's page answering with no instance on it, and the refusal a write with no body gets. |

@@ -28,7 +28,7 @@ SEGMENTS = ("192.168.1.0/24", "2001:db8:1::/64")
 RULES = [
     FirewallPortRule("neutrino_hub_panel_http", "TCP", 8080, SEGMENTS),
     FirewallPortRule("neutrino_hub_agent", "TCP", 8443, SEGMENTS),
-    FirewallPortRule("neutrino_hub_socks_1080_tcp", "TCP", 1080, SEGMENTS),
+    FirewallPortRule("neutrino_hub_dns_tcp", "TCP", 53, SEGMENTS),
 ]
 # How Windows reads the same remote addresses back.
 READ_BACK = ["192.168.1.0/255.255.255.0", "2001:db8:1::/64"]
@@ -68,7 +68,7 @@ def test_a_fresh_machine_has_every_rule_created():
     assert notes == [
         "firewall opened neutrino_hub_panel_http",
         "firewall opened neutrino_hub_agent",
-        "firewall opened neutrino_hub_socks_1080_tcp",
+        "firewall opened neutrino_hub_dns_tcp",
     ]
     assert refused == []
     (read_script, read), (change_script, change) = powershell.runs
@@ -78,7 +78,7 @@ def test_a_fresh_machine_has_every_rule_created():
     assert change["create"] == [
         document("neutrino_hub_panel_http", "TCP", "8080"),
         document("neutrino_hub_agent", "TCP", "8443"),
-        document("neutrino_hub_socks_1080_tcp", "TCP", "1080"),
+        document("neutrino_hub_dns_tcp", "TCP", "53"),
     ]
     assert change["remove"] == []
     assert change["description"]
@@ -90,8 +90,8 @@ def test_a_moved_port_is_written_again_and_a_rule_no_purpose_names_is_removed():
             FIREWALL_WINDOWS_READ_SCRIPT: held(
                 ("neutrino_hub_panel_http", "TCP", "9000"),
                 ("neutrino_hub_agent", "TCP", "8443"),
-                ("neutrino_hub_socks_1080_tcp", "TCP", "1080"),
-                ("neutrino_hub_socks_1090_tcp", "TCP", "1090"),
+                ("neutrino_hub_dns_tcp", "TCP", "53"),
+                ("neutrino_hub_dns_udp", "UDP", "53"),
             )
         }
     )
@@ -100,12 +100,12 @@ def test_a_moved_port_is_written_again_and_a_rule_no_purpose_names_is_removed():
 
     assert notes == [
         "firewall moved neutrino_hub_panel_http to 8080",
-        "firewall closed neutrino_hub_socks_1090_tcp",
+        "firewall closed neutrino_hub_dns_udp",
     ]
     change = powershell.runs[1][1]
     assert change["create"] == [document("neutrino_hub_panel_http", "TCP", "8080")]
     assert change["remove"] == [
-        "neutrino_hub_socks_1090_tcp",
+        "neutrino_hub_dns_udp",
         "neutrino_hub_panel_http",
     ]
 
@@ -130,6 +130,52 @@ def test_the_first_pass_after_setup_takes_the_wizards_rule_away():
     ]
 
 
+EARLIER_LISTENER_RULES = (
+    ("neutrino_hub_socks_1080_tcp", "TCP", "1080"),
+    ("neutrino_hub_socks_1080_tcp_link", "TCP", "1080"),
+    ("neutrino_hub_socks_1080_udp", "UDP", "1080"),
+    ("neutrino_hub_socks_1080_udp_link", "UDP", "1080"),
+)
+
+
+def test_the_next_pass_closes_the_rules_of_an_earlier_builds_listener():
+    powershell = FakePowerShell(
+        {
+            FIREWALL_WINDOWS_READ_SCRIPT: held(
+                ("neutrino_hub_panel_http", "TCP", "8080"),
+                ("neutrino_hub_agent", "TCP", "8443"),
+                ("neutrino_hub_dns_tcp", "TCP", "53"),
+                *EARLIER_LISTENER_RULES,
+            )
+        }
+    )
+
+    notes, refused = FirewallWindowsApplier(powershell=powershell).apply(RULES)
+
+    names = sorted(name for name, _, _ in EARLIER_LISTENER_RULES)
+    assert notes == [f"firewall closed {name}" for name in names]
+    assert refused == []
+    change = powershell.runs[1][1]
+    assert change["remove"] == names
+    assert change["create"] == []
+
+
+def test_an_uninstall_takes_an_earlier_builds_listener_rules_with_the_rest():
+    powershell = FakePowerShell(
+        {
+            FIREWALL_WINDOWS_READ_SCRIPT: held(
+                ("neutrino_hub_agent", "TCP", "8443"), *EARLIER_LISTENER_RULES
+            )
+        }
+    )
+
+    FirewallWindowsApplier(powershell=powershell).remove()
+
+    assert powershell.runs[1][1]["remove"] == sorted(
+        ["neutrino_hub_agent", *(name for name, _, _ in EARLIER_LISTENER_RULES)]
+    )
+
+
 def test_a_firewall_already_right_is_read_and_left_alone():
     """Windows spells an IPv4 network with its mask; it is the same network."""
     powershell = FakePowerShell(
@@ -137,7 +183,7 @@ def test_a_firewall_already_right_is_read_and_left_alone():
             FIREWALL_WINDOWS_READ_SCRIPT: held(
                 ("neutrino_hub_panel_http", "tcp", "8080"),
                 ("neutrino_hub_agent", "TCP", "8443"),
-                ("neutrino_hub_socks_1080_tcp", "TCP", "1080"),
+                ("neutrino_hub_dns_tcp", "TCP", "53"),
             )
         }
     )
@@ -397,7 +443,7 @@ def test_a_refused_rule_leaves_the_others_applied_and_is_answered_by_name():
 
     assert notes == [
         "firewall opened neutrino_hub_agent",
-        "firewall opened neutrino_hub_socks_1080_tcp",
+        "firewall opened neutrino_hub_dns_tcp",
     ]
     assert refused == [
         {
@@ -407,7 +453,7 @@ def test_a_refused_rule_leaves_the_others_applied_and_is_answered_by_name():
     ]
     assert sorted(windows.rules) == [
         "neutrino_hub_agent",
-        "neutrino_hub_socks_1080_tcp",
+        "neutrino_hub_dns_tcp",
     ]
     assert len(windows.changes) == FIREWALL_WINDOWS_RETRY_COUNT
     assert [rule["name"] for rule in windows.changes[1]["create"]] == [

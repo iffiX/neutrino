@@ -218,5 +218,5 @@ class CliproxyApiConfig:
         """
         if not 1 <= self.listen_port <= 65535:
             raise ValueError(f"listen_port {self.listen_port} is not a port")
-        if self.listen_port in (53, 80, 1080, 3000):
+        if self.listen_port in (53, 80, 3000):
             raise ValueError(f"port {self.listen_port} already belongs to the gateway")

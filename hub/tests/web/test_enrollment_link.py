@@ -190,7 +190,6 @@ def test_the_links_address_set_is_the_firewalls_open_set(fingerprinted, live_add
         panel_http_port=8080,
         panel_https_port=8444,
         agent_port=8443,
-        socks_ports=[],
         is_direct=False,
     )
     ruleset = RouterNftRenderer(

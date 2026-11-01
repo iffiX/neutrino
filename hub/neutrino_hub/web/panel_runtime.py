@@ -95,7 +95,6 @@ from neutrino_hub.web.constants import (
     WEB_PROXY_SCOPE_LAN,
     WEB_PROXY_SCOPE_OFF,
     WEB_PROXY_SCOPE_OVERLAY,
-    WEB_PROXY_SCOPE_PORTS,
     WEB_PROXY_SCOPE_UNUSED,
 )
 from neutrino_hub.platforms.detect import is_linux, process_controller
@@ -589,11 +588,9 @@ class PanelRuntime:
         where it is *about* to go.
 
         Returns:
-            One of the ``WEB_PROXY_SCOPE_*`` answers. A server whose proxy
-            serves only its SOCKS ports is ``ports``, not ``lan``: reporting
-            a diversion there would answer a question that mode never poses.
-            When nothing has been applied yet, the configured intention is
-            the best available answer. ``off`` in a tree without the proxy.
+            One of the ``WEB_PROXY_SCOPE_*`` answers. When nothing has been
+            applied yet, the configured intention is the best available
+            answer. ``off`` in a tree without the proxy.
         """
         if self.proxy is None:
             return WEB_PROXY_SCOPE_OFF
@@ -634,16 +631,10 @@ class PanelRuntime:
         ]
         if parts:
             return WEB_PROXY_SCOPE_JOINER.join(parts)
-        is_port_proxied = any(
-            entry.get("is_proxied") for entry in routing.get("socks_ports", [])
-        )
-        if is_port_proxied and self.node_list().enabled_nodes:
-            return WEB_PROXY_SCOPE_PORTS
         if (
             routing.get("is_proxy_enabled", True)
             or routing.get("is_overlay_proxy_enabled", False)
             or routing.get("is_local_proxy_enabled", False)
-            or is_port_proxied
         ):
             return WEB_PROXY_SCOPE_UNUSED
         return WEB_PROXY_SCOPE_OFF

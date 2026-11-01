@@ -69,22 +69,56 @@ def test_every_proxy_answer_reaches_the_routing_file(config_dir):
             is_enabled=True,
             nodes=(parse_share_link(SHARE_LINK),),
             is_local=True,
-            is_socks_proxy_enabled=True,
-            socks_proxy_port=1081,
-            is_socks_direct_enabled=True,
-            socks_direct_port=1088,
         )
     )
 
     routing = read_config("xray/routing.json")
     assert routing["is_proxy_enabled"] is True
     assert routing["is_local_proxy_enabled"] is True
-    # Two questions, one list: each answered port becomes a listener, and
-    # which way its traffic leaves is what it carries.
-    assert routing["socks_ports"] == [
-        {"port": 1081, "is_proxied": True},
-        {"port": 1088, "is_proxied": False},
-    ]
+    assert "socks_ports" not in routing
+
+
+def test_a_server_given_nodes_and_not_its_own_traffic_saves_them_with_every_scope_off(
+    config_dir,
+):
+    from neutrino_hub.utils.json_file import read_config
+
+    setup_part.write_answers(
+        wizard.from_document(
+            {
+                "password": "a-long-enough-password",
+                "vault_passphrase": "A-vault-passphrase-16!",  # scan: allow
+                "network": {"mode": "server"},
+                "proxy": {"links": [SHARE_LINK]},
+            }
+        ).proxy
+    )
+
+    routing = read_config("xray/routing.json")
+    assert routing["is_proxy_enabled"] is False
+    assert routing["is_local_proxy_enabled"] is False
+    assert routing["is_overlay_proxy_enabled"] is False
+    assert len(read_config("xray/nodes.json")["nodes"]) == 1
+
+
+def test_the_answers_drop_an_earlier_builds_listeners_from_the_routing_file(config_dir):
+    from neutrino_hub.utils.json_file import read_config, write_config
+
+    former = dict(read_config("xray/routing.json"))
+    former["socks_ports"] = [{"port": 1080, "is_proxied": False}]
+    write_config("xray/routing.json", former)
+
+    setup_part.write_answers(wizard.WizardProxy())
+
+    assert "socks_ports" not in read_config("xray/routing.json")
+
+
+def test_the_routing_example_names_no_listener():
+    example = (UTILS_EXAMPLES_DIR / "xray/routing.example.json").read_text(
+        encoding="utf-8"
+    )
+
+    assert "socks" not in example.lower()
 
 
 def _proxy_answered(path: str, is_local: bool, monkeypatch) -> wizard.WizardProxy:
@@ -100,7 +134,7 @@ def _proxy_answered(path: str, is_local: bool, monkeypatch) -> wizard.WizardProx
         return wizard.from_document(document).proxy
     asked = wizard.SetupWizard(links=[])
     asked._mode = "server"
-    typed = iter(["2", SHARE_LINK, "", "", "y" if is_local else "n"])
+    typed = iter(["2", SHARE_LINK, "", "y" if is_local else "n"])
     monkeypatch.setattr("builtins.input", lambda prompt="": next(typed))
     assert asked._ask_proxy() == wizard.WIZARD_NEXT
     return asked._proxy

@@ -1,16 +1,15 @@
 """Every operation the Proxy page offers, and the edges around them.
 
 The nodes named here are servers nobody can reach, which is what these need:
-the checks are about the list, the switch and the listeners, never about
-traffic arriving anywhere.
+the checks are about the list and the switch, never about traffic arriving
+anywhere.
 """
 
 import pytest
 
 SHARE_LINK = "ss://YWVzLTI1Ni1nY206c2VjcmV0@203.0.113.10:5800#audit"  # scan: allow
 SECOND_LINK = "ss://YWVzLTI1Ni1nY206c2VjcmV0@203.0.113.11:5800#audit2"  # scan: allow
-# More listeners and more direct domains than anybody would type.
-CROWD_PORTS = range(2000, 2030)
+# More direct domains than anybody would type.
 CROWD_DOMAIN_COUNT = 1000
 
 
@@ -139,70 +138,14 @@ def test_the_list_empties_again(panel):
     assert node_ids(panel) == []
 
 
-# --- the listeners ------------------------------------------------------------
+# --- an earlier build's listeners ---------------------------------------------
 
 
-def test_one_direct_listener(panel):
+def test_a_body_naming_a_listener_stores_and_opens_none(panel):
     body = routing_body(panel, socks_ports=[{"port": 1080, "is_proxied": False}])
 
     assert panel.status("POST", "/hub/proxy/set", body) == 200
-    assert panel.read("/hub/proxy")["socks_ports"] == [
-        {"port": 1080, "is_proxied": False}
-    ]
-
-
-def test_two_listeners_cannot_share_a_port(panel):
-    body = routing_body(
-        panel,
-        socks_ports=[
-            {"port": 1080, "is_proxied": False},
-            {"port": 1080, "is_proxied": True},
-        ],
-    )
-
-    assert panel.status("POST", "/hub/proxy/set", body) == 400
-
-
-def test_a_port_no_listener_can_take_is_refused(panel):
-    body = routing_body(panel, socks_ports=[{"port": 0, "is_proxied": False}])
-
-    assert panel.status("POST", "/hub/proxy/set", body) == 400
-
-
-def test_a_port_the_box_already_holds_is_refused(panel):
-    """xray builds this configuration without binding it and its unit reports
-    started at fork, so accepting it is a proxy that is simply absent."""
-    held = panel.read("/hub/setting")["listen_port"]
-    body = routing_body(panel, socks_ports=[{"port": held, "is_proxied": False}])
-
-    assert panel.status("POST", "/hub/proxy/set", body) == 400
-
-
-def test_a_proxied_listener_is_allowed_with_the_proxy_off(panel):
-    """It is a listener that will proxy once the switch goes on, not a
-    contradiction to refuse."""
-    body = routing_body(panel, socks_ports=[{"port": 1081, "is_proxied": True}])
-
-    assert panel.status("POST", "/hub/proxy/set", body) == 200
-
-
-def test_thirty_listeners_are_all_kept(panel):
-    body = routing_body(
-        panel,
-        socks_ports=[
-            {"port": port, "is_proxied": port % 2 == 0} for port in CROWD_PORTS
-        ],
-    )
-
-    assert panel.status("POST", "/hub/proxy/set", body) == 200
-    assert len(panel.read("/hub/proxy")["socks_ports"]) == len(CROWD_PORTS)
-
-
-def test_the_listeners_can_be_deleted_to_none(panel):
-    body = routing_body(panel, socks_ports=[])
-
-    assert panel.status("POST", "/hub/proxy/set", body) == 200
-    assert panel.read("/hub/proxy")["socks_ports"] == []
+    assert "socks_ports" not in panel.read("/hub/proxy")
 
 
 # --- the routing lists --------------------------------------------------------

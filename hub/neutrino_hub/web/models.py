@@ -534,16 +534,6 @@ class NodeCreate(BaseModel):
     link: str
 
 
-class SocksPortView(BaseModel):
-    """One SOCKS5 listener: a port, and which way what arrives there leaves."""
-
-    port: int
-    # True goes out through the exit nodes, split the way forwarded traffic
-    # is; False leaves straight out the uplink, which is what an application
-    # that must appear to come from this network is pointed at.
-    is_proxied: bool = False
-
-
 class ProxySettings(BaseModel):
     """The Proxy tab's switches and the routing lists behind them."""
 
@@ -554,7 +544,6 @@ class ProxySettings(BaseModel):
     direct_domains: list[str]
     direct_ips: list[str]
     is_local_proxy_enabled: bool
-    socks_ports: list[SocksPortView] = Field(default_factory=list)
     # Each asked in order. An empty direct list follows the network's
     # resolvers.
     remote_dns: list[DnsServerView]
