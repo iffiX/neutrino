@@ -48,6 +48,9 @@ class FakePlatform:
         self.opened.append(url)
         return self.is_opening
 
+    def elevation_hint(self, arguments: str) -> str:
+        return f"sudo nhub {arguments}"
+
 
 class FakeController:
     """The hub's service, running or not."""
@@ -267,6 +270,12 @@ def test_print_without_privilege_carries_no_token(box, capsys):
     assert "setup token" in captured.err
 
 
+def test_print_without_privilege_names_the_command_that_has_it(box, capsys):
+    box.run("--print", platform=FakePlatform(is_elevated=False))
+
+    assert "sudo nhub open --print" in capsys.readouterr().err
+
+
 def test_a_development_root_starts_no_service(box, monkeypatch):
     monkeypatch.setattr(open_command, "is_dev_root_set", lambda: True)
 
@@ -293,10 +302,12 @@ class RoutedLinks:
         return "192.0.2.1" if name in RoutedLinks.routed else None
 
 
-def reachable(monkeypatch, addresses: dict, stored=None, routed=()) -> str:
+def reachable(
+    monkeypatch, addresses: dict, stored=None, routed=(), missing=FileNotFoundError
+) -> str:
     def read(name):
         if stored is None:
-            raise FileNotFoundError(name)
+            raise missing(name)
         return stored
 
     RoutedLinks.routed = routed
@@ -323,6 +334,17 @@ def test_an_exposed_interface_s_address_comes_first(monkeypatch):
     )
 
     assert host == "192.168.8.5"
+
+
+def test_settings_it_may_not_read_leave_the_default_route_s_interface(monkeypatch):
+    host = reachable(
+        monkeypatch,
+        {"docker0": "172.17.0.1/16", "eno1": "10.0.0.5/24"},
+        routed=("eno1",),
+        missing=PermissionError,
+    )
+
+    assert host == "10.0.0.5"
 
 
 def test_before_setup_the_interface_holding_the_default_route_comes_first(

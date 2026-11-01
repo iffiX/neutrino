@@ -97,8 +97,8 @@ def main() -> int:
             return 0
         print(f"http://{_reachable_host()}:{WEB_DEFAULT_LISTEN_PORT}/")
         print(
-            f"run nhub open --print as {platform.elevation_word} for the "
-            "setup token",
+            "for the panel's configured address and the setup token, run: "
+            f"{platform.elevation_hint('open --print')}",
             file=sys.stderr,
         )
         return 0
@@ -240,7 +240,8 @@ def _reachable_host() -> str:
 
     The box's addresses are read as everything else of the hub reads them,
     by :func:`device_addresses`, which leaves out loopback, the proxy's TUN
-    and the desktop client's files adapter.
+    and the desktop client's files adapter. Settings this user may not read
+    count as no settings.
 
     Returns:
         The address of an interface whose IPv4 segment is exposed, as
@@ -251,7 +252,7 @@ def _reachable_host() -> str:
     addresses = device_addresses()
     try:
         network = RouterNetworkConfig.from_dict(read_config(OPEN_NETWORK_FILE))
-    except (FileNotFoundError, ValueError):
+    except (OSError, ValueError):
         network = RouterNetworkConfig.from_dict({})
     status = RouterLinkStatus()
     routed = [name for name in addresses if status.gateway_for(name) is not None]
