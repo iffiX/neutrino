@@ -85,3 +85,28 @@ def test_the_configuration_names_the_hub_s_loopback():
         in flat(CliproxyApiConfig.__doc__)
     )
     assert "LAN" not in CliproxyApiConfig.__doc__
+
+
+@pytest.mark.parametrize(
+    ("language", "key", "words"),
+    [
+        ("en", "ui.ai.key_default_name", "tool"),
+        ("en", "ui.ai.key_name_placeholder", "e.g. my tool"),
+        (
+            "en",
+            "ui.ai.port_apply_warning",
+            "A tool set up by hand with a generated key stops reaching the gateway "
+            "until its endpoint is changed too.",
+        ),
+        ("zh-CN", "ui.ai.key_default_name", "工具"),
+        ("zh-CN", "ui.ai.key_name_placeholder", "例如 我的工具"),
+        (
+            "zh-CN",
+            "ui.ai.port_apply_warning",
+            "手动配置了生成密钥的工具，在地址改过来之前都连不上网关。",
+        ),
+    ],
+)
+def test_a_key_s_words_name_a_tool_and_no_other_machine(language, key, words):
+    catalog = FRONTEND_SRC_DIR / "locales" / language / "modules.json"
+    assert json.loads(catalog.read_text(encoding="utf-8"))[key] == words
