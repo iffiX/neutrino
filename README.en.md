@@ -4,6 +4,8 @@
 
 # Neutrino Hub
 
+[neutrinohub.net](https://neutrinohub.net/en/)
+
 **Deploy apps in one click and use them anywhere**
 
 [简体中文](README.md) · **English**
@@ -22,7 +24,7 @@
 [![Tests](https://img.shields.io/endpoint?url=https://docs.neutrinohub.net/badges/tests.json&labelColor=0a0e14)](https://github.com/iffiX/neutrino/actions/workflows/ci.yml)
 [![Code size](https://img.shields.io/github/languages/code-size/iffiX/neutrino?label=code&labelColor=0a0e14&color=a78bfa)](https://github.com/iffiX/neutrino)
 
-**[Live demo](https://demo.neutrinohub.net/)** · **[Install](#install)** · **[Docs](https://docs.neutrinohub.net/en/)** · [Download](https://github.com/iffiX/neutrino/releases/latest)
+**[Live demo](https://demo.neutrinohub.net/)** · **[Install](https://neutrinohub.net/en/)** · **[Docs](https://docs.neutrinohub.net/en/)** · [Download](https://github.com/iffiX/neutrino/releases/latest)
 
 <img src="images/web/readme_hero.webp" width="100%" alt="The panel's dashboard on a laptop and the app list on a phone" />
 

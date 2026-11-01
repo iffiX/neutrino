@@ -4,6 +4,8 @@
 
 # 微子·中枢
 
+[neutrinohub.net](https://neutrinohub.net)
+
 **一键部署应用，走到哪用到哪**
 
 **简体中文** · [English](README.en.md)
@@ -22,7 +24,7 @@
 [![Tests](https://img.shields.io/endpoint?url=https://docs.neutrinohub.net/badges/tests.json&labelColor=0a0e14)](https://github.com/iffiX/neutrino/actions/workflows/ci.yml)
 [![Code size](https://img.shields.io/github/languages/code-size/iffiX/neutrino?label=code&labelColor=0a0e14&color=a78bfa)](https://github.com/iffiX/neutrino)
 
-**[在线演示](https://demo.neutrinohub.net/)** · **[安装](#安装)** · **[文档](https://docs.neutrinohub.net/)** · [下载](https://github.com/iffiX/neutrino/releases/latest)
+**[在线演示](https://demo.neutrinohub.net/)** · **[安装](https://neutrinohub.net)** · **[文档](https://docs.neutrinohub.net/)** · [下载](https://github.com/iffiX/neutrino/releases/latest)
 
 <img src="images/web/readme_hero_zh.webp" width="100%" alt="电脑上的面板总览，手机上的应用列表" />
 
