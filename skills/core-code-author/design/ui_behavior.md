@@ -848,8 +848,9 @@ bar; an account checked goes to the end of the order, and each row shows the
 module's own field, its running dot and its code's words. The bar's hint is
 `ui.modules.stopped_hint` while the module's `want` is not `running`, and the
 module's own hint otherwise, on every tab but Terminal's and the SSH
-server's, which have no **Start**. An apply writes no `want`, starts nothing
-on a module not running, and its bar waits for the `want` the module has. A
+server's, which have no **Start**. An apply starts nothing on a module not
+running and writes no `want` there, and its bar waits for the `want` the
+module has. A
 running module of this layer with no enabled account reads
 `state.running_no_accounts` on its tab's state line. The tabs of the
 machine layer,
@@ -894,7 +895,9 @@ A module the machine reports `installed`, `stopped` or `running` while
 the hub holds no `want` for it, as after a reset or a new join on a machine
 that kept its modules, has **Start** live, whatever its state; the press
 gives it the `want` `running`, and an apply of its configuration writes no
-`want` ([protocol.md](protocol.md), "Taking over a machine").
+`want`, except `running` on a module that reads `running`, whose panel's hint
+and bar then read `running` too ([protocol.md](protocol.md), "Taking over a
+machine").
 
 A module the machine reports `queued` is in transit, as `installing` and
 `uninstalling` are: every button of its tab is disabled until the machine
