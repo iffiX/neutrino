@@ -390,6 +390,36 @@ def test_the_part_reads_an_earlier_builds_listeners_as_nothing(monkeypatch):
     assert "socks_ports" not in part.routing()
 
 
+def test_the_part_says_whether_the_file_holds_them_and_writes_them_away(
+    monkeypatch,
+):
+    held = dict(EARLIER_ROUTING)
+    monkeypatch.setattr(proxy_router, "read_config", lambda name: dict(held))
+
+    def replace(name, body):
+        held.clear()
+        held.update(body)
+
+    monkeypatch.setattr(proxy_router, "write_config", replace)
+    part = object.__new__(proxy_router.ProxyPanelPart)
+
+    assert part.has_former_listeners() is True
+    part.forget_former_listeners()
+    assert part.has_former_listeners() is False
+    assert held["is_geoip_split_enabled"] is True
+
+
+@pytest.mark.parametrize("failure", [FileNotFoundError("none"), ValueError("bad")])
+def test_a_file_that_cannot_be_read_holds_no_listeners(monkeypatch, failure):
+    def unreadable(name):
+        raise failure
+
+    monkeypatch.setattr(proxy_router, "read_config", unreadable)
+    part = object.__new__(proxy_router.ProxyPanelPart)
+
+    assert part.has_former_listeners() is False
+
+
 def test_settling_the_scopes_writes_an_earlier_builds_listeners_away(monkeypatch):
     written = {}
     monkeypatch.setattr(

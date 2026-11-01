@@ -18,6 +18,7 @@ import time
 
 import pytest
 
+from neutrino_hub.exceptions import NetworkApplyError
 from neutrino_hub.modules.channel.constants import CHANNEL_ROLE_CLIENT
 from neutrino_hub.modules.clients import ai_keys
 from neutrino_hub.modules.cliproxyapi import ops as cliproxyapi_ops
@@ -228,6 +229,80 @@ def following_resolvers(monkeypatch, routing: dict, found: list) -> tuple:
     panel.converge_network_blocking = passes
     panel.proxy = FakeProxy(routing)
     return panel, passes
+
+
+class FormerListenersProxy:
+    """The proxy's part, on a routing file that holds an earlier build's listeners."""
+
+    def __init__(self, *, is_held: bool = True):
+        self.is_held = is_held
+
+    def has_former_listeners(self) -> bool:
+        return self.is_held
+
+    def forget_former_listeners(self) -> None:
+        self.is_held = False
+
+
+def following_former_listeners(*, is_held: bool = True, failure=None) -> tuple:
+    """A runtime whose converge raises this failure, when there is one."""
+    passes = CountingConverge()
+
+    def converge():
+        passes()
+        if failure is not None:
+            raise failure
+
+    panel = object.__new__(PanelRuntime)
+    panel.converge_network_blocking = converge
+    panel.proxy = FormerListenersProxy(is_held=is_held)
+    return panel, passes
+
+
+def test_an_earlier_builds_listeners_run_one_converge_and_their_key_goes():
+    panel, passes = following_former_listeners()
+
+    assert panel.follow_former_listeners() is True
+    assert passes.passes == 1
+    assert panel.proxy.is_held is False
+    assert panel.follow_former_listeners() is False
+    assert passes.passes == 1
+
+
+def test_a_routing_file_without_them_runs_nothing():
+    panel, passes = following_former_listeners(is_held=False)
+
+    assert panel.follow_former_listeners() is False
+    assert passes.passes == 0
+
+
+def test_a_tree_without_the_proxy_has_no_listeners_to_close():
+    panel, passes = following_former_listeners()
+    panel.proxy = None
+
+    assert panel.follow_former_listeners() is False
+    assert passes.passes == 0
+
+
+def test_a_pass_that_tried_every_step_ends_it_whatever_a_step_reported():
+    """A step that fails for its own reason would otherwise run a whole pass
+    every half minute."""
+    panel, passes = following_former_listeners(
+        failure=NetworkApplyError("overlay: refused", [])
+    )
+
+    assert panel.follow_former_listeners() is True
+    assert panel.proxy.is_held is False
+
+
+@pytest.mark.parametrize("failure", [TimeoutError("locked"), OSError("no file")])
+def test_a_pass_that_could_not_run_is_tried_at_the_next_sample(failure):
+    panel, passes = following_former_listeners(failure=failure)
+
+    assert panel.follow_former_listeners() is True
+    assert panel.proxy.is_held is True
+    assert panel.follow_former_listeners() is True
+    assert passes.passes == 2
 
 
 class FakeProxy:

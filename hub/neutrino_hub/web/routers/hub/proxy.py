@@ -426,6 +426,28 @@ class ProxyPanelPart:
         routing.pop(XRAY_FORMER_SOCKS_PORTS_FIELD, None)
         return routing
 
+    def has_former_listeners(self) -> bool:
+        """Whether ``config/xray/routing.json`` holds an earlier build's listeners.
+
+        Returns:
+            True when the file names the key; False when it does not, cannot
+            be read or does not parse.
+        """
+        try:
+            routing = read_config(XRAY_ROUTING_FILE)
+        except (FileNotFoundError, ValueError):
+            return False
+        return XRAY_FORMER_SOCKS_PORTS_FIELD in routing
+
+    def forget_former_listeners(self) -> None:
+        """Write ``config/xray/routing.json`` without an earlier build's listeners.
+
+        Raises:
+            OSError: When the file cannot be read or written.
+            ValueError: When the file is not valid JSON.
+        """
+        write_config(XRAY_ROUTING_FILE, self.routing())
+
     def node_list(self) -> XrayNodeList:
         """Read the current node list.
 

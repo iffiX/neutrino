@@ -19,6 +19,7 @@ class StubRuntime:
         self.calls: list = []
         self.is_device_moved = False
         self.is_resolver_moved = False
+        self.is_former_listener_held = False
 
     def follow_overlay_devices(self) -> bool:
         self.calls.append("follow")
@@ -27,6 +28,10 @@ class StubRuntime:
     def follow_network_resolvers(self) -> bool:
         self.calls.append("resolvers")
         return self.is_resolver_moved
+
+    def follow_former_listeners(self) -> bool:
+        self.calls.append("former_listeners")
+        return self.is_former_listener_held
 
     def sample_peer_latencies(self) -> None:
         self.latency_samples = getattr(self, "latency_samples", 0) + 1
@@ -55,6 +60,26 @@ def test_the_first_sample_is_not_itself_news(monkeypatch):
     watcher, runtime = sampler(monkeypatch)
 
     assert watcher.sample_once() is False
+    assert "converge" not in runtime.calls
+
+
+def test_each_sample_asks_after_an_earlier_builds_listeners(monkeypatch):
+    watcher, runtime = sampler(monkeypatch)
+
+    watcher.sample_once()
+
+    assert "former_listeners" in runtime.calls
+
+
+def test_a_set_that_moved_with_those_listeners_closed_converges_no_second_time(
+    monkeypatch,
+):
+    watcher, runtime = sampler(monkeypatch)
+    watcher.sample_once()
+    runtime.urls = ["tcp://192.168.100.1:8443", "tcp://100.64.0.1:8443"]
+    runtime.is_former_listener_held = True
+
+    assert watcher.sample_once() is True
     assert "converge" not in runtime.calls
 
 
@@ -104,6 +129,7 @@ def test_each_sample_follows_the_overlay_devices_before_reading(monkeypatch):
     assert runtime.calls == [
         "follow",
         "resolvers",
+        "former_listeners",
         "routes",
         "urls",
         ("certificate", runtime.urls),
