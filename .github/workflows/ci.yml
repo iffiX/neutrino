@@ -69,11 +69,13 @@ jobs:
 
       # Codacy reads each path from the report's directory, so that is its prefix.
       - name: Codacy coverage, hub
+        continue-on-error: true
         env:
           CODACY_PROJECT_TOKEN: ${{ secrets.CODACY_PROJECT_TOKEN }}
         run: bash <(curl -Ls https://coverage.codacy.com/get.sh) report --skip --partial -l Python -r hub/coverage.xml --prefix hub/
 
       - name: Codacy coverage, agent
+        continue-on-error: true
         env:
           CODACY_PROJECT_TOKEN: ${{ secrets.CODACY_PROJECT_TOKEN }}
         run: bash <(curl -Ls https://coverage.codacy.com/get.sh) report --skip --partial -l Python -r agent/coverage.xml --prefix agent/
@@ -107,6 +109,7 @@ jobs:
           use_oidc: true
 
       - name: Codacy coverage, client
+        continue-on-error: true
         env:
           CODACY_PROJECT_TOKEN: ${{ secrets.CODACY_PROJECT_TOKEN }}
         run: bash <(curl -Ls https://coverage.codacy.com/get.sh) report --skip --partial -l Python -r client/desktop/coverage.xml --prefix client/desktop/
@@ -117,7 +120,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
-      - env:
+      - continue-on-error: true
+        env:
           CODACY_PROJECT_TOKEN: ${{ secrets.CODACY_PROJECT_TOKEN }}
         run: bash <(curl -Ls https://coverage.codacy.com/get.sh) final --skip
 
