@@ -2,4 +2,4 @@ User-agent: *
 Content-Signal: search=yes, ai-input=yes, ai-train=yes
 Allow: /
 
-Sitemap: https://neutrino.beyond-infinity.top/sitemap.xml
+Sitemap: https://neutrinohub.net/sitemap.xml

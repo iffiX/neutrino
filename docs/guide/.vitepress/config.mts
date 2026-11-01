@@ -33,7 +33,7 @@ export default defineConfig({
   cleanUrls: false,
   lastUpdated: false,
   srcExclude: ["README.md"],
-  sitemap: { hostname: "https://neutrino.beyond-infinity.top" },
+  sitemap: { hostname: "https://neutrinohub.net" },
   head: [
     ["meta", { name: "theme-color", content: "#0891b2" }],
     ["link", { rel: "author", href: "https://www.beyond-infinity.top/" }],

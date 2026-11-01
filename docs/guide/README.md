@@ -119,27 +119,13 @@ touches `docs/guide/**`, `images/guide/**`, `images/icons/**`, `images/web/**`,
 itself, by running `packaging/build/build_docs.py`. It publishes
 on a pushed `v*` tag, so the site shows the guide of the newest release.
 
-The three Pages steps (`configure-pages`, `upload-pages-artifact` and the
-`deploy` job) run only on a `v*` tag and only when the repository variable
-`DOCS_PAGES_ENABLED` is `true`. A run on any other ref builds and checks and
-publishes nothing. The `github-pages` environment needs a deployment rule for
-`v*` tags in `Settings → Environments`.
+The deploy step runs only on a `v*` tag, or on `workflow_dispatch` from `main`,
+and only when the repository variable `DOCS_PAGES_ENABLED` is `true`. A run on
+any other ref builds and checks and publishes nothing.
 
-The site is published at `https://neutrino.beyond-infinity.top/`: a DNS CNAME
-from that name to `iffix.github.io`, and `public/CNAME` carrying the name so
-every deploy keeps it. With a custom domain the base path is `/`.
-
-To switch publishing on:
-
-1. `Settings → Pages → Build and deployment → Source`: `GitHub Actions`, and
-   `Custom domain`: `neutrino.beyond-infinity.top` with `Enforce HTTPS`.
-2. `Settings → Secrets and variables → Actions → Variables`: add
-   `DOCS_PAGES_ENABLED` with the value `true`.
-3. Run the `docs` workflow on the newest `v*` tag, or push a new one.
-
-The workflow reads the real base path from `configure-pages`, so a repository
-subpath and a custom domain both build correctly. The deploy job requests
-`pages: write` and `id-token: write`; no personal access token is stored.
+The site is published at `https://neutrinohub.net/`, the custom domain of the
+Cloudflare Pages project `neutrinohub`. The step signs in with the repository
+secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
 
 ## Other static hosts
 
