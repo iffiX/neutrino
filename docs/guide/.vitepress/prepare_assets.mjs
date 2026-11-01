@@ -29,8 +29,11 @@ const WEBP_QUALITY = 90;
 
 await mkdir(publicDirectory, { recursive: true });
 
-for (const name of ["neutrino_64.png", "neutrino_512.png"]) {
-  await copyFile(new URL(name, iconDirectory), new URL(name, publicDirectory));
+const hubFace = new URL("neutrino_hub/wolf_open_1024.png", iconDirectory);
+for (const size of [64, 512]) {
+  await sharp(fileURLToPath(hubFace))
+    .resize(size, size)
+    .toFile(fileURLToPath(new URL(`neutrino_${size}.png`, publicDirectory)));
 }
 
 const webDirectory = new URL("../../../images/web/", import.meta.url);

@@ -83,10 +83,10 @@ register file.
 
 `prepare_assets.mjs` runs before `dev` and `build`. It copies:
 
-| Source                                             | Destination     | Referenced as                                                                                                                |
-| -------------------------------------------------- | --------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `images/icons/neutrino_64.png`, `neutrino_512.png` | `public/`       | `/neutrino_64.png`                                                                                                           |
-| `images/guide/` (recursive)                        | `public/guide/` | `/guide/en/<name>.webp`, `/guide/zh/<name>.webp`, `/guide/os/<name>.webp`, `/guide/console/<name>.webp`, `/guide/<name>.svg` |
+| Source                                                                                              | Destination     | Referenced as                                                                                                                |
+| --------------------------------------------------------------------------------------------------- | --------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `images/icons/neutrino_hub/wolf_open_1024.png`, resized to `neutrino_64.png` and `neutrino_512.png` | `public/`       | `/neutrino_64.png`                                                                                                           |
+| `images/guide/` (recursive)                                                                         | `public/guide/` | `/guide/en/<name>.webp`, `/guide/zh/<name>.webp`, `/guide/os/<name>.webp`, `/guide/console/<name>.webp`, `/guide/<name>.svg` |
 
 Every screenshot has an entry in
 `packaging/screenshots/shots.json`, and the tool beside it
