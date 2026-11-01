@@ -44,7 +44,7 @@
   "code.connect_failed": "主机没有响应。",
   "code.core_module_always_running": "{name} 是核心服务，必须保持运行。",
   "code.core_module_kept": "{name} 是核心服务，不能卸载。",
-  "code.credential_invalid": "非法凭据：Windows 不接受 {account} 的这个密码。请在账户的表单里填对。",
+  "code.credential_invalid": "非法凭据：Windows 不接受 {account} 的这个密码，请填对后再试。",
   "code.account_logon_refused": "Windows 拒绝了 {account} 的登录：{detail}",
   "code.credential_missing": "{account} 需要它的 Windows 密码，在账户的表单里填上。",
   "code.declared_service_invalid": "非法服务字段：{field} 不是这个服务能用的值。",

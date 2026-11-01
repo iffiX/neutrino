@@ -60,11 +60,11 @@ WORDS = {
 CODES = ("container_name_reserved", "module_in_use", "container_hub_owned")
 LOGON_WORDS = {
     "en": {
-        "code.credential_invalid": "Windows does not accept this password for {account}. Type the right one in the account's form.",
+        "code.credential_invalid": "Windows does not accept this password for {account}. Type the right one and try again.",
         "code.account_logon_refused": "Windows refused the logon of {account}: {detail}",
     },
     "zh-CN": {
-        "code.credential_invalid": "非法凭据：Windows 不接受 {account} 的这个密码。请在账户的表单里填对。",
+        "code.credential_invalid": "非法凭据：Windows 不接受 {account} 的这个密码，请填对后再试。",
         "code.account_logon_refused": "Windows 拒绝了 {account} 的登录：{detail}",
     },
 }

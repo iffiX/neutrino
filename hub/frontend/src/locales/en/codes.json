@@ -44,7 +44,7 @@
   "code.connect_failed": "The host did not answer.",
   "code.core_module_always_running": "{name} is a core service and keeps running.",
   "code.core_module_kept": "{name} is a core service and stays installed.",
-  "code.credential_invalid": "Windows does not accept this password for {account}. Type the right one in the account's form.",
+  "code.credential_invalid": "Windows does not accept this password for {account}. Type the right one and try again.",
   "code.account_logon_refused": "Windows refused the logon of {account}: {detail}",
   "code.credential_missing": "{account} needs its Windows password; type it in the account's form.",
   "code.declared_service_invalid": "The {field} is not one this service can have.",
