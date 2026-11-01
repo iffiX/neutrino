@@ -148,7 +148,7 @@ entry exists while the module reads `running`.
 | Rule | Reason |
 | --- | --- |
 | The agent's forwarder listens on `127.0.0.1` at a port the agent takes from 8900 up at the first apply and keeps in the module's record, where the agent's end of a `connect` stream reaches it, and reports it as `port`. | The page's port is the agent's, as Hermes WebUI's is ([hermes_webui.md](hermes_webui.md), "The page"). |
-| The app's 80 is published on `127.0.0.1` at a free loopback port the agent picks at the first apply and keeps in the module's record. The published port is in no entry, and the `connect` stream does not serve it. | Every request from a client reaches the app through the forwarder's check. |
+| The app's 80 is published on `127.0.0.1` at a free loopback port the agent picks at the first apply and keeps in the module's record. It picks the port from 15000 up. A render picks again when the system refuses the kept port, as Windows does for a port it reserved at boot. A module whose page is silent behind running containers at such a port plans `render` before `start`, with no press. The published port is in no entry, and the `connect` stream does not serve it. | Every request from a client reaches the app through the forwarder's check. Every system's dynamic ports, the range Windows reserves from at boot, start above 15000. |
 | The administrator's password stays set. | A program on the machine that finds the published port still meets the app's login. |
 
 The forwarder turns the hub's token into the app's own login:
