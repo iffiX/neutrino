@@ -33,6 +33,34 @@ them.
 | Removing a folder share removes the share and the access the module gave its SMB users to the folder, and never the folder or a file in it. | The folder held the person's files before it was shared. |
 | The person's own shares and users stay as they are, whatever the folder shares are named ("Parallel, never take over"). | The module manages only what it made. |
 
+## A person's Samba and the module's, on Linux
+
+A Samba that was on the machine before the module installed it is the
+person's. The install step writes `is_package_ours` into the module's record
+under the state root when the presence check found no Samba before it. With no
+such record the Samba is the person's, so an adopted machine and any machine of
+an earlier build count as the person's. A Samba the module installed is the
+module's.
+
+| | A person's Samba | A Samba the module installed |
+| --- | --- | --- |
+| **Stop** | deletes the module's file and its users' files, takes the include line out and reloads a running `smbd`; `smbd`, `nmbd` and their enablement stay as they are | stops and disables `smbd` and `nmbd`; the module's files stay |
+| **Start** | writes the module's files and the include line and reloads a running `smbd` | writes them too, enables and starts `smbd`, and brings `nmbd` back as the **Stop** found it |
+| A `configure` under `stopped` | as **Stop**, and writes no file of the module's | writes the module's files and starts nothing |
+| **Uninstall** | removes what the module added and no package, so `smb.conf` is never renamed | removes what the module added and the packages |
+| A reboot | `smbd` and `nmbd` start or stay off as the person set them | `smbd` and `nmbd` start or stay off as the module's last **Start** or **Stop** left them |
+
+What is the module's on a person's Samba is its include line, its own file, its
+folder and Home shares and its `neutrino-<account>` SMB accounts.
+
+| Rule | Reason |
+| --- | --- |
+| Every account the module creates, changes or removes starts with `neutrino-`, and it never reads as its own, changes or removes any other, on any system. A configuration whose `users` names another is refused `user_name_invalid {user}`, and the module passes over any other name its record lists. | The person's accounts are theirs, whatever a comment, a description or an older record says of them. |
+| A person's Samba reads `stopped` after a **Stop** while its `smbd` runs, and `running` after a **Start**, from the module's own mark, `is_served` in the record. While the module's file stands, `running` also takes an active `smbd`. Before the first `configure` there is no mark, and the module reads the unit, so adoption takes `running` or `stopped` from what the person runs. A Samba the module installed reads its unit. | A person's `smbd` serves the person's shares whatever the module does, so the unit says nothing of the module's shares. |
+| A person's `smbd` that is off when the module serves a share is enabled and started for it, and the record keeps what that changed, `started_server`. At **Stop**, at an uninstall and when the module's last share goes, the module turns back only that. While it runs, the person's own shares answer too. | The module's shares need a running `smbd`, and the choice to keep it off stays the person's once the module has no share to serve. |
+| `nmbd` on a person's Samba is never started, stopped, enabled or disabled. | A client reaches the module's shares on port 445 through the agent's relay, with no NetBIOS name. |
+| After an **Uninstall** on a person's Samba the module reads `absent` through the uninstalled mark `uninstalled/samba`, the one a `builtin` module takes ([../module_install.md](../module_install.md), "From the system's packages"), across a restart of the agent. The hub adopts no `absent` row. A later **Install** finds Samba there, runs no package manager, records nothing as the module's, and its `verify` deletes the mark. | Samba stays on the machine, so its presence check alone reads `failed` `uninstall_unconfirmed`, with no press that clears it. |
+
 ## Linux
 
 The module's shares live in a file of the module's own,
@@ -45,10 +73,10 @@ of its own it adds one line to `smb.conf`, `include =
 /etc/samba/neutrino.conf`, right after the `[global]` header, or first in a
 file with no such header, once, and changes nothing else in it, not its
 `[global]`, not the person's shares, not the person's Samba users. When the
-last share of the module's goes, at a disable as at uninstall, the module
-deletes its file and takes that one line out again; a machine adopted with
-no enabled account keeps its `smb.conf` byte for byte, and the module starts
-no server there.
+last share of the module's goes, at a disable as at uninstall, and at a
+**Stop** on a person's Samba, the module deletes its file and takes that one
+line out again; a machine adopted with no enabled account keeps its `smb.conf`
+byte for byte, and the module starts no server there.
 
 Samba reads an included file in place of the `include` line, and smbd ignores
 a global setting inside a share, with `Global parameter ... found in service
@@ -89,9 +117,9 @@ finds on the machine, with its Samba credential, and every share of its
 own, its file and its users' files on Linux, then makes the wanted ones
 anew from the configuration; later applies manage them as usual. On Windows
 the same apply deletes every share whose description carries the module's
-marker and every account the marker names or whose name carries the
-prefix, and on macOS every share point under the `neutrino_` prefix and
-every account the module's full name or the prefix marks.
+marker and every account whose name carries the prefix, and on macOS every
+share point under the `neutrino_` prefix and every account whose name carries
+the prefix.
 
 The module makes each SMB user it lacks with `useradd --system
 --no-create-home --shell <nologin> --comment "neutrino file share"` and sets
@@ -133,8 +161,8 @@ it will be with the module's file, before the module writes anything.
 
 An account that is disabled loses its SMB user's Samba credential and, when
 the comment says the module made it, the user itself; a user the module did
-not make is never deleted. The comment is the mark the module tells its own
-users by.
+not make is never deleted, and a name without the prefix is passed over. The
+comment and the prefix are the marks the module tells its own users by.
 
 ## SELinux on Linux
 
@@ -161,7 +189,8 @@ mode are the limits left.
 
 On Windows and macOS the module drives the system's own SMB server. It
 changes only the shares and accounts it made, the ones its record under the
-state root lists and its marker names, and fences nothing: it writes no
+state root lists and its marker names, each account's name starting with
+`neutrino-`, and fences nothing: it writes no
 firewall rule on Windows and no pf anchor on macOS, and the first apply
 after an upgrade removes the `neutrino_smb_fence` rule and the
 `com.apple/neutrino_smb` anchor an earlier version left. The record is
