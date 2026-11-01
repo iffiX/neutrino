@@ -105,6 +105,7 @@ export function RemoteDesktopPanels({
         />
         <ApplyBar
           isDirty={isDirty || isFailed}
+          hasChanges={isDirty}
           isBusy={isBusy}
           label={t("ui.remote_desktop_module.apply")}
           hint={t("ui.remote_desktop_module.apply_hint")}

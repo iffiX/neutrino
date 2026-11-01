@@ -191,6 +191,7 @@ export function InstancesPanel({
           )}
         <ApplyBar
           isDirty={isPending}
+          hasChanges={isDirty}
           isBusy={isBusy || settle.isSettling}
           label={t(descriptor.apply)}
           hint={

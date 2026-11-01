@@ -516,6 +516,7 @@ export function NodesPanel({ onNodesChanged }: NodesPanelProps) {
 
       <ApplyBar
         isDirty={isUnapplied}
+        hasChanges={diff?.isDirty ?? false}
         isBusy={isApplying}
         label={t(TEXT_KEYS.applyLabel)}
         hint={

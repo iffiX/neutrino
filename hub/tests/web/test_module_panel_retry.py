@@ -1,7 +1,8 @@
 """A failed module's account panel, held against ui_behavior.md.
 
-What these pin: the one panel of the account layer lights its apply bar and
-its frame while the module reads ``failed`` or ``install_failed``; its apply
+What these pin: the one panel of the account layer and Remote desktop's light
+their apply bar and their frame while the module reads ``failed``, and a bar lit
+with nothing changed leaves **Reset** dead; the account layer's apply
 sends ``/set`` with a changed list and the module's ``/apply`` with nothing
 changed, and waits for the machine's report after either; a failure standing
 at the press ends that wait only after ``OLD_FAILURE_LIMIT_MS`` or a report
@@ -24,7 +25,23 @@ def test_the_bar_and_the_frame_are_lit_while_the_module_reads_failed():
     assert 'export const FAILED_STATES = ["failed", "install_failed"];' in hook
     assert "const isPending = isDirty || FAILED_STATES.includes(saved.state);" in panel
     assert 'isPending ? "settings_group--dirty" : ""' in panel
-    assert "<ApplyBar isDirty={isPending}" in panel
+    assert "<ApplyBar isDirty={isPending} hasChanges={isDirty}" in panel
+
+
+def test_reset_is_dead_on_a_bar_lit_with_nothing_changed():
+    bar = flat("components/apply_bar.tsx")
+
+    assert "hasChanges = isDirty," in bar
+    assert "disabled={isBusy || !hasChanges || blockedHint !== null}" in bar
+    assert "isDirty={isPending} hasChanges={isDirty}" in flat(
+        "components/frp_panels.tsx"
+    )
+    assert "isDirty={hasDrafts || isServingStale} hasChanges={hasDrafts}" in flat(
+        "components/ai_providers_section.tsx"
+    )
+    assert "isDirty={isUnapplied} hasChanges={diff?.isDirty ?? false}" in flat(
+        "components/nodes_panel.tsx"
+    )
 
 
 def test_an_apply_with_nothing_changed_sends_the_modules_apply_and_waits():

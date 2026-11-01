@@ -24,8 +24,12 @@ import "./apply_bar.css";
  */
 
 interface ApplyBarProps {
-  /** Whether anything in this group differs from what the gateway holds. */
+  /** Whether anything in this group differs from what the gateway holds, or
+   * waits to be applied again. */
   isDirty: boolean;
+  /** Whether the draft differs from what the gateway holds, which Reset takes
+   * back; `isDirty` when left out. */
+  hasChanges?: boolean;
   isBusy: boolean;
   /** Names the scope, e.g. "Apply to enp1s0". */
   label: string;
@@ -49,6 +53,7 @@ interface ApplyBarProps {
 
 export function ApplyBar({
   isDirty,
+  hasChanges = isDirty,
   isBusy,
   label,
   hint,
@@ -94,7 +99,7 @@ export function ApplyBar({
             type="button"
             className="button button--ghost"
             onClick={onReset}
-            disabled={isBusy || !isDirty || blockedHint !== null}
+            disabled={isBusy || !hasChanges || blockedHint !== null}
           >
             {t("ui.apply_bar.reset")}
           </button>

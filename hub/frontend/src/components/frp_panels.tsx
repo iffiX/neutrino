@@ -619,6 +619,7 @@ function FrpTunnelsPanel({
       )}
       <ApplyBar
         isDirty={isPending}
+        hasChanges={isDirty}
         isBusy={isBusy}
         label={t("ui.overlay.frp_apply")}
         hint={t("ui.overlay.frp_apply_hint")}

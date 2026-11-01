@@ -355,6 +355,7 @@ export function AiProvidersSection({
 
       <ApplyBar
         isDirty={hasDrafts || isServingStale}
+        hasChanges={hasDrafts}
         isBusy={isBusy}
         label={t("ui.ai.providers_apply")}
         hint={
