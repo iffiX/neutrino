@@ -442,6 +442,7 @@ same component is every such list; none gets a table or a second idiom.
 | Rule | Reason |
 | --- | --- |
 | The list is part of its panel's draft: an added or removed row lights the frame, and the apply bar writes the whole list. | A list inside a frame stages, as "Inline forms" states. |
+| Editors side by side share their rows, the label and hint, the list, and the add, in one grid (`.string_list_row`). | A longer hint or a taller list on one side moves nothing out of line on the other. |
 | A row keeps the order it was added in, and that order is the order the backend uses. Reordering is removing a row and adding it again. | The chips have no drag handle, and the order is rarely changed. |
 | A blank row or a duplicate is dropped at the add; what the value means is checked by the backend, and its refusal shows on the apply bar. | The editor keeps the list tidy and the backend owns the rules. |
 | An editor can have **Browse…** after its **Add**: it opens the path window (`directory_picker_modal.tsx`) on the device, at the folder the input names or at the machine's root, and writes the folder chosen into the input with `:` after it, for the person to finish the row and add it. | A volume is `<folder>:<path in the container>`, and only the first half is a folder of the machine. |
