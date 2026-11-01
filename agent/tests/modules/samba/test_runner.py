@@ -23,7 +23,8 @@ not record as its own is the person's: its units and its package stay as they
 are at a **Stop**, a **Start** and an uninstall, the row reads the module's own
 mark, a server that was off is started for the module's shares and turned back,
 and the module reads absent after its uninstall and installs again with no
-package manager.
+package manager. An uninstall on either kind deletes every ``neutrino-`` user
+before any package goes.
 """
 
 import json
@@ -932,6 +933,43 @@ def test_an_uninstall_of_the_module_s_samba_removes_the_package_and_forgets_it(
 
     assert packaged._platform.removed == [["samba"]]
     assert not packaged.record_path.exists()
+
+
+@pytest.mark.parametrize("is_ours", [False, True], ids=["persons", "modules"])
+def test_an_uninstall_deletes_the_neutrino_users_before_any_package_goes(
+    packaged, is_ours
+):
+    if is_ours:
+        mark_package_ours(packaged)
+    swept_before_the_package: list = []
+    platform = packaged._platform
+
+    def removed(names):
+        swept_before_the_package.append(FakeUsers.sweeps)
+        return ""
+
+    platform.remove_system_packages = removed
+
+    packaged.uninstall(RECIPE)
+
+    assert FakeUsers.sweeps == 1
+    assert swept_before_the_package == ([1] if is_ours else [])
+
+
+def test_a_refused_sweep_leaves_the_package_and_the_mark_for_the_next_press(
+    packaged, monkeypatch
+):
+    def refuse(self):
+        raise subprocess.CalledProcessError(8, ["userdel"], stderr="in use")
+
+    monkeypatch.setattr(FakeUsers, "sweep", refuse)
+    mark_package_ours(packaged)
+
+    with pytest.raises(subprocess.CalledProcessError):
+        packaged.uninstall(RECIPE)
+
+    assert packaged._platform.removed == []
+    assert runner_module.is_package_ours(str(packaged.record_path)) is True
 
 
 def test_a_stop_on_a_person_s_samba_leaves_its_units_and_withdraws_the_shares(runner):

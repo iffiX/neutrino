@@ -412,15 +412,21 @@ class SambaModuleRunner(SystemPackageModuleRunner):
                 self._forget_package()
 
     def uninstall(self, recipe: dict) -> None:
-        """Take the packages off a Samba the module installed; a person's keeps them.
+        """Delete every ``neutrino-`` SMB user, then take the packages off a Samba the module installed.
+
+        A person's Samba keeps its packages.
 
         Args:
             recipe: The module's recipe.
 
         Raises:
+            subprocess.CalledProcessError: If Samba or ``userdel`` refuses.
             InstallError: If the uninstall refuses.
             PlatformUnsupportedError: If this platform removes nothing.
         """
+        swept = SambaUserManager().sweep()
+        if swept:
+            self._log("samba: " + "; ".join(swept))
         if not is_package_ours(self._record_path):
             self._log("samba: kept the machine's own Samba and its packages")
             return
