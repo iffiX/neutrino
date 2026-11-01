@@ -1590,6 +1590,26 @@ def test_a_watcher_that_never_returns_holds_no_later_announcement(
     held.set()
 
 
+def test_a_slow_watcher_holds_no_watcher_after_it(two_hubs, monkeypatch):
+    """The tray's face comes after the page's push in the list, and is told beside it."""
+    monkeypatch.setattr(resident_module, "ANNOUNCE_SETTLE_S", 0.01)
+    monkeypatch.setattr(resident_module, "ANNOUNCE_WATCHER_WAIT_S", 30)
+    released = threading.Event()
+    heard = threading.Event()
+
+    def slow():
+        released.wait(timeout=30)
+
+    two_hubs.subscribe(slow)
+    two_hubs.subscribe(heard.set)
+    two_hubs.notify()
+
+    try:
+        assert heard.wait(timeout=2)
+    finally:
+        released.set()
+
+
 def test_a_watcher_held_too_often_is_skipped_until_it_returns(two_hubs, monkeypatch):
     monkeypatch.setattr(resident_module, "ANNOUNCE_SETTLE_S", 0.01)
     monkeypatch.setattr(resident_module, "ANNOUNCE_WATCHER_WAIT_S", 0.01)

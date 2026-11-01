@@ -1787,25 +1787,46 @@ class ClientResident:
                 self._is_pending_announcement = False
             with self._lock:
                 watchers = list(self._watchers)
-            for watcher in watchers:
-                self._tell_watcher(watcher)
+            self._tell_watchers(watchers)
             with self._announce_lock:
                 if not self._is_pending_announcement:
                     self._is_announcing = False
                     return
 
-    def _tell_watcher(self, watcher) -> None:
-        """Tell one watcher, waiting for it no longer than ``ANNOUNCE_WATCHER_WAIT_S``.
+    def _tell_watchers(self, watchers: list) -> None:
+        """Tell every watcher at once, waiting no longer than ``ANNOUNCE_WATCHER_WAIT_S``.
 
         A watcher that does not come back, as a window whose script call
-        never answers, holds its own thread and never the announcements:
-        the next change is told on a thread of its own, up to
-        ``ANNOUNCE_WATCHER_HELD_MAX`` held at once.
+        never answers, holds its own thread and never another watcher or
+        the announcements: the next change is told on a thread of its own,
+        up to ``ANNOUNCE_WATCHER_HELD_MAX`` held at once.
+
+        Args:
+            watchers: The watchers.
+        """
+        tellers = [self._tell_watcher(watcher) for watcher in watchers]
+        deadline = time.monotonic() + ANNOUNCE_WATCHER_WAIT_S
+        for teller in tellers:
+            if teller is None:
+                continue
+            teller.join(timeout=max(0.0, deadline - time.monotonic()))
+            if teller.is_alive():
+                self._log(
+                    f"a state watcher did not return in {ANNOUNCE_WATCHER_WAIT_S}s; "
+                    "the next change is told without it"
+                )
+
+    def _tell_watcher(self, watcher) -> "threading.Thread | None":
+        """Start telling one watcher on a thread of its own.
+
+        Returns:
+            The thread; None for a skipped watcher, one held
+            ``ANNOUNCE_WATCHER_HELD_MAX`` times.
         """
         with self._lock:
             held = self._held_watchers.get(id(watcher), 0)
             if held >= ANNOUNCE_WATCHER_HELD_MAX:
-                return
+                return None
             self._held_watchers[id(watcher)] = held + 1
 
         def tell() -> None:
@@ -1819,12 +1840,7 @@ class ClientResident:
 
         teller = threading.Thread(target=tell, name="client_announce", daemon=True)
         teller.start()
-        teller.join(timeout=ANNOUNCE_WATCHER_WAIT_S)
-        if teller.is_alive():
-            self._log(
-                f"a state watcher did not return in {ANNOUNCE_WATCHER_WAIT_S}s; "
-                "the next change is told without it"
-            )
+        return teller
 
     def _entry_job(self, service_type: str, body: dict) -> "tuple[str, str]":
         """The service key a press acts on and the job it starts; no job for an instant one."""
