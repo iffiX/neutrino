@@ -45,8 +45,8 @@ and leave this pointing at it.**
 | [coding_style/swift.md](skills/core-code-author/coding_style/swift.md) | Touching `client/ios/`: PascalCase files, swift-format, one `Error` enum per target, no force unwrap. |
 | [coding_style/go.md](skills/core-code-author/coding_style/go.md) | Touching `transport/` or `agent/sshserver/`: gofmt and vet, lowercase package directories, one `errors.go` per package, errors wrapped with `%w`, no panic, every goroutine owned by a context. |
 | [design/protocol.md](skills/core-code-author/design/protocol.md) | Adding or renaming any endpoint, frame, kind or code: the three ports, path rules and the verb table, refusals as `{code, params}`, every route, the channel's frames, kinds and sections, versioning by protocol number. |
-| [design/transport.md](skills/core-code-author/design/transport.md) | Touching `transport/`, the agent port, or anything a client or a Web share reaches through it: the doors the first bytes pick, the member header and its per-hub magic, the knock and the handshake, the guest path of a Web share, what each link holds, TCP first, the stream layer and its timings, the ways the port is reached, what the hub spends before admission and the limits on it, admission and the binding, an agent of 0.5, the local channel between each transport and its Python, and why the hub relays every stream; each design with its reason. |
-| [design/web_share.md](skills/core-code-author/design/web_share.md) | Touching `share_page/` or what a Web share's visitor sees: the files and the sites, the connection and its timeouts, the app in the page, what the page keeps, and the four screens. |
+| [design/transport.md](skills/core-code-author/design/transport.md) | Touching `transport/`, the agent port, or anything a client or an App share reaches through it: the doors the first bytes pick, the member header and its per-hub magic, the knock and the handshake, the guest path of an App share, what each link holds, TCP first, the stream layer and its timings, the ways the port is reached, what the hub spends before admission and the limits on it, admission and the binding, an agent of 0.5, the local channel between each transport and its Python, and why the hub relays every stream; each design with its reason. |
+| [design/web_share.md](skills/core-code-author/design/web_share.md) | Touching `share_page/` or what an App share's visitor sees: the files and the sites, the connection and its timeouts, the app in the page, what the page keeps, and the four screens. |
 | [design/hub_components/network.md](skills/core-code-author/design/hub_components/network.md) | Touching the router layer: the three engines the hub drives, which modes own a machine's network and which touch nothing, server mode and the system firewall on macOS and Windows, and why it does not build on NetworkManager. |
 | [design/hub_components/proxy.md](skills/core-code-author/design/hub_components/proxy.md) | Touching the proxy: the scopes and what each diverts, exit selection, where every lookup resolves, what an overlay member can do, the consequences of a dead exit. |
 | [design/hub_components/ai.md](skills/core-code-author/design/hub_components/ai.md) | Touching the AI gateway: how a request routes, the gateway-owned model namespace, what each AI panel surface owns, metering. |
@@ -137,7 +137,7 @@ agent/
 transport/            The Go module of the channel the hub, the agent and
                       the clients carry: the knock, the Noise handshake,
                       the yamux sessions, the relay, the local channel,
-                      and the WebRTC gate of a Web share's guests.
+                      and the WebRTC gate of an App share's guests.
 client/
   desktop/
     neutrino_client/  The client: a person's session on Linux, Windows or
@@ -149,7 +149,7 @@ client/
   android/            The Android app: Gradle, Kotlin, Jetpack Compose.
                       AGPL-3.0.
   ios/                The iOS app: XcodeGen, Swift, SwiftUI. AGPL-3.0.
-share_page/           The page a Web share link opens in a visitor's
+share_page/           The page an App share link opens in a visitor's
                       browser: plain JavaScript, hosted as static files.
 packaging/            build/ one script per release target, shared/ what
                       they share, ci/ the post-install checks, install/ the

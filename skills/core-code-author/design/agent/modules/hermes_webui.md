@@ -118,7 +118,7 @@ no instance runs per account. The webui's share links, `/share/<id>`, open
 with no login of the webui's own. The forwarder returns 401 to a request with
 neither a token nor the cookie, so a share link opens only in a browser that
 signed in through the page, from a client the hub allows this entry or
-from a Web share of it ([../../protocol.md](../../protocol.md), "Web
+from an App share of it ([../../protocol.md](../../protocol.md), "Web
 shares").
 
 ## The gateway

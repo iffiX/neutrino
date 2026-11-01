@@ -42,7 +42,7 @@ password and is turned on for one client at a time.
 | `config/transport/` | none | yes: the hub's static key, `static_key` in the clear, mode 0600 and readable by the transport's account alone, and `public_key`; the guest path's DTLS certificate, `dtls_certificate.pem`, its key `dtls_key.pem` in the clear with the static key's mode, and `dtls_fingerprint`; the transport generates them, and the backup carries both private keys sealed ([../design/transport.md](../design/transport.md), "The hub's static key" and "The DTLS certificate") |
 | `config/devices/devices.json` | `devices.example.json` | yes — device SSH creds; each row's `client` keeps the token's hash, the agent's static `public_key` and its `agent_version` |
 | `config/clients/clients.json` | `clients.example.json` | yes: each client's token hash, its static `public_key` and its gateway key's id, and the permissions, the default's and each client's own, each `{kinds, devices, entries}` ([../design/protocol.md](../design/protocol.md), `/api/hub/client`) |
-| `config/clients/web_shares.json` | `web_shares.example.json` | yes: each Web share's ticket hash, its ufrag and its pwd sealed under the vault's data key, and a guest account's password and token secret sealed the same way ([../design/protocol.md](../design/protocol.md), "Web shares") |
+| `config/clients/web_shares.json` | `web_shares.example.json` | yes: each App share's ticket hash, its ufrag and its pwd sealed under the vault's data key, and a guest account's password and token secret sealed the same way ([../design/protocol.md](../design/protocol.md), "App shares") |
 | `config/devices/<id>/accounts.json` | none | yes: the machine's available accounts, each `{account, login_id, share_path, shell_path, is_ai_tools_enabled, tool_configs}`, `login_id` naming the vault login of a Windows account ([../design/agent.md](../design/agent.md), "The two layers and the accounts") |
 | `config/devices/<id>/terminal.json` | none | no: the Terminal module's enabled accounts, `{accounts: [{account}]}`; absent enables none |
 | `config/devices/<id>/samba.json` | none | yes: the file share's enabled accounts and each one's SMB password, sealed under the vault's data key, and `shares`, the folder shares, each `{name, path, accounts}` ([../design/protocol.md](../design/protocol.md), "The account layer in the state") |
@@ -162,10 +162,10 @@ and your edit will be lost.
   and `config/transport/dtls_key.pem`, owned by the transport's account,
   and the transport reads them again, so the restored hub answers every
   binding the backup holds.
-- A restore leaves the hub with no Web share. It removes
+- A restore leaves the hub with no App share. It removes
   `config/clients/web_shares.json` once the archive is unpacked, a copy in
   the archive included, and ends each share the box stored as a revoke ends
-  it ([../design/protocol.md](../design/protocol.md), "Web shares").
+  it ([../design/protocol.md](../design/protocol.md), "App shares").
 
 ## Field reference
 
@@ -245,7 +245,7 @@ Each `*.example.json` is annotated field-by-field. The load-bearing ones:
   revoked and `guest` present for an app shared with a guest account; a
   share past its `expires_at` is removed by the hub, so the file holds the
   live shares alone; a backup leaves the file out, and a restore removes it
-  ([../design/protocol.md](../design/protocol.md), "Web shares").
+  ([../design/protocol.md](../design/protocol.md), "App shares").
 - **`identity.json`** — the hub's own `id` (a uuid generated at setup) and
   `name` (the hostname until the Settings page changes it); the `welcome`
   frame carries both, and `nhub reset all` deletes the file.

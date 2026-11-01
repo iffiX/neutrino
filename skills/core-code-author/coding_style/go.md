@@ -2,7 +2,7 @@
 
 The transport (`transport/`) is one Go module shared by the hub, the agent
 and the clients: the knock, the Noise handshake, the yamux sessions, the
-relay between streams, the WebRTC gate a Web share's guests come through,
+relay between streams, the WebRTC gate an App share's guests come through,
 and the local control channel the Python side talks to. The hub, the agent and the desktop client carry it as a binary; the
 Android and iOS apps embed it as a gomobile library. This file is its
 language surface. The shared intent is set by

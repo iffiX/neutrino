@@ -20,7 +20,7 @@ kinds of stream and the sections of the state, is in
 way in", and SakuraFrp's and OpenFrp's in its "SakuraFrp and OpenFrp".
 
 On this page a member, or peer, is an agent or a client, and a guest is a
-browser opening a Web share. An entry is one service the hub publishes, a
+browser opening an App share. An entry is one service the hub publishes, a
 kind is the permission an entry falls under, and a binding is the record of
 one enrolled peer.
 
@@ -44,7 +44,7 @@ the frp loopback listeners included.
 | The first bytes | The door | Who comes through it |
 | --- | --- | --- |
 | the hub's magic, 4 bytes ("The header and the magic") | the member path | an agent or a client, which has the magic from its link |
-| a STUN Binding Request in RFC 4571 framing, its 2-byte length starting with `0x00` ("The guest path") | the guest path, while a Web share is live | a browser opening a Web share |
+| a STUN Binding Request in RFC 4571 framing, its 2-byte length starting with `0x00` ("The guest path") | the guest path, while an App share is live | a browser opening an App share |
 | anything else | none: the connection is refused ("A refused connection") | |
 
 | Rule | Reason |
@@ -176,7 +176,7 @@ counts as no failed admission.
 
 ## The guest path
 
-The guest path is the door of a Web share: a person who holds a Web share
+The guest path is the door of an App share: a person who holds an App share
 link opens one shared app in a browser. The page in the browser is plain
 JavaScript, and it reaches the port through the browser's WebRTC, which dials
 an address and a port the page names and trusts a certificate by the
@@ -305,20 +305,20 @@ the hub only over an overlay it has not joined yet still has what it needs.
 The panel draws the code at four pixels per module at least
 ([ui_behavior.md](ui_behavior.md)).
 
-A Web share link opens a static page in the browser, which reads the
+An App share link opens a static page in the browser, which reads the
 share's facts from the link and connects to the port through the guest path.
 The two links hold different facts and open different doors:
 
 | Link | Holds | Opens |
 | --- | --- | --- |
 | a member link | the hub's addresses, its static public key, from which the magic follows, a one-use ticket, the role, and on a client link the overlays | the member path |
-| a Web share link | the hub's IP address and port, the DTLS certificate's fingerprint, the share's ufrag and pwd, the share's ticket, and the app | the guest path, to that app alone |
+| an App share link | the hub's IP address and port, the DTLS certificate's fingerprint, the share's ufrag and pwd, the share's ticket, and the app | the guest path, to that app alone |
 
 | Rule | Reason |
 | --- | --- |
-| A Web share link holds no Noise public key. | The magic follows from that key alone, so a share link neither reveals the member door nor knocks on it. A leaked share link reaches one app. |
+| An App share link holds no Noise public key. | The magic follows from that key alone, so a share link neither reveals the member door nor knocks on it. A leaked share link reaches one app. |
 
-A Web share link is `<site>/__neutrino/#<base64url>`, `<site>` being the
+An App share link is `<site>/__neutrino/#<base64url>`, `<site>` being the
 address of the static page the share names. After `#` is one JSON object,
 written with no spaces, in base64url without padding and not compressed; a
 browser sends nothing after `#` to the site:
@@ -593,7 +593,7 @@ and the binding is what a successful `join` leaves on both sides.
 | Credential | What it is | How long it holds | How the hub keeps it |
 | --- | --- | --- | --- |
 | The hub's static key | a Curve25519 key pair, its public half inside the link | as long as the hub keeps it | the transport keeps the private half; every binding keeps the public half |
-| The hub's DTLS certificate | a self-signed certificate, its fingerprint inside a Web share link | ten years, until a reset makes a new one | the transport keeps it in `config/transport/` beside the static key ("The DTLS certificate") |
+| The hub's DTLS certificate | a self-signed certificate, its fingerprint inside an App share link | ten years, until a reset makes a new one | the transport keeps it in `config/transport/` beside the static key ("The DTLS certificate") |
 | The ticket | 18 random bytes inside an enrolment link | 30 minutes, one use, one open ticket for each role | its SHA-256, on disk, so an unused link holds across a hub restart |
 | The peer's static key | a Curve25519 key pair the peer makes when it first reads a link | until the peer leaves or the binding is removed | the peer keeps the private half in its binding; the hub keeps the public half on the binding's row |
 | The token | 24 random bytes returned in `joined` | as long as the binding | its SHA-256, which is the psk of every later handshake ("The handshake") |

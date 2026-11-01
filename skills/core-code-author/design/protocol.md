@@ -17,7 +17,7 @@ the Python beside it.
 The hub listens for two audiences, which verify it differently. A browser
 trusts a password on a local network, and reaches the panel on two ports, one
 per scheme; an agent or a client trusts the hub's static key on any network.
-A browser opening a Web share reaches the agent port too, and trusts the
+A browser opening an App share reaches the agent port too, and trusts the
 certificate fingerprint its link holds ([transport.md](transport.md), "The
 guest path").
 
@@ -25,7 +25,7 @@ guest path").
 | --- | --- | --- | --- |
 | `listen_port`, default 8080 | HTTP | the panel: its page, every `/api/hub` and `/api/agent` route, every `/ws` socket; while `is_https_enabled` is on, a 301 to the HTTPS port for every path but the authority's download | the session cookie |
 | `https_listen_port`, default 443 | TLS with the hub's own certificate, whatever `is_https_enabled` says | the same panel | the session cookie |
-| `agent_listen_port`, default 8443 | TCP: the transport's knock, Noise handshake and go-yamux session, or a Web share's WebRTC ([transport.md](transport.md)) | the channel, and a Web share's one app | the hub's static key and the peer's own, the ticket in `join`, then the binding's key; for a guest, the certificate fingerprint and the share's ticket |
+| `agent_listen_port`, default 8443 | TCP: the transport's knock, Noise handshake and go-yamux session, or an App share's WebRTC ([transport.md](transport.md)) | the channel, and an App share's one app | the hub's static key and the peer's own, the ticket in `join`, then the binding's key; for a guest, the certificate fingerprint and the share's ticket |
 
 The two panel ports are uvicorn servers in the one `nhub run --only-web`
 process. The agent port is the transport's: `neutrino_transport`, the Go
@@ -335,7 +335,7 @@ walk theirs. A new code and its wording are one change.
 | `module_in_use` | `{modules}` | 409 of `module/uninstall`, a module that the installed `modules` require ([agent/module_install.md](agent/module_install.md), "Dependencies") | added |
 | `package_manager_busy` | `{holder}` | the `code` of an `install_failed` or `failed` row: a step whose package helper waited 300 seconds for the system's own lock ([agent.md](agent.md), "The system's own lock") | added |
 | `ayakaleaf_setup_failed` | `{step, detail}` | an Ayakaleaf install whose first-start step failed, `step` being `replica_set`, `admin` or `tex` ([agent/modules/ayakaleaf.md](agent/modules/ayakaleaf.md), "The first start") | added |
-| `share_unknown` | none | the `guest` question's answer, a guest session's `refused`, and a visitor's `service` or `connect`, for a share that does not exist or a ticket not its own ("Web shares") | added |
+| `share_unknown` | none | the `guest` question's answer, a guest session's `refused`, and a visitor's `service` or `connect`, for a share that does not exist or a ticket not its own ("App shares") | added |
 | `web_share_entry_invalid`, `web_share_site_invalid`, `web_share_unknown` | `{entry_id}`, `{site}`, none | `web_share/create` naming an entry no share can offer now or a site that is not a listed one or an `https://` address, and `web_share/destroy` naming no share | added |
 | `ayakaleaf_guest_failed` | `{step, detail}` | a guest of the Ayakaleaf module in its `details.guests`, `step` being `admin_login`, `register`, `password` or `name` ([agent/modules/ayakaleaf.md](agent/modules/ayakaleaf.md), "The guest account") | added |
 | `op_unknown` | `{op}` | a `file` stream naming any `op` but `list` | added |
@@ -364,7 +364,7 @@ the agent group follows, then the panel's live sockets.
 | `/api/hub/proxy` | Routing policy, and under it `node` (the exit nodes), `balancer`, and `geodata` (the databases the split runs on: which release is installed, and updating them to the latest) |
 | `/api/hub/ai` | The providers the gateway forwards to and their order, and under it `gateway` (the gateway itself: keys, accounts, usage, journal) |
 | `/api/hub/device` | The **Agents** page: every managed machine, names and icons, the SSH credential the hub reaches a machine with, enrolment links, installing or reinstalling the agent over SSH, waking, rebooting, shutting down, its processes, its remote desktops, its seat password, its published services, which module tabs its machine page shows |
-| `/api/hub/client` | Enrolled client sessions, the links that enrol them, and the Web shares |
+| `/api/hub/client` | Enrolled client sessions, the links that enrol them, and the App shares |
 | `/api/hub/service` | The apps and the other published services, and the apps declared by hand |
 | `/api/hub/credential` | The secrets the box keeps for somebody, SSH keys, logins and tokens, and the ones it generated for the machines |
 | `/api/hub/setting` | The panel's own: its two ports, its scheme and certificate authority, password, hub name, backup, restore, version, and updating the hub itself from its newest release |
@@ -544,7 +544,7 @@ A client ticket's row waits to join for as long as its ticket lives
 
 | Route | Parameters | Does |
 | --- | --- | --- |
-| `GET /api/hub/client` | | every client, grouped as the page draws them, each with its `permission` (null while it follows the default), `permission_devices`, `permission_entries` and `link_expires_in_s`, the seconds its link still works while the row waits to join and null once it joined, and the list's `default_permission`, `default_permission_devices`, `default_permission_entries`, `permission_kinds`, and `permission_rows`, the rows the fine mode lists under each kind, each `{id, title, device_id, device_name}`, in the order the Services page lists its apps; and `web_shares`, each `{id, name, app_id, entry_id, app_title, device_name, expires_at, expires_in_s, state, code, params, online_count, guest_email}`, `expires_at` null for a share that lasts until it is revoked; `web_share_entries`, the entries a share can offer now, each `{entry_id, app_id, title, device_name, guest_login, visitor_account}`, `visitor_account` the account a visitor uses the app as, for an entry whose `guest_login` is `run_account`, and empty for the others ("Web shares"); and `web_share_sites`, each `{url, title}` |
+| `GET /api/hub/client` | | every client, grouped as the page draws them, each with its `permission` (null while it follows the default), `permission_devices`, `permission_entries` and `link_expires_in_s`, the seconds its link still works while the row waits to join and null once it joined, and the list's `default_permission`, `default_permission_devices`, `default_permission_entries`, `permission_kinds`, and `permission_rows`, the rows the fine mode lists under each kind, each `{id, title, device_id, device_name}`, in the order the Services page lists its apps; and `web_shares`, each `{id, name, app_id, entry_id, app_title, device_name, expires_at, expires_in_s, state, code, params, online_count, guest_email}`, `expires_at` null for a share that lasts until it is revoked; `web_share_entries`, the entries a share can offer now, each `{entry_id, app_id, title, device_name, guest_login, visitor_account}`, `visitor_account` the account a visitor uses the app as, for an entry whose `guest_login` is `run_account`, and empty for the others ("App shares"); and `web_share_sites`, each `{url, title}` |
 | `POST /api/hub/client/enrollment/create` | `{name, permission}`, `permission` null to follow the default, else `{kinds, devices, entries}` as `permission/set` takes them | makes the client's row at once, waiting to join with that name and permission, and its link, which works for `ENROLLMENT_TTL_S`, 30 minutes; `ClientEnrollmentView`, `{link, client_id, expires_at, expires_in_s}`; a client link still open from before stops working, and its waiting row goes; 400 as `permission/set`, 409 `transport_key_missing` |
 | `POST /api/hub/client/set` | `{client_id, name}` | |
 | `POST /api/hub/client/enable` | `{client_id}` | |
@@ -552,8 +552,8 @@ A client ticket's row waits to join for as long as its ticket lives
 | `POST /api/hub/client/remove` | `{client_id}` | forgets the client; its session is ended with `binding_unknown`, and a waiting row's link stops working |
 | `POST /api/hub/client/default_permission/set` | `{kinds, devices, entries}`, `devices` and `entries` optional | what a client with no permission of its own is allowed; every client's `state` is pushed |
 | `POST /api/hub/client/permission/set` | `{client_id, kinds, devices, entries}`, `kinds` null to follow the default, `devices` and `entries` optional | that client's own permission; its `state` is pushed |
-| `POST /api/hub/client/web_share/create` | `{name, entry_id, days, site}`: `days` 1, 7 or 30, or null for a share that lasts until it is revoked; `site` one of `web_share_sites`, or the `https://` address of a copy of the page | makes the share and returns `WebShareCreatedView`, `{link, share}`, the link given this once ("Web shares"); 400 `web_share_entry_invalid {entry_id}` for an entry that is no `web` entry published now, `web_share_site_invalid {site}`, `body_invalid` for an empty name or another `days`, `no_reachable_address` while the hub has no address a link can name; 409 `vault_locked`, `transport_key_missing` while the transport has made no DTLS certificate |
-| `POST /api/hub/client/web_share/destroy` | `{share_id}` | **Revoke**: ends the share at once: its link stops working, every page open on it closes, and a guest account it made is removed ("Web shares"); the list; 404 `web_share_unknown` |
+| `POST /api/hub/client/web_share/create` | `{name, entry_id, days, site}`: `days` 1, 7 or 30, or null for a share that lasts until it is revoked; `site` one of `web_share_sites`, or the `https://` address of a copy of the page | makes the share and returns `WebShareCreatedView`, `{link, share}`, the link given this once ("App shares"); 400 `web_share_entry_invalid {entry_id}` for an entry that is no `web` entry published now, `web_share_site_invalid {site}`, `body_invalid` for an empty name or another `days`, `no_reachable_address` while the hub has no address a link can name; 409 `vault_locked`, `transport_key_missing` while the transport has made no DTLS certificate |
+| `POST /api/hub/client/web_share/destroy` | `{share_id}` | **Revoke**: ends the share at once: its link stops working, every page open on it closes, and a guest account it made is removed ("App shares"); the list; 404 `web_share_unknown` |
 
 One client link adds one device. Its row is made when the link is, and
 waits to join: it holds the name and the permission the link was made with,
@@ -662,7 +662,7 @@ is not `true` or `false` is refused `body_invalid`.
 
 | Route | Parameters | Does |
 | --- | --- | --- |
-| `GET /api/hub/service` | | `ServiceListView`: `apps`, each `{id, title, source, device_id, device_name, local_name, description, entries}` with each entry `{id, name, type, payload, is_healthy, local_port, detail_code, guest_login}`, `detail_code` the probe's word on an unhealthy declared entry such as `share_missing`, else null, `guest_login` how a Web share's visitor signs in to a `web` entry, `app`, `guest_account` or `run_account`, and empty on an entry of another type ("Web shares"), a module's apps first, then the declared, then the manual, each group by title; and `services`, the entries of no app, the `ai` and `rdp` entries and a machine's `file` entries, as a client's list holds them |
+| `GET /api/hub/service` | | `ServiceListView`: `apps`, each `{id, title, source, device_id, device_name, local_name, description, entries}` with each entry `{id, name, type, payload, is_healthy, local_port, detail_code, guest_login}`, `detail_code` the probe's word on an unhealthy declared entry such as `share_missing`, else null, `guest_login` how an App share's visitor signs in to a `web` entry, `app`, `guest_account` or `run_account`, and empty on an entry of another type ("App shares"), a module's apps first, then the declared, then the manual, each group by title; and `services`, the entries of no app, the `ai` and `rdp` entries and a machine's `file` entries, as a client's list holds them |
 | `GET /api/hub/service/share` | | the shares devices declared |
 | `POST /api/hub/service/declaration/add` | `{name, host, description, entries}`, each entry `{type, port, scheme, path, protocol, share}`: `type` `web`, `port` or `file`; `scheme` `http` or `https` and `path` for `web`; `protocol` `tcp` or `udp` for `port`, `tcp` when absent; `share` for `file`, an SMB share's name, with `port` 445 when absent; one entry at least, no two of one type, port and protocol, and no two `file` entries whose shares give one slug ("The local name and the local port") | declares one app; `ServiceListView`; 400 `declared_service_invalid {field}` |
 | `POST /api/hub/service/declaration/remove` | `{app_id}` | `ServiceListView`; 404 `declared_service_unknown` |
@@ -707,7 +707,7 @@ by a connection to the port, and a UDP one never.
 | `POST /api/hub/setting/https/disable` | | writes `is_https_enabled: false`; the HTTP port serves the panel from the next request, nothing restarts, the certificates stay; `PanelHttpsView` |
 | `POST /api/hub/setting/https/authority/reset` | | a new authority and a certificate signed by it, served from the next connection; every browser installs the new authority; `PanelHttpsResetView`, `PanelHttpsView` with `authority_der`, the new authority's DER in base64; 409 `https_reset_over_https` when the request came over HTTPS |
 | `POST /api/hub/setting/password/set` | the old and the new password | |
-| `POST /api/hub/setting/backup` | | an archive of `config/` without `clients/web_shares.json` ("Web shares") |
+| `POST /api/hub/setting/backup` | | an archive of `config/` without `clients/web_shares.json` ("App shares") |
 | `POST /api/hub/setting/restore` | the archive | |
 | `GET /api/hub/setting/about` | | `AboutView`: versions, the credited components, and `os` and `os_version`, the system the hub runs on and its version |
 | `GET /api/hub/setting/release` | | `HubReleaseView`: the version running, whether this hub came from a package, `package_family` (`deb`, `rpm`, `arch`, `msi`, `pkg`, or empty in a checkout) and `log_root`, the record of its last update with its `steps` and `output`, the tail of the package manager's log, and the staging task while one runs |
@@ -1616,7 +1616,7 @@ the token secret; the password of the administrator the module makes; the
 name of the app's session cookie, `ayakaleaf_sid_` and the first 12
 characters of the device id, which the hub also sets in the app's
 `COOKIE_NAME`; the app's local name; and `guests`, `[{account, email,
-password, secret}]`, the guest account of each live Web share of the app,
+password, secret}]`, the guest account of each live App share of the app,
 opened from the share's record ([agent/modules/ayakaleaf.md](agent/modules/ayakaleaf.md),
 "The guest account"). The agent takes the forwarder's port itself, from 8900 up. The
 hub generates the secret, the password and the app's session and invitation
@@ -1632,8 +1632,8 @@ first such read; a step that fails ends the install `ayakaleaf_setup_failed
 {step, detail}`. `details` is `{version, port, guests}`, `port` the
 forwarder's and `guests` `[{account, code, params}]`, each guest the hooks
 made or tried, `code` empty once made and `ayakaleaf_guest_failed {step,
-detail}` while a step fails; a Web share of the app reads its state from it
-("Web shares").
+detail}` while a step fails; an App share of the app reads its state from it
+("App shares").
 
 Package bytes come to the agent down a `package {module, artifact, digest}`
 stream it opens, `artifact` naming the artifact and `digest` the bytes
@@ -1952,8 +1952,8 @@ type:
 | `web` with no token, `port`, a declared `file` | empty: the entry's `payload` is already everything the client needs; a declared share's login is the person's, typed on the client |
 | the panel, `{is_panel: true}` | `{token}`: a sign-in for one browser, minted for this answer alone, which the client opens at its panel forward's address with `?tkn=<token>` ("The panel ports") |
 
-A Web share's visitor sends the `service` frame too, for the one entry its
-share offers ("Web shares"), and its material follows from the entry's
+An App share's visitor sends the `service` frame too, for the one entry its
+share offers ("App shares"), and its material follows from the entry's
 `guest_login` ([agent/module_install.md](agent/module_install.md), "The
 manifest"):
 
@@ -2088,9 +2088,9 @@ with the agent's code:
 | Size | `cols` and `rows` size the pseudo-terminal with `is_tty`, and a later size is a `resize` record ("Kept shells"); without `is_tty` they are ignored. |
 | Account | `account`, an enabled account of the Terminal module, the first one when it is empty, as a new shell runs ([agent/modules/terminal.md](agent/modules/terminal.md)); never root or SYSTEM. The account's shell is not read, since `argv` names the program. |
 
-### Web shares
+### App shares
 
-A Web share offers one app's `web` entry to anyone who holds its link, in a
+An App share offers one app's `web` entry to anyone who holds its link, in a
 browser, for as long as the share lasts; a visitor installs nothing and is
 no client. The Clients page makes and revokes shares
 ([ui_behavior.md](ui_behavior.md), "The Clients page"), the visitor's page

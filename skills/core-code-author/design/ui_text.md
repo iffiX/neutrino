@@ -259,8 +259,8 @@ Chinese a kind is 权限, as in 默认权限.
 | `ui.clients.waiting_delete_body` | Its link stops working. | 它的链接随即失效。 |
 | `ui.devices.generate_link`, the **Add by link** dialog's foot | Generate link | 生成链接 |
 | `ui.devices.link_name_hint` | Left empty, the machine's host name names it. | 留空时用机器的主机名。 |
-| `ui.clients.panel_clients`, `ui.web_shares.title`, the two panels | Clients, Web shares | 客户端、Web 分享 |
-| `ui.web_shares.new_link` | New Web share link | 新建 Web 分享链接 |
+| `ui.clients.panel_clients`, `ui.web_shares.title`, the two panels | Clients, App shares | 客户端、应用分享 |
+| `ui.web_shares.new_link` | New App share link | 新建应用分享链接 |
 | `ui.web_shares.share`, on a Services page row | Share | 分享 |
 | `ui.web_shares.field_name`, `field_app`, `field_expires`, `field_site` | Name, App, Expires, Site | 名称、应用、有效期、站点 |
 | `ui.web_shares.expires_1d`, `expires_7d`, `expires_30d`, `until_revoked` | 1 day, 7 days, 30 days, Until revoked | 1 天、7 天、30 天、直到撤销 |
@@ -275,7 +275,7 @@ Chinese a kind is 权限, as in 默认权限.
 | `ui.web_shares.revoke_title` | Revoke {name} | 撤销 {name} |
 | `ui.web_shares.revoke_body` | Every page open on this share closes, and its link stops working. | 这个分享上打开着的页面全部关闭，链接随即失效。 |
 | `ui.web_shares.revoke_guest` | The guest account {email} is removed from the app; what it edited in your projects stays. | 应用里的访客账户 {email} 会删除；它在你的项目里改过的内容保留。 |
-| `ui.web_shares.empty`, `ui.web_shares.empty_hint` | No Web shares; Share one app's page with people who have no client. | 还没有 Web 分享；把一个应用的页面分享给没有客户端的人。 |
+| `ui.web_shares.empty`, `ui.web_shares.empty_hint` | No App shares; Share one app's page with people who have no client. | 还没有应用分享；把一个应用的页面分享给没有客户端的人。 |
 | `code.share_unknown` | This share no longer exists. | 这个分享已不存在。 |
 | `code.web_share_entry_invalid` | This app's page cannot be shared. | 非法应用：这个应用的页面不能分享。 |
 | `code.web_share_site_invalid` | {site} is not an https:// address. | 非法站点：{site} 不是 https:// 地址。 |
@@ -302,9 +302,9 @@ keys are in `locales/<language>/devices.json` beside the page's other `ui.creden
 | `ui.credentials.generated_empty` | No generated secrets yet | 还没有中枢生成的密钥 |
 | `code.generated_credential_unknown` | The machine no longer has this secret. | 这台机器已没有这个密钥。 |
 
-## The Web share page's words
+## The App share page's words
 
-The page a Web share link opens ([web_share.md](web_share.md), "The
+The page an App share link opens ([web_share.md](web_share.md), "The
 screens") carries its words in `shell.js`, in the language the browser
 names: Chinese when it starts with `zh`, English otherwise. `<app>` is the
 link's `app.title`.
@@ -314,7 +314,7 @@ link's `app.title`.
 | Loading | Opening <app>… | 正在打开 <app>… |
 | Loading, after 10 seconds, before the admission | The line is slow, still connecting… | 线路较慢，仍在连接… |
 | Loading, after 10 seconds, after the admission | The line is slow, still loading… | 线路较慢，仍在加载… |
-| The introduction | Neutrino Web share / To use the shared app, open the full share link you were sent. | 微子 Web 分享 / 用别人发给你的完整分享链接，就能打开他分享的应用。 |
+| The introduction | Neutrino App share / To use the shared app, open the full share link you were sent. | 微子应用分享 / 用别人发给你的完整分享链接，就能打开他分享的应用。 |
 | The link is incomplete | This link is incomplete. / Copy the whole share link and open it again. | 这个链接不完整。/ 请把分享链接整段复制下来再打开。 |
 | The link no longer works | This link is no longer valid. / Ask the person who shared it for a new one. | 这个链接已失效。/ 请向分享给你的人要一个新链接。 |
 | The hub is offline | The hub is offline. / The computer that shares this app cannot be reached right now. | 中枢已离线。/ 分享这个应用的电脑现在连不上。 |
@@ -455,7 +455,7 @@ sentences.
 | `ui.modules.step.wait_app` | Wait for the app to start | 等待应用启动 |
 | `ui.modules.step.admin` | Create the administrator | 创建管理员 |
 | `ui.modules.step.tex` | Install TeX packages | 安装 TeX 宏包 |
-| `ui.modules.step.guests` | Create the Web share guests | 建好 Web 分享的访客账户 |
+| `ui.modules.step.guests` | Create the App share guests | 建好应用分享的访客账户 |
 | `ui.modules.step.tools` | Set the AI tools of {account} | 设置 {account} 的 AI 工具 |
 | `ui.modules.failed_step`, the first line of a failed row's notice, `{step}` being one of the step words above | Failed at step {index} of {count}: {step} | 第 {index}/{count} 步失败：{step} |
 
@@ -575,7 +575,7 @@ are in `locales/<language>/modules.json`, and the code's in `codes.json`.
 | `ui.ayakaleaf.apply` | Apply Ayakaleaf | 应用 Ayakaleaf 设置 |
 | `ui.ayakaleaf.apply_warning` | Ayakaleaf restarts, and open editors connect again. | Ayakaleaf 会重启，打开着的编辑器会重新连接。 |
 | `code.ayakaleaf_setup_failed` | Ayakaleaf's first start stopped at {step}: {detail} | Ayakaleaf 首次启动停在 {step} 这一步：{detail} |
-| `code.ayakaleaf_guest_failed`, under a Web share's row | Ayakaleaf could not make the guest account at {step}: {detail} | Ayakaleaf 在 {step} 这一步没能建好访客账户：{detail} |
+| `code.ayakaleaf_guest_failed`, under an App share's row | Ayakaleaf could not make the guest account at {step}: {detail} | Ayakaleaf 在 {step} 这一步没能建好访客账户：{detail} |
 
 ## The Containers tab's words
 

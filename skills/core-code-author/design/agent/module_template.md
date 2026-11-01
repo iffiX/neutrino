@@ -87,7 +87,7 @@ where it first gives a session and the CSRF token that session's login
 needs, as Ayakaleaf's does ([modules/ayakaleaf.md](modules/ayakaleaf.md),
 "The page").
 
-A Web share's visitor reaches a module's page through the same forwarder,
+An App share's visitor reaches a module's page through the same forwarder,
 and every module with a page names `web_share`
 ([module_install.md](module_install.md), "The manifest"). With
 `guest_login` `run_account` the hub hands a visitor the material it hands a
@@ -155,7 +155,7 @@ and kept sealed under the vault's data key in
 `config/devices/<id>/<module>.json`, and the state carries them opened. SiYuan's gateway key per enabled account is generated with them, and voided when the account is disabled ([modules/siyuan.md](modules/siyuan.md), "The gateway"). The panel draws the five with one `instances_panel.tsx`
 ([ui_behavior.md](../ui_behavior.md), "The machine page").
 
-## Guest accounts of a Web share
+## Guest accounts of an App share
 
 A module whose manifest names `web_share: {guest_login: guest_account}`
 ([module_install.md](module_install.md), "The manifest") signs each Web
@@ -169,8 +169,8 @@ The hub does the same for every such module:
 
 | Duty | Where |
 | --- | --- |
-| When a share of the module's page is made, the hub makes the guest's facts: the account, `guest-` and 4 characters unlike every other guest of the module on that machine, its e-mail `<account>@share.neutrino`, its password and its token secret. It seals them in the share's record. | `modules/clients/web_shares.py` ([../protocol.md](../protocol.md), "Web shares") |
-| It pushes the machine's state when a share is made and when one ends. | the Web share routes |
+| When a share of the module's page is made, the hub makes the guest's facts: the account, `guest-` and 4 characters unlike every other guest of the module on that machine, its e-mail `<account>@share.neutrino`, its password and its token secret. It seals them in the share's record. | `modules/clients/web_shares.py` ([../protocol.md](../protocol.md), "App shares") |
+| It pushes the machine's state when a share is made and when one ends. | the App share routes |
 | The state carries `guests` in the module's configuration, `[{account, email, password, secret}]`: the guest of each live share of the module's page, the app `<module>_<device id>`, opened. | `DesiredStateStore.agent_config` in `modules/devices/desired_state.py`, the one place for every such module |
 | It reads the module's report `details.guests`, `[{account, code, params}]`, for the share's state: `preparing` until the guest is reported, `failed` with its code while one is reported, `active` once it is reported with an empty code. | `modules/clients/web_shares.py` |
 
@@ -196,7 +196,7 @@ with an empty code, then each failure with its code and params.
 | Rule | Reason |
 | --- | --- |
 | A guest's account lives as long as its share: when the share is revoked or expires, the hub takes its guest out of the state, and the hooks remove the account. | Ending the share is the person's one press. |
-| No visitor signs in as a guest the record does not hold made: the share reads `preparing` until the account is made, and `failed` with the hook's code after a failed step, until a start makes it. | A visitor reaches no app whose guest is half made, and the owner sees why on the Web shares panel. |
+| No visitor signs in as a guest the record does not hold made: the share reads `preparing` until the account is made, and `failed` with the hook's code after a failed step, until a start makes it. | A visitor reaches no app whose guest is half made, and the owner sees why on the App shares panel. |
 
 ## What a module owns
 
@@ -226,7 +226,7 @@ under `modules/<module>/`, which the `container` runner calls.
 | `installers.py` | installing a downloaded package the way this machine installs things, one function per artifact kind: `install_msi` and `uninstall_msi` run `msiexec` under the step lock `package_manager`, waiting for the Windows Installer mutex, trying once more on 1618 and taking 0 and 3010 as success; `install_pkg` runs `installer -pkg <file> -target /`; the agent's self-update uses the same functions, and the scripts it renders stay as they are |
 | `source_fetch.py` | probing and ranking the sources of an image, an npm registry or a host an npm setting names ([module_install.md](module_install.md), "Choosing a source") |
 | `http_forward.py` | what every forwarder in front of a module's page shares: the listener, the token check, the pass-through |
-| `guest_accounts.py` | the guest accounts of a module's Web shares: the three hooks a `guest_account` module answers, and the making, the removing, the forwarder's lookup and the report every such module shares ("Guest accounts of a Web share") |
+| `guest_accounts.py` | the guest accounts of a module's App shares: the three hooks a `guest_account` module answers, and the making, the removing, the forwarder's lookup and the report every such module shares ("Guest accounts of an App share") |
 | `hub_clock.py` | the hub's time on this machine, which every token check reads: the machine's clock plus the offset the last `welcome` gave, moved by any jump of the machine's clock |
 | `log_tail.py` | the last lines of a log file, and the mask every journal passes through |
 | `subprocess_run.py` | running one command for a module applier, with its output kept |

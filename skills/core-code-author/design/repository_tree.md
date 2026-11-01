@@ -33,11 +33,11 @@ client/
                      by XcodeGen.
 transport/           The Go module of the channel: knock/, handshake/,
                      session/, relay/, control/ the local channel, gate/
-                     the guest path of a Web share,
+                     the guest path of an App share,
                      cmd/neutrino_transport/ the binary, mobile/ the
                      library the phones embed, tests/ what crosses
                      packages. Style: ../coding_style/go.md.
-share_page/          The page a Web share link opens: plain HTML and
+share_page/          The page an App share link opens: plain HTML and
                      JavaScript, no build step, hosted as static files.
 packaging/           Building every package, and driving a built one on a
                      live box or a rented one.
@@ -372,7 +372,7 @@ editing it should not need to know how the code is arranged.
 | Anything the managed machines run | `agent/neutrino_agent/`, or `agent/sshserver/` for the SSH server's Go |
 | Anything of the channel's wire, the knock, the handshake, the sessions and the relay | `transport/`, in Go |
 | Anything a person's computer runs | `client/desktop/neutrino_client/` |
-| Anything a Web share's visitor's browser runs | `share_page/`, in plain JavaScript ([web_share.md](web_share.md)) |
+| Anything an App share's visitor's browser runs | `share_page/`, in plain JavaScript ([web_share.md](web_share.md)) |
 | A screen, a service kind or a platform piece of the Android app | `client/android/`, in Kotlin |
 | A page or a platform piece of the iOS app | `client/ios/`, in Swift |
 | A script that builds a core the phones compile in | `packaging/build/build_core_<core>.py` |

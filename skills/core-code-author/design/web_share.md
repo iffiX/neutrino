@@ -1,6 +1,6 @@
-# The Web share page
+# The App share page
 
-The Web share page is the static page a Web share link opens: plain
+The App share page is the static page an App share link opens: plain
 JavaScript in `share_page/`, which connects a browser to the hub through
 the guest path and shows the one shared app in the whole window. A visitor
 installs nothing, and sees nothing of Neutrino but a loading screen and,
@@ -8,7 +8,7 @@ when something is wrong, one of four refusal screens. The site's own
 address, opened with no link, shows an introduction. The guest path's
 bytes, the link's form and its address are in
 [transport.md](transport.md), "The guest path" and "The links"; the panel's
-side of a share is in [protocol.md](protocol.md), "Web shares", and
+side of a share is in [protocol.md](protocol.md), "App shares", and
 [ui_behavior.md](ui_behavior.md), "The Clients page".
 
 ## The files and the sites
@@ -112,7 +112,7 @@ introduction, and four refusals. A refusal covers the app's frame when the
 app cannot be reached, the frame kept under it. Each screen is centred on
 the page background: the mark the panel shows while it checks a session,
 with one or two lines of text under it. Their words are in
-[ui_text.md](ui_text.md), "The Web share page's words", Chinese when the
+[ui_text.md](ui_text.md), "The App share page's words", Chinese when the
 browser's language starts with `zh` and English otherwise.
 
 | Screen | Shown | Under the mark |

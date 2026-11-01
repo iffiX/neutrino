@@ -368,7 +368,7 @@ task, and a forwarder changes nothing but the record.
 | The running step ends as it would. The task then plans again from what the machine shows toward the newer entry, and goes on with that plan. | A step cut in the middle leaves its work half done, such as a dpkg run, an msi or a half-made Podman machine. A step done once is not run again, since the new plan starts from what the machine shows. |
 | A step that waits for something outside the agent, a restart owed, a first start or an install task left running on Windows, checks it every 30 seconds and holds no step lock between checks. Each check is a step boundary. | A module stuck waiting still takes a new `want`, an **Uninstall** among them, and every other module's task goes on. |
 | A new plan toward `absent` from a task that already ran an install step runs the module's uninstall whatever the presence check finds. | A partial pull or a half unpack is the task's own leftover, as an `install_failed` module's is. |
-| A configure step reads the configuration of the entry the task holds when the step starts. | A newer entry that changes only the configuration, a Web share's guest or an account added, reaches the configure steps that have not run yet. |
+| A configure step reads the configuration of the entry the task holds when the step starts. | A newer entry that changes only the configuration, an App share's guest or an account added, reaches the configure steps that have not run yet. |
 | No button cancels a step, so a newer entry waits at most the running step's own time, about 5 minutes for Ayakaleaf's `tex`. | A cut differs on every system and leaves its work half done. |
 
 ### The end of a task

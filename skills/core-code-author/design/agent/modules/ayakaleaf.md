@@ -14,7 +14,7 @@ health read, which the `container` runner calls. The configuration is
 administrator's password, the name of the app's session cookie ("The
 page"), the app's local name, which the forwarder checks the `Host`
 against ([../module_template.md](../module_template.md), "The run"), and the
-guest accounts of the live Web shares of the app ("The guest account"). The hub
+guest accounts of the live App shares of the app ("The guest account"). The hub
 generates the secret, the password, and the app's session and invitation
 secrets the first time the module is installed, and seals them in
 `config/devices/<id>/ayakaleaf.json`, beside the module's gateway key and the
@@ -173,12 +173,12 @@ The forwarder turns the hub's token into the app's own login:
 
 ## The guest account
 
-A Web share of the app's page signs its visitors in as an account of the
+An App share of the app's page signs its visitors in as an account of the
 app's own, one per share, and never as the administrator: the module's
 manifest names `web_share: {guest_login: guest_account}`
 ([../module_install.md](../module_install.md), "The manifest"). The hub makes
 the account's facts when the share is made and seals them in the share's
-record ([../../protocol.md](../../protocol.md), "Web shares"):
+record ([../../protocol.md](../../protocol.md), "App shares"):
 
 | Fact | What it is |
 | --- | --- |
@@ -212,8 +212,8 @@ administrator's routes by its `user_id`, and leaves the record.
 | Rule | Reason |
 | --- | --- |
 | The hooks make a guest through the app's own routes, as a browser of the administrator does, and run nothing inside the container. | The image's `create-user.mjs` fails in the version the module installs, and the routes are the ones the app's own pages use. |
-| A step that fails reports the guest `ayakaleaf_guest_failed {step, detail}`, `step` being `admin_login`, `register`, `password` or `name`, and the hooks run it again at the next apply of the state. The share reads `failed` meanwhile. | A visitor reaches no app whose guest is half made, and the owner sees why on the Web shares panel. |
-| A guest sees the projects the owner shares with it and nothing else. The owner invites the guest's e-mail in the app's own Share dialog, the e-mail the Web shares panel shows to copy, and the forwarder accepts every invitation waiting for the guest at each sign-in: it reads them from the `ol-notifications` of `GET /project`, then sends `GET /project/<id>/invite/token/<token>` and `POST /project/<id>/invite/token/<token>/accept` for each. | The owner's one step is the invitation, and a visitor never meets one to accept. |
+| A step that fails reports the guest `ayakaleaf_guest_failed {step, detail}`, `step` being `admin_login`, `register`, `password` or `name`, and the hooks run it again at the next apply of the state. The share reads `failed` meanwhile. | A visitor reaches no app whose guest is half made, and the owner sees why on the App shares panel. |
+| A guest sees the projects the owner shares with it and nothing else. The owner invites the guest's e-mail in the app's own Share dialog, the e-mail the App shares panel shows to copy, and the forwarder accepts every invitation waiting for the guest at each sign-in: it reads them from the `ol-notifications` of `GET /project`, then sends `GET /project/<id>/invite/token/<token>` and `POST /project/<id>/invite/token/<token>/accept` for each. | The owner's one step is the invitation, and a visitor never meets one to accept. |
 | When the share is revoked or expires, the hub takes its guest out of the state, and the hooks delete the account. The owner's projects stay, with what the guest edited in them. An uninstall removes every guest with every other datum of the app. | The account lives as long as its share, and ending the share is the person's one press. |
 | The owner's own clients keep signing in as the administrator. | The owner's clients are the owner, and a share changes nothing for them. |
 

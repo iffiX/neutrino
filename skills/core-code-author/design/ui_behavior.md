@@ -36,11 +36,11 @@ has a tunnel picked, its `tunnel_id` not empty, the bar adds
 **A page carries no controls that belong to a panel** — no apply, no reset, no
 save. Its header may carry an action that belongs to no single panel and starts
 something the whole page is about: `Add over SSH`, `Declare app`, `New
-Web share link`. Those sit in `page_actions`, and a page with none is the
+App share link`. Those sit in `page_actions`, and a page with none is the
 normal case.
 
 A header action that adds a record (**Add by link**, **Add over SSH**, **New
-client link**, **New Web share link**, **Declare app**) opens a dialog in the style of the install
+client link**, **New App share link**, **Declare app**) opens a dialog in the style of the install
 dialog (`install_agent_modal.tsx`). The dialog holds the form, the link or the
 QR it produces, and the output of the task it starts; the page itself never
 shows an add form or a produced link inline. A header add wears
@@ -637,16 +637,16 @@ entry and no row for a machine's SSH server, which is no app
 ([protocol.md](protocol.md), "Apps").
 
 An app's row with a `web` entry carries **Share** (分享), a ghost button
-that opens the Clients page's Web share dialog with that entry chosen ("The
+that opens the Clients page's App share dialog with that entry chosen ("The
 Clients page"). An app with no `web` entry has no **Share**.
 
 ## The Clients page
 
 The **Clients** page, at `/clients`, is who reaches the hub's machines from
 outside the panel, in two panels, **Clients** (客户端), one row per enrolled
-device with what each is allowed, and **Web shares** (Web 分享), one row per
+device with what each is allowed, and **App shares** (应用分享), one row per
 share. The page's header holds two primary buttons, both dialogs, **New
-client link** and **New Web share link**. **Default permissions**, a
+client link** and **New App share link**. **Default permissions**, a
 bordered button in the Clients panel's header, opens the default's dialog.
 
 **New client link** (新建客户端链接), in the page's header, opens a dialog in
@@ -666,8 +666,8 @@ that the link stops working. The hub removes the row when the link expires
 unused, and the page's next read drops it; a join makes it an ordinary row
 with the permission it waited with.
 
-**New Web share link** (新建 Web 分享链接) opens a dialog in the same style
-that makes one share ([protocol.md](protocol.md), "Web shares"). The Services
+**New App share link** (新建应用分享链接) opens a dialog in the same style
+that makes one share ([protocol.md](protocol.md), "App shares"). The Services
 page's **Share** on an app's row opens the same dialog with the app's `web`
 entry chosen ("The Services page").
 
@@ -695,7 +695,7 @@ app whose `guest_login` is `guest_account`, the guest account's e-mail in
 mono with a copy button and `ui.web_shares.guest_hint`. The form goes, and
 the foot becomes **Done**.
 
-The Web shares panel lists the shares, newest first, one row each: the
+The App shares panel lists the shares, newest first, one row each: the
 name; the app's title and its machine; when it expires,
 `ui.web_shares.expires_in {days}` or `ui.web_shares.until_revoked`; its
 state as a dot and its word; `ui.web_shares.online {count}`; for a guest
@@ -706,7 +706,7 @@ and, for a guest account, `ui.web_shares.revoke_guest {email}` after it,
 and the button **Revoke**; it acts at once, as a revocation does ("When an
 effect happens"). A share that ends, at its expiry or by **Revoke**, leaves
 the list at the page's next read, and the hub keeps nothing of it
-([protocol.md](protocol.md), "Web shares").
+([protocol.md](protocol.md), "App shares").
 With no share the panel shows `ui.web_shares.empty` and its hint.
 
 | Rule | Reason |

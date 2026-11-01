@@ -106,7 +106,7 @@ conventions explicit so nobody drifts.
      kinds, and versioning by protocol number.
    - [design/transport.md](design/transport.md) — the agent port and the Go
      program that holds it, each design with its reason: the doors, the
-     member path's header, magic, knock and handshake, a Web share's guest
+     member path's header, magic, knock and handshake, an App share's guest
      path, the links, the stream layer, the ways in, what an unadmitted peer
      can cost the hub, admission and the binding, the local channel to the
      Python beside each transport, what an admitted client reaches.
