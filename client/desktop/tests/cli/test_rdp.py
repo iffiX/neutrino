@@ -19,6 +19,14 @@ def test_list_prints_each_shared_desktop(running, capsys):
     )
 
 
+def test_list_prints_nothing_with_no_shared_desktop(running, capsys):
+    running.state["services"] = []
+
+    assert rdp.main_list() == 0
+
+    assert capsys.readouterr().out == ""
+
+
 def test_connect_posts_connect_and_waits_for_the_viewer(running, capsys):
     reads = []
 
