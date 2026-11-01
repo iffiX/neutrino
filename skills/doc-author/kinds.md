@@ -12,7 +12,7 @@ Opens with the product's name and what the reader gets, in one line.
 
 | Part | Holds | Budget |
 | --- | --- | --- |
-| Top | the icon, the name as the only H1, the site's address, one line on what the reader gets, the badges, links to the demo, the site's install box and the docs, a picture of the product | one screen |
+| Top | the icon, the name as the only H1, the site's address, one line on what the reader gets, the badges, links to the demo and to the site's install and docs, a picture of the product | one screen |
 | What it is | the definition first, then what each part does and where it runs, then the reader's trouble it removes, one picture | one sentence, two lines, one sentence |
 | Blocks | one per thing the reader gets: a heading, the text, one picture | three blocks, three lines of text each |
 | Comparison | one line per claim, then a table against products the reader knows; on the network side Tailscale alone, never frp, EasyTier or NetBird; the full table on the site | ten rows |
