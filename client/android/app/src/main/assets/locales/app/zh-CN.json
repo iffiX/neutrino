@@ -18,6 +18,7 @@
     "copy": "复制",
     "core_channel": "连接",
     "core_notice": "已连接 {count} 台中枢",
+    "core_notice_one": "已连接 1 台中枢",
     "forget_password": "忘掉密码",
     "forget_password_arm": "再按一次以忘掉",
     "join_hint": "扫描二维码，或粘贴链接。",

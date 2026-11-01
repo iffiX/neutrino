@@ -24,4 +24,12 @@ object ClientCoreHold {
      * @return How many have an open channel.
      */
     fun connectedCount(hubs: List<HubView>): Int = hubs.count { it.isConnected || it.isDisabled }
+
+    /**
+     * The key of the notification's words.
+     *
+     * @param count The hubs [connectedCount] counts.
+     * @return The key of the sentence for one hub, or for any other count.
+     */
+    fun noticeKey(count: Int): String = if (count == 1) "ui.core_notice_one" else "ui.core_notice"
 }

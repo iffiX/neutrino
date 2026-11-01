@@ -81,7 +81,7 @@ class ClientCoreService : Service() {
         )
         return NotificationCompat.Builder(this, CLIENT_CORE_NOTIFICATION_CHANNEL)
             .setSmallIcon(R.drawable.ic_launcher_monochrome)
-            .setContentTitle(words.word("ui.core_notice", mapOf("count" to count)))
+            .setContentTitle(words.word(ClientCoreHold.noticeKey(count), mapOf("count" to count)))
             .setContentIntent(open)
             .setOngoing(true)
             .build()

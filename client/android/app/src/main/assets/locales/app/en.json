@@ -18,6 +18,7 @@
     "copy": "Copy",
     "core_channel": "Connections",
     "core_notice": "Connected to {count} hubs",
+    "core_notice_one": "Connected to 1 hub",
     "forget_password": "Forget password",
     "forget_password_arm": "Press again to forget",
     "join_hint": "Scan the QR code, or paste the link.",

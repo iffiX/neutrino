@@ -35,4 +35,11 @@ class ClientCoreHoldTest {
         )
         assertEquals(2, ClientCoreHold.connectedCount(hubs))
     }
+
+    @Test
+    fun theNotificationSaysOneHubInTheSingular() {
+        assertEquals("ui.core_notice_one", ClientCoreHold.noticeKey(1))
+        assertEquals("ui.core_notice", ClientCoreHold.noticeKey(0))
+        assertEquals("ui.core_notice", ClientCoreHold.noticeKey(2))
+    }
 }
