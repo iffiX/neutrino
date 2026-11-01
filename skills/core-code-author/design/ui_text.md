@@ -657,7 +657,7 @@ the agent's `cli/wording.py` words the same codes in English.
 | `code.machine_cpus_invalid` | CPUs must be between 0 and {max}. | 非法 CPU 数：要在 0 到 {max} 之间。 |
 | `code.machine_memory_invalid` | Memory must be between 0 and {max} GiB. | 非法内存大小：要在 0 到 {max} GiB 之间。 |
 | `code.machine_disk_shrink` | The disk is {current_gib} GiB and only grows; {disk_gib} GiB is smaller. | 磁盘现在是 {current_gib} GiB，只能改大，{disk_gib} GiB 比它小。 |
-| `code.credential_invalid` | Windows does not accept this password for {account}. Type the right one in the account's form. | 非法凭据：Windows 不接受 {account} 的这个密码。请在账户的表单里填对。 |
+| `code.credential_invalid` | Windows does not accept this password for {account}. Type the right one and try again. | 非法凭据：Windows 不接受 {account} 的这个密码，请填对后再试。 |
 | `code.account_logon_refused` | Windows refused the logon of {account}: {detail} | Windows 拒绝了 {account} 的登录：{detail} |
 | `code.machine_disk_invalid` | The disk limit {disk_gib} GiB is not valid: on Windows it is 1 GiB or more. | 非法磁盘上限：Windows 上至少要 1 GiB，{disk_gib} GiB 不行。 |
 | `code.volume_not_shared` | The volume {volume} of {name} is outside what the Podman machine shares: a fixed drive on Windows; /Users, /private or /var/folders on macOS. | 容器 {name} 的卷 {volume} 不在 Podman 虚拟机共享的范围内：Windows 上是本机的固定磁盘，macOS 上是 /Users、/private 或 /var/folders。 |
