@@ -718,10 +718,10 @@ async def serve_package_stream(runtime, session, stream) -> None:
                 sent += len(chunk)
                 if progress is not None:
                     progress.note(sent, size)
+    except AgentOfflineError:
+        return
     except OSError:
         await stream.close("module_artifact_missing", {})
-        return
-    except AgentOfflineError:
         return
     if progress is not None:
         progress.note(sent, size, is_done=True)

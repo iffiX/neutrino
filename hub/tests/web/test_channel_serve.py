@@ -1,12 +1,17 @@
 """A client's ``join``: the link's waiting row binds and keeps the permission
 it waited with, and a machine that has a row lands back on it with the link's
-name and permission while the waiting row goes."""
+name and permission while the waiting row goes. A package stream: how it ends
+when the file or the agent goes."""
+
+import asyncio
+from types import SimpleNamespace
 
 import pytest
 
+from neutrino_hub.exceptions import AgentOfflineError
 from neutrino_hub.modules.clients.permissions import ClientPermission
 from neutrino_hub.modules.clients.registry import ClientRegistry
-from neutrino_hub.web.channel_serve import join_client
+from neutrino_hub.web.channel_serve import join_client, serve_package_stream
 from neutrino_hub.web.models import ChannelJoin
 
 PUBLIC_KEY = "ab" * 32
@@ -80,3 +85,41 @@ def test_a_machine_with_a_row_lands_on_it_with_the_links_name_and_permission(
     assert runtime.forgotten == [waiting_id]
     assert client.name == "guest"
     assert client.permission == ["file"]
+
+
+class PackageStream:
+    def __init__(self, *, is_offline=False):
+        self.args = {"artifact": "agent", "digest": ""}
+        self.is_offline = is_offline
+        self.closed: list = []
+
+    async def send_bytes(self, data):
+        if self.is_offline:
+            raise AgentOfflineError("d1")
+
+    async def close(self, code, params):
+        self.closed.append(code)
+
+
+def served_package(monkeypatch, stream, path):
+    monkeypatch.setattr(
+        "neutrino_hub.web.channel_serve._package_file",
+        lambda *args: (path, "title", "name"),
+    )
+    runtime = SimpleNamespace(device_platform={"d1": {"os": "linux"}})
+    session = SimpleNamespace(key="d1", name="machine")
+    asyncio.run(serve_package_stream(runtime, session, stream))
+    return stream.closed
+
+
+def test_a_package_stream_says_nothing_to_an_agent_gone_mid_send(tmp_path, monkeypatch):
+    package = tmp_path / "package"
+    package.write_bytes(b"bytes")
+
+    assert served_package(monkeypatch, PackageStream(is_offline=True), package) == []
+
+
+def test_a_package_stream_names_a_file_it_cannot_read(tmp_path, monkeypatch):
+    closed = served_package(monkeypatch, PackageStream(), tmp_path / "gone")
+
+    assert closed == ["module_artifact_missing"]
