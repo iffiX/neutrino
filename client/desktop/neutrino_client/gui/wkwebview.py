@@ -46,6 +46,7 @@ def open_window(
     on_show_ready=None,
     on_push_ready=None,
     on_tray_ready=None,
+    on_title_ready=None,
 ) -> None:
     """Open the window and run the application loop until Quit ends it.
 
@@ -63,6 +64,8 @@ def open_window(
             state payload; the page redraws from it without asking.
         on_tray_ready: Called with a callable that shows another menu bar
             icon, safe to call from any thread.
+        on_title_ready: Called with a callable that sets the window title,
+            safe to call from any thread.
 
     Raises:
         GuiShellUnavailableError: When pyobjc is not in this install.
@@ -172,6 +175,12 @@ def open_window(
             on_main(tray.set_icon, icon_path)
 
         on_tray_ready(set_tray_icon)
+    if on_title_ready is not None:
+
+        def set_window_title(text: str) -> None:
+            on_main(window.setTitle_, text)
+
+        on_title_ready(set_window_title)
     app.run()
 
 

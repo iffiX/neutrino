@@ -15,6 +15,7 @@ import signal
 import pytest
 
 import neutrino_client.cli.gui as gui_cli
+from neutrino_client import words
 from neutrino_client.cli import wording
 from neutrino_client.constants import CLIENT_TRAY_FACES
 from neutrino_client.control import client
@@ -343,6 +344,33 @@ def test_the_window_is_pushed_the_state_after_every_change(
     watcher()
     assert pushed[0]["hostname"] == resident.hostname()
     assert "services" in pushed[0]
+
+
+def test_the_window_title_follows_the_language_and_stays_otherwise(
+    platform, residents, monkeypatch
+):
+    titles = []
+
+    def fake_shell(*, on_title_ready, **rest):
+        on_title_ready(titles.append)
+
+    monkeypatch.setattr(gui_cli, "open_shell_window", fake_shell)
+
+    assert gui_cli.main() == 0
+
+    (resident,) = residents.made
+    (watcher,) = resident.watchers
+    watcher()
+    assert titles == []
+
+    resident.set_language("zh-CN")
+    watcher()
+    watcher()
+    assert titles == [words.word("zh-CN", "ui.window.title")]
+
+    resident.set_language("en")
+    watcher()
+    assert titles[1:] == ["Neutrino client"]
 
 
 def test_the_tray_shows_the_hubs_state_and_changes_with_it(

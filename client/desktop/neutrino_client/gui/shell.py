@@ -4,7 +4,7 @@ Each shell embeds the platform's own web view, WebKitGTK on Linux,
 WebView2 on Windows and WKWebView on macOS, loads the page, registers the message handler the
 page's bridge adapter posts to, and puts an icon in the status area. The
 window is built in the language it is opened with; a language picked later
-reaches the page at once and the tray at the next start. The
+reaches the page and the window title at once and the tray at the next start. The
 toolkit imports are guarded at call time, so a machine without one still
 imports the client, and opening the window there refuses with a typed code
 naming what to install.
@@ -53,6 +53,7 @@ def open_shell_window(
     on_show_ready=None,
     on_push_ready=None,
     on_tray_ready=None,
+    on_title_ready=None,
 ):
     """Open the platform's window and block until its Quit ends the loop.
 
@@ -69,6 +70,8 @@ def open_shell_window(
         on_push_ready: Called with a callable that hands the page one state
             payload to redraw from, or one piece of a terminal it shows.
         on_tray_ready: Called with a callable that shows another tray icon,
+            safe to call from any thread.
+        on_title_ready: Called with a callable that sets the window title,
             safe to call from any thread.
 
     Raises:
@@ -89,6 +92,7 @@ def open_shell_window(
         on_show_ready=on_show_ready,
         on_push_ready=on_push_ready,
         on_tray_ready=on_tray_ready,
+        on_title_ready=on_title_ready,
     )
 
 

@@ -51,6 +51,7 @@ def open_window(
     on_show_ready=None,
     on_push_ready=None,
     on_tray_ready=None,
+    on_title_ready=None,
 ) -> None:
     """Open the window and run the GTK main loop until Quit ends it.
 
@@ -67,6 +68,8 @@ def open_window(
         on_show_ready: Called with a callable that brings the window up,
             safe to call from any thread.
         on_tray_ready: Called with a callable that shows another tray icon,
+            safe to call from any thread.
+        on_title_ready: Called with a callable that sets the window title,
             safe to call from any thread.
 
     Raises:
@@ -162,6 +165,12 @@ def open_window(
         on_push_ready(push_state)
     if on_tray_ready is not None:
         on_tray_ready(set_tray_icon)
+    if on_title_ready is not None:
+
+        def set_window_title(text: str) -> None:
+            GLib.idle_add(window.set_title, text)
+
+        on_title_ready(set_window_title)
     Gtk.main()
 
 

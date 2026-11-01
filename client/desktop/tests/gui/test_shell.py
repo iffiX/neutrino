@@ -60,6 +60,9 @@ class FakeWebviewWindow:
     def evaluate_js(self, script: str) -> None:
         self.evaluated.append(script)
 
+    def set_title(self, title: str) -> None:
+        self.title = title
+
 
 class FakeWindowEvents:
     """pywebview's own ``+=`` subscription, recorded."""
@@ -151,6 +154,7 @@ def test_each_platform_dispatches_to_its_own_shell(monkeypatch, os_name, module_
             "on_show_ready": show_ready,
             "on_push_ready": None,
             "on_tray_ready": None,
+            "on_title_ready": None,
         }
     ]
 
@@ -283,6 +287,24 @@ def test_the_windows_tray_opens_the_window_again_and_quits_the_client(monkeypatc
     assert window.is_destroyed is True
     # Quit is the one close that goes through, or the loop never ends.
     assert window.events.closing.fire() == [True]
+
+
+def test_the_windows_shell_sets_the_window_title_it_is_handed(monkeypatch):
+    fake = windows_toolkit(monkeypatch)
+    handed = []
+
+    webview2.open_window(
+        title="Neutrino client",
+        html="<html>",
+        bridge=None,
+        is_hidden=True,
+        on_title_ready=handed.append,
+    )
+    (set_title,) = handed
+
+    set_title("title in zh-CN")
+
+    assert fake.windows[0].title == "title in zh-CN"
 
 
 def test_the_windows_shell_hands_back_the_trays_icon_change(monkeypatch):
@@ -573,6 +595,26 @@ def test_the_show_the_shell_hands_back_brings_the_window_up(monkeypatch):
     show()
 
     assert gtk.windows[0].presents == 1
+
+
+def test_the_linux_shell_sets_the_window_title_on_the_main_loop(monkeypatch):
+    glib, gtk = linux_toolkit(monkeypatch)
+    handed = []
+
+    webkitgtk.open_window(
+        title="Neutrino client",
+        html="<html>",
+        bridge=None,
+        is_hidden=True,
+        on_title_ready=handed.append,
+    )
+    (set_title,) = handed
+    idles_before = len(glib.idles)
+
+    set_title("title in zh-CN")
+
+    assert len(glib.idles) == idles_before + 1
+    assert gtk.windows[0].title == "title in zh-CN"
 
 
 def test_the_linux_shell_changes_the_trays_icon_on_the_main_loop(monkeypatch):
@@ -1055,6 +1097,26 @@ def test_the_macos_shell_changes_the_menu_bar_icon_on_the_main_queue(monkeypatch
     assert len(FakeOperationQueue.blocks) == 1
     (item,) = FakeStatusBar.items
     assert item.button().image.path == "/icons/error.png"
+
+
+def test_the_macos_window_sets_its_title_through_the_main_queue(monkeypatch):
+    macos_toolkit(monkeypatch)
+    handed = []
+
+    wkwebview.open_window(
+        title="Neutrino client",
+        html="<html>",
+        bridge=None,
+        is_hidden=True,
+        on_title_ready=handed.append,
+    )
+    (set_title,) = handed
+    blocks_before = len(FakeOperationQueue.blocks)
+
+    set_title("title in zh-CN")
+
+    assert len(FakeOperationQueue.blocks) == blocks_before + 1
+    assert FakeCocoaWindow.made[0].title == "title in zh-CN"
 
 
 def test_the_macos_window_pushes_state_through_the_main_queue(monkeypatch):

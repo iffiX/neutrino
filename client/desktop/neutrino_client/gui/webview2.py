@@ -38,6 +38,7 @@ def open_window(
     on_show_ready=None,
     on_push_ready=None,
     on_tray_ready=None,
+    on_title_ready=None,
 ) -> None:
     """Open the window and block until Quit ends the loop.
 
@@ -55,6 +56,8 @@ def open_window(
         on_push_ready: Called with a callable that hands the page one
             state payload; the page redraws from it without asking.
         on_tray_ready: Called with a callable that shows another tray icon,
+            safe to call from any thread.
+        on_title_ready: Called with a callable that sets the window title,
             safe to call from any thread.
 
     Raises:
@@ -115,6 +118,8 @@ def open_window(
         on_push_ready(push_state)
     if on_tray_ready is not None:
         on_tray_ready(tray.set_icon)
+    if on_title_ready is not None:
+        on_title_ready(window.set_title)
     try:
         webview.start(gui="edgechromium")
     finally:

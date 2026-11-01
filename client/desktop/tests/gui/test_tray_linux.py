@@ -144,6 +144,9 @@ class FakeGtkWindow(FakeSignalled):
         self.hides = 0
         self.presents = 0
 
+    def set_title(self, title: str) -> None:
+        self.title = title
+
     def set_default_size(self, width, height) -> None:
         self.size = (width, height)
 

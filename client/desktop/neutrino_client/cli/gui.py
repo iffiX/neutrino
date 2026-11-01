@@ -247,6 +247,18 @@ def _open(os_name: str, resident, *, is_hidden: bool) -> int:
         show_state()
 
     language = resident.language()
+
+    def register_title(set_title) -> None:
+        shown = {"language": language}
+
+        def show_title() -> None:
+            current = resident.language()
+            if current != shown["language"]:
+                shown["language"] = current
+                set_title(words.word(current, CLIENT_GUI_WINDOW_TITLE_KEY))
+
+        resident.subscribe(show_title)
+
     try:
         open_shell_window(
             os_name=os_name,
@@ -260,6 +272,7 @@ def _open(os_name: str, resident, *, is_hidden: bool) -> int:
             on_show_ready=register_show,
             on_push_ready=register_push,
             on_tray_ready=register_tray,
+            on_title_ready=register_title,
         )
     except GuiShellUnavailableError as error:
         print(wording.word_code(error.code, error.params), file=sys.stderr)
