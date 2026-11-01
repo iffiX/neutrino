@@ -1,5 +1,5 @@
 "use strict";
-// The service worker of a Web share. It passes every request of an app's
+// The service worker of an App share. It passes every request of an app's
 // frame to the shell of the frame's own tab, builds the response from what the
 // shell sends back, and keeps the app's static files in Cache Storage. The
 // shell's own files under /__neutrino/ go to the network.

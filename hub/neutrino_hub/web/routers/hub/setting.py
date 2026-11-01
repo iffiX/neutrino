@@ -739,7 +739,7 @@ def change_password(
 
 @router.post("/backup")
 def backup() -> StreamingResponse:
-    """Download ``config/`` as one plain archive, its Web shares left out.
+    """Download ``config/`` as one plain archive, its App shares left out.
 
     Restoring this on a fresh machine and running the installer reproduces
     the appliance. The archive travels plainly because ``config/`` holds no
@@ -786,7 +786,7 @@ def backup() -> StreamingResponse:
 
 
 def _config_snapshot() -> tuple[list[str], list[tuple[str, bytes]]]:
-    """Read the ``config/`` tree but the Web shares into memory, in one consistent pass.
+    """Read the ``config/`` tree but the App shares into memory, in one consistent pass.
 
     Returns:
         The directory paths and the file paths with their bytes, both
@@ -883,8 +883,8 @@ async def restore(
     exactly as it was. The passphrase is always required — it is what turns
     the archive's wrapped data key back into a working vault.
 
-    The hub stores no Web share after it. The box's shares end as a revoke
-    ends them, and the archive's Web shares file is removed.
+    The hub stores no App share after it. The box's shares end as a revoke
+    ends them, and the archive's App shares file is removed.
 
     Args:
         file: The uploaded ``.tar.gz`` backup.
@@ -947,7 +947,7 @@ async def restore(
 
 
 def _stored_shares() -> list:
-    """The Web shares stored now, or none for a file that does not read."""
+    """The App shares stored now, or none for a file that does not read."""
     try:
         return WebShareRegistry().all()
     except (OSError, ValueError):

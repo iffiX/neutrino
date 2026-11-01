@@ -1,4 +1,4 @@
-"""The guest accounts of a module's Web shares: the three hooks a module answers, and what every such module shares around them.
+"""The guest accounts of a module's App shares: the three hooks a module answers, and what every such module shares around them.
 
 A module whose manifest names ``web_share: {guest_login: guest_account}``
 is sent ``guests`` in its configuration, the account of each live Web
@@ -34,7 +34,7 @@ GUEST_DETAIL_CHARS = 200
 
 @dataclass(frozen=True)
 class ShareGuest:
-    """The guest account of one live Web share of a module's page.
+    """The guest account of one live App share of a module's page.
 
     Attributes:
         account: ``guest-`` and 4 characters, the account's name.
@@ -97,7 +97,7 @@ def share_guests(entries) -> tuple:
 
 
 class GuestAccountHooks:
-    """The three hooks of a module whose Web shares sign visitors in as accounts of the app."""
+    """The three hooks of a module whose App shares sign visitors in as accounts of the app."""
 
     def make_guest(self, guest: ShareGuest, record: dict) -> dict:
         """Make one guest's account in the app.
@@ -148,7 +148,7 @@ class GuestAccountHooks:
 
 
 class ShareGuestAccounts:
-    """The guest accounts of one module's Web shares: made, removed, found and reported."""
+    """The guest accounts of one module's App shares: made, removed, found and reported."""
 
     def __init__(self, *, name: str, hooks: GuestAccountHooks, log=print):
         """

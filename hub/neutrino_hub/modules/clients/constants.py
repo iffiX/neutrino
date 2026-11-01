@@ -65,8 +65,8 @@ CLIENT_PERMISSION_ROW_KINDS = tuple(
 )
 CLIENT_CODE_PERMISSION_DEVICE_UNKNOWN = "permission_device_unknown"
 
-# --- Web shares ---
-# Where the Web shares live under config/. Real file gitignored.
+# --- App shares ---
+# Where the App shares live under config/. Real file gitignored.
 WEB_SHARES_CONFIG_PATH = "clients/web_shares.json"
 # The sites that serve the share page, each {url, title}.
 WEB_SHARE_SITES = ({"url": "https://share.neutrinohub.net", "title": "Neutrino"},)

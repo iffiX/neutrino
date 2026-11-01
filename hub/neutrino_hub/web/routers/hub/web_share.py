@@ -1,4 +1,4 @@
-"""The Clients page's Web shares: make one, and destroy one.
+"""The Clients page's App shares: make one, and destroy one.
 
 A share offers one app's ``web`` entry to anyone who holds its link. Its
 link is returned once, by the make; the hub keeps a hash of the ticket alone

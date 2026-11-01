@@ -18,7 +18,7 @@ import type {
 import "./web_shares_panel.css";
 
 /**
- * The Clients page's **Web shares** panel: one row per share, newest first,
+ * The Clients page's **App shares** panel: one row per share, newest first,
  * with its app, when it ends, its state, how many pages are open on it and
  * the guest account's e-mail, and Revoke, which ends it at once. A visitor
  * has no row. The panel reads the list on its own cadence, so the count and

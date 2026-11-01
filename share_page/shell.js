@@ -1,5 +1,5 @@
 "use strict";
-// The shell of a Web share. It owns the connection to the hub. It opens a
+// The shell of an App share. It owns the connection to the hub. It opens a
 // WebRTC data channel from the link's facts, sends the share's ticket in the
 // open record, and runs a yamux client. Its streams are the control stream,
 // the app's HTTP requests and the app's WebSockets, all to the share's entry.
@@ -37,7 +37,7 @@ const WORDS = {
     opening: "Opening {app}…",
     slowConnecting: "The line is slow, still connecting…",
     slowLoading: "The line is slow, still loading…",
-    intro: ["Neutrino Web share", "To use the shared app, open the full share link you were sent."],
+    intro: ["Neutrino App share", "To use the shared app, open the full share link you were sent."],
     incomplete: ["This link is incomplete.", "Copy the whole share link and open it again."],
     link: ["This link is no longer valid.", "Ask the person who shared it for a new one."],
     hub: ["The hub is offline.", "The computer that shares this app cannot be reached right now."],
@@ -47,7 +47,7 @@ const WORDS = {
     opening: "正在打开 {app}…",
     slowConnecting: "线路较慢，仍在连接…",
     slowLoading: "线路较慢，仍在加载…",
-    intro: ["微子 Web 分享", "用别人发给你的完整分享链接，就能打开他分享的应用。"],
+    intro: ["微子应用分享", "用别人发给你的完整分享链接，就能打开他分享的应用。"],
     incomplete: ["这个链接不完整。", "请把分享链接整段复制下来再打开。"],
     link: ["这个链接已失效。", "请向分享给你的人要一个新链接。"],
     hub: ["中枢已离线。", "分享这个应用的电脑现在连不上。"],

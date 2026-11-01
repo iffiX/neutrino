@@ -1,6 +1,6 @@
-"""The Web shares as stored: the record, its secrets, its link and its state.
+"""The App shares as stored: the record, its secrets, its link and its state.
 
-What these pin, by protocol.md's "Web shares" and transport.md's "The
+What these pin, by protocol.md's "App shares" and transport.md's "The
 links": a share keeps the SHA-256 of its ticket alone, its ufrag in the
 clear and its pwd sealed, and a guest account's password and secret sealed;
 the ticket is 18 random bytes, the ufrag 24 hex characters and the pwd 32;

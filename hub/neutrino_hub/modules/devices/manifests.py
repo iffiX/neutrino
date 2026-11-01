@@ -153,7 +153,7 @@ def load_module_manifests() -> dict:
 
 
 def guest_login_of(manifests: dict, module: str) -> str:
-    """How a Web share's visitor is signed in to one module's page.
+    """How an App share's visitor is signed in to one module's page.
 
     Args:
         manifests: The module manifests, as :func:`load_module_manifests`

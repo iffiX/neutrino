@@ -36,7 +36,7 @@ import "./services_page.css";
  * where it comes from. A module the hub manages is one app however many
  * containers it runs; a container the hub does not manage is one app of its
  * own. An app declared here carries Test and Delete, and an app with a web
- * entry carries Share, which opens the Web share dialog with that entry
+ * entry carries Share, which opens the App share dialog with that entry
  * chosen. The entries of no app
  * follow in their own sections: the AI gateway, the machines' file shares
  * and the shared desktops. A machine's SSH server is no app, and the hub
@@ -154,7 +154,7 @@ const INVALIDATE_ON = [
 ];
 
 const SERVICE_PATH = "/hub/service";
-/** The Clients page's list, which holds what a Web share can offer. */
+/** The Clients page's list, which holds what an App share can offer. */
 const CLIENTS_PATH = "/hub/client";
 
 export function ServicesPage() {
@@ -291,7 +291,7 @@ export function ServicesPage() {
 interface AppRowProps {
   app: AppView;
   onChanged: (view: ServiceListView) => void;
-  /** Opens the Web share dialog with a web entry chosen. */
+  /** Opens the App share dialog with a web entry chosen. */
   onShare: (entryId: string) => void;
 }
 

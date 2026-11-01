@@ -386,7 +386,7 @@
   "ui.modules.step.artifact.codeg.server": "Install the Codeg server",
   "ui.modules.step.configure": "Apply the configuration",
   "ui.modules.step.first_start": "First start",
-  "ui.modules.step.guests": "Create the Web share guests",
+  "ui.modules.step.guests": "Create the App share guests",
   "ui.modules.step.machine": "Set up the Podman machine",
   "ui.modules.step.npm": "Run npm for {account}",
   "ui.modules.step.packages": "Install system packages",

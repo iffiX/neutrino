@@ -1,4 +1,4 @@
-"""The guest accounts of a module's Web shares, with the module's three hooks replaced.
+"""The guest accounts of a module's App shares, with the module's three hooks replaced.
 
 What these pin: the guests a configuration names are read whole, each
 account once; a settle makes each guest the record does not hold, keeps

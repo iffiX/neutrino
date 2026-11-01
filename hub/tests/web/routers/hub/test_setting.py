@@ -1265,7 +1265,7 @@ def test_a_restored_key_replaces_the_one_already_on_the_box(client):
 
 
 def web_shares_file(config_dir, *share_ids) -> Path:
-    """A Web shares file of bare shares under ``config/clients/``."""
+    """An App shares file of bare shares under ``config/clients/``."""
     path = config_dir / "clients" / "web_shares.json"
     path.parent.mkdir(exist_ok=True)
     shares = [{"id": share_id, "ufrag": f"ufrag-{share_id}"} for share_id in share_ids]
@@ -1287,7 +1287,7 @@ def test_a_backup_leaves_the_web_shares_out(client):
 
 
 def test_a_restore_ends_the_boxs_web_shares_and_brings_back_none(client, monkeypatch):
-    """An archive holding a Web shares file, as an older hub wrote it."""
+    """An archive holding an App shares file, as an older hub wrote it."""
     opened, config_dir = client
     seed_config(config_dir)
     contents = archive_contents(download_backup(opened))

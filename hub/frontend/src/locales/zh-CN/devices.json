@@ -438,7 +438,7 @@
   "ui.services.invalid_entry": "第 {number} 个入口：{problem}",
   "ui.services.invalid_share": "共享需要一个名称。",
   "ui.services.kind_ssh": "SSH",
-  "ui.web_shares.empty": "还没有 Web 分享",
+  "ui.web_shares.empty": "还没有应用分享",
   "ui.web_shares.empty_hint": "把一个应用的页面分享给没有客户端的人。",
   "ui.web_shares.expires_1d": "1 天",
   "ui.web_shares.expires_30d": "30 天",
@@ -450,7 +450,7 @@
   "ui.web_shares.field_site": "站点",
   "ui.web_shares.guest_hint": "访客以这个账户登录。在应用里邀请这个地址，访客就能看到对应的项目。",
   "ui.web_shares.link_once": "拿到这个链接的人都能打开这个应用，直到分享结束。现在就复制：中枢之后无法再显示它。",
-  "ui.web_shares.new_link": "新建 Web 分享链接",
+  "ui.web_shares.new_link": "新建应用分享链接",
   "ui.web_shares.online": "在线 {count}",
   "ui.web_shares.revoke": "撤销",
   "ui.web_shares.revoke_body": "这个分享上打开着的页面全部关闭，链接随即失效。",
@@ -460,6 +460,6 @@
   "ui.web_shares.share": "分享",
   "ui.web_shares.site_other": "其他站点",
   "ui.web_shares.site_other_hint": "你自己托管的那份页面的 https:// 地址。",
-  "ui.web_shares.title": "Web 分享",
+  "ui.web_shares.title": "应用分享",
   "ui.web_shares.until_revoked": "直到撤销"
 }

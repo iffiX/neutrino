@@ -203,7 +203,7 @@ def module_app_id(module: str, device_id: str) -> str:
 
 
 def share_guests(device_id: str, app_id: str) -> list:
-    """The guest accounts of one app's live Web shares, as a module's state carries them.
+    """The guest accounts of one app's live App shares, as a module's state carries them.
 
     Args:
         device_id: The machine the app runs on.
@@ -211,7 +211,7 @@ def share_guests(device_id: str, app_id: str) -> list:
 
     Returns:
         ``[{account, email, password, secret}]`` opened, in the shares'
-        order; none while the hub has no Web share module or the vault is
+        order; none while the hub has no App share module or the vault is
         locked.
     """
     try:
@@ -1345,7 +1345,7 @@ class DesiredStateStore:
             and Ayakaleaf with their secrets opened and their names. A
             module whose manifest's ``web_share`` names ``guest_login``
             ``guest_account`` also carries ``guests``, the guest account of
-            each live Web share of its page.
+            each live App share of its page.
 
         Raises:
             VaultLockedError: When a sealed token or login cannot be opened.

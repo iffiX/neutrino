@@ -1,8 +1,8 @@
-"""The Clients page's Web shares: the list fields, the make and the destroy.
+"""The Clients page's App shares: the list fields, the make and the destroy.
 
 The shares file and the vault are real over a config root of their own; the
 published list, the machines' sessions and the transport are played by the
-test. What these pin, by protocol.md's ``/api/hub/client`` and "Web shares":
+test. What these pin, by protocol.md's ``/api/hub/client`` and "App shares":
 a make refuses an empty name, a ``days`` outside the four, a site that is
 not listed or an ``https://`` origin, an entry no share can offer, a hub
 with no certificate or no address, and a locked vault; it returns the link

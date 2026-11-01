@@ -1,4 +1,4 @@
-"""Assemble the Web share page into the tree a static host serves.
+"""Assemble the App share page into the tree a static host serves.
 
     python3 packaging/build/build_share_page.py --output-dir dist/share_page/
 

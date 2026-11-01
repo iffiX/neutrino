@@ -456,7 +456,7 @@ def test_the_ai_tools_section_reads_the_gateway_modules_from_the_one_read(unlock
 
 @pytest.fixture
 def shares(monkeypatch):
-    """A Web share module holding the guests the test sets, by machine and app id."""
+    """An App share module holding the guests the test sets, by machine and app id."""
     held: dict = {}
     module = types.ModuleType("neutrino_hub.modules.clients.web_shares")
     module.guest_accounts = lambda device_id, app_id: list(

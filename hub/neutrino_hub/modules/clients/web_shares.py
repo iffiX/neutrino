@@ -1,11 +1,11 @@
-"""The Web shares: one app's ``web`` entry offered to anyone who holds a link.
+"""The App shares: one app's ``web`` entry offered to anyone who holds a link.
 
 A share is made on the Clients page and lasts until its ``expires_at`` or
 until it is revoked. The hub keeps the SHA-256 of its ticket alone, its
 ufrag in the clear and its pwd sealed under the vault's data key, and for an
 app whose manifest names ``guest_login: guest_account`` the facts of the
 share's guest account, its password and token secret sealed the same way
-(protocol.md, "Web shares"). The link is composed once, at the share's
+(protocol.md, "App shares"). The link is composed once, at the share's
 making, and the hub cannot read it back.
 
 Not pure: reads and writes ``config/clients/web_shares.json``.
@@ -104,7 +104,7 @@ class WebShareGuest:
 
 @dataclass(frozen=True)
 class WebShare:
-    """One Web share as stored.
+    """One App share as stored.
 
     Attributes:
         id: A uuid4 hex.
@@ -214,7 +214,7 @@ class WebShareSecrets:
 
 
 class WebShareRegistry:
-    """The stored Web shares, newest last in the file."""
+    """The stored App shares, newest last in the file."""
 
     def all(self) -> list:
         """Every stored share, in the order made.

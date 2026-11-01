@@ -21,7 +21,7 @@ import type {
 import "./web_share_modal.css";
 
 /**
- * The **New Web share link** dialog: the share's name, the app it offers,
+ * The **New App share link** dialog: the share's name, the app it offers,
  * how long it lasts and the site that serves its page, then the link and
  * its QR code, given this once, and the guest account's e-mail where the
  * app signs visitors in as one.

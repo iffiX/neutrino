@@ -1,4 +1,4 @@
-"""The Web shares as the panel and the transport meet them.
+"""The App shares as the panel and the transport meet them.
 
 The Clients page lists the shares with their state and the visitors online,
 the entries a new share can offer and the sites that serve the page; it
@@ -6,7 +6,7 @@ makes a share and revokes one. A share ends at its expiry, at a revoke, and
 with its machine, its module or its declared app. An end sends the
 transport ``shares_set`` without it and ``session_close {code:
 share_unknown}`` for each of its sessions, and pushes its machine the state
-without its guest (protocol.md, "Web shares").
+without its guest (protocol.md, "App shares").
 """
 
 import asyncio
@@ -255,7 +255,7 @@ def share_views(runtime, now: "float | None" = None) -> list:
 
 
 def web_share_fields(runtime) -> dict:
-    """The Web share fields of the Clients page's list.
+    """The App share fields of the Clients page's list.
 
     Returns:
         ``{web_shares, web_share_entries, web_share_sites}``.
@@ -434,7 +434,7 @@ def end_shares_where(runtime, predicate) -> list:
     try:
         removed = WebShareRegistry().remove_where(predicate)
     except OSError as error:
-        LOGGER.warning("web shares not ended: %s", error)
+        LOGGER.warning("app shares not ended: %s", error)
         return []
     end_shares(runtime, removed)
     return removed
@@ -470,7 +470,7 @@ def end_app_shares(runtime, app_id: str) -> list:
 
 
 class PanelWebShareSweeper:
-    """Ends the expired Web shares on a daemon thread."""
+    """Ends the expired App shares on a daemon thread."""
 
     def __init__(self, *, runtime, interval_s: float = WEB_SHARE_SWEEP_INTERVAL_S):
         """
@@ -508,7 +508,7 @@ class PanelWebShareSweeper:
         moment = time.time() if now is None else now
         ended = end_shares_where(self._runtime, lambda share: share.is_expired(moment))
         if ended:
-            LOGGER.info("web shares: %d expired share(s) ended", len(ended))
+            LOGGER.info("app shares: %d expired share(s) ended", len(ended))
         return ended
 
     def _loop(self) -> None:
@@ -565,10 +565,10 @@ def _on_loop(runtime, coroutine) -> None:
     try:
         future.result(COMMAND_WAIT_S)
     except StreamRefusedError as error:
-        LOGGER.warning("the transport refused a web share command: %s", error.code)
+        LOGGER.warning("the transport refused an app share command: %s", error.code)
     except (concurrent.futures.TimeoutError, RuntimeError):
         future.cancel()
         LOGGER.warning(
-            "the transport refused a web share command: %s",
+            "the transport refused an app share command: %s",
             CHANNEL_CODE_CONTROL_UNAVAILABLE,
         )

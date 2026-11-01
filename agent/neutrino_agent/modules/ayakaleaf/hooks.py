@@ -25,7 +25,7 @@ the TeX volume again and plans ``tex`` again. A password in the state other
 than the administrator's plans ``admin`` again, which then changes the
 password through the app's own settings route.
 
-The ``guests`` step settles the guests of the module's Web shares through
+The ``guests`` step settles the guests of the module's App shares through
 :class:`ShareGuestAccounts`, which calls the three guest hooks: a guest is
 made through the app's own routes as the administrator, deleted by its
 ``user_id``, and signed in as the forwarder signs in the administrator, its
@@ -1246,7 +1246,7 @@ class AyakaleafHooks(ContainerHooks, GuestAccountHooks):
         return [name for name in AYAKALEAF_TEX_FILES if name not in found]
 
     def _settle_guests(self, record: dict) -> dict:
-        """Make and remove the guests of the module's Web shares, once the app answers.
+        """Make and remove the guests of the module's App shares, once the app answers.
 
         Raises:
             ModuleInstallPending: While a guest is owed or kept past its

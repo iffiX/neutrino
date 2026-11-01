@@ -1000,13 +1000,13 @@ export interface ClientListView {
   web_share_sites: WebShareSiteView[];
 }
 
-/** How a Web share's visitor signs in to a web entry. */
+/** How an App share's visitor signs in to a web entry. */
 export type WebShareGuestLogin = "app" | "guest_account" | "run_account";
 
-/** Where a Web share stands. */
+/** Where an App share stands. */
 export type WebShareState = "active" | "preparing" | "unavailable" | "failed";
 
-/** A Web share on the Clients page. */
+/** An App share on the Clients page. */
 export interface WebShareView {
   id: string;
   name: string;
@@ -1042,7 +1042,7 @@ export interface WebShareSiteView {
   title: string;
 }
 
-/** A new Web share; `days` null lasts until it is revoked. */
+/** A new App share; `days` null lasts until it is revoked. */
 export interface WebShareCreateRequest {
   name: string;
   entry_id: string;
@@ -1056,7 +1056,7 @@ export interface WebShareCreatedView {
   share: WebShareView;
 }
 
-/** A request naming one Web share. */
+/** A request naming one App share. */
 export interface WebShareDestroyRequest {
   share_id: string;
 }
@@ -1568,7 +1568,7 @@ export interface AppEntryView {
   local_port: number;
   /** What a declared entry's last probe measured, null when it answered. */
   detail_code: string | null;
-  /** How a Web share's visitor signs in to a web entry; empty on an entry
+  /** How an App share's visitor signs in to a web entry; empty on an entry
    * of another type. */
   guest_login: WebShareGuestLogin | "";
 }

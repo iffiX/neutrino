@@ -386,7 +386,7 @@
   "ui.modules.step.artifact.codeg.server": "安装 Codeg 服务端",
   "ui.modules.step.configure": "应用配置",
   "ui.modules.step.first_start": "首次启动",
-  "ui.modules.step.guests": "建好 Web 分享的访客账户",
+  "ui.modules.step.guests": "建好应用分享的访客账户",
   "ui.modules.step.machine": "准备 Podman 虚拟机",
   "ui.modules.step.npm": "为 {account} 运行 npm",
   "ui.modules.step.packages": "安装系统软件包",

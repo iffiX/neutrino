@@ -211,7 +211,7 @@ class PanelRuntime:
         # Every client program's live session, keyed by client id.
         self.client_sessions = ChannelSessionRegistry(CHANNEL_ROLE_CLIENT)
         self.client_sessions.on_presence_change = self._publish_clients
-        # Every Web share visitor's live session, by the transport's id.
+        # Every App share visitor's live session, by the transport's id.
         self.web_share_guests = WebShareGuestSessions()
         # The local channel to the transport, which holds every session and
         # asks here before it admits a peer or opens a stream. The serving
@@ -318,7 +318,7 @@ class PanelRuntime:
         self.release_sampler = PanelReleaseSampler(store=self.module_releases)
         # A client row whose link expired unused is removed by a sweep.
         self.enrollment_sweeper = PanelEnrollmentSweeper(events=self.events)
-        # A Web share ends at its expiry by a sweep.
+        # An App share ends at its expiry by a sweep.
         self.web_share_sweeper = PanelWebShareSweeper(runtime=self)
         # The channel's own address set moves the same way, and every peer
         # holds a copy; sampled, and pushed to both roles when it moved.

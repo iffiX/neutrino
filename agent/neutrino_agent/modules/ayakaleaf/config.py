@@ -4,7 +4,7 @@ The hub sends ``{secret, password, cookie_name, local_name, guests}``: the
 secret the page's tokens are signed with, the administrator's password,
 which the forwarder signs in with, the name the app's session cookie has on
 this device, the app's local name, a ``Host`` the forwarder accepts, and the
-guest account of each live Web share of the app. The forwarder's port is
+guest account of each live App share of the app. The forwarder's port is
 the agent's own, kept in the module's record.
 
 Pure: parsing.
@@ -29,7 +29,7 @@ class AyakaleafConfig:
         password: The administrator's password.
         cookie_name: The name of the app's session cookie.
         local_name: The app's local name, a ``Host`` the forwarder accepts.
-        guests: The guest accounts of the live Web shares, in order, each
+        guests: The guest accounts of the live App shares, in order, each
             a :class:`ShareGuest`.
     """
 

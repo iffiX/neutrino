@@ -49,7 +49,7 @@ var doorDraws = knock.DoorDraws{
 	Hold:      func() time.Duration { return doorHold },
 }
 
-// shareRecord is one Web share as the faked hub Python keeps it: its id,
+// shareRecord is one App share as the faked hub Python keeps it: its id,
 // its ticket and the one entry it opens.
 type shareRecord struct {
 	id     string

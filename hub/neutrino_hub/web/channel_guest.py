@@ -1,11 +1,11 @@
-"""Answering the transport for a Web share's visitors.
+"""Answering the transport for an App share's visitors.
 
 A guest reaches the agent port through WebRTC with a share's ticket. The
 transport asks ``guest`` at its open record, passes its ``hello``, asks
 ``entry`` at each ``connect`` it opens and ``token`` at its ``service``
 frame. Each is judged against the share now: the share, the entry, the
 machine, the entry's publication and the share's guest, in that order
-(protocol.md, "Web shares"). A refusal counts as no failed admission.
+(protocol.md, "App shares"). A refusal counts as no failed admission.
 """
 
 import asyncio

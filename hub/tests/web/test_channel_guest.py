@@ -1,7 +1,7 @@
-"""A Web share's visitors on the hub's local channel, against a fake transport.
+"""An App share's visitors on the hub's local channel, against a fake transport.
 
 What these pin, by transport.md's "The guest path" and "The hub's local
-channel" and protocol.md's "Web shares": each new control connection is
+channel" and protocol.md's "App shares": each new control connection is
 sent ``shares_set`` with the live shares' pairs; the ``guest`` question
 admits a live share's ticket under its ufrag and refuses anything else
 ``share_unknown``, or by protocol number; a guest's ``hello`` is welcomed

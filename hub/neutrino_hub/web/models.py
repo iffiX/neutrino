@@ -1308,7 +1308,7 @@ class AppEntryView(BaseModel):
     is_healthy: bool | None = None
     local_port: int = 0
     detail_code: str | None = None
-    # How a Web share's visitor signs in to a web entry: app, guest_account
+    # How an App share's visitor signs in to a web entry: app, guest_account
     # or run_account. Empty on an entry of another type.
     guest_login: str = ""
 
@@ -1646,7 +1646,7 @@ class PermissionRowView(BaseModel):
 
 
 class WebShareView(BaseModel):
-    """A Web share on the Clients page."""
+    """An App share on the Clients page."""
 
     id: str
     name: str
@@ -1686,7 +1686,7 @@ class WebShareSiteView(BaseModel):
 
 
 class ClientListView(BaseModel):
-    """Every enrolled client, the default permission, every kind, and the Web shares."""
+    """Every enrolled client, the default permission, every kind, and the App shares."""
 
     clients: list[ClientView] = Field(default_factory=list)
     default_permission: list[str] = Field(default_factory=list)
@@ -1714,7 +1714,7 @@ class ClientPermissionFields(BaseModel):
 
 
 class WebShareCreateRequest(BaseModel):
-    """A new Web share; ``days`` None lasts until it is revoked."""
+    """A new App share; ``days`` None lasts until it is revoked."""
 
     name: str
     entry_id: str
@@ -1730,7 +1730,7 @@ class WebShareCreatedView(BaseModel):
 
 
 class WebShareDestroyRequest(BaseModel):
-    """A request naming one Web share."""
+    """A request naming one App share."""
 
     share_id: str
 
