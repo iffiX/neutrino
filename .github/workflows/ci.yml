@@ -67,16 +67,16 @@ jobs:
           disable_search: true
           use_oidc: true
 
-      # Codacy, too, needs each package's prefix for the names the three share.
+      # Codacy reads each path from the report's directory, so that is its prefix.
       - name: Codacy coverage, hub
         env:
           CODACY_PROJECT_TOKEN: ${{ secrets.CODACY_PROJECT_TOKEN }}
-        run: bash <(curl -Ls https://coverage.codacy.com/get.sh) report --skip --partial -l Python -r hub/coverage.xml --prefix hub/neutrino_hub/
+        run: bash <(curl -Ls https://coverage.codacy.com/get.sh) report --skip --partial -l Python -r hub/coverage.xml --prefix hub/
 
       - name: Codacy coverage, agent
         env:
           CODACY_PROJECT_TOKEN: ${{ secrets.CODACY_PROJECT_TOKEN }}
-        run: bash <(curl -Ls https://coverage.codacy.com/get.sh) report --skip --partial -l Python -r agent/coverage.xml --prefix agent/neutrino_agent/
+        run: bash <(curl -Ls https://coverage.codacy.com/get.sh) report --skip --partial -l Python -r agent/coverage.xml --prefix agent/
 
   client:
     name: client tests
@@ -109,7 +109,7 @@ jobs:
       - name: Codacy coverage, client
         env:
           CODACY_PROJECT_TOKEN: ${{ secrets.CODACY_PROJECT_TOKEN }}
-        run: bash <(curl -Ls https://coverage.codacy.com/get.sh) report --skip --partial -l Python -r client/desktop/coverage.xml --prefix client/desktop/neutrino_client/
+        run: bash <(curl -Ls https://coverage.codacy.com/get.sh) report --skip --partial -l Python -r client/desktop/coverage.xml --prefix client/desktop/
 
   coverage_final:
     name: Codacy coverage, final
