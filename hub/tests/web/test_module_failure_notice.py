@@ -61,3 +61,12 @@ def test_the_failure_s_words_keep_their_line_breaks():
         "{stripAnsi(describeFailure(activeRow, manifestTitles))} </span>"
     ) in page
     assert ".modules_failure_detail { white-space: pre-wrap;" in styles
+
+
+def test_a_row_waiting_behind_a_required_modules_restart_shows_its_notice():
+    source = (COMPONENTS_DIR / "machine_modules.tsx").read_text(encoding="utf-8")
+
+    assert "required?.code === REBOOT_REQUIRED_CODE" in source
+    assert "isInTransit && owedRestart !== undefined" in source
+    assert source.count("{restartButton}") == 1
+    assert "REBOOT_REQUIRED_CODE && restartButton" in source

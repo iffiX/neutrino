@@ -634,6 +634,23 @@ export function MachineModules({
     (isRowCancelling || isFirstInstall(reportedRow));
   const isStepFailed =
     reportedRow !== undefined && FAILED_STATES.includes(reportedRow.state);
+  const owedRestart =
+    activeRow === undefined ? undefined : restartOwner(activeRow, rows);
+  const restartButton = (
+    <button
+      type="button"
+      className="button button--small"
+      disabled={!isAgentOnline || isBusy}
+      onClick={askRestart}
+    >
+      {busyAction === "restart" ? (
+        <Spinner size={13} />
+      ) : (
+        <Icon name="refresh" size={13} />
+      )}
+      {t("ui.modules.restart_now")}
+    </button>
+  );
   // What the step list already words under a step: the wait of the running
   // step, and the failure of the last step run.
   const isWaitInSteps =
@@ -764,24 +781,22 @@ export function MachineModules({
                         {wordedCode(activeRow, manifestTitles) ??
                           activeRow.code}
                       </span>
-                      {activeRow.code === REBOOT_REQUIRED_CODE && (
-                        <button
-                          type="button"
-                          className="button button--small"
-                          disabled={!isAgentOnline || isBusy}
-                          onClick={askRestart}
-                        >
-                          {busyAction === "restart" ? (
-                            <Spinner size={13} />
-                          ) : (
-                            <Icon name="refresh" size={13} />
-                          )}
-                          {t("ui.modules.restart_now")}
-                        </button>
-                      )}
+                      {activeRow.code === REBOOT_REQUIRED_CODE && restartButton}
                     </div>
                   </div>
                 )}
+              {isInTransit && owedRestart !== undefined && (
+                <div className="notice notice--warn modules_install_notice">
+                  <Icon name="alert" size={15} />
+                  <div className="notice_body">
+                    <span>
+                      {wordedCode(owedRestart, manifestTitles) ??
+                        owedRestart.code}
+                    </span>
+                    {restartButton}
+                  </div>
+                </div>
+              )}
               {FAILED_STATES.includes(activeRow.state) && !isFailureInSteps && (
                 <div className="notice notice--error">
                   <Icon name="alert" size={15} />
@@ -1175,6 +1190,16 @@ function keptCancels(
   return Object.values(rows)
     .filter((row) => isCancelKept(row, cancels))
     .map((row) => row.name);
+}
+
+/** The required module whose restart this row's task waits behind. */
+function restartOwner(
+  row: DeviceModuleView,
+  rows: Record<string, DeviceModuleView>,
+): DeviceModuleView | undefined {
+  return row.requires
+    .map((name) => rows[name])
+    .find((required) => required?.code === REBOOT_REQUIRED_CODE);
 }
 
 /** The word a module's state wears; a token outside the table reads as a
