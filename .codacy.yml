@@ -1,0 +1,22 @@
+---
+# Off on Codacy's Code patterns page: ESLint's security/detect-object-injection.
+engines:
+  opengrep:
+    exclude_paths:
+      - "**"
+  prospector:
+    exclude_paths:
+      - "**"
+exclude_paths:
+  - "agent/tests/**"
+  - "hub/tests/**"
+  - "client/desktop/tests/**"
+  - "client/android/app/src/test/**"
+  - "client/ios/NeutrinoTests/**"
+  - "client/ios/NeutrinoUITests/**"
+  - "transport/tests/**"
+  - "**/*_test.go"
+  - "packaging/integration/**"
+  - "packaging/integration_aws/**"
+  - "packaging/lab/**"
+  - "skills/**"
