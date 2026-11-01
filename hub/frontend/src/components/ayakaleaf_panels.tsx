@@ -156,7 +156,11 @@ export function AyakaleafPanels({
         isDirty={isDirty}
         isBusy={isBusy || wait !== null}
         label={t("ui.ayakaleaf.apply")}
-        hint={t("ui.ayakaleaf.model_hint")}
+        hint={
+          isRestarted
+            ? t("ui.ayakaleaf.model_hint")
+            : t("ui.modules.stopped_hint")
+        }
         warning={isRestarted ? t("ui.ayakaleaf.apply_warning") : undefined}
         blockedHint={isEditable ? null : t("ui.modules.agent_offline")}
         isApplyDisabled={isUnsupported}

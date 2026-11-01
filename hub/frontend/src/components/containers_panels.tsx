@@ -123,6 +123,9 @@ const WINDOWS_OS = "windows";
 /** The state of a module whose software is not on the machine. */
 const ABSENT_STATE = "absent";
 
+/** The `want` of a module a person pressed Start on. */
+const WANT_RUNNING = "running";
+
 /** A volume in each system's own form, shown in the empty add field. */
 const VOLUME_PLACEHOLDER_KEYS: Record<string, string> = {
   linux: "ui.containers.volume_placeholder_linux",
@@ -428,7 +431,11 @@ export function ContainersPanels({
           isDirty={isMirrorsDirty}
           isBusy={isMirrorsBusy || mirrorsSettle.isSettling}
           label={t("ui.containers.mirrors_apply")}
-          hint={t("ui.containers.mirrors_apply_hint")}
+          hint={
+            want !== WANT_RUNNING
+              ? t("ui.modules.stopped_hint")
+              : t("ui.containers.mirrors_apply_hint")
+          }
           blockedHint={isEditable ? null : t("ui.modules.agent_offline")}
           isApplyDisabled={isRunNeeded}
           error={mirrorsError}
@@ -493,7 +500,11 @@ export function ContainersPanels({
           isDirty={isDirty}
           isBusy={isBusy || containersSettle.isSettling}
           label={t("ui.containers.containers_apply")}
-          hint={t("ui.containers.containers_apply_hint")}
+          hint={
+            want !== WANT_RUNNING
+              ? t("ui.modules.stopped_hint")
+              : t("ui.containers.containers_apply_hint")
+          }
           warning={t("ui.containers.containers_apply_warning")}
           blockedHint={isEditable ? null : t("ui.modules.agent_offline")}
           isApplyDisabled={isRunNeeded}

@@ -42,6 +42,8 @@ interface GiteaPanelsProps {
   /** Where Gitea answers: `/agent/module/gitea`. */
   basePath: string;
   isEditable: boolean;
+  /** Whether a change takes effect at Gitea's next Start. */
+  isWaitingForStart: boolean;
 }
 
 /** The Access group as the form holds it, before it names its machine. */
@@ -51,6 +53,7 @@ export function GiteaPanels({
   deviceId,
   basePath,
   isEditable,
+  isWaitingForStart,
 }: GiteaPanelsProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
@@ -165,7 +168,11 @@ export function GiteaPanels({
           isDirty={isDirty}
           isBusy={isBusy}
           label={t("ui.gitea.access_apply")}
-          hint={t("ui.gitea.access_apply_hint")}
+          hint={
+            isWaitingForStart
+              ? t("ui.modules.stopped_hint")
+              : t("ui.gitea.access_apply_hint")
+          }
           blockedHint={isEditable ? null : t("ui.modules.agent_offline")}
           error={error}
           notice={notice}
