@@ -204,7 +204,6 @@
   "code.share_user_unknown": "There is no user {user} to share with.",
   "code.share_users_unknown": "The folder shares {shares} have no account and are not served; check an account for them, or remove them.",
   "code.shell_failed": "The shell could not be opened: {detail}",
-  "code.socks_ports_share_a_port": "Two listeners cannot share a port.",
   "code.split_needs_wired_port": "Only a wired port can be split into VLANs.",
   "code.state_not_settled": "{module} is still applying its configuration.",
   "code.static_lease_address_invalid": "{address} is not an address a device can hold.",

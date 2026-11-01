@@ -39,8 +39,6 @@ export interface SetupDefaults {
   address: string;
   prefix_len: number;
   lan_vlan_id: number;
-  socks_proxy_port: number;
-  socks_direct_port: number;
   listen_port: number;
   https_listen_port: number;
 }
@@ -106,9 +104,6 @@ export interface SetupNetworkAnswers {
 export interface SetupProxyAnswers {
   links?: string[];
   is_local?: boolean;
-  socks_proxy_port?: number;
-  is_socks_direct_enabled?: boolean;
-  socks_direct_port?: number;
 }
 
 /** Everything the wizard asks for. */

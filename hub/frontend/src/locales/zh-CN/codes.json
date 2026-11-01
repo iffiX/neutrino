@@ -204,7 +204,6 @@
   "code.share_user_unknown": "没有 {user} 这个用户可以共享给。",
   "code.share_users_unknown": "文件夹共享 {shares} 没有勾选任何账户，所以没有提供；请给它们勾选账户，或删掉它们。",
   "code.shell_failed": "打不开 shell：{detail}",
-  "code.socks_ports_share_a_port": "两个监听端口不能相同。",
   "code.split_needs_wired_port": "只有有线网口能拆分成 VLAN。",
   "code.state_not_settled": "“{module}”还在应用配置。",
   "code.static_lease_address_invalid": "非法地址：设备不能持有 {address}。",

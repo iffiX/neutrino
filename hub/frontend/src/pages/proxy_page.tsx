@@ -6,7 +6,6 @@ import { ErrorPanel } from "../components/error_panel";
 import { GeodataPanel } from "../components/geodata_panel";
 import { Icon } from "../components/icon";
 import { NodesPanel } from "../components/nodes_panel";
-import { SocksPortsPanel } from "../components/socks_ports_panel";
 import { StringListEditor } from "../components/string_list_editor";
 import { ToggleSwitch } from "../components/toggle_switch";
 import {
@@ -381,8 +380,6 @@ export function ProxyPage() {
           onApply={() => void applyGroup("route")}
         />
       </section>
-
-      <SocksPortsPanel applied={saved} onApplied={resource.setData} />
     </div>
   );
 }

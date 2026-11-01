@@ -92,8 +92,6 @@ PACKAGING_CN_LEFT_OUT_PATHS = (
     "hub/frontend/src/node_draft.ts",
     "hub/frontend/src/components/geodata_panel.tsx",
     "hub/frontend/src/components/geodata_panel.css",
-    "hub/frontend/src/components/socks_ports_panel.tsx",
-    "hub/frontend/src/components/socks_ports_panel.css",
 )
 
 # The released packages a Windows check installs first, so the package it

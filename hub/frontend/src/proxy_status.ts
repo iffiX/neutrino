@@ -13,10 +13,7 @@ import type { StatsFrame } from "./api_types";
  * of the page rather than a second opinion.
  *
  * The answer has two halves. The scope is whose traffic the proxy is taking,
- * which the gateway reports from the applied ruleset; the modes differ in what
- * there is to divert, so a server's proxy is its SOCKS ports and saying
- * `direct` there would claim traffic is bypassing a proxy every pointed
- * application is using.
+ * which the gateway reports from the applied ruleset.
  *
  * The exit half is one name: the hub pins one exit, and the frame carries its
  * tag for the chip to read.
@@ -35,7 +32,6 @@ export interface ProxyStatus {
 }
 
 const SCOPE_KEYS: Record<string, string> = {
-  ports: "state.ports",
   lan: "state.lan",
   overlay: "state.overlay",
   hub: "state.hub",

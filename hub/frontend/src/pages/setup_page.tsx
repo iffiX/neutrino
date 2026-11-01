@@ -130,14 +130,9 @@ export function SetupPage({ token, context }: SetupPageProps) {
   );
   const [isProxyWanted, setIsProxyWanted] = useState(false);
   const [links, setLinks] = useState<DraftLink[]>([emptyLink()]);
-  const [isLocalProxied, setIsLocalProxied] = useState(false);
-  const [socksProxyPort, setSocksProxyPort] = useState(
-    context.defaults.socks_proxy_port,
-  );
-  const [isSocksDirect, setIsSocksDirect] = useState(false);
-  const [socksDirectPort, setSocksDirectPort] = useState(
-    context.defaults.socks_direct_port,
-  );
+  // Follows the mode until answered. A server's proxy screen offers its own
+  // traffic.
+  const [localAnswer, setLocalAnswer] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [state, setState] = useState<SetupState | null>(null);
   // Consecutive polls that got no answer. Setting a box up from a browser on
@@ -146,6 +141,7 @@ export function SetupPage({ token, context }: SetupPageProps) {
   const [missedPolls, setMissedPolls] = useState(0);
 
   const isServer = mode === "server";
+  const isLocalProxied = localAnswer ?? isServer;
   const isRouter = mode === "router";
   const isOneArm = mode === "one_arm_router";
   const isSideGateway = mode === "side_gateway";
@@ -244,9 +240,6 @@ export function SetupPage({ token, context }: SetupPageProps) {
       document.proxy = {
         links: wanted,
         is_local: isLocalProxied,
-        socks_proxy_port: socksProxyPort,
-        is_socks_direct_enabled: isSocksDirect,
-        socks_direct_port: socksDirectPort,
       };
     }
     document.listen_port = listenPort;
@@ -271,13 +264,19 @@ export function SetupPage({ token, context }: SetupPageProps) {
     links,
     isProxyWanted,
     isLocalProxied,
-    socksProxyPort,
-    isSocksDirect,
-    socksDirectPort,
     listenPort,
     httpsListenPort,
     isHttps,
   ]);
+
+  const isProxyGiven = isProxyWanted && named.length > 0;
+  const isProxyUnused = isServer && !isLocalProxied;
+  let proxyReview = t("state.not_used");
+  if (isProxyGiven) {
+    proxyReview = isProxyUnused
+      ? t("ui.setup.review_proxy_saved", { names: named.join(", ") })
+      : named.join(", ");
+  }
 
   const start = async () => {
     setError(null);
@@ -684,32 +683,10 @@ export function SetupPage({ token, context }: SetupPageProps) {
                   {t("ui.setup.link_add")}
                 </button>
               </div>
-              {isServer ? (
-                <PortField
-                  label={t("ui.setup.socks_proxy_port")}
-                  value={socksProxyPort}
-                  onChange={setSocksProxyPort}
-                />
-              ) : (
-                <>
-                  <ToggleSwitch
-                    isOn={isSocksDirect}
-                    label={t("ui.setup.socks_direct_enable")}
-                    onChange={setIsSocksDirect}
-                  />
-                  {isSocksDirect && (
-                    <PortField
-                      label={t("ui.setup.socks_direct_port")}
-                      value={socksDirectPort}
-                      onChange={setSocksDirectPort}
-                    />
-                  )}
-                </>
-              )}
               <ToggleSwitch
                 isOn={isLocalProxied}
                 label={t("ui.setup.proxy_local")}
-                onChange={setIsLocalProxied}
+                onChange={setLocalAnswer}
               />
             </>
           )}
@@ -793,14 +770,7 @@ export function SetupPage({ token, context }: SetupPageProps) {
               <Row name={t("ui.setup.review_upstream")} value={upstream} />
             )}
             {IS_PROXY_CARRIED && (
-              <Row
-                name={t("ui.setup.review_proxy")}
-                value={
-                  isProxyWanted && named.length > 0
-                    ? named.join(", ")
-                    : t("state.not_used")
-                }
-              />
+              <Row name={t("ui.setup.review_proxy")} value={proxyReview} />
             )}
           </dl>
         </div>

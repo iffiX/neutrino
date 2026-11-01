@@ -154,14 +154,8 @@ export interface NodeProbe {
 }
 
 /**
- * Whose traffic the proxy is taking, read from the applied ruleset: the
- * master switch is off; on but nothing is sent to it; only the SOCKS ports
- * reach it; the forwarded network is diverted; the hub's own traffic is; or
- * both are.
- */
-/**
- * Whose traffic the proxy is taking: off, unused, ports, or the diverted
- * scopes out of `lan`, `overlay` and `hub` joined with `+`.
+ * Whose traffic the proxy is taking: off, unused, or the diverted scopes out
+ * of `lan`, `overlay` and `hub` joined with `+`.
  */
 export type ProxyScope = string;
 
@@ -502,13 +496,6 @@ export interface DnsServer {
   port: number;
 }
 
-/** One SOCKS5 listener: a port, and which way what arrives there leaves. */
-export interface SocksPort {
-  port: number;
-  /** True goes out through the exit nodes; false leaves out the uplink. */
-  is_proxied: boolean;
-}
-
 export interface ProxySettings {
   /** The served networks' switch: off leaves forwarded traffic alone. */
   is_proxy_enabled: boolean;
@@ -519,7 +506,6 @@ export interface ProxySettings {
   direct_domains: string[];
   direct_ips: string[];
   is_local_proxy_enabled: boolean;
-  socks_ports: SocksPort[];
   /** Each asked in order; an empty direct list follows the network's. */
   remote_dns: DnsServer[];
   direct_dns: DnsServer[];
