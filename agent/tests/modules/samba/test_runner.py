@@ -1232,6 +1232,25 @@ def test_an_uninstall_with_no_record_leaves_a_person_s_units_as_they_are(
     assert FakeApplier.is_unit_active is True
 
 
+def test_an_uninstall_of_a_module_with_no_first_start_ends_with_units_as_it_found(
+    linux, monkeypatch
+):
+    """A machine an earlier build configured: the stop the uninstall runs keeps them first."""
+    engine, _ = linux
+    samba_on_path(monkeypatch, is_there=True)
+    samba = engine.module_runners["samba"]
+    engine.mark_configured("samba")
+    FakeUnits.states[samba.unit] = {"is_enabled": True, "is_active": True}
+
+    absent = linux_entry("absent")
+    engine.take_state({"samba": absent})
+    run_steps(engine.uninstall_steps("samba", absent))
+
+    assert (samba.unit, "put_back", {"is_enabled": True, "is_active": True}) in (
+        FakeUnits.calls
+    )
+
+
 def test_a_samba_the_module_installed_is_taken_off_with_its_package_through_the_engine(
     linux, monkeypatch, tmp_path
 ):
