@@ -594,6 +594,45 @@ def test_a_switch_that_did_not_take_fails_the_module_and_applies_nothing(tmp_pat
     assert held.applied_hash == ""
 
 
+def test_a_new_configuration_under_installed_runs_no_step_of_the_module(tmp_path):
+    journal: list = []
+    runners = {"samba": FakeRunner(journal=journal)}
+    held, engine = applier(runners, tmp_path=tmp_path)
+    document = state(samba="installed")
+    document["modules"]["samba"]["config"] = {"users": ["ann"]}
+
+    run(held, document)
+
+    assert journal == []
+    assert engine.configured == set()
+    assert held.applied_hash == "h1"
+
+
+def test_a_version_switch_under_installed_starts_nothing(tmp_path):
+    journal: list = []
+    runners = {"gitea": FakeRunner(journal=journal)}
+    held, engine = applier(runners, tmp_path=tmp_path)
+    engine.switching.add("gitea")
+
+    run(held, state(gitea="installed"))
+
+    assert engine.switches == ["gitea"]
+    assert journal == []
+    assert engine.configured == set()
+
+
+def test_a_module_never_started_stays_down_at_an_agent_restart(tmp_path):
+    journal: list = []
+    runners = {"samba": FakeRunner(journal=journal)}
+    held, _ = applier(runners, tmp_path=tmp_path)
+    run(held, state(samba="installed"))
+
+    again, _ = applier(runners, tmp_path=tmp_path)
+    run(again, state(samba="installed"))
+
+    assert journal == []
+
+
 def test_stopped_configures_then_stops_the_unit(tmp_path):
     journal: list = []
     runners = {"samba": FakeRunner(journal=journal)}
