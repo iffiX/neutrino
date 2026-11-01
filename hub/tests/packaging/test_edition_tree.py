@@ -41,8 +41,8 @@ def intl_tree(root: Path) -> Path:
             "utf-8",
         )
     (root / "EDITION").write_text("intl\n", encoding="utf-8")
-    (root / "README.md").write_text("# the full README\n", encoding="utf-8")
-    (root / "README.zh-CN.md").write_text("# 完整的中文 README\n", encoding="utf-8")
+    (root / "README.md").write_text("# 完整的 README\n", encoding="utf-8")
+    (root / "README.en.md").write_text("# the English README\n", encoding="utf-8")
     (root / "README.zh-CN-CNB.md").write_text("# CNB 的 README\n", "utf-8")
     (root / "hub" / "neutrino_hub" / "kept.py").write_text("", encoding="utf-8")
     return root
@@ -87,7 +87,7 @@ def test_the_mainland_readme_is_the_cnb_one_and_the_only_one(tmp_path):
     make_cn_tree(root)
 
     assert (root / "README.md").read_text(encoding="utf-8") == "# CNB 的 README\n"
-    assert not (root / "README.zh-CN.md").exists()
+    assert not (root / "README.en.md").exists()
     assert not (root / "README.zh-CN-CNB.md").exists()
 
 

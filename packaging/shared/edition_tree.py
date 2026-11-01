@@ -24,7 +24,7 @@ from shared.constants import (
 # The mainland tree's README is the CNB one, under the name CNB shows.
 EDITION_README = "README.md"
 EDITION_CN_README_SOURCE = "README.zh-CN-CNB.md"
-EDITION_CN_DROPPED_READMES = ("README.zh-CN.md", EDITION_CN_README_SOURCE)
+EDITION_CN_DROPPED_READMES = ("README.en.md", EDITION_CN_README_SOURCE)
 
 
 def make_cn_tree(root: Path) -> None:
