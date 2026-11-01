@@ -322,7 +322,8 @@ wizard and starts no panel, and `nhub setup` installs its agent
 ([../design/architecture.md](../design/architecture.md), "`nhub setup`
 configures and starts, and installs nothing"). An agent of 0.5 is replaced
 by the agent of 0.6, which reads `hub_key_missing` until it joins again with
-a new link from the hub's own row on the Agents page
+a new link from **Add by link** on the Agents page, its name left empty: it
+lands back on its row by `machine_id`
 ([../design/transport.md](../design/transport.md), "A peer of 0.5").
 
 | Rule | Reason |

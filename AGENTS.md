@@ -90,7 +90,7 @@ cd hub/frontend && npx prettier --check src && npx eslint src --max-warnings 0
 cd hub/frontend && npm run build     # REQUIRED after frontend changes
                                      # builds into neutrino_hub/data/frontend/
 
-nhub apply --dry-run                 # render everything, no effects
+sudo nhub apply --dry-run            # render everything, no effects
 sudo systemctl restart neutrino_hub_web  # deploy the panel on an installed box
 ```
 

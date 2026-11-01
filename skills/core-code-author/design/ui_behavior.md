@@ -961,7 +961,9 @@ the top of its tab, and its buttons are those of any `absent` module. A
 (`ui.modules.restart_title`, `ui.modules.restart_body`) and sends `POST
 /api/hub/device/reboot`. The agent never restarts the machine itself, and
 the install goes on after the restart with no press ([agent.md](agent.md),
-"Status is typed").
+"Status is typed"). A row in transit that requires a module reading
+`reboot_required` shows that module's notice with the same **Restart now**,
+since its own step only waits.
 
 **Install** on a module that requires a module the machine reports
 `absent` asks through `useConfirm` first: the title

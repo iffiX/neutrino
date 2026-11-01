@@ -226,7 +226,8 @@ after it would undo the press's `want` on the machine.
 The machine's AI tools take the same mark on the `ai_tools` section when a
 press asks again while an account's result is `failed`. A press on a module
 that reads its `want`, or is in transit, writes no mark and asks for
-nothing new. A module verb that acts waits for that module's task alone, at
+nothing new. A **Cancel** of a first install writes `want` `absent` and no
+mark. A module verb that acts waits for that module's task alone, at
 most 30 seconds, else it is refused `state_not_settled {module}`.
 
 Software somebody installs or removes by hand is displayed, never fought

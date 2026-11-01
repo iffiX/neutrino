@@ -332,6 +332,7 @@ walk theirs. A new code and its wording are one change.
 | `waiting_for_module` | `{module}` | a task's `wait`, and the `code` of an `installing` row: a `wait_module` or `render` step waiting for the task of a module its module requires | added |
 | `waiting_for_check` | `{seconds}` | a task's `wait`, and the `code` of an `installing` row: a step that checks something outside the agent every `seconds`, 30 | added |
 | `module_needed` | `{module, state}` | the `code` of an `install_failed` or `failed` row: its `wait_module {module}` ended while the required `module` read `state` and not `running`, or while that module's `want` was not `running` in an install ([agent.md](agent.md), "A step that brings up another module") | added |
+| `page_silent` | `{port}` | the `code` of a `stopped` row of a container module, once its page stays silent for 5 minutes behind running containers | added |
 | `module_in_use` | `{modules}` | 409 of `module/uninstall`, a module that the installed `modules` require ([agent/module_install.md](agent/module_install.md), "Dependencies") | added |
 | `package_manager_busy` | `{holder}` | the `code` of an `install_failed` or `failed` row: a step whose package helper waited 300 seconds for the system's own lock ([agent.md](agent.md), "The system's own lock") | added |
 | `ayakaleaf_setup_failed` | `{step, detail}` | an Ayakaleaf install whose first-start step failed, `step` being `replica_set`, `admin` or `tex` ([agent/modules/ayakaleaf.md](agent/modules/ayakaleaf.md), "The first start") | added |

@@ -325,7 +325,7 @@ window and the tray.
 | `neutrino-client-<version>-1.x86_64.rpm` | Fedora, RHEL, AlmaLinux, Rocky |
 | `neutrino-client-<version>-1.aarch64.rpm` | The same on ARM64 |
 | `neutrino-client-<version>-1-x86_64.pkg.tar.zst` | Arch, EndeavourOS, Manjaro |
-| `neutrino-client-<version>-windows-amd64.msi` | Windows 10 or newer, x86-64 |
+| `neutrino-client-<version>-windows-amd64.msi` | Windows 10 1809 or newer, x86-64 |
 | `neutrino-client-<version>-macos-arm64.pkg` | macOS 13 or newer on Apple silicon |
 | `neutrino-client-<version>-macos-amd64.pkg` | macOS 13 or newer on Intel |
 

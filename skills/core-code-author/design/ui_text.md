@@ -66,7 +66,9 @@ the switch does to traffic; the reader knows what they run.
 | Error | what happened, in the terms the reader used | `port 8080 is already in use on this box` |
 
 A button says what pressing it does, never what state the system is in — and
-never the same word for two different actions on one page.
+never the same word for two different actions on one page. The one exception
+is a first install's **Cancel** (`ui.modules.cancel`) beside a form's **Cancel**
+on the same tab.
 
 ## The rules that apply to everything
 
@@ -883,7 +885,7 @@ page and SSH setting ([client.md](client.md)). A code is in the hub's
 | Key | English | Chinese |
 | --- | --- | --- |
 | `code.control_unavailable` | The hub is busy and did not answer; try again. | 中枢正忙，没有应答，稍后再试。 |
-| `code.transport_key_missing` | The transport has not written its key yet; try again in a moment. | 传输层还没有写出密钥，稍后再试。 |
+| `code.transport_key_missing` | The hub's connection port is not ready yet; make the link again in a moment. | 中枢的连接端口还没就绪，稍后再生成链接。 |
 | `code.transport_apply_failed` | The transport could not be started: {detail} | 传输层没能启动：{detail} |
 | `code.account_home_unknown` | The machine has not reported a home directory for {account}; set its share path. | 这台机器还没有报告 {account} 的家目录，请填写它的共享路径。 |
 | `code.account_no_profile` | {account} has never signed in on this machine. Sign in as {account} once, then try again. | {account} 还没有在这台机器上登录过。请先用这个账户登录一次，再重试。 |
