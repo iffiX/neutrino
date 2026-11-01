@@ -231,6 +231,8 @@ overrides both, which is what makes a second instance testable. Details of the f
                             {code, params}, root only
         install_marks/      each module whose task ran an install step,
                             until a task of it ends, root only
+        uninstalled/        the mark that a builtin module was uninstalled,
+                            root only
         packages/           the module packages the hub sent
         vscode/             the VS Code CLI, read and run by every account
         code_server/        code-server's release, its own Node.js inside

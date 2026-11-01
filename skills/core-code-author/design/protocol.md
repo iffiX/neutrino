@@ -1284,13 +1284,13 @@ from the same facts, whoever installed the software:
 
 | Fact | Read from |
 | --- | --- |
-| installed | the method's presence check: `verify` succeeds for `system` and `hub`, and every image's digest is in Containers' Podman for `container`; for a module the state does not name, which comes with no recipe, and for a `builtin` entry, the runner's own check ([agent/module_install.md](agent/module_install.md), "One presence check") |
+| installed | the method's presence check: `verify` succeeds for `system` and `hub`, and every image's digest is in Containers' Podman for `container`; for a module the state does not name, which comes with no recipe, and for a `builtin` entry, the runner's own check unless its uninstalled mark stands ([agent/module_install.md](agent/module_install.md), "One presence check") |
 | active | the unit is active, read whenever the row before reads installed |
 | configured | the root-only mark `/var/lib/neutrino/agent/configured/<module>` exists; written on the first successful apply of the hub's configuration, deleted on uninstall |
 
 | `state` | Meaning |
 | --- | --- |
-| `absent` | the software is missing; the row can hold a kept failure's `{code, params}` ([agent.md](agent.md), "A failure outlives a restart") |
+| `absent` | the software is missing, or a `builtin` module was uninstalled and not installed again; the row can hold a kept failure's `{code, params}` ([agent.md](agent.md), "A failure outlives a restart") |
 | `installed` | the software is present and the hub has never configured it; `is_active` says whether it runs |
 | `install_failed` | the last install failed with `{code, params}`, whatever it left on the machine |
 | `stopped` | the hub has configured it and the unit is stopped |

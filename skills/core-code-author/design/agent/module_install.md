@@ -76,9 +76,9 @@ before the artifacts, and an uninstall keeps them.
 
 | | `agent` | `builtin` | `system` | `hub` | `container` |
 | --- | --- | --- | --- | --- | --- |
-| Present when | always | the runner's own check passes | `verify` exits 0 | `verify` exits 0 | every image's digest is in the Containers module's Podman, as the agent reads it there |
+| Present when | always | the runner's own check passes and the module's uninstalled mark does not stand | `verify` exits 0 | `verify` exits 0 | every image's digest is in the Containers module's Podman, as the agent reads it there |
 | `running` means | the module's own rule ([modules/terminal.md](modules/terminal.md), [modules/remote_desktop.md](modules/remote_desktop.md)) | the system's server runs the module's configuration | the module's unit is active | the module's service or instances run | every container of the module runs |
-| An uninstall removes | nothing: the four presses are refused `module_not_optional` | what the module's own page names; the system keeps its server | the named packages and the configuration the hub wrote, keeping the data | the module's files, its service definitions and the forwarder's records, keeping the data | the module's containers, their units, its network and its named volumes, and the images no other container uses |
+| An uninstall removes | nothing: the four presses are refused `module_not_optional` | what the module's own page names, and writes the uninstalled mark; the system keeps its server | the named packages and the configuration the hub wrote, keeping the data | the module's files, its service definitions and the forwarder's records, keeping the data | the module's containers, their units, its network and its named volumes, and the images no other container uses |
 | A failed install reports | `reinstall_failed`, from the agent's own install | nothing, since nothing is installed | `install_failed {detail}` with the package manager's output | `download_failed {file, sources}` or `module_fetch_too_large` from the cache, then `install_failed {detail}` or the module's own code | `download_failed {file, sources}` when no source serves an image |
 | The version | the agent's | the system's | the system's, locked | the tested one or the machine's choice | the tested tag or the machine's choice; the tested one, locked, where the entry names no `releases` |
 
@@ -317,7 +317,12 @@ owner:
 A `builtin` entry names software the system holds, such as the SMB server of
 Windows and macOS. It names no `packages`, `verify` or `uninstall`, and the
 runner checks for the software itself: the system installs and removes it,
-and the module drives it.
+and the module drives it. An uninstall leaves that software where it is, so the
+agent keeps a root-only mark, `uninstalled/<module>` under the state root, from
+the uninstall until the next install's `verify`. While the mark stands the
+module reads `absent`, whether the state names it or not and across a restart
+of the agent. A state that names no module, as after a join or a leave, deletes
+every mark.
 
 ## From container images
 
@@ -352,6 +357,7 @@ The tools inside its containers fetch from the source sets its entry lists
 | A `verify` that names its program by an absolute path, as every `hub` entry's does, runs again only once that file changes its size, its time or its inode. A pass stands until then, and a failure runs again at the next read. | The agent reads every module at each report, every 5 seconds: on the lab Mac `gitea --version` and `code --version` each ran 12 times a minute as root. |
 | `is_active` and `details` are read whenever the presence check passes, and a runner adds no check of its own in front of them. | A runner check stricter than `verify` read Containers as `stopped` with an empty list on a machine whose Docker CE kept `podman-docker` off. |
 | A runner's own check answers only for a `builtin` entry and for a module the hub does not name in the machine's state, which the agent still observes and reports, such as a Samba a person installed by hand. | Neither comes with a `verify` to run. |
+| A `builtin` module reads absent while its uninstalled mark stands, whatever the runner's own check finds. | The system keeps its own software, so the runner's check stays true after an uninstall, and the row read `failed` `uninstall_unconfirmed` with no press that cleared it. |
 
 ## Module versions
 
