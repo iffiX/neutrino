@@ -941,7 +941,8 @@ and `start`. The row names no kind of plan, and only an install plan holds
 `verify` ([agent.md](agent.md), "The steps"). A first start with a long step
 counts as a first install: a row reading `installed`, `installing` or `queued`
 whose `task` runs and whose plan holds no `switch`, and holds `npm {account}`
-while the row's `is_active` is false, or holds both `replica_set` and `tex`.
+while the row's `is_active` is false, or holds both `replica_set` and `tex`;
+Hermes WebUI's `first_start` holds neither and has no **Cancel**.
 Every module has this one behaviour:
 
 | Rule | Reason |
