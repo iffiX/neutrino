@@ -12,7 +12,7 @@ body:
     id: docs
     attributes:
       label: The docs page you read / 看过的文档页
-      placeholder: "https://neutrino.beyond-infinity.top/zh-CN/..."
+      placeholder: "https://neutrinohub.net/..."
   - type: input
     id: version
     attributes:
