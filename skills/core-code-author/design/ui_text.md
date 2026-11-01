@@ -322,6 +322,19 @@ link's `app.title`.
 | The hub is offline | The hub is offline. / The computer that shares this app cannot be reached right now. | 中枢已离线。/ 分享这个应用的电脑现在连不上。 |
 | The app is unavailable | The app cannot be opened right now. / It opens by itself once it is back. | 应用暂时打不开。/ 恢复后会自动打开。 |
 
+## The AI page's words
+
+The **Access** panel and the **Gateway port** field of the AI page
+([hub_components/ai.md](hub_components/ai.md), "What each panel surface
+owns"). `ui.ai.endpoint`'s line shows `http://127.0.0.1:<port>`, since the
+gateway listens on the hub's loopback alone.
+
+| Key | English | Chinese |
+| --- | --- | --- |
+| `ui.ai.access_hint` | For a tool on the hub's machine, or one using an SSH tunnel to it. | 给中枢这台机器上的工具用，或经 SSH 隧道连到它的工具用。 |
+| `ui.ai.keys_empty_hint` | Generate one for a tool on the hub's machine. | 给中枢这台机器上的工具生成一个。 |
+| `ui.ai.port_reached_at`, `{origin}` being `http://127.0.0.1:<port>` | Reached at {origin}. | 当前地址 {origin}。 |
+
 ## The machine page's words
 
 The machine page's sections, the available accounts, the catalog and a
