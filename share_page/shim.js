@@ -65,6 +65,24 @@
   document.addEventListener("click", tagAnchor, true);
   document.addEventListener("auxclick", tagAnchor, true);
 
+  // A link followed in this frame gets this tab added, once the app's own
+  // handlers have run. The worker then answers it with no page of its own while
+  // several shells are open, and a download leaves this page in the frame.
+  const tagFollowed = (event) => {
+    if (event.defaultPrevented || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+    const anchor = event.target instanceof Element ? event.target.closest("a[href]") : null;
+    if (!(anchor instanceof HTMLAnchorElement) || (anchor.target && !/^_self$/i.test(anchor.target))) return;
+    let target;
+    try { target = new URL(anchor.href, location.href); } catch (e) { return; }
+    if (target.protocol !== location.protocol || target.origin !== location.origin) return;
+    if (target.hash && target.pathname === location.pathname && target.search === location.search) return;
+    const original = anchor.getAttribute("href");
+    target.searchParams.set(TAB_PARAM, tab);
+    anchor.href = target.href;
+    setTimeout(() => anchor.setAttribute("href", original), 0);
+  };
+  window.addEventListener("click", tagFollowed);
+
   Object.defineProperty(document, "cookie", {
     configurable: true,
     get() { return shell.cookieGet(); },
