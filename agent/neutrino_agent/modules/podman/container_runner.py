@@ -503,18 +503,11 @@ class ContainerModuleRunner(ModuleRunner):
         return False
 
     def notice(self) -> dict:
-        """``apply_failed {detail}`` once the page stays silent behind running containers."""
+        """``page_silent {port}`` once the page stays silent behind running containers."""
         since = self._page_silent_since
         if since is None or self._clock() - since < PAGE_SILENT_S:
             return {}
-        port = self._hooks.upstream_port()
-        return {
-            "code": "apply_failed",
-            "params": {
-                "detail": f"the page at port {port} does not answer; "
-                "check what else listens on that port"
-            },
-        }
+        return {"code": "page_silent", "params": {"port": self._hooks.upstream_port()}}
 
     def details(self, recipe: dict) -> dict:
         """The version the recipe pins, and what the hooks add.

@@ -315,16 +315,14 @@ def test_a_page_that_stays_silent_says_why_on_its_row(paged):
 
     now[0] += 1
     runner.is_active()
-    notice = runner.notice()
-    assert notice["code"] == "apply_failed"
-    assert "64586" in notice["params"]["detail"]
+    assert runner.notice() == {"code": "page_silent", "params": {"port": 64586}}
 
 
 def test_a_page_that_answers_again_says_nothing(paged):
     runner, _, _, now = paged
     runner.is_active()
     now[0] += container_runner_module.PAGE_SILENT_S
-    assert runner.notice()["code"] == "apply_failed"
+    assert runner.notice()["code"] == "page_silent"
 
     PagedHooks.answers = True
 

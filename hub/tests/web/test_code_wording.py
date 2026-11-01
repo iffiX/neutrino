@@ -177,6 +177,7 @@ CONTAINERS_CODES = (
     "command_invalid",
     "mirror_invalid",
     "containers_not_applied",
+    "page_silent",
 )
 
 
@@ -218,6 +219,7 @@ AGENT_ROW_PARAMS = {
     "waiting_for_module": {"module"},
     "waiting_for_check": {"seconds"},
     "module_needed": {"module", "state"},
+    "page_silent": {"port"},
     "package_manager_busy": {"holder"},
     "state_not_settled": {"module"},
 }

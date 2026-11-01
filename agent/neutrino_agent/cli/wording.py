@@ -226,6 +226,7 @@ CLI_CODE_WORDS = {
         "Containers did not apply this module's containers; fix Containers, "
         "then start this module again"
     ),
+    "page_silent": "the page at port {port} does not respond; check what else listens on that port",
     "waiting_for_lock": "waiting for {lock}, held by {module}",
     "waiting_for_package_manager": (
         "waiting for the system's package manager, held by {holder}"

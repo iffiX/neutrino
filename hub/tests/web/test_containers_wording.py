@@ -68,6 +68,10 @@ LOGON_WORDS = {
         "code.account_logon_refused": "Windows 拒绝了 {account} 的登录：{detail}",
     },
 }
+PAGE_SILENT_WORDS = {
+    "en": "The page at port {port} does not respond. Check what else listens on that port.",
+    "zh-CN": "端口 {port} 上的页面没有响应。请检查这个端口上还有什么程序在监听。",
+}
 
 
 def catalog(language: str, name: str) -> dict:
@@ -98,6 +102,13 @@ def test_a_refused_logon_says_what_ui_text_writes(language):
 
     for key, sentence in LOGON_WORDS[language].items():
         assert worded[key] == sentence
+
+
+@pytest.mark.parametrize("language", ["en", "zh-CN"])
+def test_a_silent_page_says_what_ui_text_writes(language):
+    worded = catalog(language, "codes.json")
+
+    assert worded["code.page_silent"] == PAGE_SILENT_WORDS[language]
 
 
 @pytest.mark.parametrize("language", ["en", "zh-CN"])
