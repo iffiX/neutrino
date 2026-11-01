@@ -708,7 +708,7 @@ export function MachineModules({
                   </div>
                 </div>
               )}
-              {NOTICED_STATES.includes(activeRow.state) &&
+              {isCodeNoticed(activeRow) &&
                 activeRow.code !== "" &&
                 (!isWaitInSteps || activeRow.code === REBOOT_REQUIRED_CODE) && (
                   <div className="notice notice--warn modules_install_notice">
@@ -1041,6 +1041,15 @@ function isRowInTransit(row: DeviceModuleView): boolean {
   return (
     BUSY_STATES.includes(row.state) ||
     (row.task !== null && row.task.is_running)
+  );
+}
+
+/** Whether the tab words a row's code as a notice: a state that holds one, or
+ * a module stopped against its want. */
+function isCodeNoticed(row: DeviceModuleView): boolean {
+  return (
+    NOTICED_STATES.includes(row.state) ||
+    (row.state === "stopped" && row.want !== WANT_STOPPED)
   );
 }
 

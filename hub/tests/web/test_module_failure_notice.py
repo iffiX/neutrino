@@ -2,8 +2,9 @@
 
 What these pin: ``ui.modules.failed_step`` says in both languages what
 ui_text.md writes; the notice heads the failure's words with the step the row
-names, in the step list's own words; and the failure's words keep their line
-breaks in the notice as they do under a step.
+names, in the step list's own words; the failure's words keep their line
+breaks in the notice as they do under a step; and a module stopped against its
+want words its code in the notice at the top of its tab.
 """
 
 import json
@@ -29,6 +30,16 @@ def test_the_heading_says_what_ui_text_writes(language):
     words = json.loads(path.read_text(encoding="utf-8"))
 
     assert words["ui.modules.failed_step"] == WORDS[language]
+
+
+def test_a_module_stopped_against_its_want_words_its_code_in_the_notice():
+    page = source("machine_modules.tsx")
+
+    assert (
+        'NOTICED_STATES.includes(row.state) || (row.state === "stopped" && '
+        "row.want !== WANT_STOPPED)"
+    ) in page
+    assert '{isCodeNoticed(activeRow) && activeRow.code !== "" &&' in page
 
 
 def test_the_notice_heads_the_failure_with_the_step_the_row_names():
