@@ -1109,7 +1109,7 @@ def test_a_configuration_is_checked_on_the_agent_then_stored_then_pushed(box):
     assert runtime.published_services.refreshes == 1
 
 
-@pytest.mark.parametrize("state", ["installed", "stopped", "running"])
+@pytest.mark.parametrize("state", ["installed", "stopped", "failed", "queued"])
 def test_a_configuration_stored_on_a_module_with_no_want_writes_none(box, state):
     _, runtime = box
     runtime.report(LAPTOP, MODULE, state)
@@ -1119,6 +1119,66 @@ def test_a_configuration_stored_on_a_module_with_no_want_writes_none(box, state)
 
     assert runtime.desired_states.read(LAPTOP, MODULE) == {"accounts": []}
     assert runtime.desired_states.want_of(LAPTOP, MODULE) == ""
+
+
+def test_a_running_module_with_no_want_takes_running_ahead_of_the_push(box):
+    from neutrino_hub.modules.devices.retry_marks import DeviceRetryMarks
+
+    _, runtime = box
+    runtime.report(LAPTOP, MODULE, "running")
+    context = device_modules.device_context(runtime, MODULE, LAPTOP)
+    wants_at_push = []
+    push = runtime.push_desired_state
+
+    def push_noting_the_want(key):
+        wants_at_push.append(runtime.desired_states.want_of(key, MODULE))
+        push(key)
+
+    runtime.push_desired_state = push_noting_the_want
+
+    device_modules.store_config(runtime, context, {"accounts": []})
+
+    assert runtime.desired_states.read(LAPTOP, MODULE) == {"accounts": []}
+    assert wants_at_push == ["running"]
+    assert DeviceRetryMarks().marks(LAPTOP) == {}
+
+
+def test_a_row_is_read_as_it_stands_when_the_configuration_is_stored(box):
+    _, runtime = box
+    runtime.report(LAPTOP, MODULE, "running")
+    context = device_modules.device_context(runtime, MODULE, LAPTOP)
+    runtime.report(LAPTOP, MODULE, "stopped")
+
+    device_modules.store_config(runtime, context, {"accounts": []})
+
+    assert runtime.desired_states.want_of(LAPTOP, MODULE) == ""
+
+
+@pytest.mark.parametrize(
+    "state, want",
+    [("running", "running"), ("installed", ""), ("stopped", ""), ("failed", "")],
+)
+def test_an_apply_writes_running_only_on_a_running_module_with_no_want(
+    box, state, want
+):
+    client, runtime = box
+    runtime.report(LAPTOP, MODULE, state)
+
+    answer = client.post(f"{BLOCK_PATH}/apply", json={"device_id": LAPTOP})
+
+    assert answer.status_code == 200, answer.text
+    assert runtime.desired_states.want_of(LAPTOP, MODULE) == want
+
+
+@pytest.mark.parametrize("want", ["installed", "stopped", "absent"])
+def test_an_apply_on_a_running_module_leaves_the_want_it_has(box, want):
+    client, runtime = box
+    runtime.report(LAPTOP, MODULE, "running")
+    runtime.desired_states.set_want(LAPTOP, MODULE, want)
+
+    client.post(f"{BLOCK_PATH}/apply", json={"device_id": LAPTOP})
+
+    assert runtime.desired_states.want_of(LAPTOP, MODULE) == want
 
 
 @pytest.mark.parametrize("want", ["installed", "stopped", "running"])

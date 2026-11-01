@@ -116,6 +116,47 @@ def test_an_add_and_a_set_on_a_stopped_module_keep_it_stopped(api, tmp_path):
     assert [push[0] for push in runtime.agent_sessions.pushes] == [DEVICE] * 2
 
 
+def test_an_add_on_a_running_module_with_no_want_writes_running(api):
+    client, runtime = api
+    runtime.report(DEVICE, "samba", "running")
+
+    answer = add(client)
+
+    assert answer.status_code == 200, answer.text
+    assert runtime.desired_states.want_of(DEVICE, "samba") == "running"
+    assert [push[0] for push in runtime.agent_sessions.pushes] == [DEVICE]
+
+
+def test_a_set_on_a_running_module_with_no_want_writes_running(api):
+    client, runtime = api
+    add(client)
+    runtime.report(DEVICE, "samba", "running")
+
+    answer = client.post(
+        f"{PATH}/set",
+        json={
+            "device_id": DEVICE,
+            "name": "lab",
+            "path": "/srv/lab2",
+            "accounts": ["alice"],
+        },
+    )
+
+    assert answer.status_code == 200, answer.text
+    assert runtime.desired_states.want_of(DEVICE, "samba") == "running"
+
+
+def test_a_remove_on_a_running_module_with_no_want_writes_running(api):
+    client, runtime = api
+    add(client)
+    runtime.report(DEVICE, "samba", "running")
+
+    answer = client.post(f"{PATH}/remove", json={"device_id": DEVICE, "name": "lab"})
+
+    assert answer.status_code == 200, answer.text
+    assert runtime.desired_states.want_of(DEVICE, "samba") == "running"
+
+
 @pytest.mark.parametrize("want", ["", "installed"])
 def test_an_add_a_set_and_a_remove_on_a_module_never_started_write_no_want(api, want):
     client, runtime = api

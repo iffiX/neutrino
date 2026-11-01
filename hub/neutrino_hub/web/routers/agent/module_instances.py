@@ -7,8 +7,8 @@ SiYuan. The view lists every available account with whether the module
 enables it and what the machine reports of its instance; the set replaces
 the enabled accounts, generating each newly enabled account's secrets, a
 SiYuan account's gateway key among them and voided for an account it
-disables, and writes no ``want`` (protocol.md, "The account layer in the
-state").
+disables, and writes no ``want`` on a module not running (protocol.md, "The
+account layer in the state").
 """
 
 import functools
@@ -53,6 +53,7 @@ from neutrino_hub.web.routers.agent.module import (
     module_router,
     push_state,
     recompose_published,
+    record_running,
     require_online,
     require_terms,
     write_module_config,
@@ -143,8 +144,8 @@ def replace_accounts(
     Each newly enabled account gets the fields the row seals, generated
     once; a disabled account keeps its record for its next enabling. The
     agent checks the module's section as the state will carry it before the
-    change holds. No ``want`` is written, so a module not running takes the
-    change at its next **Start**.
+    change holds. A module not running takes no ``want``, and takes the change
+    at its next **Start**.
 
     Args:
         row: The module's row in the description table.
@@ -209,6 +210,7 @@ def replace_accounts(
             apply_keys()
         raise
     context.config = written
+    record_running(runtime, context)
     push_state(runtime, context.key)
     recompose_published(runtime, row.name)
     return device_view(row, runtime, context)

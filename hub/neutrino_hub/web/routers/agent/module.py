@@ -640,6 +640,7 @@ def module_router(
     ):
         context = device_context(runtime, module, request.device_id)
         require_online(context)
+        record_running(runtime, context)
         mark_retry(runtime, context.key, module)
         push_state(runtime, context.key)
         return ApplyResult(is_applied=True)
@@ -915,6 +916,7 @@ def store_config(
     written = dict(config)
     write_module_config(runtime, context.key, context.module, written)
     context.config = written
+    record_running(runtime, context)
     push_state(runtime, context.key)
     recompose_published(runtime, context.module)
 
@@ -987,6 +989,47 @@ def write_module_config(
         runtime.desired_states.write(key, module, config)
     except OSError as error:
         raise _config_unwritable(error) from error
+
+
+def record_running(runtime: PanelRuntime, context: DeviceModuleContext) -> None:
+    """Write ``want: running`` on a module with no ``want`` that reads ``running``.
+
+    An apply calls this ahead of its push. The ``want`` records what already
+    runs and starts nothing. A container module gets what its containers are
+    composed from, as at a **Start**. A module the agent carries, and a row
+    with a ``want`` or in any other state, writes nothing.
+
+    Args:
+        runtime: The shared runtime.
+        context: The device and the module.
+
+    Raises:
+        HTTPException: 500 ``config_unwritable`` when the ``want`` cannot be
+            written.
+    """
+    key = context.key
+    module = context.module
+    if module in DEVICE_AGENT_MODULES:
+        return
+    manifest = load_module_manifests().get(module) or {}
+    minted = ""
+    try:
+        with CONFIG_WRITE_LOCK:
+            state = module_status(runtime, key, module)["state"]
+            if (
+                runtime.desired_states.want_of(key, module)
+                or state != CHANNEL_MODULE_STATE_RUNNING
+            ):
+                return
+            if DEVICE_METHOD_CONTAINER in manifest_methods(manifest):
+                minted = _prepare_container_module(runtime, key, module)
+            runtime.desired_states.set_want(key, module, CHANNEL_MODULE_STATE_RUNNING)
+    except OSError as error:
+        raise _config_unwritable(error) from error
+    context.want = CHANNEL_MODULE_STATE_RUNNING
+    if minted:
+        apply_keys(new_key=minted)
+    recompose_published(runtime, module)
 
 
 def require_terms(runtime: PanelRuntime, key: str, module: str) -> None:

@@ -94,6 +94,31 @@ def test_set_stores_the_model_pushes_the_state_and_keeps_the_secrets(api):
     assert stored(tmp_path)["model"] == ""
 
 
+def test_set_on_a_running_module_with_no_want_writes_running_with_its_secrets(api):
+    client, runtime, tmp_path = api
+    runtime.report(DEVICE, "ayakaleaf", state="running", port=8900)
+
+    view = client.post(f"{BASE}/set", json={"device_id": DEVICE, "model": "model-b"})
+
+    assert view.status_code == 200, view.text
+    assert view.json()["model"] == "model-b"
+    assert runtime.desired_states.want_of(DEVICE, "ayakaleaf") == "running"
+    held = stored(tmp_path)
+    assert held["model"] == "model-b"
+    assert {*SECRETS, "gateway_key"} <= set(held)
+
+
+@pytest.mark.parametrize("state", ["installed", "stopped"])
+def test_set_on_a_module_not_running_with_no_want_writes_none(api, state):
+    client, runtime, tmp_path = api
+    runtime.report(DEVICE, "ayakaleaf", state=state, port=8900)
+
+    client.post(f"{BASE}/set", json={"device_id": DEVICE, "model": "model-b"})
+
+    assert runtime.desired_states.want_of(DEVICE, "ayakaleaf") == ""
+    assert stored(tmp_path) == {"model": "model-b"}
+
+
 def test_set_refuses_a_machine_with_no_session(api):
     client, _, tmp_path = api
 

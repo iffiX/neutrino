@@ -41,6 +41,7 @@ from neutrino_hub.web.routers.agent.module import (
     device_context,
     push_state,
     recompose_published,
+    record_running,
     require_online,
     validate_config,
     write_module_config,
@@ -122,8 +123,8 @@ def add_folder_share(
 ) -> FolderShareListView:
     """Add a folder share and push the state.
 
-    No ``want`` is written, so a module not running takes the share at its
-    next **Start**.
+    A module not running takes no ``want``, and takes the share at its next
+    **Start**.
 
     Args:
         request: The device, the name, the folder and the accounts checked.
@@ -211,6 +212,7 @@ def remove_folder_share(
         )
     except OSError as error:
         raise _config_unwritable(error) from error
+    record_running(runtime, context)
     push_state(runtime, context.key)
     recompose_published(runtime, MODULE)
     return _view(runtime, context)
@@ -267,6 +269,7 @@ def _save(
     validate_config(runtime, context, written)
     write_module_config(runtime, context.key, MODULE, written)
     context.config = written
+    record_running(runtime, context)
     push_state(runtime, context.key)
     recompose_published(runtime, MODULE)
     return _view(runtime, context)

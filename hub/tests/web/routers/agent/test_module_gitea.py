@@ -65,6 +65,24 @@ def test_a_change_of_settings_on_a_gitea_never_started_writes_no_want(box, want)
     assert runtime.desired_states.want_of(DEVICE, "gitea") == want
 
 
+def test_a_change_of_settings_on_a_running_gitea_with_no_want_writes_running(box):
+    client, runtime = box
+    runtime.report(DEVICE, "gitea", "running", is_running=True, admins=[])
+
+    answer = client.post(
+        f"{BASE}/set",
+        json={
+            "device_id": DEVICE,
+            "listen_port": 3001,
+            "root_url": "",
+            "is_registration_enabled": True,
+        },
+    )
+
+    assert answer.status_code == 200, answer.text
+    assert runtime.desired_states.want_of(DEVICE, "gitea") == "running"
+
+
 def test_the_view_reports_config_beside_reality(box):
     client, _ = box
 

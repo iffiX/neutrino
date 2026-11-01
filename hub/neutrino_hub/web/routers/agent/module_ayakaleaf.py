@@ -24,6 +24,7 @@ from neutrino_hub.web.routers.agent.module import (
     module_router,
     panel_details,
     push_state,
+    record_running,
     require_online,
     write_module_config,
 )
@@ -88,5 +89,6 @@ def set_model(
         }
         write_module_config(runtime, context.key, MODULE, written)
     context.config = written
+    record_running(runtime, context)
     push_state(runtime, context.key)
     return device_view(runtime, context)

@@ -698,6 +698,29 @@ def test_a_change_of_settings_on_containers_never_started_writes_no_want(
     assert runtime.desired_states.want_of(DEVICE, "podman") == want
 
 
+@pytest.mark.parametrize(
+    "path, body, platform",
+    [
+        ("container/set", {"containers": []}, LINUX),
+        ("mirror/set", {"mirrors": ["mirror.example"]}, LINUX),
+        ("machine/set", RUN_SETTINGS, DARWIN),
+    ],
+    ids=["containers", "mirrors", "run_settings"],
+)
+def test_a_change_of_settings_on_running_containers_with_no_want_writes_running(
+    box, path, body, platform
+):
+    client, runtime = box
+    runtime.device_platform[DEVICE] = platform
+    available(runtime, "lab")
+    runtime.report(DEVICE, "podman", "running")
+
+    answer = client.post(f"{BASE}/{path}", json={"device_id": DEVICE, **body})
+
+    assert answer.status_code == 200, answer.text
+    assert runtime.desired_states.want_of(DEVICE, "podman") == "running"
+
+
 NEW_MACHINE = {"cpus": 4, "memory_gib": 4, "disk_gib": 100, "disk_gib_now": 0}
 
 

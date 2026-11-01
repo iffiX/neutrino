@@ -237,6 +237,42 @@ def test_a_set_on_a_module_never_started_writes_no_want(
     assert [push[0] for push in runtime.agent_sessions.pushes] == [DEVICE]
 
 
+@pytest.mark.parametrize(
+    "module", ["samba", "vscode", "code_server", "cloudcli", "codeg", "siyuan"]
+)
+def test_a_set_on_a_running_module_with_no_want_writes_running(
+    api, monkeypatch, module
+):
+    from neutrino_hub.modules.clients import ai_keys
+
+    monkeypatch.setattr(ai_keys, "_apply", lambda **kwargs: None)
+    client, runtime = api
+    runtime.report(DEVICE, module, "running")
+
+    answer = client.post(
+        f"/api/agent/module/{module}/set",
+        json={"device_id": DEVICE, "accounts": ["bob"]},
+    )
+
+    assert answer.status_code == 200, answer.text
+    assert runtime.desired_states.want_of(DEVICE, module) == "running"
+    assert [push[0] for push in runtime.agent_sessions.pushes] == [DEVICE]
+
+
+@pytest.mark.parametrize("module", ["terminal", "ssh_server"])
+def test_a_carried_module_reading_running_takes_no_want(api, module):
+    client, runtime = api
+    runtime.report(DEVICE, module, "running")
+
+    client.post(
+        f"/api/agent/module/{module}/set",
+        json={"device_id": DEVICE, "accounts": ["bob"]},
+    )
+    client.post(f"/api/agent/module/{module}/apply", json={"device_id": DEVICE})
+
+    assert runtime.desired_states.want_of(DEVICE, module) == ""
+
+
 def test_a_set_on_a_running_module_keeps_it_running(api):
     client, runtime = api
     runtime.report(DEVICE, "samba", "running")
