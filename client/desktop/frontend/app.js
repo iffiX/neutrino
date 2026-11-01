@@ -380,6 +380,8 @@ function draw(state) {
   mergeSessions(state);
 
   const content = document.getElementById('content');
+  // Taking the surface out of the page takes the keyboard from its terminal.
+  if (shellSurface && shellSurface.contains(document.activeElement)) shouldFocusShell = true;
   clearChildren(content);
   if (openTab === 'hubs') {
     content.appendChild(drawHubs(state));

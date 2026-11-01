@@ -2711,6 +2711,25 @@ def test_the_account_picker_follows_the_chips_with_two_accounts_or_more():
     assert "tab.account = account || '';" in body_of("openShell")
 
 
+def test_a_redraw_keeps_the_keyboard_on_the_terminal_that_holds_it():
+    """A new terminal takes the keyboard in the frame after its first redraw.
+    The redraw at its open answer takes the surface out of the page, and the
+    terminal takes the keyboard back in the frame after that."""
+    draw = body_of("draw")
+    kept = (
+        "if (shellSurface && shellSurface.contains(document.activeElement)) "
+        "shouldFocusShell = true;"
+    )
+
+    assert "shouldFocusShell = true;" in body_of("openShell")
+    assert "redraw();" in body_of("startShell")
+    assert kept in draw
+    assert draw.index(kept) < draw.index("clearChildren(content);")
+    assert "window.requestAnimationFrame(fitActiveShell);" in body_of("drawTerminals")
+    fit = body_of("fitActiveShell")
+    assert fit.index("if (shouldFocusShell) {") < fit.index("tab.term.focus();")
+
+
 # --- no word from outside is read as markup ---
 
 
