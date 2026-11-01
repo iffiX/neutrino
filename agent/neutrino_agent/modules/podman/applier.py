@@ -30,6 +30,7 @@ from neutrino_agent.modules.podman.constants import (
     PODMAN_CNI_DIR,
     PODMAN_CNI_SUFFIX,
     PODMAN_CNI_VERSION,
+    PODMAN_NETWORK_FILE_DIRS,
     PODMAN_CONTAINER_ACTIONS,
     PODMAN_ENV_DIR,
     PODMAN_ENV_DIR_MODE,
@@ -53,6 +54,7 @@ from neutrino_agent.modules.podman.constants import (
 from neutrino_agent.modules.podman.renderer import source_neutral
 from neutrino_agent.modules.shared import source_fetch
 from neutrino_agent.modules.shared.subprocess_run import run, unit_state
+from neutrino_agent.modules.shared.unpacked_tree import remove_tree
 
 # The order a survey lists the containers in, by where each comes from.
 SOURCE_ORDER = (PODMAN_SOURCE_DECLARED, PODMAN_SOURCE_HUB, PODMAN_SOURCE_MANUAL)
@@ -144,6 +146,34 @@ def ensure_network(name: str, *, podman: tuple = (PODMAN_BINARY,)) -> bool:
     if podman == (PODMAN_BINARY,):
         fix_cni_version(os.path.join(PODMAN_CNI_DIR, name + PODMAN_CNI_SUFFIX))
     return True
+
+
+def remove_network_files(name: str, *, run_command=run) -> None:
+    """Delete what the network backends keep of a network Podman no longer lists.
+
+    ``network rm`` leaves them behind. CNI's dnsname plugin reuses the
+    ``dnsmasq.conf`` it finds for the next network of that name, and its dnsmasq
+    then binds the bridge the old file names.
+
+    Args:
+        name: The network.
+        run_command: Runs one command, as :func:`run`.
+
+    Raises:
+        subprocess.SubprocessError: When podman does not finish.
+        OSError: When podman cannot start or a file cannot be deleted.
+    """
+    found = run_command(
+        [PODMAN_BINARY, "network", "exists", name], is_checked=False, timeout_s=30
+    )
+    if found.is_success:
+        return
+    for directory in PODMAN_NETWORK_FILE_DIRS:
+        path = os.path.join(directory, name)
+        if os.path.isdir(path):
+            remove_tree(path)
+        elif os.path.lexists(path):
+            os.unlink(path)
 
 
 def fix_cni_version(path: str) -> bool:

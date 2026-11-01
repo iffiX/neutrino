@@ -258,6 +258,13 @@ PODMAN_SOURCE_MANUAL = "manual"
 PODMAN_CNI_DIR = "/etc/cni/net.d"
 PODMAN_CNI_SUFFIX = ".conflist"
 PODMAN_CNI_VERSION = "0.4.0"
+# What a network backend keeps of a network under the network's name: CNI
+# dnsname's directory, CNI host-local's leases and aardvark-dns's file.
+PODMAN_NETWORK_FILE_DIRS = (
+    "/run/containers/cni/dnsname",
+    "/var/lib/cni/networks",
+    "/run/containers/networks/aardvark-dns",
+)
 
 # The verbs a ``command {module: podman}`` names, beside ``validate``.
 PODMAN_COMMAND_CONTROL = "control"

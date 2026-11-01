@@ -8,6 +8,7 @@ import subprocess
 import pytest
 
 from neutrino_agent.exceptions import ModuleApplyError, ModuleInstallPending
+from neutrino_agent.modules.podman import applier as applier_module
 from neutrino_agent.modules.podman import container_runner as container_runner_module
 from neutrino_agent.modules.podman.container_runner import (
     ContainerHooks,
@@ -110,8 +111,19 @@ class FakeContainers:
 class FakePodman:
     """podman's answers: what ``ps`` lists, what ``volume ls`` lists, which pulls fail."""
 
-    def __init__(self, *, running=(), stopped=(), volumes=(), failing=(), on_rmi=None):
+    def __init__(
+        self,
+        *,
+        running=(),
+        stopped=(),
+        volumes=(),
+        failing=(),
+        on_rmi=None,
+        networks=(),
+    ):
         self.running = list(running)
+        # The networks ``network exists`` finds.
+        self.networks = set(networks)
         self.stopped = list(stopped)
         self.volumes = list(volumes)
         self.failing = set(failing)
@@ -134,6 +146,9 @@ class FakePodman:
         if verb == "volume" and command[2] == "ls":
             listed = [{"Name": name} for name in self.volumes]
             return CommandResult(list(command), 0, json.dumps(listed), "")
+        if verb == "network" and command[2] == "exists":
+            code = 0 if command[3] in self.networks else 1
+            return CommandResult(list(command), code, "", "")
         if verb == "rmi" and self.on_rmi is not None:
             self.on_rmi(command[2])
         if verb == "pull" and command[2] in self.failing:
@@ -569,12 +584,77 @@ def test_the_uninstall_removes_containers_units_network_volumes_and_images(store
     assert removals == [
         ["rm", "-f", "neutrino_demo"],
         ["network", "rm", "neutrino_demo"],
+        ["network", "exists", "neutrino_demo"],
         ["volume", "ls", "--format", "json"],
         ["volume", "rm", "-f", "neutrino_demo_home"],
         ["volume", "rm", "-f", "neutrino_demo_app"],
         ["rmi", "ghcr.io/acme/webui@" + WEB],
         ["rmi", "docker.io/acme/agent@" + AGENT],
     ]
+
+
+@pytest.fixture
+def network_files(tmp_path, monkeypatch):
+    """What each network backend keeps of one module's network and of another's."""
+    roots = [tmp_path / "dnsname", tmp_path / "leases", tmp_path / "aardvark"]
+    monkeypatch.setattr(
+        applier_module, "PODMAN_NETWORK_FILE_DIRS", tuple(map(str, roots))
+    )
+    for root in roots[:2]:
+        for name in ("neutrino_demo", "neutrino_other"):
+            (root / name).mkdir(parents=True)
+            (root / name / "dnsmasq.conf").write_text("interface=cni-podman1\n")
+    roots[2].mkdir()
+    (roots[2] / "neutrino_demo").write_text("10.89.0.1\n")
+    (roots[2] / "neutrino_other").write_text("10.89.1.1\n")
+    return roots
+
+
+def test_the_uninstall_leaves_nothing_of_the_module_s_network_behind(
+    store, network_files
+):
+    """The dnsname plugin reuses a ``dnsmasq.conf`` it finds, whichever bridge
+    the next network of that name has."""
+    runner_for(FakeContainers(), FakePodman()).uninstall(RECIPE)
+
+    assert all(not (root / "neutrino_demo").exists() for root in network_files)
+    assert all((root / "neutrino_other").exists() for root in network_files)
+
+
+def test_a_network_podman_still_lists_keeps_its_files(store, network_files):
+    podman = FakePodman(networks=["neutrino_demo"])
+
+    runner_for(FakeContainers(), podman).uninstall(RECIPE)
+
+    assert all((root / "neutrino_demo").exists() for root in network_files)
+
+
+def test_the_uninstall_reaches_no_network_file_through_a_machine(store, network_files):
+    """A Podman machine's files are in the machine, and its backend is netavark."""
+    containers = FakeContainers()
+    containers.command = ("podman.exe", "--url", "ssh://lab@127.0.0.1:2222")
+    podman = FakePodman()
+
+    runner_for(containers, podman).uninstall(RECIPE)
+
+    assert all((root / "neutrino_demo").exists() for root in network_files)
+    assert ["network", "exists", "neutrino_demo"] not in [
+        call[1:4] for call in podman.calls
+    ]
+
+
+def test_a_network_file_that_cannot_go_is_a_line_in_the_log(
+    store, network_files, monkeypatch
+):
+    def refuse(path):
+        raise PermissionError(13, "refused", path)
+
+    monkeypatch.setattr(applier_module, "remove_tree", refuse)
+    lines: list = []
+
+    runner_for(FakeContainers(), FakePodman(), lines=lines).uninstall(RECIPE)
+
+    assert any("refused" in line for line in lines)
 
 
 def test_the_uninstall_holds_the_engine_awake_through_every_step(store):

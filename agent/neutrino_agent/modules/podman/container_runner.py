@@ -37,9 +37,11 @@ from neutrino_agent.exceptions import ModuleApplyError, ModuleInstallPending
 from neutrino_agent.modules.podman.applier import (
     image_references,
     read_image_references,
+    remove_network_files,
     stored_reference,
 )
 from neutrino_agent.modules.podman.constants import (
+    PODMAN_BINARY,
     PODMAN_CONTAINER_PULL_TIMEOUT_S,
     PODMAN_HUB_PREFIX,
     PODMAN_MODULE_LABEL,
@@ -360,6 +362,8 @@ class ContainerModuleRunner(ModuleRunner):
                 self._quietly(
                     [*command, "network", "rm", PODMAN_HUB_PREFIX + self.name]
                 )
+                if command == (PODMAN_BINARY,):
+                    self._remove_network_files()
                 for volume in self._volumes(command):
                     self._quietly([*command, "volume", "rm", "-f", volume])
                 held = image_references(podman=command)
@@ -653,6 +657,13 @@ class ContainerModuleRunner(ModuleRunner):
             for entry in (entries if isinstance(entries, list) else [])
             if isinstance(entry, dict) and str(entry.get("Name", "")).startswith(prefix)
         ]
+
+    def _remove_network_files(self) -> None:
+        """Delete what the machine's network backend keeps of the module's network, a failure of which is a line in the log."""
+        try:
+            remove_network_files(PODMAN_HUB_PREFIX + self.name, run_command=self._run)
+        except (OSError, subprocess.SubprocessError) as error:
+            self._log(f"{self.name}: its network's files stay: {error}")
 
     def _quietly(self, command: list) -> None:
         """Run one removal, a failure of which is a line in the log."""
