@@ -1,4 +1,4 @@
-"""The Web share page's inline faces against the client's icon files."""
+"""The App share page's inline faces against the client's icon files."""
 
 import base64
 import re

@@ -1,11 +1,11 @@
 # icons
 
-The source of every icon Neutrino ships: the wolf's faces and the device modules' glyphs. Packaging, the panel and the Web share page read them at build time.
+The source of every icon Neutrino ships: the wolf's faces and the device modules' glyphs. Packaging, the panel and the App share page read them at build time.
 
 | Folder | Holds |
 | --- | --- |
 | `neutrino_hub/` | The hub's eight faces, with a coloured ring around the whole edge. `angry` is red on black. |
-| `neutrino_client/` | The client's seven faces, with colour at the top left and bottom right corners alone. The Web share page and both phone apps use this family. |
+| `neutrino_client/` | The client's seven faces, with colour at the top left and bottom right corners alone. The App share page and both phone apps use this family. |
 | `modules/` | One glyph per device module. |
 
 ## The files of a face
@@ -18,7 +18,7 @@ The source of every icon Neutrino ships: the wolf's faces and the device modules
 
 ## Which face is for what
 
-| Face | Hub | Client | Web share page |
+| Face | Hub | Client | App share page |
 | --- | --- | --- | --- |
 | `open` | the application icon, `.ico`, `.icns`, sidebar, login and favicon | none | none |
 | `wink` | none | the application icon, `.ico`, `.icns`, window, tray, and the iOS and Android app icons | the introduction and its tab icon |
