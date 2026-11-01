@@ -399,7 +399,7 @@ Change one setting. The names and the values they take are in nclient settings s
 例子：nclient hub join "neutrino://…\"""",
         "hub list": """用法：nclient hub list
 
-每个中枢一行：名字、连接状态、走的哪条路（局域网、NetBird、EasyTier、SSH 中转、直连、SakuraFrp、OpenFrp）、往返时间。""",
+每个中枢一行：名字、连接状态、走的哪条路（局域网、NetBird、EasyTier、SSH 中继、直连、SakuraFrp、OpenFrp）、往返时间。""",
         "hub join": """用法：nclient hub join <链接>
 
 用面板生成的链接加入一个中枢。链接只能用一次，30 分钟内有效。
