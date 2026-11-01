@@ -447,6 +447,14 @@ class ModuleRunner:
         """
         return False
 
+    def is_without_instances(self) -> bool:
+        """Whether the module runs one instance per account and has none.
+
+        Returns:
+            False for a module that runs no instances.
+        """
+        return False
+
     def forwarder_ports(self) -> tuple:
         """The ports the agent's forwarders of this module listen on, on ``127.0.0.1``.
 

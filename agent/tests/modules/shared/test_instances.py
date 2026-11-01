@@ -1899,3 +1899,17 @@ def test_an_archive_that_cannot_be_read_is_install_failed(runner, tmp_path):
         runner.install_artifact({}, artifact, str(junk))
 
     assert caught.value.code == "install_failed"
+
+
+def test_a_module_with_no_account_takes_a_start_and_is_without_instances(runner):
+    runner.apply({"instances": []})
+    runner.start()
+
+    assert runner.is_active() is False
+    assert runner.is_without_instances() is True
+
+
+def test_a_module_with_an_account_is_not_without_instances(runner):
+    runner.apply(CONFIG)
+
+    assert runner.is_without_instances() is False

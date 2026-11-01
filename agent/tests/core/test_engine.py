@@ -3231,3 +3231,49 @@ def test_a_read_begun_first_does_not_land_over_a_read_begun_after_it(tmp_path):
     older.join(5)
 
     assert engine._statuses["demo"]["state"] == "installed"
+
+
+class EmptyInstancesRunner(HubRunner):
+    """A module of the account layer that enables no account."""
+
+    def verify(self, recipe):
+        return True
+
+    def is_active(self):
+        return False
+
+    def is_without_instances(self):
+        return True
+
+
+@pytest.mark.parametrize(
+    "want, state, is_active",
+    [("running", "running", True), ("stopped", "stopped", False)],
+)
+def test_a_module_with_no_instance_reads_what_its_want_says(
+    tmp_path, want, state, is_active
+):
+    engine = bare_engine(
+        runner=EmptyInstancesRunner(), verified=[True], tmp_path=tmp_path
+    )
+    engine.mark_configured("fakedesk")
+    engine._wanted["fakedesk"] = {**engine._wanted["fakedesk"], "want": want}
+
+    row = engine._read_one("fakedesk", engine._wanted["fakedesk"])
+
+    assert (row["state"], row["is_active"]) == (state, is_active)
+
+
+def test_a_module_with_instances_reads_stopped_under_running_while_they_are_down(
+    tmp_path,
+):
+    runner = EmptyInstancesRunner()
+    runner.is_without_instances = lambda: False
+    engine = bare_engine(runner=runner, verified=[True], tmp_path=tmp_path)
+    engine.mark_configured("fakedesk")
+
+    row = engine._read_one(
+        "fakedesk", {**engine._wanted["fakedesk"], "want": "running"}
+    )
+
+    assert row["state"] == "stopped"

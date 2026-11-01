@@ -1454,7 +1454,10 @@ class ModuleEngine(ReconcileWorker):
                 return self._with_failure(
                     name, _typed(AGENT_MODULE_STATE_ABSENT), is_present=False
                 )
-            is_active = bool(runner.is_active())
+            # A module with no instance runs while a person's Start stands.
+            is_active = bool(runner.is_active()) or (
+                _want_of(wanted) == AGENT_WANT_RUNNING and runner.is_without_instances()
+            )
             status = _typed(
                 _steady_state(
                     is_active=is_active, is_configured=self.is_configured(name)
@@ -1785,6 +1788,11 @@ def _has_step(task: dict, step: str) -> bool:
         isinstance(planned, dict) and planned.get("name") == step
         for planned in task.get("steps") or []
     )
+
+
+def _want_of(wanted: "dict | None") -> str:
+    """The ``want`` a state's entry names, empty for none."""
+    return str((wanted or {}).get("want", "") or "")
 
 
 def _steady_state(*, is_active: bool, is_configured: bool) -> str:

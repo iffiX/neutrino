@@ -716,6 +716,14 @@ class InstancesModuleRunner(ModuleRunner):
         self._note_refused_page_ports()
         return False
 
+    def is_without_instances(self) -> bool:
+        """Whether no account has an instance.
+
+        Returns:
+            True while the records name no account.
+        """
+        return not self._read_states()
+
     def notice(self) -> dict:
         """``page_silent {port}`` once an instance with no stopped mark stays down for 5 minutes."""
         with self._lock:
