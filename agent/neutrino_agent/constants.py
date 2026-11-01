@@ -393,6 +393,10 @@ AGENT_FAILURES_DIR_NAME = "failures"
 # per module with the digest of each artifact it installed; beside the
 # configured marks.
 AGENT_VERSIONS_DIR_NAME = "versions"
+# Where the mark that a module's task ran an install step lives, one root-only
+# file per module, from that step until a task of the module ends; beside the
+# configured marks.
+AGENT_INSTALL_MARKS_DIR_NAME = "install_marks"
 # Where a package coming down a stream lands until its digest is checked.
 # A module's package is deleted once its install ran; the agent's own
 # outlives the process that received it, and the agent the install put

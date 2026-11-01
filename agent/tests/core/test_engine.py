@@ -142,6 +142,9 @@ def bare_engine(*, runner=None, verified=None, tmp_path=None):
     engine._versions_dir = (
         str(tmp_path / "versions") if tmp_path else "/nowhere/versions"
     )
+    engine._install_marks_dir = (
+        str(tmp_path / "install_marks") if tmp_path else "/nowhere/install_marks"
+    )
     engine._platform_tuple = {"os": "linux", "family": "debian", "arch": "amd64"}
     engine._lines = threading.local()
     engine._task_rows = {}
@@ -1208,6 +1211,54 @@ def test_a_kept_failure_reads_the_same_after_the_agent_starts_again(tmp_path):
         "install_failed",
         {"detail": "dpkg"},
     )
+
+
+def test_an_install_mark_outlives_the_agent_root_only_until_it_is_cleared(tmp_path):
+    configured_dir = str(tmp_path / "configured")
+    first = ModuleEngine(platform=NoPackagesPlatform(), configured_dir=configured_dir)
+    assert not first.has_install_mark("gitea")
+
+    first.keep_install_mark("gitea")
+
+    path = tmp_path / "install_marks" / "gitea"
+    assert (os.stat(path).st_mode & 0o777) == 0o600
+    assert (os.stat(path.parent).st_mode & 0o777) == 0o700
+    second = ModuleEngine(platform=NoPackagesPlatform(), configured_dir=configured_dir)
+    assert second.has_install_mark("gitea")
+    second.clear_install_mark("gitea")
+    assert not second.has_install_mark("gitea")
+    assert not path.exists()
+
+
+def test_an_install_mark_keeps_a_module_the_check_finds_nothing_of_from_reading_absent(
+    tmp_path,
+):
+    """The hub settles a want of ``absent`` at the first report that reads it,
+    and then names the module no more."""
+    engine = bare_engine(verified=[False], tmp_path=tmp_path)
+    wanted = {"want": "absent", "config": {}, "install": HUB_RECIPE}
+    assert engine._read_one("fakedesk", wanted)["state"] == "absent"
+
+    engine.keep_install_mark("fakedesk")
+
+    assert engine._read_one("fakedesk", wanted)["state"] == "installing"
+    engine.clear_install_mark("fakedesk")
+    assert engine._read_one("fakedesk", wanted)["state"] == "absent"
+
+
+def test_a_state_that_names_a_marked_module_no_more_deletes_its_mark(tmp_path):
+    engine = ModuleEngine(
+        platform=NoPackagesPlatform(), configured_dir=str(tmp_path / "configured")
+    )
+    engine.keep_install_mark("gitea")
+    engine.keep_install_mark("codeg")
+
+    engine.take_state({"gitea": {"want": "absent", "config": {}, "install": {}}})
+
+    assert engine.has_install_mark("gitea")
+    assert not engine.has_install_mark("codeg")
+    engine.take_state({})
+    assert not engine.has_install_mark("gitea")
 
 
 def test_a_kept_failure_keeps_its_step_on_disk_and_after_a_restart(tmp_path):

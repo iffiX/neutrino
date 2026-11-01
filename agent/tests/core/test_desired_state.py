@@ -21,9 +21,10 @@ step lock naming the module that holds it and a first step's wait reading
 ``queued``, ``settle`` waiting for one module's task alone, an ask for a
 configure task made before a state names the module planned by the next
 state, a restart's replan from what the machine shows, a step's result
-after the agent began to stop keeping nothing, and a container
-module waiting for Containers once in its install plan, asking it to render,
-and ending quietly while Containers is not to run.
+after the agent began to stop keeping nothing, the mark of a task that ran an
+install step kept across a restart and cleared when a task ends, and a
+container module waiting for Containers once in its install plan, asking it
+to render, and ending quietly while Containers is not to run.
 """
 
 import functools
@@ -129,6 +130,8 @@ class FakeEngine:
         # install gives.
         self.row_states: dict = {}
         self.refreshed: list = []
+        # The modules whose task ran an install step, as a restart finds them.
+        self.install_marks: set = set()
         self.lock = threading.Lock()
 
     def take_state(self, modules, source_sets=None):
@@ -146,6 +149,15 @@ class FakeEngine:
 
     def is_install_failed(self, name):
         return (self.failures.get(name) or {}).get("state") == "install_failed"
+
+    def keep_install_mark(self, name):
+        self.install_marks.add(name)
+
+    def has_install_mark(self, name):
+        return name in self.install_marks
+
+    def clear_install_mark(self, name):
+        self.install_marks.discard(name)
 
     def take_version_switch(self, name, entry):
         return name in self.switching
@@ -1301,6 +1313,127 @@ def test_a_restart_mid_task_plans_the_module_again_from_what_the_machine_shows(
     assert machine.installs == []
     assert runners["samba"].applied == [{"n": "samba"}]
     assert again.applied_hash == "h1"
+
+
+def _stopped_mid_install(runners, tmp_path, **wants):
+    """An agent stopped during one module's install step, with the state its want came from.
+
+    Returns:
+        Its engine, the mark on disk among what a next agent finds.
+    """
+    gate = threading.Event()
+    engine = FakeEngine(
+        runners,
+        absent=tuple(runners),
+        install_refusal={"code": "install_failed", "params": {}},
+    )
+    engine.install_gates["samba"] = gate
+    dying = _agent(runners, tmp_path, engine=engine)
+    dying.apply(state(samba="installed"))
+    assert wait_until(lambda: engine.last("samba")[0].get("index") == 1)
+    dying.apply(state("h2", **wants))
+    dying.stop()
+    gate.set()
+    assert dying.settle("", SETTLE_S)
+    return engine
+
+
+def test_a_cancel_cut_by_a_restart_uninstalls_what_the_install_left(tmp_path):
+    """Cancel's state, then the agent stops at a pull: the presence check fails
+    with one image missing, and the next agent's plan removes the images the
+    task pulled all the same."""
+    runners = {"samba": FakeRunner()}
+    stopped = _stopped_mid_install(runners, tmp_path, samba="absent")
+    assert stopped.install_marks == {"samba"}
+
+    machine = FakeEngine(runners, absent=("samba",))
+    machine.install_marks = stopped.install_marks
+    again = _agent(runners, tmp_path, engine=machine)
+    again.take(state("h2", samba="absent"))
+    assert again.settle("", SETTLE_S)
+
+    assert machine.uninstalls == ["samba"]
+    assert machine.install_marks == set()
+    assert machine.failures == {}
+
+
+def test_a_second_restart_during_the_uninstall_keeps_the_mark(tmp_path):
+    runners = {"samba": FakeRunner()}
+    stopped = _stopped_mid_install(runners, tmp_path, samba="absent")
+    machine = FakeEngine(runners, absent=("samba",))
+    machine.install_marks = stopped.install_marks
+
+    cut = _agent(runners, tmp_path, engine=machine)
+    cut.stop()
+    cut.take(state("h2", samba="absent"))
+    assert cut.settle("", SETTLE_S)
+
+    assert machine.install_marks == {"samba"}
+    assert machine.uninstalls == []
+
+
+def test_a_mark_plans_the_uninstall_over_the_same_tried_hash(tmp_path):
+    """The process died before its task ended, so the file still holds the hash
+    of the absent entry the install began from."""
+    runners = {"samba": FakeRunner()}
+    machine = FakeEngine(runners, absent=("samba",))
+    first = _agent(runners, tmp_path, engine=machine)
+    run(first, state(samba="absent"))
+    assert machine.uninstalls == []
+    machine.install_marks.add("samba")
+
+    again = _agent(runners, tmp_path, engine=machine)
+    again.take(state(samba="absent"))
+    assert again.settle("", SETTLE_S)
+
+    assert machine.uninstalls == ["samba"]
+    assert machine.install_marks == set()
+
+
+def test_a_restart_mid_install_under_a_present_want_installs_and_clears_the_mark(
+    tmp_path,
+):
+    runners = {"samba": FakeRunner()}
+    stopped = _stopped_mid_install(runners, tmp_path, samba="installed")
+    machine = FakeEngine(runners, absent=("samba",))
+    machine.install_marks = stopped.install_marks
+
+    again = _agent(runners, tmp_path, engine=machine)
+    again.take(state("h2", samba="installed"))
+    assert again.settle("", SETTLE_S)
+
+    assert [name for name, _ in machine.installs] == ["samba"]
+    assert machine.uninstalls == []
+    assert machine.install_marks == set()
+
+
+@pytest.mark.parametrize(
+    "refusal", [None, {"code": "install_failed", "params": {}}], ids=["took", "failed"]
+)
+def test_a_task_that_ends_clears_the_mark(tmp_path, refusal):
+    runners = {"samba": FakeRunner()}
+    engine = FakeEngine(runners, absent=("samba",), install_refusal=refusal)
+    marks: list = []
+    keep = engine.keep_install_mark
+    engine.keep_install_mark = lambda name: (marks.append(name), keep(name))
+    held, _ = applier(runners, engine=engine, tmp_path=tmp_path)
+
+    run(held, state(samba="installed"))
+
+    assert marks == ["samba"]
+    assert engine.install_marks == set()
+
+
+def test_a_configure_task_writes_no_mark(tmp_path):
+    runners = {"samba": FakeRunner()}
+    engine = FakeEngine(runners)
+    held, _ = applier(runners, engine=engine, tmp_path=tmp_path)
+    marks: list = []
+    engine.keep_install_mark = marks.append
+
+    run(held, state(samba="running"))
+
+    assert marks == []
 
 
 def test_a_step_that_fails_after_the_agent_began_to_stop_keeps_nothing(tmp_path):

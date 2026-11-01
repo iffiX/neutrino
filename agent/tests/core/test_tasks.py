@@ -53,9 +53,13 @@ class Owner:
         self.rows: list = []
         self.ended: list = []
         self.boundaries = 0
+        self.install_steps_ran = 0
 
     def task_started(self, task):
         pass
+
+    def install_step_ran(self, task):
+        self.install_steps_ran += 1
 
     def plan_task(self, task, entry, *, has_installed):
         plan = self.plans.pop(0)

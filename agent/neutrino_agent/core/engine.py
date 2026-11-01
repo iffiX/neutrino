@@ -52,6 +52,7 @@ from neutrino_agent.constants import (
     AGENT_METHOD_HUB,
     AGENT_METHOD_SYSTEM,
     AGENT_FAILURES_DIR_NAME,
+    AGENT_INSTALL_MARKS_DIR_NAME,
     AGENT_MODULE_DETAILS_TTL_S,
     AGENT_MODULE_STATE_ABSENT,
     AGENT_MODULE_STATE_FAILED,
@@ -285,6 +286,9 @@ class ModuleEngine(ReconcileWorker):
         self._versions_dir = versions_dir or os.path.join(
             os.path.dirname(self._configured_dir), AGENT_VERSIONS_DIR_NAME
         )
+        self._install_marks_dir = os.path.join(
+            os.path.dirname(self._configured_dir), AGENT_INSTALL_MARKS_DIR_NAME
+        )
         self._platform_tuple = platform_tuple()
         # The line sink of the task running on each thread.
         self._lines = threading.local()
@@ -405,8 +409,8 @@ class ModuleEngine(ReconcileWorker):
 
         Each module's runner is handed its recipe and its configuration, a
         container module getting its runner the first time the state names
-        it, and every runner the state's source sets. The failure kept for a
-        module the state no longer names is deleted.
+        it, and every runner the state's source sets. The failure and the
+        install mark kept for a module the state no longer names are deleted.
 
         Args:
             modules: ``{name: {"want", "config", "install"}}``; empty when
@@ -436,6 +440,7 @@ class ModuleEngine(ReconcileWorker):
                 runner.take_config(dict(config) if isinstance(config, dict) else {})
         for name in dropped:
             self.record_failure(name, None)
+        self._clear_install_marks_except(wanted)
         self._wakeup.set()
 
     def is_installed(self, name: str, entry: "dict | None" = None) -> bool:
@@ -493,6 +498,45 @@ class ModuleEngine(ReconcileWorker):
         """
         with contextlib.suppress(OSError):
             os.unlink(os.path.join(self._configured_dir, name))
+
+    def keep_install_mark(self, name: str) -> None:
+        """Record that one module's task ran an install step.
+
+        A name that is not one plain file name keeps nothing.
+
+        Args:
+            name: The module name.
+
+        Raises:
+            OSError: When the mark cannot be written.
+        """
+        if not _is_plain(name):
+            return
+        os.makedirs(self._install_marks_dir, mode=0o700, exist_ok=True)
+        path = os.path.join(self._install_marks_dir, name)
+        with open(path, "a", encoding="utf-8"):
+            pass
+        os.chmod(path, 0o600)
+
+    def has_install_mark(self, name: str) -> bool:
+        """Whether a task of one module ran an install step and no task of it ended since.
+
+        Args:
+            name: The module name.
+
+        Returns:
+            True while the module's mark stands, across a restart.
+        """
+        return os.path.isfile(os.path.join(self._install_marks_dir, name))
+
+    def clear_install_mark(self, name: str) -> None:
+        """Forget that a task of one module ran an install step.
+
+        Args:
+            name: The module name.
+        """
+        with contextlib.suppress(OSError):
+            os.unlink(os.path.join(self._install_marks_dir, name))
 
     def record_failure(self, name: str, failure: "dict | None") -> None:
         """Keep how one module's last step failed, on disk, or delete it.
@@ -1309,7 +1353,8 @@ class ModuleEngine(ReconcileWorker):
             code and params, and a module whose last install failed reads
             ``install_failed`` with that install's code and params,
             whatever is on the machine, except while its task runs. A row
-            with a kept failure adds its ``step``.
+            with a kept failure adds its ``step``. A module the check does
+            not find reads ``installing`` while its install mark stands.
         """
         recipe = _recipe_of(wanted)
         runner = self._runner_for(name, recipe)
@@ -1328,6 +1373,10 @@ class ModuleEngine(ReconcileWorker):
             if not self._is_present(runner, recipe):
                 with self._lock:
                     self._verify_failures.pop(name, None)
+                # The hub settles an absent row, and its state then names no
+                # recipe for the uninstall this mark owes.
+                if self.has_install_mark(name):
+                    return _typed(AGENT_MODULE_STATE_INSTALLING)
                 return self._with_failure(
                     name, _typed(AGENT_MODULE_STATE_ABSENT), is_present=False
                 )
@@ -1375,6 +1424,16 @@ class ModuleEngine(ReconcileWorker):
             status["params"] = dict(failure["params"])
             status = _with_failed_step(status, failure)
         return status
+
+    def _clear_install_marks_except(self, names) -> None:
+        """Forget the install mark of every module but these."""
+        try:
+            held = os.listdir(self._install_marks_dir)
+        except OSError:
+            return
+        for name in held:
+            if name not in names:
+                self.clear_install_mark(name)
 
     def _failure_path(self, name: str) -> str:
         return os.path.join(self._failures_dir, name + FAILURE_SUFFIX)

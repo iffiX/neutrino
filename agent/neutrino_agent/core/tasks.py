@@ -453,8 +453,9 @@ class ModuleTask:
                     if not is_written:
                         self._write_step_line(index, count, step)
                         is_written = True
-                    if kind == PLAN_INSTALL:
+                    if kind == PLAN_INSTALL and not self._has_installed:
                         self._has_installed = True
+                        self._owner.install_step_ran(self)
                     failure = run_step(step, self)
                 except ModuleInstallPending:
                     failure = None

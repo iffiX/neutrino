@@ -35,7 +35,9 @@ kept failure. A task that ends once the agent began to stop keeps no tried
 hash and no outcome: the stop's signal ends the step's commands too. The
 marks hold for one install, one build and one binding: the agent's
 removal, a join and a leave delete them, and another build reads none of
-them.
+them. A task that ran an install step leaves a mark of its own on disk until
+a task of the module ends, so a plan toward ``absent`` after a restart
+uninstalls what that step left.
 
 Not pure: writes the state file, starts the tasks and opens streams.
 """
@@ -536,7 +538,8 @@ class DesiredStateApplier:
         """Plan a task's steps from its entry and what the machine shows.
 
         ``absent`` plans the uninstall when the software is there, the last
-        install failed, or this task already ran an install step; a present
+        install failed, or this task or one the agent's stop cut already ran
+        an install step; a present
         ``want`` plans the install when the software is missing or the last
         install failed, the version switch when a ``hub`` module's kept
         version differs from its recipe's, then the configure steps under
@@ -560,6 +563,7 @@ class DesiredStateApplier:
         if want == AGENT_WANT_ABSENT:
             if (
                 has_installed
+                or self._engine.has_install_mark(name)
                 or self._engine.is_install_failed(name)
                 or self._engine.is_installed(name, entry)
             ):
@@ -587,6 +591,17 @@ class DesiredStateApplier:
                 ]
             steps += configuring
         return kind, steps
+
+    def install_step_ran(self, task) -> None:
+        """Keep the mark that a task ran an install step, until a task of the module ends.
+
+        Args:
+            task: The task, about to run its first install step.
+        """
+        try:
+            self._engine.keep_install_mark(task.name)
+        except OSError as error:
+            self._log(task_line(task.name, f"could not keep the install mark: {error}"))
 
     def is_stopping(self) -> bool:
         """Whether the agent began to stop.
@@ -622,7 +637,8 @@ class DesiredStateApplier:
         """End a task, unless a newer entry came: keep its outcome and its tried hash.
 
         A task that ends once the agent began to stop keeps neither: its
-        tried hash goes, and the module's kept failure stays as it was.
+        tried hash goes, and the module's kept failure and its install mark
+        stay as they were. Any other end deletes the install mark.
 
         Args:
             task: The task.
@@ -659,6 +675,7 @@ class DesiredStateApplier:
             if is_stopped:
                 self._log(task_line(name, "ended by the agent's stop; nothing kept"))
             elif name != AI_TOOLS_SECTION:
+                self._engine.clear_install_mark(name)
                 self._keep_outcome(task, entry, outcome, is_cut=is_cut)
         finally:
             with self._idle:
@@ -929,7 +946,11 @@ class DesiredStateApplier:
             if task.entry_hash != entry_hash or is_asked:
                 task.offer(entry, entry_hash)
             return None
-        if entry_hash == self._tried.get(name) and not is_asked:
+        if (
+            entry_hash == self._tried.get(name)
+            and not is_asked
+            and not self._engine.has_install_mark(name)
+        ):
             return None
         return self._new_task(name, entry, entry_hash)
 
