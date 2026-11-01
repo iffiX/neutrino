@@ -52,6 +52,7 @@ import json
 import os
 import tempfile
 import threading
+import time
 
 from neutrino_agent import AGENT_BUILT_AT, AGENT_VERSION
 from neutrino_agent.constants import (
@@ -125,6 +126,8 @@ AI_TOOLS_SECTION = "ai_tools"
 SOURCE_SETS_SECTION = "source_sets"
 # The module whose Podman runs every container module.
 CONTAINERS_MODULE = AGENT_CONTAINERS_MODULE
+# How often a step reads a required module again once its task took.
+REQUIRED_READ_LOOK_S = 1.0
 
 
 def apply_order(modules: dict, runners: dict) -> list:
@@ -777,7 +780,10 @@ class DesiredStateApplier:
 
         A configure task of an installed module plans again once the
         required module's ``want`` is not ``running``, and so ends with no
-        failure, as :meth:`is_task_cut` has it.
+        failure, as :meth:`is_task_cut` has it. A read begun during the
+        required module's task can land after the task ends, and a failed
+        read of a Podman machine is kept a few seconds, so a required module
+        whose task took is read again for one recheck interval.
 
         Args:
             task: The requiring module's task.
@@ -786,25 +792,35 @@ class DesiredStateApplier:
         Raises:
             ModuleApplyError: ``module_needed {module, state}`` when the
                 required module's ``want`` is not ``running`` in an install,
-                or when it has no task and does not read ``running``.
+                when it has no task and its last task failed or it had none,
+                or when it does not read ``running`` by the interval's end.
             StepSuperseded: When the task holds a newer entry meanwhile, or
                 is a configure task that ends at the step's boundary.
         """
+        read_until = None
         while True:
             with self._lock:
                 want = self._want_of(module)
                 required = self._tasks.get(module)
+                has_taken = module in self._outcomes and not self._outcomes[module]
             if want != AGENT_WANT_RUNNING:
                 if self.is_task_cut(task):
                     raise StepSuperseded(task.name)
                 raise self._module_needed(module)
-            if required is None:
-                if self._state_of(module) == AGENT_WANT_RUNNING:
-                    task.set_wait({})
-                    return
+            if required is not None:
+                task.set_wait(module_wait(module))
+                task.wait_for_task(required)
+                continue
+            if self._state_of(module) == AGENT_WANT_RUNNING:
+                task.set_wait({})
+                return
+            now = time.monotonic()
+            read_until = now + self._recheck_s if read_until is None else read_until
+            if not has_taken or now >= read_until:
                 raise self._module_needed(module)
             task.set_wait(module_wait(module))
-            task.wait_for_task(required)
+            task.wait_for_newer(REQUIRED_READ_LOOK_S)
+            self._engine.refresh_one(module)
 
     def ask_configure(self, name: str):
         """Ask for a configure task of one module, from its entry in the latest state.
@@ -861,9 +877,7 @@ class DesiredStateApplier:
             raise self._module_needed(CONTAINERS_MODULE)
         task.set_wait(module_wait(CONTAINERS_MODULE))
         task.wait_for_task(containers)
-        task.set_wait({})
-        if self._state_of(CONTAINERS_MODULE) != AGENT_WANT_RUNNING:
-            raise self._module_needed(CONTAINERS_MODULE)
+        self.wait_for_module(task, CONTAINERS_MODULE)
 
     def stop_requiring_modules(self, task) -> None:
         """Take down what each module requiring a stopping module serves.

@@ -24,7 +24,8 @@ state, a restart's replan from what the machine shows, a step's result
 after the agent began to stop keeping nothing, the mark of a task that ran an
 install step kept across a restart and cleared when a task ends, and a
 container module waiting for Containers once in its install plan, asking it
-to render, and ending quietly while Containers is not to run.
+to render, ending quietly while Containers is not to run, and taking a read of
+Containers older than its task's end as no failure.
 """
 
 import functools
@@ -1837,6 +1838,114 @@ def test_a_container_module_fails_when_containers_task_ends_not_running(tmp_path
         "module_needed",
         {"module": "podman", "state": "failed"},
     )
+
+
+def _reading_running_after(engine, reads):
+    """Containers' row reads ``stopped`` until the given number of reads after its task."""
+    engine.containers_state = "stopped"
+    seen: list = []
+
+    def refresh_one(name):
+        seen.append(name)
+        if name == "podman" and seen.count("podman") >= reads:
+            engine.containers_state = "running"
+
+    engine.refresh_one = refresh_one
+    return seen
+
+
+def test_a_read_older_than_the_required_task_s_end_fails_no_module(
+    tmp_path, monkeypatch
+):
+    """A read begun during Containers' task can land after the task ends, and a
+    failed read of a Podman machine is kept a few seconds. Windows: ``module_needed
+    {podman, stopped}`` at 1 of 3 Starts, with Containers running seconds later."""
+    monkeypatch.setattr(desired_state_module, "REQUIRED_READ_LOOK_S", 0.01)
+    runners = {"podman": FakeRunner(), "demo": FakeRunner()}
+    engine = FakeEngine(runners, absent=("demo",))
+    seen = _reading_running_after(engine, 3)
+    held, _ = applier(runners, engine=engine, tmp_path=tmp_path)
+
+    run(held, container_state(demo="running"))
+
+    assert seen.count("podman") >= 3
+    assert engine.results["demo"] == ("", {})
+    assert [name for name, _ in engine.installs] == ["demo"]
+
+
+def test_a_required_task_that_took_and_stays_down_fails_the_module(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(desired_state_module, "REQUIRED_READ_LOOK_S", 0.01)
+    runners = {"podman": FakeRunner(), "demo": FakeRunner()}
+    engine = FakeEngine(runners, absent=("demo",))
+    seen = _reading_running_after(engine, 10**6)
+    held, _ = applier(runners, engine=engine, tmp_path=tmp_path, recheck_s=0.05)
+
+    run(held, container_state(demo="running"))
+
+    assert seen.count("podman") > 1
+    assert engine.results["demo"] == (
+        "module_needed",
+        {"module": "podman", "state": "stopped"},
+    )
+
+
+def test_a_newer_entry_ends_the_look_at_a_required_module(tmp_path, monkeypatch):
+    monkeypatch.setattr(desired_state_module, "REQUIRED_READ_LOOK_S", 0.01)
+    runners = {"podman": FakeRunner(), "demo": FakeRunner()}
+    engine = FakeEngine(runners, absent=("demo",))
+    seen = _reading_running_after(engine, 10**6)
+    held, _ = applier(runners, engine=engine, tmp_path=tmp_path)
+
+    held.apply(container_state(demo="running"))
+    assert wait_until(lambda: seen.count("podman") > 1)
+    held.apply(container_state("h2", demo="absent"))
+    assert held.settle("", SETTLE_S)
+
+    assert "demo" not in engine.results or engine.results["demo"] == ("", {})
+    assert engine.failures == {}
+
+
+def test_a_required_module_with_no_task_since_the_start_is_read_once(tmp_path):
+    """A stopped row with no task of this agent is no read that raced one."""
+    runners = {"podman": FakeRunner(), "demo": FakeRunner()}
+    engine = FakeEngine(runners, absent=("demo",))
+    seen = _reading_running_after(engine, 10**6)
+    held, _ = applier(runners, engine=engine, tmp_path=tmp_path)
+    held._tried["podman"] = desired_state_module._section_hash(
+        container_state()["modules"]["podman"]
+    )
+
+    run(held, container_state(demo="running"))
+
+    assert seen.count("podman") == 0
+    assert engine.results["demo"] == (
+        "module_needed",
+        {"module": "podman", "state": "stopped"},
+    )
+
+
+def test_a_render_takes_a_read_older_than_containers_task_s_end(tmp_path, monkeypatch):
+    monkeypatch.setattr(desired_state_module, "REQUIRED_READ_LOOK_S", 0.01)
+    runners = {"podman": FakeRunner(), "demo": FakeRunner()}
+    engine = FakeEngine(runners, absent=("demo",))
+    starts: list = []
+    start = runners["podman"].start
+
+    def start_and_read_stopped():
+        start()
+        starts.append(True)
+        if len(starts) == 2:
+            _reading_running_after(engine, 3)
+
+    runners["podman"].start = start_and_read_stopped
+    held, _ = applier(runners, engine=engine, tmp_path=tmp_path)
+
+    run(held, container_state(demo="installed"))
+
+    assert len(starts) == 2
+    assert engine.results["demo"] == ("", {})
 
 
 def test_a_retry_mark_on_both_runs_containers_again_and_the_module_follows(tmp_path):

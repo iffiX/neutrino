@@ -400,6 +400,18 @@ class ModuleTask:
             if self.has_newer():
                 raise StepSuperseded(self.name)
 
+    def wait_for_newer(self, seconds: float) -> None:
+        """Wait a while, looking at this task's newer entry meanwhile.
+
+        Args:
+            seconds: How long to wait.
+
+        Raises:
+            StepSuperseded: When this task holds a newer entry first.
+        """
+        if self._has_newer.wait(seconds):
+            raise StepSuperseded(self.name)
+
     def _run(self) -> None:
         self._owner.task_started(self)
         try:
