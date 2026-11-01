@@ -907,6 +907,34 @@ def test_a_failed_install_that_left_samba_stays_the_modules_and_runs_again(
     assert packaged._platform.installed == [["samba"], ["samba"]]
 
 
+def test_an_uninstall_with_no_samba_on_the_machine_leaves_no_uninstalled_mark(
+    linux, monkeypatch, tmp_path
+):
+    """A failed install left nothing: a Samba a person installs later reads installed."""
+    engine, platform = linux
+    samba_on_path(monkeypatch, is_there=False)
+    absent = linux_entry("absent")
+    engine.take_state({"samba": absent})
+    engine.keep_install_mark("samba")
+
+    run_steps(engine.uninstall_steps("samba", absent))
+
+    assert not (tmp_path / "uninstalled").exists()
+    assert platform.removed == []
+
+
+def test_a_first_apply_under_stopped_on_a_person_s_samba_withdraws_once(
+    runner, tmp_path
+):
+    (tmp_path / "configured" / "samba").unlink()
+
+    runner.apply_stopped(CONFIG)
+
+    assert FakeUsers.sweeps == 1
+    assert FakeApplier.removals == 0
+    assert FakeApplier.withdrawals == 1
+
+
 def test_a_later_apply_keeps_the_mark_that_the_module_installed_samba(runner):
     mark_package_ours(runner)
 

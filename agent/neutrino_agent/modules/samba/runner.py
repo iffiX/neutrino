@@ -245,7 +245,8 @@ class SambaModuleRunner(SystemPackageModuleRunner):
             applier = SambaConfigApplier(unit=self._unit)
             if self._is_first_apply():
                 changes += users.sweep()
-                applier.remove()
+                if not is_withdrawn:
+                    applier.remove()
                 held = {}
             changes += users.converge_accounts(parsed)
             if is_withdrawn:
@@ -376,12 +377,12 @@ class SambaModuleRunner(SystemPackageModuleRunner):
             write_record(self._record_path, record)
 
     def is_software_kept(self) -> bool:
-        """Whether an uninstall leaves Samba on the machine: it does unless the record says the module installed it.
+        """Whether an uninstall leaves a Samba on the machine: a person's, one the record does not say the module installed.
 
         Returns:
-            True for a person's Samba.
+            True while such a Samba is on the machine.
         """
-        return not is_package_ours(self._record_path)
+        return not is_package_ours(self._record_path) and self.verify({})
 
     def install(self, recipe: dict) -> None:
         """Install the packages when the machine has no Samba, and record that the module did.
@@ -428,7 +429,7 @@ class SambaModuleRunner(SystemPackageModuleRunner):
         if swept:
             self._log("samba: " + "; ".join(swept))
         if not is_package_ours(self._record_path):
-            self._log("samba: kept the machine's own Samba and its packages")
+            self._log("samba: removed no package")
             return
         super().uninstall(recipe)
         self._forget_package()
