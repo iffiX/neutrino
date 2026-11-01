@@ -936,14 +936,19 @@ While a module's first install runs, **Install** reads **Cancel**
 (`ui.modules.cancel`) in the same place, in `button--danger`, the tier of a
 button that removes something ([visual.md](visual.md), "Colour carries one
 meaning each"). A first install is a row reading `installing` or `queued`
-whose `task` runs and whose plan holds a `verify` step. The row names no kind
-of plan, and only an install plan holds `verify` ([agent.md](agent.md), "The
-steps"). Every module has this one behaviour:
+whose `task` runs and whose plan holds a `verify` step, and not both `pull`
+and `start`. The row names no kind of plan, and only an install plan holds
+`verify` ([agent.md](agent.md), "The steps"). A first start with a long step
+counts as a first install: a row reading `installed`, `installing` or `queued`
+whose `task` runs and whose plan holds no `switch`, and holds `npm {account}`
+while the row's `is_active` is false, or holds both `replica_set` and `tex`.
+Every module has this one behaviour:
 
 | Rule | Reason |
 | --- | --- |
 | **Cancel** shows while the task waits for a step lock or a required module, and on a `reboot_required` row beside **Restart now**. A Cancel restarts nothing, and the Windows features stay on, as an uninstall leaves them. | An install that waits is one a person can leave. |
-| A version switch, and any task on a module already installed, shows no **Cancel**, and its buttons stay disabled. | The machine holds the module's data then. |
+| **Cancel** shows through every step of a first start with a long step, in the words and the dialog of a first install. `npm {account}` runs 2 to 3.5 minutes on Linux, 14 minutes in the Windows lab and at most four hours there, and `tex` 4 to 5 minutes. | A person who pressed **Start** on a module the machine never ran can leave it as they can leave its install, and every button would otherwise stay off for that long. |
+| A version switch shows no **Cancel**, and its buttons stay disabled: a plan holding `switch`, and a container module's plan holding both `pull` and `start`. So does any other task on a module already running. | The machine holds the module's data then. |
 | **Cancel** asks through `useConfirm`: the title `ui.modules.cancel_title`, the body `ui.modules.cancel_body`, under it the row's `uninstall_data` line, and the buttons `ui.modules.cancel_confirm` and `ui.modules.cancel_keep`. The line's tone and the confirming button follow `is_deleted`, as in the **Uninstall** table below. Escape and the backdrop keep installing. | Two buttons that both read as cancelling leave the person guessing, and outside a dialog means cancel the dialog. |
 | The confirming button sends `POST /api/agent/module/uninstall`, the route and the `want` of **Uninstall**. The running step ends as it would, no further step runs, and the new plan removes what the install left ([agent.md](agent.md), "A newer entry while a task runs"). | **Cancel** waits for the running step, since a step cut in the middle leaves its work half done. |
 | A row whose `want` is `absent` while its first install still runs reads `ui.modules.cancelling` on the same button, disabled. The page reads this from the row, and a reload shows it. | A press's memory ends with the page. |

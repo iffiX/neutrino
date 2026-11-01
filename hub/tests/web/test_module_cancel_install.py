@@ -2,12 +2,14 @@
 
 What these pin: the six words in both languages; a first install read from
 the row alone, a state of the two a first install reads with a running task
-whose plan has a ``verify`` step; Cancel in Install's place in the danger
-tier, for every module with no module named; its dialog, the uninstall line
-and its tone beside two buttons that do not both read as cancelling; the
-press going to the route of Uninstall with no press noted; Cancelling read
-from the row's ``want`` and kept by the page through the uninstall that
-follows; the buttons of a row in transit staying dead around it.
+whose plan has a ``verify`` step and does not pull and start; a first start
+with a long step read from the plan the same way, ``npm`` on a row that is not
+active, ``tex`` beside ``replica_set``, and none with ``switch``; Cancel in
+Install's place in the danger tier, for every module with no module named; its
+dialog, the uninstall line and its tone beside two buttons that do not both
+read as cancelling; the press going to the route of Uninstall with no press
+noted; Cancelling read from the row's ``want`` and kept by the page through the
+uninstall that follows; the buttons of a row in transit staying dead around it.
 """
 
 import json
@@ -59,11 +61,43 @@ def test_a_first_install_is_read_from_the_row_s_state_and_plan():
     assert 'const FIRST_INSTALL_STATES = ["installing", "queued"];' in page()
     assert 'const INSTALL_PLAN_STEP = "verify";' in page()
     assert (
-        "function isFirstInstall(row: DeviceModuleView): boolean { return ( "
-        "FIRST_INSTALL_STATES.includes(row.state) && row.task !== null && "
-        "row.task.is_running && "
-        "row.task.steps.some((step) => step.name === INSTALL_PLAN_STEP) ); }"
+        "function runningPlan(row: DeviceModuleView): string[] { "
+        "return row.task !== null && row.task.is_running "
+        "? row.task.steps.map((step) => step.name) : []; }"
     ) in page()
+    assert (
+        "(FIRST_INSTALL_STATES.includes(row.state) && "
+        "plan.includes(INSTALL_PLAN_STEP) && "
+        "!IMAGE_CHANGE_STEPS.every((step) => plan.includes(step)))"
+    ) in page()
+
+
+def test_a_container_module_s_version_change_is_no_first_install():
+    assert 'const IMAGE_CHANGE_STEPS = ["pull", "start"];' in page()
+
+
+def test_a_first_start_with_a_long_step_is_read_from_the_plan():
+    assert (
+        'const FIRST_START_STATES = ["installed", ...FIRST_INSTALL_STATES];' in page()
+    )
+    assert 'const EVERY_START_LONG_STEP = "npm";' in page()
+    assert 'const FRESH_START_LONG_STEPS = ["replica_set", "tex"];' in page()
+    assert (
+        "(FIRST_START_STATES.includes(row.state) && isLongFirstStart(row, plan))"
+    ) in page()
+    assert (
+        "function isLongFirstStart(row: DeviceModuleView, plan: string[]): boolean { "
+        "return ( !plan.includes(VERSION_SWITCH_STEP) && "
+        "((plan.includes(EVERY_START_LONG_STEP) && !row.is_active) || "
+        "FRESH_START_LONG_STEPS.every((step) => plan.includes(step))) ); }"
+    ) in page()
+
+
+def test_a_version_switch_and_a_running_module_show_no_cancel():
+    assert 'const VERSION_SWITCH_STEP = "switch";' in page()
+    first_start = page().split('const FIRST_START_STATES = ["installed"')[1]
+    assert '"running"' not in first_start.split(";")[0]
+    assert '"stopped"' not in first_start.split(";")[0]
 
 
 def test_cancel_stands_in_install_s_place_in_the_danger_tier():
@@ -79,7 +113,15 @@ def test_cancel_stands_in_install_s_place_in_the_danger_tier():
 
 def test_every_module_takes_one_cancel():
     body = page()
-    for name in ("isFirstInstall", "isCancelling", "isCancelKept", "CancelButton"):
+    names = (
+        "runningPlan",
+        "isFirstInstall",
+        "isLongFirstStart",
+        "isCancelling",
+        "isCancelKept",
+        "CancelButton",
+    )
+    for name in names:
         start = body.index(f"function {name}(")
         assert "activeModule" not in body[start : start + 400]
         for module in ("podman", "ayakaleaf", "cloudcli", "HERMES", "CONTAINERS"):

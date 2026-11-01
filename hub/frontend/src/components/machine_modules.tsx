@@ -236,6 +236,24 @@ const FIRST_INSTALL_STATES = ["installing", "queued"];
 /** The step only an install plan has. */
 const INSTALL_PLAN_STEP = "verify";
 
+/** The steps of a container module's version change, whose plan pulls the new
+ * images and starts them. A first install's plan ends before `start`. */
+const IMAGE_CHANGE_STEPS = ["pull", "start"];
+
+/** The states a first start reads while its task runs. */
+const FIRST_START_STATES = ["installed", ...FIRST_INSTALL_STATES];
+
+/** The step of a `hub` module's version switch. */
+const VERSION_SWITCH_STEP = "switch";
+
+/** The long step of a first start that every start's plan holds. A module
+ * already active reads as running. */
+const EVERY_START_LONG_STEP = "npm";
+
+/** The steps a first start's plan holds around its other long step. `tex`
+ * alone comes back after a version change, and `replica_set` runs once. */
+const FRESH_START_LONG_STEPS = ["replica_set", "tex"];
+
 /** The busy mark of a Cancel. A Cancel posts Uninstall's route. */
 const CANCEL_BUSY = "cancel";
 
@@ -1155,14 +1173,31 @@ function isCodeNoticed(row: DeviceModuleView): boolean {
   );
 }
 
-/** Whether a module's first install runs. The row names no kind of plan, so
- * this reads the task's steps. */
+/** The step names of a row's running task, empty with none running. */
+function runningPlan(row: DeviceModuleView): string[] {
+  return row.task !== null && row.task.is_running
+    ? row.task.steps.map((step) => step.name)
+    : [];
+}
+
+/** Whether a module's first install runs, or its first start with a long
+ * step. The row names no kind of plan, so this reads the task's steps. */
 function isFirstInstall(row: DeviceModuleView): boolean {
+  const plan = runningPlan(row);
   return (
-    FIRST_INSTALL_STATES.includes(row.state) &&
-    row.task !== null &&
-    row.task.is_running &&
-    row.task.steps.some((step) => step.name === INSTALL_PLAN_STEP)
+    (FIRST_INSTALL_STATES.includes(row.state) &&
+      plan.includes(INSTALL_PLAN_STEP) &&
+      !IMAGE_CHANGE_STEPS.every((step) => plan.includes(step))) ||
+    (FIRST_START_STATES.includes(row.state) && isLongFirstStart(row, plan))
+  );
+}
+
+/** Whether a running plan is a first start that holds a long step. */
+function isLongFirstStart(row: DeviceModuleView, plan: string[]): boolean {
+  return (
+    !plan.includes(VERSION_SWITCH_STEP) &&
+    ((plan.includes(EVERY_START_LONG_STEP) && !row.is_active) ||
+      FRESH_START_LONG_STEPS.every((step) => plan.includes(step)))
   );
 }
 
