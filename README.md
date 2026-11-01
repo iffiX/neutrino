@@ -13,7 +13,7 @@
 [![许可证 MIT](https://img.shields.io/badge/%E8%AE%B8%E5%8F%AF%E8%AF%81-MIT-0a0e14?labelColor=0a0e14&color=22d3ee)](LICENSE)
 [![版本](https://img.shields.io/github/v/release/iffiX/neutrino?label=%E7%89%88%E6%9C%AC&labelColor=0a0e14&color=22d3ee)](https://github.com/iffiX/neutrino/releases)
 [![国内版](https://img.shields.io/badge/%E5%9B%BD%E5%86%85%E7%89%88-CNB-0a0e14?labelColor=0a0e14&color=22d3ee)](https://cnb.cool/iffi-X/neutrino/-/releases)
-[![系统](https://img.shields.io/badge/%E7%B3%BB%E7%BB%9F-Linux%20%C2%B7%20macOS%20%C2%B7%20Windows%20%C2%B7%20Android%20%C2%B7%20iOS-0a0e14?labelColor=0a0e14&color=a78bfa)](https://docs.neutrinohub.net/reference/platforms)
+[![系统](https://img.shields.io/badge/%E7%B3%BB%E7%BB%9F-Linux%20%C2%B7%20macOS%20%C2%B7%20Windows%20%C2%B7%20Android%20%C2%B7%20iOS-0a0e14?labelColor=0a0e14&color=a78bfa)](https://neutrinohub.net/reference/platforms)
 [![LINUX DO](https://img.shields.io/badge/LINUX%20DO-%E8%AE%A8%E8%AE%BA-0a0e14?labelColor=0a0e14&color=ffb003&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB3aWR0aD0iMTIwIiBoZWlnaHQ9IjEyMCIgdmlld0JveD0iMCAwIDEyMCAxMjAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI%2BPGNsaXBQYXRoIGlkPSJhIj48Y2lyY2xlIGN4PSI2MCIgY3k9IjYwIiByPSI0NyIvPjwvY2xpcFBhdGg%2BPGNpcmNsZSBmaWxsPSIjZjBmMGYwIiBjeD0iNjAiIGN5PSI2MCIgcj0iNTAiLz48cmVjdCBmaWxsPSIjMWMxYzFlIiBjbGlwLXBhdGg9InVybCgjYSkiIHg9IjEwIiB5PSIxMCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIzMCIvPjxyZWN0IGZpbGw9IiNmMGYwZjAiIGNsaXAtcGF0aD0idXJsKCNhKSIgeD0iMTAiIHk9IjQwIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjQwIi8%2BPHJlY3QgZmlsbD0iI2ZmYjAwMyIgY2xpcC1wYXRoPSJ1cmwoI2EpIiB4PSIxMCIgeT0iODAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMzAiLz48L3N2Zz4%3D)](https://linux.do/t/topic/3008982) <!-- scan: allow -->
 [![V2EX](https://img.shields.io/badge/V2EX-%E8%AE%A8%E8%AE%BA-0a0e14?labelColor=0a0e14&color=e5e7eb&logo=v2ex&logoColor=white)](https://www.v2ex.com/t/1247759)
 
@@ -21,10 +21,10 @@
 [![Release build](https://img.shields.io/github/actions/workflow/status/iffiX/neutrino/release.yml?label=release%20build&labelColor=0a0e14)](https://github.com/iffiX/neutrino/actions/workflows/release.yml)
 [![Coverage](https://img.shields.io/codecov/c/github/iffiX/neutrino/main?label=coverage&labelColor=0a0e14&logo=codecov&logoColor=white)](https://app.codecov.io/gh/iffiX/neutrino)
 [![Code quality](https://img.shields.io/codacy/grade/ea9cdd7af936477a81201e0f0b25246c?label=code%20quality&labelColor=0a0e14)](https://app.codacy.com/gh/iffiX/neutrino/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
-[![Tests](https://img.shields.io/endpoint?url=https://docs.neutrinohub.net/badges/tests.json&labelColor=0a0e14)](https://github.com/iffiX/neutrino/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/endpoint?url=https://neutrinohub.net/badges/tests.json&labelColor=0a0e14)](https://github.com/iffiX/neutrino/actions/workflows/ci.yml)
 [![Code size](https://img.shields.io/github/languages/code-size/iffiX/neutrino?label=code&labelColor=0a0e14&color=a78bfa)](https://github.com/iffiX/neutrino)
 
-**[在线演示](https://demo.neutrinohub.net/)** · **[安装](https://neutrinohub.net)** · **[文档](https://docs.neutrinohub.net/)** · [下载](https://github.com/iffiX/neutrino/releases/latest)
+**[在线演示](https://neutrinohub.net/demo/)** · **[安装及文档](https://neutrinohub.net/)** · [下载](https://github.com/iffiX/neutrino/releases/latest)
 
 <img src="images/web/readme_hero_zh.webp" width="100%" alt="电脑上的面板总览，手机上的应用列表" />
 
@@ -51,13 +51,13 @@
 
 | 用途 | 应用 |
 | --- | --- |
-| 系统访问 | [远程桌面](https://docs.neutrinohub.net/deploy/remote_desktop)、[传文件](https://docs.neutrinohub.net/deploy/file_share)、[终端](https://docs.neutrinohub.net/deploy/terminal)、[SSH](https://docs.neutrinohub.net/deploy/ssh) |
-| 写代码 | [VS Code](https://docs.neutrinohub.net/deploy/vscode)、[code-server](https://docs.neutrinohub.net/deploy/code_server) |
-| AI 工作流 | [CloudCLI](https://docs.neutrinohub.net/deploy/cloudcli)、[Codeg](https://docs.neutrinohub.net/deploy/codeg)、[Hermes WebUI](https://docs.neutrinohub.net/deploy/hermes_webui) |
-| 写论文 | [Ayakaleaf](https://docs.neutrinohub.net/deploy/ayakaleaf) |
-| 记笔记 | [思源笔记](https://docs.neutrinohub.net/deploy/siyuan) |
-| 放代码 | [Gitea](https://docs.neutrinohub.net/deploy/gitea) |
-| 跑容器 | [容器](https://docs.neutrinohub.net/deploy/containers) |
+| 系统访问 | [远程桌面](https://neutrinohub.net/deploy/remote_desktop)、[传文件](https://neutrinohub.net/deploy/file_share)、[终端](https://neutrinohub.net/deploy/terminal)、[SSH](https://neutrinohub.net/deploy/ssh) |
+| 写代码 | [VS Code](https://neutrinohub.net/deploy/vscode)、[code-server](https://neutrinohub.net/deploy/code_server) |
+| AI 工作流 | [CloudCLI](https://neutrinohub.net/deploy/cloudcli)、[Codeg](https://neutrinohub.net/deploy/codeg)、[Hermes WebUI](https://neutrinohub.net/deploy/hermes_webui) |
+| 写论文 | [Ayakaleaf](https://neutrinohub.net/deploy/ayakaleaf) |
+| 记笔记 | [思源笔记](https://neutrinohub.net/deploy/siyuan) |
+| 放代码 | [Gitea](https://neutrinohub.net/deploy/gitea) |
+| 跑容器 | [容器](https://neutrinohub.net/deploy/containers) |
 
 ## 到处使用
 
@@ -97,7 +97,7 @@
 | 全球连接 | ✅ 免费 | ❌ 自己开端口 | ❌ 自己开端口 | ❌ $19.8/月 | ✅ 免费 | ❌ ¥66/月 | ❌ 另收费 |
 | 付费档 | ✅ 没有 | ❌ 有 | ❌ 有 | ❌ 有 | ❌ 有 | ❌ 有 | ❌ 有 |
 
-价格和限制来自 2026-10-30 各家页面。第三方服务以它们的带宽和账号规定为准。[完整对比](https://docs.neutrinohub.net/compare)
+价格和限制来自 2026-10-30 各家页面。第三方服务以它们的带宽和账号规定为准。[完整对比](https://neutrinohub.net/compare)
 
 ## 安装
 
@@ -111,7 +111,7 @@
 
    <img src="images/web/search_hub_zh.svg" width="100%" alt="搜索微子中枢并打开" />
 
-1. 在手机或另一台电脑上装客户端。iPhone 要[自己签名](https://docs.neutrinohub.net/access/ios)。
+1. 在手机或另一台电脑上装客户端。iPhone 要[自己签名](https://neutrinohub.net/access/ios)。
 
    [![Windows](https://img.shields.io/badge/Windows-%E4%B8%8B%E8%BD%BD-22d3ee?style=for-the-badge&labelColor=0a0e14&color=22d3ee)](https://github.com/iffiX/neutrino/releases/latest)
    [![macOS](https://img.shields.io/badge/macOS-%E4%B8%8B%E8%BD%BD-22d3ee?style=for-the-badge&labelColor=0a0e14&color=22d3ee)](https://github.com/iffiX/neutrino/releases/latest)
@@ -183,7 +183,7 @@ nhub setup
 
 </details>
 
-再加一台电脑见[添加电脑](https://docs.neutrinohub.net/hub/add_machine)，升级和卸载见[升级](https://docs.neutrinohub.net/hub/upgrade)和[卸载](https://docs.neutrinohub.net/hub/uninstall)。
+再加一台电脑见[添加电脑](https://neutrinohub.net/hub/add_machine)，升级和卸载见[升级](https://neutrinohub.net/hub/upgrade)和[卸载](https://neutrinohub.net/hub/uninstall)。
 
 ## 常见问题
 
@@ -211,13 +211,13 @@ nhub setup
 <details>
 <summary><b>安全吗，要注册吗</b></summary>
 
-不开放注册，客户端的密钥由你自己生成，只有你许可的人才能访问。所有连接都走中枢一个受保护的端口，端对端加密。详情见[安全设计](https://docs.neutrinohub.net/share/security)。
+不开放注册，客户端的密钥由你自己生成，只有你许可的人才能访问。所有连接都走中枢一个受保护的端口，端对端加密。详情见[安全设计](https://neutrinohub.net/share/security)。
 
 </details>
 
 ## 文档和社区
 
-- [文档](https://docs.neutrinohub.net/)，新手从[快速上手](https://docs.neutrinohub.net/quick-start)读起
+- [文档](https://neutrinohub.net/)，新手从[快速上手](https://neutrinohub.net/quick-start)读起
 - [LINUX DO 介绍帖](https://linux.do/t/topic/3008982)，[V2EX 帖子](https://www.v2ex.com/t/1247759)
 - 欢迎提 PR、补文档、写教程
 
@@ -229,16 +229,16 @@ nhub setup
 
 | 应用 | 是什么 | 怎么部署 |
 | --- | --- | --- |
-| [VS Code](https://github.com/microsoft/vscode) | 微软的代码编辑器，开在浏览器里 | [部署 VS Code](https://docs.neutrinohub.net/deploy/vscode) |
-| [code-server](https://github.com/coder/code-server) | 开源的网页版 VS Code | [部署 code-server](https://docs.neutrinohub.net/deploy/code_server) |
-| [CloudCLI](https://github.com/siteboon/claudecodeui) | Claude Code 等 AI 编程工具的网页界面 | [部署 CloudCLI](https://docs.neutrinohub.net/deploy/cloudcli) |
-| [Codeg](https://github.com/spacering-net/codeg) | AI 编程工作台，把 Claude Code、Codex、Gemini 放进一个网页 | [部署 Codeg](https://docs.neutrinohub.net/deploy/codeg) |
-| [Hermes WebUI](https://github.com/nesquena/hermes-webui) | AI 助手 Hermes Agent 的网页界面 | [部署 Hermes WebUI](https://docs.neutrinohub.net/deploy/hermes_webui) |
-| [Ayakaleaf](https://github.com/ayaka-notes/ayakaleaf-pro) | 写 LaTeX 论文的网页编辑器，能和同学一起写 | [部署 Ayakaleaf](https://docs.neutrinohub.net/deploy/ayakaleaf) |
-| [思源笔记](https://github.com/siyuan-note/siyuan) | 笔记和知识库软件，笔记存在自己电脑上 | [部署思源笔记](https://docs.neutrinohub.net/deploy/siyuan) |
-| [Gitea](https://github.com/go-gitea/gitea) | 自己架的 GitHub | [部署 Gitea](https://docs.neutrinohub.net/deploy/gitea) |
-| [Podman](https://github.com/podman-container-tools/podman) | 跑容器的引擎，列表里没有的软件也能跑 | [部署容器](https://docs.neutrinohub.net/deploy/containers) |
-| [Samba](https://www.samba.org/) | 把电脑上的文件夹变成别的设备上的一个盘 | [部署文件共享](https://docs.neutrinohub.net/deploy/file_share) |
+| [VS Code](https://github.com/microsoft/vscode) | 微软的代码编辑器，开在浏览器里 | [部署 VS Code](https://neutrinohub.net/deploy/vscode) |
+| [code-server](https://github.com/coder/code-server) | 开源的网页版 VS Code | [部署 code-server](https://neutrinohub.net/deploy/code_server) |
+| [CloudCLI](https://github.com/siteboon/claudecodeui) | Claude Code 等 AI 编程工具的网页界面 | [部署 CloudCLI](https://neutrinohub.net/deploy/cloudcli) |
+| [Codeg](https://github.com/spacering-net/codeg) | AI 编程工作台，把 Claude Code、Codex、Gemini 放进一个网页 | [部署 Codeg](https://neutrinohub.net/deploy/codeg) |
+| [Hermes WebUI](https://github.com/nesquena/hermes-webui) | AI 助手 Hermes Agent 的网页界面 | [部署 Hermes WebUI](https://neutrinohub.net/deploy/hermes_webui) |
+| [Ayakaleaf](https://github.com/ayaka-notes/ayakaleaf-pro) | 写 LaTeX 论文的网页编辑器，能和同学一起写 | [部署 Ayakaleaf](https://neutrinohub.net/deploy/ayakaleaf) |
+| [思源笔记](https://github.com/siyuan-note/siyuan) | 笔记和知识库软件，笔记存在自己电脑上 | [部署思源笔记](https://neutrinohub.net/deploy/siyuan) |
+| [Gitea](https://github.com/go-gitea/gitea) | 自己架的 GitHub | [部署 Gitea](https://neutrinohub.net/deploy/gitea) |
+| [Podman](https://github.com/podman-container-tools/podman) | 跑容器的引擎，列表里没有的软件也能跑 | [部署容器](https://neutrinohub.net/deploy/containers) |
+| [Samba](https://www.samba.org/) | 把电脑上的文件夹变成别的设备上的一个盘 | [部署文件共享](https://neutrinohub.net/deploy/file_share) |
 
 ## 致谢
 

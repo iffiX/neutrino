@@ -13,7 +13,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-0a0e14?labelColor=0a0e14&color=22d3ee)](LICENSE)
 [![Version](https://img.shields.io/github/v/release/iffiX/neutrino?label=version&labelColor=0a0e14&color=22d3ee)](https://github.com/iffiX/neutrino/releases)
 [![Mainland edition](https://img.shields.io/badge/mainland%20edition-CNB-0a0e14?labelColor=0a0e14&color=22d3ee)](https://cnb.cool/iffi-X/neutrino/-/releases)
-[![Platforms](https://img.shields.io/badge/runs%20on-Linux%20%C2%B7%20macOS%20%C2%B7%20Windows%20%C2%B7%20Android%20%C2%B7%20iOS-0a0e14?labelColor=0a0e14&color=a78bfa)](https://docs.neutrinohub.net/en/reference/platforms)
+[![Platforms](https://img.shields.io/badge/runs%20on-Linux%20%C2%B7%20macOS%20%C2%B7%20Windows%20%C2%B7%20Android%20%C2%B7%20iOS-0a0e14?labelColor=0a0e14&color=a78bfa)](https://neutrinohub.net/en/reference/platforms)
 [![LINUX DO](https://img.shields.io/badge/LINUX%20DO-discussion-0a0e14?labelColor=0a0e14&color=ffb003&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB3aWR0aD0iMTIwIiBoZWlnaHQ9IjEyMCIgdmlld0JveD0iMCAwIDEyMCAxMjAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI%2BPGNsaXBQYXRoIGlkPSJhIj48Y2lyY2xlIGN4PSI2MCIgY3k9IjYwIiByPSI0NyIvPjwvY2xpcFBhdGg%2BPGNpcmNsZSBmaWxsPSIjZjBmMGYwIiBjeD0iNjAiIGN5PSI2MCIgcj0iNTAiLz48cmVjdCBmaWxsPSIjMWMxYzFlIiBjbGlwLXBhdGg9InVybCgjYSkiIHg9IjEwIiB5PSIxMCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIzMCIvPjxyZWN0IGZpbGw9IiNmMGYwZjAiIGNsaXAtcGF0aD0idXJsKCNhKSIgeD0iMTAiIHk9IjQwIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjQwIi8%2BPHJlY3QgZmlsbD0iI2ZmYjAwMyIgY2xpcC1wYXRoPSJ1cmwoI2EpIiB4PSIxMCIgeT0iODAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMzAiLz48L3N2Zz4%3D)](https://linux.do/t/topic/3008982) <!-- scan: allow -->
 [![V2EX](https://img.shields.io/badge/V2EX-discussion-0a0e14?labelColor=0a0e14&color=e5e7eb&logo=v2ex&logoColor=white)](https://www.v2ex.com/t/1247759)
 
@@ -21,10 +21,10 @@
 [![Release build](https://img.shields.io/github/actions/workflow/status/iffiX/neutrino/release.yml?label=release%20build&labelColor=0a0e14)](https://github.com/iffiX/neutrino/actions/workflows/release.yml)
 [![Coverage](https://img.shields.io/codecov/c/github/iffiX/neutrino/main?label=coverage&labelColor=0a0e14&logo=codecov&logoColor=white)](https://app.codecov.io/gh/iffiX/neutrino)
 [![Code quality](https://img.shields.io/codacy/grade/ea9cdd7af936477a81201e0f0b25246c?label=code%20quality&labelColor=0a0e14)](https://app.codacy.com/gh/iffiX/neutrino/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
-[![Tests](https://img.shields.io/endpoint?url=https://docs.neutrinohub.net/badges/tests.json&labelColor=0a0e14)](https://github.com/iffiX/neutrino/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/endpoint?url=https://neutrinohub.net/badges/tests.json&labelColor=0a0e14)](https://github.com/iffiX/neutrino/actions/workflows/ci.yml)
 [![Code size](https://img.shields.io/github/languages/code-size/iffiX/neutrino?label=code&labelColor=0a0e14&color=a78bfa)](https://github.com/iffiX/neutrino)
 
-**[Live demo](https://demo.neutrinohub.net/)** · **[Install](https://neutrinohub.net/en/)** · **[Docs](https://docs.neutrinohub.net/en/)** · [Download](https://github.com/iffiX/neutrino/releases/latest)
+**[Live demo](https://neutrinohub.net/demo/)** · **[Install and docs](https://neutrinohub.net/en/)** · [Download](https://github.com/iffiX/neutrino/releases/latest)
 
 <img src="images/web/readme_hero.webp" width="100%" alt="The panel's dashboard on a laptop and the app list on a phone" />
 
@@ -51,13 +51,13 @@ Pick an app and it installs in one click, with no environment to prepare and no 
 
 | Use | Apps |
 | --- | --- |
-| System access | [Remote desktop](https://docs.neutrinohub.net/en/deploy/remote_desktop), [File share](https://docs.neutrinohub.net/en/deploy/file_share), [Terminal](https://docs.neutrinohub.net/en/deploy/terminal), [SSH](https://docs.neutrinohub.net/en/deploy/ssh) |
-| Writing code | [VS Code](https://docs.neutrinohub.net/en/deploy/vscode), [code-server](https://docs.neutrinohub.net/en/deploy/code_server) |
-| AI workflows | [CloudCLI](https://docs.neutrinohub.net/en/deploy/cloudcli), [Codeg](https://docs.neutrinohub.net/en/deploy/codeg), [Hermes WebUI](https://docs.neutrinohub.net/en/deploy/hermes_webui) |
-| Writing papers | [Ayakaleaf](https://docs.neutrinohub.net/en/deploy/ayakaleaf) |
-| Notes | [SiYuan](https://docs.neutrinohub.net/en/deploy/siyuan) |
-| Hosting code | [Gitea](https://docs.neutrinohub.net/en/deploy/gitea) |
-| Containers | [Containers](https://docs.neutrinohub.net/en/deploy/containers) |
+| System access | [Remote desktop](https://neutrinohub.net/en/deploy/remote_desktop), [File share](https://neutrinohub.net/en/deploy/file_share), [Terminal](https://neutrinohub.net/en/deploy/terminal), [SSH](https://neutrinohub.net/en/deploy/ssh) |
+| Writing code | [VS Code](https://neutrinohub.net/en/deploy/vscode), [code-server](https://neutrinohub.net/en/deploy/code_server) |
+| AI workflows | [CloudCLI](https://neutrinohub.net/en/deploy/cloudcli), [Codeg](https://neutrinohub.net/en/deploy/codeg), [Hermes WebUI](https://neutrinohub.net/en/deploy/hermes_webui) |
+| Writing papers | [Ayakaleaf](https://neutrinohub.net/en/deploy/ayakaleaf) |
+| Notes | [SiYuan](https://neutrinohub.net/en/deploy/siyuan) |
+| Hosting code | [Gitea](https://neutrinohub.net/en/deploy/gitea) |
+| Containers | [Containers](https://neutrinohub.net/en/deploy/containers) |
 
 ## Use it anywhere
 
@@ -97,7 +97,7 @@ Select **Share** on any web app to get a link. A friend opens it in a browser wi
 | Global access | ✅ Free | ❌ Open a port | ❌ Open a port | ❌ $19.8/month | ✅ Free | ❌ ¥66/month | ❌ Paid extra |
 | Paid tier | ✅ None | ❌ Yes | ❌ Yes | ❌ Yes | ❌ Yes | ❌ Yes | ❌ Yes |
 
-Prices and limits come from each vendor's page on 2026-10-30. Third-party services set their own bandwidth and account rules. [Full comparison](https://docs.neutrinohub.net/en/compare)
+Prices and limits come from each vendor's page on 2026-10-30. Third-party services set their own bandwidth and account rules. [Full comparison](https://neutrinohub.net/en/compare)
 
 ## Install
 
@@ -111,7 +111,7 @@ Install the hub on a computer and the app on your phone, then scan once:
 
    <img src="images/web/search_hub.svg" width="100%" alt="Searching for Neutrino Hub and opening it" />
 
-1. On your phone or another computer, install the client. An iPhone needs [self-signing](https://docs.neutrinohub.net/en/access/ios).
+1. On your phone or another computer, install the client. An iPhone needs [self-signing](https://neutrinohub.net/en/access/ios).
 
    [![Windows](https://img.shields.io/badge/Windows-Download-22d3ee?style=for-the-badge&labelColor=0a0e14&color=22d3ee)](https://github.com/iffiX/neutrino/releases/latest)
    [![macOS](https://img.shields.io/badge/macOS-Download-22d3ee?style=for-the-badge&labelColor=0a0e14&color=22d3ee)](https://github.com/iffiX/neutrino/releases/latest)
@@ -183,7 +183,7 @@ nhub setup
 
 </details>
 
-To add another computer, see [Add a machine](https://docs.neutrinohub.net/en/hub/add_machine). For upgrades and removal, see [Upgrade](https://docs.neutrinohub.net/en/hub/upgrade) and [Uninstall](https://docs.neutrinohub.net/en/hub/uninstall).
+To add another computer, see [Add a machine](https://neutrinohub.net/en/hub/add_machine). For upgrades and removal, see [Upgrade](https://neutrinohub.net/en/hub/upgrade) and [Uninstall](https://neutrinohub.net/en/hub/uninstall).
 
 ## FAQ
 
@@ -211,13 +211,13 @@ Neutrino Hub deploys them: Codeg, CloudCLI and Hermes WebUI are apps on its list
 <details>
 <summary><b>Is it secure, and do I have to register</b></summary>
 
-Registration is closed. You generate the client keys yourself, and only people you approve get in. Every connection goes through one protected port on the hub, end-to-end encrypted. See [Security](https://docs.neutrinohub.net/en/share/security).
+Registration is closed. You generate the client keys yourself, and only people you approve get in. Every connection goes through one protected port on the hub, end-to-end encrypted. See [Security](https://neutrinohub.net/en/share/security).
 
 </details>
 
 ## Docs and community
 
-- [Docs](https://docs.neutrinohub.net/en/), starting with the [quick start](https://docs.neutrinohub.net/en/quick-start)
+- [Docs](https://neutrinohub.net/en/), starting with the [quick start](https://neutrinohub.net/en/quick-start)
 - [LINUX DO introduction](https://linux.do/t/topic/3008982), [V2EX post](https://www.v2ex.com/t/1247759)
 - Pull requests, docs and tutorials are welcome
 
@@ -229,16 +229,16 @@ Anything else works too. You can declare your own service, with several ports an
 
 | App | What it is | How to deploy |
 | --- | --- | --- |
-| [VS Code](https://github.com/microsoft/vscode) | Microsoft's code editor, opened in a browser | [Deploy VS Code](https://docs.neutrinohub.net/en/deploy/vscode) |
-| [code-server](https://github.com/coder/code-server) | VS Code as an open source web app | [Deploy code-server](https://docs.neutrinohub.net/en/deploy/code_server) |
-| [CloudCLI](https://github.com/siteboon/claudecodeui) | A web page for Claude Code and other AI coding tools | [Deploy CloudCLI](https://docs.neutrinohub.net/en/deploy/cloudcli) |
-| [Codeg](https://github.com/spacering-net/codeg) | An AI coding workspace with Claude Code, Codex and Gemini on one page | [Deploy Codeg](https://docs.neutrinohub.net/en/deploy/codeg) |
-| [Hermes WebUI](https://github.com/nesquena/hermes-webui) | A web page for the Hermes Agent assistant | [Deploy Hermes WebUI](https://docs.neutrinohub.net/en/deploy/hermes_webui) |
-| [Ayakaleaf](https://github.com/ayaka-notes/ayakaleaf-pro) | A web editor for writing LaTeX papers with classmates | [Deploy Ayakaleaf](https://docs.neutrinohub.net/en/deploy/ayakaleaf) |
-| [SiYuan](https://github.com/siyuan-note/siyuan) | Notes and a knowledge base, kept on your computer | [Deploy SiYuan](https://docs.neutrinohub.net/en/deploy/siyuan) |
-| [Gitea](https://github.com/go-gitea/gitea) | Your own GitHub | [Deploy Gitea](https://docs.neutrinohub.net/en/deploy/gitea) |
-| [Podman](https://github.com/podman-container-tools/podman) | A container engine for software the list leaves out | [Deploy containers](https://docs.neutrinohub.net/en/deploy/containers) |
-| [Samba](https://www.samba.org/) | Turns a folder on your computer into a drive on other devices | [Deploy file sharing](https://docs.neutrinohub.net/en/deploy/file_share) |
+| [VS Code](https://github.com/microsoft/vscode) | Microsoft's code editor, opened in a browser | [Deploy VS Code](https://neutrinohub.net/en/deploy/vscode) |
+| [code-server](https://github.com/coder/code-server) | VS Code as an open source web app | [Deploy code-server](https://neutrinohub.net/en/deploy/code_server) |
+| [CloudCLI](https://github.com/siteboon/claudecodeui) | A web page for Claude Code and other AI coding tools | [Deploy CloudCLI](https://neutrinohub.net/en/deploy/cloudcli) |
+| [Codeg](https://github.com/spacering-net/codeg) | An AI coding workspace with Claude Code, Codex and Gemini on one page | [Deploy Codeg](https://neutrinohub.net/en/deploy/codeg) |
+| [Hermes WebUI](https://github.com/nesquena/hermes-webui) | A web page for the Hermes Agent assistant | [Deploy Hermes WebUI](https://neutrinohub.net/en/deploy/hermes_webui) |
+| [Ayakaleaf](https://github.com/ayaka-notes/ayakaleaf-pro) | A web editor for writing LaTeX papers with classmates | [Deploy Ayakaleaf](https://neutrinohub.net/en/deploy/ayakaleaf) |
+| [SiYuan](https://github.com/siyuan-note/siyuan) | Notes and a knowledge base, kept on your computer | [Deploy SiYuan](https://neutrinohub.net/en/deploy/siyuan) |
+| [Gitea](https://github.com/go-gitea/gitea) | Your own GitHub | [Deploy Gitea](https://neutrinohub.net/en/deploy/gitea) |
+| [Podman](https://github.com/podman-container-tools/podman) | A container engine for software the list leaves out | [Deploy containers](https://neutrinohub.net/en/deploy/containers) |
+| [Samba](https://www.samba.org/) | Turns a folder on your computer into a drive on other devices | [Deploy file sharing](https://neutrinohub.net/en/deploy/file_share) |
 
 ## Acknowledgements
 
