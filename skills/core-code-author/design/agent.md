@@ -370,7 +370,7 @@ task, and a forwarder changes nothing but the record.
 | --- | --- |
 | The running step ends as it would. The task then plans again from what the machine shows toward the newer entry, and goes on with that plan. | A step cut in the middle leaves its work half done, such as a dpkg run, an msi or a half-made Podman machine. A step done once is not run again, since the new plan starts from what the machine shows. |
 | A step that waits for something outside the agent, a restart owed, a first start or an install task left running on Windows, checks it every 30 seconds and holds no step lock between checks. Each check is a step boundary. | A module stuck waiting still takes a new `want`, an **Uninstall** among them, and every other module's task goes on. |
-| A new plan toward `absent` from a task that already ran an install step runs the module's uninstall whatever the presence check finds. | A partial pull or a half unpack is the task's own leftover, as an `install_failed` module's is. |
+| A new plan toward `absent` from a task that already ran an install step runs the module's uninstall whatever the presence check finds. The mark that a task ran an install step is kept root-only in `install_marks/<module>` from that step until a task of the module ends, so it holds across a restart. | A partial pull or a half unpack is the task's own leftover, as an `install_failed` module's is. |
 | A configure step reads the configuration of the entry the task holds when the step starts. | A newer entry that changes only the configuration, an App share's guest or an account added, reaches the configure steps that have not run yet. |
 | No button cancels a step, so a newer entry waits at most the running step's own time, about 5 minutes for Ayakaleaf's `tex`. | A cut differs on every system and leaves its work half done. |
 
@@ -470,8 +470,10 @@ hash. The stop's signal also ends the commands a step runs, such as a pull
 or a `tlmgr` run, and a command ended so can exit 0 or fail. So a step whose
 result comes after the agent began to stop counts as the stop: the task
 starts no further step, keeps no tried hash and leaves the kept failure as
-it was. The hub finds the applied hash empty and sends the state, and each
-module is planned again from what the machine shows:
+it was. A module the check does not find reads `installing` while that mark
+stands ("A newer entry while a task runs"), so the hub does not settle a want
+of `absent` before the uninstall runs. The hub finds the applied hash empty and
+sends the state, and each module is planned again from what the machine shows:
 
 | Step | Safe to run again |
 | --- | --- |
