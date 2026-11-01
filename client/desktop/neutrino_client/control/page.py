@@ -9,8 +9,8 @@ from ``vendor/`` among them, so the page loads nothing on its own; the
 terminal's font comes over the same bridge, one piece per request.
 
 The page redraws only when the state payload actually changed, and never
-while the person holds a text selection, a focused form field, or an open
-dialog.
+while the person holds a text selection, a focused form field, an open dialog,
+or a mouse press.
 """
 
 import base64

@@ -200,7 +200,38 @@ function bridgeReady() {
 
 // --- redraw discipline ---
 
+// Whether a mouse press runs, from its mouse down to its click. A draw in
+// between replaces the button under the pointer, and the click never fires.
+let isPressHeld = false;
+// Whether a draw waits for the press to end.
+let isDrawOwed = false;
+let pressEndTimer = null;
+
+window.addEventListener('mousedown', () => {
+  clearTimeout(pressEndTimer);
+  isPressHeld = true;
+}, true);
+
+// A click's handlers draw at once.
+window.addEventListener('click', () => { isPressHeld = false; }, true);
+
+// The click follows its mouse up in the same task, before this timer.
+function endPress() {
+  clearTimeout(pressEndTimer);
+  pressEndTimer = setTimeout(() => {
+    isPressHeld = false;
+    settle();
+  }, 0);
+}
+window.addEventListener('mouseup', endPress, true);
+
+// A press on a scrollbar or a native drag may send no mouse up.
+window.addEventListener('mousemove', (event) => {
+  if (isPressHeld && event.buttons === 0) endPress();
+}, true);
+
 function canRedraw() {
+  if (isPressHeld) return false;
   if (openDialogs > 0) return false;
   if (openPicker) return false;
   if (openMenu) return false;
@@ -369,6 +400,8 @@ function spinner() {
 function draw(state) {
   if (state !== lastState) stateSerial += 1;
   lastState = state;
+  if (isPressHeld) { isDrawOwed = true; return; }
+  isDrawOwed = false;
   setLanguage(state.language);
   setTheme(state.theme);
   document.title = t('ui.window.title');
@@ -1569,8 +1602,11 @@ function mergeSessions(state) {
       endTab(tab, t('ui.terminal_ended'));
     }
   }
-  for (const key of Array.from(closedSessions)) {
-    if (!listed.has(key)) closedSessions.delete(key);
+  // A state held back may still list a session this window closed.
+  if (pendingState === null) {
+    for (const key of Array.from(closedSessions)) {
+      if (!listed.has(key)) closedSessions.delete(key);
+    }
   }
   const shown = new Set(shellTabs.map((tab) => tab.hub_id + '/' + tab.session_id));
   const isFirst = shellTabs.length === 0;
@@ -3135,8 +3171,15 @@ function openDialog(overlay) {
   settleInert();
 }
 
+// A draw replaces a focused form field, so a draw owed to a press waits for it.
 function settle() {
+  if (isDrawOwed && !isFieldFocused()) draw(lastState);
   if (pendingState !== null && canRedraw()) present(pendingState);
+}
+
+function isFieldFocused() {
+  const active = document.activeElement;
+  return !!active && active.tagName === 'INPUT';
 }
 
 function closeDialog(overlay) {

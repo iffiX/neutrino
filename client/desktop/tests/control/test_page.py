@@ -748,6 +748,65 @@ def test_a_deferred_payload_is_replayed_when_the_guard_lifts():
     assert "if (pendingState !== null && canRedraw())" in PAGE_JS
 
 
+def test_no_draw_runs_between_a_mouse_down_and_its_click():
+    """A draw replaces the button under the pointer, and its click never fires."""
+    assert (
+        "window.addEventListener('mousedown', () => {\n"
+        "  clearTimeout(pressEndTimer);\n"
+        "  isPressHeld = true;\n"
+        "}, true);"
+    ) in PAGE_JS
+    # Every way to the page goes through draw, which waits for the press.
+    draw = body_of("draw")
+    held = "if (isPressHeld) { isDrawOwed = true; return; }"
+    assert draw.index("lastState = state;") < draw.index(held)
+    assert draw.index(held) < draw.index("clearChildren(content);")
+    assert "if (isPressHeld) return false;" in body_of("canRedraw")
+    assert PAGE_JS.count("clearChildren(content);") == 2
+    assert "function renderHint(text) {\n  const content" in PAGE_JS
+
+
+def test_a_press_listens_before_the_handlers_that_draw_at_its_mouse_down():
+    # The press takes the window's capture phase, the armed button the document's.
+    assert PAGE_JS.index("window.addEventListener('mousedown'") < PAGE_JS.index(
+        "document.addEventListener('mousedown', (event) => {\n  if (!armedKey) return;"
+    )
+
+
+def test_the_click_of_a_press_draws_at_once():
+    """Opening a terminal fits its pane in the draw its click asks for."""
+    assert (
+        "window.addEventListener('click', () => { isPressHeld = false; }, true);"
+    ) in PAGE_JS
+    opened = body_of("openShell")
+    assert opened.index("redraw();") < opened.index("startShell(tab);")
+
+
+def test_what_a_press_held_back_draws_once_it_ends():
+    end = body_of("endPress")
+    assert "setTimeout(() => {" in end
+    assert end.index("isPressHeld = false;") < end.index("settle();")
+    assert "window.addEventListener('mouseup', endPress, true);" in PAGE_JS
+    settle = body_of("settle")
+    assert settle.index("if (isDrawOwed && !isFieldFocused()) draw(lastState);") < (
+        settle.index("if (pendingState !== null && canRedraw())")
+    )
+    assert "active.tagName === 'INPUT'" in body_of("isFieldFocused")
+
+
+def test_a_closed_session_stays_closed_past_a_draw_of_an_older_state():
+    """The first press on a tab's x runs while a state that lists it is held."""
+    merge = body_of("mergeSessions")
+    guard = merge.index("if (pendingState === null) {")
+    assert guard < merge.index("closedSessions.delete(key);")
+    closed = body_of("closeShell")
+    assert closed.index("closedSessions.add") < closed.index("dropShell(tab);")
+
+
+def test_a_press_with_no_mouse_up_ends_at_the_next_move_with_no_button_down():
+    assert "if (isPressHeld && event.buttons === 0) endPress();" in PAGE_JS
+
+
 # --- the bridge adapter, staging, hygiene ---
 
 
