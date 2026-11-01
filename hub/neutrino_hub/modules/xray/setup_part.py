@@ -18,7 +18,6 @@ from neutrino_hub.modules.xray.constants import (
     XRAY_BINARY_NAME,
     XRAY_DOWNLOAD_URL,
     XRAY_FETCH_LIMIT_BYTES,
-    XRAY_FORMER_SOCKS_PORTS_FIELD,
     XRAY_GEODATA,
     XRAY_NODES_FILE,
     XRAY_ROUTING_FILE,
@@ -98,7 +97,6 @@ def write_answers(proxy) -> None:
     routing["is_local_proxy_enabled"] = proxy.is_enabled and proxy.is_local
     if not is_linux():
         routing["is_overlay_proxy_enabled"] = routing["is_local_proxy_enabled"]
-    routing.pop(XRAY_FORMER_SOCKS_PORTS_FIELD, None)
     write_config(XRAY_ROUTING_FILE, routing)
 
 

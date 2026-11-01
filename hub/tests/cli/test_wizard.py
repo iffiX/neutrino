@@ -629,42 +629,6 @@ def test_a_link_that_cannot_be_read_is_refused():
 
 
 @pytest.mark.feature("proxy")
-@pytest.mark.parametrize(
-    "former",
-    [
-        {"socks_proxy_port": 1081},
-        {"is_socks_direct_enabled": True, "socks_direct_port": 1088},
-    ],
-    ids=["proxied", "direct"],
-)
-@pytest.mark.parametrize(
-    "network",
-    [{"mode": "server"}, {"mode": "router", "wan": ["a"], "lan": ["b"]}],
-    ids=["server", "router"],
-)
-def test_a_document_naming_an_earlier_builds_ports_reads_as_if_it_did_not(
-    network, former
-):
-    def read(proxy: dict) -> wizard.WizardProxy:
-        return wizard.from_document(
-            {
-                "password": "a-long-enough-password",
-                "vault_passphrase": VAULT_PASSPHRASE,
-                "network": network,
-                "proxy": proxy,
-            }
-        ).proxy
-
-    plain = read({"links": [SHARE_LINK]})
-    named = read({"links": [SHARE_LINK], **former})
-
-    assert named.is_enabled == plain.is_enabled
-    assert named.is_local == plain.is_local
-    assert len(named.nodes) == len(plain.nodes)
-    assert read(former) == wizard.WizardProxy()
-
-
-@pytest.mark.feature("proxy")
 def test_any_other_proxy_key_a_document_names_is_still_refused():
     with pytest.raises(WizardAborted, match="socks_port"):
         wizard.from_document(

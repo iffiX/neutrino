@@ -101,18 +101,6 @@ def test_a_server_given_nodes_and_not_its_own_traffic_saves_them_with_every_scop
     assert len(read_config("xray/nodes.json")["nodes"]) == 1
 
 
-def test_the_answers_drop_an_earlier_builds_listeners_from_the_routing_file(config_dir):
-    from neutrino_hub.utils.json_file import read_config, write_config
-
-    former = dict(read_config("xray/routing.json"))
-    former["socks_ports"] = [{"port": 1080, "is_proxied": False}]
-    write_config("xray/routing.json", former)
-
-    setup_part.write_answers(wizard.WizardProxy())
-
-    assert "socks_ports" not in read_config("xray/routing.json")
-
-
 def test_the_routing_example_names_no_listener():
     example = (UTILS_EXAMPLES_DIR / "xray/routing.example.json").read_text(
         encoding="utf-8"

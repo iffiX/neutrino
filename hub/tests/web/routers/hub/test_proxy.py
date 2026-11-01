@@ -381,28 +381,3 @@ def test_the_page_shows_and_stores_no_listener(client):
     assert saved.status_code == 200
     assert "socks_ports" not in saved.json()
     assert "socks_ports" not in runtime.files["xray/routing.json"]
-
-
-def test_the_part_reads_an_earlier_builds_listeners_as_nothing(monkeypatch):
-    monkeypatch.setattr(proxy_router, "read_config", lambda name: dict(EARLIER_ROUTING))
-    part = object.__new__(proxy_router.ProxyPanelPart)
-
-    assert "socks_ports" not in part.routing()
-
-
-def test_settling_the_scopes_writes_an_earlier_builds_listeners_away(monkeypatch):
-    written = {}
-    monkeypatch.setattr(
-        proxy_router,
-        "read_config",
-        lambda name: dict(EARLIER_ROUTING, is_local_proxy_enabled=True),
-    )
-    monkeypatch.setattr(
-        proxy_router, "write_config", lambda name, body: written.update(body)
-    )
-    part = object.__new__(proxy_router.ProxyPanelPart)
-
-    part.settled_routing(XrayNodeList.from_dict({"nodes": [], "balancer": {}}))
-
-    assert written["is_local_proxy_enabled"] is False
-    assert "socks_ports" not in written

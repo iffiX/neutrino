@@ -34,7 +34,6 @@ from neutrino_hub.modules.xray.constants import (
     XRAY_BINARY,
     XRAY_CONFIG_PATH,
     XRAY_DIRECT_DNS_FIELD,
-    XRAY_FORMER_SOCKS_PORTS_FIELD,
     XRAY_GEODATA,
     XRAY_GEODATA_GEOIP_FILE,
     XRAY_GEODATA_GEOSITE_FILE,
@@ -422,9 +421,7 @@ class ProxyPanelPart:
             FileNotFoundError: When the box is not set up.
             ValueError: When the file is not valid JSON.
         """
-        routing = with_resolver_lists(read_config(XRAY_ROUTING_FILE))
-        routing.pop(XRAY_FORMER_SOCKS_PORTS_FIELD, None)
-        return routing
+        return with_resolver_lists(read_config(XRAY_ROUTING_FILE))
 
     def node_list(self) -> XrayNodeList:
         """Read the current node list.

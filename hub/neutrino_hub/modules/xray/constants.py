@@ -171,10 +171,6 @@ XRAY_REMOTE_DNS_FIELD = "remote_dns"
 XRAY_DIRECT_DNS_FIELD = "direct_dns"
 XRAY_REMOTE_DNS_DEFAULT = ({"address": "1.1.1.1", "port": 53},)
 XRAY_FORMER_DIRECT_DNS = "223.5.5.5"
-# The key of the listeners a routing.json from an earlier build holds. Nothing
-# reads it, and the next write of the file drops it.
-XRAY_FORMER_SOCKS_PORTS_FIELD = "socks_ports"
-
 # Statistics and handler API, loopback only.
 XRAY_API_LISTEN = "127.0.0.1"
 XRAY_API_PORT = 10085

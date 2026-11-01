@@ -180,12 +180,6 @@ WIZARD_DOCUMENT_KEYS = (
 # A document need not answer the proxy screen; skipping it is what an
 # unanswered one means, exactly as it does on the screen.
 WIZARD_PROXY_KEYS = ("links", "is_local")
-# The proxy keys an earlier build's document names, read as if it did not.
-WIZARD_PROXY_FORMER_KEYS = (
-    "socks_proxy_port",
-    "is_socks_direct_enabled",
-    "socks_direct_port",
-)
 
 
 def from_document(document: dict) -> WizardAnswers:
@@ -344,11 +338,7 @@ def _proxy_from(given, mode: str) -> WizardProxy:
     """
     if not isinstance(given, dict):
         raise WizardAborted("'proxy' must be an object")
-    _reject_unknown(
-        {key: given[key] for key in given if key not in WIZARD_PROXY_FORMER_KEYS},
-        WIZARD_PROXY_KEYS,
-        "'proxy'",
-    )
+    _reject_unknown(given, WIZARD_PROXY_KEYS, "'proxy'")
     links = given.get("links", [])
     if not links:
         return WizardProxy()
