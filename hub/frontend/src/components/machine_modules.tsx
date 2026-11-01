@@ -189,6 +189,9 @@ const TAB_ORDER = [
 /** The module whose containers run in an account's Podman machine. */
 const CONTAINERS_MODULE = "podman";
 
+/** The module whose Stop stops the machine's SMB server. */
+const FILE_SHARE_MODULE = "samba";
+
 /** The module whose tab opens only once its terms are accepted. */
 const TERMS_MODULE = "vscode";
 
@@ -561,6 +564,26 @@ export function MachineModules({
     });
   };
 
+  // Stop on the File share asks first. Stop on any other module acts at once.
+  const askStop = () => {
+    if (activeRow === undefined) {
+      return;
+    }
+    if (activeRow.name !== FILE_SHARE_MODULE) {
+      void act("stop");
+      return;
+    }
+    confirm.ask({
+      title: t("ui.samba.stop_title", {
+        module: moduleTitle(activeRow.name, activeRow.title),
+        device: deviceName,
+      }),
+      body: t("ui.samba.stop_body"),
+      confirmLabel: t("ui.modules.stop"),
+      onConfirm: () => void act("stop"),
+    });
+  };
+
   const askUninstall = () => {
     if (activeRow === undefined) {
       return;
@@ -909,7 +932,7 @@ export function MachineModules({
                         isKeeperStoppable(activeRow))
                     }
                     isBusy={busyAction === "stop"}
-                    onClick={() => void act("stop")}
+                    onClick={askStop}
                   />
                   <ActionButton
                     action="uninstall"

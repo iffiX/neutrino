@@ -567,5 +567,7 @@
   "ui.samba.folder_remove_title": "Remove {name}",
   "ui.samba.folder_remove_body": "The share goes away. The folder {path} and its files stay.",
   "ui.samba.folder_empty": "No folder shares yet.",
-  "ui.samba.folder_no_accounts": "Enable an account under Home shares first."
+  "ui.samba.folder_no_accounts": "Enable an account under Home shares first.",
+  "ui.samba.stop_title": "Stop {module} on {device}",
+  "ui.samba.stop_body": "The machine's SMB server stops, with every share on it."
 }
