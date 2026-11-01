@@ -2269,11 +2269,11 @@ def test_the_managed_reason_is_one_text_with_its_code_in_both_languages():
     for words in CATALOGS.values():
         assert words["ui.reason.ai_managed"] == words["code.ai_tools_managed"]
     assert EN_WORDS["ui.reason.ai_managed"] == (
-        "This is a managed device: set its AI tools on the hub's panel, "
-        "under Modules, Global configuration."
+        "This is an agent's machine: set its AI tools on the hub's panel, "
+        "in the account's form on its machine page."
     )
     assert CATALOGS["zh-CN"]["ui.reason.ai_managed"] == (
-        "这是已管理的设备，请到中枢面板的“模块”页，在“全局配置”里设置它的 AI 工具。"
+        "这是被控端所在的机器，请到中枢面板上这台机器的机器页，在账户的表单里设置它的 AI 工具。"
     )
 
 
