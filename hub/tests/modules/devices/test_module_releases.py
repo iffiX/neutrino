@@ -12,7 +12,8 @@ going to the npm artifact of its package alone, a ``vscode_update`` feed's
 digest and address going to the entry's artifact, and every module's manifest
 naming a digest of the chosen version for each artifact that changes with it.
 Against a fake that refuses: a feed read once in one read however many entries
-name it, and one warning with each source's reason.
+name it, and one warning with each source's reason. Through the real fetcher:
+a release listing as large as Gitea's read whole.
 """
 
 import hashlib
@@ -32,6 +33,7 @@ from neutrino_hub.modules.devices.module_releases import (
     bearer_token_address,
     oci_index_digest,
 )
+from neutrino_hub.utils.source_fetch import SourceFetcher
 
 REPOSITORY = "acme/app"
 FEED = {
@@ -194,6 +196,65 @@ class RefusingFeed:
         self.reads += 1
         failures = [{"source": sources[0], "reason": "http_403", "detail": "limit"}]
         raise DownloadFailedError(file, failures)
+
+
+class ListingAnswer:
+    """A publisher's answer, as the fetcher opens and reads it."""
+
+    def __init__(self, body: bytes):
+        self._body = body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_details):
+        return False
+
+    def read(self, size: int = -1) -> bytes:
+        return self._body if size < 0 else self._body[:size]
+
+
+def test_a_release_listing_as_large_as_gitea_s_is_read(tmp_path):
+    """Gitea's newest 100 releases weighed 15 MB and Codeg's 6.7 MB on 2026-11-01."""
+    feed = {
+        "kind": "github",
+        "sources": ["https://api.github.com"],
+        "repository": REPOSITORY,
+        "tag": "v{version}",
+    }
+    artifact = {
+        "name": "app",
+        "kind": "binary",
+        "file": "app-{version}",
+        "digest": TESTED_DIGEST,
+        "sources": ["https://app.example/{file}"],
+    }
+    entry = {
+        "runner": "app",
+        "install": {
+            "method": "hub",
+            "params": {"version": "1.2.0", "releases": [feed], "artifacts": [artifact]},
+        },
+    }
+    digest = "sha256:" + "c" * 64
+    release = {
+        "tag_name": "v1.3.0",
+        "body": "x" * (15 * 1024 * 1024),
+        "assets": [{"name": "app-1.3.0", "digest": digest}],
+    }
+    body = json.dumps([release]).encode()
+
+    def opener(_request, _timeout):
+        return ListingAnswer(body)
+
+    read = ModuleReleaseReader(
+        fetcher=SourceFetcher(opener=opener),
+        store=ModuleReleaseStore(path=tmp_path / "module_releases.json"),
+    )
+
+    listed = read.read_entry({"name": "app", "platforms": {"linux": entry}}, entry)
+
+    assert listed == [{"version": "1.3.0", "artifacts": {"app": {"digest": digest}}}]
 
 
 def test_a_feed_that_failed_is_read_and_warned_of_once_in_one_read(

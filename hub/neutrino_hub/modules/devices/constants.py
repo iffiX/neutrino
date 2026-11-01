@@ -333,6 +333,8 @@ DEVICE_SSH_SERVER_KEY_COMMENT = "neutrino"
 DEVICE_MODULE_RELEASES_PATH = UTILS_STATE_ROOT / "module_releases.json"
 DEVICE_MODULE_RELEASES_INTERVAL_S = 24 * 60 * 60
 DEVICE_MODULE_RELEASES_VERSIONS_MAX = 50
+# A GitHub feed's listing names every asset of 100 releases: 15 MB for Gitea.
+DEVICE_MODULE_RELEASES_LISTING_LIMIT_BYTES = 32 * 1024 * 1024
 # The systems whose containers run in an account's Podman machine; only these
 # are sent the Run settings, ``machine`` in ``podman.json``.
 DEVICE_PODMAN_MACHINE_OS = ("windows", "darwin")

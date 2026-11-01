@@ -30,6 +30,7 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_METHOD_AGENT,
     DEVICE_METHOD_BUILTIN,
     DEVICE_METHOD_SYSTEM,
+    DEVICE_MODULE_RELEASES_LISTING_LIMIT_BYTES,
     DEVICE_MODULE_RELEASES_PATH,
     DEVICE_MODULE_RELEASES_VERSIONS_MAX,
 )
@@ -612,6 +613,7 @@ class ModuleReleaseReader:
                     for source in sources
                 ],
                 parse=json.loads,
+                limit=DEVICE_MODULE_RELEASES_LISTING_LIMIT_BYTES,
             )
             return parse_github_releases(document, feed["tag"])
         if kind == FEED_VSCODE_UPDATE:
