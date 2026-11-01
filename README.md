@@ -1,61 +1,172 @@
 <div align="center">
 
-<img src="images/web/banner.webp" width="100%" alt="微子" />
+<img src="images/icons/neutrino_hub/wolf_open.svg" width="128" alt="微子中枢" />
 
-# 家里的电脑，扫一次码，从任何地方接着用
+# 微子·中枢
 
-一个一键配置各种远程服务并提供多种外部网络访问的中枢面板
+**一键部署应用，走到哪用到哪**
 
-[English](README.en.md) · 简体中文
+**简体中文** · [English](README.en.md)
 
-[![License: MIT](https://img.shields.io/badge/license-MIT-0a0e14?labelColor=0a0e14&color=22d3ee)](LICENSE)
-[![Version](https://img.shields.io/github/v/release/iffiX/neutrino?label=version&labelColor=0a0e14&color=22d3ee)](https://github.com/iffiX/neutrino/releases)
+[![许可证 MIT](https://img.shields.io/badge/%E8%AE%B8%E5%8F%AF%E8%AF%81-MIT-0a0e14?labelColor=0a0e14&color=22d3ee)](LICENSE)
+[![版本](https://img.shields.io/github/v/release/iffiX/neutrino?label=%E7%89%88%E6%9C%AC&labelColor=0a0e14&color=22d3ee)](https://github.com/iffiX/neutrino/releases)
 [![国内版](https://img.shields.io/badge/%E5%9B%BD%E5%86%85%E7%89%88-CNB-0a0e14?labelColor=0a0e14&color=22d3ee)](https://cnb.cool/iffi-X/neutrino/-/releases)
+[![系统](https://img.shields.io/badge/%E7%B3%BB%E7%BB%9F-Linux%20%C2%B7%20macOS%20%C2%B7%20Windows%20%C2%B7%20Android%20%C2%B7%20iOS-0a0e14?labelColor=0a0e14&color=a78bfa)](https://docs.neutrinohub.net/reference/platforms)
 [![LINUX DO](https://img.shields.io/badge/LINUX%20DO-%E8%AE%A8%E8%AE%BA-0a0e14?labelColor=0a0e14&color=ffb003&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB3aWR0aD0iMTIwIiBoZWlnaHQ9IjEyMCIgdmlld0JveD0iMCAwIDEyMCAxMjAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI%2BPGNsaXBQYXRoIGlkPSJhIj48Y2lyY2xlIGN4PSI2MCIgY3k9IjYwIiByPSI0NyIvPjwvY2xpcFBhdGg%2BPGNpcmNsZSBmaWxsPSIjZjBmMGYwIiBjeD0iNjAiIGN5PSI2MCIgcj0iNTAiLz48cmVjdCBmaWxsPSIjMWMxYzFlIiBjbGlwLXBhdGg9InVybCgjYSkiIHg9IjEwIiB5PSIxMCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIzMCIvPjxyZWN0IGZpbGw9IiNmMGYwZjAiIGNsaXAtcGF0aD0idXJsKCNhKSIgeD0iMTAiIHk9IjQwIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjQwIi8%2BPHJlY3QgZmlsbD0iI2ZmYjAwMyIgY2xpcC1wYXRoPSJ1cmwoI2EpIiB4PSIxMCIgeT0iODAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMzAiLz48L3N2Zz4%3D)](https://linux.do/t/topic/3008982) <!-- scan: allow -->
 [![V2EX](https://img.shields.io/badge/V2EX-%E8%AE%A8%E8%AE%BA-0a0e14?labelColor=0a0e14&color=e5e7eb&logo=v2ex&logoColor=white)](https://www.v2ex.com/t/1247759)
-[![Platforms](https://img.shields.io/badge/runs%20on-Linux%20%C2%B7%20macOS%20%C2%B7%20Windows%20%C2%B7%20Android-0a0e14?labelColor=0a0e14&color=a78bfa)](https://neutrino.beyond-infinity.top/zh-CN/reference/platforms.html)
 
 [![CI](https://img.shields.io/github/actions/workflow/status/iffiX/neutrino/ci.yml?branch=main&label=CI&labelColor=0a0e14)](https://github.com/iffiX/neutrino/actions/workflows/ci.yml)
 [![Release build](https://img.shields.io/github/actions/workflow/status/iffiX/neutrino/release.yml?label=release%20build&labelColor=0a0e14)](https://github.com/iffiX/neutrino/actions/workflows/release.yml)
 [![Coverage](https://img.shields.io/codecov/c/github/iffiX/neutrino/main?label=coverage&labelColor=0a0e14)](https://app.codecov.io/gh/iffiX/neutrino)
-[![Tests](https://img.shields.io/endpoint?url=https://neutrino.beyond-infinity.top/badges/tests.json&labelColor=0a0e14)](https://github.com/iffiX/neutrino/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/endpoint?url=https://docs.neutrinohub.net/badges/tests.json&labelColor=0a0e14)](https://github.com/iffiX/neutrino/actions/workflows/ci.yml)
 [![Code size](https://img.shields.io/github/languages/code-size/iffiX/neutrino?label=code&labelColor=0a0e14&color=a78bfa)](https://github.com/iffiX/neutrino)
 
-**[安装](#安装)** · **[文档](https://neutrino.beyond-infinity.top/zh-CN/)** · [发布](https://github.com/iffiX/neutrino/releases)
+**[在线演示](https://demo.neutrinohub.net/)** · **[安装](#安装)** · **[文档](https://docs.neutrinohub.net/)** · [下载](https://github.com/iffiX/neutrino/releases/latest)
+
+<img src="images/web/readme_hero_zh.webp" width="100%" alt="电脑上的面板总览，手机上的应用列表" />
 
 </div>
 
-<img src="images/web/devices.webp" width="100%" alt="电脑上是面板的服务页，手机上是同一套服务" />
+## 微子·中枢是什么
 
-## 它能做什么
+微子·中枢是一个部署应用的面板，加一套安全的外部访问路由，给程序员和学生用。
 
-- **AI 会话**：家里机器上的 CloudCLI 和 Codeg，手机上接着聊。
-- **编辑器**：VS Code、code-server 在浏览器里打开。
-- **终端**：保持、共享，几台设备同一个会话。
-- **远程桌面**：点一下。
-- **文件**：挂成盘符或文件夹。
-- **端口**：容器发布的端口，和你声明的 TCP、UDP 端口，转到本机。
+- **面板**：装在你已有的 Windows、macOS 或 Linux 电脑上。应用点一下就装好，全都在一个面板里管。
+- **外部访问路由**：手机扫一次码，在外面也能打开这些应用。有 6 种连法，全程端对端加密。
 
-全部只经中枢的一个端口，在家在外一样。AI 网关多账号配一次，每台设备同一套。
+**部署在自己电脑上就行，不需要域名，也不需要额外的服务器。**
 
-<img src="images/web/one_scan.webp" width="100%" alt="小狼把六样东西汇成一个光球" />
+想在手机上接着跑 Claude Code，在宿舍打开实验室的 VS Code，再拉同学一起改论文，每样软件都不用再配环境、开端口。
+
+<img src="images/web/one_scan.webp" width="100%" alt="小狼把六样服务聚到手中的光球里" />
+
+## 一键部署
+
+想用什么，点一下就装好。不用配环境，不用换系统。容器也一样，Windows、macOS、Linux 同样的办法部署。多个下载源自动选最快的，安装又稳又快。
+
+<img src="images/web/readme_deploy_zh.webp" width="100%" alt="小狼坐在方块上用电脑，身后是面板的应用页" />
+
+| 用途 | 应用 |
+| --- | --- |
+| 系统访问 | [远程桌面](https://docs.neutrinohub.net/deploy/remote_desktop)、[传文件](https://docs.neutrinohub.net/deploy/file_share)、[终端](https://docs.neutrinohub.net/deploy/terminal)、[SSH](https://docs.neutrinohub.net/deploy/ssh) |
+| 写代码 | [VS Code](https://docs.neutrinohub.net/deploy/vscode)、[code-server](https://docs.neutrinohub.net/deploy/code_server) |
+| AI 工作流 | [CloudCLI](https://docs.neutrinohub.net/deploy/cloudcli)、[Codeg](https://docs.neutrinohub.net/deploy/codeg)、[Hermes WebUI](https://docs.neutrinohub.net/deploy/hermes_webui) |
+| 写论文 | [Ayakaleaf](https://docs.neutrinohub.net/deploy/ayakaleaf) |
+| 记笔记 | [思源笔记](https://docs.neutrinohub.net/deploy/siyuan) |
+| 放代码 | [Gitea](https://docs.neutrinohub.net/deploy/gitea) |
+| 跑容器 | [容器](https://docs.neutrinohub.net/deploy/containers) |
+
+## 到处使用
+
+手机扫一次码，地铁、高铁、飞机 Wi-Fi、国外都能用电脑上的软件。6 种连法，智能路由自动走最快的一条\*。
+
+<img src="images/web/readme_ways_zh.webp" width="100%" alt="电脑和手机之间有六种连接方式，走最快的一条" />
+
+客户端有 Windows、macOS、Linux、Android 和 iOS 版，应用、桌面、终端、文件和 SSH 都配好了。
+
+\* NetBird 和 EasyTier 要手动选择，其余的自动。iOS 不含这两种，要用美区账号自己安装它们的 App。
+
+## 任意分享
+
+任何网页应用，点“分享”得到一个链接。同学用浏览器打开就能用，什么都不用装。到期失效，也能随时收回。
+
+<img src="images/web/readme_share_zh.webp" width="100%" alt="左边是分享弹窗，中间两只小狼坐在桌边，右边是同学浏览器里打开的 Ayakaleaf" />
+
+**分享地址 share.neutrinohub.net 只提供一个不到 30 KB 的静态客户端，不会另外连到微子的服务器，全部端对端。你也可以自己部署这个页面的镜像。**
+
+## 为什么选它
+
+- **全能**：应用、桌面、终端、文件、SSH。点一下装上，客户端里都配好了。
+- **安全**：端对端加密。只有你许可的人才能访问。
+- **自主**：不用买服务器、域名和专用设备。微子不提供公开服务器，分享也只连你的中枢。
+- **免费**：管理多台电脑，局域网唤醒，全球连接，不限用户数，不限流量。全部免费。
+
+| | 微子·中枢 | 1Panel | Cosmos | Olares | Tailscale | ToDesk | 飞牛 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 系统支持 | ✅ 三系统 | ❌ 仅 Linux | ❌ 仅 Linux | ❌ 仅它的系统 | ✅ 三系统 | ✅ 三系统 | ❌ 仅它的系统 |
+| 一键装应用 | ✅ 有 | ✅ 有 | ✅ 有 | ✅ 有 | ❌ 没有 | ❌ 没有 | ✅ 有 |
+| 远程桌面 | ✅ 配好了 | ❌ 没有 | ❌ 自己装 | ❌ 自己装 | ❌ 自己装 | ✅ 有 | ❌ 自己装 |
+| 文件盘挂载 | ✅ 配好了 | ❌ 只有网页 | ❌ 付费版 | ❌ 局域网 | ❌ 只传文件 | ❌ 只传文件 | ✅ 有 |
+| 应用分享 | ✅ 一个链接 | ❌ 没有 | ❌ 要域名 | ❌ 只有文件 | ✅ 有 | ❌ 要装软件 | ❌ 只有文件 |
+| 端对端加密 | ✅ 有 | ❌ 自己配 | ❌ 要域名 | ✅ 有 | ✅ 有 | ✅ 有 | ❌ 未声明 |
+| 扫描有指纹 | ✅ 没有 | ❌ 有 | ❌ 有 | ❌ 有 | ✅ 没有 | ✅ 没有 | ❌ 有 |
+| 连回电脑的办法 | ✅ 6 种 | ❌ 自己开端口 | ❌ 自己开端口 | ❌ 3 种 | ❌ 1 种 | ❌ 1 种 | ❌ 2 种 |
+| 全球连接 | ✅ 免费 | ❌ 自己开端口 | ❌ 自己开端口 | ❌ $19.8/月 | ✅ 免费 | ❌ ¥66/月 | ❌ 另收费 |
+| 付费档 | ✅ 没有 | ❌ 有 | ❌ 有 | ❌ 有 | ❌ 有 | ❌ 有 | ❌ 有 |
+
+价格和限制来自 2026-10-30 各家页面。第三方服务以它们的带宽和账号规定为准。[完整对比](https://docs.neutrinohub.net/compare)
 
 ## 安装
 
-在你要远程访问的那台电脑上装一个包，手机装一个应用，扫一次码就能用。点你的系统下载：
+电脑装中枢，手机装 App，扫一次码就能用。
 
-<p align="center">
-<a href="https://github.com/iffiX/neutrino/releases/latest"><img alt="Windows" src="https://img.shields.io/badge/Windows-%E4%B8%8B%E8%BD%BD-22d3ee?style=for-the-badge&labelColor=0a0e14&color=22d3ee" /></a>
-<a href="https://github.com/iffiX/neutrino/releases/latest"><img alt="macOS" src="https://img.shields.io/badge/macOS-%E4%B8%8B%E8%BD%BD-22d3ee?style=for-the-badge&labelColor=0a0e14&color=22d3ee" /></a>
-<a href="https://github.com/iffiX/neutrino/releases/latest"><img alt="Linux" src="https://img.shields.io/badge/Linux-%E4%B8%8B%E8%BD%BD-22d3ee?style=for-the-badge&labelColor=0a0e14&color=22d3ee" /></a>
-<a href="https://github.com/iffiX/neutrino/releases/latest"><img alt="Android" src="https://img.shields.io/badge/Android-%E4%B8%8B%E8%BD%BD-22d3ee?style=for-the-badge&labelColor=0a0e14&color=22d3ee" /></a>
-</p>
+1. 在要远程访问的电脑上装中枢，装好后搜索 **微子中枢** 并打开，跟着浏览器里的向导走。
 
-电脑上装完，在系统里搜 **Neutrino Hub** 点开，三个系统都一样，浏览器里跟着向导走。几分钟，设好密码，面板就开了。
+   [![Windows](https://img.shields.io/badge/Windows-%E4%B8%8B%E8%BD%BD-22d3ee?style=for-the-badge&labelColor=0a0e14&color=22d3ee)](https://github.com/iffiX/neutrino/releases/latest)
+   [![macOS](https://img.shields.io/badge/macOS-%E4%B8%8B%E8%BD%BD-22d3ee?style=for-the-badge&labelColor=0a0e14&color=22d3ee)](https://github.com/iffiX/neutrino/releases/latest)
+   [![Linux](https://img.shields.io/badge/Linux-%E4%B8%8B%E8%BD%BD-22d3ee?style=for-the-badge&labelColor=0a0e14&color=22d3ee)](https://github.com/iffiX/neutrino/releases/latest)
 
-<img src="images/web/search_hub.svg" width="100%" alt="搜索 Neutrino Hub 并点开" />
+   <img src="images/web/search_hub_zh.svg" width="100%" alt="搜索微子中枢并打开" />
 
-没有桌面的机器，比如 ARM64 的软路由、开发板，或者 SSH 进去的电脑，在终端里启动向导，在终端里答，或者用别的电脑打开它打印的网址。Linux 和 macOS：
+1. 在手机或另一台电脑上装客户端。iPhone 要[自己签名](https://docs.neutrinohub.net/access/ios)。
+
+   [![Windows](https://img.shields.io/badge/Windows-%E4%B8%8B%E8%BD%BD-22d3ee?style=for-the-badge&labelColor=0a0e14&color=22d3ee)](https://github.com/iffiX/neutrino/releases/latest)
+   [![macOS](https://img.shields.io/badge/macOS-%E4%B8%8B%E8%BD%BD-22d3ee?style=for-the-badge&labelColor=0a0e14&color=22d3ee)](https://github.com/iffiX/neutrino/releases/latest)
+   [![Linux](https://img.shields.io/badge/Linux-%E4%B8%8B%E8%BD%BD-22d3ee?style=for-the-badge&labelColor=0a0e14&color=22d3ee)](https://github.com/iffiX/neutrino/releases/latest)
+   [![Android](https://img.shields.io/badge/Android-%E4%B8%8B%E8%BD%BD-22d3ee?style=for-the-badge&labelColor=0a0e14&color=22d3ee)](https://github.com/iffiX/neutrino/releases/latest)
+   [![iPhone](https://img.shields.io/badge/iPhone-%E4%B8%8B%E8%BD%BD-22d3ee?style=for-the-badge&labelColor=0a0e14&color=22d3ee)](https://github.com/iffiX/neutrino/releases/latest)
+
+   <img src="images/web/client_app_zh.svg" width="100%" alt="桌面上的微子客户端图标" />
+
+1. 在面板的 **客户端** 页按 **新建客户端链接**。手机在 App 的 **加入中枢** 里扫码，电脑把链接粘到 **中枢** 页。
+
+国内网络用[国内版](https://cnb.cool/iffi-X/neutrino/-/releases)，无部分网络功能。
+
+<details>
+<summary><b>用一条命令安装</b></summary>
+
+Linux 和 macOS：
+
+```bash
+# 中枢
+curl -fsSL https://github.com/iffiX/neutrino/releases/latest/download/install.sh | sh
+# 客户端
+curl -fsSL https://github.com/iffiX/neutrino/releases/latest/download/install.sh | sh -s -- client
+```
+
+Windows，在管理员 PowerShell 里：
+
+```powershell
+# 中枢
+irm https://github.com/iffiX/neutrino/releases/latest/download/install.ps1 | iex
+# 客户端
+& ([scriptblock]::Create((irm https://github.com/iffiX/neutrino/releases/latest/download/install.ps1))) client
+```
+
+国内版，Linux 和 macOS：
+
+```bash
+# 中枢
+curl -fsSL https://cnb.cool/iffi-X/neutrino/-/git/raw/main/packaging/install/install.sh | sh
+# 客户端
+curl -fsSL https://cnb.cool/iffi-X/neutrino/-/git/raw/main/packaging/install/install.sh | sh -s -- client
+```
+
+国内版，Windows，在管理员 PowerShell 里：
+
+```powershell
+# 中枢
+irm https://cnb.cool/iffi-X/neutrino/-/git/raw/main/packaging/install/install.ps1 | iex
+# 客户端
+& ([scriptblock]::Create((irm https://cnb.cool/iffi-X/neutrino/-/git/raw/main/packaging/install/install.ps1))) client
+```
+
+</details>
+
+<details>
+<summary><b>没有桌面的电脑</b></summary>
+
+开发板、路由器和只能 SSH 的电脑，在终端里运行向导。Linux 和 macOS：
 
 ```bash
 sudo nhub setup
@@ -67,136 +178,90 @@ Windows，在管理员 PowerShell 里：
 nhub setup
 ```
 
-嫌点来点去麻烦的，一条命令下载、校验、安装，装完直接进向导。Linux 和 macOS：
+</details>
 
-```bash
-curl -fsSL https://github.com/iffiX/neutrino/releases/latest/download/install.sh | sh
-```
+再加一台电脑见[添加电脑](https://docs.neutrinohub.net/hub/add_machine)，升级和卸载见[升级](https://docs.neutrinohub.net/hub/upgrade)和[卸载](https://docs.neutrinohub.net/hub/uninstall)。
 
-Windows：
-
-```powershell
-irm https://github.com/iffiX/neutrino/releases/latest/download/install.ps1 | iex
-```
-
-再管几台机器，或者给另一台电脑装客户端，见文档的[安装](https://neutrino.beyond-infinity.top/zh-CN/install/hub.html)。
-
-## 扫码加入
-
-在面板的客户端页建一条链接。手机扫码，电脑贴链接，服务就在列表里了。
-
-## 从外面连回来
-
-NetBird、EasyTier、自己的 VPS，或者直连\*，在面板的外部访问页上开一种就行。推荐 NetBird 或 EasyTier。每种要准备什么，见[外部访问](https://neutrino.beyond-infinity.top/zh-CN/hub/overlay.html)。
-
-\* 直连要把 8443 开到公网上，这部分的安全性还在测试，先别在公网上用。
-
-## 卸载
-
-想重来一遍但不卸载，就重置中枢。包还在，再运行 `sudo nhub setup` 重新配置：
-
-```bash
-sudo nhub reset all
-```
-
-**卸载中枢。** 卸包就停掉它的服务、把网络交还给这台电脑，不用先重置。配置和密钥留着，下次装回来还能用：
-
-```bash
-sudo apt remove neutrino-hub     # Debian、Ubuntu
-sudo dnf remove neutrino-hub     # Fedora、RHEL
-sudo pacman -R neutrino-hub      # Arch
-```
-
-Windows 上在 **设置** > **应用** > **安装的应用** 里卸载 **Neutrino Hub**。
-
-**卸载客户端.** 先在客户端里离开中枢（中枢那一行的 **离开**，或 `nclient leave --yes`），再：
-
-```bash
-sudo apt remove neutrino-client    # Debian、Ubuntu；purge 连每个账户的配置一起删
-sudo dnf remove neutrino-client    # Fedora、RHEL
-```
-
-Windows 上在 **安装的应用** 里卸载 **Neutrino Client**；手机上像别的应用一样卸载。
+## 常见问题
 
 <details>
-<summary><b>连中枢配置一起删</b></summary>
+<summary><b>和 1Panel、宝塔有什么区别</b></summary>
 
-要一点不留，包括密钥和保险库：
-
-```bash
-sudo apt purge neutrino-hub                                                  # Debian、Ubuntu
-sudo rm -rf /etc/neutrino/hub /var/lib/neutrino/hub /var/log/neutrino/hub    # Fedora、RHEL、Arch，卸包之后
-```
-
-Windows 上卸载后删掉 `C:\ProgramData\Neutrino\hub`。
+它们管 Linux 服务器上的网站和数据库。微子·中枢管你自己 Windows、macOS、Linux 电脑上的工作软件，还带 6 种连回来的办法。
 
 </details>
 
 <details>
-<summary><b>卸载被控端</b></summary>
+<summary><b>和 UU、向日葵、ToDesk 有什么区别</b></summary>
 
-在被控的机器上，卸包会撤掉模块加上的服务、计划任务和防火墙规则；共享、仓库和容器卷留下：
-
-```bash
-sudo apt remove neutrino-agent     # Debian、Ubuntu；purge 连它的配置一起删
-sudo dnf remove neutrino-agent     # Fedora、RHEL
-sudo nagent service uninstall      # macOS，或任何系统：只撤掉模块加上的东西，包留着
-```
-
-Windows 上在 **安装的应用** 里卸载 **Neutrino Agent**。
+它们是远程桌面。这里的远程桌面只是一项，旁边还有编辑器、AI 写代码、终端和文件，手机上打开的是网页和终端。
 
 </details>
 
-macOS 的命令和每一步留下什么，见文档站的[卸载](https://neutrino.beyond-infinity.top/zh-CN/uninstall.html)页。
+<details>
+<summary><b>和 Claude 自带的远程、各种 agent 聚合工具有什么区别</b></summary>
 
-## 安全性
+它们是微子·中枢部署的应用，比如 Codeg、CloudCLI、Hermes WebUI。微子·中枢负责把它们装好，让你安全地连上。
 
-- **对外只开一个端口。** 只有 8443 对外，而且只在你打开直连\*时才开；面板的两个端口只在你勾选的网络上应答。外面的人看到的，只是一个要出示凭证的 TLS 端口。
-- **只有加入过的设备能连，连上的全程加密。** 客户端和被控端到中枢的每一条连接都是 TLS。加入要用链接里的票据，链接 30 分钟有效、只能用一次；设备记住中枢的证书指纹，以后只认这一台。
-- **对 DoS 做了基本的防护。** 没验证的连接只能走一次握手，连接数、握手时间和消息大小都有上限，超了就断。这部分还比较初步，欢迎提 issue。
-- **面板密码防爆破。** 连续输错 5 次之后开始锁定，锁定时间逐级加长，30 秒、60 秒、5 分钟、1 小时、1 天；fail2ban 按同样的阶梯封禁反复尝试 SSH 登录的地址。
-- **密钥封在保险库里。** 密钥、密码和令牌用你安装时设的主口令加密；配置文件和备份里只有密文，面板存进去之后也不再显示。
-- **root 只用在该用的地方。** 中枢要改防火墙、装软件，被控端要起服务，所以这两个以 root 运行，服务单元关掉了 root 用不到的能力；客户端跑在你自己的账户下。
+</details>
 
-细节在 [design/transport.md](skills/core-code-author/design/transport.md) 和 [design/privilege.md](skills/core-code-author/design/privilege.md)。写给读者的版本在文档站的[安全](https://neutrino.beyond-infinity.top/zh-CN/security.html)页。
+<details>
+<summary><b>安全吗，要注册吗</b></summary>
 
-## 文档和许可证
+不开放注册，客户端的密钥由你自己生成，只有你许可的人才能访问。所有连接都走中枢一个受保护的端口，端对端加密。详情见[安全设计](https://docs.neutrinohub.net/share/security)。
 
-[中文文档](https://neutrino.beyond-infinity.top/zh-CN/) · [English documentation](https://neutrino.beyond-infinity.top/)
+</details>
 
-[MIT](LICENSE)。`client/android/` 下的安卓应用编进了 RustDesk 的内核，这个目录按它自己的 `LICENSE` 采用 AGPL-3.0。
+## 文档和社区
 
-## 社区
+- [文档](https://docs.neutrinohub.net/)，新手从[快速上手](https://docs.neutrinohub.net/quick-start)读起
+- [LINUX DO 介绍帖](https://linux.do/t/topic/3008982)，[V2EX 帖子](https://www.v2ex.com/t/1247759)
+- 欢迎提 PR、补文档、写教程
 
-这个项目在下面这些地方发布和讨论：
+## 支持的应用
 
-- [V2EX](https://www.v2ex.com/t/1247759)：分享创造节点
-- [LINUX DO](https://linux.do/)：开发调优版块，[介绍帖](https://linux.do/t/topic/3008982)
+微子·中枢支持以下应用，这个列表正在快速扩张。
+
+列表里没有的也能用：你可以自己声明服务，填多个端口和 HTTP 入口。容器暴露的端口会自动添加为应用，全部自动。
+
+| 应用 | 是什么 | 怎么部署 |
+| --- | --- | --- |
+| [VS Code](https://github.com/microsoft/vscode) | 微软的代码编辑器，开在浏览器里 | [部署 VS Code](https://docs.neutrinohub.net/deploy/vscode) |
+| [code-server](https://github.com/coder/code-server) | 开源的网页版 VS Code | [部署 code-server](https://docs.neutrinohub.net/deploy/code_server) |
+| [CloudCLI](https://github.com/siteboon/claudecodeui) | Claude Code 等 AI 编程工具的网页界面 | [部署 CloudCLI](https://docs.neutrinohub.net/deploy/cloudcli) |
+| [Codeg](https://github.com/spacering-net/codeg) | AI 编程工作台，把 Claude Code、Codex、Gemini 放进一个网页 | [部署 Codeg](https://docs.neutrinohub.net/deploy/codeg) |
+| [Hermes WebUI](https://github.com/nesquena/hermes-webui) | AI 助手 Hermes Agent 的网页界面 | [部署 Hermes WebUI](https://docs.neutrinohub.net/deploy/hermes_webui) |
+| [Ayakaleaf](https://github.com/ayaka-notes/ayakaleaf-pro) | 写 LaTeX 论文的网页编辑器，能和同学一起写 | [部署 Ayakaleaf](https://docs.neutrinohub.net/deploy/ayakaleaf) |
+| [思源笔记](https://github.com/siyuan-note/siyuan) | 笔记和知识库软件，笔记存在自己电脑上 | [部署思源笔记](https://docs.neutrinohub.net/deploy/siyuan) |
+| [Gitea](https://github.com/go-gitea/gitea) | 自己架的 GitHub | [部署 Gitea](https://docs.neutrinohub.net/deploy/gitea) |
+| [Podman](https://github.com/podman-container-tools/podman) | 跑容器的引擎，列表里没有的软件也能跑 | [部署容器](https://docs.neutrinohub.net/deploy/containers) |
+| [Samba](https://www.samba.org/) | 把电脑上的文件夹变成别的设备上的一个盘 | [部署文件共享](https://docs.neutrinohub.net/deploy/file_share) |
 
 ## 致谢
 
-- [Xray-core](https://github.com/XTLS/Xray-core)：代理内核
+微子·中枢自带这些软件：
+
+- [Xray-core](https://github.com/XTLS/Xray-core)：网络内核
 - [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)：AI 网关
 - [cpa-usage-keeper](https://github.com/Willxup/cpa-usage-keeper)：网关的用量记录
 - [NetBird](https://github.com/netbirdio/netbird)：带管理面的虚拟网
 - [EasyTier](https://github.com/EasyTier/EasyTier)：去中心化的虚拟网
+- [frp](https://github.com/fatedier/frp)：连 SakuraFrp 和 OpenFrp 的客户端
 - [cc-switch](https://github.com/SaladDay/cc-switch-cli)：切换 Claude Code、Codex 和 Gemini CLI 的配置
 - [RustDesk](https://github.com/rustdesk/rustdesk)：远程桌面的主机和查看器
-- [CloudCLI](https://github.com/siteboon/claudecodeui)：浏览器里的 AI 编程会话
-- [Codeg](https://github.com/spacering-net/codeg)：浏览器里的 AI 编程会话，Claude Code、Codex、Gemini CLI 等十几个 agent 共用一个页面
-- [code-server](https://github.com/coder/code-server)：浏览器里的 VS Code
-- [Gitea](https://github.com/go-gitea/gitea)：私有 git 服务器
-- [Samba](https://www.samba.org/)：SMB 共享
-- [Podman](https://github.com/containers/podman)：容器运行时
 - [dnsmasq](https://thekelleys.org.uk/dnsmasq/doc.html)：局域网的 DHCP 和 DNS
 - [hostapd](https://w1.fi/hostapd/)：无线接入点
 - [v2fly geodata](https://github.com/v2fly/domain-list-community)：分流用的域名和 IP 列表
 
+## 许可证
+
+[MIT](LICENSE)。Android 应用和 iOS 应用使用 AGPL-3.0。
+
 <div align="center">
 
-<img src="images/web/outro.webp" width="100%" alt="微子" />
+<img src="images/web/outro.webp" width="100%" alt="戴着耳机写代码的小狼" />
 
-# 让创造重新变得有趣。
+**让创造重新变得有趣。**
 
 少花点时间维护环境。<br/>
 多花点时间，做当初让你搭起这套环境的事。
