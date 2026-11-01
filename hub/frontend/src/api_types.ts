@@ -1271,6 +1271,8 @@ export interface DeviceModuleView {
   /** Whether the hub holds a configuration for the module on this device;
    * the first Configure imports one from the machine where it holds none. */
   is_configured: boolean;
+  /** Whether the module is of the account layer and enables no account. */
+  is_without_accounts: boolean;
   /** The module's last task; null before its first. */
   task: ModuleTask | null;
   /** The step the module's kept failure failed at; null without one. */

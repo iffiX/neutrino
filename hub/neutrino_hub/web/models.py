@@ -2314,6 +2314,8 @@ class DeviceModuleView(BaseModel):
     # Whether the hub holds a configuration for the module on this device;
     # the first Configure imports one from the machine where it holds none.
     is_configured: bool = False
+    # Whether the module is of the account layer and enables no account.
+    is_without_accounts: bool = False
     state: str = "unknown"
     is_active: bool = False
     # The version installed, as the machine reports it; empty before it does.

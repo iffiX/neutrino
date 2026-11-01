@@ -1244,6 +1244,9 @@ function restartOwner(
 /** The word a module's state wears; a token outside the table reads as a
  * machine that has not reported. */
 function stateWord(row: DeviceModuleView): string {
+  if (row.state === "running" && row.is_without_accounts) {
+    return t("state.running_no_accounts");
+  }
   return t(STATE_KEYS[row.state] ?? STATE_NEVER_REPORTED_KEY);
 }
 

@@ -10,6 +10,7 @@
   "state.not_used": "未使用",
   "state.nothing": "无",
   "state.running": "运行中",
+  "state.running_no_accounts": "运行中，没有账户",
   "state.stopped": "已停止",
   "state.unused": "未使用",
   "state.wifi": "无线",

@@ -168,6 +168,29 @@ def test_a_row_is_what_the_agent_reported_beside_what_the_hub_asks(api):
     assert row["task_id"] == ""
 
 
+@pytest.mark.parametrize(
+    "module, accounts, is_without",
+    [
+        ("samba", [], True),
+        ("samba", ["ann"], False),
+        ("terminal", [], True),
+        ("gitea", [], False),
+    ],
+)
+def test_a_row_says_a_module_of_the_account_layer_enables_no_account(
+    api, monkeypatch, module, accounts, is_without
+):
+    client, runtime = api
+    monkeypatch.setattr(device_modules, "load_module_manifests", shipped_manifests)
+    runtime.desired_states.enabled_accounts = lambda key, name: list(accounts)
+
+    rows = client.get(MODULE_PATH, params={"device_id": DEVICE}).json()["modules"]
+
+    assert {row["name"]: row for row in rows}[module]["is_without_accounts"] is (
+        is_without
+    )
+
+
 def test_a_failed_row_can_follow_the_tested_version_again(api, tmp_path, monkeypatch):
     """The way back from a version that failed: the press writes no version,
     so the next state's recipe is the tested one."""

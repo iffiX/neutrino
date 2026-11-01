@@ -74,6 +74,7 @@ from neutrino_hub.modules.devices.catalog import resolve_module
 from neutrino_hub.modules.devices import ayakaleaf, hermes_webui
 from neutrino_hub.modules.devices.machine_memory import memory_need
 from neutrino_hub.modules.devices.module_table import (
+    account_layer_names,
     gateway_instance_names,
     gateway_module_names,
 )
@@ -247,6 +248,10 @@ def list_modules(
                     else runtime.desired_states.want_of(key, name)
                 ),
                 is_configured=bool(runtime.desired_states.read(key, name)),
+                is_without_accounts=(
+                    name in account_layer_names()
+                    and not runtime.desired_states.enabled_accounts(key, name)
+                ),
                 task_id=module_task_id(runtime, key, name),
                 is_carried=is_carried,
                 is_shown=is_shown(device, name, reported["state"], is_carried),

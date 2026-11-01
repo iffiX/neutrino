@@ -98,3 +98,19 @@ def test_a_new_ayakaleaf_model_waits_for_running_only_under_running():
     assert (
         'warning={isRestarted ? t("ui.ayakaleaf.apply_warning") : undefined}' in panel
     )
+
+
+@pytest.mark.parametrize(
+    "language, word",
+    [("en", "running, no accounts"), ("zh-CN", "运行中，没有账户")],
+)
+def test_a_running_module_with_no_account_says_so_in_words(language, word):
+    path = FRONTEND_SRC_DIR / "locales" / language / "common.json"
+    words = json.loads(path.read_text(encoding="utf-8"))
+    page = flat(source("machine_modules.tsx"))
+
+    assert words["state.running_no_accounts"] == word
+    assert (
+        'if (row.state === "running" && row.is_without_accounts) { '
+        'return t("state.running_no_accounts"); }'
+    ) in page

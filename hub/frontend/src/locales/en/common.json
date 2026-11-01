@@ -10,6 +10,7 @@
   "state.not_used": "not used",
   "state.nothing": "nothing",
   "state.running": "running",
+  "state.running_no_accounts": "running, no accounts",
   "state.stopped": "stopped",
   "state.unused": "unused",
   "state.wifi": "wifi",
