@@ -2908,7 +2908,7 @@ function aboutSection(state) {
   ]);
   const source = t('ui.about_source_link');
   aboutGroup(about, t('ui.about_carried'), [
-    ['Neutrino client ' + state.version, CLIENT_LICENCE,
+    ['Neutrino Client ' + state.version, CLIENT_LICENCE,
       [[source, CLIENT_SOURCES[state.edition] || CLIENT_SOURCES.intl]]],
   ].concat(CARRIED.filter((core) => !core.os || core.os === platform.os)
     .map((core) => {

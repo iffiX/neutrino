@@ -208,7 +208,7 @@ stop_residents() {
         sleep 1
         waited=$((waited + 1))
     done
-    echo "a Neutrino client did not quit in 10 s; ending it" >&2
+    echo "a Neutrino Client did not quit in 10 s; ending it" >&2
     pkill -KILL -f "$resident" >/dev/null 2>&1 || true
 }
 """

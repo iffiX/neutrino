@@ -1,5 +1,5 @@
 [Unit]
-Description=EasyTier daemon of the Neutrino client
+Description=EasyTier daemon of the Neutrino Client
 After=network-online.target
 Wants=network-online.target
 

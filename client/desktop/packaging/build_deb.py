@@ -95,7 +95,7 @@ Architecture: {architecture}
 Installed-Size: {size}
 Depends: {depends}
 {conflicts}Maintainer: {maintainer}
-Description: Neutrino client
+Description: Neutrino Client
  A person's window onto the services a Neutrino Hub publishes for them:
  links, ports forwarded to this machine, shares mounted under their home,
  the AI gateway their tools point at, and desktops the fleet shares.
@@ -114,7 +114,7 @@ fi
 update-desktop-database /usr/share/applications >/dev/null 2>&1 || true
 {overlay_start}
 echo ""
-echo "  Neutrino client installed. Open it and join a hub:"
+echo "  Neutrino Client installed. Open it and join a hub:"
 echo ""
 echo "      nclient gui"
 echo ""

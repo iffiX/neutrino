@@ -1,4 +1,4 @@
-"""The Neutrino client: one person's window onto what a hub publishes."""
+"""The Neutrino Client: one person's window onto what a hub publishes."""
 
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path

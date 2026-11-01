@@ -16,7 +16,7 @@ CLIENT_HELP = {
     "en": {
         "": """Usage: nclient <command> [arguments]
 
-The Neutrino client's command line. Every button of the window is one command here.
+The Neutrino Client's command line. Every button of the window is one command here.
 
 The program itself
   gui          run the client and its window

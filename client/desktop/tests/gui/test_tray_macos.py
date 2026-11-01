@@ -155,7 +155,7 @@ def macos_tray(clicks, *, icon_path="/icons/x.png"):
         clicks["quit"] += 1
 
     return MacosTrayIcon(
-        title="Neutrino client",
+        title="Neutrino Client",
         open_label=TRAY_OPEN,
         quit_label=TRAY_QUIT,
         icon_path=icon_path,
@@ -172,7 +172,7 @@ def test_the_status_item_carries_open_and_quit_and_nothing_else(clicks):
     assert item.length == FakeAppKit.NSVariableStatusItemLength
     assert [entry.title for entry in item.menu.items] == [TRAY_OPEN, TRAY_QUIT]
     assert [entry.action for entry in item.menu.items] == ["open:", "quit:"]
-    assert item.button().tooltip == "Neutrino client"
+    assert item.button().tooltip == "Neutrino Client"
     assert icon.is_shown is True
 
 
@@ -220,4 +220,4 @@ def test_without_an_icon_the_item_shows_the_title(clicks, icon_path):
 
     button = FakeStatusBar.items[0].button()
     assert button.image is None
-    assert button.title == "Neutrino client"
+    assert button.title == "Neutrino Client"

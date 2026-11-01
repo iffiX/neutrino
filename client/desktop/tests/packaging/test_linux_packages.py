@@ -294,7 +294,7 @@ def test_the_deb_asks_every_resident_to_quit_before_it_takes_their_files(deb):
     assert "resident='(^|/)nclient gui( --hidden)?$'" in script
     assert 'while [ "$waited" -lt 10 ]' in script
     assert 'pgrep -f "$resident"' in script
-    assert 'echo "a Neutrino client did not quit in 10 s; ending it" >&2' in script
+    assert 'echo "a Neutrino Client did not quit in 10 s; ending it" >&2' in script
     assert 'pkill -KILL -f "$resident"' in script
 
 

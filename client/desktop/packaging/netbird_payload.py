@@ -214,7 +214,7 @@ def windows_components(wix_build, payload_dir: Path) -> tuple:
                     "Id": "NetbirdServiceInstall",
                     "Name": CLIENT_NETBIRD_SERVICE_WINDOWS,
                     "DisplayName": "Neutrino Client NetBird",
-                    "Description": "The NetBird daemon the Neutrino client joins with",
+                    "Description": "The NetBird daemon the Neutrino Client joins with",
                     "Type": "ownProcess",
                     "Start": "auto",
                     "ErrorControl": "normal",

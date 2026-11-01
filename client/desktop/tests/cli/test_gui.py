@@ -97,7 +97,7 @@ def test_the_resident_binds_starts_serves_and_shows_the_window(
     (resident,) = residents.made
     window = opened[0]
     assert window["os_name"] == "linux"
-    assert window["title"] == "Neutrino client"
+    assert window["title"] == "Neutrino Client"
     assert "const CATALOGS" in window["html"]
     assert '"ui.tray.open"' in window["html"]
     assert window["socket"] == 200
@@ -370,7 +370,7 @@ def test_the_window_title_follows_the_language_and_stays_otherwise(
 
     resident.set_language("en")
     watcher()
-    assert titles[1:] == ["Neutrino client"]
+    assert titles[1:] == ["Neutrino Client"]
 
 
 def test_the_tray_shows_the_hubs_state_and_changes_with_it(

@@ -97,7 +97,7 @@ def windows_tray(clicks, *, win32):
         clicks["quit"] += 1
 
     return WindowsTrayIcon(
-        title="Neutrino client",
+        title="Neutrino Client",
         open_label=TRAY_OPEN,
         quit_label=TRAY_QUIT,
         icon_path="C:\\icons\\x.ico",
@@ -115,7 +115,7 @@ def test_the_icon_goes_up_on_start_and_comes_down_on_stop(clicks):
     icon.stop()
 
     assert win32.added == [
-        {"window": 4242, "icon_path": "C:\\icons\\x.ico", "tip": "Neutrino client"}
+        {"window": 4242, "icon_path": "C:\\icons\\x.ico", "tip": "Neutrino Client"}
     ]
     assert win32.is_pumping is True
     assert win32.removed == [4242]

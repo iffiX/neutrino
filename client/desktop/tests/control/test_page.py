@@ -2214,7 +2214,7 @@ def test_the_monospace_stack_names_each_systems_own_font_before_the_generic_one(
 
 def test_about_carries_the_client_and_each_core_as_credits_rows_with_a_source_word():
     about = body_of("aboutSection")
-    assert "['Neutrino client ' + state.version, CLIENT_LICENCE," in about
+    assert "['Neutrino Client ' + state.version, CLIENT_LICENCE," in about
     assert "[[source, CLIENT_SOURCES[state.edition] || CLIENT_SOURCES.intl]]]" in about
     assert "version ? core.name + ' ' + version : core.name" in about
     assert "const source = t('ui.about_source_link');" in about

@@ -76,7 +76,7 @@ RUNTIME_REQUIRES = (
 SPEC = """Name:           {name}
 Version:        {version}
 Release:        1
-Summary:        Neutrino client
+Summary:        Neutrino Client
 License:        MIT
 URL:            https://github.com/iffiX/neutrino
 BuildArch:      {architecture}
@@ -134,7 +134,7 @@ update-desktop-database /usr/share/applications >/dev/null 2>&1 || true
 {overlay_start}
 if [ "$1" = 1 ]; then
     echo ""
-    echo "  Neutrino client installed. Open it and join a hub:"
+    echo "  Neutrino Client installed. Open it and join a hub:"
     echo ""
     echo "      nclient gui"
     echo ""

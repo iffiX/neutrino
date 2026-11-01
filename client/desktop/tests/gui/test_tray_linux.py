@@ -237,7 +237,7 @@ def linux_tray(clicks, *, indicator=None, icon_path="/icons/x.png"):
         clicks["quit"] += 1
 
     return LinuxTrayIcon(
-        title="Neutrino client",
+        title="Neutrino Client",
         open_label=TRAY_OPEN,
         quit_label=TRAY_QUIT,
         icon_path=icon_path,
@@ -257,7 +257,7 @@ def test_the_indicator_carries_open_and_quit_and_nothing_else(clicks):
     assert made.name == CLIENT_DESKTOP_NAME
     assert made.icon == "/icons/x.png"
     assert made.status == "active"
-    assert made.title == "Neutrino client"
+    assert made.title == "Neutrino Client"
     assert [item.label for item in made.menu.items] == [
         TRAY_OPEN,
         TRAY_QUIT,
@@ -287,7 +287,7 @@ def test_without_the_indicator_the_status_icon_carries_the_same_menu(
     status_icon = icon._status_icon
     assert isinstance(status_icon, FakeStatusIcon)
     assert status_icon.file_path == "/icons/x.png"
-    assert status_icon.tooltip == "Neutrino client"
+    assert status_icon.tooltip == "Neutrino Client"
     assert [item.label for item in icon._menu.items] == [
         TRAY_OPEN,
         TRAY_QUIT,
@@ -325,7 +325,7 @@ def test_the_indicator_shows_another_icon(clicks):
 
     (indicator,) = module.made
     assert indicator.icon == "neutrino_client_error"
-    assert indicator.icon_description == "Neutrino client"
+    assert indicator.icon_description == "Neutrino Client"
 
 
 @pytest.mark.parametrize(

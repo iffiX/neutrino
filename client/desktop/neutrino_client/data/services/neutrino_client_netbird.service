@@ -1,5 +1,5 @@
 [Unit]
-Description=NetBird daemon of the Neutrino client
+Description=NetBird daemon of the Neutrino Client
 After=network-online.target
 Wants=network-online.target
 

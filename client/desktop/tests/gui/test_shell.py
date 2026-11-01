@@ -133,7 +133,7 @@ def test_each_platform_dispatches_to_its_own_shell(monkeypatch, os_name, module_
 
     open_shell_window(
         os_name=os_name,
-        title="Neutrino client",
+        title="Neutrino Client",
         html="<html>",
         bridge="the bridge",
         icon_path="/icons/x.png",
@@ -144,7 +144,7 @@ def test_each_platform_dispatches_to_its_own_shell(monkeypatch, os_name, module_
 
     assert calls == [
         {
-            "title": "Neutrino client",
+            "title": "Neutrino Client",
             "html": "<html>",
             "bridge": "the bridge",
             "language": CLIENT_DEFAULT_LANGUAGE,
@@ -214,7 +214,7 @@ def test_the_windows_shell_embeds_the_bridge_end_to_end(monkeypatch):
     channel = FakeGuiChannel(reply={"hostname": "box"})
 
     webview2.open_window(
-        title="Neutrino client",
+        title="Neutrino Client",
         html="<html>page</html>",
         bridge=GuiBridge(channel=channel),
     )
@@ -235,14 +235,14 @@ def test_the_windows_icon_goes_up_with_the_window_and_down_with_the_loop(
     windows_toolkit(monkeypatch)
 
     webview2.open_window(
-        title="Neutrino client",
+        title="Neutrino Client",
         html="<html>",
         bridge=None,
         icon_path="C:\\icons\\x.ico",
     )
 
     (icon,) = FakeTrayIcon.made
-    assert (icon.title, icon.icon_path) == ("Neutrino client", "C:\\icons\\x.ico")
+    assert (icon.title, icon.icon_path) == ("Neutrino Client", "C:\\icons\\x.ico")
     assert (icon.starts, icon.stops) == (1, 1)
 
 
@@ -294,7 +294,7 @@ def test_the_windows_shell_sets_the_window_title_it_is_handed(monkeypatch):
     handed = []
 
     webview2.open_window(
-        title="Neutrino client",
+        title="Neutrino Client",
         html="<html>",
         bridge=None,
         is_hidden=True,
@@ -502,13 +502,13 @@ def test_the_linux_window_wears_the_name_its_launcher_is_installed_under(monkeyp
     glib, gtk = linux_toolkit(monkeypatch)
 
     webkitgtk.open_window(
-        title="Neutrino client", html="<html>", bridge=None, icon_path="/icons/x.png"
+        title="Neutrino Client", html="<html>", bridge=None, icon_path="/icons/x.png"
     )
 
     (window,) = gtk.windows
     assert glib.names["prgname"] == CLIENT_DESKTOP_NAME
-    assert glib.names["application"] == "Neutrino client"
-    assert window.title == "Neutrino client"
+    assert glib.names["application"] == "Neutrino Client"
+    assert window.title == "Neutrino Client"
     assert window.icon_path == "/icons/x.png"
     assert gtk.mains == 1
 
@@ -602,7 +602,7 @@ def test_the_linux_shell_sets_the_window_title_on_the_main_loop(monkeypatch):
     handed = []
 
     webkitgtk.open_window(
-        title="Neutrino client",
+        title="Neutrino Client",
         html="<html>",
         bridge=None,
         is_hidden=True,
@@ -954,7 +954,7 @@ def test_the_macos_window_is_a_regular_app_with_the_page_in_a_web_view(monkeypat
     app = macos_toolkit(monkeypatch)
 
     wkwebview.open_window(
-        title="Neutrino client",
+        title="Neutrino Client",
         html="<html>page</html>",
         bridge=None,
         icon_path="/icons/x.png",
@@ -965,7 +965,7 @@ def test_the_macos_window_is_a_regular_app_with_the_page_in_a_web_view(monkeypat
     assert app.policy == FakeCocoaAppKit.NSApplicationActivationPolicyRegular
     assert app.icon.path == "/icons/x.png"
     assert app.runs == 1
-    assert window.title == "Neutrino client"
+    assert window.title == "Neutrino Client"
     assert window.rect == (0, 0, 1080, 640)
     assert window.mask == 15
     assert window.is_released_when_closed is False
@@ -1137,7 +1137,7 @@ def test_the_macos_window_sets_its_title_through_the_main_queue(monkeypatch):
     handed = []
 
     wkwebview.open_window(
-        title="Neutrino client",
+        title="Neutrino Client",
         html="<html>",
         bridge=None,
         is_hidden=True,
