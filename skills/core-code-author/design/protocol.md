@@ -549,7 +549,7 @@ A client ticket's row waits to join for as long as its ticket lives
 | `POST /api/hub/client/enrollment/create` | `{name, permission}`, `permission` null to follow the default, else `{kinds, devices, entries}` as `permission/set` takes them | makes the client's row at once, waiting to join with that name and permission, and its link, which works for `ENROLLMENT_TTL_S`, 30 minutes; `ClientEnrollmentView`, `{link, client_id, expires_at, expires_in_s}`; a client link still open from before stops working, and its waiting row goes; 400 as `permission/set`, 409 `transport_key_missing` |
 | `POST /api/hub/client/set` | `{client_id, name}` | |
 | `POST /api/hub/client/enable` | `{client_id}` | |
-| `POST /api/hub/client/disable` | `{client_id}` | its `state` is pushed with `is_disabled` |
+| `POST /api/hub/client/disable` | `{client_id}` | its session ends `refused client_disabled {retry_after_s: 1}`, and the state of its next session holds `is_disabled` |
 | `POST /api/hub/client/remove` | `{client_id}` | forgets the client; its session is ended with `binding_unknown`, and a waiting row's link stops working |
 | `POST /api/hub/client/default_permission/set` | `{kinds, devices, entries}`, `devices` and `entries` optional | what a client with no permission of its own is allowed; every client's `state` is pushed |
 | `POST /api/hub/client/permission/set` | `{client_id, kinds, devices, entries}`, `kinds` null to follow the default, `devices` and `entries` optional | that client's own permission; its `state` is pushed |
@@ -1284,13 +1284,13 @@ from the same facts, whoever installed the software:
 
 | Fact | Read from |
 | --- | --- |
-| installed | the method's presence check: `verify` succeeds for `system` and `hub`, and every image's digest is in Containers' Podman for `container`; for a module the state does not name, which comes with no recipe, and for a `builtin` entry, the runner's own check unless its uninstalled mark stands ([agent/module_install.md](agent/module_install.md), "One presence check") |
+| installed | the method's presence check: `verify` succeeds for `system` and `hub`, unless the module's uninstalled mark stands, and every image's digest is in Containers' Podman for `container`; for a module the state does not name, which comes with no recipe, and for a `builtin` entry, the runner's own check unless its uninstalled mark stands ([agent/module_install.md](agent/module_install.md), "One presence check") |
 | active | the unit is active, read whenever the row before reads installed |
 | configured | the root-only mark `/var/lib/neutrino/agent/configured/<module>` exists; written on the first successful apply of the hub's configuration, deleted on uninstall |
 
 | `state` | Meaning |
 | --- | --- |
-| `absent` | the software is missing, or a `builtin` module was uninstalled and not installed again; the row can hold a kept failure's `{code, params}` ([agent.md](agent.md), "A failure outlives a restart") |
+| `absent` | the software is missing, or a `builtin` module or a person's Samba was uninstalled and not installed again; the row can hold a kept failure's `{code, params}` ([agent.md](agent.md), "A failure outlives a restart") |
 | `installed` | the software is present and the hub has never configured it; `is_active` says whether it runs |
 | `install_failed` | the last install failed with `{code, params}`, whatever it left on the machine |
 | `stopped` | the hub has configured it and the unit is stopped |
@@ -1339,8 +1339,10 @@ its `want`. A failure is reported with its code and is not retried while the
 module's entry is unchanged. The agent starts and stops only the units its
 recipe names, and disables or masks none but `podman.socket`, which
 Containers' **Stop** disables and its install and every apply under `want`
-`running` enable
-([agent/modules/containers.md](agent/modules/containers.md), "Linux").
+`running` enable ([agent/modules/containers.md](agent/modules/containers.md),
+"Linux"), and the file share's units, which its **Stop** disables and its
+**Start** enables ([agent/modules/file_share.md](agent/modules/file_share.md),
+"A person's Samba and the module's, on Linux").
 
 Package operations on one machine run one at a time, serialized on the agent,
 because one package manager holds the machine-wide lock.
@@ -1379,7 +1381,7 @@ the whole file back.
 
 | Module | What `details` reports, and what import reads |
 | --- | --- |
-| Samba | `testparm -s` parsed into the global section and each share, `pdbedit -L` into the user list; nothing is imported, since the shares follow the enabled accounts and the folder shares |
+| Samba | `testparm -s` parsed into the global section and each share, the `neutrino-` names of `pdbedit -L` into the user list; nothing is imported, since the shares follow the enabled accounts and the folder shares |
 | Podman | `podman ps -a --format json` and `podman inspect`: each container's image, ports, volumes, environment (empty for a hub container), whether a unit exists, and `module`, the value of its label `neutrino.module` or empty; its `host_bindings`, read from `ps`'s `Ports`, which Podman 3.4 writes as `hostPort` and `hostIP` and later versions as `host_port` and `host_ip`, one `{address, port, protocol, detected}` per published host port, `protocol` being `tcp` or `udp`, `address` empty for every address, and `detected` `http`, `https` or `tcp` as the agent's probe found on a running TCP binding, empty on UDP and before the probe; the registry mirrors; the import leaves out a container whose image is empty or contains a space ([agent/modules/containers.md](agent/modules/containers.md), "A refused declared container"), gives every port the service `auto`, and on Windows and macOS its Run settings name the reported machine's account, with its disk's size now as the disk limit and 0 CPUs and memory |
 | Gitea | the hub's own instance; a hand-installed one reports as running on its port and is not imported |
 | VS Code | each server's account, port, url and whether it runs; nothing is imported |

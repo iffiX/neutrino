@@ -147,6 +147,7 @@ that any hub matches decides.
 | A destructive action arms on the first press (the label changes to `Press again to <verb>`, the fill turns red) and acts on the second press within 5 s; a press elsewhere disarms it. There is no confirmation dialog. | The arming idiom in ui_behavior.md, and a dialog on a phone covers the row it asks about. |
 | A failed job writes its code's wording on the row's error line, and the line stays until the next press on that row or a refresh. | The person reads what failed where they pressed. |
 | A running job survives a page switch; the page it belongs to shows it again when reopened. | The job runs in the core, and the page is a view of it. |
+| The page draws nothing from a mouse down to its click. | A draw replaces the button under the pointer, and the click never fires. |
 | An entry is unhealthy only when its `is_healthy` is `false`. An entry with empty health carries no health word and its actions stay enabled, on every page. | Empty health is a record no probe has reached, and a `generic_udp` record is never probed; read as unhealthy, its row could never be used. |
 
 ## Words and colours
@@ -263,7 +264,7 @@ after the ` · ` is what ends the wait:
 | `ui.state.too_old`, Version too old | 版本太旧 | `protocol_too_new` | nothing automatic; a refresh after an upgrade |
 | `ui.state.join_refused` · `<the code's wording>`, Join refused · `<reason>` | 加入被拒 · 原因 | the hub refused the ticket (`ticket_spent`, any refusal of the join), or the binding is of the 0.5 shape, with no hub key (`hub_key_missing`), and the client dials nothing for it ([transport.md](transport.md), "A peer of 0.5") | nothing; **Leave** |
 | `ui.state.replaced` · **Reconnect**, Replaced by another client · Reconnect | 已被替换 · 重新连接 | `replaced` | the press on **Reconnect** |
-| `ui.state.disabled`, Disabled by the hub | 已停用 | the frame says the client is disabled | the frame says enabled |
+| `ui.state.disabled`, Disabled by the hub | 已停用 | the frame says the client is disabled, or the session ends `refused client_disabled` | the frame says enabled |
 
 A countdown is live: the state carries the moment of the next round, and
 the page redraws the seconds left once a second; at 0 the line reads
