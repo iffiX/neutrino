@@ -34,9 +34,29 @@ function Get-NeutrinoLogonRefusal($Account) {
     return @{refusal = @{code = 'credential_invalid'; params = @{account = $Account}}}
 }
 
+# The scheduled tasks a name matches, empty for no match. Another process
+# removing any task fails a read, so a failed read is tried again, and one that
+# keeps failing throws.
+function Get-NeutrinoScheduledTask($TaskName) {
+    $failure = $null
+    foreach ($turn in 1..5) {
+        $failures = $null
+        $found = @(Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue `
+                -ErrorVariable failures)
+        $failure = @($failures | Where-Object {
+                "$($_.FullyQualifiedErrorId)" -notlike 'CmdletizationQuery_NotFound*'
+            })[0]
+        if ($null -eq $failure) {
+            return $found
+        }
+        Start-Sleep -Milliseconds 200
+    }
+    throw "the task read failed: $($failure.Exception.Message)"
+}
+
 # One task: whether it is there, its description and its state.
 function Get-NeutrinoTask($Request) {
-    $task = Get-ScheduledTask -TaskName $Request.task -ErrorAction SilentlyContinue
+    $task = @(Get-NeutrinoScheduledTask $Request.task)[0]
     if ($null -eq $task) {
         return @{is_present = $false; description = ''; state = ''}
     }
@@ -46,7 +66,7 @@ function Get-NeutrinoTask($Request) {
 # Each task whose name starts with the prefix: its state and its last result.
 function Get-NeutrinoTaskState($Request) {
     $tasks = @()
-    foreach ($task in @(Get-ScheduledTask -TaskName "$($Request.prefix)*" -ErrorAction SilentlyContinue)) {
+    foreach ($task in @(Get-NeutrinoScheduledTask "$($Request.prefix)*")) {
         $info = Get-ScheduledTaskInfo -TaskName $task.TaskName
         $tasks += @{
             name = "$($task.TaskName)"
@@ -146,7 +166,7 @@ function Remove-NeutrinoFirewallRule {
 function Get-NeutrinoAddition($Request) {
     $services = @(Get-Service -Name "$($Request.prefix)*" -ErrorAction SilentlyContinue |
         ForEach-Object { [string]$_.Name })
-    $tasks = @(Get-ScheduledTask -TaskName "$($Request.prefix)*" -ErrorAction SilentlyContinue |
+    $tasks = @(Get-NeutrinoScheduledTask "$($Request.prefix)*" |
         ForEach-Object { [string]$_.TaskName })
     $rules = @(Get-NetFirewallRule -Name "$($Request.prefix)*" -ErrorAction SilentlyContinue |
         ForEach-Object { [string]$_.Name })

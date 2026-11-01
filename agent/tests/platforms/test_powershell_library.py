@@ -134,7 +134,7 @@ def test_a_login_refused_is_0x8007052e_in_the_message_or_the_hresult():
 def test_the_task_states_and_the_stops_are_the_task_scheduler_s_alone():
     states = body("task_states")
 
-    assert 'Get-ScheduledTask -TaskName "$($Request.prefix)*"' in states
+    assert 'Get-NeutrinoScheduledTask "$($Request.prefix)*"' in states
     assert "last_result = [int64]$info.LastTaskResult" in states
     assert "Stop-ScheduledTask -TaskName $Request.task" in body("task_stop")
     assert "Unregister-ScheduledTask -TaskName $Request.task -Confirm:$false" in body(
@@ -144,6 +144,16 @@ def test_the_task_states_and_the_stops_are_the_task_scheduler_s_alone():
     assert "Win32_Process" not in LIBRARY
     assert "Get-NetTCPConnection" not in LIBRARY
     assert "icacls" not in LIBRARY.lower()
+
+
+def test_every_task_read_goes_through_the_read_that_tells_a_failure_from_no_task():
+    defined = functions()
+    readers = [name for name, text in defined.items() if "Get-ScheduledTask " in text]
+
+    assert readers == ["Get-NeutrinoScheduledTask"]
+    assert "Get-NeutrinoScheduledTask" in body("task_read")
+    assert "Get-NeutrinoScheduledTask" in body("task_states")
+    assert "Get-NeutrinoScheduledTask" in body("added_list")
 
 
 def test_a_stopped_task_is_disabled_and_a_started_one_enabled_first():
@@ -225,7 +235,7 @@ def test_the_thermal_zones_and_the_removal_keep_what_their_scripts_did():
 
     for kind in (
         "Get-Service -Name",
-        "Get-ScheduledTask -TaskName",
+        "Get-NeutrinoScheduledTask",
         "Get-NetFirewallRule -Name",
     ):
         assert kind + ' "$($Request.prefix)*"' in listed

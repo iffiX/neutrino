@@ -1151,6 +1151,38 @@ def test_a_running_install_starts_nothing_and_keeps_waiting(windows, state):
     assert hooks.installing == frozenset({"ann"})
 
 
+def test_a_failed_task_read_during_an_install_keeps_it_waiting_and_writes_nothing(
+    windows,
+):
+    hooks, host, entry = windows
+    host.answers["task_states"] = {"tasks": [install_task("Running", 0x41301)]}
+    hooks.prepare_module()
+    hooks.prepare(CONFIG, CONFIG.instances[0], entry)
+    held = host.ops()
+
+    host.answers["task_states"] = OSError("the task read failed")
+    notes = hooks.prepare(CONFIG, CONFIG.instances[0], entry)
+
+    assert notes == []
+    assert hooks.installing == frozenset({"ann"})
+    assert host.ops() == [*held, "task_states"]
+    assert not os.path.exists(hooks._install_log_path("ann"))
+
+
+def test_a_failed_task_read_with_no_install_known_is_an_error_and_starts_nothing(
+    windows,
+):
+    hooks, host, entry = windows
+    host.answers["task_states"] = OSError("the task read failed")
+    hooks.prepare_module()
+
+    with pytest.raises(OSError, match="the task read failed"):
+        hooks.prepare(CONFIG, CONFIG.instances[0], entry)
+
+    assert host.ops() == ["task_states"]
+    assert hooks.installing == frozenset()
+
+
 def test_each_windows_attempt_removes_what_an_earlier_npm_wrote_before_its_npm():
     node = "C:\\node\\node.exe"
     text = render_install_script(

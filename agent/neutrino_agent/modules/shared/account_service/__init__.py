@@ -344,6 +344,7 @@ def states(services: list, machine: ServiceMachine) -> dict:
 
     Raises:
         PlatformUnsupportedError: On a system the layer has no file for.
+        OSError: When the system's reading fails.
     """
     return _system(machine).states(services, machine)
 

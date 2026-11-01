@@ -566,14 +566,14 @@ def test_a_discarded_output_is_found_listening_by_its_script(module_dir):
     assert states["hanha"]["is_running"] is True
 
 
-def test_a_status_the_host_cannot_give_reads_as_nothing_running(module_dir):
+def test_a_status_the_host_cannot_give_is_an_error(module_dir):
     host = RecordingHost({"task_states": OSError("gone")})
 
-    states = account_service.states(
-        [service_with(module_dir)], machine_with(module_dir, host)
-    )
+    with pytest.raises(OSError, match="gone"):
+        account_service.states(
+            [service_with(module_dir)], machine_with(module_dir, host)
+        )
 
-    assert states == {"hanha": {"is_running": False, "code": ""}}
     assert account_service.states([], machine_with(module_dir, host)) == {}
 
 

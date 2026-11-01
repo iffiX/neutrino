@@ -866,7 +866,13 @@ class CloudcliHooks(InstanceHooks):
         """
         account = instance.account
         if self._os_name == "windows":
-            self._read_install_tasks()
+            try:
+                self._read_install_tasks()
+            except OSError as error:
+                if account not in self.installing:
+                    raise
+                self._log(f"{self.name}: the install tasks were not read: {error}")
+                return []
             step = self._install_windows(instance, entry.home)
             if step == INSTALL_RUNNING:
                 self.installing = frozenset(self.installing | {account})

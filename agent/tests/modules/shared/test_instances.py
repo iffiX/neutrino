@@ -682,6 +682,72 @@ def test_a_service_read_stopped_just_after_its_start_is_read_again(
     assert runner.is_active() is True
 
 
+@pytest.fixture
+def clocked(machine, platform, monkeypatch):
+    """A running instance, its clock, and the answer of the system's next reading."""
+    now = [100.0]
+    answers: list = []
+    FakeForwarder.made = []
+    HELD_PORTS.clear()
+    runner = InstancesModuleRunner(
+        hooks_class=DemoHooks,
+        platform=platform,
+        log=lambda line: None,
+        machine=machine,
+        forwarder_factory=FakeForwarder,
+        is_port_free=lambda port: port not in HELD_PORTS,
+        clock=lambda: now[0],
+    )
+    runner.apply(CONFIG)
+    FakeForwarder.made[0].is_listening = True
+    real_states = instances_module.account_service.states
+
+    def states(services, the_machine):
+        if answers:
+            raise answers[0]
+        return real_states(services, the_machine)
+
+    monkeypatch.setattr(instances_module.account_service, "states", states)
+    return runner, now, answers
+
+
+def test_a_failed_reading_keeps_the_last_one_and_the_next_reads_again(clocked, systemd):
+    runner, now, answers = clocked
+    systemd.active.add("neutrino_demo@ann.service")
+    now[0] += instances_module.STATUS_TTL_S
+    assert runner.is_active() is True
+    systemd.active.clear()
+
+    answers.append(OSError("the task read failed"))
+    now[0] += instances_module.STATUS_TTL_S
+    assert runner.is_active() is True
+
+    answers.clear()
+    assert runner.is_active() is False
+
+
+def test_a_reading_that_keeps_failing_is_an_error(clocked, systemd):
+    runner, now, answers = clocked
+    systemd.active.add("neutrino_demo@ann.service")
+    now[0] += instances_module.STATUS_TTL_S
+    assert runner.is_active() is True
+
+    answers.append(OSError("the task read failed"))
+    now[0] += instances_module.STATUS_KEPT_S
+
+    with pytest.raises(OSError, match="the task read failed"):
+        runner.is_active()
+
+
+def test_a_first_reading_that_fails_is_an_error(clocked):
+    runner, _, answers = clocked
+    runner._forget_states()
+    answers.append(OSError("the task read failed"))
+
+    with pytest.raises(OSError, match="the task read failed"):
+        runner.is_active()
+
+
 def test_the_forwarder_ports_are_the_ones_a_forwarder_listens_on(runner):
     runner.apply(CONFIG)
     assert runner.forwarder_ports() == ()

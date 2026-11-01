@@ -34,7 +34,6 @@ import os
 import shutil
 import subprocess
 
-from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.shared.account_service import task_name
 from neutrino_agent.modules.shared.account_service.constants import (
     ACCOUNT_SERVICE_LOG_SUFFIX,
@@ -285,12 +284,9 @@ def states(services: list, machine) -> dict:
     if not services:
         return {}
     name = services[0].name
-    try:
-        read = machine.powershell.call(
-            "task_states", {"prefix": f"{ACCOUNT_SERVICE_TASK_PREFIX}{name}_"}
-        )
-    except (OSError, ModuleApplyError):
-        read = {}
+    read = machine.powershell.call(
+        "task_states", {"prefix": f"{ACCOUNT_SERVICE_TASK_PREFIX}{name}_"}
+    )
     tasks = {
         str(entry.get("name", "")): entry
         for entry in read.get("tasks") or []

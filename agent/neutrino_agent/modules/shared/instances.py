@@ -81,6 +81,8 @@ DETAIL_CHARS = 500
 # Windows refuses to delete a program file for a moment after its process ended.
 REMOVE_TRIES = 30
 REMOVE_RETRY_S = 1.0
+# How long a failed reading of the system keeps the last one.
+STATUS_KEPT_S = 120.0
 
 
 def machine_for(platform, name: str) -> ServiceMachine:
@@ -1085,7 +1087,7 @@ class InstancesModuleRunner(ModuleRunner):
         )
 
     def _read_states(self) -> list:
-        """Every instance as it stands; the system's reading is kept a while."""
+        """Every instance as it stands; the system's reading is kept a while, and longer when a reading fails."""
         self._resume()
         records = self._records.read_all()
         with self._lock:
@@ -1098,12 +1100,20 @@ class InstancesModuleRunner(ModuleRunner):
                 and not all(seen.get("is_running") for seen in applied.values())
             ):
                 ttl = STATUS_SETTLING_TTL_S
-            is_fresh = applied is not None and now - self._applied_at < ttl
+            age = now - self._applied_at
+            is_fresh = applied is not None and age < ttl
         if not is_fresh:
             services = [self._service_of(record) for record in records]
-            applied = account_service.states(services, self._machine)
-            with self._lock:
-                self._applied, self._applied_at = applied, self._clock()
+            try:
+                read = account_service.states(services, self._machine)
+            except OSError as error:
+                if applied is None or age >= STATUS_KEPT_S:
+                    raise
+                self._log(f"{self.name}: the instances were not read: {error}")
+            else:
+                applied = read
+                with self._lock:
+                    self._applied, self._applied_at = applied, self._clock()
         with self._lock:
             forwarders = dict(self._forwarders)
         states = []
