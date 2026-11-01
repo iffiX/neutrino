@@ -1046,8 +1046,9 @@ installed, from `GET /api/agent/module/version`
 ([agent/module_install.md](agent/module_install.md), "Module versions"); a
 module that is not installed shows its state, its log box and its buttons
 alone, and its **Install** installs the version the machine chose, the
-tested one when it chose none. Terminal, Remote desktop and the SSH server
-show no version line: they are the agent's, whose version **The agent**
+tested one when it chose none. A `failed` or `install_failed` row shows the
+version block too, with no line and **Update** disabled while it reports no
+version. Terminal, Remote desktop and the SSH server show no version line: they are the agent's, whose version **The agent**
 shows:
 
 | Part | Idiom |
