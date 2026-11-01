@@ -24,7 +24,9 @@ other failed step reading failed while the software is there, both kept
 root-only on disk and read the same by an engine that starts again, until
 the next attempt replaces them or a state stops naming the module, and kept
 off the row while the module's task runs; an uninstall of what a failed
-install left judged by the check afterwards; the steps of the programs run
+install left judged by the check afterwards; a ``builtin`` module reading
+absent from its uninstall to its next install's ``verify``, the system's
+software there all the while; the steps of the programs run
 as an account, the file share and Gitea with their locks; a container
 module read stopped after its start task read again until it runs; and
 that nothing in it ever retries anything.
@@ -144,6 +146,9 @@ def bare_engine(*, runner=None, verified=None, tmp_path=None):
     )
     engine._install_marks_dir = (
         str(tmp_path / "install_marks") if tmp_path else "/nowhere/install_marks"
+    )
+    engine._uninstalled_dir = (
+        str(tmp_path / "uninstalled") if tmp_path else "/nowhere/uninstalled"
     )
     engine._platform_tuple = {"os": "linux", "family": "debian", "arch": "amd64"}
     engine._lines = threading.local()
@@ -996,6 +1001,118 @@ def test_is_installed_answers_from_the_runner_for_a_builtin_recipe():
     runner.is_installed = False
     assert engine.is_installed("samba") is False
     assert engine.is_installed("nothing") is False
+
+
+class SystemServerRunner(ConfigurableRunner):
+    """A ``builtin`` module: its uninstall leaves the system's software there."""
+
+    def uninstall(self, recipe):
+        pass
+
+
+def uninstalled_builtin(tmp_path):
+    """A configured ``builtin`` module after its uninstall took."""
+    runner = SystemServerRunner()
+    engine = module_engine(runner, wanted=module_wanted("absent"), tmp_path=tmp_path)
+    engine.mark_configured("samba")
+    assert uninstall(engine, "samba") == {}
+    return engine, runner
+
+
+def test_an_uninstalled_builtin_module_reads_absent_beside_the_system_s_software(
+    tmp_path,
+):
+    engine, runner = uninstalled_builtin(tmp_path)
+
+    row = engine.report()["samba"]
+
+    assert runner.verify({}) is True
+    assert (row["state"], row["code"]) == ("absent", "")
+    assert engine.is_installed("samba") is False
+    assert engine.is_configured("samba") is False
+    assert runner.removals == 1
+
+
+def test_an_uninstalled_builtin_module_stays_absent_across_the_settle_and_a_restart(
+    tmp_path,
+):
+    engine, runner = uninstalled_builtin(tmp_path)
+
+    engine._wanted = {}
+    engine._refresh(is_forced=True)
+    assert engine.report()["samba"]["state"] == "absent"
+
+    restarted = module_engine(runner, wanted={}, tmp_path=tmp_path)
+    restarted._refresh(is_forced=True)
+    assert restarted.report()["samba"]["state"] == "absent"
+
+
+def test_an_install_after_a_builtin_uninstall_reads_installed_and_uninstalls_again(
+    tmp_path,
+):
+    engine, _ = uninstalled_builtin(tmp_path)
+
+    engine._wanted = module_wanted("installed")
+    assert install(engine, "samba", receive=None) == {}
+    assert engine.report()["samba"]["state"] == "installed"
+    assert engine.is_installed("samba") is True
+
+    engine._wanted = module_wanted("absent")
+    assert uninstall(engine, "samba") == {}
+    assert engine.report()["samba"]["state"] == "absent"
+
+
+def test_a_builtin_install_with_no_software_on_the_system_fails(tmp_path):
+    engine, runner = uninstalled_builtin(tmp_path)
+    runner.is_installed = False
+
+    engine._wanted = module_wanted("installed")
+
+    assert install(engine, "samba", receive=None) == {
+        "code": "install_unconfirmed",
+        "params": {},
+    }
+
+
+def test_a_machine_that_belongs_to_no_hub_forgets_a_builtin_uninstall(tmp_path):
+    engine, _ = uninstalled_builtin(tmp_path)
+
+    engine.take_state({})
+    engine._refresh(is_forced=True)
+
+    assert engine.report()["samba"]["state"] == "installed"
+
+
+def test_a_state_that_stops_naming_the_module_keeps_a_builtin_uninstall(tmp_path):
+    engine, _ = uninstalled_builtin(tmp_path)
+
+    engine.take_state({"terminal": {"want": "running"}})
+    engine._refresh(is_forced=True)
+
+    assert engine.report()["samba"]["state"] == "absent"
+
+
+def test_an_uninstall_of_a_system_recipe_keeps_no_uninstalled_mark(tmp_path):
+    """Only a ``builtin`` recipe's software stays on purpose: a package the
+    uninstall left there is still a failure, and a hand-installed one reads
+    ``installed`` with no recipe."""
+    engine = module_engine(
+        SystemServerRunner(),
+        wanted=module_wanted("absent", "system"),
+        tmp_path=tmp_path,
+    )
+    engine._verify_passes = lambda command: True
+
+    assert uninstall(engine, "samba") == {
+        "code": "uninstall_unconfirmed",
+        "params": {},
+    }
+    assert not (tmp_path / "uninstalled").exists()
+
+    engine._wanted = {}
+    engine.record_failure("samba", None)
+    engine._refresh(is_forced=True)
+    assert engine.report()["samba"]["state"] == "installed"
 
 
 def test_taking_a_state_wakes_the_worker_hands_each_runner_its_recipe_and_reports(

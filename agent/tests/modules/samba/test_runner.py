@@ -29,6 +29,8 @@ import threading
 
 import pytest
 
+from neutrino_agent.core.engine import ModuleEngine
+from neutrino_agent.core.tasks import run_step
 from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.shared import system_package as system_package_module
 from neutrino_agent.modules.samba import applier as applier_module
@@ -1094,6 +1096,89 @@ def test_removing_the_configuration_is_a_removal(native):
     assert native.applier.calls[-1][0] == "withdraw"
     assert native.applier.calls[-1][2] is True
     assert record_of(native)["accounts"] == ["ann"]
+
+
+NATIVE_CONFIGS = {
+    "windows": WINDOWS_CONFIG,
+    "darwin": {
+        "shares": [{"name": "share", "path": "/Users/ann", "valid_users": ["ann"]}],
+        "users": ["ann"],
+        "passwords": {"ann": "pw"},
+    },
+}
+
+
+def native_entry(want: str, os_name: str) -> dict:
+    """The file share's entry in a state, as the hub composes it on Windows and macOS."""
+    return {
+        "want": want,
+        "config": NATIVE_CONFIGS[os_name],
+        "install": {"runner": "samba_native", "method": "builtin", "params": {}},
+    }
+
+
+def native_engine(platform, tmp_path) -> ModuleEngine:
+    return ModuleEngine(
+        platform=platform,
+        log=lambda message: None,
+        configured_dir=str(tmp_path / "configured"),
+    )
+
+
+class SilentStepContext:
+    """What a step is handed here: its lines go nowhere."""
+
+    def log(self, line):
+        pass
+
+
+def run_steps(steps) -> None:
+    for step in steps:
+        assert run_step(step, SilentStepContext()) is None
+
+
+def row_of(engine) -> dict:
+    engine._refresh(is_forced=True)
+    return engine.report()["samba"]
+
+
+@pytest.mark.parametrize("os_name", ["windows", "darwin"])
+def test_the_file_share_uninstalls_to_absent_and_installs_again_on_the_system_s_server(
+    tmp_path, os_name
+):
+    platform = NativeServerPlatform(tmp_path)
+    platform.os_name = os_name
+    engine = native_engine(platform, tmp_path)
+    running = native_entry("running", os_name)
+    engine.take_state({"samba": running})
+    run_steps(engine.configure_steps("samba", running, "running"))
+    engine.mark_configured("samba")
+    assert row_of(engine)["state"] == "running"
+
+    absent = native_entry("absent", os_name)
+    engine.take_state({"samba": absent})
+    run_steps(engine.uninstall_steps("samba", absent))
+
+    assert platform.applier.calls[-1][0] == "withdraw"
+    assert platform.applier.status["is_present"] is True
+    row = row_of(engine)
+    assert (row["state"], row["code"]) == ("absent", "")
+
+    engine.take_state({"terminal": {"want": "running"}})
+    assert row_of(engine)["state"] == "absent"
+    restarted = native_engine(platform, tmp_path)
+    assert row_of(restarted)["state"] == "absent"
+
+    installed = native_entry("installed", os_name)
+    restarted.take_state({"samba": installed})
+    run_steps(restarted.install_steps("samba", installed))
+    assert row_of(restarted)["state"] == "installed"
+
+    restarted.take_state({"samba": running})
+    run_steps(restarted.configure_steps("samba", running, "running"))
+    restarted.mark_configured("samba")
+    assert row_of(restarted)["state"] == "running"
+    assert platform.applier.sweeps == [True, True]
 
 
 def password_calls(native) -> list:

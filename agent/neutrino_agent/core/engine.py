@@ -75,6 +75,7 @@ from neutrino_agent.constants import (
     AGENT_STEP_UNINSTALL,
     AGENT_STEP_VERIFY,
     AGENT_STEP_WAIT_MODULE,
+    AGENT_UNINSTALLED_DIR_NAME,
     AGENT_VERSIONS_DIR_NAME,
     AGENT_WANT_RUNNING,
     AGENT_WANT_STOPPED,
@@ -289,6 +290,9 @@ class ModuleEngine(ReconcileWorker):
         self._install_marks_dir = os.path.join(
             os.path.dirname(self._configured_dir), AGENT_INSTALL_MARKS_DIR_NAME
         )
+        self._uninstalled_dir = os.path.join(
+            os.path.dirname(self._configured_dir), AGENT_UNINSTALLED_DIR_NAME
+        )
         self._platform_tuple = platform_tuple()
         # The line sink of the task running on each thread.
         self._lines = threading.local()
@@ -410,7 +414,8 @@ class ModuleEngine(ReconcileWorker):
         Each module's runner is handed its recipe and its configuration, a
         container module getting its runner the first time the state names
         it, and every runner the state's source sets. The failure and the
-        install mark kept for a module the state no longer names are deleted.
+        install mark kept for a module the state no longer names are deleted,
+        and an empty state deletes every uninstalled mark.
 
         Args:
             modules: ``{name: {"want", "config", "install"}}``; empty when
@@ -441,6 +446,8 @@ class ModuleEngine(ReconcileWorker):
         for name in dropped:
             self.record_failure(name, None)
         self._clear_install_marks_except(wanted)
+        if not wanted:
+            self._clear_uninstalled_marks()
         self._wakeup.set()
 
     def is_installed(self, name: str, entry: "dict | None" = None) -> bool:
@@ -1004,9 +1011,12 @@ class ModuleEngine(ReconcileWorker):
                 a package manager that exits zero and installs nothing is a
                 thing that happens.
         """
+        method = str(recipe.get("method", "") or "")
+        if method == AGENT_METHOD_BUILTIN:
+            self._clear_uninstalled_mark(name)
         if not self._is_present(runner, recipe):
             raise ModuleApplyError("install_unconfirmed", {})
-        if str(recipe.get("method", "") or "") == AGENT_METHOD_HUB:
+        if method == AGENT_METHOD_HUB:
             self._keep_version(name, recipe)
 
     def _run_pull(self, runner, image: dict, context) -> None:
@@ -1182,7 +1192,11 @@ class ModuleEngine(ReconcileWorker):
         return os.path.join(self._versions_dir, name + FAILURE_SUFFIX)
 
     def _uninstall(self, name: str, wanted: dict) -> dict:
-        """Uninstall by the recipe, drop the hub's configuration and the mark."""
+        """Uninstall by the recipe, drop the hub's configuration and the mark.
+
+        A ``builtin`` module's software stays with the system, so its
+        uninstalled mark stands from here until its next install's ``verify``.
+        """
         recipe = _recipe_of(wanted)
         removal = params_of(recipe).get("uninstall")
         removal = dict(removal) if isinstance(removal, dict) else {}
@@ -1209,10 +1223,44 @@ class ModuleEngine(ReconcileWorker):
                 )
             self._collect(f"{name}: {said}"[:500])
         self.clear_configured(name)
+        if str(recipe.get("method", "") or "") == AGENT_METHOD_BUILTIN:
+            self._keep_uninstalled_mark(name)
         if self._is_present(runner, recipe):
             return {"code": "uninstall_unconfirmed", "params": {}}
         self._forget_version(name)
         return {}
+
+    def _keep_uninstalled_mark(self, name: str) -> None:
+        """Record that one ``builtin`` module was uninstalled.
+
+        Raises:
+            OSError: When the mark cannot be written.
+        """
+        if not _is_plain(name):
+            return
+        os.makedirs(self._uninstalled_dir, mode=0o700, exist_ok=True)
+        path = os.path.join(self._uninstalled_dir, name)
+        with open(path, "a", encoding="utf-8"):
+            pass
+        os.chmod(path, 0o600)
+
+    def _has_uninstalled_mark(self, name: str) -> bool:
+        """Whether one module was uninstalled and no install of it ran since."""
+        return os.path.isfile(os.path.join(self._uninstalled_dir, name))
+
+    def _clear_uninstalled_mark(self, name: str) -> None:
+        """Forget that one module was uninstalled."""
+        with contextlib.suppress(OSError):
+            os.unlink(os.path.join(self._uninstalled_dir, name))
+
+    def _clear_uninstalled_marks(self) -> None:
+        """Forget that any module was uninstalled."""
+        try:
+            held = os.listdir(self._uninstalled_dir)
+        except OSError:
+            return
+        for name in held:
+            self._clear_uninstalled_mark(name)
 
     def _remove(self, name: str, runner, recipe: dict, removal: dict) -> None:
         """The uninstall's steps: the hub's configuration, the software, the
@@ -1499,13 +1547,16 @@ class ModuleEngine(ReconcileWorker):
         program file it names; a ``container`` recipe while every image it
         pins is in Containers' Podman, as its runner reads it. A
         ``builtin`` recipe, and a module the state does not name, which
-        comes with no recipe, are judged by the runner's own check.
+        comes with no recipe, are judged by the runner's own check, and are
+        not there while the module's uninstalled mark stands.
         """
         method = str(recipe.get("method", "") or "")
         if method == AGENT_METHOD_AGENT:
             return True
         if method in VERIFIED_METHODS:
             return self._verify_passes(str(params_of(recipe).get("verify", "") or ""))
+        if self._has_uninstalled_mark(runner.name):
+            return False
         return bool(runner.verify(recipe))
 
     def _verify_passes(self, command: str) -> bool:

@@ -397,6 +397,10 @@ AGENT_VERSIONS_DIR_NAME = "versions"
 # file per module, from that step until a task of the module ends; beside the
 # configured marks.
 AGENT_INSTALL_MARKS_DIR_NAME = "install_marks"
+# Where the mark that a ``builtin`` module was uninstalled lives, one root-only
+# file per module, from its uninstall until its next install's ``verify``;
+# beside the configured marks.
+AGENT_UNINSTALLED_DIR_NAME = "uninstalled"
 # Where a package coming down a stream lands until its digest is checked.
 # A module's package is deleted once its install ran; the agent's own
 # outlives the process that received it, and the agent the install put
