@@ -1030,7 +1030,10 @@ A module whose last report is `failed` keeps the button of what it was
 asked for live: **Install** while its `want` is `installed`, **Start** while
 it is `running`, **Stop** while it is `stopped`, and **Uninstall** always.
 That press tries the same step again ([agent.md](agent.md), "A retry is the
-same press again"); there is no other retry button. A module panel's apply
+same press again"); there is no other retry button. A `failed` Containers
+keeps **Stop** live whatever its `want`, on every system: it ends the retries
+of Containers' keeper ([agent/modules/containers.md](agent/modules/containers.md),
+"The keeper") and keeps the module. A module panel's apply
 and **Configure** on a refused configuration try again the same way, and
 under `stopped` the panel's apply alone does. A
 press, or a module panel's apply, on a module whose state is not its `want`
