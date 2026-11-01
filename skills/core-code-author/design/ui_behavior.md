@@ -813,9 +813,9 @@ A tab reads, top to bottom: its state line; `ui.modules.log_title` and the
 log box; `ui.modules.config_title` and the module's panel, which **Configure**
 opens and **Hide configuration** closes; and the buttons **Install**,
 **Start**, **Stop**, **Uninstall** and **Configure** at the bottom, aligned
-to the right edge. **Configure** on a module whose `want` is `stopped` opens
-the panel and writes nothing, and the module stays stopped until its
-**Start** ([protocol.md](protocol.md), "The modules section, one entry per module").
+to the right edge. **Configure** opens the panel and writes no `want`, after
+the first import of Gitea or Containers, and the module stays as it is until
+its **Start** ([protocol.md](protocol.md), "The modules section, one entry per module").
 
 In a window 880 px wide or narrower, or one no wider than it is tall, the
 split is one column. The module list is then one row above the picked
@@ -843,10 +843,10 @@ account's share path, and `ui.modules.no_accounts` pointing at **Available
 accounts** while there is none. The panel is configurable, with its apply
 bar; an account checked goes to the end of the order, and each row shows the
 module's own field, its running dot and its code's words. The bar's hint is
-`ui.modules.stopped_hint` while the module's `want` is `stopped`, and the
+`ui.modules.stopped_hint` while the module's `want` is not `running`, and the
 module's own hint otherwise, on every tab but Terminal's and the SSH
-server's, which have no **Start**. An apply under `stopped` keeps the
-module stopped, and its bar waits for `stopped`. The tabs of the
+server's, which have no **Start**. An apply writes no `want`, starts nothing,
+and its bar waits for the `want` the module has. The tabs of the
 machine layer,
 Remote desktop, Gitea, Containers and the container modules, hold no
 accounts. No module asks for a port: the agent takes them.
@@ -857,7 +857,7 @@ each kind of share ([agent/modules/file_share.md](agent/modules/file_share.md)):
 | Panel | Idiom |
 | --- | --- |
 | **Home shares** (`ui.samba.home_shares`) | the tab's **Enabled accounts** under this title, with `ui.samba.home_shares_hint` under it: one check row per available account showing its share path, one Home share per checked account; configurable, with its apply bar |
-| **Folder shares** (`ui.samba.folder_shares`) | one row per folder share, with `ui.samba.folder_shares_hint` under the title, and `ui.modules.stopped_hint` under it while the module's `want` is `stopped`, and **Add** (`ui.samba.folder_add`), a bordered `button` at the panel's top right that opens the inline form under the list, the panel add of "Inline forms", lit with the accent frame |
+| **Folder shares** (`ui.samba.folder_shares`) | one row per folder share, with `ui.samba.folder_shares_hint` under the title, and `ui.modules.stopped_hint` under it while the module's `want` is not `running`, and **Add** (`ui.samba.folder_add`), a bordered `button` at the panel's top right that opens the inline form under the list, the panel add of "Inline forms", lit with the accent frame |
 
 | Field of the folder share form | Idiom |
 | --- | --- |
@@ -888,8 +888,8 @@ its reason.
 A module the machine reports `installed`, `stopped` or `running` while
 the hub holds no `want` for it, as after a reset or a new join on a machine
 that kept its modules, has **Start** live, whatever its state; the press
-and an apply of its configuration give it the `want` `running`
-([protocol.md](protocol.md), "Taking over a machine").
+gives it the `want` `running`, and an apply of its configuration writes no
+`want` ([protocol.md](protocol.md), "Taking over a machine").
 
 A module the machine reports `queued` is in transit, as `installing` and
 `uninstalling` are: every button of its tab is disabled until the machine
@@ -1034,9 +1034,9 @@ That press tries the same step again ([agent.md](agent.md), "A retry is the
 same press again"); there is no other retry button. A `failed` Containers
 keeps **Stop** live whatever its `want`, on every system: it ends the retries
 of Containers' keeper ([agent/modules/containers.md](agent/modules/containers.md),
-"The keeper") and keeps the module. A module panel's apply
-and **Configure** on a refused configuration try again the same way, and
-under `stopped` the panel's apply alone does. A
+"The keeper") and keeps the module. A module panel's apply on a refused
+configuration tries again the same way, and **Configure** only opens the
+panel. A
 press, or a module panel's apply, on a module whose state is not its `want`
 after the press asks the machine to apply it again, as **Start** on a module
 that reads `installed` while its `want` is `running` does. A press on a
@@ -1105,9 +1105,9 @@ one configurable `settings_group` with its own apply bar,
 | --- | --- |
 | **AI model** (`ui.ayakaleaf.model`) | the panel's picker over the view's `models`, its first row `ui.ai_tools.gateway_default`, with `ui.ayakaleaf.model_hint` under it; while `is_gateway_serving` is false the picker is disabled and `code.gateway_not_serving`'s words take the hint's place |
 
-While the group is dirty the bar's warning is `ui.ayakaleaf.apply_warning`,
-and the bar stays busy after its press until the machine reports the module
-`running` again, at most two minutes.
+While the module's `want` is `running`, the bar's warning on a dirty group is
+`ui.ayakaleaf.apply_warning`, and the bar stays busy after its press until the
+machine reports the module `running` again, at most two minutes.
 
 The path window is the one the account form's **Browse…** opens
 (`directory_picker_modal.tsx`); its file mode opens at the field's path, or
@@ -1142,8 +1142,8 @@ On Linux the tab has no Run settings, since root runs Podman there
 
 The group is one `settings_group` with its own apply bar,
 `ui.containers.run_apply`. The bar's hint is `ui.containers.run_apply_hint`,
-and `ui.modules.stopped_hint` while the module's `want` is `stopped`.
-An apply under `stopped` keeps the settings for the next **Start**
+and `ui.modules.stopped_hint` while the module's `want` is not `running`.
+Such an apply keeps the settings for the next **Start**
 ([agent/modules/containers.md](agent/modules/containers.md)). While it is dirty, the bar's warning is
 `ui.containers.run_restart_warning` when the CPUs, the memory or the disk
 changed on a machine that exists, one the report names for the draft's
@@ -1157,7 +1157,8 @@ Each apply bar of the tab, Run settings, mirrors and containers, stays busy
 after its press until the machine reports the module where its `want` asks,
 at most two minutes, as `instances_panel.tsx` waits. Under `running` that is
 `running` or `stopped` on Linux, and on Windows and macOS `running` with the
-stored account's machine running; under `stopped` it is `stopped`.
+stored account's machine running; under `stopped` it is `stopped`; under any
+other `want` the bar waits for no state.
 `ui.api.applied` shows only then, and a failure shows under its step. A failure
 reported at the press belongs to the run before it, and ends the wait only when
 the machine reports nothing else within 5 s.

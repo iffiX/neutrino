@@ -157,6 +157,10 @@ Containers row as it is. The pull runs on Containers' Podman, and on
 Windows a read of the Podman machine failed while a 2.8 GB image was
 pulled, so Containers read `stopped`.
 
+A module runs only because a person pressed **Start**, or pressed it on a
+module that requires it. An account, a share, a setting and **Configure**
+never start one.
+
 **A stopped module stays stopped.** A module's **Stop** keeps what it
 stopped from starting again at the next boot, and its **Start** undoes
 that before it starts anything:
@@ -167,7 +171,7 @@ that before it starts anything:
 | On macOS every LaunchDaemon a module's **Stop** stops is disabled with `launchctl disable system/<label>`, and **Start** runs `launchctl enable` before it loads the job. | `RunAtLoad` loads a job at boot until it is disabled. |
 | A `configure` under `stopped` writes the module's files and enables and starts nothing: Containers' units, Gitea's server and the file share's unit among them. | A configure that started the server would run it only for the `stop` after it to end it, so a **Stop** of a stopped module would start it for a moment. |
 | A person's Samba is the one exception on Linux: the file share's **Stop** takes its own files off and leaves `smbd`, `nmbd` and their enablement as they are, turning back only what the module started ([agent/modules/file_share.md](agent/modules/file_share.md), "A person's Samba and the module's, on Linux"). | Those units are the person's, and they also serve the person's own shares. |
-| An apply of a stopped module's configuration on the panel keeps its `want` `stopped`: the enabled accounts of the account layer, the file share's folder shares and Containers' Run settings among them. The change takes effect at the next **Start** ([protocol.md](protocol.md), "The modules section, one entry per module"). | A stopped module starts only on its **Start**. |
+| An apply of a module's configuration on the panel writes no `want`, on a module reading `installed` or `stopped` and on one with no `want` at all: the enabled accounts of the account layer, the file share's folder shares and Containers' Run settings among them. The change takes effect at the next **Start** ([protocol.md](protocol.md), "The modules section, one entry per module"). | A module starts only on a **Start**. |
 | On Windows every scheduled task a module's **Stop** stops is disabled with `Disable-ScheduledTask`, and **Start** runs `Enable-ScheduledTask` before it starts the task; a service a module made, Gitea's, gets the start type `disabled` at **Stop** and `auto` at **Start**. | A task triggered at startup runs at boot until it is disabled, and a service of start type `auto` starts at boot. |
 | The account service layer holds the disable and the enable for every program run as an account: VS Code, code-server, CloudCLI, Codeg, SiYuan, the SSH server's instances and Containers' keeper ([module_template.md](agent/module_template.md), "The run"). | One place for every account service, on every system. |
 | A stopped module's forwarder does not listen, after its **Stop**, after Containers' **Stop** and after a restart of the agent. Each instance's record keeps the stopped mark, and its forwarder comes back at the module's **Start** with the same port. Containers' `stop` step marks each container module's record the same way, and the state that starts Containers again plans the start of each one whose `want` is `running`. | A forwarder in front of a stopped page holds its port for nothing. In the lab 3101 and 3102 came back at a reboot, and 8787 and 8900 stayed after Containers' **Stop**. |

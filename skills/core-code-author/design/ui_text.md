@@ -408,7 +408,7 @@ where they fit.
 | `code.version_switch_failed` | Version {version} did not start, so the previous version runs again: {detail} | 版本 {version} 没能启动，已换回原来的版本：{detail} |
 | `code.version_unknown` | Version {version} is not listed for this machine. | 这台机器没有版本 {version}。 |
 | `code.version_locked` | The version of {module} follows the system or the agent and cannot be chosen. | {module} 的版本跟随系统或被控端，不能选择。 |
-| `ui.modules.stopped_hint`, an apply bar's hint while its module's `want` is `stopped`: Containers' Run settings, the account layer's **Enabled accounts**, and under the file share's folder shares | The module is stopped; these settings take effect at the next Start. | 模块已停止，这些设置在下次启动时生效。 |
+| `ui.modules.stopped_hint`, an apply bar's hint while its module's `want` is not `running`: Containers' Run settings, the account layer's **Enabled accounts**, and under the file share's folder shares | The module is stopped; these settings take effect at the next Start. | 模块已停止，这些设置在下次启动时生效。 |
 
 The keys of the Modules page's machine picker and **Global configuration**,
 `ui.modules.no_pick`, `ui.modules.no_pick_hint`, `ui.modules.global_title`,
