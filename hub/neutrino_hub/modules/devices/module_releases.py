@@ -479,7 +479,7 @@ class ModuleReleaseReader:
         """
         self._fetcher = fetcher
         self._store = store if store is not None else ModuleReleaseStore()
-        # Each feed's answer in the read now, by the feed's JSON.
+        # Each feed's answer or failure in the read now, by the feed's JSON.
         self._answers: dict = {}
 
     def read(self) -> dict:
@@ -494,6 +494,7 @@ class ModuleReleaseReader:
         previous = self._store._read().get("modules") or {}
         self._answers = {}
         modules: dict = {}
+        warned: set = set()
         for name, manifest in load_module_manifests().items():
             for platform_key, entry in (manifest.get("platforms") or {}).items():
                 if is_locked(manifest, entry):
@@ -501,7 +502,10 @@ class ModuleReleaseReader:
                 try:
                     listed = self.read_entry(manifest, entry)
                 except (DownloadFailedError, ValueError, OSError) as error:
-                    LOGGER.warning("module versions of %s not read: %s", name, error)
+                    said = _failure_words(error)
+                    if (name, said) not in warned:
+                        warned.add((name, said))
+                        LOGGER.warning("module versions of %s not read: %s", name, said)
                     kept = (previous.get(name) or {}).get(platform_key)
                     if kept is not None:
                         modules.setdefault(name, {})[platform_key] = kept
@@ -578,11 +582,24 @@ class ModuleReleaseReader:
         return listed
 
     def _read_feed(self, feed: dict) -> dict:
-        """One feed's answer as version to ``{file, name or repository: {digest, sources?}}``, each feed read once per read."""
+        """One feed's answer as version to ``{file, name or repository: {digest, sources?}}``, each feed read once per read.
+
+        Raises:
+            DownloadFailedError: When the feed's sources did not answer, the
+                same failure for every entry of the read that names the feed.
+            ValueError: When the feed answered with something else.
+            OSError: When a source could not be asked.
+        """
         held = json.dumps(feed, sort_keys=True)
         if held not in self._answers:
-            self._answers[held] = self._read_feed_now(feed)
-        return self._answers[held]
+            try:
+                self._answers[held] = self._read_feed_now(feed)
+            except (DownloadFailedError, ValueError, OSError) as error:
+                self._answers[held] = error
+        answer = self._answers[held]
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
 
     def _read_feed_now(self, feed: dict) -> dict:
         kind = feed["kind"]
@@ -685,6 +702,17 @@ class ModuleReleaseReader:
                 continue
             versions[version] = {repository: {"digest": digest}}
         return versions
+
+
+def _failure_words(error: Exception) -> str:
+    """A failed read's words, with each source's reason and detail where the failure names them."""
+    if not isinstance(error, DownloadFailedError):
+        return str(error)
+    reasons = [
+        f"{item.get('reason', '')} {item.get('detail', '')}".strip()
+        for item in error.params["sources"]
+    ]
+    return f"{error}: {', '.join(reasons)}" if reasons else str(error)
 
 
 def _feed_repository(artifact: dict, feeds: list) -> str:

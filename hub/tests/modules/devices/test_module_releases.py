@@ -11,6 +11,8 @@ Against a fake that serves documents: an ``npm`` feed's ``dist.integrity``
 going to the npm artifact of its package alone, a ``vscode_update`` feed's
 digest and address going to the entry's artifact, and every module's manifest
 naming a digest of the chosen version for each artifact that changes with it.
+Against a fake that refuses: a feed read once in one read however many entries
+name it, and one warning with each source's reason.
 """
 
 import hashlib
@@ -180,6 +182,54 @@ def test_a_feed_is_read_once_for_every_entry_of_one_read(reader, monkeypatch):
     read.read()
 
     assert [kind for kind, _, _ in registry.asked].count("challenge") == 1
+
+
+class RefusingFeed:
+    """A publisher's API that refuses every read, as GitHub past its hourly limit."""
+
+    def __init__(self):
+        self.reads = 0
+
+    def fetch_document(self, *, file, sources, parse, headers=None, limit=0):
+        self.reads += 1
+        failures = [{"source": sources[0], "reason": "http_403", "detail": "limit"}]
+        raise DownloadFailedError(file, failures)
+
+
+def test_a_feed_that_failed_is_read_and_warned_of_once_in_one_read(
+    tmp_path, monkeypatch, caplog
+):
+    feed = {
+        "kind": "github",
+        "sources": ["https://api.github.com"],
+        "repository": REPOSITORY,
+        "tag": "v{version}",
+    }
+    entry = {
+        "runner": "app",
+        "install": {
+            "method": "hub",
+            "params": {"version": "1.2.0", "releases": [feed], "artifacts": []},
+        },
+    }
+    manifest = {
+        "name": "app",
+        "platforms": {"linux": entry, "darwin": entry, "windows": entry},
+    }
+    monkeypatch.setattr(
+        module_releases, "load_module_manifests", lambda: {"app": manifest}
+    )
+    fetcher = RefusingFeed()
+    store = ModuleReleaseStore(path=tmp_path / "module_releases.json")
+
+    ModuleReleaseReader(fetcher=fetcher, store=store).read()
+
+    warnings = [record.getMessage() for record in caplog.records]
+    assert fetcher.reads == 1
+    assert warnings == [
+        "module versions of app not read: "
+        "no source served acme/app releases: http_403 limit"
+    ]
 
 
 def test_an_index_digest_is_the_sha256_of_the_bytes_served():
