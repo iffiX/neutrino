@@ -70,6 +70,7 @@ a rule without one gets negotiated away under deadline.
 | Each sentence pattern from `english.md` or `chinese.md` appears at most once per page, and no two pages of the site open with the same sentence shape. | A pattern used twice is a template; used ten times it is the page; the same opener on every page is a refrain the reader stops reading. |
 | An outline line is a note, never a sentence: the opening states the page's outcome in words written for this page. | A note expanded word for word reads as a note. |
 | The two languages share the outline and nothing else; each is written from its own register file, never from the other language's text. | A sentence carried across languages keeps the source language's clause order. |
+| A Chinese page also follows the skill `humanizer-zh` (upstream `op7418/Humanizer-zh`), an English page the skill `humanizer:humanizer` (upstream `blader/humanizer`). Where one differs from this standard, the stricter rule holds. | The register files name single patterns; these passes read the whole page for what still sounds machine-written. |
 | Product terms are fixed: hub, agent, client in English; 微子, 中枢, 被控端, 客户端 in Chinese; never 中微子, and the hub is never `hub` in Chinese nor 中枢 in English ([ui_text.md](../core-code-author/design/ui_text.md)). | One name per thing across thirty pages. |
 
 ## Budgets

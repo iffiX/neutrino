@@ -34,6 +34,7 @@ Run the greps from the repository root with the page path as `$P`.
 | Sentence length: English 25 words and two clauses; Chinese 20 characters per clause, 40 hard cap. | read each long line |
 | The two languages share headings one to one, and no sentence in one is a rendering of the other. | compare outlines |
 | The reader test in `SKILL.md` has run and every question is answered from the page alone. | record the five questions and the outcome in the review |
+| The page has had its pass: `humanizer-zh` for Chinese, `humanizer:humanizer` for English, with no fact, limit or number changed. | compare the page before and after the pass |
 
 ## English only
 

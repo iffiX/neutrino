@@ -14,6 +14,7 @@ rendering of a Chinese sentence.
 | GitLab word list | the banned words and their reasons, no em dash |
 | Diátaxis | which sentences belong to which kind of page |
 | vale-ai-tells | the named sentence shapes that mark machine prose |
+| humanizer:humanizer (upstream `blader/humanizer`) | one pass over the whole page after drafting; where it differs from this page, the stricter rule holds |
 
 ## Voice
 
