@@ -121,6 +121,9 @@ marker and every account whose name carries the prefix, and on macOS every
 share point under the `neutrino_` prefix and every account whose name carries
 the prefix.
 
+An uninstall on Linux deletes every `neutrino-*` SMB user the sweep would,
+before the packages go.
+
 The module makes each SMB user it lacks with `useradd --system
 --no-create-home --shell <nologin> --comment "neutrino file share"` and sets
 its Samba password from `passwords`, never a Unix password. The account's
