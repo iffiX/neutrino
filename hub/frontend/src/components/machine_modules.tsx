@@ -36,6 +36,7 @@ import { MACHINE_RUN_OS } from "../podman_machine";
 import { stripAnsi } from "../strip_ansi";
 import { useApiResource } from "../use_api_resource";
 import { useConfirm } from "../use_confirm";
+import { FAILED_STATES } from "../use_settled_apply";
 import {
   HUB_EVENT_CONFIG,
   HUB_EVENT_DEVICE_REPORT,
@@ -227,10 +228,6 @@ const STATE_NEVER_REPORTED_KEY = "state.never_reported";
 
 /** The states in which the software is on the machine. */
 const PRESENT_STATES = ["installed", "stopped", "running"];
-
-/** The states of a module whose last step failed: the tab shows the code's
- * words, and Uninstall is live. */
-const FAILED_STATES = ["failed", "install_failed"];
 
 /** The wants under which the machine applies the hub's configuration, so a
  * `failed` row under one of them is a refused configuration. */

@@ -18,7 +18,8 @@ def source(name: str) -> str:
 def test_a_failed_row_keeps_the_version_block():
     page = source("machine_modules.tsx")
 
-    assert 'const FAILED_STATES = ["failed", "install_failed"];' in page
+    assert 'import { FAILED_STATES } from "../use_settled_apply";' in page
+    assert "const FAILED_STATES" not in page
     assert (
         "{(isPresent || FAILED_STATES.includes(activeRow.state)) && !isCarriedRow && "
         "( <ModuleVersionBlock"
