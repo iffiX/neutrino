@@ -877,7 +877,7 @@ export function MachineModules({
                       basePath: `/agent/module/${activeRow.name}`,
                       isEditable: isAgentOnline,
                       platformOs,
-                      want: activeRow.want,
+                      want: wantAtApply(activeRow),
                       isCarried: isCarriedRow,
                       manifestTitles,
                     })}
@@ -1130,6 +1130,14 @@ function tabRank(left: string, right: string): number {
  * after a reset or a new join: Start gives it one. */
 function isUnclaimed(row: DeviceModuleView): boolean {
   return row.want === "" && PRESENT_STATES.includes(row.state);
+}
+
+/** The want a module's panel works under: a row with no want that reads
+ * `running` takes `running` at its apply. */
+function wantAtApply(row: DeviceModuleView): string {
+  return row.want === "" && row.state === WANT_RUNNING
+    ? WANT_RUNNING
+    : row.want;
 }
 
 /** Whether a failed module's own press tries again: the one of what it was

@@ -31,7 +31,7 @@ import "./instances_panel.css";
  * One check row per available account; an account checked goes to the end
  * of the order, and the apply bar writes the whole list. While the module
  * reads failed the bar is lit, and its apply with nothing changed tries the
- * module again. An apply writes no want. A row shows the module's own field of the account, whether
+ * module again. An apply writes no want on a module not running. A row shows the module's own field of the account, whether
  * its instance runs, and its code's words. The SSH server shows the machine's
  * host key under the rows. The module's words come from its descriptor.
  */

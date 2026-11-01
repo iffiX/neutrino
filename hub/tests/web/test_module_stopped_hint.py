@@ -7,7 +7,9 @@ row never started among them, and its apply then waits for the want it has;
 Terminal's and the SSH server's tabs, which the agent's package carries, never
 show it; the folder shares and Containers' Run settings show it the same way.
 Every apply bar the machine page reaches is listed here by its panel, and each
-shows it in place of its own hint, Remote desktop's alone keeping its own.
+shows it in place of its own hint, Remote desktop's alone keeping its own. A
+row with no want that reads ``running`` reaches its panels as wanted ``running``,
+since its apply writes that want, and no other row does.
 Configure on any module opens its panel after the first import and posts no
 Start, and Ayakaleaf's bar waits for ``running`` only under ``running``.
 """
@@ -121,6 +123,18 @@ def test_the_run_settings_show_it_on_any_want_but_running():
     settings = flat(source("containers_run_settings.tsx"))
 
     assert 'want !== WANT_RUNNING ? t("ui.modules.stopped_hint")' in settings
+
+
+def test_a_running_row_with_no_want_reaches_its_panels_as_wanted_running():
+    page = flat(source("machine_modules.tsx"))
+
+    assert (
+        "function wantAtApply(row: DeviceModuleView): string { "
+        'return row.want === "" && row.state === WANT_RUNNING '
+        "? WANT_RUNNING : row.want; }"
+    ) in page
+    assert "want: wantAtApply(activeRow)," in page
+    assert "want: activeRow.want," not in page
 
 
 def test_every_apply_bar_the_machine_page_reaches_is_listed():
