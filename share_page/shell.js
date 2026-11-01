@@ -15,9 +15,9 @@ const YAMUX = {
 };
 const CHANNEL = { label: "neutrino", bufferedHigh: 4 * 1024 * 1024, bufferedLow: 1024 * 1024 };
 // Every interval of web_share.md, in milliseconds.
-const TIMING = { open: 30000, slow: 10000, retry: 10000, ping: 3000, silent: 15000, quiet: 10000, awake: 10000 };
-// The app's host, and the connect streams on a slow line and on a fast one.
-const HTTP = { host: "127.0.0.1", streamsSlow: 8, streamsFast: 32 };
+const TIMING = { open: 30000, slow: 10000, retry: 10000, ping: 3000, silent: 15000, quiet: 10000, awake: 10000, signIn: 1500 };
+// The app's host, the connect streams on a slow line and on a fast one, and the status of an app still preparing.
+const HTTP = { host: "127.0.0.1", streamsSlow: 8, streamsFast: 32, preparing: 202 };
 // The line's speed check. A window counts while at least openMin requests are open through all of it.
 const LINE = { windowMs: 250, openMin: 2, fastBytesPerSecond: 1024 * 1024, slowWindows: 2 };
 // The request destinations that go before every other request waiting for a stream.
@@ -1322,7 +1322,7 @@ const page = {
     const isOwnAddress = !location.pathname.startsWith("/__neutrino");
     let start = isOwnAddress ? location.pathname + location.search : (this.facts.app.path || "/");
     if (token) {
-      const answer = await session.pool.fetchWhole("GET", "/?tkn=" + encodeURIComponent(token));
+      const answer = await this.signIn(session, token);
       const where = answer.headers.find(([name]) => name.toLowerCase() === "location");
       if (where && start === "/" && !this.facts.app.path) start = where[1];
     }
@@ -1336,6 +1336,18 @@ const page = {
     stats.appStartMs = performance.now() - stats.startedAt;
     await loaded;
     this.isPageLoaded = true;
+  },
+
+  // Spends the token, again every TIMING.signIn while the app answers 202. VS Code takes no token
+  // and answers 202 until it has downloaded its server, and its page then refuses a visitor with no token.
+  async signIn(session, token) {
+    const path = "/?tkn=" + encodeURIComponent(token);
+    let answer = await session.pool.fetchWhole("GET", path);
+    while (answer.status === HTTP.preparing) {
+      await sleep(TIMING.signIn);
+      answer = await session.pool.fetchWhole("GET", path);
+    }
+    return answer;
   },
 
   // Loads the frame's page again as a refresh does, and waits for it until the deadline.
