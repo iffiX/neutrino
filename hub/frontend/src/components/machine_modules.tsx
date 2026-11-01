@@ -91,6 +91,10 @@ interface PanelTarget {
 /** The want of a module the person stopped; an apply keeps it stopped. */
 const WANT_STOPPED = "stopped";
 
+/** The want of a module the person uninstalled, or whose install they
+ * cancelled. */
+const WANT_ABSENT = "absent";
+
 /** The account layer's panels, one per module of the descriptor table. */
 const ACCOUNT_LAYER_PANELS: Record<string, (target: PanelTarget) => ReactNode> =
   Object.fromEntries(
@@ -223,8 +227,17 @@ const FAILED_STATES = ["failed", "install_failed"];
 const CONFIGURING_WANTS = ["running", "stopped"];
 
 /** The states in transit: the tab turns a spinner beside its word and
- * every button of the tab is disabled. */
+ * every button of the tab but a first install's Cancel is disabled. */
 const BUSY_STATES = ["installing", "uninstalling", "queued"];
+
+/** The states a first install reads while its task runs. */
+const FIRST_INSTALL_STATES = ["installing", "queued"];
+
+/** The step only an install plan has. */
+const INSTALL_PLAN_STEP = "verify";
+
+/** The busy mark of a Cancel. A Cancel posts Uninstall's route. */
+const CANCEL_BUSY = "cancel";
 
 /** The transient a press shows until the machine reports otherwise. */
 const PRESSED_STATES: Record<ModuleAction | "configure", string> = {
@@ -298,6 +311,8 @@ export function MachineModules({
   const [configured, setConfigured] = useState<string[]>([]);
   const [isCatalogOpen, setIsCatalogOpen] = useState(false);
   const [isAccountAsked, setIsAccountAsked] = useState(false);
+  // The modules this page saw cancelling, by name, until the uninstall ends.
+  const [cancels, setCancels] = useState<string[]>([]);
   const confirm = useConfirm();
 
   const modules = useApiResource<DeviceModuleListView>(
@@ -351,6 +366,10 @@ export function MachineModules({
   }, [modules.data]);
 
   useEffect(() => {
+    setCancels((current) => keptCancels(current, rowsByName(modules.data)));
+  }, [modules.data]);
+
+  useEffect(() => {
     const times = Object.values(presses).map((press) => press.at);
     if (times.length === 0) {
       return;
@@ -376,11 +395,11 @@ export function MachineModules({
     }));
   };
 
-  const act = async (action: ModuleAction) => {
+  const act = async (action: ModuleAction, busy: string = action) => {
     if (activeModule === null) {
       return;
     }
-    setBusyAction(action);
+    setBusyAction(busy);
     setActionError(null);
     const request: DeviceModuleRequest = {
       device_id: deviceId,
@@ -391,7 +410,11 @@ export function MachineModules({
         `/agent/module/${action}`,
         request,
       );
-      notePress(activeModule, action);
+      if (busy === CANCEL_BUSY) {
+        setCancels((current) => [...current, activeModule]);
+      } else {
+        notePress(activeModule, action);
+      }
       modules.setData(answer);
     } catch (cause: unknown) {
       setActionError(describeError(cause));
@@ -548,6 +571,24 @@ export function MachineModules({
     });
   };
 
+  const askCancel = () => {
+    if (activeRow === undefined) {
+      return;
+    }
+    confirm.ask({
+      title: t("ui.modules.cancel_title", {
+        module: moduleTitle(activeRow.name, activeRow.title),
+        device: deviceName,
+      }),
+      body: t("ui.modules.cancel_body"),
+      detail: uninstallLine(activeRow.uninstall_data),
+      isDanger: activeRow.uninstall_data?.is_deleted === true,
+      confirmLabel: t("ui.modules.cancel_confirm"),
+      cancelLabel: t("ui.modules.cancel_keep"),
+      onConfirm: () => void act("uninstall", CANCEL_BUSY),
+    });
+  };
+
   if (modules.error !== null && modules.data === null) {
     return <ErrorPanel message={modules.error} onRetry={modules.reload} />;
   }
@@ -586,6 +627,11 @@ export function MachineModules({
   const reportedRow =
     activeModule === null ? undefined : reportedRows[activeModule];
   const stepsTask = reportedRow?.task ?? null;
+  const isRowCancelling =
+    reportedRow !== undefined && isCancelKept(reportedRow, cancels);
+  const isCancelShown =
+    reportedRow !== undefined &&
+    (isRowCancelling || isFirstInstall(reportedRow));
   const isStepFailed =
     reportedRow !== undefined && FAILED_STATES.includes(reportedRow.state);
   // What the step list already words under a step: the wait of the running
@@ -793,20 +839,29 @@ export function MachineModules({
               )}
               {!isCarriedRow && (
                 <div className="modules_actions">
-                  <ActionButton
-                    action="install"
-                    isEnabled={
-                      canAct &&
-                      (activeRow.state === "absent" ||
-                        activeRow.state === "install_failed" ||
-                        isRetried(activeRow, "installed"))
-                    }
-                    disabledReason={
-                      isPresent ? t("ui.modules.install_present") : undefined
-                    }
-                    isBusy={busyAction === "install"}
-                    onClick={() => void askInstall()}
-                  />
+                  {isCancelShown ? (
+                    <CancelButton
+                      isCancelling={isRowCancelling}
+                      isEnabled={isAgentOnline && !isBusy && !isRowCancelling}
+                      isBusy={busyAction === CANCEL_BUSY}
+                      onClick={askCancel}
+                    />
+                  ) : (
+                    <ActionButton
+                      action="install"
+                      isEnabled={
+                        canAct &&
+                        (activeRow.state === "absent" ||
+                          activeRow.state === "install_failed" ||
+                          isRetried(activeRow, "installed"))
+                      }
+                      disabledReason={
+                        isPresent ? t("ui.modules.install_present") : undefined
+                      }
+                      isBusy={busyAction === "install"}
+                      onClick={() => void askInstall()}
+                    />
+                  )}
                   <ActionButton
                     action="start"
                     isEnabled={
@@ -940,6 +995,38 @@ function ActionButton({
   );
 }
 
+interface CancelButtonProps {
+  /** Whether the row wants the module absent. */
+  isCancelling: boolean;
+  isEnabled: boolean;
+  isBusy: boolean;
+  onClick: () => void;
+}
+
+/** A first install's Cancel, in the place of Install. */
+function CancelButton({
+  isCancelling,
+  isEnabled,
+  isBusy,
+  onClick,
+}: CancelButtonProps) {
+  return (
+    <button
+      type="button"
+      className="button button--danger"
+      disabled={!isEnabled}
+      onClick={onClick}
+    >
+      {isBusy || isCancelling ? (
+        <Spinner size={13} />
+      ) : (
+        <Icon name="close" size={14} />
+      )}
+      {t(isCancelling ? "ui.modules.cancelling" : "ui.modules.cancel")}
+    </button>
+  );
+}
+
 /** The machine's modules, by name. */
 /** A module's uninstall line in the panel's language, else in English.
  * Empty for a module the agent carries. */
@@ -1051,6 +1138,43 @@ function isCodeNoticed(row: DeviceModuleView): boolean {
     NOTICED_STATES.includes(row.state) ||
     (row.state === "stopped" && row.want !== WANT_STOPPED)
   );
+}
+
+/** Whether a module's first install runs. The row names no kind of plan, so
+ * this reads the task's steps. */
+function isFirstInstall(row: DeviceModuleView): boolean {
+  return (
+    FIRST_INSTALL_STATES.includes(row.state) &&
+    row.task !== null &&
+    row.task.is_running &&
+    row.task.steps.some((step) => step.name === INSTALL_PLAN_STEP)
+  );
+}
+
+/** Whether a first install still runs on a row whose want is absent. */
+function isCancelling(row: DeviceModuleView): boolean {
+  return isFirstInstall(row) && row.want === WANT_ABSENT;
+}
+
+/** Whether a row reads as cancelling, or is in the uninstall of a cancel this
+ * page saw. That uninstall reads as any uninstall on the row. */
+function isCancelKept(row: DeviceModuleView, cancels: string[]): boolean {
+  return (
+    isCancelling(row) ||
+    (cancels.includes(row.name) &&
+      row.want === WANT_ABSENT &&
+      isRowInTransit(row))
+  );
+}
+
+/** The cancels still on their way, by module name. */
+function keptCancels(
+  cancels: string[],
+  rows: Record<string, DeviceModuleView>,
+): string[] {
+  return Object.values(rows)
+    .filter((row) => isCancelKept(row, cancels))
+    .map((row) => row.name);
 }
 
 /** The word a module's state wears; a token outside the table reads as a

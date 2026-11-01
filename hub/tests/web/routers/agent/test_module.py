@@ -1438,6 +1438,72 @@ def test_containers_cannot_be_uninstalled_while_a_container_module_is_installed(
     assert modules_file(tmp_path)["podman"]["want"] == "absent"
 
 
+TRANSIT_STATES = ["installing", "queued"]
+
+
+@pytest.mark.parametrize("state", TRANSIT_STATES)
+def test_a_cancel_writes_want_absent_on_a_row_in_transit(api, tmp_path, state):
+    """A first install's Cancel is the press of Uninstall, with no retry mark."""
+    client, runtime = api
+    runtime.agent_sessions.online.add(DEVICE)
+    runtime.desired_states.set_want(DEVICE, "fakedesk", "running")
+    runtime.device_modules[DEVICE] = {"fakedesk": {"state": state, "task": TASK}}
+
+    answer = client.post(
+        f"{MODULE_PATH}/uninstall", json={"device_id": DEVICE, "module": "fakedesk"}
+    )
+
+    assert answer.status_code == 200
+    row = answer.json()["modules"][0]
+    assert (row["want"], row["state"]) == ("absent", state)
+    assert row["task"] == TASK
+    assert modules_file(tmp_path)["fakedesk"]["want"] == "absent"
+    assert retry_marks() == {}
+    assert [push[0] for push in runtime.agent_sessions.pushes] == [DEVICE]
+
+
+@pytest.mark.parametrize("state", TRANSIT_STATES)
+def test_a_cancel_of_a_module_another_module_waits_on_is_refused(
+    containers_api, tmp_path, state
+):
+    client, runtime = containers_api
+    runtime.desired_states.set_want(DEVICE, "podman", "running")
+    runtime.desired_states.set_want(DEVICE, "demo", "installed")
+    runtime.device_modules[DEVICE] = {"podman": {"state": state, "task": TASK}}
+
+    refused = client.post(
+        f"{MODULE_PATH}/uninstall", json={"device_id": DEVICE, "module": "podman"}
+    )
+
+    assert refused.status_code == 409
+    assert refused.json()["detail"] == {
+        "code": "module_in_use",
+        "params": {"modules": ["demo"]},
+    }
+    assert modules_file(tmp_path)["podman"]["want"] == "running"
+    assert runtime.agent_sessions.pushes == []
+
+
+def test_a_cancel_of_a_container_module_leaves_containers_wanted(
+    containers_api, tmp_path
+):
+    client, runtime = containers_api
+    runtime.desired_states.set_want(DEVICE, "podman", "running")
+    runtime.desired_states.set_want(DEVICE, "demo", "installed")
+    runtime.device_modules[DEVICE] = {
+        "podman": {"state": "running"},
+        "demo": {"state": "installing", "task": TASK},
+    }
+
+    answer = client.post(
+        f"{MODULE_PATH}/uninstall", json={"device_id": DEVICE, "module": "demo"}
+    )
+
+    assert answer.status_code == 200
+    assert modules_file(tmp_path)["demo"]["want"] == "absent"
+    assert modules_file(tmp_path)["podman"]["want"] == "running"
+
+
 def test_a_module_s_rows_name_the_modules_its_entry_requires(containers_api):
     client, runtime = containers_api
 
