@@ -23,6 +23,51 @@ Checks: every claim in the definition is visible in a screenshot; the install
 block runs as pasted; the Chinese README is written from the same outline and
 its headings map one to one.
 
+## Site home page
+
+Reader: someone who has not installed and knows no term of the product, deciding
+from one screen and a short scroll. Opens with what the reader gets, in one
+line, beside the product on screen.
+
+| Part | Holds | Budget |
+| --- | --- | --- |
+| First screen | the name, one line on what the reader gets, one smaller line on systems and licence, two buttons, the mascot, a product screenshot | one screen |
+| Blocks | a heading naming what the reader gets, the text, one picture | seven blocks, three lines of text each |
+| Comparison | products the reader already knows; on the network side Tailscale alone, never frp, EasyTier or NetBird, which are ways in the product uses | three lines |
+| Start | the simplest case: one computer, one package, the phone app, one scan | three steps |
+
+The page states an absence where the reader can check it (nothing to install, no
+server to buy), and 同学 names the person a link goes to. The rest of `SKILL.md`
+holds.
+
+Refuses: port numbers, protocols, timings and other mechanism (the security page
+has them), internal names such as the agent, the three-package model, a line
+that holds only in a case the page does not name, a recap.
+Checks: a first-year student with no background can say what the product gives;
+every claim shows in a picture or holds in the product as shipped; security
+takes one common term and one line.
+
+## App page
+
+Reader: a user who runs the product and wants one app on one machine. A
+composite: a how-to with one small reference table. Opens with what the app is
+and who it suits.
+
+| Section | Holds |
+| --- | --- |
+| Definition | what it is and who it suits, one picture of the app |
+| Systems | one table of the systems it installs on |
+| Install | three to five steps; the steps every app shares are linked, not repeated |
+| Open it | how the reader opens it from a client, one picture |
+| Share it | whether it can be shared, the account a visitor uses, the dialog's warning |
+| What to watch | what someone inside it can do |
+| Settings | one table of the app's own settings |
+| Uninstall | whether its data stays |
+
+Refuses: the shared install steps, other apps, design reasons, a third picture.
+Checks: the systems table matches the manifest's platforms; the share section
+matches its `web_share`; the uninstall section matches its `uninstall_data`.
+
 ## Quick start (tutorial)
 
 Reader: a first-time user with a fresh box who wants a working hub in one

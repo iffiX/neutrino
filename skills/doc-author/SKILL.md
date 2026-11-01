@@ -43,7 +43,8 @@ are in `kinds.md`.
 | Explanation | understanding, learning | "Why is X like this?" | steps, exhaustive detail, anything the reader must do | overview, design pages, the folded architecture section of the README |
 
 The landing README is a composite: a one-paragraph explanation, an install
-how-to, and links. Its own section in `kinds.md` says how much of each.
+how-to, and links. Its own section in `kinds.md` says how much of each. The site home
+page and the app page are composites too, each with its section there.
 
 ## Rules every document obeys
 
