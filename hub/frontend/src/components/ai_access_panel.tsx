@@ -18,11 +18,11 @@ import "./ai_access_panel.css";
  * The keys machines reach the gateway with.
  *
  * An enrolled client is handed its own key over its channel and is named on
- * its row, so what is distributed by hand here is the rest: a phone, a
- * tablet, a laptop nobody enrolled. The gateway generates these keys rather
- * than being given them, so each is shown to its owner — masked in the list,
- * and expanded once at the top the moment it is generated, which is when
- * somebody is holding the machine that needs it.
+ * its row, so what is distributed by hand here is the rest: a tool on the
+ * hub's machine, or one using an SSH tunnel to it. The gateway generates these
+ * keys rather than being given them, so each is shown to its owner — masked
+ * in the list, and expanded once at the top the moment it is generated, which
+ * is when somebody is holding the machine that needs it.
  *
  * Generating and revoking write where they are pressed: a revocation never
  * waits behind an apply bar.

@@ -14,7 +14,6 @@ import { apiPath, apiPost, describeCode, describeError } from "../api_client";
 import { copyText } from "../copy_text";
 import { formatCompact } from "../format_compact";
 import { t, useLanguage } from "../i18n";
-import { useHubHost } from "../origins";
 import { useApiResource } from "../use_api_resource";
 import { HUB_EVENT_AI_USAGE, HUB_EVENT_CONFIG } from "../use_hub_events";
 import type { AiUsageResponse, CliproxyApiStatusView } from "../api_types";
@@ -34,6 +33,8 @@ import "./ai_page.css";
 
 const PORT_MIN = 1;
 const PORT_MAX = 65535;
+/** The one address the gateway listens on. */
+const GATEWAY_HOST = "127.0.0.1";
 const STATUS_PATH = "/hub/ai/gateway";
 const USAGE_PATH = apiPath("/hub/ai/gateway/usage", { range: "month" });
 // What moves the gateway's own state and its numbers: the collector saying
@@ -68,7 +69,6 @@ function toModelFamilies(models: string[]): ModelFamily[] {
 export function AiPage() {
   // Redrawn when the panel's language changes.
   useLanguage();
-  const host = useHubHost();
   const status = useApiResource<CliproxyApiStatusView>(STATUS_PATH, {
     invalidateOn: AI_INVALIDATE_ON,
   });
@@ -122,7 +122,7 @@ export function AiPage() {
     );
   }
 
-  const endpoint = originWith(view.listen_port, host);
+  const endpoint = originWith(view.listen_port);
   const isPortDirty = port !== null && port !== view.listen_port;
   const isPortValid = port !== null && port >= PORT_MIN && port <= PORT_MAX;
   const hasToday =
@@ -368,7 +368,7 @@ export function AiPage() {
             <span className="field_hint">
               {isPortDirty
                 ? t("ui.ai.port_moves_to", {
-                    origin: originWith(port ?? 0, host),
+                    origin: originWith(port ?? 0),
                   })
                 : t("ui.ai.port_reached_at", { origin: endpoint })}
             </span>
@@ -397,7 +397,7 @@ export function AiPage() {
   );
 }
 
-// The gateway answers plain HTTP, whichever scheme the panel is on.
-function originWith(port: number, host: string): string {
-  return `http://${host}:${port}`;
+// The gateway serves plain HTTP, whichever scheme the panel uses.
+function originWith(port: number): string {
+  return `http://${GATEWAY_HOST}:${port}`;
 }
