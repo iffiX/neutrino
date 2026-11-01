@@ -7,9 +7,8 @@ SiYuan. The view lists every available account with whether the module
 enables it and what the machine reports of its instance; the set replaces
 the enabled accounts, generating each newly enabled account's secrets, a
 SiYuan account's gateway key among them and voided for an account it
-disables, and writes ``want: running`` with it as an apply of a
-configuration does, a stopped module staying stopped (protocol.md, "The
-account layer in the state").
+disables, and writes no ``want`` (protocol.md, "The account layer in the
+state").
 """
 
 import functools
@@ -24,7 +23,6 @@ from neutrino_hub.modules.channel.constants import (
 from neutrino_hub.modules.clients.ai_keys import apply_keys, settle_instance_keys
 from neutrino_hub.modules.devices.accounts import DeviceAccountStore
 from neutrino_hub.modules.devices.constants import (
-    DEVICE_AGENT_MODULES,
     DEVICE_MODULE_VALIDATE_TIMEOUT_S,
     DEVICE_SAMBA_MODULE,
     DEVICE_SSH_SERVER_MODULE,
@@ -57,7 +55,6 @@ from neutrino_hub.web.routers.agent.module import (
     recompose_published,
     require_online,
     require_terms,
-    want_applied,
     write_module_config,
 )
 
@@ -146,8 +143,8 @@ def replace_accounts(
     Each newly enabled account gets the fields the row seals, generated
     once; a disabled account keeps its record for its next enabling. The
     agent checks the module's section as the state will carry it before the
-    change holds, and the module is wanted running with it. A stopped
-    module stays stopped and takes the change at its next **Start**.
+    change holds. No ``want`` is written, so a module not running takes the
+    change at its next **Start**.
 
     Args:
         row: The module's row in the description table.
@@ -212,8 +209,6 @@ def replace_accounts(
             apply_keys()
         raise
     context.config = written
-    if row.name not in DEVICE_AGENT_MODULES:
-        want_applied(runtime, context.key, row.name)
     push_state(runtime, context.key)
     recompose_published(runtime, row.name)
     return device_view(row, runtime, context)

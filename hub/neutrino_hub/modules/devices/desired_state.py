@@ -742,19 +742,29 @@ class DesiredStateStore:
         """
         return self.modules(key).get(module, {}).get("version", "")
 
-    def set_version(self, key: str, module: str, version: str) -> None:
+    def set_version(
+        self,
+        key: str,
+        module: str,
+        version: str,
+        *,
+        unnamed_want: str = CHANNEL_MODULE_STATE_ABSENT,
+    ) -> None:
         """Write the version one device is to run one module at.
 
         Args:
             key: The device key.
             module: The module name.
             version: The version; empty follows the tested one.
+            unnamed_want: The ``want`` of a module the file does not name yet;
+                ``absent`` is written settled, so the state names no such
+                module.
         """
         with CONFIG_WRITE_LOCK:
             modules = self.modules(key)
             held = modules.get(module) or {
-                "want": CHANNEL_MODULE_STATE_RUNNING,
-                "is_settled": False,
+                "want": unnamed_want,
+                "is_settled": unnamed_want == CHANNEL_MODULE_STATE_ABSENT,
             }
             modules[module] = {
                 "want": held["want"],

@@ -43,7 +43,6 @@ from neutrino_hub.web.routers.agent.module import (
     recompose_published,
     require_online,
     validate_config,
-    want_applied,
     write_module_config,
 )
 from neutrino_hub.web.routers.agent.module_account import is_machine_path_absolute
@@ -121,10 +120,10 @@ def read_folder_shares(
 def add_folder_share(
     request: FolderShareUpdate, runtime: PanelRuntime = Depends(get_runtime)
 ) -> FolderShareListView:
-    """Add a folder share, want the module running, and push the state.
+    """Add a folder share and push the state.
 
-    A stopped module stays stopped and takes the share at its next
-    **Start**.
+    No ``want`` is written, so a module not running takes the share at its
+    next **Start**.
 
     Args:
         request: The device, the name, the folder and the accounts checked.
@@ -268,7 +267,6 @@ def _save(
     validate_config(runtime, context, written)
     write_module_config(runtime, context.key, MODULE, written)
     context.config = written
-    want_applied(runtime, context.key, MODULE)
     push_state(runtime, context.key)
     recompose_published(runtime, MODULE)
     return _view(runtime, context)

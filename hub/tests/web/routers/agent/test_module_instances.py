@@ -186,9 +186,7 @@ def test_a_set_enables_the_accounts_and_seals_each_ones_fields_once(
     assert [(key, mod) for key, mod, _ in runtime.agent_sessions.validations] == [
         (DEVICE, module)
     ] * 3
-    assert runtime.desired_states.want_of(DEVICE, module) == (
-        "" if module in ("terminal", "ssh_server") else "running"
-    )
+    assert runtime.desired_states.want_of(DEVICE, module) == ""
     assert [push[0] for push in runtime.agent_sessions.pushes] == [DEVICE] * 3
 
 
@@ -211,6 +209,45 @@ def test_a_set_on_a_stopped_module_keeps_it_stopped(api, tmp_path, monkeypatch, 
     assert [row["account"] for row in stored(tmp_path, module)["accounts"]] == ["bob"]
     assert runtime.desired_states.want_of(DEVICE, module) == "stopped"
     assert [push[0] for push in runtime.agent_sessions.pushes] == [DEVICE]
+
+
+@pytest.mark.parametrize("want", ["", "installed"])
+@pytest.mark.parametrize(
+    "module", ["samba", "vscode", "code_server", "cloudcli", "codeg", "siyuan"]
+)
+def test_a_set_on_a_module_never_started_writes_no_want(
+    api, tmp_path, monkeypatch, module, want
+):
+    from neutrino_hub.modules.clients import ai_keys
+
+    monkeypatch.setattr(ai_keys, "_apply", lambda **kwargs: None)
+    client, runtime = api
+    runtime.report(DEVICE, module, "installed")
+    if want:
+        runtime.desired_states.set_want(DEVICE, module, want)
+
+    answer = client.post(
+        f"/api/agent/module/{module}/set",
+        json={"device_id": DEVICE, "accounts": ["bob"]},
+    )
+
+    assert answer.status_code == 200, answer.text
+    assert [row["account"] for row in stored(tmp_path, module)["accounts"]] == ["bob"]
+    assert runtime.desired_states.want_of(DEVICE, module) == want
+    assert [push[0] for push in runtime.agent_sessions.pushes] == [DEVICE]
+
+
+def test_a_set_on_a_running_module_keeps_it_running(api):
+    client, runtime = api
+    runtime.report(DEVICE, "samba", "running")
+    runtime.desired_states.set_want(DEVICE, "samba", "running")
+
+    client.post(
+        "/api/agent/module/samba/set",
+        json={"device_id": DEVICE, "accounts": ["bob"]},
+    )
+
+    assert runtime.desired_states.want_of(DEVICE, "samba") == "running"
 
 
 def test_a_siyuan_account_gets_a_gateway_key_while_it_is_enabled(

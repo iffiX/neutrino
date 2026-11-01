@@ -4,8 +4,8 @@ What these pin: the list answers the folder shares in the order they were
 added with the file share's enabled accounts; an add checks the name, the
 folder and the accounts in that order, has the agent check the section the
 state will carry, stores ``{name, path, accounts}`` with the accounts in the
-file share's order, wants the module running and pushes; an add or a set on
-a stopped module keeps it stopped and pushes; a set keeps the name; a remove takes the share and its permission row away and pushes; and
+file share's order and pushes; an add, a set or a remove writes no ``want``, on
+a module not running as on a stopped one; a set keeps the name; a remove takes the share and its permission row away and pushes; and
 the Home shares' set refuses an account a folder share's name takes.
 """
 
@@ -87,7 +87,7 @@ def test_an_add_stores_the_share_with_its_accounts_in_the_file_shares_order(
         "is_read_only": False,
         "valid_users": ["neutrino-bob", "neutrino-alice"],
     }
-    assert runtime.desired_states.want_of(DEVICE, "samba") == "running"
+    assert runtime.desired_states.want_of(DEVICE, "samba") == ""
     assert [push[0] for push in runtime.agent_sessions.pushes] == [DEVICE]
     assert client.get(PATH, params={"device_id": DEVICE}).json() == answer.json()
 
@@ -114,6 +114,29 @@ def test_an_add_and_a_set_on_a_stopped_module_keep_it_stopped(api, tmp_path):
     ]
     assert runtime.desired_states.want_of(DEVICE, "samba") == "stopped"
     assert [push[0] for push in runtime.agent_sessions.pushes] == [DEVICE] * 2
+
+
+@pytest.mark.parametrize("want", ["", "installed"])
+def test_an_add_a_set_and_a_remove_on_a_module_never_started_write_no_want(api, want):
+    client, runtime = api
+    runtime.report(DEVICE, "samba", "installed")
+    if want:
+        runtime.desired_states.set_want(DEVICE, "samba", want)
+
+    add(client)
+    assert runtime.desired_states.want_of(DEVICE, "samba") == want
+    client.post(
+        f"{PATH}/set",
+        json={
+            "device_id": DEVICE,
+            "name": "lab",
+            "path": "/srv/lab2",
+            "accounts": ["alice"],
+        },
+    )
+    assert runtime.desired_states.want_of(DEVICE, "samba") == want
+    client.post(f"{PATH}/remove", json={"device_id": DEVICE, "name": "lab"})
+    assert runtime.desired_states.want_of(DEVICE, "samba") == want
 
 
 @pytest.mark.parametrize(

@@ -672,6 +672,32 @@ def test_the_view_advises_memory_past_the_run_settings(box, demo_container_modul
     assert view["memory_need"] == {"need_gib": 3, "memory_gib": 2}
 
 
+@pytest.mark.parametrize("want", ["", "installed"])
+@pytest.mark.parametrize(
+    "path, body, platform",
+    [
+        ("container/set", {"containers": []}, LINUX),
+        ("mirror/set", {"mirrors": ["mirror.example"]}, LINUX),
+        ("machine/set", RUN_SETTINGS, DARWIN),
+    ],
+    ids=["containers", "mirrors", "run_settings"],
+)
+def test_a_change_of_settings_on_containers_never_started_writes_no_want(
+    box, path, body, platform, want
+):
+    client, runtime = box
+    runtime.device_platform[DEVICE] = platform
+    available(runtime, "lab")
+    runtime.report(DEVICE, "podman", "installed")
+    if want:
+        runtime.desired_states.set_want(DEVICE, "podman", want)
+
+    answer = client.post(f"{BASE}/{path}", json={"device_id": DEVICE, **body})
+
+    assert answer.status_code == 200, answer.text
+    assert runtime.desired_states.want_of(DEVICE, "podman") == want
+
+
 NEW_MACHINE = {"cpus": 4, "memory_gib": 4, "disk_gib": 100, "disk_gib_now": 0}
 
 

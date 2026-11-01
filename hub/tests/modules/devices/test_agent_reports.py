@@ -697,6 +697,48 @@ def test_a_hub_container_of_a_module_not_named_never_joins_the_declared_ones(box
     assert runtime.pushed == []
 
 
+def installed_podman_report(*containers, is_active: bool = False) -> dict:
+    return report(
+        modules={
+            "podman": {
+                "state": "installed",
+                "is_active": is_active,
+                "details": {"containers": list(containers), "mirrors": []},
+            }
+        }
+    )
+
+
+@pytest.mark.parametrize("is_active, want", [(False, "stopped"), (True, "running")])
+def test_a_takeover_of_a_person_s_containers_wants_what_the_machine_shows(
+    box, is_active, want
+):
+    """A module not running is wanted ``stopped``, so a takeover starts nothing."""
+    runtime, device = box
+
+    agent_reports.record_report(
+        runtime,
+        device,
+        installed_podman_report(HAND_STARTED, is_active=is_active),
+        is_first=True,
+    )
+
+    assert runtime.desired_states.want_of(DEVICE, "podman") == want
+
+
+def test_a_takeover_keeps_the_settings_a_person_applied_before_any_start(box):
+    runtime, device = box
+    applied = {"containers": [{"name": "mine", "image": "nginx"}], "mirrors": []}
+    runtime.desired_states.files[(DEVICE, "podman")] = dict(applied)
+
+    agent_reports.record_report(
+        runtime, device, installed_podman_report(HAND_STARTED), is_first=True
+    )
+
+    assert runtime.desired_states.files[(DEVICE, "podman")] == applied
+    assert runtime.desired_states.want_of(DEVICE, "podman") == "stopped"
+
+
 def test_a_machine_that_joins_brings_its_own_containers_and_no_module_s(box):
     """The first report of a machine that ran a module under another hub
     takes Containers over with the containers a person started, and leaves

@@ -261,12 +261,12 @@ def _adopt_modules(runtime, key: str, modules: dict) -> bool:
     """Make the hub's record of each module it holds no want for match the machine.
 
     A module with an import and no ``want`` is taken over from what the
-    machine reports: one the hub's mark says is configured (``stopped`` or
-    ``running``) is wanted as it reports, its configuration imported when
-    the hub holds none; one installed by hand is imported, and wanted
-    ``running`` or ``stopped`` by whether its unit is active. An import
-    that finds nothing leaves the module as it is, and Gitea is taken over
-    only while the hub still holds the secrets its instance signs with.
+    machine reports, its configuration imported when the hub holds none:
+    one the hub's mark says is configured (``stopped`` or ``running``) is
+    wanted as it reports, and one installed by hand ``running`` or
+    ``stopped`` by whether its unit is active. An import that finds nothing
+    leaves the module as it is, and Gitea is taken over only while the hub
+    still holds the secrets its instance signs with.
 
     Args:
         runtime: The shared runtime.
@@ -289,18 +289,15 @@ def _adopt_modules(runtime, key: str, modules: dict) -> bool:
             continue
         if name == DEVICE_GITEA_MODULE and not store.has_gitea_secrets(key):
             continue
+        if not store.read(key, name) and not _import(store, key, name, status):
+            continue
+        want = state
         if state == CHANNEL_MODULE_STATE_INSTALLED:
-            if not _import(store, key, name, status):
-                continue
             want = (
                 CHANNEL_MODULE_STATE_RUNNING
                 if status.get("is_active")
                 else CHANNEL_MODULE_STATE_STOPPED
             )
-        else:
-            if not store.read(key, name) and not _import(store, key, name, status):
-                continue
-            want = state
         store.set_want(key, name, want)
         LOGGER.info("device %s: %s reported %s, adopted as %s", key, name, state, want)
         is_changed = True

@@ -429,11 +429,34 @@ def set_module_version(
     if not runtime.agent_sessions.is_online(key):
         raise _refusal(status.HTTP_409_CONFLICT, CODE_AGENT_OFFLINE, device_id=key)
     try:
-        runtime.desired_states.set_version(key, module, request.version)
+        runtime.desired_states.set_version(
+            key,
+            module,
+            request.version,
+            unnamed_want=_want_as_reported(runtime, key, module),
+        )
     except OSError as error:
         raise _config_unwritable(error) from error
     push_state(runtime, key)
     return _version_view(runtime, key, module, manifest)
+
+
+def _want_as_reported(runtime: PanelRuntime, key: str, module: str) -> str:
+    """The ``want`` a press that starts nothing writes on a module with none.
+
+    Args:
+        runtime: The shared runtime.
+        key: The device.
+        module: The module.
+
+    Returns:
+        The state the machine reports while it is ``installed``, ``stopped``
+        or ``running``; else ``absent``.
+    """
+    state = module_status(runtime, key, module)["state"]
+    if state in CHANNEL_MODULE_PRESENT_STATES:
+        return state
+    return CHANNEL_MODULE_STATE_ABSENT
 
 
 def _version_view(
@@ -887,7 +910,6 @@ def store_config(
     written = dict(config)
     write_module_config(runtime, context.key, context.module, written)
     context.config = written
-    _claim_reported(runtime, context)
     push_state(runtime, context.key)
     recompose_published(runtime, context.module)
 
@@ -939,56 +961,6 @@ def validate_config(
             str(verdict.get("code") or "config_invalid"),
             **params,
         )
-
-
-def _claim_reported(runtime: PanelRuntime, context: DeviceModuleContext) -> None:
-    """Want running a module the machine has and the hub holds no want for.
-
-    An apply of a configuration asks the module to run it; without a want
-    the state would not name the module and the apply would reach nothing.
-
-    Args:
-        runtime: The shared runtime.
-        context: The device and the module, observed.
-
-    Raises:
-        HTTPException: 500 ``config_unwritable`` when the want cannot be
-            written.
-    """
-    store = runtime.desired_states
-    if context.module in DEVICE_AGENT_MODULES or store.want_of(
-        context.key, context.module
-    ):
-        return
-    if context.state not in CHANNEL_MODULE_PRESENT_STATES:
-        return
-    try:
-        store.set_want(context.key, context.module, CHANNEL_MODULE_STATE_RUNNING)
-    except OSError as error:
-        raise _config_unwritable(error) from error
-
-
-def want_applied(runtime: PanelRuntime, key: str, module: str) -> None:
-    """Want one module running after an apply of its configuration, a stopped one staying stopped.
-
-    A stopped module takes the change at its next **Start**.
-
-    Args:
-        runtime: The shared runtime.
-        key: The device.
-        module: The module name.
-
-    Raises:
-        HTTPException: 500 ``config_unwritable`` when the want cannot be
-            written.
-    """
-    store = runtime.desired_states
-    if store.want_of(key, module) == CHANNEL_MODULE_STATE_STOPPED:
-        return
-    try:
-        store.set_want(key, module, CHANNEL_MODULE_STATE_RUNNING)
-    except OSError as error:
-        raise _config_unwritable(error) from error
 
 
 def write_module_config(

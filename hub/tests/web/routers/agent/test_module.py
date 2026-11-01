@@ -192,6 +192,49 @@ def test_a_failed_row_can_follow_the_tested_version_again(api, tmp_path, monkeyp
     assert modules_file(tmp_path)["fakedesk"]["want"] == "running"
 
 
+@pytest.mark.parametrize("state", ["installed", "stopped", "running"])
+def test_a_version_press_on_a_module_with_no_want_keeps_what_it_reports(
+    api, tmp_path, monkeypatch, state
+):
+    client, runtime = api
+    monkeypatch.setattr(device_modules, "is_locked", lambda manifest, entry: False)
+    runtime.module_releases = ModuleReleaseStore(path=tmp_path / "releases.json")
+    runtime.agent_sessions.online.add(DEVICE)
+    runtime.device_modules[DEVICE] = {"fakedesk": {"state": state}}
+
+    answer = client.post(
+        f"{MODULE_PATH}/version/set",
+        json={"device_id": DEVICE, "module": "fakedesk", "version": ""},
+    )
+
+    assert answer.status_code == 200
+    assert modules_file(tmp_path)["fakedesk"]["want"] == state
+    assert len(runtime.agent_sessions.pushes) == 1
+
+
+def test_a_version_press_on_a_module_the_machine_has_not_keeps_it_out_of_the_state(
+    api, tmp_path, monkeypatch
+):
+    """The press keeps the choice for an **Install**, and asks the machine nothing."""
+    client, runtime = api
+    monkeypatch.setattr(device_modules, "is_locked", lambda manifest, entry: False)
+    runtime.module_releases = ModuleReleaseStore(path=tmp_path / "releases.json")
+    runtime.agent_sessions.online.add(DEVICE)
+    runtime.device_modules[DEVICE] = {"fakedesk": {"state": "absent"}}
+
+    answer = client.post(
+        f"{MODULE_PATH}/version/set",
+        json={"device_id": DEVICE, "module": "fakedesk", "version": ""},
+    )
+
+    assert answer.status_code == 200
+    assert modules_file(tmp_path)["fakedesk"] == {
+        "want": "absent",
+        "is_settled": True,
+        "version": "",
+    }
+
+
 def test_a_row_s_version_is_the_one_its_reported_details_name(api):
     client, runtime = api
     runtime.device_modules[DEVICE] = {
@@ -1043,6 +1086,30 @@ def test_a_configuration_is_checked_on_the_agent_then_stored_then_pushed(box):
     assert runtime.published_services.refreshes == 1
 
 
+@pytest.mark.parametrize("state", ["installed", "stopped", "running"])
+def test_a_configuration_stored_on_a_module_with_no_want_writes_none(box, state):
+    _, runtime = box
+    runtime.report(LAPTOP, MODULE, state)
+    context = device_modules.device_context(runtime, MODULE, LAPTOP)
+
+    device_modules.store_config(runtime, context, {"accounts": []})
+
+    assert runtime.desired_states.read(LAPTOP, MODULE) == {"accounts": []}
+    assert runtime.desired_states.want_of(LAPTOP, MODULE) == ""
+
+
+@pytest.mark.parametrize("want", ["installed", "stopped", "running"])
+def test_a_configuration_stored_leaves_the_want_as_it_is(box, want):
+    _, runtime = box
+    runtime.report(LAPTOP, MODULE, "installed")
+    runtime.desired_states.set_want(LAPTOP, MODULE, want)
+    context = device_modules.device_context(runtime, MODULE, LAPTOP)
+
+    device_modules.store_config(runtime, context, {"accounts": []})
+
+    assert runtime.desired_states.want_of(LAPTOP, MODULE) == want
+
+
 def test_a_configuration_the_agent_refuses_is_neither_stored_nor_pushed(box):
     _, runtime = box
     runtime.agent_sessions.verdict = {
@@ -1393,6 +1460,28 @@ def test_a_container_module_s_install_or_start_wants_containers_running_first(
     # The report leaves demo out, so it reads absent and its press marks it.
     assert set(retry_marks()) == {"podman", "demo"}
     assert len(runtime.agent_sessions.pushes) == 1
+
+
+def test_a_version_press_on_a_container_module_with_no_want_starts_neither_module(
+    containers_api, tmp_path, monkeypatch
+):
+    client, runtime = containers_api
+    monkeypatch.setattr(device_modules, "is_locked", lambda manifest, entry: False)
+    runtime.module_releases = ModuleReleaseStore(path=tmp_path / "releases.json")
+    runtime.device_modules[DEVICE] = {
+        "podman": {"state": "stopped"},
+        "demo": {"state": "installed"},
+    }
+
+    answer = client.post(
+        f"{MODULE_PATH}/version/set",
+        json={"device_id": DEVICE, "module": "demo", "version": ""},
+    )
+
+    assert answer.status_code == 200
+    assert modules_file(tmp_path) == {
+        "demo": {"want": "installed", "is_settled": False, "version": ""},
+    }
 
 
 def test_a_stop_of_a_failed_containers_wanted_running_writes_stopped_and_a_retry(
