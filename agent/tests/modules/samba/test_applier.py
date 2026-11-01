@@ -11,7 +11,9 @@ the person's lines after that line stay where they were once the module's file
 is read in its place; a missing ``smb.conf`` is the distribution's stock file with the
 line; a whole ``smb.conf`` an earlier version rendered is the person's and
 only gets the line; the module's shares go to its own file; an uninstall deletes that
-file and takes the line out; a stop stops the unit and disables it; the
+file and takes the line out; a stop stops the unit and disables it; the name
+server reads as enabled and active or as nothing, a stop stops and disables
+it, and a restore brings back only what it was; the
 sweep takes every ``neutrino-`` user and
 credential off the machine; the person's own
 configuration refuses a taken share name and the global settings that stop
@@ -37,6 +39,7 @@ from neutrino_agent.modules.samba import applier as applier_module
 from neutrino_agent.modules.samba.applier import (
     SambaConfigApplier,
     SambaConfigReader,
+    SambaNameServerApplier,
     SambaSelinuxApplier,
     SambaStatusReader,
     SambaUserManager,
@@ -727,6 +730,73 @@ def test_stop_stops_the_unit_and_disables_it(box):
 
     assert commands.ran("systemctl") == [
         (["systemctl", "disable", "--now", "smbd.service"], None)
+    ]
+
+
+@pytest.mark.parametrize(
+    "shown, kept",
+    [
+        (
+            "ActiveState=active\nUnitFileState=enabled\n",
+            {"is_enabled": True, "is_active": True},
+        ),
+        (
+            "ActiveState=inactive\nUnitFileState=enabled\n",
+            {"is_enabled": True, "is_active": False},
+        ),
+        (
+            "ActiveState=active\nUnitFileState=disabled\n",
+            {"is_enabled": False, "is_active": True},
+        ),
+        ("ActiveState=inactive\nUnitFileState=disabled\n", {}),
+        ("ActiveState=inactive\nUnitFileState=masked\n", {}),
+        ("ActiveState=inactive\nUnitFileState=\n", {}),
+        ("", {}),
+    ],
+)
+def test_the_name_server_reads_as_enabled_and_active_or_as_nothing(box, shown, kept):
+    commands, _ = box
+    commands.answers[("systemctl", "show")] = (0, shown)
+
+    assert SambaNameServerApplier(unit="nmbd.service").read() == kept
+    assert commands.ran("systemctl") == [
+        (
+            [
+                "systemctl",
+                "show",
+                "--property=UnitFileState,ActiveState",
+                "nmbd.service",
+            ],
+            None,
+        )
+    ]
+
+
+def test_the_name_server_stops_and_is_disabled(box):
+    commands, _ = box
+
+    SambaNameServerApplier(unit="nmbd.service").stop()
+
+    assert commands.ran("systemctl") == [
+        (["systemctl", "disable", "--now", "nmbd.service"], None)
+    ]
+
+
+@pytest.mark.parametrize(
+    "kept, verbs",
+    [
+        ({"is_enabled": True, "is_active": True}, ["enable", "start"]),
+        ({"is_enabled": True, "is_active": False}, ["enable"]),
+        ({"is_enabled": False, "is_active": True}, ["start"]),
+    ],
+)
+def test_the_name_server_comes_back_only_as_it_was(box, kept, verbs):
+    commands, _ = box
+
+    SambaNameServerApplier(unit="nmb.service").restore(kept)
+
+    assert commands.ran("systemctl") == [
+        (["systemctl", verb, "nmb.service"], None) for verb in verbs
     ]
 
 

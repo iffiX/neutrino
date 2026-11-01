@@ -8,7 +8,9 @@ the machine actually serves, read back from Samba itself, is reported and
 never imported. A root-only record under the agent's work root keeps the
 digest of each password the module set, so a password is set again only
 when the hub's differs. The record also stores whether the module turned the
-SELinux boolean on, and an uninstall turns off only what the module turned on.
+SELinux boolean on, and an uninstall turns off only what the module turned on,
+and what a stop found the NetBIOS name server to be, and a start brings back
+only that.
 
 On Windows and macOS the same module drives the system's own SMB server
 through the platform's applier instead.
@@ -41,6 +43,7 @@ from neutrino_agent.modules.shared.base import ModuleRunner
 from neutrino_agent.modules.samba.applier import (
     SambaConfigApplier,
     SambaConfigReader,
+    SambaNameServerApplier,
     SambaSelinuxApplier,
     SambaStatusReader,
     SambaUserManager,
@@ -56,6 +59,7 @@ from neutrino_agent.modules.samba.constants import (
     SAMBA_NATIVE_STATUS_TTL_S,
     SAMBA_RECORD_NAME,
     SAMBA_SELINUX_BOOLEAN,
+    samba_name_unit,
     samba_unit,
 )
 from neutrino_agent.modules.samba.renderer import SambaConfigRenderer
@@ -119,7 +123,9 @@ class SambaModuleRunner(SystemPackageModuleRunner):
             family: The distribution family; detected when empty.
         """
         super().__init__(platform=platform, log=log, publish=publish)
-        self._unit = samba_unit(family or platform_tuple().get("family", ""))
+        family = family or platform_tuple().get("family", "")
+        self._unit = samba_unit(family)
+        self._name_server = SambaNameServerApplier(unit=samba_name_unit(family))
         self._var_dir = platform.agent_var_dir()
         self._record_path = os.path.join(self._var_dir, SAMBA_RECORD_NAME)
         self._config: "SambaConfig | None" = None
@@ -214,6 +220,10 @@ class SambaModuleRunner(SystemPackageModuleRunner):
         renderer = SambaConfigRenderer(config=parsed)
         rendered = renderer.render()
         held = read_digests(self._record_path)
+        kept_name_server = read_kept_name_server(self._record_path)
+        is_name_server_due = (
+            is_started and bool(parsed.served_shares()) and bool(kept_name_server)
+        )
         try:
             changes = []
             if self._is_first_apply():
@@ -229,6 +239,9 @@ class SambaModuleRunner(SystemPackageModuleRunner):
             )
             passwords, kept = users.converge(parsed, held)
             changes += passwords
+            if is_name_server_due:
+                self._name_server.restore(kept_name_server)
+                changes.append("brought the name server back")
         except (OSError, subprocess.SubprocessError) as error:
             raise ModuleApplyError(
                 "apply_failed", {"detail": command_detail(error)[:500]}
@@ -238,10 +251,12 @@ class SambaModuleRunner(SystemPackageModuleRunner):
             and bool(parsed.served_shares())
             and self._turn_selinux_boolean(SambaSelinuxApplier().turn_on, "on")
         )
-        if kept != held or is_turned_on:
+        if kept != held or is_turned_on or is_name_server_due:
             record = {"passwords": kept}
             if is_turned_on or is_selinux_boolean_ours(self._record_path):
                 record["is_selinux_boolean_ours"] = True
+            if kept_name_server and not is_name_server_due:
+                record["kept_name_server"] = kept_name_server
             write_record(self._record_path, record)
         self._config = parsed
         self._left_out = renderer.left_out()
@@ -259,8 +274,18 @@ class SambaModuleRunner(SystemPackageModuleRunner):
         }
 
     def stop(self) -> None:
-        """Take the server down and disable it, leaving the shares' files in place."""
+        """Take the server and the name server down and disable them, leaving the shares' files in place.
+
+        Raises:
+            OSError: When the record of the name server cannot be written.
+        """
         SambaConfigApplier(unit=self._unit).stop()
+        kept_name_server = self._name_server.read()
+        if kept_name_server:
+            record = _read_record(self._record_path)
+            record["kept_name_server"] = kept_name_server
+            write_record(self._record_path, record)
+            self._name_server.stop()
 
     def remove_configuration(self) -> None:
         """Delete the module's file, its include line, the users' files and the record; the share directories stay. The SELinux boolean goes off when the record marks it as the module's."""
@@ -385,6 +410,20 @@ def is_selinux_boolean_ours(path: str) -> bool:
         there is no record or it does not read.
     """
     return _read_record(path).get("is_selinux_boolean_ours") is True
+
+
+def read_kept_name_server(path: str) -> dict:
+    """What a stop found the NetBIOS name server to be.
+
+    Args:
+        path: The record's file.
+
+    Returns:
+        ``{"is_enabled", "is_active"}``; empty when the record stores none,
+        there is no record or it does not read.
+    """
+    kept = _read_record(path).get("kept_name_server")
+    return kept if isinstance(kept, dict) else {}
 
 
 def _read_record(path: str) -> dict:

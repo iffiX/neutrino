@@ -64,6 +64,10 @@ SAMBA_USERS_INCLUDE = f"{SAMBA_USERS_DIR}/%U{SAMBA_USERS_FILE_SUFFIX}"
 # smb.service.
 SAMBA_SERVICES = {"debian": "smbd", "rhel": "smb", "arch": "smb"}
 SAMBA_DEFAULT_SERVICE = "smbd"
+# The NetBIOS name server's unit by family. The package may enable and start it
+# with the server.
+SAMBA_NAME_SERVICES = {"debian": "nmbd", "rhel": "nmb", "arch": "nmb"}
+SAMBA_DEFAULT_NAME_SERVICE = "nmbd"
 # The server binary, which says Samba is on the machine when no package is named.
 SAMBA_BINARY_NAME = "smbd"
 
@@ -171,3 +175,15 @@ def samba_unit(family: str) -> str:
         The unit name, with its suffix.
     """
     return f"{SAMBA_SERVICES.get(family, SAMBA_DEFAULT_SERVICE)}.service"
+
+
+def samba_name_unit(family: str) -> str:
+    """The unit this family's NetBIOS name server runs as.
+
+    Args:
+        family: The distribution family.
+
+    Returns:
+        The unit name, with its suffix.
+    """
+    return f"{SAMBA_NAME_SERVICES.get(family, SAMBA_DEFAULT_NAME_SERVICE)}.service"

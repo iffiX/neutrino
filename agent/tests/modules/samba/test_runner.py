@@ -15,7 +15,10 @@ A ``configure`` under ``stopped`` starts no server on any system and serves
 no share on Windows and macOS. On Linux a ``configure`` that serves a share
 turns the SELinux boolean on and the record stores the mark; a boolean on
 before the module stays unmarked; a refusal logs a line and the apply goes on;
-a **Stop** leaves it on; an uninstall turns it off only with the mark.
+a **Stop** leaves it on; an uninstall turns it off only with the mark. A **Stop**
+takes the NetBIOS name server down when it is enabled or active and the record
+stores what it was; the next start that serves a share brings back only that,
+and one the person keeps off stays off.
 """
 
 import json
@@ -32,7 +35,7 @@ from neutrino_agent.modules.samba import applier as applier_module
 from neutrino_agent.modules.samba import runner as runner_module
 from neutrino_agent.modules.samba.applier import SambaUserState, password_digest
 from neutrino_agent.modules.samba.config import SambaConfig
-from neutrino_agent.modules.samba.constants import SAMBA_CONF_MARKER
+from neutrino_agent.modules.samba.constants import SAMBA_CONF_MARKER, samba_name_unit
 from neutrino_agent.modules.shared.base import ModuleStep
 from neutrino_agent.modules.samba.runner import (
     SambaModuleRunner,
@@ -150,6 +153,27 @@ class FakeSelinux:
         return True
 
 
+class FakeNameServer:
+    """The name server, what it is in :attr:`state`, every change in :attr:`calls`."""
+
+    state: dict = {}
+    calls: list = []
+
+    def __init__(self, *, unit):
+        self.unit = unit
+
+    def read(self):
+        return dict(FakeNameServer.state)
+
+    def stop(self):
+        FakeNameServer.calls.append("stop")
+        FakeNameServer.state = {}
+
+    def restore(self, kept):
+        FakeNameServer.calls.append(("restore", dict(kept)))
+        FakeNameServer.state = dict(kept)
+
+
 class FakeReader:
     persons: tuple = ({}, [])
     judged = b""
@@ -206,6 +230,8 @@ def runner(monkeypatch, tmp_path):
     FakeSelinux.value = "off"
     FakeSelinux.changes = []
     FakeSelinux.refusal = None
+    FakeNameServer.state = {}
+    FakeNameServer.calls = []
     (tmp_path / "configured").mkdir()
     (tmp_path / "configured" / "samba").write_text("")
     monkeypatch.setattr(runner_module, "SambaConfigApplier", FakeApplier)
@@ -214,6 +240,7 @@ def runner(monkeypatch, tmp_path):
     monkeypatch.setattr(runner_module, "unit_state", lambda unit: "active")
     monkeypatch.setattr(runner_module, "SambaConfigReader", FakeReader)
     monkeypatch.setattr(runner_module, "SambaSelinuxApplier", FakeSelinux)
+    monkeypatch.setattr(runner_module, "SambaNameServerApplier", FakeNameServer)
     held = SambaModuleRunner(
         platform=RecordingPlatform(tmp_path), log=lambda m: None, family="rhel"
     )
@@ -503,6 +530,102 @@ def test_stop_takes_the_unit_down(runner):
     runner.stop()
 
     assert FakeApplier.stops == 1
+
+
+NAME_SERVER_UP = {"is_enabled": True, "is_active": True}
+
+
+@pytest.mark.parametrize(
+    "family, unit",
+    [("debian", "nmbd.service"), ("rhel", "nmb.service"), ("arch", "nmb.service")],
+)
+def test_the_name_server_unit_follows_the_family(family, unit):
+    assert samba_name_unit(family) == unit
+
+
+def test_stop_takes_the_name_server_down_and_stores_what_it_was(runner):
+    FakeNameServer.state = dict(NAME_SERVER_UP)
+    runner.apply(CONFIG)
+
+    runner.stop()
+
+    assert FakeApplier.stops == 1
+    assert FakeNameServer.calls == ["stop"]
+    record = json.loads(runner.record_path.read_text())
+    assert record["kept_name_server"] == NAME_SERVER_UP
+    assert list(record["passwords"]) == ["ann"]
+
+
+def test_a_start_brings_the_name_server_back_as_it_was_and_forgets_it(runner):
+    FakeNameServer.state = {"is_enabled": True, "is_active": False}
+    runner.apply(CONFIG)
+    runner.stop()
+
+    runner.apply(CONFIG)
+
+    assert FakeNameServer.calls == [
+        "stop",
+        ("restore", {"is_enabled": True, "is_active": False}),
+    ]
+    record = json.loads(runner.record_path.read_text())
+    assert "kept_name_server" not in record
+    assert list(record["passwords"]) == ["ann"]
+
+
+def test_a_name_server_the_person_keeps_off_stays_off(runner):
+    runner.apply(CONFIG)
+
+    runner.stop()
+    runner.apply(CONFIG)
+
+    assert FakeNameServer.calls == []
+    assert "kept_name_server" not in json.loads(runner.record_path.read_text())
+
+
+def test_a_second_stop_keeps_what_the_first_found(runner):
+    FakeNameServer.state = dict(NAME_SERVER_UP)
+
+    runner.stop()
+    runner.stop()
+
+    assert FakeNameServer.calls == ["stop"]
+    assert json.loads(runner.record_path.read_text()) == {
+        "kept_name_server": NAME_SERVER_UP
+    }
+
+
+def test_a_configure_under_stopped_keeps_the_name_server_down(runner):
+    FakeNameServer.state = dict(NAME_SERVER_UP)
+    runner.stop()
+
+    runner.apply_stopped(CONFIG)
+
+    assert FakeNameServer.calls == ["stop"]
+    record = json.loads(runner.record_path.read_text())
+    assert record["kept_name_server"] == NAME_SERVER_UP
+    assert list(record["passwords"]) == ["ann"]
+
+
+def test_a_start_that_serves_no_share_keeps_the_name_server_down(runner):
+    FakeNameServer.state = dict(NAME_SERVER_UP)
+    runner.stop()
+
+    runner.apply({})
+
+    assert FakeNameServer.calls == ["stop"]
+    assert json.loads(runner.record_path.read_text()) == {
+        "kept_name_server": NAME_SERVER_UP
+    }
+
+
+def test_an_uninstall_forgets_the_name_server(runner):
+    FakeNameServer.state = dict(NAME_SERVER_UP)
+    runner.stop()
+
+    runner.remove_configuration()
+
+    assert not runner.record_path.exists()
+    assert FakeNameServer.calls == ["stop"]
 
 
 def test_a_configure_under_stopped_writes_the_files_and_starts_no_server(runner):

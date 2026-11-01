@@ -741,6 +741,50 @@ class SambaConfigApplier:
             _write_file(os.path.join(SAMBA_USERS_DIR, name), text.encode("utf-8"))
 
 
+class SambaNameServerApplier:
+    """Takes the NetBIOS name server down at a stop and brings it back as it was."""
+
+    def __init__(self, *, unit: str):
+        """
+        Args:
+            unit: The unit this machine's name server runs as.
+        """
+        self._unit = unit
+
+    def read(self) -> dict:
+        """What the name server is now.
+
+        Returns:
+            ``{"is_enabled", "is_active"}``, empty when it is neither: a
+            unit disabled, masked or not on this machine.
+        """
+        shown = run(
+            ["systemctl", "show", "--property=UnitFileState,ActiveState", self._unit],
+            is_checked=False,
+        ).stdout
+        fields = dict(line.split("=", 1) for line in shown.splitlines() if "=" in line)
+        kept = {
+            "is_enabled": fields.get("UnitFileState") == "enabled",
+            "is_active": fields.get("ActiveState") == "active",
+        }
+        return kept if any(kept.values()) else {}
+
+    def stop(self) -> None:
+        """Take the name server down and disable it."""
+        run(["systemctl", "disable", "--now", self._unit], is_checked=False)
+
+    def restore(self, kept: dict) -> None:
+        """Bring the name server back as it was before a stop.
+
+        Args:
+            kept: What :meth:`read` gave at the stop.
+        """
+        if kept.get("is_enabled"):
+            run(["systemctl", "enable", self._unit], is_checked=False)
+        if kept.get("is_active"):
+            run(["systemctl", "start", self._unit], is_checked=False)
+
+
 def share_owner(share, config: SambaConfig) -> str:
     """The machine's account a share's missing folder is made for.
 
