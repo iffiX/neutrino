@@ -40,11 +40,11 @@ are in `kinds.md`.
 | Tutorial | action, learning | "Can you get me to a working X?" | choices, explanation, abstraction, options the learner does not need | quick start |
 | How-to guide | action, work | "How do I do X?" | teaching basics, explaining why, completeness, embedded reference lists | feature guides, troubleshooting, the install section of the README |
 | Reference | understanding, work | "What is X?" | instruction, explanation, opinion, marketing | CLI reference, state notes, the option tables inside guides |
-| Explanation | understanding, learning | "Why is X like this?" | steps, exhaustive detail, anything the reader must do | overview, design pages, the folded architecture section of the README |
+| Explanation | understanding, learning | "Why is X like this?" | steps, exhaustive detail, anything the reader must do | overview, design pages |
 
-The landing README is a composite: a one-paragraph explanation, an install
-how-to, and links. Its own section in `kinds.md` says how much of each. The site home
-page and the app page are composites too, each with its section there.
+The landing README is a composite: a short explanation, one block per thing
+the reader gets, a comparison, an install how-to, and links. Its own section in `kinds.md` says how much of each. The
+site home page and the app page are composites too, each with its section there.
 
 ## Rules every document obeys
 

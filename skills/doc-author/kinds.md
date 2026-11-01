@@ -6,22 +6,29 @@ opens, its shape, what it refuses, and the checks a reviewer runs beyond
 
 ## Landing README
 
-Reader: someone on GitHub deciding in one screen whether to install.
-Opens with one paragraph stating what the product is and what it runs on.
+Reader: someone on GitHub deciding in one screen whether to install. `README.md`
+is Chinese, the default; `README.en.md` is English. The two come from one outline.
+Opens with the product's name and what the reader gets, in one line.
 
 | Part | Holds | Budget |
 | --- | --- | --- |
-| Definition | what it is, the three components, where each runs | one paragraph |
-| Install | the one command per platform, as a how-to | one procedure, five steps |
-| Showcase | screenshots by absolute path, one line under each naming what is shown | six images |
-| Architecture | folded block: a component table and one diagram | one `<details>` |
-| Links | the guide, the licence, the credited components | one list |
+| Top | the icon, the name as the only H1, one line on what the reader gets, the badges, links to the demo, the install section and the docs, a picture of the product | one screen |
+| What it is | the definition first, then what each part does and where it runs, then the reader's trouble it removes, one picture | one sentence, two lines, one sentence |
+| Blocks | one per thing the reader gets: a heading, the text, one picture | three blocks, three lines of text each |
+| Comparison | one line per claim, then a table against products the reader knows; on the network side Tailscale alone, never frp, EasyTier or NetBird; the full table on the site | ten rows |
+| Install | the simplest case: one computer, one package, the phone app, one scan; the other ways folded | three steps |
+| FAQ | the questions readers asked, by category and fact, folded | four questions, two lines each |
+| Docs and community | the docs, the forums, a request for help | one list |
+| Apps | the software the product deploys and does not ship: its project link, one line, the page on deploying it | one table |
+| Acknowledgements | the software the product ships | one list |
+| Licence | the licences | two lines |
 
-Refuses: feature-by-feature detail (the guide has it), design rationale (the
-design pages have it), roadmap or history, slogans in headings.
-Checks: every claim in the definition is visible in a screenshot; the install
-block runs as pasted; the Chinese README is written from the same outline and
-its headings map one to one.
+Refuses: feature-by-feature detail (the guide has it), uninstall steps and
+security mechanism (the site has them), design rationale (the design pages have
+it), the three-package model before the end of the install, roadmap or history,
+slogans in headings.
+Checks: every claim shows in a picture or holds in the product as shipped; the
+install block runs as pasted; the two READMEs' headings map one to one.
 
 ## Site home page
 
