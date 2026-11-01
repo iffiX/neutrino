@@ -50,7 +50,7 @@ def test_a_failure_standing_at_the_press_ends_the_wait_after_its_limit():
     assert follow.index("if (isFailing(report))") < follow.index(
         "setIsFailureOld(false);"
     )
-    assert "() => setIsFailureOld(false), OLD_FAILURE_LIMIT_MS," in hook
+    assert "() => { setIsFailureOld(false); }, OLD_FAILURE_LIMIT_MS);" in hook
     assert (
         "const begin = useCallback(() => { setIsApplied(false); "
         "setIsFailureOld(true); setIsSettling(true); }, []);"
