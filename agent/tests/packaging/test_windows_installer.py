@@ -8,7 +8,8 @@ files in the agent's folder with nothing of RustDesk's run or registered,
 an install over a package that ran upstream's installer running
 upstream's uninstall once the old version is gone, the
 data folder closed to everyone but SYSTEM and the administrators, the agent
-on PATH, and the name the release publishes it under.
+on PATH, the hub's application icon on its entry in Installed apps, and the
+name the release publishes it under.
 """
 
 import xml.etree.ElementTree
@@ -33,6 +34,7 @@ def document():
     staged = {
         "payload": "C:\\build\\payload",
         "binary": "C:\\build\\nagent.exe",
+        "icon": "C:\\build\\neutrino_agent.ico",
     }
     source = build_agent_windows.wix_source(
         staged, "9.9.9", "iffiX <someone@example.com>"
@@ -55,6 +57,17 @@ def test_the_installer_has_a_product_identity_of_its_own(document):
     assert package.get("Name") == "Neutrino Agent"
     assert package.get("Version") == "9.9.9"
     assert package.get("Manufacturer") == "iffiX <someone@example.com>"
+
+
+def test_the_entry_in_installed_apps_has_the_hubs_application_icon(document):
+    _source, root = document
+
+    assert by_id(root, WXS + "Icon", "AgentIcon").get("SourceFile") == (
+        "C:\\build\\neutrino_agent.ico"
+    )
+    assert by_id(root, WXS + "Property", "ARPPRODUCTICON").get("Value") == "AgentIcon"
+    assert build_agent_windows.AGENT_ICON_NAME == "neutrino_hub"
+    assert build_agent_windows.AGENT_ICON_FACE == "open"
 
 
 def test_the_agent_is_a_localsystem_service_started_at_boot(document):
@@ -248,6 +261,7 @@ def test_the_payload_keeps_the_agents_binary_for_the_service_component(
     assert (staged["payload"] / "python313.dll").is_file()
     assert not (staged["payload"] / "nagent.exe").exists()
     assert staged["binary"].name == "nagent.exe"
+    assert staged["icon"].read_bytes()[:4] == b"\x00\x00\x01\x00"
     assert (staged["payload"] / "rustdesk" / "rustdesk.exe").is_file()
     assert (staged["payload"] / "rustdesk" / "data" / "app.so").is_file()
     assert "rustdesk" not in staged

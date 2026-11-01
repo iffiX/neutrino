@@ -52,6 +52,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "agent" / "packaging"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "packaging"))
 from shared import edition_build  # noqa: E402
+from shared import icons  # noqa: E402
 from shared import nuitka_build  # noqa: E402
 import payload  # noqa: E402
 from shared import rustdesk_assets  # noqa: E402
@@ -69,6 +70,10 @@ BUILD_PYTHON_VERSION = (3, 13)
 AGENT_BINARY_NAME = "nagent.exe"
 AGENT_SERVICE_NAME = "neutrino_agent"
 AGENT_SERVICE_ARGUMENTS = "service run"
+
+# The icon of the entry in Installed apps: the hub's application icon.
+AGENT_ICON_NAME = "neutrino_hub"
+AGENT_ICON_FACE = "open"
 
 # x64 only: RustDesk publishes no Windows arm64 build to carry.
 WINDOWS_MACHINES = {"x86_64": "amd64"}
@@ -123,6 +128,8 @@ WIX_BODY = r"""
         <Directory Id="INSTALLFOLDER" Name="agent" />
       </Directory>
     </StandardDirectory>
+    <Icon Id="AgentIcon" SourceFile="@ICON@" />
+    <Property Id="ARPPRODUCTICON" Value="AgentIcon" />
     <StandardDirectory Id="CommonAppDataFolder">
       <Directory Id="NeutrinoDataFolder" Name="Neutrino">
         <Directory Id="AGENTDATAFOLDER" Name="agent" />
@@ -276,7 +283,8 @@ def wix_source(staged: dict, version: str, publisher: str) -> str:
     """The installer's source with every value filled in.
 
     Args:
-        staged: What :func:`_lay_out` wrote: ``payload`` and ``binary``.
+        staged: What :func:`_lay_out` wrote: ``payload``, ``binary`` and
+            ``icon``.
         version: The version being packaged.
         publisher: The Manufacturer field's value.
 
@@ -334,6 +342,7 @@ def wix_source(staged: dict, version: str, publisher: str) -> str:
         WIX_BODY,
         {
             "PAYLOAD": staged["payload"],
+            "ICON": staged["icon"],
             "DATA_SDDL": DATA_FOLDER_SDDL,
             "AGENT_REMOVED": AGENT_REMOVED_CONDITION,
             "OLD_RUSTDESK": OLD_RUSTDESK_CONDITION,
@@ -365,8 +374,8 @@ def _lay_out(root: Path, version: str, machine: str) -> dict:
     Returns:
         The paths the installer's source names: the payload directory, with
         RustDesk's files under its ``rustdesk`` and the Go programs under its
-        ``bin``, and the agent's own binary, kept out of the payload so the
-        service component can claim it.
+        ``bin``, the agent's own binary, kept out of the payload so the
+        service component can claim it, and the entry's icon.
 
     Raises:
         SystemExit: When this Python is not the pinned minor, when the
@@ -396,7 +405,10 @@ def _lay_out(root: Path, version: str, machine: str) -> dict:
     _stage_licenses(installed)
     rustdesk_assets.stage_windows_files(installed / RUSTDESK_DIR_NAME)
     payload.stage_go_programs(installed / payload.GO_BIN_DIR_NAME, programs)
-    return {"payload": installed, "binary": binary}
+    icon = icons.write_ico(
+        root / "neutrino_agent.ico", name=AGENT_ICON_NAME, face=AGENT_ICON_FACE
+    )
+    return {"payload": installed, "binary": binary, "icon": icon}
 
 
 def _check_build_machine(machine: str) -> None:
