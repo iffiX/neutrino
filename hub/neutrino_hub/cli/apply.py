@@ -4,7 +4,7 @@ This is the command-line half of the pipeline the web panel drives. Run it after
 editing anything under ``config/`` by hand:
 
     sudo nhub apply               # render, validate, apply all
-    nhub apply --dry-run          # render and print, no effects
+    sudo nhub apply --dry-run     # render and print, no effects
     sudo nhub apply --only router
     sudo nhub apply --only overlay
 
