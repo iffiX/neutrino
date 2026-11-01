@@ -78,7 +78,7 @@ Select **Share** on any web app to get a link. A friend opens it in a browser wi
 ## Why Neutrino Hub
 
 - **Complete**: apps, the desktop, terminals, files and SSH. One click installs them, and the client has them ready.
-- **Secure**: end-to-end encrypted, and only people you approve get in.
+- **Secure**: end-to-end encrypted. Neutrino's service port strictly guards every app, and only people you approve get in.
 - **Yours**: no server, domain or special hardware to buy. Neutrino runs no public server, and a share connects only to your hub.
 - **Free**: manage several computers, wake them over the LAN and connect worldwide, with no limit on users or traffic. All free.
 
