@@ -13,6 +13,7 @@ that takes nothing closes nothing.
 
 import pytest
 
+from neutrino_hub.modules.clients.constants import CLIENT_DISABLED_RETRY_AFTER_S
 from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.web.client_access import close_lost_access
@@ -122,7 +123,9 @@ def test_switching_a_client_off_ends_its_session(config):
 
     closed = close_lost_access(runtime, why="disabled")
 
-    assert runtime.client_sessions.refused == [(client_id, "client_disabled", {})]
+    assert runtime.client_sessions.refused == [
+        (client_id, "client_disabled", {"retry_after_s": CLIENT_DISABLED_RETRY_AFTER_S})
+    ]
     assert closed == {client_id: {"socket": True}}
 
 

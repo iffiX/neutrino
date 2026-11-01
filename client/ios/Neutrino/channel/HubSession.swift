@@ -542,6 +542,8 @@ final class HubSession {
             [Channel.codeProtocolTooOld, Channel.codeProtocolTooNew].contains(refusal.code) || held == .tooOld
         {
             hold(.tooOld, refusal)
+        } else if refusal?.code == Channel.codeClientDisabled {
+            switchedOff()
         } else if let refusal {
             _ = waitFor(.hubSilent, refusal, retryAfter(refusal))
         } else {
@@ -668,6 +670,14 @@ final class HubSession {
             }
         }
         return seconds
+    }
+
+    /// Read `disabled` with no countdown until the next state. The transport dials again by itself.
+    private func switchedOff() {
+        endRefresh()
+        countdown?.cancel()
+        countdown = nil
+        view = waiting(view, .disabled, nil, nextRoundAt: 0)
     }
 
     private func hold(_ reason: HubWaitReason, _ refusal: ClientError?) {

@@ -255,6 +255,51 @@ final class HubSessionTests: XCTestCase {
         XCTAssertEqual(session.view.nextRoundAt, clock.now + 60)
     }
 
+    private func refuseDisabled() {
+        let params: JSONValue = .object(["retry_after_s": .int(1)])
+        fake.frame("b1", ["type": .string("refused"), "code": .string("client_disabled"), "params": params])
+        fake.event("session_end", "b1", ["code": .string("client_disabled"), "params": params])
+    }
+
+    private func disabledState(_ isDisabled: Bool) -> [String: JSONValue] {
+        ["type": .string("state"), "hash": .string("h1"), "is_disabled": .bool(isDisabled)]
+    }
+
+    func testASessionRefusedClientDisabledReadsDisabledWithNoCountdown() throws {
+        let session = try self.session()
+        connected(session)
+        refuseDisabled()
+        XCTAssertTrue(RunLoopWait.until { session.view.isDisabled })
+        XCTAssertEqual(session.view.connection, .waiting)
+        XCTAssertEqual(session.view.nextRoundAt, 0)
+        XCTAssertNil(session.view.waitRefusal)
+    }
+
+    func testAClientRefusedDisabledStaysDisabledUntilTheFrameSaysEnabled() throws {
+        let session = try self.session()
+        connected(session)
+        refuseDisabled()
+        XCTAssertTrue(RunLoopWait.until { session.view.isDisabled })
+        fake.event("session_open", "b1", ["address": .string(lan), "path": .string("lan"), "handshake_ms": .int(4)])
+        fake.frame("b1", Samples.welcome)
+        XCTAssertTrue(RunLoopWait.until { session.view.connectedAddress == self.lan })
+        XCTAssertTrue(session.view.isDisabled)
+        fake.frame("b1", disabledState(true))
+        XCTAssertTrue(RunLoopWait.until { session.view.connection == .waiting })
+        XCTAssertTrue(session.view.isDisabled)
+        fake.frame("b1", disabledState(false))
+        XCTAssertTrue(RunLoopWait.until { session.view.isConnected && !session.view.isDisabled })
+    }
+
+    func testARoundThatFailsAfterTheRefusalReadsTheSilentHub() throws {
+        let session = try self.session()
+        connected(session)
+        refuseDisabled()
+        XCTAssertTrue(RunLoopWait.until { session.view.isDisabled })
+        fake.event("round_end", "b1", ["code": .string("hub_unreachable"), "next_round_s": .int(5)])
+        XCTAssertTrue(RunLoopWait.until { session.view.waitReason == .hubSilent })
+    }
+
     func testAMoveGreetsTheNewSessionAndStaysConnected() throws {
         let session = try self.session()
         connected(session)

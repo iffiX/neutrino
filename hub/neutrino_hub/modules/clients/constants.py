@@ -36,6 +36,10 @@ CLIENT_CODE_NAME_REQUIRED = "client_name_required"
 CLIENT_CODE_PERMISSION_DENIED = "permission_denied"
 CLIENT_CODE_PERMISSION_KIND_UNKNOWN = "permission_kind_unknown"
 
+# The seconds a client switched off waits before its next session. That session
+# stays open and takes the state that switches the client on again.
+CLIENT_DISABLED_RETRY_AFTER_S = 1
+
 # What a client may be allowed, one switch per kind: each published service
 # type, joining the hub's overlay, opening a shell or running one command on a
 # managed machine, and opening the hub's own panel. A client follows the

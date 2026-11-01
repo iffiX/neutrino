@@ -103,6 +103,40 @@ func TestControlUnavailableIsDialledAgainInFiveSeconds(t *testing.T) {
 	}
 }
 
+// TestASessionClosedWithSecondsIsDialledAgainAfterThem checks that a client
+// whose session the hub closes naming retry_after_s, as it does for a client
+// switched off, dials again after those seconds and is admitted.
+func TestASessionClosedWithSecondsIsDialledAgainAfterThem(t *testing.T) {
+	dir := shortTempDir(t)
+	hub := startHub(t, dir, freePort(t))
+	client := startClient(t, dir)
+	client.dial(t, hub, "cl-9", hub.bind(client, "cl-9"))
+	client.hello(t, hub, "cl-9")
+	hub.records.mu.Lock()
+	clientSession := hub.records.sessions["cl-9"]
+	hub.records.mu.Unlock()
+
+	const retry = 1 * time.Second
+	hub.python.command("session_close", map[string]any{
+		"session": clientSession, "code": "client_disabled",
+		"params": map[string]any{"retry_after_s": retry.Seconds()},
+	})
+	refused, _ := client.python.waitFrame("refused")
+	if refused["code"] != "client_disabled" {
+		t.Fatalf("refused %v", refused)
+	}
+	ended := client.python.waitEvent("session_end")
+	params, _ := ended["params"].(map[string]any)
+	if ended["code"] != "client_disabled" || params["retry_after_s"] != retry.Seconds() {
+		t.Fatalf("session_end %v", ended)
+	}
+	closed := time.Now()
+	client.hello(t, hub, "cl-9")
+	if gap := time.Since(closed); gap > retry+time.Second {
+		t.Fatalf("admitted %v after the close", gap)
+	}
+}
+
 // roundEnds are the first two round_end events of a peer and when each
 // arrived.
 type roundEnds struct {

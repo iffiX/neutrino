@@ -233,6 +233,9 @@ const val CLIENT_REFUSAL_CODE_REPLACED = "replaced"
 /** The hub's refusal while its Python is away. */
 const val CLIENT_REFUSAL_CODE_CONTROL_UNAVAILABLE = "control_unavailable"
 
+/** The refusal that ends the session of a client the hub switched off. */
+const val CLIENT_REFUSAL_CODE_DISABLED = "client_disabled"
+
 /** The codes of a round, or a join, that no address answered: the next one runs at the backoff. */
 val CLIENT_ROUND_SILENT_CODES: List<String> = listOf("hub_unreachable", "transport_missing", "transport_failed")
 

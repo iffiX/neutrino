@@ -367,6 +367,61 @@ class HubSessionTest {
         eventually("disabled") { session.view.value.isDisabled }
     }
 
+    private fun refuseDisabled() {
+        val params = buildJsonObject { put("retry_after_s", 1) }
+        val refused = buildJsonObject {
+            put("type", "refused")
+            put("code", "client_disabled")
+            put("params", params)
+        }
+        fake.frame("b1", refused)
+        fake.event("session_end", "b1", "code" to "client_disabled", "params" to params)
+    }
+
+    private fun disabledState(isDisabled: Boolean) = buildJsonObject {
+        put("type", "state")
+        put("hash", "h1")
+        put("is_disabled", isDisabled)
+    }
+
+    @Test
+    fun aSessionRefusedClientDisabledReadsDisabledWithNoCountdown() {
+        val (session, _) = session()
+        connected(session)
+        refuseDisabled()
+        eventually("disabled") { session.view.value.isDisabled }
+        assertEquals(HubConnection.WAITING, session.view.value.connection)
+        assertEquals(0L, session.view.value.nextRoundAtMillis)
+        assertNull(session.view.value.waitRefusal)
+    }
+
+    @Test
+    fun aClientRefusedDisabledStaysDisabledUntilTheFrameSaysEnabled() {
+        val (session, _) = session()
+        connected(session)
+        refuseDisabled()
+        eventually("disabled") { session.view.value.isDisabled }
+        fake.event("session_open", "b1", "address" to lanUrl, "path" to "lan", "handshake_ms" to 4)
+        fake.frame("b1", welcome())
+        eventually("welcomed") { session.view.value.connectedAddress == lanUrl }
+        assertTrue(session.view.value.isDisabled)
+        fake.frame("b1", disabledState(true))
+        eventually("still disabled") { session.view.value.connection == HubConnection.WAITING }
+        assertTrue(session.view.value.isDisabled)
+        fake.frame("b1", disabledState(false))
+        eventually("enabled") { session.view.value.isConnected && !session.view.value.isDisabled }
+    }
+
+    @Test
+    fun aRoundThatFailsAfterTheRefusalReadsTheSilentHub() {
+        val (session, _) = session()
+        connected(session)
+        refuseDisabled()
+        eventually("disabled") { session.view.value.isDisabled }
+        fake.event("round_end", "b1", "code" to "hub_unreachable", "next_round_s" to 5)
+        eventually("silent") { session.view.value.waitReason == HubWaitReason.HUB_SILENT }
+    }
+
     @Test
     fun aRefreshReportsWithIsRefreshWhileConnectedAndStartsARoundOtherwise() {
         val (session, _) = session()

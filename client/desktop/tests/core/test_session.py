@@ -369,6 +369,99 @@ def test_the_hub_switching_the_client_off_is_told_once(harness):
     assert harness.disabled == [harness.session]
 
 
+def refuse_disabled(harness) -> None:
+    """End the live session the way the hub ends a client it switched off."""
+    params = {"retry_after_s": 1}
+    harness.transport.frame(
+        "c1", {"type": "refused", "code": "client_disabled", "params": params}
+    )
+    harness.transport.emit(
+        {
+            "event": "session_end",
+            "binding": "c1",
+            "code": "client_disabled",
+            "params": params,
+        }
+    )
+
+
+def open_next_session(harness) -> None:
+    """Open the session the transport dials after a refusal, up to its welcome."""
+    harness.transport.emit(
+        {
+            "event": "session_open",
+            "binding": "c1",
+            "address": HUB_URL,
+            "path": "lan",
+            "handshake_ms": 3,
+        }
+    )
+    harness.transport.next_frame("hello")
+    harness.transport.frame("c1", WELCOME)
+
+
+def test_a_session_refused_client_disabled_reads_disabled_with_no_countdown(harness):
+    harness.connect()
+    refuse_disabled(harness)
+    assert wait_for(lambda: harness.session.connection() == CONNECTION_DISABLED)
+    time.sleep(0.1)
+    assert harness.session.connection() == CONNECTION_DISABLED
+    assert harness.session.waiting() is None
+    assert harness.disabled == [harness.session]
+
+
+def test_a_client_refused_disabled_stays_disabled_until_the_frame_says_enabled(harness):
+    harness.connect()
+    refuse_disabled(harness)
+    assert wait_for(lambda: harness.session.connection() == CONNECTION_DISABLED)
+    open_next_session(harness)
+    harness.transport.next_frame("report")
+    assert harness.session.connection() == CONNECTION_DISABLED
+    harness.transport.frame("c1", dict(STATE, is_disabled=True))
+    time.sleep(0.1)
+    assert harness.session.connection() == CONNECTION_DISABLED
+    assert harness.disabled == [harness.session]
+    harness.transport.frame("c1", STATE)
+    assert wait_for(lambda: harness.session.connection() == CONNECTION_CONNECTED)
+
+
+def test_an_enable_before_the_next_session_reads_connected_at_its_state(harness):
+    harness.connect()
+    refuse_disabled(harness)
+    assert wait_for(lambda: harness.session.connection() == CONNECTION_DISABLED)
+    open_next_session(harness)
+    harness.transport.frame("c1", STATE)
+    assert wait_for(lambda: harness.session.connection() == CONNECTION_CONNECTED)
+    assert harness.session.waiting() is None
+
+
+def test_a_round_that_fails_after_the_refusal_reads_the_silent_hub(harness):
+    harness.connect()
+    refuse_disabled(harness)
+    assert wait_for(lambda: harness.session.connection() == CONNECTION_DISABLED)
+    harness.transport.emit(
+        {
+            "event": "round_end",
+            "binding": "c1",
+            "code": "hub_unreachable",
+            "next_round_s": 5,
+        }
+    )
+    assert wait_for(lambda: harness.session.connection() == CONNECTION_WAITING)
+    assert harness.session.waiting()["reason"] == "hub_silent"
+
+
+def test_a_disabled_client_the_hub_forgets_reads_the_unknown_device(harness):
+    harness.connect()
+    refuse_disabled(harness)
+    assert wait_for(lambda: harness.session.connection() == CONNECTION_DISABLED)
+    open_next_session(harness)
+    harness.transport.frame("c1", {"type": "refused", "code": "binding_unknown"})
+    assert wait_for(lambda: harness.unbound == [harness.session])
+    assert harness.session.connection() == CONNECTION_WAITING
+    assert harness.session.waiting()["reason"] == "unknown_device"
+
+
 # --- the round trip and the questions ---
 
 

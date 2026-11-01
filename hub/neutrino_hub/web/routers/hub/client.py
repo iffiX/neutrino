@@ -213,8 +213,9 @@ def enable_client(
 def disable_client(
     request: ClientRequest, runtime: PanelRuntime = Depends(get_runtime)
 ) -> ClientListView:
-    """Switch a client off: its gateway key is revoked and its state is
-    pushed with ``is_disabled``. Its socket stays.
+    """Switch a client off: its gateway key is revoked, and its session ends
+    with a refusal naming the seconds to its next session. That session's
+    state holds ``is_disabled``, and its socket stays.
 
     Args:
         request: The client.

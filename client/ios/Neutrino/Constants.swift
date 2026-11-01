@@ -246,6 +246,9 @@ enum Channel {
     /// The hub's refusal while its Python is away.
     static let codeControlUnavailable = "control_unavailable"
 
+    /// The refusal that ends the session of a client the hub switched off.
+    static let codeClientDisabled = "client_disabled"
+
     /// A binding of 0.5's shape, which this build cannot move.
     static let codeHubKeyMissing = "hub_key_missing"
 

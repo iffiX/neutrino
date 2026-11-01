@@ -14,6 +14,7 @@ import io.github.iffix.neutrino.CLIENT_REFRESH_TIMEOUT_S
 import io.github.iffix.neutrino.CLIENT_REFUSAL_CODE_ADMISSION_PAUSED
 import io.github.iffix.neutrino.CLIENT_REFUSAL_CODE_BINDING_UNKNOWN
 import io.github.iffix.neutrino.CLIENT_REFUSAL_CODE_CONTROL_UNAVAILABLE
+import io.github.iffix.neutrino.CLIENT_REFUSAL_CODE_DISABLED
 import io.github.iffix.neutrino.CLIENT_REFUSAL_CODE_REPLACED
 import io.github.iffix.neutrino.CLIENT_REFUSAL_LOG_INTERVAL_S
 import io.github.iffix.neutrino.CLIENT_REPORT_INTERVAL_S
@@ -586,6 +587,8 @@ class HubSession(
             refusal != null && (refusal.code in CLIENT_PROTOCOL_REFUSAL_CODES || held == HubWaitReason.TOO_OLD) ->
                 hold(HubWaitReason.TOO_OLD, refusal)
 
+            refusal?.code == CLIENT_REFUSAL_CODE_DISABLED -> switchedOff()
+
             refusal != null -> waitFor(silentReason(), refusal, retryAfterS(refusal))
 
             else -> current.update { it.dialling() }
@@ -725,6 +728,13 @@ class HubSession(
             }
         }
         return waitS
+    }
+
+    /** Read `disabled` with no countdown until the next state. The transport dials again by itself. */
+    private fun switchedOff() {
+        endRefresh()
+        countdown?.cancel()
+        current.update { it.waiting(HubWaitReason.DISABLED, null, 0) }
     }
 
     /** Stop on [reason] until a person, or a network change for `no_network`, starts the rounds again. */

@@ -62,6 +62,7 @@ from neutrino_client.constants import (
     CLIENT_REFUSAL_CODE_ADMISSION_PAUSED,
     CLIENT_REFUSAL_CODE_BINDING_UNKNOWN,
     CLIENT_REFUSAL_CODE_CONTROL_UNAVAILABLE,
+    CLIENT_REFUSAL_CODE_DISABLED,
     CLIENT_REFUSAL_LOG_INTERVAL_S,
     CLIENT_REPORT_INTERVAL_S,
     CLIENT_ROLE,
@@ -1504,16 +1505,20 @@ class ClientHubSession:
         """Wait by the code a round, a session or a refused frame ended in.
 
         ``binding_unknown`` unbinds, ``replaced`` is another client taking
-        the binding, a protocol refusal waits for a new client, and every
-        other code waits for the transport's next round. A session's refusal
-        names no next round, and the transport dials again after its
-        ``retry_after_s``, else a minute later.
+        the binding, ``client_disabled`` reads disabled with no wait, a
+        protocol refusal waits for a new client, and every other code waits
+        for the transport's next round. A session's refusal names no next
+        round, and the transport dials again after its ``retry_after_s``,
+        else a minute later.
         """
         name = code["code"]
         if name == CLIENT_REFUSAL_CODE_BINDING_UNKNOWN:
             self._unbind(code)
         elif name == CODE_REPLACED:
             self._stand_aside()
+        elif name == CLIENT_REFUSAL_CODE_DISABLED:
+            self._take_disabled(True)
+            self._end_wait()
         elif name in CLIENT_PROTOCOL_REFUSAL_CODES:
             self._wait(WAIT_TOO_OLD, code, None)
             self._log(f"the hub refused this client's protocol: {name}")
@@ -1872,8 +1877,10 @@ class ClientHubSession:
         """Where the session stands; the lock is held."""
         if self._is_replaced:
             return CONNECTION_REPLACED
+        if self._is_disabled and not self._wait_reason:
+            return CONNECTION_DISABLED
         if self._is_welcomed:
-            return CONNECTION_DISABLED if self._is_disabled else CONNECTION_CONNECTED
+            return CONNECTION_CONNECTED
         return CONNECTION_WAITING if self._wait_reason else CONNECTION_CONNECTING
 
     def _is_refresh_over(self) -> bool:
@@ -1950,6 +1957,15 @@ class ClientHubSession:
                 self._next_attempt_at = self._clock() + (
                     delay if delay is not None else CLIENT_IDLE_POLL_INTERVAL_S
                 )
+        self._on_change()
+
+    def _end_wait(self) -> None:
+        """Leave waiting with no round counted down, and announce it."""
+        with self._lock:
+            self._wait_reason = ""
+            self._wait_code = None
+            self._next_round_at = None
+            self._is_refreshing = False
         self._on_change()
 
     def _is_offline(self) -> bool:

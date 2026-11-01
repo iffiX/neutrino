@@ -40,6 +40,8 @@ CLIENT_REFUSAL_CODE_BINDING_UNKNOWN = "binding_unknown"
 CLIENT_REFUSAL_CODE_ADMISSION_PAUSED = "admission_paused"
 # The hub's refusal while its Python is away.
 CLIENT_REFUSAL_CODE_CONTROL_UNAVAILABLE = "control_unavailable"
+# The refusal that ends the session of a client the hub switched off.
+CLIENT_REFUSAL_CODE_DISABLED = "client_disabled"
 
 # What the hub answers as in its welcome.
 CLIENT_HUB_ROLE = "hub"

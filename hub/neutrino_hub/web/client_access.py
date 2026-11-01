@@ -20,6 +20,7 @@ import logging
 from neutrino_hub.modules.clients.constants import (
     CLIENT_CODE_DISABLED,
     CLIENT_CODE_PERMISSION_DENIED,
+    CLIENT_DISABLED_RETRY_AFTER_S,
     CLIENT_PERMISSION_KINDS,
     CLIENT_PERMISSION_PANEL,
 )
@@ -62,7 +63,9 @@ def close_lost_access(runtime, *, why: str, names: "dict | None" = None) -> dict
             continue
         if client.is_disabled:
             runtime.client_sessions.refuse_from_thread(
-                session.key, CLIENT_CODE_DISABLED
+                session.key,
+                CLIENT_CODE_DISABLED,
+                {"retry_after_s": CLIENT_DISABLED_RETRY_AFTER_S},
             )
             closed.setdefault(session.key, {})["socket"] = True
             continue
