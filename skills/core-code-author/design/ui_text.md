@@ -333,6 +333,9 @@ gateway listens on the hub's loopback alone.
 | --- | --- | --- |
 | `ui.ai.access_hint` | For a tool on the hub's machine, or one using an SSH tunnel to it. | 给中枢这台机器上的工具用，或经 SSH 隧道连到它的工具用。 |
 | `ui.ai.keys_empty_hint` | Generate one for a tool on the hub's machine. | 给中枢这台机器上的工具生成一个。 |
+| `ui.ai.key_default_name` | tool | 工具 |
+| `ui.ai.key_name_placeholder` | e.g. my tool | 例如 我的工具 |
+| `ui.ai.port_apply_warning` | A tool set up by hand with a generated key stops reaching the gateway until its endpoint is changed too. | 手动配置了生成密钥的工具，在地址改过来之前都连不上网关。 |
 | `ui.ai.port_reached_at`, `{origin}` being `http://127.0.0.1:<port>` | Reached at {origin}. | 当前地址 {origin}。 |
 
 ## The machine page's words
