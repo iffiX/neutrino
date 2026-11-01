@@ -313,6 +313,8 @@ class ModuleEngine(ReconcileWorker):
         self._verified: dict = {}
         self._verified_lock = threading.Lock()
         self._details_at = 0.0
+        self._read_serial = 0
+        self._landed_reads: dict = {}
         # The modules this agent applies the hub's configuration to, by
         # name; each also answers its own verbs. A platform that installs no
         # package has a runner only for what the system itself carries and
@@ -658,7 +660,7 @@ class ModuleEngine(ReconcileWorker):
         with self._lock:
             observed = self._observed()
         if name in observed:
-            self._publish_observed(name, self._read_one(name, observed[name]))
+            self._read_and_publish(name, observed[name])
 
     def _watch_start(self, name: str) -> None:
         """Read one container module again while it reads stopped after its start task.
@@ -1343,9 +1345,29 @@ class ModuleEngine(ReconcileWorker):
             if overlay.get("state"):
                 self._publish_observed(name, _typed(overlay["state"]))
                 continue
-            self._publish_observed(name, self._read_one(name, wanted))
+            self._read_and_publish(name, wanted)
         # A module no runner and no state names stops being reported.
         self._keep_only(observed)
+
+    def _read_and_publish(self, name: str, wanted: "dict | None") -> None:
+        """Read one module and record it, unless a read begun later landed first.
+
+        A read takes seconds, and a background pass and a task's end can read
+        the same module at once.
+
+        Args:
+            name: The module name.
+            wanted: The module's entry in the state.
+        """
+        with self._lock:
+            self._read_serial += 1
+            serial = self._read_serial
+        status = self._read_one(name, wanted)
+        with self._lock:
+            if serial < self._landed_reads.get(name, 0):
+                return
+            self._landed_reads[name] = serial
+        self._publish_observed(name, status)
 
     def _publish_observed(self, name: str, status: dict) -> None:
         """Record one module's status as read, with its task on the row.

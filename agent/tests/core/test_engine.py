@@ -165,6 +165,8 @@ def bare_engine(*, runner=None, verified=None, tmp_path=None):
     engine._verified = {}
     engine._verified_lock = threading.Lock()
     engine._details_at = 0.0
+    engine._read_serial = 0
+    engine._landed_reads = {}
     runner = runner if runner is not None else HubRunner()
     engine._module_runners = {runner.name: runner}
     engine._runners_by_name = {runner.runner: runner}
@@ -1189,6 +1191,8 @@ def test_report_wakes_the_worker_for_stale_details_and_never_waits():
     engine = module_engine(ConfigurableRunner())
     engine._refresh(is_forced=True)
     engine._details_at = 0.0
+    engine._read_serial = 0
+    engine._landed_reads = {}
 
     engine.report()
 
@@ -3202,3 +3206,28 @@ def test_the_file_share_and_gitea_take_system_accounts_for_their_accounts(tmp_pa
     assert planned_accounts(engine.uninstall_steps("gitea", gitea)) == [
         ("uninstall", "", accounts)
     ]
+
+
+def test_a_read_begun_first_does_not_land_over_a_read_begun_after_it(tmp_path):
+    engine = bare_engine(tmp_path=tmp_path)
+    engine._observed = lambda: {"demo": {}}
+    reading = threading.Event()
+    release = threading.Event()
+    answers = iter(["absent", "installed"])
+
+    def read_one(name, wanted):
+        state = next(answers)
+        if state == "absent":
+            reading.set()
+            assert release.wait(5)
+        return {"state": state, "code": "", "params": {}}
+
+    engine._read_one = read_one
+    older = threading.Thread(target=engine.refresh_one, args=("demo",))
+    older.start()
+    assert reading.wait(5)
+    engine.refresh_one("demo")
+    release.set()
+    older.join(5)
+
+    assert engine._statuses["demo"]["state"] == "installed"
