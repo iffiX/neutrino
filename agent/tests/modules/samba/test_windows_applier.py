@@ -582,7 +582,7 @@ def test_an_apply_under_stopped_takes_every_share_off_and_grants_the_folders():
     assert denied == ["ann", "bob"]
 
 
-def test_the_first_apply_asks_the_host_to_sweep_what_the_marker_names():
+def test_the_first_apply_asks_the_host_to_sweep_shares_by_marker_and_accounts_by_prefix():
     host = RecordingHost({"share_apply": {"notes": ["swept share old"]}})
 
     notes = applier_with(host, denied=[]).apply(CONFIG, {}, is_sweep=True)

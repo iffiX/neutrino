@@ -361,9 +361,7 @@ function Set-NeutrinoShare {
             }
         }
         foreach ($user in @(Get-LocalUser -ErrorAction SilentlyContinue)) {
-            $is_marked = ("$($user.Description)" -eq $Request.marker) -or
-                "$($user.Name)".StartsWith($Request.user_prefix)
-            if ($is_marked) {
+            if ("$($user.Name)".StartsWith($Request.user_prefix)) {
                 Remove-LocalUser -Name $user.Name | Out-Null
                 $notes += "swept account $($user.Name)"
             }

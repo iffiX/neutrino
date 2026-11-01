@@ -258,7 +258,7 @@ class SambaDarwinApplier:
         return notes
 
     def _sweep(self, points: list) -> list:
-        """Delete every share point and account the module's marks name.
+        """Delete every share point of the module's prefix and every account of its name prefix.
 
         Returns:
             One note per point and per account: ``swept`` when the tool
@@ -273,13 +273,8 @@ class SambaDarwinApplier:
                 notes.append(_sweep_note("share", point["smb_name"], removed))
         listing = self._read(["dscl", ".", "-list", "/Users", "RealName"])
         for line in listing.splitlines():
-            name, _, full_name = line.partition(" ")
-            full_name = " ".join(full_name.split())
-            if not name:
-                continue
-            if name.startswith(SAMBA_LINUX_USER_PREFIX) or is_module_full_name(
-                full_name
-            ):
+            name = line.partition(" ")[0]
+            if name.startswith(SAMBA_LINUX_USER_PREFIX):
                 deleted = self._run(
                     ["dscl", ".", "-delete", f"/Users/{name}"], is_checked=False
                 )

@@ -730,6 +730,7 @@ def test_the_first_apply_sweeps_the_modules_points_and_accounts_and_no_other(
     )
     tools.answers[("dscl", ".", "-list")] = (
         "neutrino-old  neutrino file share\nbob  Bob Example\n_smb  SMB Server\n"
+        "anna  neutrino file share anna\ncid  neutrino file share\n"
     )
     tools.users["neutrino-old"] = account("neutrino file share")
 
@@ -737,7 +738,8 @@ def test_the_first_apply_sweeps_the_modules_points_and_accounts_and_no_other(
 
     assert ["sharing", "-r", "neutrino_old"] in tools.calls
     assert ["dscl", ".", "-delete", "/Users/neutrino-old"] in tools.calls
-    assert ["dscl", ".", "-delete", "/Users/bob"] not in tools.calls
+    for name in ("bob", "anna", "cid"):
+        assert ["dscl", ".", "-delete", f"/Users/{name}"] not in tools.calls
     assert notes[:2] == ["swept share old", "swept account neutrino-old"]
 
 

@@ -518,7 +518,8 @@ class SambaUserManager:
             ``(changes, held)``: notes on what was changed, and the digests
             the module holds now. A user the module set a password for and
             the configuration no longer names has its Samba credential
-            removed, and the account too when the module made it.
+            removed, and the account too when the module made it. A name
+            without the module's prefix is passed over.
 
         Raises:
             subprocess.CalledProcessError: If Samba refuses a password or a
@@ -538,7 +539,7 @@ class SambaUserManager:
             kept[name] = digest
             changes.append(f"set the password of {name}")
         for name in held:
-            if name in config.users:
+            if name in config.users or not name.startswith(SAMBA_LINUX_USER_PREFIX):
                 continue
             if name in credentialed:
                 run(["smbpasswd", "-x", name])

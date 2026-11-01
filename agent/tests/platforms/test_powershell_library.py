@@ -180,6 +180,15 @@ def test_the_file_share_refuses_foreign_names_and_never_grants_everyone():
     assert apply.index("share_name_taken") < apply.index("Start-Service")
 
 
+def test_the_file_share_sweep_removes_only_an_account_of_the_prefix():
+    apply = body("share_apply")
+    sweep = apply[apply.index("Get-LocalUser -ErrorAction") :]
+    sweep = sweep[: sweep.index("Remove-LocalUser")]
+
+    assert '"$($user.Name)".StartsWith($Request.user_prefix)' in sweep
+    assert "Description" not in sweep
+
+
 def test_the_file_share_under_stopped_starts_no_server_and_makes_no_share():
     apply = body("share_apply")
     served = apply.index("if ($Request.is_served) {")

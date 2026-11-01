@@ -80,12 +80,14 @@ TESTPARM_OUTPUT = """# Global parameters
 """
 
 # What ``pdbedit -L`` prints: name, uid, full name.
-PDBEDIT_OUTPUT = "ann:1001:Ann Example\nbob:1002:\n"
+PDBEDIT_OUTPUT = "neutrino-ann:1001:\nneutrino-bob:1002:\nperson:1003:A Person\n"
 
 CONFIG = {
-    "shares": [{"name": "share", "path": "/srv/share", "valid_users": ["ann"]}],
-    "users": ["ann"],
-    "passwords": {"ann": "generated"},
+    "shares": [
+        {"name": "share", "path": "/srv/share", "valid_users": ["neutrino-ann"]}
+    ],
+    "users": ["neutrino-ann"],
+    "passwords": {"neutrino-ann": "generated"},
 }
 
 
@@ -304,7 +306,7 @@ def test_an_account_a_share_writes_as_that_the_machine_lacks_is_refused(runner):
 def test_apply_makes_the_smb_users_before_the_file_is_written(runner):
     runner.apply(CONFIG)
 
-    assert FakeUsers.made == [["ann"]]
+    assert FakeUsers.made == [["neutrino-ann"]]
 
 
 def test_apply_keeps_the_digest_of_each_password_root_only(runner):
@@ -312,10 +314,10 @@ def test_apply_keeps_the_digest_of_each_password_root_only(runner):
     runner.apply(CONFIG)
 
     record = json.loads(runner.record_path.read_text())
-    assert record["passwords"] == {"ann": password_digest("generated")}
+    assert record["passwords"] == {"neutrino-ann": password_digest("generated")}
     assert "generated" not in runner.record_path.read_text()
     assert stat.S_IMODE(os.stat(runner.record_path).st_mode) == 0o600
-    assert FakeUsers.converged == [{}, {"ann": password_digest("generated")}]
+    assert FakeUsers.converged == [{}, {"neutrino-ann": password_digest("generated")}]
 
 
 def test_removing_the_configuration_forgets_the_digests(runner):
@@ -407,10 +409,10 @@ def test_an_apply_that_changes_nothing_changes_no_boolean_and_keeps_the_mark(run
 def test_a_new_password_keeps_the_mark(runner):
     runner.apply(CONFIG)
 
-    runner.apply(dict(CONFIG, passwords={"ann": "another"}))
+    runner.apply(dict(CONFIG, passwords={"neutrino-ann": "another"}))
 
     record = json.loads(runner.record_path.read_text())
-    assert record["passwords"] == {"ann": password_digest("another")}
+    assert record["passwords"] == {"neutrino-ann": password_digest("another")}
     assert record["is_selinux_boolean_ours"] is True
 
 
@@ -509,9 +511,9 @@ def test_apply_renders_applies_and_keeps_the_configuration(runner):
     unit, rendered, config = FakeApplier.applied[0]
     assert unit == "smb.service"
     assert "[share]" in rendered
-    assert config.users == ["ann"]
+    assert config.users == ["neutrino-ann"]
     assert runner.details({})["users"] == [
-        {"name": "ann", "is_present": True, "has_password": False}
+        {"name": "neutrino-ann", "is_present": True, "has_password": False}
     ]
 
 
@@ -555,7 +557,7 @@ def test_stop_takes_the_name_server_down_and_stores_what_it_was(runner):
     assert FakeNameServer.calls == ["stop"]
     record = json.loads(runner.record_path.read_text())
     assert record["kept_name_server"] == NAME_SERVER_UP
-    assert list(record["passwords"]) == ["ann"]
+    assert list(record["passwords"]) == ["neutrino-ann"]
 
 
 def test_a_start_brings_the_name_server_back_as_it_was_and_forgets_it(runner):
@@ -571,7 +573,7 @@ def test_a_start_brings_the_name_server_back_as_it_was_and_forgets_it(runner):
     ]
     record = json.loads(runner.record_path.read_text())
     assert "kept_name_server" not in record
-    assert list(record["passwords"]) == ["ann"]
+    assert list(record["passwords"]) == ["neutrino-ann"]
 
 
 def test_a_name_server_the_person_keeps_off_stays_off(runner):
@@ -605,7 +607,7 @@ def test_a_configure_under_stopped_keeps_the_name_server_down(runner):
     assert FakeNameServer.calls == ["stop"]
     record = json.loads(runner.record_path.read_text())
     assert record["kept_name_server"] == NAME_SERVER_UP
-    assert list(record["passwords"]) == ["ann"]
+    assert list(record["passwords"]) == ["neutrino-ann"]
 
 
 def test_a_start_that_serves_no_share_keeps_the_name_server_down(runner):
@@ -658,7 +660,7 @@ def test_the_steps_that_make_or_remove_accounts_take_system_accounts(runner, ste
 def test_details_carry_the_live_reads(runner, monkeypatch):
     class Reader:
         def sessions(self):
-            return [{"username": "ann"}]
+            return [{"username": "neutrino-ann"}]
 
         def disk_usage(self, config):
             return [{"share": share.name} for share in config.shares]
@@ -669,12 +671,12 @@ def test_details_carry_the_live_reads(runner, monkeypatch):
     details = runner.details({})
 
     assert details["is_active"] is True
-    assert details["sessions"] == [{"username": "ann"}]
+    assert details["sessions"] == [{"username": "neutrino-ann"}]
     assert details["disk_usage"] == [{"share": "share"}]
 
 
 def test_the_password_verb_is_gone(runner):
-    outcome = runner.command("set_password", {"name": "ann", "password": "x"})
+    outcome = runner.command("set_password", {"name": "neutrino-ann", "password": "x"})
 
     assert outcome["code"] == "verb_unknown"
 
@@ -704,7 +706,7 @@ def test_apply_hands_the_applier_each_users_file(runner):
                 {
                     "name": "ann",
                     "path": "/home/ann",
-                    "valid_users": ["ann"],
+                    "valid_users": ["neutrino-ann"],
                     "force_user": "ann",
                 }
             ],
@@ -712,7 +714,7 @@ def test_apply_hands_the_applier_each_users_file(runner):
     )
 
     assert FakeApplier.user_files == {
-        "ann.conf": SAMBA_CONF_MARKER + "\n   force user = ann\n"
+        "neutrino-ann.conf": SAMBA_CONF_MARKER + "\n   force user = ann\n"
     }
 
 
@@ -737,7 +739,7 @@ def observed(runner) -> dict:
     }
 
 
-def samba_commands(monkeypatch, *, accounts=("ann",)):
+def samba_commands(monkeypatch, *, accounts=("neutrino-ann",)):
     """Samba's own tools answered from the fixtures; ``id`` knows ``accounts``."""
     asked: list = []
 
@@ -796,11 +798,12 @@ def test_observe_reads_what_samba_itself_says_of_the_machine(runner, monkeypatch
         },
         {"name": "backup", "path": "/srv/backup", "params": {"guest ok": "Yes"}},
     ]
-    # Every account Samba holds a credential for, whether or not the hub
-    # configured it, with the unix account's presence beside it.
+    # Every account of the module's prefix Samba holds a credential for,
+    # whether or not the hub configured it, with the unix account's presence
+    # beside it, and no other.
     assert details["users"] == [
-        {"name": "ann", "is_present": True, "has_password": True},
-        {"name": "bob", "is_present": False, "has_password": True},
+        {"name": "neutrino-ann", "is_present": True, "has_password": True},
+        {"name": "neutrino-bob", "is_present": False, "has_password": True},
     ]
     assert details["sessions"] == []
     assert ["testparm", "-s", applier_module.SAMBA_CONF_PATH] in asked
@@ -809,14 +812,26 @@ def test_observe_reads_what_samba_itself_says_of_the_machine(runner, monkeypatch
 
 def test_observe_lists_the_configured_users_first_then_the_rest(runner, monkeypatch):
     runner.apply(
-        {**CONFIG, "users": ["carol", "ann"], "passwords": {"carol": "c", "ann": "a"}}
+        {
+            **CONFIG,
+            "users": ["neutrino-carol", "neutrino-ann"],
+            "passwords": {"neutrino-carol": "c", "neutrino-ann": "a"},
+        }
     )
-    samba_commands(monkeypatch, accounts=("ann", "carol"))
+    samba_commands(monkeypatch, accounts=("neutrino-ann", "neutrino-carol"))
 
     users = observed(runner)["details"]["users"]
 
-    assert [user["name"] for user in users] == ["carol", "ann", "bob"]
-    assert users[0] == {"name": "carol", "is_present": True, "has_password": False}
+    assert [user["name"] for user in users] == [
+        "neutrino-carol",
+        "neutrino-ann",
+        "neutrino-bob",
+    ]
+    assert users[0] == {
+        "name": "neutrino-carol",
+        "is_present": True,
+        "has_password": False,
+    }
 
 
 def test_observe_of_a_machine_without_samba_reads_nothing(runner, monkeypatch):
@@ -881,9 +896,9 @@ class NativeServerPlatform(RecordingPlatform):
 
 
 WINDOWS_CONFIG = {
-    "shares": [{"name": "share", "path": "D:\\share", "valid_users": ["ann"]}],
-    "users": ["ann"],
-    "passwords": {"ann": "pw"},
+    "shares": [{"name": "share", "path": "D:\\share", "valid_users": ["neutrino-ann"]}],
+    "users": ["neutrino-ann"],
+    "passwords": {"neutrino-ann": "pw"},
 }
 
 
@@ -934,16 +949,29 @@ def test_an_apply_keeps_what_it_made_in_the_record(native):
 
     (verb, config, record), password = native.applier.calls
     assert verb == "apply"
-    assert password == ("set_password", "ann", "pw")
+    assert password == ("set_password", "neutrino-ann", "pw")
     assert config == SambaConfig.from_dict(WINDOWS_CONFIG).to_dict()
     assert record["shares"] == {"share": "D:\\share"}
     assert record_of(native) == {
         "shares": {"share": "D:\\share"},
-        "accounts": ["ann"],
-        "passwords": {"ann": password_digest("pw")},
+        "accounts": ["neutrino-ann"],
+        "passwords": {"neutrino-ann": password_digest("pw")},
         "is_served": True,
     }
     assert native.is_active() is True
+
+
+def test_a_native_record_s_name_without_the_prefix_is_no_account_of_the_module(native):
+    """An older record can name a person's account: the applier never hears of it."""
+    with open(native._record_path, "w", encoding="utf-8") as stream:
+        json.dump({"accounts": ["anna", "neutrino-ann"], "shares": {}}, stream)
+
+    assert record_of(native)["accounts"] == ["neutrino-ann"]
+
+    native.remove_configuration()
+
+    assert native.applier.calls[-1][1]["accounts"] == ["neutrino-ann"]
+    assert record_of(native)["accounts"] == ["neutrino-ann"]
 
 
 def test_a_record_write_waits_for_a_read_that_holds_the_record_open(
@@ -1014,16 +1042,16 @@ def test_stopping_withdraws_the_shares_and_the_row_reads_stopped(native):
         "withdraw",
         {
             "shares": {"share": "D:\\share"},
-            "accounts": ["ann"],
-            "passwords": {"ann": password_digest("pw")},
+            "accounts": ["neutrino-ann"],
+            "passwords": {"neutrino-ann": password_digest("pw")},
             "is_served": True,
         },
         False,
     )
     assert record_of(native) == {
         "shares": {"share": "D:\\share"},
-        "accounts": ["ann"],
-        "passwords": {"ann": password_digest("pw")},
+        "accounts": ["neutrino-ann"],
+        "passwords": {"neutrino-ann": password_digest("pw")},
         "is_served": False,
     }
     assert native.is_active() is False
@@ -1044,7 +1072,7 @@ def test_a_share_removed_while_stopped_reaches_the_applier_with_its_folder(nativ
 def test_a_share_added_while_stopped_stays_in_the_record_for_its_removal(native):
     native.apply(WINDOWS_CONFIG)
     native.stop()
-    probe = {"name": "probe", "path": "D:\\probe", "valid_users": ["ann"]}
+    probe = {"name": "probe", "path": "D:\\probe", "valid_users": ["neutrino-ann"]}
     added = {**WINDOWS_CONFIG, "shares": [*WINDOWS_CONFIG["shares"], probe]}
 
     native.apply_stopped(added)
@@ -1069,7 +1097,7 @@ def test_a_native_configure_under_stopped_serves_no_share_and_reads_stopped(nati
     ]
 
     steps = native.configure_steps(
-        {**WINDOWS_CONFIG, "passwords": {"ann": "pw2"}}, "stopped", planned
+        {**WINDOWS_CONFIG, "passwords": {"neutrino-ann": "pw2"}}, "stopped", planned
     )
     steps[0].run(None)
 
@@ -1077,11 +1105,11 @@ def test_a_native_configure_under_stopped_serves_no_share_and_reads_stopped(nati
     assert steps[1] is planned[1]
     assert native.applier.served == [True, False]
     assert native.applier.calls[-2][2]["shares"] == {"share": "D:\\share"}
-    assert native.applier.calls[-1] == ("set_password", "ann", "pw2")
+    assert native.applier.calls[-1] == ("set_password", "neutrino-ann", "pw2")
     assert record_of(native) == {
         "shares": {"share": "D:\\share"},
-        "accounts": ["ann"],
-        "passwords": {"ann": password_digest("pw2")},
+        "accounts": ["neutrino-ann"],
+        "passwords": {"neutrino-ann": password_digest("pw2")},
         "is_served": False,
     }
     assert native.is_active() is False
@@ -1095,15 +1123,17 @@ def test_removing_the_configuration_is_a_removal(native):
 
     assert native.applier.calls[-1][0] == "withdraw"
     assert native.applier.calls[-1][2] is True
-    assert record_of(native)["accounts"] == ["ann"]
+    assert record_of(native)["accounts"] == ["neutrino-ann"]
 
 
 NATIVE_CONFIGS = {
     "windows": WINDOWS_CONFIG,
     "darwin": {
-        "shares": [{"name": "share", "path": "/Users/ann", "valid_users": ["ann"]}],
-        "users": ["ann"],
-        "passwords": {"ann": "pw"},
+        "shares": [
+            {"name": "share", "path": "/Users/ann", "valid_users": ["neutrino-ann"]}
+        ],
+        "users": ["neutrino-ann"],
+        "passwords": {"neutrino-ann": "pw"},
     },
 }
 
@@ -1188,11 +1218,11 @@ def password_calls(native) -> list:
 def test_a_password_is_set_again_only_when_the_hubs_differs(native):
     native.apply(WINDOWS_CONFIG)
     native.apply(WINDOWS_CONFIG)
-    native.apply({**WINDOWS_CONFIG, "passwords": {"ann": "pw2"}})
+    native.apply({**WINDOWS_CONFIG, "passwords": {"neutrino-ann": "pw2"}})
 
     assert password_calls(native) == [
-        ("set_password", "ann", "pw"),
-        ("set_password", "ann", "pw2"),
+        ("set_password", "neutrino-ann", "pw"),
+        ("set_password", "neutrino-ann", "pw2"),
     ]
     assert "pw2" not in open(native._record_path).read()
 
@@ -1222,7 +1252,7 @@ def test_a_password_the_server_refused_is_not_recorded(native):
 
 def test_an_account_the_system_would_not_make_is_passed_over(native):
     native.applier.error = ModuleApplyError(
-        "user_create_failed", {"user": "ann", "detail": "full name exists"}
+        "user_create_failed", {"user": "neutrino-ann", "detail": "full name exists"}
     )
 
     with pytest.raises(ModuleApplyError) as refused:
@@ -1242,7 +1272,7 @@ def test_a_removal_forgets_every_password(native):
 
 
 def test_the_password_verb_is_gone_on_the_native_server(native):
-    assert native.command("set_password", {"name": "ann", "password": "pw"})[
+    assert native.command("set_password", {"name": "neutrino-ann", "password": "pw"})[
         "code"
     ] == ("verb_unknown")
 
@@ -1266,7 +1296,7 @@ def test_the_details_have_the_linux_shape_and_no_fence(native):
         "is_present": True,
         "is_running": True,
         "shares": [{"name": "share", "path": "D:\\share", "params": {}}],
-        "users": [{"name": "ann", "is_present": True, "has_password": True}],
+        "users": [{"name": "neutrino-ann", "is_present": True, "has_password": True}],
         "sessions": [],
     }
 
@@ -1339,17 +1369,17 @@ def test_an_account_passed_over_keeps_the_rest_recorded_and_says_why(native):
     lines = []
     native._log = lines.append
     native.applier.error = ModuleApplyError(
-        "user_record_unusable", {"user": "ann", "detail": "eDSPermissionError"}
+        "user_record_unusable", {"user": "neutrino-ann", "detail": "eDSPermissionError"}
     )
 
     with pytest.raises(ModuleApplyError) as refused:
-        native.apply(dict(WINDOWS_CONFIG, users=["ann", "bob"]))
+        native.apply(dict(WINDOWS_CONFIG, users=["neutrino-ann", "neutrino-bob"]))
 
     assert refused.value.code == "user_record_unusable"
     record = record_of(native)
-    assert record["accounts"] == ["ann", "bob"]
+    assert record["accounts"] == ["neutrino-ann", "neutrino-bob"]
     assert record["shares"] == {"share": "D:\\share"}
-    assert lines == ["samba: passed over account ann"]
+    assert lines == ["samba: passed over account neutrino-ann"]
 
 
 def test_a_share_left_out_is_named_on_the_row_until_an_apply_serves_every_share(
@@ -1359,7 +1389,11 @@ def test_a_share_left_out_is_named_on_the_row_until_an_apply_serves_every_share(
         {
             **CONFIG,
             "shares": [
-                {"name": "share", "path": "/srv/share", "valid_users": ["ann"]},
+                {
+                    "name": "share",
+                    "path": "/srv/share",
+                    "valid_users": ["neutrino-ann"],
+                },
                 {"name": "carried", "path": "/srv/c", "valid_users": []},
             ],
         }
@@ -1394,8 +1428,8 @@ def test_the_first_apply_sweeps_the_modules_users_and_files_and_a_later_one_does
 
     assert FakeUsers.sweeps == 1
     assert FakeApplier.removals == 1
-    assert FakeUsers.made == [["ann"], ["ann"]]
-    assert FakeUsers.converged == [{}, {"ann": password_digest("generated")}]
+    assert FakeUsers.made == [["neutrino-ann"], ["neutrino-ann"]]
+    assert FakeUsers.converged == [{}, {"neutrino-ann": password_digest("generated")}]
 
 
 def test_the_native_first_apply_sweeps_and_starts_from_an_empty_record(
@@ -1410,7 +1444,7 @@ def test_the_native_first_apply_sweeps_and_starts_from_an_empty_record(
     first, second = [call for call in native.applier.calls if call[0] == "apply"]
     assert first[2]["accounts"] == []
     assert second[2]["accounts"] == [] and second[2]["shares"] == {"share": "D:\\share"}
-    assert record_of(native)["accounts"] == ["ann"]
+    assert record_of(native)["accounts"] == ["neutrino-ann"]
 
 
 def test_a_native_share_with_no_user_is_named_on_the_row_and_left_out_of_the_record(

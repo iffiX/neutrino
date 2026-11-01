@@ -843,40 +843,73 @@ def test_a_password_samba_no_longer_holds_is_set_again(box):
 
 def test_a_dropped_user_the_module_set_loses_its_credential_and_no_other(box):
     commands, _ = box
-    commands.answers[("pdbedit", "-L")] = (0, "ann:1000:\nold:1001:\nown:1002:\n")
-
-    changes, kept = SambaUserManager().converge(
-        users_config({"ann": "pw"}),
-        {"ann": password_digest("pw"), "old": password_digest("x")},
+    commands.answers[("pdbedit", "-L")] = (
+        0,
+        "neutrino-ann:1000:\nneutrino-old:1001:\nown:1002:\n",
     )
 
-    assert commands.ran("smbpasswd", "-x") == [(["smbpasswd", "-x", "old"], None)]
-    assert kept == {"ann": password_digest("pw")}
-    assert changes == ["retired old"]
+    changes, kept = SambaUserManager().converge(
+        users_config({"neutrino-ann": "pw"}),
+        {
+            "neutrino-ann": password_digest("pw"),
+            "neutrino-old": password_digest("x"),
+        },
+    )
+
+    assert commands.ran("smbpasswd", "-x") == [
+        (["smbpasswd", "-x", "neutrino-old"], None)
+    ]
+    assert kept == {"neutrino-ann": password_digest("pw")}
+    assert changes == ["retired neutrino-old"]
+
+
+def test_a_recorded_name_without_the_prefix_keeps_its_credential_and_its_account(box):
+    """An older record can name a person's account, its comment the module's."""
+    commands, _ = box
+    commands.answers[("pdbedit", "-L")] = (0, "anna:1001:\n")
+    commands.answers[("getent", "passwd")] = (
+        lambda command: (
+            0,
+            f"{command[2]}:x:999:999:neutrino file share:/:/usr/sbin/nologin\n",
+        ),
+        "",
+    )
+
+    changes, kept = SambaUserManager().converge(
+        users_config({}), {"anna": password_digest("x")}
+    )
+
+    assert commands.ran("smbpasswd") == []
+    assert commands.ran("userdel") == []
+    assert changes == []
+    assert kept == {}
 
 
 def test_a_dropped_user_the_module_made_is_deleted_and_a_persons_is_not(box):
     commands, _ = box
-    commands.answers[("pdbedit", "-L")] = (0, "ann:1000:\nold:1001:\nown:1002:\n")
+    commands.answers[("pdbedit", "-L")] = (
+        0,
+        "neutrino-ann:1000:\nneutrino-old:1001:\nneutrino-own:1002:\n",
+    )
     commands.answers[("getent", "passwd")] = (
         lambda command: (
             (0, f"{command[2]}:x:999:999:neutrino file share:/:/usr/sbin/nologin\n")
-            if command[2] == "old"
+            if command[2] == "neutrino-old"
             else (0, f"{command[2]}:x:1002:1002:A Person:/home/own:/bin/bash\n")
         ),
         "",
     )
 
     SambaUserManager().converge(
-        users_config({"ann": "pw"}),
+        users_config({"neutrino-ann": "pw"}),
         {
-            "ann": password_digest("pw"),
-            "old": password_digest("x"),
-            "own": password_digest("y"),
+            "neutrino-ann": password_digest("pw"),
+            "neutrino-old": password_digest("x"),
+            "neutrino-own": password_digest("y"),
         },
     )
 
-    assert commands.ran("userdel") == [(["userdel", "old"], None)]
+    assert commands.ran("userdel") == [(["userdel", "neutrino-old"], None)]
 
 
 def test_a_configured_user_the_machine_lacks_is_made_with_no_home_or_shell(

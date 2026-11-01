@@ -55,6 +55,7 @@ from neutrino_agent.modules.samba.config import SambaConfig
 from neutrino_agent.modules.samba.constants import (
     SAMBA_ACCOUNT_REFUSALS,
     SAMBA_BINARY_NAME,
+    SAMBA_LINUX_USER_PREFIX,
     SAMBA_NATIVE_RECORD_NAME,
     SAMBA_NATIVE_STATUS_TTL_S,
     SAMBA_RECORD_NAME,
@@ -353,7 +354,8 @@ class SambaModuleRunner(SystemPackageModuleRunner):
 
         The global section and the shares are what ``testparm -s`` prints
         for the live file, whoever wrote it; the users are every account
-        the hub configures or Samba holds a credential for.
+        the hub configures and every account of the module's prefix Samba
+        holds a credential for.
 
         Args:
             recipe: The module's recipe.
@@ -367,7 +369,11 @@ class SambaModuleRunner(SystemPackageModuleRunner):
         reader = SambaStatusReader()
         accounts = SambaUserManager()
         names = list(config.users)
-        names += [name for name in accounts.credentialed_users() if name not in names]
+        names += [
+            name
+            for name in accounts.credentialed_users()
+            if name.startswith(SAMBA_LINUX_USER_PREFIX) and name not in names
+        ]
         try:
             users = accounts.survey(names)
         except (OSError, subprocess.SubprocessError):
@@ -790,7 +796,8 @@ class SambaNativeServerRunner(ModuleRunner):
         """The record, ``{"shares", "accounts", "passwords", "is_served"}``.
 
         ``shares`` lists the folder of each share the module configured, on
-        the server or not. Empty when none.
+        the server or not. ``accounts`` leaves out a name without the
+        module's prefix. Empty when none.
         """
         with self._record_lock:
             try:
@@ -803,7 +810,11 @@ class SambaNativeServerRunner(ModuleRunner):
         passwords = held.get("passwords")
         return {
             "shares": dict(shares) if isinstance(shares, dict) else {},
-            "accounts": [str(name) for name in held.get("accounts") or []],
+            "accounts": [
+                str(name)
+                for name in held.get("accounts") or []
+                if str(name).startswith(SAMBA_LINUX_USER_PREFIX)
+            ],
             "passwords": (
                 {str(name): str(digest) for name, digest in passwords.items()}
                 if isinstance(passwords, dict)

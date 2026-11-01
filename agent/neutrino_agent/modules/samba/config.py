@@ -19,6 +19,7 @@ import re
 from dataclasses import dataclass, field
 
 from neutrino_agent.exceptions import ModuleApplyError
+from neutrino_agent.modules.samba.constants import SAMBA_LINUX_USER_PREFIX
 
 # Share names appear as section headers in smb.conf and on every client's
 # network browser, and are the names of the machine's accounts; user names
@@ -153,9 +154,11 @@ class SambaConfig:
                 other, and a Windows account name is at most 20 characters.
 
         Raises:
-            ModuleApplyError: Naming the first problem found; on Windows
-                and macOS two users of one name are ``user_name_taken``,
-                since the hub cut two accounts to the same name.
+            ModuleApplyError: Naming the first problem found;
+                ``user_name_invalid {user}`` for a user that does not start
+                with the module's prefix; on Windows and macOS two users of
+                one name are ``user_name_taken``, since the hub cut two
+                accounts to the same name.
         """
         seen_shares: set = set()
         for share in self.shares:
@@ -183,7 +186,8 @@ class SambaConfig:
         seen_users: set = set()
         for user in self.users:
             is_too_long = os_name == "windows" and len(user) > WINDOWS_USER_NAME_MAX
-            if not pattern.match(user) or is_too_long:
+            is_foreign = not user.startswith(SAMBA_LINUX_USER_PREFIX)
+            if not pattern.match(user) or is_too_long or is_foreign:
                 raise ModuleApplyError("user_name_invalid", {"user": user})
             key = user.lower() if is_native else user
             if key in seen_users:

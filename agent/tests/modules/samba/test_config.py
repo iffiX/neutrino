@@ -17,7 +17,7 @@ from neutrino_agent.modules.samba.config import SambaConfig
 def config_with(**overrides) -> SambaConfig:
     data = {
         "shares": [{"name": "share", "path": "/srv/share", "valid_users": []}],
-        "users": ["ann"],
+        "users": ["neutrino-ann"],
     }
     data.update(overrides)
     return SambaConfig.from_dict(data)
@@ -77,12 +77,35 @@ def test_a_relative_share_path_is_refused():
     assert refused.value.code == "share_path_relative"
 
 
-@pytest.mark.parametrize("name", ["-dash", "a b", "root\n", "x" * 33, "a:b"])
+@pytest.mark.parametrize(
+    "name",
+    [
+        "-dash",
+        "neutrino-a b",
+        "neutrino-root\n",
+        "neutrino-" + "x" * 24,
+        "neutrino-a:b",
+    ],
+)
 def test_a_user_name_that_is_not_a_unix_name_is_refused(name):
     with pytest.raises(ModuleApplyError) as refused:
         config_with(users=[name]).validate()
 
     assert refused.value.code == "user_name_invalid"
+
+
+@pytest.mark.parametrize("os_name", ["linux", "windows", "darwin"])
+@pytest.mark.parametrize("name", ["ann", "root", "Neutrino-ann", "neutrino_ann"])
+def test_a_user_without_the_prefix_is_refused_on_every_system(name, os_name):
+    shares = [{"name": "share", "path": "D:\\s" if os_name == "windows" else "/s"}]
+
+    with pytest.raises(ModuleApplyError) as refused:
+        config_with(shares=shares, users=[name]).validate(os_name=os_name)
+
+    assert (refused.value.code, refused.value.params) == (
+        "user_name_invalid",
+        {"user": name},
+    )
 
 
 def test_the_forced_users_are_the_shares_accounts_once_each():
@@ -141,11 +164,15 @@ def test_a_windows_share_path_without_a_drive_is_refused(path):
 
 def test_a_windows_account_name_is_at_most_twenty_characters():
     shares = [{"name": "share", "path": "D:\\share"}]
-    config_with(shares=shares, users=["a" * 20]).validate(os_name="windows")
-    config_with(users=["a" * 21]).validate(os_name="darwin")
+    config_with(shares=shares, users=["neutrino-" + "a" * 11]).validate(
+        os_name="windows"
+    )
+    config_with(users=["neutrino-" + "a" * 12]).validate(os_name="darwin")
 
     with pytest.raises(ModuleApplyError) as refused:
-        config_with(shares=shares, users=["a" * 21]).validate(os_name="windows")
+        config_with(shares=shares, users=["neutrino-" + "a" * 12]).validate(
+            os_name="windows"
+        )
 
     assert refused.value.code == "user_name_invalid"
 
@@ -161,7 +188,7 @@ def test_the_passwords_read_and_round_trip():
 def test_an_account_with_a_dot_is_a_share_and_a_user():
     config_with(
         shares=[{"name": "first.last", "path": "/home/first.last"}],
-        users=["first.last"],
+        users=["neutrino-first.last"],
     ).validate()
 
 
@@ -179,23 +206,26 @@ def test_a_native_account_may_hold_a_space():
 )
 def test_two_users_of_one_name_are_refused(os_name, code):
     shares = [{"name": "share", "path": "D:\\s" if os_name == "windows" else "/s"}]
-    users = ["smb_ann", "smb_ann"]
+    users = ["neutrino-ann", "neutrino-ann"]
 
     with pytest.raises(ModuleApplyError) as refused:
         config_with(shares=shares, users=users).validate(os_name=os_name)
 
-    assert (refused.value.code, refused.value.params) == (code, {"user": "smb_ann"})
+    assert (refused.value.code, refused.value.params) == (
+        code,
+        {"user": "neutrino-ann"},
+    )
 
 
 def test_served_shares_are_the_ones_that_admit_a_user():
     config = SambaConfig.from_dict(
         {
             "shares": [
-                {"name": "a", "path": "/a", "valid_users": ["u"]},
+                {"name": "a", "path": "/a", "valid_users": ["neutrino-u"]},
                 {"name": "b", "path": "/b"},
                 {"name": "c", "path": "/c", "valid_users": []},
             ],
-            "users": ["u"],
+            "users": ["neutrino-u"],
         }
     )
 

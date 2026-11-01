@@ -39,10 +39,10 @@ BASIC = {
             "name": "share",
             "path": "/srv/share",
             "comment": "Shared space",
-            "valid_users": ["ann", "bob"],
+            "valid_users": ["neutrino-ann", "neutrino-bob"],
         }
     ],
-    "users": ["ann", "bob"],
+    "users": ["neutrino-ann", "neutrino-bob"],
 }
 
 
@@ -149,7 +149,10 @@ def test_each_smb_user_has_a_file_forcing_its_account_for_the_named_shares():
 
 def test_a_share_naming_no_user_is_left_out_whatever_users_are_configured():
     config = SambaConfig.from_dict(
-        {"shares": [{"name": "open", "path": "/srv/open"}], "users": ["ann", "bob"]}
+        {
+            "shares": [{"name": "open", "path": "/srv/open"}],
+            "users": ["neutrino-ann", "neutrino-bob"],
+        }
     )
     renderer = SambaConfigRenderer(config=config)
 
@@ -170,10 +173,10 @@ def test_a_read_only_share_says_so():
                 "name": "archive",
                 "path": "/srv/a",
                 "is_read_only": True,
-                "valid_users": ["ann"],
+                "valid_users": ["neutrino-ann"],
             }
         ],
-        "users": ["ann"],
+        "users": ["neutrino-ann"],
     }
 
     rendered = without_comments(render(data))
@@ -182,7 +185,7 @@ def test_a_read_only_share_says_so():
 
 
 def test_no_shares_renders_the_marker_and_the_global_header(tmp_path):
-    rendered = render({"shares": [], "users": ["ann"]})
+    rendered = render({"shares": [], "users": ["neutrino-ann"]})
 
     validate_smb_conf(rendered, tmp_path)
     assert rendered == (
