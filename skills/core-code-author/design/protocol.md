@@ -1293,7 +1293,7 @@ from the same facts, whoever installed the software:
 | `installed` | the software is present and the hub has never configured it; `is_active` says whether it runs |
 | `install_failed` | the last install failed with `{code, params}`, whatever it left on the machine |
 | `stopped` | the hub has configured it and the unit is stopped |
-| `running` | the hub has configured it and the unit is active; a `running` or `stopped` row can hold `{code, params}` a module names beside its state, `share_users_unknown {shares}` ([agent/modules/file_share.md](agent/modules/file_share.md)) |
+| `running` | the hub has configured it and the unit is active; a `running` or `stopped` row can hold `{code, params}` a module names beside its state, `share_users_unknown {shares}` ([agent/modules/file_share.md](agent/modules/file_share.md)); a `stopped` row of a container module reads `page_silent {port}` once its page stays silent for 5 minutes behind running containers |
 | `installing`, `uninstalling` | in transit; an `installing` row can hold `{code, params}`, `reboot_required` while a Windows machine owes the restart an install step asked for ([agent.md](agent.md), "Status is typed") |
 | `queued` | in transit: its task has not run its first step, which waits for a step lock, named by `waiting_for_lock {lock, module}` ([agent.md](agent.md), "Step locks") |
 | `failed`, `unsupported` | the last step failed with `{code, params}`; the agent has no runner for this module |
