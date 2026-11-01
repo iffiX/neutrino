@@ -223,20 +223,6 @@ def kernel_login(port: int, host: str, access_code: str) -> tuple:
         connection.close()
 
 
-def free_loopback_port() -> int:
-    """A port nothing listens on at the loopback address, as the system picks one.
-
-    Returns:
-        The port.
-
-    Raises:
-        OSError: When the system gives none.
-    """
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
-        probe.bind((SIYUAN_UPSTREAM_HOST, 0))
-        return int(probe.getsockname()[1])
-
-
 def installed_version(resources: str, join=os.path.join) -> str:
     """The desktop build's version, from its own description.
 
@@ -296,19 +282,17 @@ class SiyuanHooks(InstanceHooks):
     forwarder_fields = SIYUAN_FORWARDER_FIELDS
     secret_field = "secret"
     base_port = SIYUAN_BASE_PORT
+    page_port_field = "kernel_port"
     page_cookie = SIYUAN_COOKIE
 
-    def __init__(self, *, platform, log=print, pick_port=None, login=None):
+    def __init__(self, *, platform, log=print, login=None):
         """
         Args:
             platform: The machine's platform, which runs steps as an account.
             log: Callable used for progress messages.
-            pick_port: Returns a free loopback port for a new kernel; None
-                asks the system.
             login: Called as :func:`kernel_login`; None asks the kernel.
         """
         super().__init__(platform=platform, log=log)
-        self._pick_port = pick_port if pick_port is not None else free_loopback_port
         self._login = login if login is not None else kernel_login
         # Account to the settings this agent last wrote for it, so a
         # forwarder that started from an older record writes them once.
@@ -402,8 +386,8 @@ class SiyuanHooks(InstanceHooks):
         Args:
             parsed: The configuration.
             instance: The instance.
-            held: The record held before, with the port the runner took; its
-                kernel's port and what was last written are kept.
+            held: The record held before, with the ports the runner took;
+                what was last written is kept.
 
         Returns:
             The record.
@@ -412,7 +396,7 @@ class SiyuanHooks(InstanceHooks):
         return {
             "account": instance.account,
             "port": int(held.get("port") or 0),
-            "kernel_port": int(held.get("kernel_port") or 0) or self._pick_port(),
+            "kernel_port": int(held.get("kernel_port") or 0),
             "secret": instance.secret,
             "access_code": instance.access_code,
             "local_name": instance.local_name,

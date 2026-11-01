@@ -303,10 +303,12 @@ def test_on_windows_the_settings_wait_for_a_login_and_never_try_one_empty(tmp_pa
 
 
 def test_the_record_keeps_the_kernels_port_and_what_was_written(tmp_path):
-    hooks, *_ = hooks_for(tmp_path, pick_port=lambda: 41001)
+    hooks, *_ = hooks_for(tmp_path)
     parsed = config()
 
-    fresh = hooks.record(parsed, parsed.instances[0], {"port": 6810})
+    fresh = hooks.record(
+        parsed, parsed.instances[0], {"port": 6810, "kernel_port": 41001}
+    )
     kept = hooks.record(
         parsed,
         parsed.instances[0],

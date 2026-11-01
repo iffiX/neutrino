@@ -451,6 +451,14 @@ AGENT_FORWARD_RETRY_S = 30.0
 # The address every forwarder listens on: loopback, where the agent's end of
 # a ``connect`` stream reaches it.
 AGENT_FORWARD_LISTEN_HOST = "127.0.0.1"
+# The first port the page behind a forwarder listens on. It sits below every
+# system's dynamic ports, the range Windows reserves from at boot, and below
+# the client's forwards.
+AGENT_PAGE_PORT_BASE = 15000
+# What keeps such a port under a module's directory in the state root: a hub
+# container's file, and the fields of an instance's or a module's record.
+AGENT_PAGE_PORTS_NAME = "page_ports.json"
+AGENT_PAGE_PORT_FIELDS = ("upstream_port", "kernel_port")
 # The token a client opens such a page with: ``?tkn=`` holding
 # ``base64url(expiry || nonce || HMAC-SHA256(secret, expiry || nonce))``,
 # the expiry eight bytes big-endian in seconds since the epoch. A token

@@ -658,20 +658,6 @@ def cookie_name(record: dict) -> str:
     return named or f"{CLOUDCLI_COOKIE_PREFIX}{int(record.get('port', 0) or 0)}"
 
 
-def free_loopback_port() -> int:
-    """A port nothing listens on at the loopback address, as the system picks one.
-
-    Returns:
-        The port.
-
-    Raises:
-        OSError: When the system gives none.
-    """
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
-        probe.bind((CLOUDCLI_UPSTREAM_HOST, 0))
-        return int(probe.getsockname()[1])
-
-
 def _normal_path(path: str) -> str:
     """A path as CloudCLI's router matches it: decoded, lower case, slashes collapsed."""
     decoded = urllib.parse.unquote(path).lower()
@@ -711,6 +697,7 @@ class CloudcliHooks(InstanceHooks):
     forwarder_fields = CLOUDCLI_FORWARDER_FIELDS
     secret_field = "token_secret"
     base_port = CLOUDCLI_BASE_PORT
+    page_port_field = "upstream_port"
     prepare_step = AGENT_STEP_NPM
 
     def __init__(
@@ -719,7 +706,6 @@ class CloudcliHooks(InstanceHooks):
         platform,
         log=print,
         run_as=None,
-        pick_port=None,
         clock=time.time,
         probe=None,
         sleep=time.sleep,
@@ -731,8 +717,6 @@ class CloudcliHooks(InstanceHooks):
             run_as: Called with ``(entry, command, environment=,
                 timeout_s=)`` on a Mac; runs a command as the account and
                 returns a ``CommandResult``. None runs it.
-            pick_port: Returns a free loopback port for a new instance; None
-                asks the system.
             clock: Seconds since the epoch, which a login is judged by.
             probe: Probes one source, as :func:`source_fetch.probe`; None
                 probes over the network.
@@ -740,7 +724,6 @@ class CloudcliHooks(InstanceHooks):
         """
         super().__init__(platform=platform, log=log)
         self._run_as = run_as if run_as is not None else _run_as_account
-        self._pick_port = pick_port if pick_port is not None else free_loopback_port
         self._clock = clock
         self._sleep = sleep
         self._probe = probe if probe is not None else source_fetch.probe
@@ -904,8 +887,8 @@ class CloudcliHooks(InstanceHooks):
         Args:
             parsed: The configuration.
             instance: The instance.
-            held: The record held before, with the port the runner took;
-                its loopback port and its database are kept.
+            held: The record held before, with the ports the runner took;
+                its database is kept.
 
         Returns:
             The record.
@@ -913,7 +896,7 @@ class CloudcliHooks(InstanceHooks):
         return {
             "account": instance.account,
             "port": int(held.get("port") or 0),
-            "upstream_port": int(held.get("upstream_port") or 0) or self._pick_port(),
+            "upstream_port": int(held.get("upstream_port") or 0),
             "web_password": instance.web_password,
             "token_secret": instance.token_secret,
             "database": str(held.get("database") or CLOUDCLI_DATABASE_NAME),

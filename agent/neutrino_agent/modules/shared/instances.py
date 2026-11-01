@@ -7,8 +7,11 @@ instance's port itself, the first free port on loopback from the module's
 ``base_port`` up, at the instance's first start, and keeps it in the
 instance's root-only record, a retired one while the account is not
 enabled; a kept port another program holds at a start is replaced by the
-next free one. The record lets a forwarder start again after the agent
-restarts, unless it keeps the mark of the module's stop. A task applies the module in steps: ``configure`` for what every
+next free one. The port of the page behind a forwarder is picked from
+``AGENT_PAGE_PORT_BASE`` up and kept in the record, and picked again at a start
+while the system refuses it. The record lets a forwarder start again after the
+agent restarts, unless it keeps the mark of the module's stop. A task applies
+the module in steps: ``configure`` for what every
 instance shares, then one ``account {account}`` per enabled account, after
 its ``npm {account}`` where the module installs per account. A record the
 hooks change is applied by a configure task the runner asks for. The runner
@@ -49,7 +52,12 @@ from neutrino_agent.modules.shared.account_service.constants import (
 from neutrino_agent.modules.shared.base import ModuleRunner, ModuleStep
 from neutrino_agent.modules.shared.http_forward import InstanceForwarder
 from neutrino_agent.modules.shared.log_tail import file_tail
-from neutrino_agent.modules.shared.loopback_port import is_port_free, pick_port
+from neutrino_agent.modules.shared.loopback_port import (
+    is_port_free,
+    is_port_refused,
+    pick_page_port,
+    pick_port,
+)
 from neutrino_agent.modules.shared.package import joiner, unpacked_paths
 from neutrino_agent.modules.shared.record_store import InstanceRecordStore
 from neutrino_agent.modules.shared.subprocess_run import (
@@ -143,6 +151,9 @@ class InstanceHooks:
             each instance; False for a page that admits the browser itself.
         base_port: The port the runner takes each instance's port from,
             the first free one from it up on loopback.
+        page_port_field: The record field keeping the loopback port the page
+            behind the forwarder listens on, which the runner picks and
+            hands :meth:`record`; empty for a module with no such port.
         page_cookie: The fixed name of the page's own login cookie, which
             the forwarder renames to the record's ``cookie_name`` toward the
             browser and back toward the page; empty for a page with none.
@@ -160,6 +171,7 @@ class InstanceHooks:
     secret_field = "secret"
     is_forwarded = True
     base_port = 0
+    page_port_field = ""
     page_cookie = ""
     prepare_step = ""
 
@@ -288,7 +300,7 @@ class InstanceHooks:
             parsed: The parsed configuration.
             instance: The instance.
             held: The record held before this apply, with the ``port`` the
-                runner took for the instance.
+                runner took for the instance and its ``page_port_field``.
 
         Returns:
             The record, every field in ``record_fields``: the port the
@@ -436,6 +448,7 @@ class InstancesModuleRunner(ModuleRunner):
         forwarder_factory=None,
         clock=time.monotonic,
         is_port_free=is_port_free,
+        is_port_refused=is_port_refused,
     ):
         """
         Args:
@@ -451,10 +464,13 @@ class InstancesModuleRunner(ModuleRunner):
                 makes an :class:`InstanceForwarder`.
             clock: The monotonic clock the instances' reading ages on.
             is_port_free: Answers whether a loopback port can be bound now.
+            is_port_refused: Answers whether the system refuses a loopback
+                port now.
         """
         super().__init__(platform=platform, log=log, publish=publish)
         self._hooks = hooks_class(platform=platform, log=log)
         self._is_port_free = is_port_free
+        self._is_port_refused = is_port_refused
         self.runner = self._hooks.runner
         self.name = self._hooks.name
         self._machine = (
@@ -488,6 +504,8 @@ class InstancesModuleRunner(ModuleRunner):
         # The accounts whose running instance a changed template restarts.
         self._owed_restarts: set = set()
         self._recipe: dict = {}
+        # The refused page ports a configure task was asked for.
+        self._asked_ports: set = set()
 
     @property
     def hooks(self) -> InstanceHooks:
@@ -682,9 +700,16 @@ class InstancesModuleRunner(ModuleRunner):
             self._forget_states()
 
     def is_active(self) -> bool:
-        """Whether there is an instance and every one of them runs."""
+        """Whether there is an instance and every one of them runs.
+
+        A module that does not run asks for one configure task while the
+        system refuses a page port a record with no stopped mark keeps.
+        """
         states = self._read_states()
-        return bool(states) and all(state["is_running"] for state in states)
+        if states and all(state["is_running"] for state in states):
+            return True
+        self._note_refused_page_ports()
+        return False
 
     def is_installing(self) -> bool:
         """Whether an account's install runs or is waited on."""
@@ -956,7 +981,10 @@ class InstancesModuleRunner(ModuleRunner):
         account = instance.account
         held = self._records.read(account)
         port = self._take_port(account, self._records.kept_ports(), is_held=bool(held))
-        record = self._hooks.record(parsed, instance, {**held, "port": port})
+        page_port = self._take_page_port(account, held)
+        record = self._hooks.record(
+            parsed, instance, {**held, "port": port, **page_port}
+        )
         record["port"] = port
         service = self._hooks.service(instance, entry, record)
         is_changed = account_service.write(service, self._machine)
@@ -1010,6 +1038,49 @@ class InstancesModuleRunner(ModuleRunner):
         if kept:
             self._log(f"{self.name}: {account} moved from port {kept} to {port}")
         return port
+
+    def _take_page_port(self, account: str, held: dict) -> dict:
+        """The page port field one instance runs with: the kept port while the system accepts it, else a new pick.
+
+        Args:
+            account: The instance's account.
+            held: The instance's record.
+
+        Returns:
+            ``{field: port}``; empty for a module with no page port.
+
+        Raises:
+            OSError: When no port is free.
+        """
+        field = self._hooks.page_port_field
+        if not field:
+            return {}
+        kept = int(held.get(field) or 0)
+        if kept and not self._is_port_refused(kept):
+            return {field: kept}
+        port = pick_page_port(
+            self._platform.agent_var_dir(), is_free=self._is_port_free
+        )
+        if kept:
+            self._log(
+                f"{self.name}: the system refuses port {kept} of {account}, {port} now"
+            )
+        return {field: port}
+
+    def _note_refused_page_ports(self) -> None:
+        """Ask once for a configure task of a page port the system refuses."""
+        field = self._hooks.page_port_field
+        if not field:
+            return
+        kept = {int(record.get(field) or 0) for record in self._records.read_running()}
+        kept.discard(0)
+        refused = {port for port in kept if self._is_port_refused(port)}
+        if not refused or refused <= self._asked_ports:
+            return
+        self._asked_ports |= refused
+        ports = ", ".join(str(port) for port in sorted(refused))
+        self._log(f"{self.name}: the system refuses port {ports}, a start follows")
+        self.ask_configure()
 
     def _base_port(self) -> int:
         """The module's base port.

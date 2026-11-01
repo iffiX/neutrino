@@ -13,7 +13,10 @@ the hooks name for its preparation and ``account``, each account step
 starting its own instance, with no account step under ``stopped``; a
 stop closes the forwarders, keeps the records and marks them stopped; a
 restarted agent starts the forwarders of the records no stop marked, on every
-system, and an account's step starts its own forwarder at its kept port; a row runs only while its service
+system, and an account's step starts its own forwarder at its kept port; the
+port of the page behind a forwarder is picked from 15000 up and kept, picked
+again when the system refuses it and kept when another program holds it, an
+instance that does not run on a refused port asking for one configure task; a row runs only while its service
 runs and its forwarder listens, a reading that finds a service stopped just
 after an apply read again at the next report; the forwarder ports the relays carry are
 those of the forwarders that listen; the details carry what the hooks add; the
@@ -30,12 +33,14 @@ import functools
 import io
 import json
 import os
+import socket
 import stat
 import tarfile
 from dataclasses import dataclass
 
 import pytest
 
+from neutrino_agent.constants import AGENT_PAGE_PORT_FIELDS
 from neutrino_agent.exceptions import ModuleApplyError, ModuleInstallPending
 from neutrino_agent.modules.cloudcli.hooks import CloudcliHooks
 from neutrino_agent.modules.code_server.hooks import CodeServerHooks
@@ -53,6 +58,7 @@ from neutrino_agent.modules.shared.instances import (
     machine_for,
 )
 from neutrino_agent.modules.shared.base import ModuleStep
+from neutrino_agent.modules.shared.loopback_port import is_port_refused
 from neutrino_agent.modules.shared.subprocess_run import CommandResult
 from neutrino_agent.modules.siyuan.hooks import SiyuanHooks
 from neutrino_agent.modules.ssh_server.hooks import SshServerHooks
@@ -866,6 +872,274 @@ def test_the_stopped_mark_covers_each_module_with_a_forwarder(
 
     assert FakeForwarder.made == []
     assert bool(store.read_running()) is not is_forwarded
+
+
+class PagedDemoHooks(DemoHooks):
+    """A module whose page listens on a port the shared runner keeps for it."""
+
+    page_port_field = "upstream_port"
+    forwarder_fields = ("account", "port", "secret", "upstream_port")
+
+    def record(self, parsed, instance, held):
+        record = InstanceHooks.record(self, parsed, instance, held)
+        record["upstream_port"] = held.get("upstream_port")
+        return record
+
+
+@pytest.fixture
+def paged(systemd, tmp_path):
+    """A runner whose records lie under the state root, and the system's refusals."""
+    (tmp_path / "systemd").mkdir()
+    the_machine = ServiceMachine(
+        os_name="linux",
+        module_dir=str(tmp_path / "state" / "demo"),
+        record_dir=str(tmp_path / "state" / "demo"),
+        lookup_account=lookup,
+        run=systemd,
+        chown=lambda path, uid, gid: None,
+        systemd_dir=str(tmp_path / "systemd"),
+    )
+    refused_ports: set = set()
+    lines: list = []
+    FakeForwarder.made = []
+
+    def made_runner():
+        return InstancesModuleRunner(
+            hooks_class=PagedDemoHooks,
+            platform=Platform(root=str(tmp_path)),
+            log=lines.append,
+            machine=the_machine,
+            forwarder_factory=FakeForwarder,
+            is_port_free=lambda port: True,
+            is_port_refused=refused_ports.__contains__,
+        )
+
+    return made_runner, refused_ports, lines
+
+
+def keep_record(tmp_path, **fields):
+    """An instance's record as an earlier build left it, under the state root."""
+    directory = tmp_path / "state" / "demo"
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "ann.json").write_text(
+        json.dumps({"account": "ann", "port": 8443, "secret": "s", **fields})
+    )
+
+
+def kept_record(tmp_path, account="ann"):
+    return json.loads((tmp_path / "state" / "demo" / f"{account}.json").read_text())
+
+
+def test_a_new_instance_s_page_port_is_picked_from_15000_up_and_kept(paged, tmp_path):
+    made_runner, _, _ = paged
+    runner = made_runner()
+
+    runner.apply({"instances": [INSTANCE, {"account": "bob", "secret": "s"}]})
+
+    assert kept_record(tmp_path, "ann")["upstream_port"] == 15000
+    assert kept_record(tmp_path, "bob")["upstream_port"] == 15001
+
+
+def test_a_page_port_passes_the_ports_any_module_keeps(paged, tmp_path):
+    made_runner, _, _ = paged
+    other = tmp_path / "state" / "hermes_webui"
+    other.mkdir(parents=True)
+    (other / "page_ports.json").write_text(json.dumps({"neutrino_webui": 15000}))
+
+    made_runner().apply(CONFIG)
+
+    assert kept_record(tmp_path)["upstream_port"] == 15001
+
+
+def test_a_kept_page_port_the_system_accepts_stays_whatever_its_number(
+    paged, tmp_path, systemd
+):
+    made_runner, _, lines = paged
+    keep_record(tmp_path, upstream_port=51280)
+
+    made_runner().apply(CONFIG)
+
+    assert kept_record(tmp_path)["upstream_port"] == 51280
+    assert FakeForwarder.made[0].record["upstream_port"] == 51280
+    assert not any("refuses" in line for line in lines)
+
+
+def test_a_kept_page_port_another_program_holds_stays(paged, tmp_path):
+    made_runner, _, _ = paged
+    holder = socket.socket()
+    holder.bind(("127.0.0.1", 0))
+    holder.listen(1)
+    in_use = holder.getsockname()[1]
+    keep_record(tmp_path, upstream_port=in_use)
+    try:
+        runner = made_runner()
+        runner._is_port_refused = is_port_refused
+        runner.apply(CONFIG)
+    finally:
+        holder.close()
+
+    assert kept_record(tmp_path)["upstream_port"] == in_use
+
+
+def test_a_kept_page_port_the_system_refuses_is_picked_again_and_restarts_the_page(
+    paged, tmp_path, systemd
+):
+    made_runner, refused_ports, lines = paged
+    runner = made_runner()
+    keep_record(tmp_path, upstream_port=51280)
+    runner.apply(CONFIG)
+    (first,) = FakeForwarder.made
+    systemd.calls.clear()
+    refused_ports.add(51280)
+
+    runner.apply(CONFIG)
+
+    record = kept_record(tmp_path)
+    assert record["upstream_port"] == 15000
+    assert record["port"] == 8443
+    assert first.is_closed
+    assert FakeForwarder.made[-1].record["upstream_port"] == 15000
+    assert systemd.units("restart")
+    assert lines.count("demo: the system refuses port 51280 of ann, 15000 now") == 1
+
+
+def test_a_stopped_page_on_a_refused_port_moves_at_the_start_with_no_other_press(
+    paged, tmp_path
+):
+    made_runner, refused_ports, _ = paged
+    keep_record(tmp_path, upstream_port=51280)
+    runner = made_runner()
+    runner.apply(CONFIG)
+    runner.stop()
+    refused_ports.add(51280)
+
+    again = made_runner()
+    FakeForwarder.made = []
+    again.details({})
+    assert FakeForwarder.made == []
+    assert kept_record(tmp_path)["upstream_port"] == 51280
+
+    again.apply(CONFIG)
+
+    assert kept_record(tmp_path)["upstream_port"] == 15000
+    assert FakeForwarder.made[0].record["upstream_port"] == 15000
+    assert FakeForwarder.made[0].record["port"] == 8443
+
+
+def asking(runner) -> list:
+    """The configure tasks a runner asks for, one entry each."""
+    asks: list = []
+    runner.bind_configure_asker(functools.partial(asks.append, "demo"))
+    return asks
+
+
+def test_an_instance_down_on_a_refused_port_asks_for_one_configure_task(
+    paged, tmp_path, systemd
+):
+    made_runner, refused_ports, lines = paged
+    keep_record(tmp_path, upstream_port=51280)
+    refused_ports.add(51280)
+    runner = made_runner()
+    asks = asking(runner)
+
+    assert runner.is_active() is False
+    runner._forget_states()
+    assert runner.is_active() is False
+
+    assert asks == ["demo"]
+    assert "demo: the system refuses port 51280, a start follows" in lines
+
+
+def test_a_configure_task_of_a_refused_port_brings_the_instance_back(
+    paged, tmp_path, systemd
+):
+    made_runner, refused_ports, _ = paged
+    keep_record(tmp_path, upstream_port=51280)
+    refused_ports.add(51280)
+    runner = made_runner()
+    asks = asking(runner)
+    assert runner.is_active() is False
+    assert asks == ["demo"]
+
+    for step in runner.configure_steps(
+        CONFIG, "running", [configure_step(), start_step()]
+    ):
+        step.run(None)
+    FakeForwarder.made[-1].is_listening = True
+    systemd.active.add("neutrino_demo@ann.service")
+    runner._forget_states()
+
+    assert kept_record(tmp_path)["upstream_port"] == 15000
+    assert runner.is_active() is True
+    assert asks == ["demo"]
+
+
+def test_an_instance_that_runs_asks_for_nothing_at_a_refused_port(
+    paged, tmp_path, systemd
+):
+    made_runner, refused_ports, _ = paged
+    keep_record(tmp_path, upstream_port=51280)
+    runner = made_runner()
+    asks = asking(runner)
+    runner.apply(CONFIG)
+    FakeForwarder.made[-1].is_listening = True
+    systemd.active.add("neutrino_demo@ann.service")
+    runner._forget_states()
+    refused_ports.add(51280)
+
+    assert runner.is_active() is True
+    assert asks == []
+
+
+def test_an_instance_down_at_an_accepted_port_asks_for_nothing(paged, tmp_path):
+    made_runner, _, _ = paged
+    keep_record(tmp_path, upstream_port=51280)
+    runner = made_runner()
+    asks = asking(runner)
+
+    assert runner.is_active() is False
+    assert asks == []
+
+
+def test_a_stopped_module_asks_for_nothing_at_a_refused_port(paged, tmp_path):
+    made_runner, refused_ports, _ = paged
+    keep_record(tmp_path, upstream_port=51280)
+    first = made_runner()
+    first.apply(CONFIG)
+    first.stop()
+    refused_ports.add(51280)
+    runner = made_runner()
+    asks = asking(runner)
+
+    assert runner.is_active() is False
+    assert asks == []
+
+
+def test_a_module_with_no_page_port_asks_for_nothing(runner, tmp_path):
+    asks = asking(runner)
+    runner.apply(CONFIG)
+    runner._is_port_refused = lambda port: True
+
+    assert runner.is_active() is False
+    assert asks == []
+
+
+@pytest.mark.parametrize(
+    ("hooks_class", "field"),
+    [
+        (CloudcliHooks, "upstream_port"),
+        (CodegHooks, "upstream_port"),
+        (SiyuanHooks, "kernel_port"),
+        (CodeServerHooks, ""),
+        (SshServerHooks, ""),
+        (VscodeHooks, ""),
+    ],
+)
+def test_each_module_names_the_field_of_its_page_port(hooks_class, field):
+    assert hooks_class.page_port_field == field
+    if field:
+        assert field in hooks_class.record_fields
+        assert field in AGENT_PAGE_PORT_FIELDS
 
 
 def test_a_row_runs_only_while_its_unit_runs_and_its_forwarder_listens(runner, systemd):

@@ -243,12 +243,6 @@ PODMAN_HOST_ALIAS = "host.containers.internal"
 PODMAN_CONTAINER_PULL_TIMEOUT_S = 3600
 # Where a hub container's page port is published on the machine.
 PODMAN_PAGE_ADDRESS = "127.0.0.1"
-# The first port a page is published at. It sits below every system's dynamic
-# ports, the range Windows reserves from at boot, and below the client's forwards.
-PODMAN_PAGE_PORT_BASE = 15000
-# The file under a container module's directory in the configuration root
-# that keeps the loopback port each of its pages is published at.
-PODMAN_PAGE_PORTS_NAME = "page_ports.json"
 # An image's digest, as a hub container names it.
 PODMAN_DIGEST_PATTERN = r"sha256:[0-9a-f]{64}"
 # The type of a volume's mount, and the name podman gives an anonymous volume.

@@ -31,6 +31,9 @@ RECORD_PORT_FIELD = "port"
 RECORD_RETIRED_FIELD = "is_retired"
 # The mark a module's stop leaves in a record.
 RECORD_STOPPED_FIELD = "is_stopped"
+# One open of the record files at a time, across every store. Windows refuses
+# to replace a file another handle has open.
+RECORD_FILES_LOCK = threading.Lock()
 
 
 class InstanceRecordStore:
@@ -48,8 +51,7 @@ class InstanceRecordStore:
         self.directory = directory
         self._fields = tuple(fields)
         self._seal = seal
-        # One open of the files at a time.
-        self._lock = threading.Lock()
+        self._lock = RECORD_FILES_LOCK
 
     def read_all(self) -> list:
         """Every record held, by account; a retired one left out.

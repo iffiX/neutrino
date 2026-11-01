@@ -187,11 +187,11 @@ def test_a_refusal_of_the_configuration_names_what_it_is_about():
 
 
 def test_the_record_keeps_the_loopback_port_across_applies():
-    hooks = hooks_for("linux", LINUX_STATE, pick_port=lambda: 41000)
+    hooks = hooks_for("linux", LINUX_STATE)
     config = hooks.parse(CONFIG)
     (instance,) = config.instances
 
-    first = hooks.record(config, instance, {"port": 3101})
+    first = hooks.record(config, instance, {"port": 3101, "upstream_port": 41000})
     again = hooks.record(config, instance, dict(first, upstream_port=41234))
 
     assert first == {

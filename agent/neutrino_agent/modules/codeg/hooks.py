@@ -212,20 +212,6 @@ def make_account_directory(path: str, entry: AccountEntry, chown) -> bool:
     return bool(missing)
 
 
-def free_loopback_port() -> int:
-    """A port nothing listens on at the loopback address, as the system picks one.
-
-    Returns:
-        The port.
-
-    Raises:
-        OSError: When the system gives none.
-    """
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
-        probe.bind((CODEG_UPSTREAM_HOST, 0))
-        return int(probe.getsockname()[1])
-
-
 def has_bearer(request, token: str) -> bool:
     """Whether a request's ``Authorization`` header carries the token as Bearer.
 
@@ -313,18 +299,16 @@ class CodegHooks(InstanceHooks):
     record_fields = CODEG_RECORD_FIELDS
     secret_field = "secret"
     base_port = CODEG_BASE_PORT
+    page_port_field = "upstream_port"
 
-    def __init__(self, *, platform, log=print, pick_port=None, clock=time.time):
+    def __init__(self, *, platform, log=print, clock=time.time):
         """
         Args:
             platform: The machine's platform.
             log: Callable used for progress messages.
-            pick_port: Returns a free loopback port for a new instance; None
-                asks the system.
             clock: Seconds since the epoch, which the login cookie is judged by.
         """
         super().__init__(platform=platform, log=log)
-        self._pick_port = pick_port if pick_port is not None else free_loopback_port
         self._clock = clock
         # The server binary's size and time, and the version it printed.
         self._version: tuple = ((), "")
@@ -411,8 +395,7 @@ class CodegHooks(InstanceHooks):
         Args:
             parsed: The configuration.
             instance: The instance.
-            held: The record held before, with the port the runner took;
-                its loopback port is kept.
+            held: The record held before, with the ports the runner took.
 
         Returns:
             The record.
@@ -420,7 +403,7 @@ class CodegHooks(InstanceHooks):
         return {
             "account": instance.account,
             "port": int(held.get("port") or 0),
-            "upstream_port": int(held.get("upstream_port") or 0) or self._pick_port(),
+            "upstream_port": int(held.get("upstream_port") or 0),
             "secret": instance.secret,
             "local_name": instance.local_name,
             "cookie_name": instance.cookie_name,

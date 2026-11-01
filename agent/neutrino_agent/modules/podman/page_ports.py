@@ -20,26 +20,11 @@ import os
 import tempfile
 import threading
 
-from neutrino_agent.modules.podman.constants import (
-    PODMAN_PAGE_PORT_BASE,
-    PODMAN_PAGE_PORTS_NAME,
+from neutrino_agent.constants import AGENT_PAGE_PORTS_NAME
+from neutrino_agent.modules.shared.loopback_port import (
+    is_port_refused,
+    pick_page_port,
 )
-from neutrino_agent.modules.shared.loopback_port import is_port_refused, pick_port
-
-
-def free_loopback_port(taken=()) -> int:
-    """A TCP port nothing listens on at ``127.0.0.1`` now, below the dynamic ports.
-
-    Args:
-        taken: Ports kept for other containers, which may not listen yet.
-
-    Returns:
-        The first free port from ``PODMAN_PAGE_PORT_BASE`` up.
-
-    Raises:
-        OSError: When no port from there up is free.
-    """
-    return pick_port(PODMAN_PAGE_PORT_BASE, taken=taken)
 
 
 class PodmanPagePortStore:
@@ -49,7 +34,7 @@ class PodmanPagePortStore:
         self,
         *,
         directory: str,
-        pick=free_loopback_port,
+        pick=pick_page_port,
         is_refused=is_port_refused,
         log=print,
     ):
@@ -57,7 +42,7 @@ class PodmanPagePortStore:
         Args:
             directory: The state root; each module's record is in its own
                 directory under it.
-            pick: Returns a free loopback port, given the ports kept already.
+            pick: Returns a free loopback port, given the state root.
             is_refused: Answers whether the system refuses a port now.
             log: Called with the line of a port picked again.
         """
@@ -107,7 +92,7 @@ class PodmanPagePortStore:
             held = self.ports(module)
             if name in held:
                 return held[name]
-            held[name] = self._pick(self._kept_ports())
+            held[name] = self._pick(self._directory)
             self._write(module, held)
             return held[name]
 
@@ -131,7 +116,7 @@ class PodmanPagePortStore:
             kept = held.get(name, 0)
             if kept and not self._is_refused(kept):
                 return kept
-            held[name] = self._pick(self._kept_ports())
+            held[name] = self._pick(self._directory)
             self._write(module, held)
         if kept:
             self._log(
@@ -163,17 +148,6 @@ class PodmanPagePortStore:
             with contextlib.suppress(OSError):
                 os.rmdir(os.path.dirname(self._path(module)))
 
-    def _kept_ports(self) -> set:
-        """Every port kept for a container of any module."""
-        try:
-            modules = os.listdir(self._directory)
-        except OSError:
-            return set()
-        kept: set = set()
-        for module in modules:
-            kept.update(self.ports(module).values())
-        return kept
-
     def _write(self, module: str, held: dict) -> None:
         """Keep one module's ports whole, mode 0600, in a directory of mode 0700."""
         directory = os.path.dirname(self._path(module))
@@ -190,4 +164,4 @@ class PodmanPagePortStore:
             raise
 
     def _path(self, module: str) -> str:
-        return os.path.join(self._directory, module, PODMAN_PAGE_PORTS_NAME)
+        return os.path.join(self._directory, module, AGENT_PAGE_PORTS_NAME)

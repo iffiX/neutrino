@@ -1395,11 +1395,10 @@ def test_a_refused_login_is_credential_invalid(windows):
 
 
 def test_the_record_keeps_the_loopback_port_and_the_database_across_applies(tmp_path):
-    ports = iter([41000, 41001])
-    hooks = hooks_for("linux", with_node(tmp_path), pick_port=lambda: next(ports))
+    hooks = hooks_for("linux", with_node(tmp_path))
     instance = CONFIG.instances[0]
 
-    first = hooks.record(CONFIG, instance, {"port": 3001})
+    first = hooks.record(CONFIG, instance, {"port": 3001, "upstream_port": 41000})
     again = hooks.record(CONFIG, instance, first)
     fresh = hooks.record(CONFIG, instance, dict(first, database="auth-x.db"))
 
