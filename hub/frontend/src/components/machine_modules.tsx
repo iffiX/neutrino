@@ -895,7 +895,8 @@ export function MachineModules({
                       (activeRow.state === "installed" ||
                         activeRow.state === "stopped" ||
                         isUnclaimed(activeRow) ||
-                        isRetried(activeRow, "running"))
+                        isRetried(activeRow, "running") ||
+                        isRequiredModuleNeeded(activeRow))
                     }
                     isBusy={busyAction === "start"}
                     onClick={() => void act("start")}
@@ -1114,6 +1115,12 @@ function isUnclaimed(row: DeviceModuleView): boolean {
  * asked for. */
 function isRetried(row: DeviceModuleView, want: string): boolean {
   return row.state === "failed" && row.want === want;
+}
+
+/** Whether a failed row's task ended on a module it requires, whose words
+ * name Start whatever the row's want. */
+function isRequiredModuleNeeded(row: DeviceModuleView): boolean {
+  return row.state === "failed" && row.code === MODULE_NEEDED_CODE;
 }
 
 /** Whether a failed row's Stop ends what its module retries by itself,

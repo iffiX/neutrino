@@ -5,8 +5,9 @@ ui_text.md writes; the notice heads the failure's words with the step the row
 names, in the step list's own words; the failure's words keep their line
 breaks in the notice as they do under a step; a module stopped against its
 want words its code in the notice at the top of its tab; ``module_needed``
-names Start on a ``failed`` row and Install on every other; and **Stop** is live
-on a ``failed`` Containers row whatever its want.
+names Start on a ``failed`` row and Install on every other, and such a ``failed``
+row keeps **Start** live whatever its want; and **Stop** is live on a ``failed``
+Containers row whatever its want.
 """
 
 import json
@@ -95,6 +96,18 @@ def test_a_failed_row_words_module_needed_with_start_and_every_other_with_instal
         'return "code.module_needed_start"; } return `code.${row.code}`;'
     ) in page
     assert "const key = codeKey(row);" in page
+
+
+def test_start_is_live_on_a_failed_module_needed_row_whatever_its_want():
+    page = source("machine_modules.tsx")
+
+    assert (
+        'isRetried(activeRow, "running") || isRequiredModuleNeeded(activeRow))' in page
+    )
+    assert (
+        "function isRequiredModuleNeeded(row: DeviceModuleView): boolean { return "
+        'row.state === "failed" && row.code === MODULE_NEEDED_CODE; }'
+    ) in page
 
 
 def test_stop_is_live_on_a_failed_containers_row_and_no_other_failed_row():
