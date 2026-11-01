@@ -14,7 +14,8 @@ mark being such a change, the first failure in ``APPLY_ORDER`` naming the
 state error, the hashes kept under the agent's build, a write of the
 state or the hashes waiting for a read that holds its file open, the tasks of two
 modules running at once, a newer entry taken at the next step boundary and
-at a waiting step's check, a step that waits for something outside the
+at a waiting step's check, a new plan toward absent removing what the task
+began and nothing before its first install step, a step that waits for something outside the
 agent run again every recheck interval with no lock held, the wait of a
 step lock naming the module that holds it and a first step's wait reading
 ``queued``, ``settle`` waiting for one module's task alone, an ask for a
@@ -1193,6 +1194,28 @@ def test_a_new_plan_toward_absent_uninstalls_what_the_task_began(tmp_path):
     assert engine.uninstalls == ["samba"]
 
 
+def test_a_new_plan_toward_absent_before_any_install_step_uninstalls_nothing(tmp_path):
+    """A task whose first step still waits for its lock left nothing to remove."""
+    gate = threading.Event()
+    runners = {"samba": FakeRunner(), "gitea": FakeRunner()}
+    engine = FakeEngine(runners, absent=("samba", "gitea"))
+    engine.install_gates["samba"] = gate
+    held, _ = applier(runners, engine=engine, tmp_path=tmp_path)
+
+    held.apply(state(samba="running"))
+    assert wait_until(lambda: engine.last("samba")[0].get("index") == 1)
+    held.apply(state("h2", samba="running", gitea="running"))
+    assert wait_until(lambda: engine.last("gitea")[1] == "queued")
+    held.apply(state("h3", samba="running", gitea="absent"))
+    gate.set()
+    assert held.settle("", SETTLE_S)
+
+    assert engine.uninstalls == []
+    assert [name for name, _ in engine.installs] == ["samba"]
+    assert engine.last("gitea")[0]["steps"] == []
+    assert engine.states_of("gitea")[-1] == ""
+
+
 def test_settle_waits_for_one_module_s_task_alone(tmp_path):
     gate = threading.Event()
     runners = {"samba": FakeRunner()}
@@ -1554,6 +1577,31 @@ def test_a_container_module_waits_for_containers_and_asks_it_to_render(tmp_path)
     assert [entry[0] for entry in journal] == ["apply", "start", "apply", "start"]
     assert [name for name, _ in engine.installs] == ["podman", "demo"]
     assert engine.results["demo"] == ("", {})
+
+
+def test_a_container_module_waiting_for_containers_takes_absent_and_leaves_containers(
+    tmp_path,
+):
+    gate = threading.Event()
+    journal: list = []
+    runners = {"podman": FakeRunner(journal=journal), "demo": FakeRunner()}
+    engine = FakeEngine(runners, absent=("podman", "demo"))
+    engine.install_gates["podman"] = gate
+    held, _ = applier(runners, engine=engine, tmp_path=tmp_path)
+
+    held.apply(container_state(demo="running"))
+    assert wait_until(
+        lambda: engine.last("demo")[2]
+        == {"code": "waiting_for_module", "params": {"module": "podman"}}
+    )
+    held.apply(container_state("h2", demo="absent"))
+    gate.set()
+    assert held.settle("", SETTLE_S)
+
+    assert engine.uninstalls == ["demo"]
+    assert [name for name, _ in engine.installs] == ["podman"]
+    assert [entry[0] for entry in journal] == ["apply", "start"]
+    assert engine.results["podman"] == ("", {})
 
 
 def test_a_container_module_s_install_plan_waits_for_containers_once(tmp_path):

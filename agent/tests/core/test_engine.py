@@ -249,6 +249,23 @@ def landing_receive(received, tmp_path, sha256=DIGEST):
 # --- an install ---
 
 
+def test_only_an_install_plan_has_a_verify_step(tmp_path):
+    """The panel reads a first install from the plan: the row names no kind."""
+    engine = bare_engine(tmp_path=tmp_path)
+    entry = engine._wanted["fakedesk"]
+
+    plans = {
+        "install": engine.install_steps("fakedesk", entry),
+        "switch": engine.switch_steps("fakedesk", entry),
+        "configure": engine.configure_steps("fakedesk", entry, "running"),
+        "uninstall": engine.uninstall_steps("fakedesk", entry),
+    }
+
+    assert {
+        kind: "verify" in [step.name for step in steps] for kind, steps in plans.items()
+    } == {"install": True, "switch": False, "configure": False, "uninstall": False}
+
+
 def test_an_install_asks_for_each_artifact_checks_it_and_deletes_it_after(tmp_path):
     received: list = []
     runner = HubRunner()
