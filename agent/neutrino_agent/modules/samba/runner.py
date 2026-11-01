@@ -15,10 +15,9 @@ The record marks a Samba the install step found missing and installed, and only
 that Samba's units and package are the module's: a stop then takes the server and
 the name server down and keeps what it found the name server to be, and an
 uninstall removes the package. On a person's Samba a stop takes the module's own
-files off and the row reads the record's ``is_served``, a person's server that was
-off is started for the module's shares and turned back at the stop, and an uninstall
-removes no package and leaves the module absent through the engine's uninstalled
-mark.
+files off and the row reads the record's ``is_served``, a start turns a person's
+server that was off on and the stop turns it back, and an uninstall removes no
+package and leaves the module absent through the engine's uninstalled mark.
 
 On Windows and macOS the same module drives the system's own SMB server
 through the platform's applier instead.
@@ -64,7 +63,6 @@ from neutrino_agent.modules.samba.constants import (
     SAMBA_ACCOUNT_REFUSALS,
     SAMBA_BINARY_NAME,
     SAMBA_LINUX_USER_PREFIX,
-    SAMBA_MODULE_CONF_PATH,
     SAMBA_NATIVE_RECORD_NAME,
     SAMBA_NATIVE_STATUS_TTL_S,
     SAMBA_RECORD_NAME,
@@ -225,7 +223,8 @@ class SambaModuleRunner(SystemPackageModuleRunner):
         """Make the users, write the files and set the passwords.
 
         With ``is_started`` false the unit is left as it is, and on a person's
-        Samba the module's shares come off the server.
+        Samba the module's shares come off the server. A true one reloads an
+        active unit and starts none: the ``start`` step does.
         """
         parsed = SambaConfig.from_dict(config)
         parsed.validate()
@@ -256,17 +255,10 @@ class SambaModuleRunner(SystemPackageModuleRunner):
                     rendered,
                     config=parsed,
                     user_files=renderer.render_user_files(),
-                    is_started=is_started,
-                    before_start=(
-                        None
-                        if is_ours
-                        else functools.partial(self._keep_started_server, record)
-                    ),
+                    is_reloaded=is_started,
                 )
             passwords, kept = users.converge(parsed, held)
             changes += passwords
-            if not is_ours and is_started and not is_serving:
-                self._turn_server_back(record)
         except (OSError, subprocess.SubprocessError) as error:
             raise ModuleApplyError(
                 "apply_failed", {"detail": command_detail(error)[:500]}
@@ -359,9 +351,9 @@ class SambaModuleRunner(SystemPackageModuleRunner):
             self._name_server.stop()
 
     def start(self) -> None:
-        """Bring up a Samba the module installed, and its name server as a stop found it.
+        """Turn the server on, share or no share, and a Samba the module installed's name server as a stop found it.
 
-        A person's Samba stays as the apply left it.
+        A person's server that was off is recorded for the stop to turn back.
 
         Raises:
             subprocess.CalledProcessError: If the unit will not come up.
@@ -369,6 +361,9 @@ class SambaModuleRunner(SystemPackageModuleRunner):
         """
         record = _read_record(self._record_path)
         if record.get("is_package_ours") is not True:
+            if unit_state(self._unit) != "active":
+                self._keep_started_server(record)
+                SambaConfigApplier(unit=self._unit).start()
             return
         SambaConfigApplier(unit=self._unit).start()
         kept_name_server = record.pop("kept_name_server", None)
@@ -512,8 +507,7 @@ class SambaModuleRunner(SystemPackageModuleRunner):
         """Whether the module serves.
 
         A Samba the module installed, and a Samba no ``configure`` marked yet,
-        read the unit. A person's Samba reads the record's mark, and an active
-        unit too while the module's own file stands.
+        read the unit. A person's Samba reads the record's mark and the unit.
 
         Returns:
             True when it serves.
@@ -522,9 +516,7 @@ class SambaModuleRunner(SystemPackageModuleRunner):
         record = _read_record(self._record_path)
         if record.get("is_package_ours") is True or "is_served" not in record:
             return is_unit_active
-        if record["is_served"] is not True:
-            return False
-        return is_unit_active or not os.path.exists(SAMBA_MODULE_CONF_PATH)
+        return is_unit_active and record["is_served"] is True
 
     def journal_units(self) -> list:
         """This machine's Samba unit."""

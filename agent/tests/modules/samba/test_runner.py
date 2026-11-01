@@ -20,9 +20,10 @@ the module installed a **Stop** takes the NetBIOS name server down when it is
 enabled or active and the record stores what it was; the next start brings back
 only that, and one the person keeps off stays off. A Samba the install step did
 not record as its own is the person's: its units and its package stay as they
-are at a **Stop**, a **Start** and an uninstall, the row reads the module's own
-mark, a server that was off is started for the module's shares and turned back,
-and the module reads absent after its uninstall and installs again with no
+are at a **Stop** and an uninstall, the row reads the module's own mark and the
+unit, a **Start** turns a server that was off on, share or no share, and the
+**Stop** and the uninstall turn it back, a later share or the last one going moves
+no server, and the module reads absent after its uninstall and installs again with no
 package manager. An uninstall on either kind deletes every ``neutrino-`` user
 before any package goes.
 """
@@ -132,19 +133,11 @@ class FakeApplier:
         FakeApplier.served.append(is_served)
         return b"[global]\n   include = /etc/samba/neutrino.conf\n", ""
 
-    def apply(
-        self, rendered, *, config, user_files=None, is_started=True, before_start=None
-    ):
+    def apply(self, rendered, *, config, user_files=None, is_reloaded=True):
         FakeApplier.applied.append((self.unit, rendered, config))
         FakeApplier.user_files = dict(user_files or {})
-        FakeApplier.started.append(is_started)
-        if not is_started:
-            return "written"
-        if config.served_shares() and not FakeApplier.is_unit_active:
-            if before_start is not None:
-                before_start()
-            FakeApplier.is_unit_active = True
-        return "started"
+        FakeApplier.started.append(is_reloaded)
+        return "reloaded" if is_reloaded else "written"
 
     def remove(self):
         FakeApplier.removals += 1
@@ -287,9 +280,6 @@ def runner(monkeypatch, tmp_path):
     monkeypatch.setattr(runner_module, "SambaConfigReader", FakeReader)
     monkeypatch.setattr(runner_module, "SambaSelinuxApplier", FakeSelinux)
     monkeypatch.setattr(runner_module, "SambaUnitApplier", FakeUnits)
-    monkeypatch.setattr(
-        runner_module, "SAMBA_MODULE_CONF_PATH", str(tmp_path / "neutrino.conf")
-    )
     held = SambaModuleRunner(
         platform=RecordingPlatform(tmp_path), log=lambda m: None, family="rhel"
     )
@@ -565,9 +555,7 @@ def test_apply_renders_applies_and_keeps_the_configuration(runner):
 
 
 def test_a_refused_apply_is_typed(runner, monkeypatch):
-    def refuse(
-        self, rendered, *, config, user_files=None, is_started=True, before_start=None
-    ):
+    def refuse(self, rendered, *, config, user_files=None, is_reloaded=True):
         raise subprocess.CalledProcessError(1, ["systemctl"], stderr="no unit")
 
     monkeypatch.setattr(FakeApplier, "apply", refuse)
@@ -1047,36 +1035,42 @@ def test_a_person_s_samba_with_no_account_reads_as_pressed_and_touches_nothing(r
     assert FakeUnits.calls == []
 
 
-def test_a_person_s_samba_that_is_off_with_no_share_stays_off_and_reads_running(
-    runner,
-):
+def test_a_start_turns_on_a_person_s_samba_that_is_off_with_no_share(runner):
     FakeApplier.is_unit_active = False
 
     runner.apply({"shares": [], "users": [], "passwords": {}})
-    runner.start()
 
     assert FakeApplier.is_unit_active is False
+    assert runner.is_active() is False
+
+    runner.start()
+
+    assert FakeApplier.is_unit_active is True
     assert runner.is_active() is True
-    assert "started_server" not in json.loads(runner.record_path.read_text())
+    record = json.loads(runner.record_path.read_text())
+    assert record["started_server"] == {"is_enabled": True, "is_active": True}
 
 
-def test_a_person_s_smbd_stopped_by_hand_under_the_module_s_shares_reads_stopped(
-    runner, tmp_path
-):
-    runner.apply(CONFIG)
-    (tmp_path / "neutrino.conf").write_text("[share]\n")
+@pytest.mark.parametrize(
+    "config", [CONFIG, {"shares": [], "users": [], "passwords": {}}], ids=["one", "no"]
+)
+def test_a_person_s_smbd_stopped_by_hand_reads_stopped_with_any_share(runner, config):
+    runner.apply(config)
 
     FakeApplier.is_unit_active = False
 
     assert runner.is_active() is False
 
 
-def test_a_person_s_samba_that_is_off_starts_for_a_share_and_turns_back_at_the_stop(
-    runner,
-):
+def test_an_apply_starts_no_server_and_the_start_turns_it_back_at_the_stop(runner):
     FakeApplier.is_unit_active = False
 
     runner.apply(CONFIG)
+
+    assert FakeApplier.is_unit_active is False
+    assert "started_server" not in json.loads(runner.record_path.read_text())
+
+    runner.start()
 
     record = json.loads(runner.record_path.read_text())
     assert record["started_server"] == {"is_enabled": True, "is_active": True}
@@ -1098,6 +1092,7 @@ def test_a_person_s_enabled_samba_that_is_off_turns_back_to_off_and_stays_enable
     FakeUnits.states[SERVER_UNIT] = {"is_enabled": True, "is_active": False}
 
     runner.apply(CONFIG)
+    runner.start()
     runner.stop()
 
     assert FakeUnits.calls == [
@@ -1109,33 +1104,45 @@ def test_a_person_s_samba_already_running_is_never_turned_back(runner):
     FakeUnits.states[SERVER_UNIT] = {"is_enabled": True, "is_active": True}
 
     runner.apply(CONFIG)
+    runner.start()
     runner.apply_stopped(CONFIG)
     runner.stop()
 
+    assert FakeApplier.starts == 0
     assert FakeUnits.calls == []
+    assert "started_server" not in json.loads(runner.record_path.read_text())
 
 
-def test_a_person_s_samba_the_module_started_turns_back_when_the_last_share_goes(
+def test_a_share_on_a_running_module_starts_nothing_and_the_last_going_moves_nothing(
     runner,
 ):
     FakeApplier.is_unit_active = False
+    empty = {"shares": [], "users": [], "passwords": {}}
+    runner.apply(empty)
+    runner.start()
+    assert FakeApplier.starts == 1
+
     runner.apply(CONFIG)
+    runner.start()
+    runner.apply(empty)
+    runner.start()
 
-    runner.apply({"shares": [], "users": [], "passwords": {}})
-
-    assert FakeUnits.calls == [
-        (SERVER_UNIT, "turn_back", {"is_enabled": True, "is_active": True})
-    ]
-    assert "started_server" not in json.loads(runner.record_path.read_text())
+    assert FakeApplier.starts == 1
+    assert FakeApplier.is_unit_active is True
+    assert FakeUnits.calls == []
+    record = json.loads(runner.record_path.read_text())
+    assert record["started_server"] == {"is_enabled": True, "is_active": True}
 
 
 def test_a_second_start_keeps_what_the_first_found_of_a_person_s_samba(runner):
     FakeApplier.is_unit_active = False
     runner.apply(CONFIG)
+    runner.start()
     FakeUnits.states[SERVER_UNIT] = {"is_enabled": True, "is_active": False}
     FakeApplier.is_unit_active = False
 
     runner.apply(CONFIG)
+    runner.start()
 
     record = json.loads(runner.record_path.read_text())
     assert record["started_server"] == {"is_enabled": True, "is_active": True}
@@ -1254,6 +1261,25 @@ def test_a_person_s_samba_stops_starts_uninstalls_and_installs_again_through_the
     assert not (tmp_path / "uninstalled" / "samba").exists()
     assert row_of(restarted)["state"] == "installed"
     assert restarted.module_runners["samba"].is_software_kept() is True
+
+
+def test_an_uninstall_turns_back_the_person_s_samba_the_start_turned_on(
+    linux, monkeypatch
+):
+    engine, _ = linux
+    samba_on_path(monkeypatch, is_there=True)
+    FakeApplier.is_unit_active = False
+
+    configure(engine, "running")
+    assert FakeApplier.is_unit_active is True
+
+    absent = linux_entry("absent")
+    engine.take_state({"samba": absent})
+    run_steps(engine.uninstall_steps("samba", absent))
+
+    assert [call[1:] for call in FakeUnits.calls] == [
+        ("turn_back", {"is_enabled": True, "is_active": True})
+    ]
 
 
 def test_a_samba_the_module_installed_is_taken_off_with_its_package_through_the_engine(

@@ -653,8 +653,7 @@ class SambaConfigApplier:
         *,
         config: SambaConfig,
         user_files: "dict | None" = None,
-        is_started: bool = True,
-        before_start=None,
+        is_reloaded: bool = True,
     ) -> str:
         """Validate, install and load the module's file, or take it away.
 
@@ -669,17 +668,15 @@ class SambaConfigApplier:
                 directories to create.
             user_files: The files under :data:`SAMBA_USERS_DIR` by name, as
                 the renderer gives them; every other file there goes.
-            is_started: Whether the unit is reloaded or enabled and started
-                on the files. False writes the files alone.
-            before_start: Called right before the unit is enabled and
-                started, once the files are written; None calls nothing.
+            is_reloaded: Whether an active unit reloads the files. Nothing
+                here starts a unit that is off.
 
         Returns:
             A short summary of what changed.
 
         Raises:
             ModuleApplyError: If Samba rejects the configuration.
-            subprocess.CalledProcessError: If the unit will not come up.
+            subprocess.CalledProcessError: If the reload fails.
         """
         is_served = bool(config.served_shares())
         smb_conf, note = self.plan(is_served=is_served)
@@ -689,7 +686,7 @@ class SambaConfigApplier:
             self._remove_own()
             if smb_conf != (current or b""):
                 _write_smb_conf(smb_conf)
-            if notes and is_started and unit_state(self._unit) == "active":
+            if notes and is_reloaded and unit_state(self._unit) == "active":
                 run(["systemctl", "reload", self._unit])
                 notes.append("reloaded")
             return "; ".join(notes or ["unchanged"])
@@ -699,15 +696,10 @@ class SambaConfigApplier:
         _write_file(SAMBA_MODULE_CONF_PATH, rendered.encode("utf-8"))
         if smb_conf != current:
             _write_smb_conf(smb_conf)
-        if not is_started:
-            return "; ".join(notes + ["written"])
-        if unit_state(self._unit) == "active":
+        if is_reloaded and unit_state(self._unit) == "active":
             run(["systemctl", "reload", self._unit])
             return "; ".join(notes + ["reloaded"])
-        if before_start is not None:
-            before_start()
-        run(["systemctl", "enable", "--now", self._unit])
-        return "; ".join(notes + ["started"])
+        return "; ".join(notes + ["written"])
 
     def remove(self) -> None:
         """Delete the module's file and its users' files, and take the include line out of ``smb.conf``."""
@@ -748,13 +740,16 @@ class SambaConfigApplier:
         run(["systemctl", "disable", "--now", self._unit], is_checked=False)
 
     def start(self) -> None:
-        """Enable and start the server unless it is active.
+        """Enable and start the server unless it is active, on the stock ``smb.conf`` where the machine has none.
 
         Raises:
             subprocess.CalledProcessError: If the unit will not come up.
         """
-        if unit_state(self._unit) != "active":
-            run(["systemctl", "enable", "--now", self._unit])
+        if unit_state(self._unit) == "active":
+            return
+        if read_bytes(SAMBA_CONF_PATH) is None:
+            _write_smb_conf(read_stock_conf()[0])
+        run(["systemctl", "enable", "--now", self._unit])
 
     def _ensure_share_directories(self, config: SambaConfig) -> None:
         """Make a share's folder that is missing, owned by the one account it writes as."""

@@ -13,8 +13,8 @@ line; a whole ``smb.conf`` an earlier version rendered is the person's and
 only gets the line; the module's shares go to its own file; an uninstall deletes that
 file and takes the line out; a stop stops the unit and disables it; a withdrawal
 takes the module's shares off a running server with one reload and nothing else of
-the unit; a start starts only a unit that is not active, the call before it running
-only then; a unit reads as enabled and active or as nothing, a stop stops and disables
+the unit; an apply starts no unit; a start starts only a unit that is not active, on
+the stock file where the machine has no ``smb.conf``; a unit reads as enabled and active or as nothing, a stop stops and disables
 it, a restore brings back only what it was, and a turn back undoes only what the
 module changed; the
 sweep takes every ``neutrino-`` user and
@@ -234,7 +234,7 @@ def test_apply_writes_the_modules_file_and_gives_a_machine_without_smb_conf_the_
     module_conf = str(tmp_path / "etc/neutrino.conf")
     assert note == (
         f"wrote the distribution's {tmp_path / 'stock/smb.conf'}; "
-        "added the include line; started"
+        "added the include line; written"
     )
     assert (tmp_path / "etc/neutrino.conf").read_text() == rendered
     assert (tmp_path / "etc/smb.conf").read_text() == (
@@ -243,9 +243,7 @@ def test_apply_writes_the_modules_file_and_gives_a_machine_without_smb_conf_the_
     )
     assert (tmp_path / "srv/s").is_dir()
     assert stat.S_IMODE(os.stat(tmp_path / "home/ann").st_mode) == 0o700
-    assert commands.ran("systemctl", "enable") == [
-        (["systemctl", "enable", "--now", "smbd.service"], None)
-    ]
+    assert commands.ran("systemctl") == []
 
 
 @pytest.mark.parametrize("state", ["active", "inactive"])
@@ -256,7 +254,7 @@ def test_apply_under_stopped_writes_the_files_and_runs_no_systemctl(
     monkeypatch.setattr(applier_module, "unit_state", lambda unit: state)
 
     note = SambaConfigApplier(unit="smbd.service").apply(
-        f"{MARKER}\n", config=one_share(tmp_path), is_started=False
+        f"{MARKER}\n", config=one_share(tmp_path), is_reloaded=False
     )
 
     assert note.endswith("written")
@@ -296,8 +294,8 @@ def test_a_persons_smb_conf_gets_the_include_line_once_and_nothing_else(box):
     second = applier.apply(f"{MARKER}\n", config=one_share(tmp_path))
 
     module_conf = str(tmp_path / "etc/neutrino.conf")
-    assert first == "added the include line; started"
-    assert second == "started"
+    assert first == "added the include line; written"
+    assert second == "written"
     assert (tmp_path / "etc/smb.conf").read_text() == (
         f"# mine\n[Global]\n{INCLUDE}{module_conf}\n   workgroup = HOME\n\n"
         "[media]\n   path = /srv/media\n"
@@ -319,7 +317,7 @@ def test_an_earlier_versions_whole_file_is_the_persons_and_only_gets_the_line(bo
     )
 
     module_conf = str(tmp_path / "etc/neutrino.conf")
-    assert note == "added the include line; started"
+    assert note == "added the include line; written"
     assert (tmp_path / "etc/smb.conf").read_text() == (
         f"{MARKER}\n\n[global]\n{INCLUDE}{module_conf}\n   hosts deny = 0/0\n\n"
         "[lab]\n   path = /home/lab\n"
@@ -800,28 +798,29 @@ def test_a_start_starts_only_a_unit_that_is_not_active(box, monkeypatch, state, 
     ]
 
 
-@pytest.mark.parametrize(
-    "state, calls", [("active", []), ("inactive", ["called"])], ids=["active", "off"]
-)
-def test_the_call_before_a_start_runs_only_when_the_unit_starts(
-    box, monkeypatch, state, calls
+def test_a_start_on_a_machine_with_no_smb_conf_writes_the_stock_one_first(
+    box, monkeypatch
 ):
     commands, tmp_path = box
-    monkeypatch.setattr(applier_module, "unit_state", lambda unit: state)
-    config = one_share(tmp_path)
-    called: list = []
+    monkeypatch.setattr(applier_module, "unit_state", lambda unit: "inactive")
 
-    def before_start():
-        called.append("called")
-        assert commands.ran("systemctl") == []
+    SambaConfigApplier(unit="smbd.service").start()
 
-    SambaConfigApplier(unit="smbd.service").apply(
-        SambaConfigRenderer(config=config).render(),
-        config=config,
-        before_start=before_start,
-    )
+    assert (tmp_path / "etc/smb.conf").read_text() == STOCK
+    assert commands.ran("systemctl") == [
+        (["systemctl", "enable", "--now", "smbd.service"], None)
+    ]
 
-    assert called == calls
+
+def test_a_start_keeps_a_person_s_smb_conf_byte_for_byte(box, monkeypatch):
+    _, tmp_path = box
+    (tmp_path / "etc").mkdir()
+    (tmp_path / "etc/smb.conf").write_bytes(PERSONS_BYTES)
+    monkeypatch.setattr(applier_module, "unit_state", lambda unit: "inactive")
+
+    SambaConfigApplier(unit="smbd.service").start()
+
+    assert (tmp_path / "etc/smb.conf").read_bytes() == PERSONS_BYTES
 
 
 def test_stop_stops_the_unit_and_disables_it(box):
