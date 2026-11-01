@@ -24,7 +24,7 @@ from neutrino_agent.modules.gitea.constants import (
 
 # Ports the hub's own services listen on, which a git server on the hub box
 # would fight over.
-RESERVED_PORTS = (53, 80, 1080)
+RESERVED_PORTS = (53, 80)
 
 # What accounts may be called: the subset of Gitea's own rules that also
 # survives a command line.

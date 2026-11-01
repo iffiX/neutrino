@@ -42,12 +42,16 @@ def test_a_non_port_is_refused(port):
     assert refused.value.code == "port_invalid"
 
 
-@pytest.mark.parametrize("port", [53, 80, 1080])
+@pytest.mark.parametrize("port", [53, 80])
 def test_a_port_the_hub_already_owns_is_refused(port):
     with pytest.raises(ModuleApplyError) as refused:
         config(listen_port=port).validate()
 
     assert refused.value.code == "port_reserved"
+
+
+def test_the_port_of_an_earlier_builds_listener_is_free():
+    config(listen_port=1080).validate()
 
 
 @pytest.mark.parametrize("url", ["box:3000", "ftp://box/", "http://a\nb/"])
