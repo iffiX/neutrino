@@ -23,7 +23,6 @@ from neutrino_agent.constants import (
     AGENT_LOCK_CONTAINERS,
     AGENT_LOCK_PACKAGE_MANAGER,
     AGENT_LOCK_SYSTEM_ACCOUNTS,
-    AGENT_SERVICE_NAME,
 )
 from neutrino_agent.control import client
 from neutrino_agent.exceptions import PlatformUnsupportedError
@@ -35,8 +34,7 @@ from neutrino_agent.modules.remote_desktop.rdp.constants import (
 )
 
 AGENT_NOT_RUNNING = (
-    "the agent is not running, so there is nothing to ask; start it: "
-    f"sudo systemctl enable --now {AGENT_SERVICE_NAME}"
+    "the agent is not running, so there is nothing to ask; start it: {hint}"
 )
 NO_CONTROL_SOCKET = "this platform has no control socket"
 
@@ -394,7 +392,8 @@ def request(
         no platform socket, or nothing answering on it.
     """
     try:
-        socket_path = detect_platform().control_socket_path()
+        platform = detect_platform()
+        socket_path = platform.control_socket_path()
     except PlatformUnsupportedError:
         print(NO_CONTROL_SOCKET, file=sys.stderr)
         return None
@@ -407,7 +406,8 @@ def request(
             timeout_s=timeout_s,
         )
     except (OSError, ValueError):
-        print(AGENT_NOT_RUNNING, file=sys.stderr)
+        hint = platform.agent_service_start_hint()
+        print(AGENT_NOT_RUNNING.format(hint=hint), file=sys.stderr)
         return None
 
 

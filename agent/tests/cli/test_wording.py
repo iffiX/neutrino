@@ -340,3 +340,27 @@ def test_an_action_waits_longer_than_a_read(monkeypatch):
     assert seen[0] == ("POST", "/api/rdp/start", AGENT_CONTROL_ACTION_TIMEOUT_S)
     assert seen[1] == ("GET", "/api/state", AGENT_CONTROL_REQUEST_TIMEOUT_S)
     assert AGENT_CONTROL_ACTION_TIMEOUT_S > AGENT_CONTROL_REQUEST_TIMEOUT_S
+
+
+@pytest.mark.parametrize(
+    "hint",
+    ["sudo systemctl enable --now a", "sc start a", "sudo launchctl bootstrap a"],
+)
+def test_an_agent_not_answering_names_this_systems_start_command(
+    monkeypatch, capsys, hint
+):
+    class Platform:
+        def control_socket_path(self):
+            return "/gone"
+
+        def agent_service_start_hint(self):
+            return hint
+
+    def refused(**kwargs):
+        raise OSError("nothing answers")
+
+    monkeypatch.setattr(wording, "detect_platform", lambda: Platform())
+    monkeypatch.setattr(wording.client, "request", refused)
+
+    assert wording.request("GET", "/x") is None
+    assert hint in capsys.readouterr().err
