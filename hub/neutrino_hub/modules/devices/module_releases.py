@@ -26,6 +26,7 @@ from datetime import datetime, timezone
 
 from neutrino_hub.exceptions import DownloadFailedError
 from neutrino_hub.modules.devices.constants import (
+    DEVICE_ARTIFACT_KIND_NPM,
     DEVICE_METHOD_AGENT,
     DEVICE_METHOD_BUILTIN,
     DEVICE_METHOD_SYSTEM,
@@ -550,18 +551,20 @@ class ModuleReleaseReader:
                         break
                     found[artifact["name"]] = dict(held)
                     continue
-                if not _is_versioned(artifact):
+                if not _is_versioned(artifact, feeds):
                     continue
                 file = artifact_file(artifact, version)
                 held = next(
                     (
                         answer[version].get(file)
                         or answer[version].get(artifact["name"])
+                        or answer[version].get(_ANY_FILE)
                         for answer in answers
                         if version in answer
                         and (
                             answer[version].get(file)
                             or answer[version].get(artifact["name"])
+                            or answer[version].get(_ANY_FILE)
                         )
                     ),
                     None,
@@ -613,7 +616,7 @@ class ModuleReleaseReader:
                     )
                 except DownloadFailedError:
                     continue
-                versions[version] = {_VSCODE_ANY_FILE: parse_vscode_version(found)}
+                versions[version] = {_ANY_FILE: parse_vscode_version(found)}
             return versions
         if kind == FEED_OCI:
             return self._read_oci(feed, sources)
@@ -627,7 +630,7 @@ class ModuleReleaseReader:
                 parse=json.loads,
             )
             return {
-                version: {_NPM_ANY_FILE: {"digest": integrity}}
+                version: {_ANY_FILE: {"digest": integrity}}
                 for version, integrity in parse_npm_package(document).items()
             }
         raise ValueError(f"no feed of kind {kind!r}")
@@ -702,14 +705,34 @@ def _feed_repository(artifact: dict, feeds: list) -> str:
 
 # The one artifact a vscode_update or an npm feed answers for, whatever its
 # file is called: the feed names the platform or the package itself.
-_VSCODE_ANY_FILE = "*"
-_NPM_ANY_FILE = "*"
+_ANY_FILE = "*"
 
 
-def _is_versioned(artifact: dict) -> bool:
-    """Whether an artifact's file or sources name ``{version}``, or its feed answers for any file."""
+def _is_versioned(artifact: dict, feeds: list) -> bool:
+    """Whether an artifact's file or sources name ``{version}``, or a feed answers for any file of it.
+
+    Args:
+        artifact: The artifact.
+        feeds: The entry's feeds.
+
+    Returns:
+        True when each listed version names the artifact's digest.
+    """
     if UTILS_SOURCE_VERSION in str(artifact.get("file", "") or ""):
         return True
-    return any(
+    if any(
         UTILS_SOURCE_VERSION in str(source) for source in artifact.get("sources") or []
+    ):
+        return True
+    return any(_answers_for_any_file(feed, artifact) for feed in feeds)
+
+
+def _answers_for_any_file(feed: dict, artifact: dict) -> bool:
+    """Whether a feed names the one artifact of a ``vscode_update`` entry, or an npm artifact of its package."""
+    if feed.get("kind") == FEED_VSCODE_UPDATE:
+        return True
+    return (
+        feed.get("kind") == FEED_NPM
+        and artifact.get("kind") == DEVICE_ARTIFACT_KIND_NPM
+        and artifact.get("package") == feed.get("package")
     )

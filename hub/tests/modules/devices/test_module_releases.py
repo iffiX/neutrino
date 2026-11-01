@@ -1,4 +1,4 @@
-"""The ``oci`` feed of the module versions: a registry's tags, each with its index digest.
+"""The module versions' feeds: each version's digest for the artifact the feed answers for.
 
 What these pin, against a fake fetcher that serves a registry: an anonymous
 token taken from the service the registry's bearer challenge names, with
@@ -7,6 +7,10 @@ read for a digest; each tag's digest the SHA-256 of the index the registry
 serves, a single-architecture manifest refused; the digest going to the
 image whose sources name the feed's repository alone, every other image
 keeping its own; and the recipe of a chosen version naming that digest.
+Against a fake that serves documents: an ``npm`` feed's ``dist.integrity``
+going to the npm artifact of its package alone, a ``vscode_update`` feed's
+digest and address going to the entry's artifact, and every module's manifest
+naming a digest of the chosen version for each artifact that changes with it.
 """
 
 import hashlib
@@ -16,6 +20,10 @@ import pytest
 
 from neutrino_hub.exceptions import DownloadFailedError
 from neutrino_hub.modules.devices import module_releases
+from neutrino_hub.modules.devices.manifests import (
+    entry_artifacts,
+    load_module_manifests,
+)
 from neutrino_hub.modules.devices.module_releases import (
     ModuleReleaseReader,
     ModuleReleaseStore,
@@ -194,3 +202,162 @@ def test_the_token_address_names_the_realm_the_service_and_the_scope():
     )
     assert bearer_token_address('Basic realm="x"', "acme/app") == ""
     assert bearer_token_address('Bearer realm="http://x/token"', "acme/app") == ""
+
+
+NPM_FEED = {
+    "kind": "npm",
+    "sources": ["https://registry.example"],
+    "package": "@acme/app",
+}
+NODE_DIGEST = "sha256:" + "c" * 64
+TESTED_INTEGRITY = "sha512-tested"
+NPM_ENTRY = {
+    "runner": "cloudcli",
+    "install": {
+        "method": "hub",
+        "params": {
+            "version": "1.2.0",
+            "releases": [NPM_FEED],
+            "artifacts": [
+                {
+                    "name": "node",
+                    "kind": "tar_gz",
+                    "directory": "node",
+                    "file": "node.tar.gz",
+                    "digest": NODE_DIGEST,
+                    "sources": ["https://nodejs.example/{file}"],
+                },
+                {
+                    "name": "app",
+                    "kind": "npm",
+                    "package": "@acme/app",
+                    "digest": TESTED_INTEGRITY,
+                    "source_set": "npm",
+                },
+            ],
+        },
+    },
+}
+NPM_MANIFEST = {"name": "app", "platforms": {"linux": NPM_ENTRY}}
+VSCODE_FEED = {
+    "kind": "vscode_update",
+    "sources": ["https://update.example"],
+    "platform": "cli-alpine-x64",
+}
+VSCODE_ENTRY = {
+    "runner": "vscode",
+    "install": {
+        "method": "hub",
+        "params": {
+            "version": "1.2.0",
+            "releases": [VSCODE_FEED],
+            "artifacts": [
+                {
+                    "name": "cli",
+                    "kind": "tar_gz",
+                    "directory": "cli",
+                    "file": "cli.tar.gz",
+                    "digest": TESTED_DIGEST,
+                    "sources": ["https://download.example/stable/abc/{file}"],
+                }
+            ],
+        },
+    },
+}
+VSCODE_MANIFEST = {"name": "vs", "platforms": {"linux": VSCODE_ENTRY}}
+# The artifacts that keep their own digest for every version of their module.
+PINNED_ARTIFACTS = ("node", "wsl", "mongo", "redis")
+
+
+class FakeDocuments:
+    """The fetcher's document call, answered from a table of addresses."""
+
+    def __init__(self, documents):
+        self.documents = dict(documents)
+
+    def fetch_document(self, *, file, sources, parse, headers=None, limit=0):
+        (url,) = sources
+        return parse(json.dumps(self.documents[url]).encode()), url
+
+
+def npm_document():
+    return {
+        "versions": {
+            "1.3.0": {"dist": {"integrity": "sha512-newer"}},
+            "1.2.0": {"dist": {"integrity": TESTED_INTEGRITY}},
+            "1.1.0": {"dist": {"integrity": "sha512-older"}},
+        }
+    }
+
+
+def test_an_npm_feed_gives_each_version_its_own_integrity(tmp_path, monkeypatch):
+    """CloudCLI: a chosen version with the tested version's digest fails
+    ``digest_mismatch`` on every registry."""
+    monkeypatch.setattr(
+        module_releases, "load_module_manifests", lambda: {"app": NPM_MANIFEST}
+    )
+    fetcher = FakeDocuments(
+        {
+            "https://registry.example"
+            + module_releases.NPM_PACKAGE_PATH.format(package="@acme/app"): (
+                npm_document()
+            )
+        }
+    )
+    store = ModuleReleaseStore(path=tmp_path / "module_releases.json")
+    read = ModuleReleaseReader(fetcher=fetcher, store=store)
+
+    listed = read.read_entry(NPM_MANIFEST, NPM_ENTRY)
+    read.read()
+    recipe = store.recipe("app", {"os": "linux"}, "1.1.0")
+
+    assert listed[2] == {
+        "version": "1.1.0",
+        "artifacts": {"app": {"digest": "sha512-older"}},
+    }
+    node, app = recipe["params"]["artifacts"]
+    assert (node["digest"], app["digest"]) == (NODE_DIGEST, "sha512-older")
+    assert recipe["params"]["version"] == "1.1.0"
+
+
+def test_a_vscode_feed_gives_each_version_its_digest_and_address(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        module_releases, "load_module_manifests", lambda: {"vs": VSCODE_MANIFEST}
+    )
+    version_path = module_releases.VSCODE_VERSION_PATH.format(
+        version="1.1.0", platform="cli-alpine-x64"
+    )
+    fetcher = FakeDocuments(
+        {
+            "https://update.example" + module_releases.VSCODE_RELEASES_PATH: ["1.1.0"],
+            "https://update.example"
+            + version_path: {"sha256hash": "d" * 64, "url": "https://ms.example/1.1.0"},
+        }
+    )
+    store = ModuleReleaseStore(path=tmp_path / "module_releases.json")
+    read = ModuleReleaseReader(fetcher=fetcher, store=store)
+
+    read.read()
+    recipe = store.recipe("vs", {"os": "linux"}, "1.1.0")
+
+    digest = "sha256:" + "d" * 64
+    assert recipe["params"]["artifacts"][0]["digest"] == digest
+    assert store.artifact_sources("vs", {"os": "linux"}, "cli", digest) == [
+        "https://ms.example/1.1.0"
+    ]
+
+
+def test_each_artifact_of_a_module_with_feeds_follows_the_version_or_stays_pinned():
+    """An artifact left out of a listing keeps the tested version's digest
+    beside another version's number."""
+    for name, manifest in load_module_manifests().items():
+        for key, entry in (manifest.get("platforms") or {}).items():
+            feeds = (entry.get("install") or {}).get("params", {}).get("releases") or []
+            if not feeds:
+                continue
+            for artifact in entry_artifacts(manifest, entry):
+                follows = module_releases._is_versioned(
+                    artifact, feeds
+                ) or module_releases._feed_repository(artifact, feeds)
+                is_pinned = artifact["name"] in PINNED_ARTIFACTS
+                assert bool(follows) != is_pinned, (name, key, artifact["name"])
