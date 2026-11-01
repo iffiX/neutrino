@@ -8,8 +8,9 @@ account's; the file share drops ``users`` and its 0.5 shares, which stay the
 person's own on the machine; the Podman
 machine drops ``login_id``; Hermes WebUI drops ``port``; the machine's AI
 tools setting turns into each account's switch and the file is gone; a
-directory already of the new shape is left alone; and the move names the
-machines it touched.
+directory already of the new shape is left alone, a file share's file with
+``users`` beside its accounts or its folder shares among them; and the move
+names the machines it touched.
 """
 
 import json
@@ -19,6 +20,7 @@ import pytest
 from neutrino_hub.modules.devices.accounts import DeviceAccountStore
 from neutrino_hub.modules.devices.desired_state import DesiredStateStore
 from neutrino_hub.modules.devices.legacy_files import move_legacy_device_files
+from neutrino_hub.modules.devices.module_import import import_module_config
 
 DEVICE = "device-one"
 OTHER = "device-two"
@@ -149,6 +151,66 @@ def test_a_directory_of_the_new_shape_is_left_alone(config):
         name: json.loads((config / "devices" / DEVICE / f"{name}.json").read_text())
         for name in ("terminal", "codeg", "samba")
     } == before
+    assert DeviceAccountStore(store).accounts(DEVICE) == []
+
+
+LAB_ACCOUNT = {"account": "lab", "password_sealed": SEALED}
+FOLDER_SHARE = {"name": "probe", "path": "/srv/probe", "accounts": ["lab"]}
+SHARE_OF_0_5 = {
+    "name": "media",
+    "path": "/tank/media",
+    "comment": "",
+    "is_read_only": False,
+    "valid_users": ["ann"],
+}
+
+
+@pytest.mark.parametrize(
+    "held",
+    [
+        {"shares": [], "users": []},
+        {"shares": [], "users": [], "accounts": [LAB_ACCOUNT]},
+        {"shares": [FOLDER_SHARE], "users": [], "accounts": [LAB_ACCOUNT]},
+        {"shares": [FOLDER_SHARE], "users": [], "accounts": []},
+        {"shares": [dict(FOLDER_SHARE, accounts=[])], "users": []},
+        {"shares": [FOLDER_SHARE], "accounts": [LAB_ACCOUNT]},
+    ],
+)
+def test_a_file_share_file_of_0_6_is_never_moved(config, held):
+    store = DesiredStateStore()
+    store.write(DEVICE, "samba", held)
+
+    assert move_legacy_device_files(store, [DEVICE]) == []
+    assert store.read(DEVICE, "samba") == held
+
+
+@pytest.mark.parametrize(
+    "held",
+    [
+        {"shares": [SHARE_OF_0_5], "users": ["ann"]},
+        {"shares": [], "users": ["ann"]},
+        {"shares": [SHARE_OF_0_5], "users": []},
+        {"shares": [SHARE_OF_0_5]},
+    ],
+)
+def test_a_file_share_file_of_0_5_moves_once(config, held):
+    store = DesiredStateStore()
+    store.write(DEVICE, "samba", held)
+
+    assert move_legacy_device_files(store, [DEVICE]) == [DEVICE]
+    assert store.read(DEVICE, "samba") == {"shares": []}
+    assert move_legacy_device_files(store, [DEVICE]) == []
+
+
+def test_an_imported_machine_is_never_moved(config):
+    store = DesiredStateStore()
+    imported = import_module_config(
+        "podman", {"machine": {"account": "lab", "disk_gib": 100}}
+    )
+    store.write(DEVICE, "podman", imported)
+
+    assert move_legacy_device_files(store, [DEVICE]) == []
+    assert store.read(DEVICE, "podman") == imported
     assert DeviceAccountStore(store).accounts(DEVICE) == []
 
 

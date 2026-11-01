@@ -9,6 +9,8 @@ with no import here is never taken over.
 
 import math
 
+from neutrino_hub.modules.devices.constants import DEVICE_SAMBA_SHARES_KEY
+
 # The ``testparm -s`` parameters a share's fields are read from.
 SAMBA_PARAM_COMMENT = "comment"
 SAMBA_PARAM_READ_ONLY = "read only"
@@ -27,9 +29,9 @@ def samba_import_config(details: dict) -> dict:
         details: What the agent last reported; not read.
 
     Returns:
-        ``{"shares": [], "users": []}``.
+        ``{"shares": []}``.
     """
-    return {"shares": [], "users": []}
+    return {DEVICE_SAMBA_SHARES_KEY: []}
 
 
 def gitea_import_config(details: dict) -> dict:
@@ -82,7 +84,6 @@ def podman_import_config(details: dict) -> dict:
     if isinstance(machine, dict) and machine.get("account"):
         config["machine"] = {
             "account": str(machine["account"]),
-            "login_id": "",
             "cpus": 0,
             "memory_gib": 0,
             "disk_gib": _whole_gib(machine.get("disk_gib")),

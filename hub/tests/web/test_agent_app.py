@@ -3,6 +3,16 @@
 import pytest
 
 import neutrino_hub.web.app as app_module
+from neutrino_hub.modules.devices.accounts import DeviceAccount, DeviceAccountStore
+from neutrino_hub.modules.devices.desired_state import (
+    DesiredStateStore,
+    account_layer_agent_config,
+)
+from neutrino_hub.modules.devices.folder_shares import with_folder_share
+from neutrino_hub.modules.devices.module_import import import_module_config
+from neutrino_hub.modules.devices.module_table import module_row
+from neutrino_hub.modules.devices.registry import DeviceRegistry
+from tests.conftest import unlock_vault
 from tests.web.test_paths import routes_of
 
 
@@ -187,3 +197,96 @@ def test_the_panel_deletes_the_tls_pair_of_0_5_at_start(
 
     assert not pair.exists()
     assert not served.exists()
+
+
+@pytest.fixture
+def config_box(factories, monkeypatch, tmp_path):
+    """A ``config/`` of this test's own, with its vault unlocked."""
+    config = tmp_path / "config"
+    config.mkdir()
+    monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", config)
+    monkeypatch.setattr(
+        "neutrino_hub.modules.devices.desired_state.UTILS_CONFIG_DIR", config
+    )
+    unlock_vault(monkeypatch, tmp_path)
+    return factories
+
+
+def enabled_with_folder_share(store: DesiredStateStore, device_id: str) -> dict:
+    """The file share's file after an account is enabled and a folder share added."""
+    DeviceAccountStore(store).add(device_id, DeviceAccount(account="lab"))
+    store.set_enabled_accounts(device_id, "samba", ["lab"])
+    store.write(
+        device_id,
+        "samba",
+        with_folder_share(
+            store.read(device_id, "samba"),
+            {"name": "probe", "path": "/srv/probe", "accounts": ["lab"]},
+        ),
+    )
+    return store.read(device_id, "samba")
+
+
+def samba_section(store: DesiredStateStore, device_id: str) -> dict:
+    """The file share's section as the agent is sent it."""
+    return account_layer_agent_config(
+        module_row("samba"),
+        store.read(device_id, "samba"),
+        DeviceAccountStore(store).accounts(device_id),
+        {"os": "linux"},
+        account_details={"lab": {"home": "/home/lab"}},
+    )
+
+
+@pytest.mark.parametrize(
+    "adopted",
+    [import_module_config("samba", {}), {"shares": [], "users": []}],
+    ids=["this_build", "an_earlier_build"],
+)
+def test_a_restart_keeps_the_file_share_of_an_adopted_machine(config_box, adopted):
+    device_id = DeviceRegistry().create("box").id
+    store = DesiredStateStore()
+    store.write(device_id, "samba", adopted)
+    written = enabled_with_folder_share(store, device_id)
+
+    config_box.create_app()
+    config_box.create_app()
+
+    assert store.read(device_id, "samba") == written
+    section = samba_section(store, device_id)
+    assert [share["name"] for share in section["shares"]] == ["lab", "probe"]
+    assert section["users"] == ["neutrino-lab"]
+
+
+def test_a_restart_moves_a_0_5_file_share_once_and_the_next_keeps_what_follows(
+    config_box,
+):
+    device_id = DeviceRegistry().create("box").id
+    store = DesiredStateStore()
+    store.write(
+        device_id,
+        "samba",
+        {
+            "shares": [
+                {
+                    "name": "media",
+                    "path": "/tank/media",
+                    "comment": "",
+                    "is_read_only": False,
+                    "valid_users": ["ann"],
+                }
+            ],
+            "users": ["ann"],
+        },
+    )
+
+    config_box.create_app()
+
+    assert store.read(device_id, "samba") == {"shares": []}
+
+    written = enabled_with_folder_share(store, device_id)
+
+    config_box.create_app()
+
+    assert store.read(device_id, "samba") == written
+    assert samba_section(store, device_id)["users"] == ["neutrino-lab"]

@@ -1,11 +1,10 @@
 """What a module's report amounts to as the hub's configuration.
 
-Each import is a pure function of ``details``: Samba's shares and users in
-the hub's shape, a share with no path left out and ``valid users`` kept to
-the names the user list carries; Podman's containers with a unit read as
+Each import is a pure function of ``details``: Samba's empty list of shares
+with no key of 0.5's file beside it; Podman's containers with a unit read as
 autostart, each container's services and the Podman machine's account, with
-its disk's size now as the limit, taken where they are reported; Gitea's
-nothing; and a module with no import answering empty.
+its disk's size now as the limit and no key of 0.5's file, taken where they
+are reported; Gitea's nothing; and a module with no import answering empty.
 """
 
 import pytest
@@ -31,11 +30,11 @@ def test_samba_copies_nothing_of_what_the_machine_serves():
         "users": [{"name": "alice", "is_present": True, "has_password": True}],
     }
 
-    assert samba_import_config(details) == {"shares": [], "users": []}
+    assert samba_import_config(details) == {"shares": []}
 
 
 def test_samba_with_nothing_served_amounts_to_an_empty_list_of_each():
-    assert samba_import_config({}) == {"shares": [], "users": []}
+    assert samba_import_config({}) == {"shares": []}
 
 
 def test_podman_reads_the_containers_and_the_mirrors():
@@ -114,7 +113,6 @@ def test_podman_takes_the_services_and_the_machines_account_where_reported():
     assert "services" not in imported["containers"][1]
     assert imported["machine"] == {
         "account": "lab",
-        "login_id": "",
         "cpus": 0,
         "memory_gib": 0,
         "disk_gib": 100,
@@ -143,8 +141,7 @@ def test_gitea_imports_nothing():
 def test_a_module_is_imported_by_name_and_one_with_no_import_answers_empty():
     assert set(MODULE_IMPORTS) == {"samba", "gitea", "podman"}
     assert import_module_config("samba", {"users": [{"name": "alice"}]}) == {
-        "shares": [],
-        "users": [],
+        "shares": []
     }
     assert import_module_config("vscode", {"instances": []}) == {}
     assert import_module_config("rustdesk", {}) == {}

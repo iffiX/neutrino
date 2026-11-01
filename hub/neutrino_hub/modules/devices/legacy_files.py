@@ -117,8 +117,7 @@ def _move_one(store, key: str) -> bool:
         store.write(key, module, written)
         is_moved = True
 
-    samba = store.read(key, DEVICE_SAMBA_MODULE)
-    if LEGACY_SAMBA_USERS_KEY in samba:
+    if _is_legacy_samba(store.read(key, DEVICE_SAMBA_MODULE)):
         # The 0.5 shares and users are the person's own on the machine now,
         # neither carried nor managed (file_share.md, "Linux").
         store.write(key, DEVICE_SAMBA_MODULE, {DEVICE_SAMBA_SHARES_KEY: []})
@@ -163,3 +162,13 @@ def _move_one(store, key: str) -> bool:
     for row in found.values():
         accounts.add(key, DeviceAccount.from_dict(row))
     return is_moved
+
+
+def _is_legacy_samba(samba: dict) -> bool:
+    """Whether a ``samba.json`` is of 0.5: no ``accounts``, with users or a share without them."""
+    if DEVICE_ENABLED_ACCOUNTS_KEY in samba:
+        return False
+    return bool(samba.get(LEGACY_SAMBA_USERS_KEY)) or any(
+        isinstance(share, dict) and DEVICE_ENABLED_ACCOUNTS_KEY not in share
+        for share in samba.get(DEVICE_SAMBA_SHARES_KEY) or []
+    )
