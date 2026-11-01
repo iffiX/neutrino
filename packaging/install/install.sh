@@ -66,7 +66,7 @@ LOCK_WAIT_S=300
 # the file pacman makes while it runs, and the names of the processes that
 # make it.
 APT_LOCKS="/var/lib/dpkg/lock-frontend /var/lib/apt/lists/lock"
-DNF_LOCK_FILES="/var/lib/dnf/rpmdb_lock.pid /var/cache/dnf/metadata_lock.pid"
+DNF_LOCK_FILES="/var/lib/dnf/rpmdb_lock.pid /var/cache/dnf/metadata_lock.pid /var/cache/dnf/download_lock.pid"
 DNF_LOCK_TEXT="rpm transaction lock"
 PACMAN_LOCK=/var/lib/pacman/db.lck
 PACMAN_LOCK_HOLDERS="pacman packagekitd pamac-daemon"

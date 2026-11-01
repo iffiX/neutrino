@@ -1457,6 +1457,29 @@ def test_an_install_waits_for_the_holder_of_dnf_s_own_lock(stand_ins):
     assert _installs(asked)[-1].startswith("dnf install -y /")
 
 
+def test_an_install_waits_for_the_holder_of_dnf_s_download_lock(stand_ins, tmp_path):
+    """The script's own list of dnf's lock files, under a root of the test's."""
+    named = re.search(r'^DNF_LOCK_FILES="(.*)"$', SCRIPT.read_text(), re.M).group(1)
+    root = tmp_path / "root"
+    stand_ins.dnf_lock = " ".join(f"{root}{path}" for path in named.split())
+    download_lock = root / "var/cache/dnf/download_lock.pid"
+    download_lock.parent.mkdir(parents=True)
+    _holder(stand_ins, 4343, "dnf", b"/usr/bin/python3", b"/usr/bin/dnf", b"upgrade")
+    download_lock.write_text("4343")
+    released = _later(1.5, download_lock.unlink)
+
+    result, asked = stand_ins("agent", os_release="rocky")
+    released.join()
+
+    assert result.returncode == 0, result.stderr
+    waiting = [line for line in result.stdout.splitlines() if "Waiting" in line]
+    assert waiting == [
+        "Waiting up to 300 seconds for dnf (process 4343) "
+        "to finish with the package manager"
+    ]
+    assert _installs(asked)[-1].startswith("dnf install -y /")
+
+
 def test_a_dnf_lock_file_of_an_ended_process_holds_nothing(stand_ins):
     stand_ins.dnf_lock.write_text("4343")
 

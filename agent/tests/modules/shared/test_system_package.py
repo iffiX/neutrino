@@ -1,6 +1,8 @@
 """The system-package runner: packages by name, steps before them, and the one
 helper every package run goes through, waiting for the system's own lock."""
 
+import pathlib
+
 import pytest
 
 from neutrino_agent.modules.shared import installers
@@ -8,6 +10,8 @@ from neutrino_agent.modules.shared import system_package as system_package_modul
 from neutrino_agent.exceptions import InstallError, ModuleApplyError
 from neutrino_agent.modules.shared.system_package import SystemPackageModuleRunner
 from neutrino_agent.platforms.base import AgentPlatform
+
+DNF_LOCK_PATHS = system_package_module.DNF_LOCK_PATHS
 
 
 class RecordingPlatform(AgentPlatform):
@@ -321,6 +325,43 @@ def test_dnf_waits_while_another_dnf_holds_its_lock_and_names_it(fakes):
         ({}, 0),
     ]
     assert len(fakes.args("dnf")) == 1
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/var/lib/dnf/rpmdb_lock.pid",
+        "/var/cache/dnf/metadata_lock.pid",
+        "/var/cache/dnf/download_lock.pid",
+    ],
+)
+def test_each_lock_of_dnf_4_names_its_holder(fakes, monkeypatch, tmp_path, path):
+    root = tmp_path / "root"
+    monkeypatch.setattr(
+        system_package_module,
+        "DNF_LOCK_PATHS",
+        tuple(f"{root}{named}" for named in DNF_LOCK_PATHS),
+    )
+    held = pathlib.Path(f"{root}{path}")
+    held.parent.mkdir(parents=True)
+    held.write_text("4321")
+    fakes.process(4321, "dnf", b"/usr/bin/python3", b"/usr/bin/dnf", b"upgrade")
+    waits: list = []
+
+    def told(wait):
+        waits.append(wait)
+        held.unlink(missing_ok=True)
+
+    system_package_module.set_wait_sink(told)
+    try:
+        system_package_module.run_package_manager(["dnf", "install", "-y", "x"])
+    finally:
+        system_package_module.set_wait_sink(None)
+
+    assert waits == [
+        {"code": "waiting_for_package_manager", "params": {"holder": "dnf"}},
+        {},
+    ]
 
 
 def test_a_dnf_lock_held_past_the_wait_fails_naming_its_holder(fakes, monkeypatch):

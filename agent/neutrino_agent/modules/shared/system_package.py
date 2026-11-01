@@ -49,8 +49,12 @@ from neutrino_agent.modules.shared.package import params_of
 APT_LOCK_TEXT = "Could not get lock"
 APT_LOCK_HOLDER = re.compile(r"held by process (\d+) \(([^)]*)\)")
 # The files dnf 4 names the process that holds each of its own locks in,
-# the rpm database's and the metadata's.
-DNF_LOCK_PATHS = ("/var/lib/dnf/rpmdb_lock.pid", "/var/cache/dnf/metadata_lock.pid")
+# the rpm database's, the metadata's and the package download's.
+DNF_LOCK_PATHS = (
+    "/var/lib/dnf/rpmdb_lock.pid",
+    "/var/cache/dnf/metadata_lock.pid",
+    "/var/cache/dnf/download_lock.pid",
+)
 # Where the kernel shows each process: its name, cut at 15 characters, and
 # its command line.
 PROC_DIR = "/proc"
