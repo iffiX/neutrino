@@ -7,10 +7,12 @@ A push from the panel goes to the one binding named; a push after the
 list moved goes to every live client whose hash differs, and to none whose
 copy already agrees. Two pushes at once reach the binding in the order
 they were composed, and an agent is offered its state only when it has
-another.
+another. A list that moves during a compose stops no push, and the client's
+last state holds the newest list.
 """
 
 import asyncio
+import functools
 import threading
 import time
 import types
@@ -31,9 +33,12 @@ from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.modules.services.collector import resolve_entries
 from neutrino_hub.modules.services.host_scope import HostScope, link_scope
+from neutrino_hub.modules.services.published import PublishedServiceCache
 from neutrino_hub.web import channel_state, identity
+from neutrino_hub.web.panel_runtime import PanelRuntime
 from tests.conftest import FakeChannelSessions, StubDesiredStates
 from tests.modules.channel.test_sessions import FakeLocalChannel
+from tests.web.test_panel_runtime import RecordingEvents
 
 DEVICE = "device-one"
 ENTRY = {
@@ -664,6 +669,153 @@ def test_an_agent_is_offered_its_state_only_when_it_has_another():
 
     assert [state_hash for _, state_hash, _ in runtime.agent_sessions.pushes] == ["h9"]
     assert session.offered_hash == "h9"
+
+
+def _published_list(title: str) -> tuple:
+    """A composed list of one app and its entry, both named by the title."""
+    return (
+        [{**ENTRY, "title": title, "app_id": "app-one"}],
+        [
+            {
+                "id": "app-one",
+                "title": title,
+                "source": "module",
+                "device_id": "",
+                "device_name": "",
+                "local_name": "",
+                "description": "",
+            }
+        ],
+    )
+
+
+def _push_every_client(runtime, client_id: str) -> None:
+    channel_state.push_states(runtime, CHANNEL_ROLE_CLIENT)
+
+
+def _push_the_client(runtime, client_id: str) -> None:
+    channel_state.push_state(runtime, CHANNEL_ROLE_CLIENT, client_id)
+
+
+class MovingListBox:
+    """A runtime with a real list cache whose change runs the real handler."""
+
+    def __init__(self, monkeypatch):
+        # A push stopped on its lock stays stopped, and these locks go with
+        # the test.
+        monkeypatch.setattr(channel_state, "_PUSH_LOCKS", {})
+        self.lists = [_published_list("before")]
+        self.runtime = FakeRuntime()
+        self.runtime.events = RecordingEvents()
+        self.cache = PublishedServiceCache(
+            declared_probe=None,
+            served_models=None,
+            units=None,
+            desired_states=object(),
+            on_fingerprint_change=functools.partial(
+                PanelRuntime._services_changed, self.runtime
+            ),
+        )
+        self.cache._compose = self.compose
+        self.runtime.published_services = self.cache
+        self.cache.refresh()
+        self.client_id = ClientRegistry().create("laptop")
+        self.channel = FakeLocalChannel()
+
+    def compose(self) -> tuple:
+        return self.lists[-1]
+
+    def attach_client(self) -> None:
+        self.runtime.client_sessions.attach(
+            ChannelSession(
+                key=self.client_id,
+                role=CHANNEL_ROLE_CLIENT,
+                session_id="s-laptop",
+                channel=self.channel,
+                loop=asyncio.get_running_loop(),
+                address="192.168.100.9",
+            )
+        )
+
+    async def run_push(self, push) -> None:
+        """Run a push on its own thread and fail when it does not end in time."""
+        pusher = threading.Thread(
+            target=push, args=(self.runtime, self.client_id), daemon=True
+        )
+        pusher.start()
+        await asyncio.to_thread(pusher.join, 5)
+        assert not pusher.is_alive(), "the push stopped on its own lock"
+
+    async def last_state(self) -> dict:
+        """The client's last state frame, once every owed push ended."""
+        for _ in range(500):
+            if not any(
+                thread.name == "client_state_push" for thread in threading.enumerate()
+            ):
+                break
+            await asyncio.sleep(0.01)
+        for _ in range(10):
+            await asyncio.sleep(0)
+        return [
+            frame for _, frame, _ in self.channel.frames if frame["type"] == "state"
+        ][-1]
+
+
+@pytest.mark.parametrize("push", [_push_every_client, _push_the_client])
+def test_a_compose_that_finds_the_list_stale_stops_no_push(
+    config_dir, monkeypatch, push
+):
+    """The compose under the push lock refreshes the list, which moved, and the
+    move asks for a push of every client. The client ends on the newest list."""
+    box = MovingListBox(monkeypatch)
+
+    async def scenario():
+        box.attach_client()
+        box.lists.append(_published_list("after"))
+        box.cache.expire()
+
+        await box.run_push(push)
+
+        state = await box.last_state()
+        assert [entry["title"] for entry in state["services"]] == ["after"]
+        assert [app["title"] for app in state["apps"]] == ["after"]
+        session = box.runtime.client_sessions.get(box.client_id)
+        assert session.offered_hash == state["hash"]
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("push", [_push_every_client, _push_the_client])
+def test_a_list_that_moves_during_a_compose_reaches_the_client_last(
+    config_dir, monkeypatch, push
+):
+    """The compose reads the entries, the list moves, and its read of the apps
+    refreshes. The state it sends mixes both lists. The newest list's state still
+    reaches the client after it, however the two pushes interleave."""
+    box = MovingListBox(monkeypatch)
+    read_entries = box.cache.entries_for
+
+    def entries_for(scope):
+        entries = read_entries(scope)
+        if len(box.lists) == 1:
+            box.lists.append(_published_list("after"))
+            box.cache.expire()
+        return entries
+
+    box.cache.entries_for = entries_for
+
+    async def scenario():
+        box.attach_client()
+
+        await box.run_push(push)
+
+        state = await box.last_state()
+        assert [entry["title"] for entry in state["services"]] == ["after"]
+        assert [app["title"] for app in state["apps"]] == ["after"]
+        session = box.runtime.client_sessions.get(box.client_id)
+        assert session.offered_hash == state["hash"]
+
+    asyncio.run(scenario())
 
 
 def test_push_states_hands_every_client_whose_hash_differs_the_list(config_dir):

@@ -126,8 +126,8 @@ class PublishedServiceCache:
             device_names: Returns device id to what the hub calls the
                 machine, for every stored device; None names none.
             hub_name: Returns the hub's own name; None is the fallback slug.
-            on_fingerprint_change: Called with nothing when a refresh
-                composes a different list; None tells nobody.
+            on_fingerprint_change: Called with nothing on the reading thread
+                when a refresh composes a different list; None tells nobody.
             executor: The single-thread executor a scheduled recompose runs
                 on; None builds one.
         """

@@ -204,7 +204,8 @@ def note_client_scope(
 
 
 # Each binding's push lock, by role and key. One state is composed and sent
-# at a time, so the state composed last is the one sent last.
+# at a time, so the state composed last is the one sent last. A push under one
+# of these locks stops for good, so nothing a compose reaches pushes on its thread.
 _PUSH_LOCKS: dict = {}
 _PUSH_LOCKS_GUARD = threading.Lock()
 

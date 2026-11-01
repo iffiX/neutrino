@@ -4,7 +4,8 @@ overlay's device moves.
 The devices page is told, the published list is recomposed, and every
 client is handed its state, whose terminals list each machine's presence,
 so a client's dots follow the machines at once rather than at its next
-report. An overlay device found at run time that the loaded ruleset does not
+report. A published list that moves has every client pushed on a thread of
+its own. An overlay device found at run time that the loaded ruleset does not
 name yet runs one converge step, and nothing else does; so do network
 resolvers the last render did not use. A machine's state keeps its hash
 while the gateway is down or serves nothing and an account is signed in, and
@@ -29,7 +30,7 @@ from neutrino_hub.modules.overlay.constants import OVERLAY_ENGINES
 from neutrino_hub.modules.router import controller, routes
 from neutrino_hub.web import channel_state
 from neutrino_hub.web import panel_runtime as runtime_module
-from neutrino_hub.web.constants import WEB_EVENT_DEVICES
+from neutrino_hub.web.constants import WEB_EVENT_DEVICES, WEB_EVENT_SERVICES
 from neutrino_hub.utils.json_file import CONFIG_WRITE_LOCK
 from neutrino_hub.web.panel_runtime import PanelRuntime
 from tests.conftest import unlock_vault
@@ -74,6 +75,25 @@ def test_an_agent_coming_or_going_pushes_every_client_its_state(monkeypatch):
     assert pushed == [(panel, CHANNEL_ROLE_CLIENT, "client_state_push")]
     assert panel.events.published == [WEB_EVENT_DEVICES]
     assert panel.published_services.refreshes == 1
+
+
+def test_a_moved_list_pushes_every_client_on_a_thread_of_its_own(monkeypatch):
+    pushed = []
+    done = threading.Event()
+
+    def push_states(runtime, role):
+        pushed.append((runtime, role, threading.current_thread().name))
+        done.set()
+
+    monkeypatch.setattr(runtime_module.channel_state, "push_states", push_states)
+    panel = object.__new__(PanelRuntime)
+    panel.events = RecordingEvents()
+
+    panel._services_changed()
+
+    assert done.wait(timeout=5)
+    assert pushed == [(panel, CHANNEL_ROLE_CLIENT, "client_state_push")]
+    assert panel.events.published == [WEB_EVENT_SERVICES]
 
 
 class CountingConverge:

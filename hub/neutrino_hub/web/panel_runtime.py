@@ -1173,9 +1173,19 @@ class PanelRuntime:
         self.events.publish(WEB_EVENT_CLIENTS)
 
     def _services_changed(self) -> None:
-        """Say the published list composes differently, and hand it on."""
+        """Say the published list composes differently, and hand it on.
+
+        The push runs on a thread of its own. A compose under a binding's push
+        lock reads the list and reaches this, and that lock would stop a push
+        on the same thread for good.
+        """
         self.events.publish(WEB_EVENT_SERVICES)
-        channel_state.push_states(self, CHANNEL_ROLE_CLIENT)
+        threading.Thread(
+            target=channel_state.push_states,
+            args=(self, CHANNEL_ROLE_CLIENT),
+            name="client_state_push",
+            daemon=True,
+        ).start()
 
     def _publish_config_write(self, relative_path: str) -> None:
         """Say one file under ``config/`` was written."""
