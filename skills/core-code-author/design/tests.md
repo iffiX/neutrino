@@ -233,9 +233,10 @@ mainland jobs run their suites without coverage.
 package's directory, because the three packages share file names such as
 `cli/entry.py`.
 
-The same three files go to Codacy, each with `--partial` and its package's
+The same three files go to Codacy, each with `--partial` and its block's
 directory as `--prefix`, and the job `coverage_final` sends `final` after both
-jobs pass. With no `CODACY_PROJECT_TOKEN` secret, `--skip` passes over them.
+jobs pass. With no `CODACY_PROJECT_TOKEN` secret, `--skip` passes over them,
+and a failed upload leaves its job green.
 
 A job passes or fails on its tests alone, whatever its coverage. pytest-cov
 comes with the hub's dev extra, and the `client` job installs it by name
