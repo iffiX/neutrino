@@ -1606,7 +1606,8 @@ class PodmanMachineModuleRunner(ModuleRunner):
     def _retire(self, record: dict) -> None:
         """Remove one account's keeper, stop its machine and forget its record.
 
-        The machine, its images and named volumes stay as they are.
+        The machine, its images and named volumes stay as they are. An
+        account with no machine has nothing to stop.
         """
         account = str(record.get("account", "") or "")
         password = str(record.get("password", "") or "")
@@ -1617,14 +1618,16 @@ class PodmanMachineModuleRunner(ModuleRunner):
         except (OSError, ModuleApplyError) as error:
             self._log(f"podman: the keeper of {account} was not removed: {error}")
         try:
-            self._machine_of(account, password).stop()
+            machine = self._machine_of(account, password)
+            if machine.is_present():
+                machine.stop()
+                self._log(f"podman: stopped the machine of {account}")
         except (ModuleApplyError, KeyError, OSError, PlatformUnsupportedError) as error:
             self._log(f"podman: the machine of {account} was not stopped: {error}")
         with self._record_lock:
             self._records.remove(account)
         with self._lock:
             self._reading = None
-        self._log(f"podman: stopped the machine of {account}")
 
     def _configured_record(self) -> dict:
         """The account and the login the state's configuration names, as a record holds them.

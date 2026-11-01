@@ -23,8 +23,9 @@ keeper for a removal or a container module's uninstall; removal and
 uninstall keeping the machine; a configure under ``stopped`` keeping the
 configuration and starting nothing; with no record, Stop stopping and
 disabling the keeper of the configured account and an uninstall removing
-it with its plist and its log; and a restarted agent reading on from the
-record.
+it with its plist and its log; one line for a machine retired, stopped or
+not stopped, and none where no machine exists; and a restarted agent reading
+on from the record.
 """
 
 import functools
@@ -167,6 +168,7 @@ class World:
         self.is_account_gone = False
         self.environments: list = []
         self.remove_error = None
+        self.stop_error = None
         # Whether the machine answered the read at each root script.
         self.answering_at_shell: list = []
 
@@ -214,6 +216,8 @@ def machine_class_for(world: World):
 
         def stop(self):
             world.calls.append((self.account, "stop", self.password))
+            if world.stop_error is not None:
+                raise world.stop_error
             world.running.discard(self.account)
 
         def remove(self):
@@ -1527,6 +1531,37 @@ def test_uninstall_with_no_record_removes_the_keeper_its_plist_and_its_log(rig):
     assert ("me", "stop", "") in rig.world.calls
     assert rig.world.scripts == []
     assert rig.system.calls == [("uninstall",)]
+
+
+def test_an_uninstall_before_the_machine_exists_stops_nothing_and_says_nothing_of_it(
+    rig,
+):
+    rig.runner.take_config(CONFIG)
+
+    rig.runner.uninstall({})
+
+    assert ("me", "stop", "") not in rig.world.calls
+    assert not any("the machine of me" in line for line in rig.lines)
+    assert rig.system.calls == [("uninstall",)]
+
+
+def test_a_machine_that_does_not_stop_is_logged_as_not_stopped_alone(rig):
+    unanswered_machine(rig)
+    rig.world.stop_error = ModuleApplyError("machine_set_failed", {"detail": "busy"})
+
+    rig.runner.uninstall({})
+
+    assert "podman: the machine of me was not stopped: machine_set_failed" in rig.lines
+    assert "podman: stopped the machine of me" not in rig.lines
+
+
+def test_a_machine_that_stops_is_logged_as_stopped_alone(rig):
+    unanswered_machine(rig)
+
+    rig.runner.uninstall({})
+
+    assert rig.lines.count("podman: stopped the machine of me") == 1
+    assert not any("was not stopped" in line for line in rig.lines)
 
 
 def test_stop_and_uninstall_with_no_record_and_no_account_touch_no_keeper(rig):
