@@ -497,6 +497,7 @@ as the module's title, and `{state}` as the state's word. A `{module}` of
 | `code.waiting_for_module` | Waiting for {module} to be ready. | 在等“{module}”准备好。 |
 | `code.waiting_for_check` | Checking every {seconds} seconds. | 每 {seconds} 秒检查一次。 |
 | `code.module_needed` | This module needs {module} running, and the state of {module} is {state}. Press Install to try both again. | 这个模块需要“{module}”在运行，而“{module}”现在的状态是“{state}”。按“安装”会把两个模块一起重试。 |
+| `code.module_needed_start` | This module needs {module} running, and the state of {module} is {state}. Press Start to try both again. | 这个模块需要“{module}”在运行，而“{module}”现在的状态是“{state}”。按“启动”会把两个模块一起重试。 |
 | `code.package_manager_busy` | The system's package manager stayed busy for 5 minutes, held by {holder}; try again later. | 系统的包管理器一直在忙，等了 5 分钟（占用者：{holder}），稍后再试。 |
 | `code.state_not_settled` | {module} is still applying its configuration. | “{module}”还在应用配置。 |
 
