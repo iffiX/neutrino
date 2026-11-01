@@ -17,7 +17,11 @@ the panel writes all of them off.
 | served networks | `is_proxy_enabled` | every TCP and UDP connection forwarded from a LAN interface to a public address | `prerouting` TPROXY on the LAN interfaces | no such scope | router and side_gateway; the switch is not drawn in server mode |
 | overlays | `is_overlay_proxy_enabled` | the same, forwarded from an exposed interface of any running overlay | every running overlay's exposed interfaces join the TPROXY set, NetBird's and EasyTier's alike when both run | the TUN below, with forwarding on the overlay interfaces | every mode |
 | the hub itself | `is_local_proxy_enabled` | the box's own connections, every process except xray and the hub's own overlay engines | `output` marks the packet, it hairpins through `lo`, TPROXY takes it; a packet from the NetBird or EasyTier unit's cgroup is accepted before the mark | the TUN below, with the engines' endpoints kept out | every mode |
-| SOCKS ports | `socks_ports[].is_proxied` | what an application is pointed at | a SOCKS inbound per port | the same | every mode |
+
+The hub opens no proxy port to anyone. What a person sends to the exits is
+what these scopes and the direct lists decide. The loopback inbounds
+`socks_local_in` and `socks_probe_in` serve the TUN and the measurement, and
+nothing about them reaches a person.
 
 The hub-itself scope never diverts what an overlay's WireGuard sends. A
 kernel WireGuard device sends from no socket, so no cgroup row names it, and
@@ -78,9 +82,9 @@ scope there turns IP forwarding on for the overlay interfaces, and a member
 whose exit this box is follows the same default route into the TUN.
 
 The rendered xray configuration on those systems has no `tproxy_in`
-inbound and no `sockopt.mark` on any outbound. The SOCKS ports,
-`socks_probe_in`, `socks_local_in`, `api_in`, the balancer, the geodata and
-the exit measurement are the same on every system.
+inbound and no `sockopt.mark` on any outbound. `socks_probe_in`,
+`socks_local_in`, `api_in`, the balancer, the geodata and the exit measurement
+are the same on every system.
 
 The overlay interface of EasyTier in console mode is the one holding the
 console network's address, found at run time;
@@ -93,7 +97,7 @@ network, exposed or not: the mark is set on the way in and on nothing else.
 Destinations inside `reserved_v4` (private, link-local, loopback, multicast)
 leave undiverted, whatever the scope.
 
-A fourth listener reaches xray outside every scope: `socks_probe_in`, on
+One more listener reaches xray outside every scope: `socks_probe_in`, on
 loopback, which carries the hub's own measurement of each node. "Exit
 selection" holds it.
 
@@ -106,15 +110,50 @@ tunnel that drops it. The overlay itself has to name this box an exit node
 (NetBird: a network route for `0.0.0.0/0` with this box as the routing
 peer; EasyTier: this box published as an exit node). NetBird then adds its
 own forward and masquerade rules for that route, and the member's AllowedIPs
-covers everything.
+covers everything. The member's traffic then leaves through the box's own
+uplink, or through the exit nodes with `is_overlay_proxy_enabled` on.
 
-| The member wants | Route | Exit it gets |
-| --- | --- | --- |
-| all traffic through the box | the overlay names the box an exit node | the box's own uplink, or the exit nodes with `is_overlay_proxy_enabled` |
-| one application through the box | a SOCKS port over the overlay | the port's own setting: the uplink or the exit nodes |
+The hub builds no gateway feature for overlays.
 
-The hub builds no gateway feature for overlays. The SOCKS port over the
-overlay is the case a laptop away from home has.
+## What setup writes
+
+Setup writes the scopes from the proxy screen's answers, on the terminal and
+in the browser alike.
+
+| Mode | Exit nodes given | The hub's own traffic | With that answer off |
+| --- | --- | --- | --- |
+| `router`, `one_arm_router`, `side_gateway` | the served networks' scope on | asked, off by default | the served networks' scope alone |
+| `server` | nothing by themselves: no network is served | asked, on by default | the nodes are saved, every scope is off, and the review and the status strip say the proxy is not used |
+
+An answers document states `is_local` itself, and false when it names none,
+so a document that gives a server nodes alone turns no scope on. On macOS and
+Windows the answer sets the overlay scope as well, since one TUN carries both.
+The **Proxy** page turns any scope on or off later.
+
+## A configuration from an earlier build
+
+A `routing.json` written by 0.5 or by an earlier 0.6 build may hold
+`socks_ports`. It loads with no error, nothing reads the key, and the next
+write of that file drops it. A backup that holds it restores the same way.
+
+A Linux package's script runs `nhub apply` and so a routing pass. The macOS and
+Windows packages run none, so the panel's address sample, within half a minute
+of its start, runs a pass while the file holds the key and writes the key away
+once the pass has tried every step. That pass restarts xray with no such
+inbound and closes what those ports opened:
+
+| System | How |
+| --- | --- |
+| Linux | the nftables ruleset and firewalld's rich rules are rendered with no such port, and firewalld loses every rule of the hub's it no longer renders |
+| Windows | every `neutrino_hub_*` rule no purpose names is removed, `neutrino_hub_socks_<port>_<protocol>` and its `_link` rule among them |
+| macOS | the pf anchor is rendered with no such port, and `xray` goes from the application firewall's list |
+
+An uninstall removes the same rules by the same prefix and takes `xray` off
+the same list, whether a routing pass ran first or not.
+
+An answers document that still names `socks_proxy_port`,
+`is_socks_direct_enabled` or `socks_direct_port` reads as if it did not.
+`wizard.from_document` refuses every other key it does not know.
 
 ## Exit selection
 

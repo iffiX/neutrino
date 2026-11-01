@@ -258,8 +258,8 @@ returns it is, and booleans are questions in all three, `is_` and `has_`
 ### The principles behind every route
 
 Exposure is the only control plane for the hub's own ports. The exposed
-segments decide which senders reach the panel ports, the agent port, DNS and
-the SOCKS ports, on Linux, macOS and Windows alike; no route switches a port
+segments decide which senders reach the panel ports, the agent port and DNS,
+on Linux, macOS and Windows alike; no route switches a port
 on for one network ([network.md](hub_components/network.md), "What answers,
 and where").
 

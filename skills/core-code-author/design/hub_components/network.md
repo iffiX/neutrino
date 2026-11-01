@@ -128,7 +128,6 @@ the roles, as below.
 | the panel's HTTPS port, `https_listen_port` | always |
 | the agent port, `agent_listen_port`, 8443 by default | always |
 | DNS, 53 over UDP and TCP | in `router` and `side_gateway` |
-| each SOCKS port | while the proxy has one |
 
 The AI gateway's port is not among them: the gateway listens on the hub's
 loopback alone ([ai.md](ai.md), "What serves"). Neither are the ports the
@@ -178,8 +177,8 @@ inserts into another chain cannot pass a packet this chain drops.
 | A connection open when a segment or an overlay's chip closes keeps running until it ends. | The chain sees no later packet of that connection. |
 
 A served network whose segment is closed keeps DHCP and forwarding, and
-loses the hub's DNS, the panel, the agent port unless Direct is on, and the
-SOCKS ports, in the family whose segment is closed. Wake-on-LAN and the LAN
+loses the hub's DNS, the panel and the agent port unless Direct is on, in
+the family whose segment is closed. Wake-on-LAN and the LAN
 scan follow the exposed IPv4 segments; the proxy's scopes follow the roles,
 whatever the exposure.
 
@@ -350,8 +349,8 @@ routing pass renders the answer into the system's own firewall:
 
 | System | How | What |
 | --- | --- | --- |
-| Windows | `New-NetFirewallRule`, one allow rule per purpose named `neutrino_hub_<purpose>`. A hub port's rule names the exposed segments as its remote addresses, `-RemoteAddress`; a peer port's rule takes any remote address. Beside each hub port's rule, `neutrino_hub_<purpose>_link` allows `fe80::/64` on the interfaces whose IPv6 segment is exposed, `-InterfaceAlias`. Direct's rule is `neutrino_hub_agent_direct`. A port change rewrites the rule and an uninstall removes it. The profile's default inbound block is what closes a hub port to every other sender. The rules are written again whenever an exposed segment's networks change, from the pass that follows the overlay devices and the addresses | the panel's HTTP and HTTPS ports, the agent port, every SOCKS port, NetBird's UDP port, EasyTier's 11010 over TCP and UDP |
-| macOS | `/usr/libexec/ApplicationFirewall/socketfilterfw --add <program>` and `--unblockapp <program>`, since that firewall allows programs rather than ports, and the pf sub-anchor `com.apple/neutrino_hub`, loaded from a file under the state root at each routing pass and when the service starts. The anchor holds the exposed segments in address tables, passes a hub port's packet from an address in them and from loopback, and blocks it from every other address, the way the agent's `com.apple/neutrino_smb` fences the file share | the programs `nhub`, `xray`, `netbird`, `easytier-core`, and the same port list as Windows in the anchor |
+| Windows | `New-NetFirewallRule`, one allow rule per purpose named `neutrino_hub_<purpose>`. A hub port's rule names the exposed segments as its remote addresses, `-RemoteAddress`; a peer port's rule takes any remote address. Beside each hub port's rule, `neutrino_hub_<purpose>_link` allows `fe80::/64` on the interfaces whose IPv6 segment is exposed, `-InterfaceAlias`. Direct's rule is `neutrino_hub_agent_direct`. A port change rewrites the rule and an uninstall removes it. The profile's default inbound block is what closes a hub port to every other sender. The rules are written again whenever an exposed segment's networks change, from the pass that follows the overlay devices and the addresses | the panel's HTTP and HTTPS ports, the agent port, NetBird's UDP port, EasyTier's 11010 over TCP and UDP |
+| macOS | `/usr/libexec/ApplicationFirewall/socketfilterfw --add <program>` and `--unblockapp <program>`, since that firewall allows programs rather than ports, and the pf sub-anchor `com.apple/neutrino_hub`, loaded from a file under the state root at each routing pass and when the service starts. The anchor holds the exposed segments in address tables, passes a hub port's packet from an address in them and from loopback, and blocks it from every other address, the way the agent's `com.apple/neutrino_smb` fences the file share | the programs `nhub`, `netbird`, `easytier-core`, and the same port list as Windows in the anchor |
 
 Before setup the Windows firewall holds one rule of the hub's,
 `neutrino_hub_setup`: the setup wizard's port over TCP, open to every sender
@@ -909,7 +908,6 @@ another:
 | Machines on a served network | — | yes | yes | the prerouting chain, into the TPROXY inbound |
 | Overlay members whose exit this box is | yes | yes | yes | the prerouting chain on the overlay interfaces on Linux, behind `is_overlay_proxy_enabled`; the TUN on macOS and Windows |
 | This box's own traffic | yes | yes | yes | the output chain on Linux, behind `is_local_proxy_enabled`, which returns xray's own packets, the hub's NetBird and EasyTier units' packets (matched by their cgroup), every packet another subsystem already marked and the UDP NetBird's WireGuard port sends, before anything is marked; the TUN on macOS and Windows, with the engines' endpoints routed past it ([proxy.md](proxy.md)) |
-| Applications pointed at a SOCKS port | yes | yes | yes | the port's own `is_proxied` answer |
 | The served networks' DNS | — | yes | yes | dnsmasq's only upstream, the xray DNS inbound |
 
 `server` has no row for a served network because it serves none: no

@@ -16,21 +16,17 @@ ip addr show; ip route; resolvectl status | grep -A2 'DNS Servers'
 #    not your local ISP address.
 curl -s https://ifconfig.me; echo
 
-# 3. Does the direct path work? This should show your local WAN address —
-#    the path remote desktop and anything else that must look local uses.
-curl -s --proxy socks5h://192.168.100.1:1080 https://ifconfig.me; echo
-
-# 4. Is GeoIP split routing working? With it on, a Chinese destination
+# 3. Is GeoIP split routing working? With it on, a Chinese destination
 #    should leave directly while a foreign one goes through the proxy.
 curl -s --resolve '' https://www.baidu.com -o /dev/null -w '%{http_code}\n'
 
-# 5. Does DNS resolve, and does it leak? The dig should answer; the tcpdump
+# 4. Does DNS resolve, and does it leak? The dig should answer; the tcpdump
 #    should stay silent while it does.
 sudo tcpdump -ni enp2s0 port 53 &     # run on the gateway
 dig @192.168.100.1 google.com +short  # run on the LAN machine
 ```
 
-Step 5 is the important one. If `tcpdump` prints anything while the `dig`
+Step 4 is the important one. If `tcpdump` prints anything while the `dig`
 answers, LAN queries are escaping to the WAN in plaintext and the dnsmasq
 upstream is wrong — check that the generated `dnsmasq_neutrino.conf` has `no-resolv`
 and exactly one `server=127.0.0.1#5353` line.
