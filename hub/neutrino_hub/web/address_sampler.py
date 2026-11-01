@@ -63,7 +63,6 @@ class PanelAddressSampler:
         is_converged = (
             self._runtime.follow_overlay_devices()
             or self._runtime.follow_network_resolvers()
-            or self._runtime.follow_former_listeners()
         )
         self._runtime.check_overlay_routes()
         self._runtime.sample_peer_latencies()

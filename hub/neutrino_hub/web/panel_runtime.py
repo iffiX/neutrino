@@ -556,41 +556,6 @@ class PanelRuntime:
             LOGGER.warning("network resolvers not applied: %s", error)
         return True
 
-    def follow_former_listeners(self) -> bool:
-        """Converge when ``routing.json`` holds an earlier build's listeners.
-
-        The macOS and Windows packages run no ``nhub apply``. The inbound and
-        the firewall rules of those listeners stay until a routing pass. The
-        key goes once a pass has tried every step, whatever a step reported.
-
-        Returns:
-            True when a converge ran; False otherwise, and in a tree without
-            the proxy.
-
-        Raises:
-            OSError: When the routing file cannot be read or written after the
-                pass.
-            ValueError: When the routing file no longer parses after the pass.
-        """
-        if self.proxy is None or not self.proxy.has_former_listeners():
-            return False
-        LOGGER.info("closing the listeners of an earlier build")
-        try:
-            self.converge_network_blocking()
-        except NetworkApplyError as error:
-            LOGGER.warning("closing an earlier build's listeners: %s", error)
-        except (
-            TimeoutError,
-            ValueError,
-            OSError,
-            RuntimeError,
-            subprocess.SubprocessError,
-        ) as error:
-            LOGGER.warning("an earlier build's listeners not closed: %s", error)
-            return True
-        self.proxy.forget_former_listeners()
-        return True
-
     def node_list(self):
         """Read the current node list, for the proxy's own routes.
 
