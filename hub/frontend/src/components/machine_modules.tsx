@@ -575,10 +575,7 @@ export function MachineModules({
       return;
     }
     confirm.ask({
-      title: t("ui.samba.stop_title", {
-        module: moduleTitle(activeRow.name, activeRow.title),
-        device: deviceName,
-      }),
+      title: t("ui.samba.stop_title", { device: deviceName }),
       body: t("ui.samba.stop_body"),
       confirmLabel: t("ui.modules.stop"),
       onConfirm: () => void act("stop"),

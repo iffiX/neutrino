@@ -17,12 +17,12 @@ FRONTEND_SRC_DIR = HUB_DIR / "frontend/src"
 UI_TEXT = HUB_DIR.parent / "skills/core-code-author/design/ui_text.md"
 WORDS = {
     "en": {
-        "ui.samba.stop_title": "Stop {module} on {device}",
+        "ui.samba.stop_title": "Stop File share on {device}",
         "ui.samba.stop_body": "The machine's SMB server stops, with every share on it.",
         "ui.modules.stop": "Stop",
     },
     "zh-CN": {
-        "ui.samba.stop_title": "停止 {device} 上的 {module}",
+        "ui.samba.stop_title": "停止 {device} 上的文件共享",
         "ui.samba.stop_body": "这台机器的 SMB 服务会停止，上面所有共享都会停。",
         "ui.modules.stop": "停止",
     },
@@ -75,11 +75,7 @@ def test_only_the_file_share_asks():
 def test_the_dialog_names_what_stops_and_says_what_its_button_does():
     ask = ask_stop()
 
-    assert (
-        'title: t("ui.samba.stop_title", { '
-        "module: moduleTitle(activeRow.name, activeRow.title), "
-        "device: deviceName, }),"
-    ) in ask
+    assert 'title: t("ui.samba.stop_title", { device: deviceName }),' in ask
     assert 'body: t("ui.samba.stop_body"),' in ask
     assert 'confirmLabel: t("ui.modules.stop"),' in ask
     assert 'onConfirm: () => void act("stop"),' in ask

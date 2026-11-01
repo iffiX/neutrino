@@ -568,6 +568,6 @@
   "ui.samba.folder_remove_body": "共享会移除，文件夹 {path} 和里面的文件都保留。",
   "ui.samba.folder_empty": "还没有文件夹共享。",
   "ui.samba.folder_no_accounts": "先在“主目录共享”里启用账户。",
-  "ui.samba.stop_title": "停止 {device} 上的 {module}",
+  "ui.samba.stop_title": "停止 {device} 上的文件共享",
   "ui.samba.stop_body": "这台机器的 SMB 服务会停止，上面所有共享都会停。"
 }
