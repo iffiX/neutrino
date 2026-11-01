@@ -193,6 +193,9 @@ const AYAKALEAF_MODULE = "ayakaleaf";
 /** The method of a module whose containers run on Containers. */
 const CONTAINER_METHOD = "container";
 
+/** The code of a row whose task ended on a module it requires. */
+const MODULE_NEEDED_CODE = "module_needed";
+
 /** The wants of a module the machine is not asked to have. */
 const UNWANTED = ["", "absent"];
 
@@ -1331,13 +1334,22 @@ function describeFailure(
   );
 }
 
+/** The catalog key of a row's code. A `failed` row has its software, so its
+ * `module_needed` names Start, where every other row's names Install. */
+function codeKey(row: DeviceModuleView): string {
+  if (row.code === MODULE_NEEDED_CODE && row.state === "failed") {
+    return "code.module_needed_start";
+  }
+  return `code.${row.code}`;
+}
+
 /** The code the agent reported, in words; null for one the catalog lacks.
  * `manifestTitles` holds each module's manifest title, by name. */
 function wordedCode(
   row: DeviceModuleView,
   manifestTitles: Record<string, string>,
 ): string | null {
-  const key = `code.${row.code}`;
+  const key = codeKey(row);
   if (row.code === "" || !hasWord(key)) {
     return null;
   }

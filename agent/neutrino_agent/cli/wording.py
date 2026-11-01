@@ -235,7 +235,8 @@ CLI_CODE_WORDS = {
     "waiting_for_check": "checking every {seconds} seconds",
     "module_needed": (
         "this module needs {module} running, and {module} is {state}; press "
-        "Install to try both again"
+        "Install on a module not yet installed, or Start on an installed one, "
+        "to try both again"
     ),
     "package_manager_busy": (
         "the system's package manager stayed busy for 5 minutes, held by "

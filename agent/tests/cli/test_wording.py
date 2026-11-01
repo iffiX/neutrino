@@ -364,3 +364,15 @@ def test_an_agent_not_answering_names_this_systems_start_command(
 
     assert wording.request("GET", "/x") is None
     assert hint in capsys.readouterr().err
+
+
+def test_module_needed_names_both_presses_since_nagent_holds_no_row():
+    words = wording.word_code(
+        "module_needed", {"module": "Containers", "state": "failed"}
+    )
+
+    assert words == (
+        "this module needs Containers running, and Containers is failed; press "
+        "Install on a module not yet installed, or Start on an installed one, "
+        "to try both again"
+    )

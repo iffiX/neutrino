@@ -375,6 +375,7 @@
   "code.share_account_not_enabled": "这台机器的文件共享没有启用 {account}。",
   "code.folder_share_unknown": "这台机器没有叫 {name} 的文件夹共享。",
   "code.module_needed": "这个模块需要“{module}”在运行，而“{module}”现在的状态是“{state}”。按“安装”会把两个模块一起重试。",
+  "code.module_needed_start": "这个模块需要“{module}”在运行，而“{module}”现在的状态是“{state}”。按“启动”会把两个模块一起重试。",
   "code.package_manager_busy": "系统的包管理器一直在忙，等了 5 分钟（占用者：{holder}），稍后再试。",
   "code.waiting_for_check": "每 {seconds} 秒检查一次。",
   "code.waiting_for_lock": "在等“{module}”用完{lock}。",

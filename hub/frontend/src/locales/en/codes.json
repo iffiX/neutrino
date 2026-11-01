@@ -375,6 +375,7 @@
   "code.share_account_not_enabled": "{account} is not enabled for this machine's file share.",
   "code.folder_share_unknown": "This machine has no folder share named {name}.",
   "code.module_needed": "This module needs {module} running, and the state of {module} is {state}. Press Install to try both again.",
+  "code.module_needed_start": "This module needs {module} running, and the state of {module} is {state}. Press Start to try both again.",
   "code.package_manager_busy": "The system's package manager stayed busy for 5 minutes, held by {holder}; try again later.",
   "code.waiting_for_check": "Checking every {seconds} seconds.",
   "code.waiting_for_lock": "Waiting for {lock}, held by {module}.",
