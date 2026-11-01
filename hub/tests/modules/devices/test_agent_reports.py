@@ -438,6 +438,28 @@ def test_a_module_already_settled_absent_is_settled_once_and_pushed_once(box):
     assert runtime.pushed == [DEVICE]
 
 
+@pytest.mark.parametrize("want", ["absent", ""])
+def test_a_person_s_samba_reported_absent_after_its_uninstall_is_not_adopted_again(
+    box, want
+):
+    """The machine still holds Samba, and its row reads ``absent``: no first
+    report of any session writes a want or a configuration for it."""
+    runtime, device = box
+    if want:
+        runtime.desired_states.wants[(DEVICE, "samba")] = want
+
+    for _ in range(2):
+        agent_reports.record_report(
+            runtime,
+            device,
+            report(modules={"samba": {"state": "absent", "is_active": True}}),
+            is_first=True,
+        )
+
+    assert runtime.desired_states.want_of(DEVICE, "samba") == want
+    assert runtime.desired_states.read(DEVICE, "samba") == {}
+
+
 def test_a_report_naming_nothing_absent_that_the_hub_wants_absent_pushes_nothing(
     box,
 ):

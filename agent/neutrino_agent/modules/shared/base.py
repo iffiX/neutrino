@@ -392,6 +392,17 @@ class ModuleRunner:
         Run on uninstall, only for a module the hub configured.
         """
 
+    def is_software_kept(self) -> bool:
+        """Whether an uninstall leaves the software on the machine on purpose.
+
+        Read before the uninstall runs. Such a module keeps the uninstalled
+        mark, and reads absent while it stands.
+
+        Returns:
+            False by default.
+        """
+        return False
+
     def remove_data(self) -> None:
         """Delete the module's own data: what an uninstall otherwise leaves.
 

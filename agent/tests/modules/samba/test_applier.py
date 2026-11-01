@@ -11,9 +11,12 @@ the person's lines after that line stay where they were once the module's file
 is read in its place; a missing ``smb.conf`` is the distribution's stock file with the
 line; a whole ``smb.conf`` an earlier version rendered is the person's and
 only gets the line; the module's shares go to its own file; an uninstall deletes that
-file and takes the line out; a stop stops the unit and disables it; the name
-server reads as enabled and active or as nothing, a stop stops and disables
-it, and a restore brings back only what it was; the
+file and takes the line out; a stop stops the unit and disables it; a withdrawal
+takes the module's shares off a running server with one reload and nothing else of
+the unit; a start starts only a unit that is not active, the call before it running
+only then; a unit reads as enabled and active or as nothing, a stop stops and disables
+it, a restore brings back only what it was, and a turn back undoes only what the
+module changed; the
 sweep takes every ``neutrino-`` user and
 credential off the machine; the person's own
 configuration refuses a taken share name and the global settings that stop
@@ -39,9 +42,9 @@ from neutrino_agent.modules.samba import applier as applier_module
 from neutrino_agent.modules.samba.applier import (
     SambaConfigApplier,
     SambaConfigReader,
-    SambaNameServerApplier,
     SambaSelinuxApplier,
     SambaStatusReader,
+    SambaUnitApplier,
     SambaUserManager,
     check_person_config,
     has_include_line,
@@ -723,6 +726,104 @@ def test_the_persons_configuration_that_leaves_the_loopback_open_passes():
     )
 
 
+def test_a_withdrawal_takes_the_shares_off_a_running_server_with_one_reload(
+    box, monkeypatch
+):
+    commands, tmp_path = box
+    monkeypatch.setattr(applier_module, "unit_state", lambda unit: "active")
+    conf = tmp_path / "etc/smb.conf"
+    conf.parent.mkdir()
+    conf.write_bytes(with_include_line(STOCK.encode("utf-8")))
+    (tmp_path / "etc/neutrino.conf").write_text("[s]\n")
+    (tmp_path / "etc/neutrino_users").mkdir()
+
+    note = SambaConfigApplier(unit="smbd.service").withdraw()
+
+    assert conf.read_bytes() == STOCK.encode("utf-8")
+    assert not (tmp_path / "etc/neutrino.conf").exists()
+    assert not (tmp_path / "etc/neutrino_users").exists()
+    assert commands.ran("systemctl") == [
+        (["systemctl", "reload", "smbd.service"], None)
+    ]
+    assert note == "took the module's shares off; reloaded"
+
+
+def test_a_withdrawal_with_nothing_of_the_module_s_reloads_nothing(box, monkeypatch):
+    commands, tmp_path = box
+    monkeypatch.setattr(applier_module, "unit_state", lambda unit: "active")
+    conf = tmp_path / "etc/smb.conf"
+    conf.parent.mkdir()
+    conf.write_text(STOCK)
+
+    note = SambaConfigApplier(unit="smbd.service").withdraw()
+
+    assert conf.read_text() == STOCK
+    assert commands.ran("systemctl") == []
+    assert note == "unchanged"
+
+
+def test_a_withdrawal_from_a_server_that_is_off_starts_nothing(box):
+    commands, tmp_path = box
+    conf = tmp_path / "etc/smb.conf"
+    conf.parent.mkdir()
+    conf.write_bytes(with_include_line(STOCK.encode("utf-8")))
+
+    SambaConfigApplier(unit="smbd.service").withdraw()
+
+    assert conf.read_bytes() == STOCK.encode("utf-8")
+    assert commands.ran("systemctl") == []
+
+
+def test_a_withdrawal_a_reload_refuses_says_so_and_goes_on(box, monkeypatch):
+    commands, tmp_path = box
+    monkeypatch.setattr(applier_module, "unit_state", lambda unit: "active")
+    commands.answers[("systemctl", "reload")] = (1, "")
+    (tmp_path / "etc").mkdir()
+    (tmp_path / "etc/neutrino.conf").write_text("[s]\n")
+
+    note = SambaConfigApplier(unit="smbd.service").withdraw()
+
+    assert note == "took the module's shares off; could not reload"
+
+
+@pytest.mark.parametrize(
+    "state, verbs", [("active", []), ("inactive", [["enable", "--now"]])]
+)
+def test_a_start_starts_only_a_unit_that_is_not_active(box, monkeypatch, state, verbs):
+    commands, _ = box
+    monkeypatch.setattr(applier_module, "unit_state", lambda unit: state)
+
+    SambaConfigApplier(unit="smbd.service").start()
+
+    assert commands.ran("systemctl") == [
+        (["systemctl", *verb, "smbd.service"], None) for verb in verbs
+    ]
+
+
+@pytest.mark.parametrize(
+    "state, calls", [("active", []), ("inactive", ["called"])], ids=["active", "off"]
+)
+def test_the_call_before_a_start_runs_only_when_the_unit_starts(
+    box, monkeypatch, state, calls
+):
+    commands, tmp_path = box
+    monkeypatch.setattr(applier_module, "unit_state", lambda unit: state)
+    config = one_share(tmp_path)
+    called: list = []
+
+    def before_start():
+        called.append("called")
+        assert commands.ran("systemctl") == []
+
+    SambaConfigApplier(unit="smbd.service").apply(
+        SambaConfigRenderer(config=config).render(),
+        config=config,
+        before_start=before_start,
+    )
+
+    assert called == calls
+
+
 def test_stop_stops_the_unit_and_disables_it(box):
     commands, _ = box
 
@@ -758,7 +859,7 @@ def test_the_name_server_reads_as_enabled_and_active_or_as_nothing(box, shown, k
     commands, _ = box
     commands.answers[("systemctl", "show")] = (0, shown)
 
-    assert SambaNameServerApplier(unit="nmbd.service").read() == kept
+    assert SambaUnitApplier(unit="nmbd.service").read() == kept
     assert commands.ran("systemctl") == [
         (
             [
@@ -775,7 +876,7 @@ def test_the_name_server_reads_as_enabled_and_active_or_as_nothing(box, shown, k
 def test_the_name_server_stops_and_is_disabled(box):
     commands, _ = box
 
-    SambaNameServerApplier(unit="nmbd.service").stop()
+    SambaUnitApplier(unit="nmbd.service").stop()
 
     assert commands.ran("systemctl") == [
         (["systemctl", "disable", "--now", "nmbd.service"], None)
@@ -793,10 +894,29 @@ def test_the_name_server_stops_and_is_disabled(box):
 def test_the_name_server_comes_back_only_as_it_was(box, kept, verbs):
     commands, _ = box
 
-    SambaNameServerApplier(unit="nmb.service").restore(kept)
+    SambaUnitApplier(unit="nmb.service").restore(kept)
 
     assert commands.ran("systemctl") == [
         (["systemctl", verb, "nmb.service"], None) for verb in verbs
+    ]
+
+
+@pytest.mark.parametrize(
+    "started, verbs",
+    [
+        ({"is_enabled": True, "is_active": True}, ["stop", "disable"]),
+        ({"is_enabled": False, "is_active": True}, ["stop"]),
+        ({"is_enabled": True, "is_active": False}, ["disable"]),
+        ({"is_enabled": False, "is_active": False}, []),
+    ],
+)
+def test_a_turn_back_undoes_only_what_the_module_changed(box, started, verbs):
+    commands, _ = box
+
+    SambaUnitApplier(unit="smbd.service").turn_back(started)
+
+    assert commands.ran("systemctl") == [
+        (["systemctl", verb, "smbd.service"], None) for verb in verbs
     ]
 
 

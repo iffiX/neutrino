@@ -1012,8 +1012,7 @@ class ModuleEngine(ReconcileWorker):
                 thing that happens.
         """
         method = str(recipe.get("method", "") or "")
-        if method == AGENT_METHOD_BUILTIN:
-            self._clear_uninstalled_mark(name)
+        self._clear_uninstalled_mark(name)
         if not self._is_present(runner, recipe):
             raise ModuleApplyError("install_unconfirmed", {})
         if method == AGENT_METHOD_HUB:
@@ -1194,8 +1193,9 @@ class ModuleEngine(ReconcileWorker):
     def _uninstall(self, name: str, wanted: dict) -> dict:
         """Uninstall by the recipe, drop the hub's configuration and the mark.
 
-        A ``builtin`` module's software stays with the system, so its
-        uninstalled mark stands from here until its next install's ``verify``.
+        A ``builtin`` module's software stays with the system, and a person's
+        Samba with the person, so the uninstalled mark stands from here until
+        the module's next install's ``verify``.
         """
         recipe = _recipe_of(wanted)
         removal = params_of(recipe).get("uninstall")
@@ -1210,6 +1210,10 @@ class ModuleEngine(ReconcileWorker):
             is_leftover = not self._is_present(runner, recipe)
         except Exception:  # noqa: BLE001 - an unreadable module is not installed
             is_leftover = True
+        is_software_kept = (
+            str(recipe.get("method", "") or "") == AGENT_METHOD_BUILTIN
+            or runner.is_software_kept()
+        )
         try:
             self._remove(name, runner, recipe, removal)
         except Exception as error:  # noqa: BLE001 - logged; the check is the outcome
@@ -1223,7 +1227,7 @@ class ModuleEngine(ReconcileWorker):
                 )
             self._collect(f"{name}: {said}"[:500])
         self.clear_configured(name)
-        if str(recipe.get("method", "") or "") == AGENT_METHOD_BUILTIN:
+        if is_software_kept:
             self._keep_uninstalled_mark(name)
         if self._is_present(runner, recipe):
             return {"code": "uninstall_unconfirmed", "params": {}}
@@ -1231,7 +1235,7 @@ class ModuleEngine(ReconcileWorker):
         return {}
 
     def _keep_uninstalled_mark(self, name: str) -> None:
-        """Record that one ``builtin`` module was uninstalled.
+        """Record that one module was uninstalled and its software stays.
 
         Raises:
             OSError: When the mark cannot be written.
@@ -1542,21 +1546,21 @@ class ModuleEngine(ReconcileWorker):
     def _is_present(self, runner, recipe: dict) -> bool:
         """Whether the software is there, by the method's one presence check.
 
-        A module the agent carries is always there; a ``system`` or a
-        ``hub`` recipe is there while its ``verify`` exits 0, run once per
-        program file it names; a ``container`` recipe while every image it
-        pins is in Containers' Podman, as its runner reads it. A
-        ``builtin`` recipe, and a module the state does not name, which
-        comes with no recipe, are judged by the runner's own check, and are
-        not there while the module's uninstalled mark stands.
+        A module the agent carries is always there; a module whose
+        uninstalled mark stands is not; a ``system`` or a ``hub`` recipe is
+        there while its ``verify`` exits 0, run once per program file it
+        names; a ``container`` recipe while every image it pins is in
+        Containers' Podman, as its runner reads it. A ``builtin`` recipe, and
+        a module the state does not name, which comes with no recipe, are
+        judged by the runner's own check.
         """
         method = str(recipe.get("method", "") or "")
         if method == AGENT_METHOD_AGENT:
             return True
-        if method in VERIFIED_METHODS:
-            return self._verify_passes(str(params_of(recipe).get("verify", "") or ""))
         if self._has_uninstalled_mark(runner.name):
             return False
+        if method in VERIFIED_METHODS:
+            return self._verify_passes(str(params_of(recipe).get("verify", "") or ""))
         return bool(runner.verify(recipe))
 
     def _verify_passes(self, command: str) -> bool:

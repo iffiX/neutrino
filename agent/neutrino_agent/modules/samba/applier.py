@@ -654,6 +654,7 @@ class SambaConfigApplier:
         config: SambaConfig,
         user_files: "dict | None" = None,
         is_started: bool = True,
+        before_start=None,
     ) -> str:
         """Validate, install and load the module's file, or take it away.
 
@@ -670,6 +671,8 @@ class SambaConfigApplier:
                 the renderer gives them; every other file there goes.
             is_started: Whether the unit is reloaded or enabled and started
                 on the files. False writes the files alone.
+            before_start: Called right before the unit is enabled and
+                started, once the files are written; None calls nothing.
 
         Returns:
             A short summary of what changed.
@@ -701,6 +704,8 @@ class SambaConfigApplier:
         if unit_state(self._unit) == "active":
             run(["systemctl", "reload", self._unit])
             return "; ".join(notes + ["reloaded"])
+        if before_start is not None:
+            before_start()
         run(["systemctl", "enable", "--now", self._unit])
         return "; ".join(notes + ["started"])
 
@@ -711,14 +716,45 @@ class SambaConfigApplier:
         if data is not None and has_include_line(data):
             _write_smb_conf(without_include_line(data))
 
+    def withdraw(self) -> str:
+        """Take the module's shares off a server that goes on running.
+
+        Deletes what :meth:`remove` deletes and reloads an active unit when
+        anything was there. Nothing else of the unit changes.
+
+        Returns:
+            A short summary of what changed.
+        """
+        data = read_bytes(SAMBA_CONF_PATH)
+        has_line = data is not None and has_include_line(data)
+        has_file = os.path.exists(SAMBA_MODULE_CONF_PATH)
+        if not has_line and not has_file:
+            return "unchanged"
+        self.remove()
+        if unit_state(self._unit) != "active":
+            return "took the module's shares off"
+        result = run(["systemctl", "reload", self._unit], is_checked=False)
+        if not result.is_success:
+            return "took the module's shares off; could not reload"
+        return "took the module's shares off; reloaded"
+
     def _remove_own(self) -> None:
         with contextlib.suppress(OSError):
             os.unlink(SAMBA_MODULE_CONF_PATH)
         shutil.rmtree(SAMBA_USERS_DIR, ignore_errors=True)
 
     def stop(self) -> None:
-        """Take the server down and disable it until the next apply starts it."""
+        """Take the server down and disable it until the next start."""
         run(["systemctl", "disable", "--now", self._unit], is_checked=False)
+
+    def start(self) -> None:
+        """Enable and start the server unless it is active.
+
+        Raises:
+            subprocess.CalledProcessError: If the unit will not come up.
+        """
+        if unit_state(self._unit) != "active":
+            run(["systemctl", "enable", "--now", self._unit])
 
     def _ensure_share_directories(self, config: SambaConfig) -> None:
         """Make a share's folder that is missing, owned by the one account it writes as."""
@@ -742,18 +778,18 @@ class SambaConfigApplier:
             _write_file(os.path.join(SAMBA_USERS_DIR, name), text.encode("utf-8"))
 
 
-class SambaNameServerApplier:
-    """Takes the NetBIOS name server down at a stop and brings it back as it was."""
+class SambaUnitApplier:
+    """Reads one of Samba's units, and changes it only as the runner asks."""
 
     def __init__(self, *, unit: str):
         """
         Args:
-            unit: The unit this machine's name server runs as.
+            unit: The unit.
         """
         self._unit = unit
 
     def read(self) -> dict:
-        """What the name server is now.
+        """What the unit is now.
 
         Returns:
             ``{"is_enabled", "is_active"}``, empty when it is neither: a
@@ -771,11 +807,11 @@ class SambaNameServerApplier:
         return kept if any(kept.values()) else {}
 
     def stop(self) -> None:
-        """Take the name server down and disable it."""
+        """Take the unit down and disable it."""
         run(["systemctl", "disable", "--now", self._unit], is_checked=False)
 
     def restore(self, kept: dict) -> None:
-        """Bring the name server back as it was before a stop.
+        """Bring the unit back as it was before a stop.
 
         Args:
             kept: What :meth:`read` gave at the stop.
@@ -784,6 +820,18 @@ class SambaNameServerApplier:
             run(["systemctl", "enable", self._unit], is_checked=False)
         if kept.get("is_active"):
             run(["systemctl", "start", self._unit], is_checked=False)
+
+    def turn_back(self, started: dict) -> None:
+        """Undo what the module changed when it started a person's unit.
+
+        Args:
+            started: ``{"is_enabled", "is_active"}``, each true when the
+                module made that so.
+        """
+        if started.get("is_active"):
+            run(["systemctl", "stop", self._unit], is_checked=False)
+        if started.get("is_enabled"):
+            run(["systemctl", "disable", self._unit], is_checked=False)
 
 
 def share_owner(share, config: SambaConfig) -> str:
