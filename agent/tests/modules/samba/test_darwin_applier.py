@@ -608,6 +608,78 @@ def test_the_status_reads_launchd_the_share_list_and_lsof(applier, tools):
     assert tools.ran("pfctl") == []
 
 
+def test_a_stop_of_the_server_disables_smbd_and_takes_it_out_of_launchd(applier, tools):
+    assert applier.stop_server() == []
+
+    assert tools.ran("launchctl", "disable") == [
+        ["launchctl", "disable", "system/com.apple.smbd"]
+    ]
+    assert tools.ran("launchctl", "bootout") == [
+        ["launchctl", "bootout", "system/com.apple.smbd"]
+    ]
+
+
+def test_a_stop_of_a_server_launchd_does_not_hold_boots_nothing_out(applier, tools):
+    tools.failing.add(("launchctl", "print"))
+
+    applier.stop_server()
+
+    assert tools.ran("launchctl", "bootout") == []
+
+
+def test_a_stop_launchd_refuses_fails(applier, tools):
+    tools.failing.add(("launchctl", "bootout"))
+
+    with pytest.raises(OSError):
+        applier.stop_server()
+
+
+@pytest.mark.parametrize(
+    "listed, is_enabled",
+    [
+        ('"com.apple.smbd" => enabled', True),
+        ('"com.apple.smbd" => disabled', False),
+        ('"com.apple.smbd" => false', True),
+        ('"com.apple.smbd" => true', False),
+    ],
+)
+def test_a_read_of_the_server_names_what_launchd_lists(
+    applier, tools, listed, is_enabled
+):
+    tools.answers[("launchctl", "print-disabled")] = listed
+
+    assert applier.read_server() == {"is_enabled": is_enabled, "is_running": True}
+
+
+def test_a_job_launchd_lists_neither_way_is_enabled_while_it_holds_it(applier, tools):
+    tools.failing.add(("launchctl", "print"))
+
+    assert applier.read_server() == {"is_enabled": False, "is_running": False}
+
+
+def test_a_put_back_of_a_server_that_was_off_boots_it_out_and_disables_it(
+    applier, tools
+):
+    applier.put_back_server({"is_enabled": False, "is_running": False}, [])
+
+    assert tools.ran("launchctl", "bootout") == [
+        ["launchctl", "bootout", "system/com.apple.smbd"]
+    ]
+    assert tools.ran("launchctl", "disable") == [
+        ["launchctl", "disable", "system/com.apple.smbd"]
+    ]
+
+
+def test_a_put_back_of_a_server_that_ran_serves_it_and_enables_it(applier, tools):
+    tools.failing.add(("launchctl", "print"))
+
+    applier.put_back_server({"is_enabled": True, "is_running": True}, [])
+
+    assert tools.ran("launchctl", "kickstart")
+    assert tools.ran("launchctl", "bootout") == []
+    assert tools.ran("launchctl", "disable") == []
+
+
 def test_a_mac_without_smbd_has_no_server(applier, monkeypatch, tmp_path):
     monkeypatch.setattr(
         applier_module, "SAMBA_DARWIN_SMBD_PLIST", str(tmp_path / "missing")

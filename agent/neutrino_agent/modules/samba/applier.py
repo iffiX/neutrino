@@ -740,13 +740,11 @@ class SambaConfigApplier:
         run(["systemctl", "disable", "--now", self._unit], is_checked=False)
 
     def start(self) -> None:
-        """Enable and start the server unless it is active, on the stock ``smb.conf`` where the machine has none.
+        """Enable and start the server, on the stock ``smb.conf`` where the machine has none.
 
         Raises:
             subprocess.CalledProcessError: If the unit will not come up.
         """
-        if unit_state(self._unit) == "active":
-            return
         if read_bytes(SAMBA_CONF_PATH) is None:
             _write_smb_conf(read_stock_conf()[0])
         run(["systemctl", "enable", "--now", self._unit])
@@ -801,32 +799,24 @@ class SambaUnitApplier:
         }
         return kept if any(kept.values()) else {}
 
+    def start(self) -> None:
+        """Enable and start the unit. A masked or missing unit stays as it is."""
+        run(["systemctl", "enable", "--now", self._unit], is_checked=False)
+
     def stop(self) -> None:
         """Take the unit down and disable it."""
         run(["systemctl", "disable", "--now", self._unit], is_checked=False)
 
-    def restore(self, kept: dict) -> None:
-        """Bring the unit back as it was before a stop.
+    def put_back(self, found: dict) -> None:
+        """Make the unit enabled and active as it was found.
 
         Args:
-            kept: What :meth:`read` gave at the stop.
+            found: What :meth:`read` gave then.
         """
-        if kept.get("is_enabled"):
-            run(["systemctl", "enable", self._unit], is_checked=False)
-        if kept.get("is_active"):
-            run(["systemctl", "start", self._unit], is_checked=False)
-
-    def turn_back(self, started: dict) -> None:
-        """Undo what the module changed when it started a person's unit.
-
-        Args:
-            started: ``{"is_enabled", "is_active"}``, each true when the
-                module made that so.
-        """
-        if started.get("is_active"):
-            run(["systemctl", "stop", self._unit], is_checked=False)
-        if started.get("is_enabled"):
-            run(["systemctl", "disable", self._unit], is_checked=False)
+        verb = "enable" if found.get("is_enabled") else "disable"
+        run(["systemctl", verb, self._unit], is_checked=False)
+        verb = "start" if found.get("is_active") else "stop"
+        run(["systemctl", verb, self._unit], is_checked=False)
 
 
 def share_owner(share, config: SambaConfig) -> str:

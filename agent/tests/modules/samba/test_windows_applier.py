@@ -177,6 +177,7 @@ def test_an_apply_names_only_what_the_module_made():
                 "is_sweep": False,
                 "user_prefix": "neutrino-",
                 "is_served": True,
+                "server_dependents": [],
             },
         ),
     ]
@@ -680,3 +681,46 @@ def test_a_folder_share_that_moved_takes_its_grants_off_the_old_folder():
         ["icacls.exe", "D:\\lab", "/remove:g", "ann"],
         ["icacls.exe", "E:\\lab", "/grant:r", "ann:(OI)(CI)M"],
     ]
+
+
+def test_a_read_of_the_server_names_its_start_type_and_whether_it_runs():
+    host = RecordingHost(
+        {"share_server_read": {"start_type": "Manual", "is_running": True}}
+    )
+
+    assert applier_with(host).read_server() == {
+        "start_type": "Manual",
+        "is_running": True,
+    }
+
+
+def test_a_stop_of_the_server_names_the_services_that_stopped_with_it():
+    host = RecordingHost({"share_server_stop": {"dependents": ["Browser"]}})
+
+    assert applier_with(host).stop_server() == ["Browser"]
+
+
+def test_a_put_back_hands_the_host_what_the_server_was():
+    host = RecordingHost({"share_server_set": {}})
+
+    applier_with(host).put_back_server(
+        {"start_type": "Manual", "is_running": False}, ["Browser"]
+    )
+
+    assert host.calls == [
+        (
+            "share_server_set",
+            {"start_type": "Manual", "is_running": False, "dependents": ["Browser"]},
+        )
+    ]
+
+
+def test_an_apply_starts_again_the_services_a_stop_took_down():
+    host = RecordingHost({"share_apply": {"notes": []}, "folder_access": {}})
+
+    applier_with(host).apply(
+        SambaConfig(), {"shares": {}, "server_dependents": ["Browser"]}
+    )
+
+    request = next(call[1] for call in host.calls if call[0] == "share_apply")
+    assert request["server_dependents"] == ["Browser"]

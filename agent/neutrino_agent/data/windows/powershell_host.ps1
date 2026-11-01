@@ -392,6 +392,9 @@ function Set-NeutrinoShare {
             Start-Service -Name LanmanServer | Out-Null
             $notes += 'started the server'
         }
+        foreach ($name in @($Request.server_dependents)) {
+            Start-Service -Name $name -ErrorAction SilentlyContinue | Out-Null
+        }
     }
     $retired =Get-NetFirewallRule -Name $Request.retired_rule_name -ErrorAction SilentlyContinue
     if ($retired) {
@@ -503,6 +506,56 @@ function Remove-NeutrinoShare {
     return @{}
 }
 
+# The SMB server's start type and whether it runs.
+function Get-NeutrinoShareServer($Request) {
+    $svc = Get-Service -Name LanmanServer
+    return @{start_type = "$($svc.StartType)"; is_running = ($svc.Status -eq 'Running')}
+}
+
+# Stops the SMB server and every service that depends on it, and disables it.
+# Answers the names of those services that ran.
+function Stop-NeutrinoShareServer {
+    [CmdletBinding(SupportsShouldProcess = $true)]
+    [OutputType([hashtable])]
+    param($Request)
+    if (-not $PSCmdlet.ShouldProcess('the SMB server')) {
+        return @{dependents = @()}
+    }
+    $svc = Get-Service -Name LanmanServer
+    $dependents = @()
+    foreach ($dependent in @($svc.DependentServices)) {
+        if ($dependent.Status -eq 'Running') {
+            $dependents += "$($dependent.Name)"
+        }
+    }
+    if ($svc.Status -ne 'Stopped') {
+        Stop-Service -Name LanmanServer -Force | Out-Null
+    }
+    Set-Service -Name LanmanServer -StartupType Disabled | Out-Null
+    return @{dependents = $dependents}
+}
+
+# Gives the SMB server the start type it had, and runs or stops it as it did.
+# Each listed service a stop took down starts again with it.
+function Set-NeutrinoShareServer {
+    [CmdletBinding(SupportsShouldProcess = $true)]
+    [OutputType([hashtable])]
+    param($Request)
+    if (-not $PSCmdlet.ShouldProcess('the SMB server')) {
+        return @{}
+    }
+    Set-Service -Name LanmanServer -StartupType $Request.start_type | Out-Null
+    if ($Request.is_running) {
+        Start-Service -Name LanmanServer | Out-Null
+        foreach ($name in @($Request.dependents)) {
+            Start-Service -Name $name -ErrorAction SilentlyContinue | Out-Null
+        }
+    } else {
+        Stop-Service -Name LanmanServer -Force -ErrorAction SilentlyContinue | Out-Null
+    }
+    return @{}
+}
+
 # The SMB server's latest events, oldest first: the time, the event id and
 # the first line of the message. wevtutil renders the newest events first,
 # in UTF-16, and an empty or missing log leaves no line.
@@ -573,6 +626,9 @@ $NeutrinoOperations = @{
     'folder_access' = 'Get-NeutrinoFolderAccess'
     'share_apply' = 'Set-NeutrinoShare'
     'share_withdraw' = 'Remove-NeutrinoShare'
+    'share_server_read' = 'Get-NeutrinoShareServer'
+    'share_server_stop' = 'Stop-NeutrinoShareServer'
+    'share_server_set' = 'Set-NeutrinoShareServer'
     'share_log' = 'Get-NeutrinoShareLog'
     'share_password' = 'Set-NeutrinoSharePassword'
     'relay_rules_read' = 'Get-NeutrinoRelayRule'

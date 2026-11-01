@@ -113,7 +113,8 @@ SAMBA_WINDOWS_FOLDER_RULES = {
 SAMBA_WINDOWS_SHARE_OWNER = "BUILTIN\\Administrators"
 
 # macOS: smbd's launchd job and the plist it loads from.
-SAMBA_DARWIN_SMBD_TARGET = "system/com.apple.smbd"
+SAMBA_DARWIN_SMBD_LABEL = "com.apple.smbd"
+SAMBA_DARWIN_SMBD_TARGET = f"system/{SAMBA_DARWIN_SMBD_LABEL}"
 SAMBA_DARWIN_SMBD_PLIST = "/System/Library/LaunchDaemons/com.apple.smbd.plist"
 # The start of the record name of every share point the module made.
 SAMBA_DARWIN_SHARE_PREFIX = "neutrino_"

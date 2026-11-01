@@ -305,6 +305,7 @@ class SambaWindowsApplier:
                 "is_sweep": is_sweep,
                 "user_prefix": SAMBA_LINUX_USER_PREFIX,
                 "is_served": is_served,
+                "server_dependents": list(record.get("server_dependents") or []),
             },
         )
         for path in left:
@@ -335,6 +336,47 @@ class SambaWindowsApplier:
                 "owned_accounts": list(record.get("accounts") or []),
                 "is_removed": is_removed,
             },
+        )
+
+    def read_server(self) -> dict:
+        """What the server is now.
+
+        Returns:
+            ``{"start_type", "is_running"}``.
+
+        Raises:
+            OSError: When the host fails.
+        """
+        read = self._powershell.call("share_server_read", {})
+        return {
+            "start_type": str(read.get("start_type", "") or ""),
+            "is_running": bool(read.get("is_running")),
+        }
+
+    def stop_server(self) -> list:
+        """Stop the server and every service that depends on it, and disable it.
+
+        Returns:
+            The names of the services that ran and stopped with it.
+
+        Raises:
+            OSError: When the host fails or the server will not stop.
+        """
+        answer = self._powershell.call("share_server_stop", {})
+        return [str(name) for name in _listed(answer.get("dependents"))]
+
+    def put_back_server(self, found: dict, dependents: list) -> None:
+        """Put the server back as :meth:`read_server` found it.
+
+        Args:
+            found: ``{"start_type", "is_running"}``.
+            dependents: The services a stop took down with it.
+
+        Raises:
+            OSError: When the host fails.
+        """
+        self._powershell.call(
+            "share_server_set", {**found, "dependents": list(dependents)}
         )
 
     def read_server_log(self, lines: int) -> list:

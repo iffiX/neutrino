@@ -42,6 +42,7 @@ from neutrino_agent.modules.samba.constants import (
     SAMBA_LINUX_USER_PREFIX,
     SAMBA_DARWIN_SHELL,
     SAMBA_DARWIN_SMBD_PLIST,
+    SAMBA_DARWIN_SMBD_LABEL,
     SAMBA_DARWIN_SMBD_TARGET,
 )
 from neutrino_agent.modules.shared.subprocess_run import run as run_command
@@ -326,6 +327,54 @@ class SambaDarwinApplier:
         self._run(["pwpolicy", "-u", name, "-enableuser"], is_checked=False)
         self._run(["pwpolicy", "-u", name, "-sethashtypes", SMB_NT_HASH, "on"])
         self._run(["dscl", ".", "-passwd", f"/Users/{name}", password])
+
+    def read_server(self) -> dict:
+        """What the server is now.
+
+        Returns:
+            ``{"is_enabled", "is_running"}``. A job launchd lists neither way
+            counts as enabled while it holds the job.
+        """
+        is_running = self._is_loaded()
+        listed = self._run(
+            ["launchctl", "print-disabled", "system"], is_checked=False
+        ).stdout
+        found = re.search(rf'"{re.escape(SAMBA_DARWIN_SMBD_LABEL)}" => (\w+)', listed)
+        is_enabled = found.group(1) in ("enabled", "false") if found else is_running
+        return {"is_enabled": is_enabled, "is_running": is_running}
+
+    def stop_server(self) -> list:
+        """Disable smbd and take it out of launchd.
+
+        Returns:
+            Nothing: no service depends on smbd here.
+
+        Raises:
+            OSError: When a command cannot run.
+            subprocess.CalledProcessError: When a command refuses.
+        """
+        self._run(["launchctl", "disable", SAMBA_DARWIN_SMBD_TARGET])
+        if self._is_loaded():
+            self._run(["launchctl", "bootout", SAMBA_DARWIN_SMBD_TARGET])
+        return []
+
+    def put_back_server(self, found: dict, dependents: list) -> None:
+        """Put the server back as :meth:`read_server` found it.
+
+        Args:
+            found: ``{"is_enabled", "is_running"}``.
+            dependents: Unused here, where no service depends on smbd.
+
+        Raises:
+            OSError: When a command cannot run.
+            subprocess.CalledProcessError: When a command refuses.
+        """
+        if found.get("is_running"):
+            self._serve()
+        elif self._is_loaded():
+            self._run(["launchctl", "bootout", SAMBA_DARWIN_SMBD_TARGET])
+        verb = "enable" if found.get("is_enabled") else "disable"
+        self._run(["launchctl", verb, SAMBA_DARWIN_SMBD_TARGET])
 
     def read_server_log(self, lines: int) -> list:
         """What the unified log holds of smbd over the last 15 minutes.

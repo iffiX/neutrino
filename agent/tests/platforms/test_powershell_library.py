@@ -8,7 +8,8 @@ kept, refusals as values, errors caught; the task, the one-shot task, the
 file share, the thermal zones and the removal keep what the scripts they
 replace did, the task settings, the login refusal, the fence before any
 share or account, the share accounts' sign-in denial and hiding; the file
-share under ``stopped`` starting no server and making no share; the
+share under ``stopped`` starting no server and making no share; a stop of the
+server taking its dependents down and disabling it, and a put back as it was; the
 folders' access read listing each folder's own allow rules by SID and
 whether it inherits, and changing nothing; a relay's
 rule allows inbound TCP to its port on its adapter alone; nothing there
@@ -199,6 +200,33 @@ def test_the_file_share_under_stopped_starts_no_server_and_makes_no_share():
     assert apply.index("New-Item -ItemType Directory") < unserved
     assert unserved < apply.index("New-SmbShare")
     assert unserved < apply.index("Grant-SmbShareAccess")
+
+
+def test_the_server_stop_names_its_dependents_stops_it_and_disables_it():
+    stop = body("share_server_stop")
+
+    assert stop.index("DependentServices") < stop.index("Stop-Service")
+    assert "Stop-Service -Name LanmanServer -Force" in stop
+    assert stop.index("Stop-Service") < stop.index(
+        "Set-Service -Name LanmanServer -StartupType Disabled"
+    )
+
+
+def test_the_server_put_back_sets_its_start_type_and_runs_it_as_it_was():
+    put_back = body("share_server_set")
+
+    assert "Set-Service -Name LanmanServer -StartupType $Request.start_type" in put_back
+    assert "if ($Request.is_running) {" in put_back
+    assert "foreach ($name in @($Request.dependents))" in put_back
+    assert "Stop-Service -Name LanmanServer -Force" in put_back
+
+
+def test_a_start_starts_again_the_services_a_stop_took_down():
+    apply = body("share_apply")
+
+    assert apply.index("Start-Service -Name LanmanServer") < apply.index(
+        "foreach ($name in @($Request.server_dependents))"
+    )
 
 
 def test_the_folder_access_read_lists_each_folder_s_own_allow_rules():

@@ -11,13 +11,13 @@ when the hub's differs. The record also stores whether the module turned the
 SELinux boolean on, and an uninstall turns off only what the module turned on.
 
 A Samba that was on the machine before the module installed it is the person's.
-The record marks a Samba the install step found missing and installed, and only
-that Samba's units and package are the module's: a stop then takes the server and
-the name server down and keeps what it found the name server to be, and an
-uninstall removes the package. On a person's Samba a stop takes the module's own
-files off and the row reads the record's ``is_served``, a start turns a person's
-server that was off on and the stop turns it back, and an uninstall removes no
-package and leaves the module absent through the engine's uninstalled mark.
+The record marks a Samba the install step found missing and installed. On either
+Samba a start starts the server and the name server, share or no share, and a stop
+stops and disables both. On a person's Samba a stop also takes the module's own
+files off, the row reads the record's ``is_served`` and the unit, the record keeps
+what both units were at the first start, and an uninstall puts them back, removes
+no package and leaves the module absent through the engine's uninstalled mark. An
+uninstall of a Samba the module installed removes the package.
 
 On Windows and macOS the same module drives the system's own SMB server
 through the platform's applier instead.
@@ -78,6 +78,8 @@ from neutrino_agent.platforms.detect import platform_tuple
 
 # The steps that make or remove the module's accounts.
 ACCOUNT_STEPS = (AGENT_STEP_CONFIGURE, AGENT_STEP_UNINSTALL)
+# The record's fields a removal of the configuration leaves for the uninstall.
+KEPT_FOR_UNINSTALL = ("is_package_ours", "found_units")
 
 
 def account_step_locks(step: str) -> tuple:
@@ -281,41 +283,44 @@ class SambaModuleRunner(SystemPackageModuleRunner):
             changes.append("left out " + ", ".join(self._left_out))
         self._log("samba: " + "; ".join([note] + changes))
 
-    def _keep_started_server(self, record: dict) -> None:
-        """Keep what the start about to run changes on a person's server.
+    def _keep_found_units(self, record: dict) -> None:
+        """Keep what a person's server and name server were, once.
 
-        The first start the record holds stays, since it found the server as
-        the person left it.
+        The first record stays, since it found them as the person left them.
 
         Args:
-            record: The record as this apply read it, kept up to date.
+            record: The record, kept up to date.
 
         Raises:
             OSError: When the record cannot be written.
         """
-        if "started_server" in record:
+        if "found_units" in record:
             return
-        found = self._server.read()
-        record["started_server"] = {
-            "is_enabled": not found.get("is_enabled", False),
-            "is_active": not found.get("is_active", False),
+        record["found_units"] = {
+            "server": self._server.read(),
+            "name_server": self._name_server.read(),
         }
         write_record(self._record_path, record)
 
-    def _turn_server_back(self, record: dict) -> None:
-        """Undo what the module changed when it started a person's server.
+    def _put_units_back(self) -> None:
+        """Put a person's server and name server back as the record found them.
 
-        Args:
-            record: The record; it stores nothing of the start afterwards.
+        A record with none leaves them as they are.
 
         Raises:
             OSError: When the record cannot be written.
         """
-        started = record.pop("started_server", None)
-        if not isinstance(started, dict):
+        record = _read_record(self._record_path)
+        found = record.pop("found_units", None)
+        if not isinstance(found, dict):
             return
-        self._server.turn_back(started)
-        write_record(self._record_path, record)
+        self._server.put_back(dict(found.get("server") or {}))
+        self._name_server.put_back(dict(found.get("name_server") or {}))
+        if record:
+            write_record(self._record_path, record)
+            return
+        with contextlib.suppress(OSError):
+            os.unlink(self._record_path)
 
     def notice(self) -> dict:
         """``share_users_unknown {shares}`` while the last apply left shares out."""
@@ -327,49 +332,37 @@ class SambaModuleRunner(SystemPackageModuleRunner):
         }
 
     def stop(self) -> None:
-        """Take a Samba the module installed down, or turn a person's back.
+        """Take the server and the name server down and disable them, on any Samba.
 
-        A Samba the module installed: the server and the name server go down
-        and are disabled, the shares' files stay, and the record keeps what
-        the name server was. A person's Samba: only what the module started
-        is turned back, and the record marks the module stopped.
+        A person's Samba: the record also marks the module stopped, and keeps
+        what both units were when no start has yet.
 
         Raises:
             OSError: When the record cannot be written.
         """
         record = _read_record(self._record_path)
         if record.get("is_package_ours") is not True:
-            self._turn_server_back(record)
+            self._keep_found_units(record)
             record["is_served"] = False
             write_record(self._record_path, record)
-            return
         SambaConfigApplier(unit=self._unit).stop()
-        kept_name_server = self._name_server.read()
-        if kept_name_server:
-            record["kept_name_server"] = kept_name_server
-            write_record(self._record_path, record)
-            self._name_server.stop()
+        self._name_server.stop()
 
     def start(self) -> None:
-        """Turn the server on, share or no share, and a Samba the module installed's name server as a stop found it.
+        """Enable and start the server and the name server, share or no share.
 
-        A person's server that was off is recorded for the stop to turn back.
+        A person's Samba: the record keeps what both units were at the first
+        start.
 
         Raises:
-            subprocess.CalledProcessError: If the unit will not come up.
+            subprocess.CalledProcessError: If the server will not come up.
             OSError: When the record cannot be written.
         """
         record = _read_record(self._record_path)
         if record.get("is_package_ours") is not True:
-            if unit_state(self._unit) != "active":
-                self._keep_started_server(record)
-                SambaConfigApplier(unit=self._unit).start()
-            return
+            self._keep_found_units(record)
         SambaConfigApplier(unit=self._unit).start()
-        kept_name_server = record.pop("kept_name_server", None)
-        if isinstance(kept_name_server, dict):
-            self._name_server.restore(kept_name_server)
-            write_record(self._record_path, record)
+        self._name_server.start()
 
     def is_software_kept(self) -> bool:
         """Whether an uninstall leaves a Samba on the machine: a person's, one the record does not say the module installed.
@@ -410,7 +403,8 @@ class SambaModuleRunner(SystemPackageModuleRunner):
     def uninstall(self, recipe: dict) -> None:
         """Delete every ``neutrino-`` SMB user, then take the packages off a Samba the module installed.
 
-        A person's Samba keeps its packages.
+        A person's Samba keeps its packages, and its units go back as the
+        record found them.
 
         Args:
             recipe: The module's recipe.
@@ -424,6 +418,7 @@ class SambaModuleRunner(SystemPackageModuleRunner):
         if swept:
             self._log("samba: " + "; ".join(swept))
         if not is_package_ours(self._record_path):
+            self._put_units_back()
             self._log("samba: removed no package")
             return
         super().uninstall(recipe)
@@ -444,7 +439,7 @@ class SambaModuleRunner(SystemPackageModuleRunner):
 
         A running server reloads. The SELinux boolean goes off when the record
         marks it as the module's, and the mark that the module installed Samba
-        stays for the uninstall.
+        and what a person's units were stay for the uninstall.
 
         Raises:
             OSError: When the record cannot be written.
@@ -454,8 +449,10 @@ class SambaModuleRunner(SystemPackageModuleRunner):
         SambaConfigApplier(unit=self._unit).withdraw()
         if is_selinux_boolean_ours(self._record_path):
             self._turn_selinux_boolean(SambaSelinuxApplier().turn_off, "off")
-        if is_package_ours(self._record_path):
-            write_record(self._record_path, {"is_package_ours": True})
+        record = _read_record(self._record_path)
+        kept = {key: record[key] for key in KEPT_FOR_UNINSTALL if key in record}
+        if kept:
+            write_record(self._record_path, kept)
             return
         with contextlib.suppress(OSError):
             os.unlink(self._record_path)
@@ -643,7 +640,9 @@ class SambaNativeServerRunner(ModuleRunner):
 
     Windows and macOS carry the server, so there is nothing to install or
     uninstall; the platform's applier converges the shares and the accounts
-    and fences nothing. Each
+    and fences nothing. A start starts the server, share or no share, and a
+    stop stops it. The record keeps what the server was at the first start,
+    and an uninstall puts it back. Each
     account's password is set from the configuration's ``passwords``
     whenever it differs from the one the module set last. A root-only
     record under the agent's work root lists what the module made and the
@@ -709,11 +708,23 @@ class SambaNativeServerRunner(ModuleRunner):
         """
 
     def uninstall(self, recipe: dict) -> None:
-        """Remove nothing: the server stays with the system.
+        """Remove nothing, and put the server back as the record found it. A record with none leaves it as it is.
 
         Args:
             recipe: The module's recipe.
+
+        Raises:
+            OSError: When the server will not go back.
         """
+        record = self._read_record()
+        found = record.pop("found_server", None)
+        if found is None:
+            return
+        try:
+            self._applier.put_back_server(found, record.pop("server_dependents", []))
+        finally:
+            self._forget_status()
+        self._write_record(record)
 
     def validate(self, config: dict) -> None:
         """Parse and check a configuration for this system.
@@ -793,11 +804,14 @@ class SambaNativeServerRunner(ModuleRunner):
         shares = dict(record["shares"])
         shares.update({share.name: share.path for share in served})
         self._write_record(dict(record, shares=shares))
+        record = dict(record, shares=shares)
         refusal = None
         try:
+            if is_served:
+                record = self._keep_found_server(record)
             notes = self._applier.apply(
                 parsed,
-                dict(record, shares=shares),
+                record,
                 is_sweep=is_sweep,
                 is_served=is_served,
             )
@@ -823,14 +837,17 @@ class SambaNativeServerRunner(ModuleRunner):
             )
         finally:
             self._forget_status()
-        self._write_record(
-            {
-                "shares": {share.name: share.path for share in served},
-                "accounts": accounts,
-                "passwords": passwords,
-                "is_served": is_served,
-            }
-        )
+        written = {
+            "shares": {share.name: share.path for share in served},
+            "accounts": accounts,
+            "passwords": passwords,
+            "is_served": is_served,
+        }
+        if "found_server" in record:
+            written["found_server"] = record["found_server"]
+        if not is_served and "server_dependents" in record:
+            written["server_dependents"] = record["server_dependents"]
+        self._write_record(written)
         self._config = parsed
         self._left_out = [share.name for share in parsed.shares if share not in served]
         if self._left_out:
@@ -878,17 +895,47 @@ class SambaNativeServerRunner(ModuleRunner):
         return kept
 
     def stop(self) -> None:
-        """Take the module's shares off the server; the accounts stay, and the record keeps each share's folder.
+        """Take the module's shares off the server and stop it; the accounts stay, and the record keeps each share's folder.
+
+        The record keeps what the server was when no start has yet, and each
+        service the stop took down with it for the next start.
 
         Raises:
-            OSError: When the server will not let them go.
+            OSError: When the server will not let them go or will not stop.
         """
-        record = self._read_record()
+        record = self._keep_found_server(self._read_record())
         try:
             self._applier.withdraw(record, is_removed=False)
+            dependents = self._applier.stop_server()
         finally:
             self._forget_status()
-        self._write_record(dict(record, is_served=False))
+        written = dict(record, is_served=False)
+        if dependents:
+            written["server_dependents"] = dependents
+            self._log("samba: stopped with the server: " + ", ".join(dependents))
+        self._write_record(written)
+
+    def _keep_found_server(self, record: dict) -> dict:
+        """The record with what the server was, read and kept once.
+
+        The first record stays, since it found the server as the system left
+        it.
+
+        Args:
+            record: The record.
+
+        Returns:
+            The record, ``found_server`` in it.
+
+        Raises:
+            OSError: When the host cannot read the server or the record
+                cannot be written.
+        """
+        if "found_server" in record:
+            return record
+        kept = dict(record, found_server=self._applier.read_server())
+        self._write_record(kept)
+        return kept
 
     def remove_configuration(self) -> None:
         """Take the shares away and disable the accounts.
@@ -965,7 +1012,7 @@ class SambaNativeServerRunner(ModuleRunner):
             self._status = None
 
     def _read_record(self) -> dict:
-        """The record, ``{"shares", "accounts", "passwords", "is_served"}``.
+        """The record, ``{"shares", "accounts", "passwords", "is_served"}``, and ``found_server`` and ``server_dependents`` where it stores them.
 
         ``shares`` lists the folder of each share the module configured, on
         the server or not. ``accounts`` leaves out a name without the
@@ -980,7 +1027,13 @@ class SambaNativeServerRunner(ModuleRunner):
         held = held if isinstance(held, dict) else {}
         shares = held.get("shares")
         passwords = held.get("passwords")
+        kept = {}
+        if isinstance(held.get("found_server"), dict):
+            kept["found_server"] = dict(held["found_server"])
+        if isinstance(held.get("server_dependents"), list):
+            kept["server_dependents"] = [str(n) for n in held["server_dependents"]]
         return {
+            **kept,
             "shares": dict(shares) if isinstance(shares, dict) else {},
             "accounts": [
                 str(name)
