@@ -1030,6 +1030,8 @@ the agent carries has no **Uninstall** and no line.
 A module whose last report is `failed` keeps the button of what it was
 asked for live: **Install** while its `want` is `installed`, **Start** while
 it is `running`, **Stop** while it is `stopped`, and **Uninstall** always.
+A `failed` row whose code is `module_needed` keeps **Start** live whatever its
+`want`.
 That press tries the same step again ([agent.md](agent.md), "A retry is the
 same press again"); there is no other retry button. A `failed` Containers
 keeps **Stop** live whatever its `want`, on every system: it ends the retries
