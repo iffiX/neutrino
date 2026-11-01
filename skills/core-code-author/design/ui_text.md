@@ -387,6 +387,7 @@ where they fit.
 | `ui.ssh_server.host_key` | Host key {fingerprint} | 主机密钥 {fingerprint} |
 | `ui.ssh_server.apply` | Apply SSH server | 应用 SSH 服务器 |
 | `state.queued` | queued | 排队中 |
+| `state.running_no_accounts`, the state line of a running module of the account layer with no enabled account | running, no accounts | 运行中，没有账户 |
 | `state.install_failed`, and `ui.module_state.install_failed` on a machine chip | install failed | 安装失败 |
 | `state.ai_tools_switched` | Uses the hub's AI gateway | 使用中枢的 AI 网关 |
 | `state.ai_tools_switched_back` | Uses its own settings | 使用自己原来的设置 |

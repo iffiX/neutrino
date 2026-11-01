@@ -44,11 +44,11 @@ module's.
 
 | | A person's Samba | A Samba the module installed |
 | --- | --- | --- |
-| **Stop** | deletes the module's file and its users' files, takes the include line out and reloads a running `smbd`; `smbd`, `nmbd` and their enablement stay as they are | stops and disables `smbd` and `nmbd`; the module's files stay |
-| **Start** | writes the module's files and the include line, reloads a running `smbd`, and enables and starts one that is off, share or no share | writes them too, enables and starts `smbd`, share or no share, and brings `nmbd` back as the **Stop** found it |
-| A `configure` under `stopped` | as **Stop**, and writes no file of the module's | writes the module's files and starts nothing |
-| **Uninstall** | removes what the module added and no package, so `smb.conf` is never renamed | removes what the module added and the packages |
-| A reboot | `smbd` and `nmbd` start or stay off as the person set them, and `smbd` the module turned on starts | `smbd` and `nmbd` start or stay off as the module's last **Start** or **Stop** left them |
+| **Stop** | deletes the module's file and its users' files, takes the include line out, and stops and disables `smbd` and `nmbd` | stops and disables `smbd` and `nmbd`; the module's files stay |
+| **Start** | writes the module's files and the include line, and enables and starts `smbd` and `nmbd`, share or no share | the same |
+| A `configure` under `stopped` | takes the module's files off, writes none, and starts nothing | writes the module's files and starts nothing |
+| **Uninstall** | removes what the module added and no package, so `smb.conf` is never renamed, and puts `smbd` and `nmbd` back as the first **Start** found them | removes what the module added and the packages |
+| A reboot | `smbd` and `nmbd` start or stay off as the module's last **Start** or **Stop** left them | the same |
 
 What is the module's on a person's Samba is its include line, its own file, its
 folder and Home shares and its `neutrino-<account>` SMB accounts.
@@ -56,9 +56,10 @@ folder and Home shares and its `neutrino-<account>` SMB accounts.
 | Rule | Reason |
 | --- | --- |
 | Every account the module creates, changes or removes starts with `neutrino-`, and it never reads as its own, changes or removes any other, on any system. A configuration whose `users` names another is refused `user_name_invalid {user}`, and the module passes over any other name its record lists. | The person's accounts are theirs, whatever a comment, a description or an older record says of them. |
-| A person's Samba reads `stopped` after a **Stop** while its `smbd` runs, and `running` after a **Start** while `smbd` runs, from the module's own mark, `is_served` in the record. Before the first `configure` there is no mark, and the module reads the unit, so adoption takes `running` or `stopped` from what the person runs. A Samba the module installed reads its unit. | A person's `smbd` serves the person's shares whatever the module does, so the unit says nothing of the module's shares. |
-| **Start** turns a person's `smbd` that is off on, share or no share, and the record keeps what that changed, `started_server`. At **Stop** and at an uninstall the module turns back only that, and a `smbd` that was already on stays on. An account or a share added later starts nothing, and adding or removing the last share moves no `smbd`: a running `smbd` reloads. While it runs, the person's own shares answer too. | A module runs only because a person pressed **Start** ([agent.md](../../agent.md), "One session, everything on it"), and the choice to keep `smbd` off stays the person's once the module stops. |
-| `nmbd` on a person's Samba is never started, stopped, enabled or disabled. | A client reaches the module's shares on port 445 through the agent's relay, with no NetBIOS name. |
+| A person's Samba reads `running` after a **Start** while `smbd` runs, and `stopped` after a **Stop**, a `smbd` the person starts by hand afterwards among it, from the module's own mark, `is_served` in the record, and the unit. Before the first `configure` there is no mark, and the module reads the unit, so adoption takes `running` or `stopped` from what the person runs. A Samba the module installed reads its unit. | A `smbd` the person starts by hand serves the person's shares and none of the module's, since a **Stop** took those off. |
+| The module's first **Start** on a person's Samba keeps what `smbd` and `nmbd` were, each enabled and active or neither, as `found_units` in the record, and a **Stop** on a machine with no such record keeps it first. An uninstall puts both back from it and deletes it. On a machine with no such record an uninstall leaves them as they are. | The module takes the person's service over while it is installed ([agent.md](../../agent.md), "One session, everything on it"), and gives it back as it found it. |
+| An account or a share added later starts nothing, and adding or removing the last share moves no unit: a running `smbd` reloads. While it runs, the person's own shares answer too. | **Start** turned `smbd` on already, share or no share. |
+| A `nmbd` that is masked or not on the machine stays as it is, and its failed start fails nothing. | A client reaches the module's shares on port 445 through the agent's relay, with no NetBIOS name. |
 | After an **Uninstall** on a person's Samba the module reads `absent` through the uninstalled mark `uninstalled/samba`, the one a `builtin` module takes ([../module_install.md](../module_install.md), "From the system's packages"), across a restart of the agent. The hub adopts no `absent` row. A later **Install** finds Samba there, runs no package manager, records nothing as the module's, and its `verify` deletes the mark. | Samba stays on the machine, so its presence check alone reads `failed` `uninstall_unconfirmed`, with no press that clears it. |
 
 ## Linux
@@ -191,8 +192,16 @@ mode are the limits left.
 
 ## Windows and macOS
 
-On Windows and macOS the module drives the system's own SMB server. It
-changes only the shares and accounts it made, the ones its record under the
+On Windows and macOS the module drives the system's own SMB server.
+
+| Rule | Reason |
+| --- | --- |
+| **Start** starts the server and **Stop** stops it, share or no share: `LanmanServer` on Windows, its start type `Automatic` at **Start** when a **Stop** left it `Disabled`, and `com.apple.smbd` on macOS, enabled and bootstrapped at **Start**, disabled and booted out at **Stop**. | The module is a service ([agent.md](../../agent.md), "One session, everything on it"), and a stopped module stays stopped across a boot. |
+| **Stop** takes the module's shares off the server before it stops the server. | Windows removes no share of a server that is stopped. |
+| On Windows **Stop** stops every service that depends on `LanmanServer` with it, and **Start** starts again each one that ran, kept as `server_dependents` in the record. Beside them the person's own shares and the administrative shares `C$`, `ADMIN$` and `IPC$` stop answering, and the agent, the hub and the client use none of them. | Windows stops no server while a service that depends on it runs. The agent's local channel is a local named pipe, which needs no server, and a client mounts with the SMB client, `LanmanWorkstation`. |
+| The module's first **Start** keeps what the server was, as `found_server` in the record: on Windows its start type and whether it ran, on macOS whether it was enabled and whether launchd held it. A **Stop** on a machine with no such record keeps it first. An uninstall puts the server back from it and deletes it. On a machine with no such record an uninstall leaves the server as it is. | The server is the system's, and an uninstall gives it back as the module found it. |
+
+The module changes only the shares and accounts it made, the ones its record under the
 state root lists and its marker names, each account's name starting with
 `neutrino-`, and fences nothing: it writes no
 firewall rule on Windows and no pf anchor on macOS, and the first apply

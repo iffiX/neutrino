@@ -157,8 +157,8 @@ Containers row as it is. The pull runs on Containers' Podman, and on
 Windows a read of the Podman machine failed while a 2.8 GB image was
 pulled, so Containers read `stopped`.
 
-A module runs only because a person pressed **Start**, or pressed it on a
-module that requires it. An account, a share, a setting and **Configure**
+A module installed is a service: **Start** starts it and **Stop** stops it,
+whatever instances it has. An account, a share, a setting and **Configure**
 never start one.
 
 **A stopped module stays stopped.** A module's **Stop** keeps what it
@@ -170,8 +170,8 @@ that before it starts anything:
 | On Linux every unit a module's **Stop** stops is also disabled, and **Start** enables it again. Containers' declared and hub containers are among them. | A person who stopped a module expects it stopped until they start it, and a module that comes back at boot spends the memory and the port the **Stop** gave back. |
 | On macOS every LaunchDaemon a module's **Stop** stops is disabled with `launchctl disable system/<label>`, and **Start** runs `launchctl enable` before it loads the job. | `RunAtLoad` loads a job at boot until it is disabled. |
 | A `configure` under `stopped` writes the module's files and enables and starts nothing: Containers' units, Gitea's server and the file share's unit among them. | A configure that started the server would run it only for the `stop` after it to end it, so a **Stop** of a stopped module would start it for a moment. |
-| A person's Samba is the one exception on Linux: the file share's **Stop** takes its own files off and leaves `smbd`, `nmbd` and their enablement as they are, turning back only what the module started ([agent/modules/file_share.md](agent/modules/file_share.md), "A person's Samba and the module's, on Linux"). | Those units are the person's, and they also serve the person's own shares. |
-| An apply of a module's configuration on the panel writes no `want`, on a module reading `installed` or `stopped` and on one with no `want` at all: the enabled accounts of the account layer, the file share's folder shares and Containers' Run settings among them. The change takes effect at the next **Start** ([protocol.md](protocol.md), "The modules section, one entry per module"). | A module starts only on a **Start**. |
+| The file share's **Stop** stops the SMB server on every system and on a person's Samba too: `smbd` and `nmbd` on Linux, `LanmanServer` on Windows and `com.apple.smbd` on macOS. An **Uninstall** puts it back as the first **Start** found it ([agent/modules/file_share.md](agent/modules/file_share.md), "A person's Samba and the module's, on Linux", "Windows and macOS"). | The module is a service, and **Stop** stops it. |
+| An apply of a module's configuration on the panel writes no `want`, on a module reading `installed` or `stopped` and on one with no `want` at all: the enabled accounts of the account layer, the file share's folder shares and Containers' Run settings among them. The change takes effect at the next **Start** ([protocol.md](protocol.md), "The modules section, one entry per module"). On a running module it takes effect at once, starting that one instance or reloading. | A module starts only on a **Start**. |
 | On Windows every scheduled task a module's **Stop** stops is disabled with `Disable-ScheduledTask`, and **Start** runs `Enable-ScheduledTask` before it starts the task; a service a module made, Gitea's, gets the start type `disabled` at **Stop** and `auto` at **Start**. | A task triggered at startup runs at boot until it is disabled, and a service of start type `auto` starts at boot. |
 | The account service layer holds the disable and the enable for every program run as an account: VS Code, code-server, CloudCLI, Codeg, SiYuan, the SSH server's instances and Containers' keeper ([module_template.md](agent/module_template.md), "The run"). | One place for every account service, on every system. |
 | A stopped module's forwarder does not listen, after its **Stop**, after Containers' **Stop** and after a restart of the agent. Each instance's record keeps the stopped mark, and its forwarder comes back at the module's **Start** with the same port. Containers' `stop` step marks each container module's record the same way, and the state that starts Containers again plans the start of each one whose `want` is `running`. | A forwarder in front of a stopped page holds its port for nothing. In the lab 3101 and 3102 came back at a reboot, and 8787 and 8900 stayed after Containers' **Stop**. |
@@ -276,7 +276,9 @@ table on every surface:
 `installed` is present and never configured by the hub; `install_failed` is
 a module whose last install failed, whatever that install left on the
 machine ("An install that fails ends install_failed"); `stopped` and
-`running` are configured by the hub and told apart by the unit; `installing`
+`running` are configured by the hub and told apart by the unit, and a module
+of the account layer with no instance reads `running` under `want` `running`;
+`installing`
 also covers a module's own install that runs inside its apply or as a task
 the apply left running, and the module's task checks such a task every 30
 seconds in its step, holding no step lock, until it ends. An `installing`
@@ -606,7 +608,7 @@ state root, and only a thing that carries the mark is ever changed or removed.
 | --- | --- |
 | A thing of the person's that stands where the agent needs to put its own, a share with the name an account's share takes, an account with the name an SMB user takes, is left as it is, and the apply refuses with a code that names it, `share_name_taken {name}` or `user_name_taken {user}`, worded so the person renames or removes their own thing. | The person decides what gives way; the agent never does it for them. |
 | A setting of the person's that stops the agent's own things from working is reported on the module row by a code that names the setting, and is never changed. The file share's SELinux boolean `samba_export_all_rw` is the one exception ([agent/modules/file_share.md](agent/modules/file_share.md), "SELinux on Linux"). | The person sees why and keeps their setting. |
-| A program the person installed by hand that a module drives, a Samba on Linux among them, reads `installed` and `running` as the module's and is adopted as the module with an empty configuration; what it already serves stays the person's, is not copied into `config/`, and the panel does not manage it. The module's **Stop**, **Start** and **Uninstall** act on what the module added and leave the person's Samba, its units and its package as they are ([agent/modules/file_share.md](agent/modules/file_share.md), "A person's Samba and the module's, on Linux"). | Adoption gives the person the module's switch without taking their setup. |
+| A program the person installed by hand that a module drives, a Samba on Linux among them, reads `installed` and `running` as the module's and is adopted as the module with an empty configuration; what it already serves stays the person's, is not copied into `config/`, and the panel does not manage it. The module's **Start** and **Stop** start and stop its service, and its **Uninstall** removes what the module added and no package, and puts the service back as the first **Start** found it ([agent/modules/file_share.md](agent/modules/file_share.md), "A person's Samba and the module's, on Linux"). | Adoption gives the person the module's switch and keeps their setup. |
 | A module adds its own things through a seam the program offers for exactly that, an `include` line, a share of the system's SMB server, a unit of its own, and takes them away through the same seam at uninstall, leaving the person's things as they were. | The person's configuration is theirs before, during and after. |
 | No module fences the machine: no `hosts allow` of the whole server, no firewall rule, no pf anchor. A module's own share answers the loopback alone, since every client reaches it through the agent's relay. | A fence around the person's shares would block what the person opened on purpose. |
 
@@ -684,6 +686,7 @@ instance for each.
 | Rule | Reason |
 | --- | --- |
 | A machine starts with no available account, and every module of the account layer with none enabled. | The hub runs nothing as a person's account until the person chose that account. |
+| A module of the account layer with no enabled account runs as a service with no instance: **Start** takes and the module reads `running`, and **Stop** reads `stopped`. An account enabled while it runs starts that one instance. | A module installed is a service, whatever instances it has. |
 | The machine reports `account_details` in its `machine` section beside `accounts`, one `{account, home, shell}` for each, `home` in the machine's own form and `shell` the login shell, empty on Windows. | The form shows each default before the person changes it. |
 | Every feature that runs as an account reads that account's row: the file share its `share_path`, the terminal and the SSH server its `shell_path`, every program its login on Windows. | One form per account holds it, so no module asks again and two modules never disagree. |
 | On Windows the account's password is the one login every feature of the account signs in with: the scheduled tasks of the programs and of the SSH server, the terminal's logon, and the AI tools' one-shot tasks. A changed password is a new login; the old one is deleted ([ui_behavior.md](ui_behavior.md), "Secrets"). | Windows starts a process as another account only with its password, and one password per account is the one a person can keep up to date. |

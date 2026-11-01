@@ -813,9 +813,11 @@ A tab reads, top to bottom: its state line; `ui.modules.log_title` and the
 log box; `ui.modules.config_title` and the module's panel, which **Configure**
 opens and **Hide configuration** closes; and the buttons **Install**,
 **Start**, **Stop**, **Uninstall** and **Configure** at the bottom, aligned
-to the right edge. **Configure** opens the panel and writes no `want`, after
-the first import of Gitea or Containers, and the module stays as it is until
-its **Start** ([protocol.md](protocol.md), "The modules section, one entry per module").
+to the right edge. Once a module is installed it is a service: **Start** starts
+it and **Stop** stops it, whatever instances it has. **Configure** opens the
+panel and writes no `want`, after the first import of Gitea or Containers, and
+the module stays as it is until its **Start** ([protocol.md](protocol.md), "The
+modules section, one entry per module").
 
 In a window 880 px wide or narrower, or one no wider than it is tall, the
 split is one column. The module list is then one row above the picked
@@ -845,8 +847,10 @@ bar; an account checked goes to the end of the order, and each row shows the
 module's own field, its running dot and its code's words. The bar's hint is
 `ui.modules.stopped_hint` while the module's `want` is not `running`, and the
 module's own hint otherwise, on every tab but Terminal's and the SSH
-server's, which have no **Start**. An apply writes no `want`, starts nothing,
-and its bar waits for the `want` the module has. The tabs of the
+server's, which have no **Start**. An apply writes no `want`, starts nothing
+on a module not running, and its bar waits for the `want` the module has. A
+running module of this layer with no enabled account reads
+`state.running_no_accounts` on its tab's state line. The tabs of the
 machine layer,
 Remote desktop, Gitea, Containers and the container modules, hold no
 accounts. No module asks for a port: the agent takes them.
