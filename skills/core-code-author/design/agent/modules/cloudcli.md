@@ -203,7 +203,9 @@ account in it. The record's `database` names the file an instance runs on,
 mints one secret per instance, keeps it sealed, and the module's desired
 state carries it opened, as it carries the password; the agent keeps a
 root-only record per instance (its ports, password and secret) so the
-forwarder comes back after an agent restart. A token is `base64url(expiry ||
+forwarder comes back after an agent restart, unless the record keeps the
+stopped mark of the module's **Stop** ([agent.md](../../agent.md), "A stopped
+module stays stopped"). A token is `base64url(expiry ||
 nonce || HMAC-SHA256(secret, expiry || nonce))`, minted by the hub on every
 `service` ask with `expiry` 60 seconds ahead
 ([protocol.md](../../protocol.md), the service material). The forwarder

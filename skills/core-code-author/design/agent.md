@@ -169,6 +169,7 @@ that before it starts anything:
 | An apply of a stopped module's configuration on the panel keeps its `want` `stopped`: the enabled accounts of the account layer, the file share's folder shares and Containers' Run settings among them. The change takes effect at the next **Start** ([protocol.md](protocol.md), "The modules section, one entry per module"). | A stopped module starts only on its **Start**. |
 | On Windows every scheduled task a module's **Stop** stops is disabled with `Disable-ScheduledTask`, and **Start** runs `Enable-ScheduledTask` before it starts the task; a service a module made, Gitea's, gets the start type `disabled` at **Stop** and `auto` at **Start**. | A task triggered at startup runs at boot until it is disabled, and a service of start type `auto` starts at boot. |
 | The account service layer holds the disable and the enable for every program run as an account: VS Code, code-server, CloudCLI, Codeg, SiYuan, the SSH server's instances and Containers' keeper ([module_template.md](agent/module_template.md), "The run"). | One place for every account service, on every system. |
+| A stopped module's forwarder does not listen, after its **Stop**, after Containers' **Stop** and after a restart of the agent. Each instance's record keeps the stopped mark, and its forwarder comes back at the module's **Start** with the same port. Containers' `stop` step marks each container module's record the same way, and the state that starts Containers again plans the start of each one whose `want` is `running`. | A forwarder in front of a stopped page holds its port for nothing. In the lab 3101 and 3102 came back at a reboot, and 8787 and 8900 stayed after Containers' **Stop**. |
 
 **The agent is handed conclusions, never a table to search.** The recipes it
 receives are already resolved for its platform; it has no manifest logic and
@@ -740,7 +741,9 @@ Every other port in the table is published on TCP alone. Any other port,
 and a number published on the other protocol alone, is refused
 `port_not_published {port}` and nothing is dialled. A dial that fails closes
 the stream `connect_failed {reason}`, `reason` being `refused`, `timeout` or
-`unreachable`.
+`unreachable`. The port of a stopped module stays published with nothing
+listening on it ("A stopped module stays stopped"), so its dial closes the
+stream `connect_failed {refused}`.
 
 What the Podman report gives this stream is
 [modules/containers.md](agent/modules/containers.md).
