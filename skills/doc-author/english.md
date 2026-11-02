@@ -14,7 +14,7 @@ rendering of a Chinese sentence.
 | GitLab word list | the banned words and their reasons, no em dash |
 | Diátaxis | which sentences belong to which kind of page |
 | vale-ai-tells | the named sentence shapes that mark machine prose |
-| humanizer:humanizer (upstream `blader/humanizer`) | one pass over the whole page after drafting; where it differs from this page, the stricter rule holds |
+| humanizer:humanizer (upstream `blader/humanizer`) | one pass over the whole page after drafting; it removes padding and never swaps a term for an everyday word; where it differs from this page, the stricter rule holds |
 
 ## Voice
 
@@ -107,11 +107,67 @@ whole sentence. A swapped word keeps the shape.
 | Mic drop | "It matters." "Full stop." | delete |
 | Figurative verb | mints, rides, travels, lives, owns, carries, earns, lands, surfaces, fires, clears, ships (for a release), wires, stands (for exists), hands out, spins up, lights up, bakes in | generates, is sent, is in, has, includes, returns, appears, is released, exists, gives |
 | Unbaselined comparison | "significantly faster", "much lower" | the number, or delete the adverb |
-| Self reference | "as mentioned above", "as we'll see" | a link, or delete |
+| Self reference | "as mentioned above", "as we'll see", "this page explains" | a link, or delete |
 
 Over-correction is its own tell. A rewrite subtracts and sharpens; it adds no
 first person, no invented numbers, and no manufactured stakes. Sentences of
 varied length stay.
+
+## Manual anti-patterns
+
+A manual page is technical documentation. The reader wants to know what a thing
+is and how to use it. These failures were found in a draft of the manual.
+
+| Anti-pattern | Bad | Do instead |
+| --- | --- | --- |
+| Headless opening: the first sentence under the title has no subject | "Deploy apps on your own computer, use them safely from anywhere, and share them too." | Start with the thing the title names and say what it is, or speak to `you`: "Neutrino Hub is an open source, self-hosted panel for deploying apps." |
+| Topic list as an opening | "How the hub, the agent and the client fit together, and where a connection goes." | State the content: "A device connects to one port on the hub, and the hub checks permissions and connects to the app." |
+| Question as a hook | "Have a public address? Your phone connects straight back." | A condition: "If your connection has a public address, you can use Direct." |
+| Causative definition | "File sharing turns a folder into a drive on your laptop." | `X is`, in one sentence: "File sharing is the feature that mounts a folder on your system at a path or drive letter on the client for direct reading and writing." |
+| Parallel items packed into a paragraph | "Home shares share the account's own folder, such as `/home/lab`. Folder shares share one folder you choose." | Name the kinds in the introducing line, then one bullet each. |
+| Talking to nobody: the page discusses itself | "The design fits in one sentence." "This page walks through each step." | Delete; state the fact, and use `you` when the reader acts. |
+| Living object: a device does what only a person can | "This device must first install the client." | The person is the subject: "Install the client on this device." A program does only what it performs. |
+| Everyday word for a term | "The phone recognises the hub by the key in the link." | The term the field uses, from the following table. |
+| One-word answer | "Nothing." | A full sentence with the mechanism: "The hub sends no reply when the first bytes are wrong, and closes the connection after 5 to 30 seconds." |
+| Advertising a third party | "No server to buy: open a free account and people outside can open your links too." | What it is and how the hub uses it: "SakuraFrp is a third-party tunnel service. The hub runs frpc, which connects to a SakuraFrp node, and the node forwards connections." The free quota goes in a small table after the opening, with its reading date and no selling point. |
+| Sales tone from the home page | "Everything at a glance, no clicking around." | What the page shows and how to reach it: "**Dashboard** shows traffic, systems and AI usage." |
+| Colloquial from top to bottom on a security or architecture page | "Can other programs on my computer get at it?" | Plain answers go in one section, `Quick answers`. `Technical architecture` is for technical readers and holds the protocol, the routing and the architecture diagram. |
+| Stating protection thresholds, which help someone tune an attack | "Each connection is read for 20 to 100 bytes and held for 5 to 30 seconds. At most 128 connections wait for admission." | State the mechanism and leave out any number the reader can do without: "The hub reads a random number of bytes, holds the connection for a random time, then resets it. Connections awaiting admission have a limit." A number the reader acts on stays, such as a link valid for 30 minutes. |
+| Stating a date, when the page describes the product as it is now | "These results were measured on 2026-10-26." | Delete the date: "The measured results are:" Only a table surveying vendors states a reading date. |
+| Definition with a sales tail | "code-server is the open source web VS Code, no Microsoft terms, write code on your phone." | End the definition at the period. The next fact is its own sentence, addressed to `you`. |
+| One thing under several names | "Open a road back to the hub when you are out." | One name per thing, the name the interface shows. |
+| Dangling reference: it, that side, the other end | "When that side connects, the app tries again." | Name the noun: "When NetBird or EasyTier connects, the app tries again." |
+| Misplaced subject | "Share visitors keep no record." | The acting component is the subject: "The hub keeps no record of a visitor's identity or address." |
+| Empty lead-in | "The statuses go like this." | Name the subject in a line ending in a colon: "Each status means:" |
+| Colloquial heading | "What's different", "Later", "Try it", "Careful" | A heading naming the content: "Differences", "Maintenance", "Verify the connection", "Risks". |
+| Guessing at a cause | "Most likely the link expired." | "The usual cause is an expired link." |
+| Assuming where the reader is | "The rest stays on your home line." | Name the thing: "The rest uses this computer's own connection." |
+| Answering half the question | A question about two products, answered for one. | Answer every part. |
+
+### Terms
+
+Prose uses the right-hand word. A label quoted from the interface stays bold and
+exact, whatever this table says.
+
+| Do not write | Write |
+| --- | --- |
+| lock, secret (for a key) | key, public key, private key |
+| recognise, tell | verify, authenticate |
+| touch, get at, reach (for data) | access, read, write |
+| guard, watch (a port) | listen on |
+| opening bytes, knock | magic bytes |
+| door | port, endpoint |
+| dial | connect to |
+| run many streams over | multiplex |
+| stuff, materials | the named thing, such as a setup key or a network key |
+| friends, classmates | visitor, the other person |
+| says, reads (for a status) | shows |
+| comes back | returns, restores |
+| road, way back | the interface's name, or connection method |
+| by itself (of a program) | automatically |
+| one copy (of a running program) | one instance |
+| sealed | encrypted |
+| tick | select |
 
 ## Sentence patterns
 

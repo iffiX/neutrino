@@ -30,6 +30,7 @@ Run the greps from the repository root with the page path as `$P`.
 | No opener shared across the site: the first sentence's first four words appear on no other page. `[grep]` | `for f in $(git ls-files 'docs/guide/**.md'); do awk 'NF && !/^(---|#|!|:::|title:)/{print substr($0,1,16); exit}' $f; done \| sort \| uniq -c \| sort -rn \| head` (every count is 1) |
 | Product terms are the fixed ones. `[grep]` | `grep -n '中微子' $P` |
 | The step budget holds: no procedure over nine items. | count each list |
+| Each step of installing and using has a picture, and the page meets the checks in `layout.md`. | open the page at 1920, 1440 and 390 px wide |
 | Each step has one verb and one action; a result sentence only where the outcome is invisible. | read each procedure |
 | Sentence length: English 25 words and two clauses; Chinese 20 characters per clause, 40 hard cap. | read each long line |
 | The two languages share headings one to one, and no sentence in one is a rendering of the other. | compare outlines |
@@ -68,4 +69,6 @@ Run the greps from the repository root with the page path as `$P`.
 | 括号：全英文内容半角并留空格，含中文内容全角不留空格。 | 逐个括号看 |
 | 界面名加粗；只在面板本身显示英文处括注英文，其余不括。 | 对照界面 |
 | 人称统一为“你”。`[grep]` | `grep -n '您' $P` |
+| 写“安装”不写“装上”。`[grep]` | `grep -n '装上' $P` |
+| 写“系统”不写“机器”，加粗的屏幕原话除外。`[grep]` | `sed 's/\*\*[^*]*\*\*//g' $P \| grep -n '机器'` |
 | 中文标点在中文句子里，半角标点只在整句英文里。`[grep]` | `grep -nP '[\x{4e00}-\x{9fff}][,.;:!?]' $P` |

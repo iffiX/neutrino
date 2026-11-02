@@ -8,7 +8,8 @@ description: Writing standard for every Markdown document in this repository, in
 A document in this repository is one page of one kind, for one reader, in one
 language, written from an outline the user approved. This file is the gate
 before drafting and the check after it. The register of each language is in
-its own file; the shape of each kind of page is in `kinds.md`.
+its own file; the site's outline and the shape of each kind of page are in
+`outline.md`, and how a finished page looks on screen is in `layout.md`.
 
 ## Before the first sentence
 
@@ -33,7 +34,7 @@ this gate exists for.
 Two questions place a page. Does it serve the reader's action or the reader's
 understanding? Does it serve learning or does it serve work? The answers give
 one row of the table below for every document here. Per-kind shape and checks
-are in `kinds.md`.
+are in `outline.md`.
 
 | Kind | Serves | Answers | What it refuses | Documents here |
 | --- | --- | --- | --- | --- |
@@ -43,8 +44,8 @@ are in `kinds.md`.
 | Explanation | understanding, learning | "Why is X like this?" | steps, exhaustive detail, anything the reader must do | overview, design pages |
 
 The landing README is a composite: a short explanation, one block per thing
-the reader gets, a comparison, an install how-to, and links. Its own section in `kinds.md` says how much of each. The
-site home page and the app page are composites too, each with its section there.
+the reader gets, a comparison, an install how-to, and links. Its own section in `outline.md` says how much of each. The
+site home page, the overview pages and the app page are composites too, each with its section there.
 
 ## Rules every document obeys
 
@@ -70,6 +71,8 @@ a rule without one gets negotiated away under deadline.
 | No security reassurance of the form "X never leaves the machine". | A claim stated as an absence is untestable by the reader and reads as marketing. |
 | Each sentence pattern from `english.md` or `chinese.md` appears at most once per page, and no two pages of the site open with the same sentence shape. | A pattern used twice is a template; used ten times it is the page; the same opener on every page is a refrain the reader stops reading. |
 | An outline line is a note, never a sentence: the opening states the page's outcome in words written for this page. | A note expanded word for word reads as a note. |
+| A finished guide page is detailed enough for a reader who knows nothing to finish the job from the page alone, in connected prose, with a picture for every step of installing and using. | The outline's brevity does not carry over: a short page the reader cannot follow is worth nothing. |
+| Pictures, rows, steps and enlarging follow `layout.md`, and a writer never sizes a picture by hand. | Pictures sized one by one were the reason a page was unreadable. |
 | The two languages share the outline and nothing else; each is written from its own register file, never from the other language's text. | A sentence carried across languages keeps the source language's clause order. |
 | A Chinese page also follows the skill `humanizer-zh` (upstream `op7418/Humanizer-zh`), an English page the skill `humanizer:humanizer` (upstream `blader/humanizer`). Where one differs from this standard, the stricter rule holds. | The register files name single patterns; these passes read the whole page for what still sounds machine-written. |
 | Product terms are fixed: hub, agent, client in English; 微子, 中枢, 被控端, 客户端 in Chinese; never 中微子, and the hub is never `hub` in Chinese nor 中枢 in English ([ui_text.md](../core-code-author/design/ui_text.md)). | One name per thing across thirty pages. |
@@ -85,7 +88,7 @@ a site are not budgets.
 | Chinese clause | 20 characters; 30 to 39 only when unambiguous; 40 never; a comma-chained sentence 100 characters | 阮一峰 句子 |
 | Paragraph | four sentences in English; seven lines, best four, in Chinese | Microsoft, 阮一峰 段落 |
 | Steps in one procedure | nine; split at a heading beyond that | yikeke 列表, Microsoft |
-| Step result sentence | only when the outcome is invisible to the reader | GitHub procedural steps |
+| Step result sentence | whenever the pressed control does not itself show the reader it worked; every procedure ends in a visible result | iffi, 2026-11-01 |
 | Alerts | one per section, three per page, four lines each, never consecutive | GitHub, GitLab, yikeke |
 | Links | two per section, each in its own sentence | GitHub |
 | Heading depth | H2 to H4 | GitLab, 阮一峰 标题 |
@@ -93,8 +96,8 @@ a site are not budgets.
 
 ## Before calling it done
 
-Run `checklist.md` line by line; half of it is a grep. Then run the reader
-test, which catches what a grep cannot:
+Run `checklist.md` line by line; half of it is a grep. Check the page against
+`layout.md`. Then run the reader test, which catches what a grep cannot:
 
 1. Write five questions the intended reader asks of this page, including one the
    page answers only by implication.
@@ -111,7 +114,7 @@ test, which catches what a grep cannot:
 | --- | --- |
 | "The outline is obvious, I'll draft straight away." | The other language's writer has a different obvious outline. Write it down. |
 | "This warning matters, it needs its own alert." | One alert per section. A second one goes under a heading as body text. |
-| "A result sentence after every step helps." | It restates the step. Add it only where success and failure look alike. |
+| "A result sentence after every step helps." | It restates the step when the button already shows the result. Add it where the reader cannot tell yet. |
 | "A short recap helps the reader leave." | The reader leaves at the last step. A recap becomes the refrain on every page. |
 | "The Chinese page is nearly the English one, I'll render it." | A rendering keeps English clause order and the 被 passive. Write from the outline. |
 | "This sentence pattern fits every entry." | That is how a page becomes twenty-five copies of one sentence. Once per page. |
@@ -131,5 +134,6 @@ of these means the draft goes back through the register file before review.
 | --- | --- |
 | `english.md` | Writing any English page: register, step shape, banned words and shapes, sentence patterns. |
 | `chinese.md` | 写任何中文页面：语气、句子、排版、禁用词、禁用句式、句式范例。 |
-| `kinds.md` | Shaping a page: reader, opening, structure, refusals and checks for each kind written here. |
+| `outline.md` | Shaping a page or the site: the guide's outline, the overview pages, and the reader, opening, structure, refusals and checks for each kind written here. |
+| `layout.md` | Placing pictures and laying out a finished page: the arrangements, capture rules, steps, enlarging and the rest of the reading experience. |
 | `checklist.md` | Finishing a page: the line-by-line check, with the grep for each mechanical item. |
