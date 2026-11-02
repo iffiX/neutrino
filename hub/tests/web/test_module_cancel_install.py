@@ -37,7 +37,7 @@ WORDS = {
         "ui.modules.cancelling": "正在取消",
         "ui.modules.cancel_title": "取消在 {device} 上安装 {module}",
         "ui.modules.cancel_body": (
-            "正在运行的这一步先走完，之后的步骤不再运行，安装留下的内容都会移除。"
+            "正在运行的这一步先完成，之后的步骤不再运行，安装留下的内容都会移除。"
         ),
         "ui.modules.cancel_confirm": "取消安装",
         "ui.modules.cancel_keep": "继续安装",
