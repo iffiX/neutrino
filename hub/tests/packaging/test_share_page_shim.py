@@ -43,16 +43,25 @@ def test_a_link_that_leaves_no_page_keeps_its_address():
     assert "target.origin !== location.origin" in handler
 
 
-def leaving_listener() -> str:
-    """The shim's line that tells the worker a page is about to leave."""
-    start = SHIM.index('window.addEventListener("beforeunload"')
+def tell_navigating() -> str:
+    """The shim's line that sends the worker the navigating message."""
+    start = SHIM.index("const tellNavigating = () => {")
     return SHIM[start : SHIM.index("\n", start)]
 
 
+def child_frame_observer() -> str:
+    """The shim's observer of the page's child frames."""
+    start = SHIM.index("new MutationObserver(")
+    end = SHIM.index("subtree: true });", start)
+    return SHIM[start : end + len("subtree: true });")]
+
+
 def test_a_page_tells_the_worker_before_it_leaves():
-    listener = leaving_listener()
-    assert 'type: "leaving", tab, address: location.href.split("#")[0]' in listener
-    assert listener.endswith(", true);")
+    assert (
+        'type: "navigating", tab, address: location.href.split("#")[0]'
+        in tell_navigating()
+    )
+    assert 'window.addEventListener("beforeunload", tellNavigating, true);' in SHIM
 
 
 def test_the_shim_never_holds_a_page_back():
@@ -66,4 +75,34 @@ def test_the_listener_goes_on_before_the_app_s_code_can_run():
     assert SHIM.index('window.addEventListener("beforeunload"') < SHIM.index(
         "const tagAction = (element, attribute) => {"
     )
-    assert "worker.controller.postMessage" in leaving_listener()
+    assert "worker.controller.postMessage" in tell_navigating()
+
+
+def test_a_page_tells_the_worker_when_it_gains_a_child_frame():
+    observer = child_frame_observer()
+    assert observer.index("seenFrames.add(window[i]);") < observer.index(
+        "tellNavigating();"
+    )
+    assert observer.endswith(".observe(document, { childList: true, subtree: true });")
+
+
+def test_a_frame_that_replaces_another_counts_as_a_new_frame():
+    observer = child_frame_observer()
+    assert "if (seenFrames.has(window[i])) continue;" in observer
+    assert "window.length >" not in observer
+
+
+def test_an_empty_child_frame_tells_the_worker_at_its_own_beforeunload():
+    observer = child_frame_observer()
+    assert (
+        'try { window[i].addEventListener("beforeunload", tellNavigating, true); } '
+        "catch (e)" in observer
+    )
+
+
+def test_the_observer_reads_no_record_and_watches_no_attribute():
+    observer = child_frame_observer()
+    assert observer.startswith("new MutationObserver(() => {")
+    assert "attributes" not in observer
+    assert "characterData" not in observer
+    assert SHIM.count("new MutationObserver(") == 1

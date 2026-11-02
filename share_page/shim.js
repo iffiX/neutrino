@@ -22,7 +22,18 @@
     worker.startMessages();
     announce();
     // The page's tab, sent to the worker before the frame's request. This listener runs ahead of the app's own.
-    window.addEventListener("beforeunload", () => { if (worker.controller) worker.controller.postMessage({ type: "leaving", tab, address: location.href.split("#")[0] }); }, true);
+    const tellNavigating = () => { if (worker.controller) worker.controller.postMessage({ type: "navigating", tab, address: location.href.split("#")[0] }); };
+    window.addEventListener("beforeunload", tellNavigating, true);
+    // A child frame's first load fires beforeunload in the frame's empty document alone, and the shim does not run there. The page sends the message when it gains the frame and at that beforeunload.
+    const seenFrames = new WeakSet();
+    new MutationObserver(() => {
+      for (let i = 0; i < window.length; i++) {
+        if (seenFrames.has(window[i])) continue;
+        seenFrames.add(window[i]);
+        tellNavigating();
+        try { window[i].addEventListener("beforeunload", tellNavigating, true); } catch (e) { /* a frame of another origin */ }
+      }
+    }).observe(document, { childList: true, subtree: true });
   }
 
   // A form sent in the frame by any method but GET gets this tab added to its
