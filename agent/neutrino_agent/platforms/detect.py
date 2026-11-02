@@ -34,6 +34,10 @@ MACHINE_TO_ARCH = {
     "armv6l": "armhf",
 }
 
+# Windows' architecture, and the machine's own under a 32-bit process.
+WINDOWS_ARCHITECTURE_VARIABLE = "PROCESSOR_ARCHITECTURE"
+WINDOWS_NATIVE_ARCHITECTURE_VARIABLE = "PROCESSOR_ARCHITEW6432"
+
 DEBIAN_LIKE = ("debian", "ubuntu", "raspbian", "linuxmint", "pop")
 RHEL_LIKE = ("rhel", "fedora", "centos", "rocky", "almalinux")
 ARCH_LIKE = ("arch", "manjaro", "endeavouros")
@@ -52,10 +56,11 @@ def platform_tuple() -> dict:
     """
     reported = "linux" if sys.platform.startswith("linux") else sys.platform
     os_name = OS_NAMES.get(reported, reported)
+    machine = _machine_name(os_name)
     return {
         "os": os_name,
         "family": _distro_family() if os_name == "linux" else "",
-        "arch": MACHINE_TO_ARCH.get(platform.machine().lower(), platform.machine()),
+        "arch": MACHINE_TO_ARCH.get(machine.lower(), machine),
         "version": _system_version(os_name),
     }
 
@@ -76,6 +81,20 @@ def detect_platform() -> AgentPlatform:
     if os_name == "darwin":
         return DarwinPlatform()
     return AgentPlatform()
+
+
+def _machine_name(os_name: str) -> str:
+    """The name the system gives its architecture.
+
+    On Windows it comes from the environment. ``platform.machine`` reads WMI's
+    ``Win32_OperatingSystem``, and that read starts a stopped SMB server of
+    Manual start type.
+    """
+    if os_name == "windows":
+        return os.environ.get(WINDOWS_NATIVE_ARCHITECTURE_VARIABLE) or os.environ.get(
+            WINDOWS_ARCHITECTURE_VARIABLE, ""
+        )
+    return platform.machine()
 
 
 def _system_version(os_name: str) -> str:

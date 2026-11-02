@@ -252,8 +252,9 @@ function Get-NeutrinoThermalZone {
 # marker, the sessions and the listed accounts.
 function Get-NeutrinoShare($Request) {
     $svc = Get-Service -Name LanmanServer -ErrorAction SilentlyContinue
+    $is_running = [bool]($svc -and $svc.Status -eq 'Running')
     $shares = @()
-    foreach ($share in @(Get-SmbShare -ErrorAction SilentlyContinue)) {
+    foreach ($share in @(if ($is_running) { Get-SmbShare -ErrorAction SilentlyContinue })) {
         if (-not "$($share.Description)".StartsWith($Request.marker)) {
             continue
         }
@@ -269,7 +270,7 @@ function Get-NeutrinoShare($Request) {
         }
     }
     $sessions = @()
-    foreach ($session in @(Get-SmbSession -ErrorAction SilentlyContinue)) {
+    foreach ($session in @(if ($is_running) { Get-SmbSession -ErrorAction SilentlyContinue })) {
         $sessions += @{
             user = "$($session.ClientUserName)"
             address = "$($session.ClientComputerName)"
@@ -286,7 +287,7 @@ function Get-NeutrinoShare($Request) {
     }
     return @{
         is_present = [bool]$svc
-        is_running = [bool]($svc -and $svc.Status -eq 'Running')
+        is_running = $is_running
         shares = $shares
         sessions = $sessions
         users = $users
@@ -353,8 +354,10 @@ function Set-NeutrinoShare {
     }
     $computer = $env:COMPUTERNAME
     $notes = @()
+    # A read of a stopped server of Manual start type starts it.
+    $is_readable = $Request.is_served -or ((Get-Service -Name LanmanServer).Status -eq 'Running')
     if ($Request.is_sweep) {
-        foreach ($share in @(Get-SmbShare -ErrorAction SilentlyContinue)) {
+        foreach ($share in @(if ($is_readable) { Get-SmbShare -ErrorAction SilentlyContinue })) {
             if ("$($share.Description)".StartsWith($Request.marker)) {
                 Remove-SmbShare -Name $share.Name -Force | Out-Null
                 $notes += "swept share $($share.Name)"
@@ -368,7 +371,7 @@ function Set-NeutrinoShare {
         }
     }
     foreach ($s in @($Request.shares)) {
-        $held = Get-SmbShare -Name $s.name -ErrorAction SilentlyContinue
+        $held = if ($is_readable) { Get-SmbShare -Name $s.name -ErrorAction SilentlyContinue }
         $is_ours = (@($Request.owned_shares) -contains $s.name) -and
             "$($held.Description)".StartsWith($Request.marker)
         if ($held -and -not $is_ours) {
@@ -422,7 +425,7 @@ function Set-NeutrinoShare {
         }
     }
     foreach ($name in @($Request.removed_shares)) {
-        $held = Get-SmbShare -Name $name -ErrorAction SilentlyContinue
+        $held = if ($is_readable) { Get-SmbShare -Name $name -ErrorAction SilentlyContinue }
         if ($held -and "$($held.Description)".StartsWith($Request.marker)) {
             Remove-SmbShare -Name $name -Force | Out-Null
             $notes += "removed share $name"
@@ -489,8 +492,10 @@ function Remove-NeutrinoShare {
     if (-not $PSCmdlet.ShouldProcess('the file share')) {
         return @{}
     }
+    # A read of a stopped server of Manual start type starts it.
+    $is_running = (Get-Service -Name LanmanServer).Status -eq 'Running'
     foreach ($name in @($Request.owned_shares)) {
-        $held = Get-SmbShare -Name $name -ErrorAction SilentlyContinue
+        $held = if ($is_running) { Get-SmbShare -Name $name -ErrorAction SilentlyContinue }
         if ($held -and "$($held.Description)".StartsWith($Request.marker)) {
             Remove-SmbShare -Name $name -Force | Out-Null
         }

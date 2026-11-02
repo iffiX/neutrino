@@ -87,6 +87,8 @@ def test_an_os_that_is_not_linux_is_named_as_the_client_names_it(
     monkeypatch, reported, named, version
 ):
     monkeypatch.setattr(detect_module.platform, "machine", lambda: "AMD64")
+    monkeypatch.setenv("PROCESSOR_ARCHITECTURE", "AMD64")
+    monkeypatch.delenv("PROCESSOR_ARCHITEW6432", raising=False)
     monkeypatch.setattr(detect_module.sys, "platform", reported)
     monkeypatch.setattr(
         detect_module.sys, "getwindowsversion", windows_version, raising=False
@@ -161,3 +163,23 @@ def test_an_os_the_agent_does_not_know_gets_the_contract_that_claims_nothing(
 
     assert type(detected) is AgentPlatform
     assert detected.capabilities == frozenset()
+
+
+def test_windows_takes_its_architecture_from_the_environment_and_never_from_wmi(
+    monkeypatch,
+):
+    def refuse():
+        raise AssertionError("platform.machine reads WMI and starts the SMB server")
+
+    monkeypatch.setattr(detect_module.platform, "machine", refuse)
+    monkeypatch.setattr(detect_module.sys, "platform", "win32")
+    monkeypatch.setattr(
+        detect_module.sys, "getwindowsversion", windows_version, raising=False
+    )
+    monkeypatch.setenv("PROCESSOR_ARCHITECTURE", "ARM64")
+    monkeypatch.delenv("PROCESSOR_ARCHITEW6432", raising=False)
+    assert detect_module.platform_tuple()["arch"] == "arm64"
+
+    monkeypatch.setenv("PROCESSOR_ARCHITECTURE", "x86")
+    monkeypatch.setenv("PROCESSOR_ARCHITEW6432", "AMD64")
+    assert detect_module.platform_tuple()["arch"] == "amd64"
