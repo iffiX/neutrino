@@ -1,6 +1,7 @@
 """The system-package runner: packages by name, steps before them, and the one
 helper every package run goes through, waiting for the system's own lock."""
 
+import os
 import pathlib
 
 import pytest
@@ -169,11 +170,19 @@ def fakes(tmp_path, monkeypatch):
     monkeypatch.setattr(system_package_module, "PROC_DIR", str(tmp_path / "proc"))
     dnf_lock = tmp_path / "rpmdb_lock.pid"
     monkeypatch.setattr(system_package_module, "DNF_LOCK_PATHS", (str(dnf_lock),))
+    repo_lock = tmp_path / "system-repo.lock"
+    monkeypatch.setattr(
+        system_package_module, "DNF_SYSTEM_REPO_LOCK_PATHS", (str(repo_lock),)
+    )
+    proc_locks = tmp_path / "locks"
+    monkeypatch.setattr(system_package_module, "PROC_LOCKS_PATH", str(proc_locks))
     alpm_lock = tmp_path / "db.lck"
     monkeypatch.setattr(system_package_module, "AGENT_PACMAN_LOCK_PATH", str(alpm_lock))
 
     class Fakes:
         lock = dnf_lock
+        system_repo_lock = repo_lock
+        kernel_locks = proc_locks
         pacman_lock = alpm_lock
 
         def turns(self, program, *turns):
@@ -324,6 +333,109 @@ def test_dnf_waits_while_another_dnf_holds_its_lock_and_names_it(fakes):
         ),
         ({}, 0),
     ]
+    assert len(fakes.args("dnf")) == 1
+
+
+def kernel_lock_line(pid: int, path) -> str:
+    """One line of ``/proc/locks`` for a lock on a file."""
+    inode = os.stat(path).st_ino
+    return f"1: POSIX  ADVISORY  WRITE {pid} 00:2b:{inode} 0 EOF\n"
+
+
+def test_dnf_5_4_waits_while_the_kernel_lists_a_holder_of_its_lock_and_names_it(fakes):
+    """dnf 5.4 waits inside its own run with no word the row can show, for as
+    long as another dnf downloads. The row names the holder, and dnf runs once
+    the kernel lists no holder."""
+    fakes.process(1507, "dnf", b"/usr/bin/dnf", b"-y", b"upgrade")
+    fakes.system_repo_lock.write_text("")
+    fakes.kernel_locks.write_text(kernel_lock_line(1507, fakes.system_repo_lock))
+    waits: list = []
+
+    def told(wait):
+        waits.append((wait, len(fakes.args("dnf"))))
+        fakes.kernel_locks.write_text("")
+
+    system_package_module.set_wait_sink(told)
+    try:
+        system_package_module.run_package_manager(["dnf", "install", "-y", "x"])
+    finally:
+        system_package_module.set_wait_sink(None)
+
+    assert waits == [
+        (
+            {"code": "waiting_for_package_manager", "params": {"holder": "dnf"}},
+            0,
+        ),
+        ({}, 0),
+    ]
+    assert len(fakes.args("dnf")) == 1
+
+
+def test_dnf_5_4_s_lock_held_past_the_wait_fails_package_manager_busy(
+    fakes, monkeypatch
+):
+    monkeypatch.setattr(system_package_module, "AGENT_PACKAGE_LOCK_RETRY_S", 150)
+    monkeypatch.setattr(system_package_module.time, "sleep", lambda seconds: None)
+    fakes.process(1507, "dnf", b"/usr/bin/dnf", b"-y", b"upgrade")
+    fakes.system_repo_lock.write_text("")
+    fakes.kernel_locks.write_text(kernel_lock_line(1507, fakes.system_repo_lock))
+
+    with pytest.raises(ModuleApplyError) as refused:
+        system_package_module.run_package_manager(["dnf", "install", "-y", "x"])
+
+    assert refused.value.code == "package_manager_busy"
+    assert refused.value.params == {"holder": "dnf"}
+    assert fakes.args("dnf") == []
+
+
+def test_dnf_5_4_finds_its_lock_on_either_path(fakes, monkeypatch, tmp_path):
+    """The file sits under /var/lib/dnf where that directory exists, and under
+    /usr/lib/sysimage/libdnf5 where it does not."""
+    other = tmp_path / "libdnf5" / "system-repo.lock"
+    other.parent.mkdir()
+    other.write_text("")
+    monkeypatch.setattr(
+        system_package_module,
+        "DNF_SYSTEM_REPO_LOCK_PATHS",
+        (str(fakes.system_repo_lock), str(other)),
+    )
+    fakes.kernel_locks.write_text(kernel_lock_line(1507, other))
+
+    assert system_package_module._dnf_lock_pid() == 1507
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "",
+        "1: POSIX  ADVISORY  WRITE 1507 00:2b:0 0 EOF\n",
+        "1: OFDLCK ADVISORY  WRITE -1 00:2b:{inode} 0 EOF\n",
+        "1: -> POSIX  ADVISORY  WRITE 1508 00:2b:{inode} 0 EOF\n",
+    ],
+    ids=["no lock", "another file", "a lock with no process", "a process waiting"],
+)
+def test_dnf_runs_at_once_while_no_process_holds_dnf_5_4_s_lock(fakes, line):
+    fakes.system_repo_lock.write_text("")
+    inode = os.stat(fakes.system_repo_lock).st_ino
+    fakes.kernel_locks.write_text(line.format(inode=inode))
+    waits: list = []
+
+    system_package_module.set_wait_sink(waits.append)
+    try:
+        system_package_module.run_package_manager(["dnf", "install", "-y", "x"])
+    finally:
+        system_package_module.set_wait_sink(None)
+
+    assert waits == []
+    assert len(fakes.args("dnf")) == 1
+
+
+def test_a_dnf_with_no_system_repo_lock_file_runs_as_before(fakes):
+    """dnf 4 and dnf 5.2 make no such file."""
+    fakes.kernel_locks.write_text("1: POSIX  ADVISORY  WRITE 1507 00:2b:99 0 EOF\n")
+
+    system_package_module.run_package_manager(["dnf", "install", "-y", "x"])
+
     assert len(fakes.args("dnf")) == 1
 
 

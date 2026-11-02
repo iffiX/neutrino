@@ -55,6 +55,14 @@ DNF_LOCK_PATHS = (
     "/var/cache/dnf/metadata_lock.pid",
     "/var/cache/dnf/download_lock.pid",
 )
+# The file dnf 5.4 locks the system repository with, under /var/lib/dnf where
+# that directory exists. It names no holder.
+DNF_SYSTEM_REPO_LOCK_PATHS = (
+    "/var/lib/dnf/system-repo.lock",
+    "/usr/lib/sysimage/libdnf5/system-repo.lock",
+)
+# Where the kernel lists the file locks held.
+PROC_LOCKS_PATH = "/proc/locks"
 # Where the kernel shows each process: its name, cut at 15 characters, and
 # its command line.
 PROC_DIR = "/proc"
@@ -83,8 +91,9 @@ def run_package_manager(
 
     apt waits up to 300 seconds through ``DPkg::Lock::Timeout`` and names
     the process that holds the lock; dnf runs once no process holds dnf 4's
-    own locks, and again every few seconds while its output names the rpm
-    transaction lock, up to 300 seconds in all; pacman runs once no process
+    own locks or dnf 5.4's system repository lock, and again every few seconds
+    while its output names the rpm transaction lock, up to 300 seconds in
+    all; pacman runs once no process
     holds its lock file, up to 300 seconds, and a file no process holds is
     removed. A run apt refuses because a dpkg run was cut runs ``dpkg
     --configure -a`` once, then the command again.
@@ -229,8 +238,10 @@ def _run_dnf(command: list, timeout_s: int) -> str:
 
     dnf 4 and yum wait for their own lock without a word, so the files
     their locks name the holder in are read before each run, and the wait
-    for a holder they name ends before dnf runs; dnf 5 refuses at once, and
-    runs again while its output names the rpm transaction lock.
+    for a holder they name ends before dnf runs. dnf 5.4 waits for its system
+    repository lock without a word the row can show, so the kernel's list of
+    locks names that holder. dnf 5 refuses at once on the rpm transaction lock,
+    and runs again while its output names that lock.
     """
     waited = 0
     told = None
@@ -260,7 +271,7 @@ def _run_dnf(command: list, timeout_s: int) -> str:
 
 
 def _dnf_lock_pid() -> int:
-    """The process that holds one of dnf 4's own locks; 0 when none does.
+    """The process that holds one of dnf 4's own locks or dnf 5.4's; 0 when none does.
 
     A file that names this process or a process that has ended holds
     nothing.
@@ -274,6 +285,39 @@ def _dnf_lock_pid() -> int:
         if pid > 0 and pid != os.getpid():
             if os.path.exists(os.path.join(PROC_DIR, str(pid))):
                 return pid
+    for path in DNF_SYSTEM_REPO_LOCK_PATHS:
+        pid = _kernel_lock_pid(path)
+        if pid:
+            return pid
+    return 0
+
+
+def _kernel_lock_pid(path: str) -> int:
+    """The process the kernel lists as holding a lock on a file; 0 when none does.
+
+    A line matches by the file's inode alone, since Btrfs lists another device
+    number than ``stat`` gives. A line that starts ``->`` is a process waiting.
+
+    Args:
+        path: The locked file.
+
+    Returns:
+        The process id.
+    """
+    try:
+        inode = os.stat(path).st_ino
+        with open(PROC_LOCKS_PATH, encoding="utf-8") as stream:
+            lines = stream.read().splitlines()
+    except OSError:
+        return 0
+    for line in lines:
+        fields = line.split()
+        if len(fields) < 6 or fields[1] == "->":
+            continue
+        pid, device_inode = fields[4], fields[5]
+        if pid.isdigit() and device_inode.endswith(f":{inode}"):
+            if int(pid) != os.getpid():
+                return int(pid)
     return 0
 
 
