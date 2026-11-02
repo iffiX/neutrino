@@ -950,10 +950,12 @@ meaning each"). A first install is a row reading `installing` or `queued`
 whose `task` runs and whose plan holds a `verify` step, and not both `pull`
 and `start`. The row names no kind of plan, and only an install plan holds
 `verify` ([agent.md](agent.md), "The steps"). A first start with a long step
-counts as a first install: a row reading `installed`, `installing` or `queued`
-whose `task` runs and whose plan holds no `switch`, and holds `npm {account}`
-while the row's `is_active` is false, or holds both `replica_set` and `tex`;
-Hermes WebUI's `first_start` holds neither and has no **Cancel**.
+counts as a first install: a row whose `task` runs and whose plan holds no
+`switch`, and that either reads `running`, `installed`, `installing` or
+`queued` with `npm {account}` in its plan and no instance in
+`details.instances` reading `is_running`, or reads `installed`, `installing`
+or `queued` with both `replica_set` and `tex` in its plan; Hermes WebUI's
+`first_start` holds neither and has no **Cancel**.
 Every module has this one behaviour:
 
 | Rule | Reason |
