@@ -3,9 +3,10 @@
 What these pin: the six words in both languages; a first install read from
 the row alone, a state of the two a first install reads with a running task
 whose plan has a ``verify`` step and does not pull and start; a first start
-with a long step read from the plan the same way, ``npm`` on a row that is not
-active, ``tex`` beside ``replica_set``, and none with ``switch``; Cancel in
-Install's place in the danger tier, for every module with no module named; its
+with a long step read from the plan the same way, ``npm`` on a row with no
+instance running, ``tex`` beside ``replica_set``, and none with ``switch``; the
+agent's plans, each with the rows it reads; Cancel in Install's place in
+the danger tier, for every module with no module named; its
 dialog, the uninstall line and its tone beside two buttons that do not both
 read as cancelling; the press going to the route of Uninstall with no press
 noted; Cancelling read from the row's ``want`` and kept by the page through the
@@ -80,17 +81,30 @@ def test_a_first_start_with_a_long_step_is_read_from_the_plan():
     assert (
         'const FIRST_START_STATES = ["installed", ...FIRST_INSTALL_STATES];' in page()
     )
+    assert 'const EVERY_START_STATES = ["running", ...FIRST_START_STATES];' in page()
     assert 'const EVERY_START_LONG_STEP = "npm";' in page()
     assert 'const FRESH_START_LONG_STEPS = ["replica_set", "tex"];' in page()
     assert (
-        "(FIRST_START_STATES.includes(row.state) && isLongFirstStart(row, plan))"
+        "!IMAGE_CHANGE_STEPS.every((step) => plan.includes(step))) || "
+        "isLongFirstStart(row, plan) );"
     ) in page()
     assert (
         "function isLongFirstStart(row: DeviceModuleView, plan: string[]): boolean { "
         "return ( !plan.includes(VERSION_SWITCH_STEP) && "
-        "((plan.includes(EVERY_START_LONG_STEP) && !row.is_active) || "
-        "FRESH_START_LONG_STEPS.every((step) => plan.includes(step))) ); }"
+        "((EVERY_START_STATES.includes(row.state) && "
+        "plan.includes(EVERY_START_LONG_STEP) && !hasRunningInstance(row)) || "
+        "(FIRST_START_STATES.includes(row.state) && "
+        "FRESH_START_LONG_STEPS.every((step) => plan.includes(step)))) ); }"
     ) in page()
+
+
+def test_an_instance_running_is_read_from_the_row_s_details():
+    assert (
+        "function hasRunningInstance(row: DeviceModuleView): boolean { "
+        "const instances = (row.details.instances ?? []) as ModuleInstanceState[]; "
+        "return instances.some((instance) => instance.is_running); }"
+    ) in page()
+    assert "!row.is_active" not in page()
 
 
 def test_a_version_switch_and_a_running_module_show_no_cancel():
@@ -98,6 +112,89 @@ def test_a_version_switch_and_a_running_module_show_no_cancel():
     first_start = page().split('const FIRST_START_STATES = ["installed"')[1]
     assert '"running"' not in first_start.split(";")[0]
     assert '"stopped"' not in first_start.split(";")[0]
+    every_start = page().split("const EVERY_START_STATES = ")[1]
+    assert '"stopped"' not in every_start.split(";")[0]
+
+
+def constant(name: str) -> list:
+    """One string constant of the page as a list, its spreads written out."""
+    text = page().split(f"const {name} = ")[1].split(";")[0]
+    if not text.startswith("["):
+        return [text.strip('"')]
+    words = []
+    for word in text.strip("[]").split(", "):
+        words += constant(word[3:]) if word.startswith("...") else [word.strip('"')]
+    return words
+
+
+def reads_as_first_install(state: str, plan: list, instances: list) -> bool:
+    """``isFirstInstall`` over the page's own constants; the tests above pin it.
+
+    Args:
+        state: The row's state.
+        plan: The step names of its running task.
+        instances: Each instance's ``is_running``.
+
+    Returns:
+        Whether the tab shows Cancel.
+    """
+    if (
+        state in constant("FIRST_INSTALL_STATES")
+        and constant("INSTALL_PLAN_STEP")[0] in plan
+        and not set(constant("IMAGE_CHANGE_STEPS")) <= set(plan)
+    ):
+        return True
+    if constant("VERSION_SWITCH_STEP")[0] in plan:
+        return False
+    if (
+        state in constant("EVERY_START_STATES")
+        and constant("EVERY_START_LONG_STEP")[0] in plan
+        and not any(instances)
+    ):
+        return True
+    return state in constant("FIRST_START_STATES") and set(
+        constant("FRESH_START_LONG_STEPS")
+    ) <= set(plan)
+
+
+# The plans the agent makes: CloudCLI's start with one account and with two, its
+# version switch and its first install, and Ayakaleaf's first start.
+NPM_START_PLAN = ["configure", "npm", "account", "start"]
+TWO_ACCOUNTS_PLAN = ["configure", "npm", "account", "npm", "account", "start"]
+SWITCH_PLAN = ["switch", "configure", "npm", "account", "start"]
+TEX_PLAN = ["wait_module", "start", "replica_set", "wait_app", "admin", "tex"]
+INSTALL_PLAN = ["artifact", "artifact", "verify", *NPM_START_PLAN]
+
+
+@pytest.mark.parametrize(
+    ("state", "plan", "instances", "is_shown"),
+    [
+        # An account ticked before the first Start.
+        ("installed", NPM_START_PLAN, [], True),
+        ("installing", NPM_START_PLAN, [], True),
+        # An account ticked on a running module with no instance.
+        ("running", NPM_START_PLAN, [], True),
+        ("installing", NPM_START_PLAN, [False], True),
+        # Another account's instance runs, and Cancel uninstalls the module.
+        ("running", TWO_ACCOUNTS_PLAN, [True], False),
+        ("installing", TWO_ACCOUNTS_PLAN, [True], False),
+        ("installing", TWO_ACCOUNTS_PLAN, [False, True], False),
+        # A Start on a module that stopped, whose npm finds its files.
+        ("stopped", NPM_START_PLAN, [False], False),
+        # A version switch reports no details.
+        ("installing", SWITCH_PLAN, [], False),
+        ("running", SWITCH_PLAN, [True], False),
+        # The first start of Ayakaleaf.
+        ("installed", TEX_PLAN, [], True),
+        ("installing", TEX_PLAN, [], True),
+        ("running", TEX_PLAN, [], False),
+        # A first install, which the plan's verify names.
+        ("installing", INSTALL_PLAN, [], True),
+        ("queued", INSTALL_PLAN, [], True),
+    ],
+)
+def test_each_plan_shows_cancel_by_its_row(state, plan, instances, is_shown):
+    assert reads_as_first_install(state, plan, instances) is is_shown
 
 
 def test_cancel_stands_in_install_s_place_in_the_danger_tier():
@@ -117,6 +214,7 @@ def test_every_module_takes_one_cancel():
         "runningPlan",
         "isFirstInstall",
         "isLongFirstStart",
+        "hasRunningInstance",
         "isCancelling",
         "isCancelKept",
         "CancelButton",

@@ -1268,6 +1268,14 @@ export interface DeviceModuleView {
   task_id: string;
 }
 
+/** An instance in the `details` of a module that runs one per account. */
+export interface ModuleInstanceState {
+  account: string;
+  port: number;
+  is_running: boolean;
+  code: string;
+}
+
 /** What an uninstall does to a module's data, as the manifest words it. */
 export interface ModuleUninstallData {
   /** True when the data goes with the module. */

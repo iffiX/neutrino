@@ -50,6 +50,7 @@ import type {
   DeviceModuleView,
   DeviceRequest,
   EnabledAccountsView,
+  ModuleInstanceState,
   ModuleUninstallData,
   PodmanDeviceView,
   TaskStarted,
@@ -254,11 +255,15 @@ const IMAGE_CHANGE_STEPS = ["pull", "start"];
 /** The states a first start reads while its task runs. */
 const FIRST_START_STATES = ["installed", ...FIRST_INSTALL_STATES];
 
+/** The states a start's plan with `npm` reads with no instance running. A
+ * started module with no instance reads `running`. */
+const EVERY_START_STATES = ["running", ...FIRST_START_STATES];
+
 /** The step of a `hub` module's version switch. */
 const VERSION_SWITCH_STEP = "switch";
 
-/** The long step of a first start that every start's plan holds. A module
- * already active reads as running. */
+/** The long step of a first start that every start's plan holds. A plan that
+ * holds it while an instance runs is no first start. */
 const EVERY_START_LONG_STEP = "npm";
 
 /** The steps a first start's plan holds around its other long step. `tex`
@@ -1221,7 +1226,7 @@ function isFirstInstall(row: DeviceModuleView): boolean {
     (FIRST_INSTALL_STATES.includes(row.state) &&
       plan.includes(INSTALL_PLAN_STEP) &&
       !IMAGE_CHANGE_STEPS.every((step) => plan.includes(step))) ||
-    (FIRST_START_STATES.includes(row.state) && isLongFirstStart(row, plan))
+    isLongFirstStart(row, plan)
   );
 }
 
@@ -1229,9 +1234,19 @@ function isFirstInstall(row: DeviceModuleView): boolean {
 function isLongFirstStart(row: DeviceModuleView, plan: string[]): boolean {
   return (
     !plan.includes(VERSION_SWITCH_STEP) &&
-    ((plan.includes(EVERY_START_LONG_STEP) && !row.is_active) ||
-      FRESH_START_LONG_STEPS.every((step) => plan.includes(step)))
+    ((EVERY_START_STATES.includes(row.state) &&
+      plan.includes(EVERY_START_LONG_STEP) &&
+      !hasRunningInstance(row)) ||
+      (FIRST_START_STATES.includes(row.state) &&
+        FRESH_START_LONG_STEPS.every((step) => plan.includes(step))))
   );
+}
+
+/** Whether an instance of a row's module runs, as the row's `details` list
+ * them. */
+function hasRunningInstance(row: DeviceModuleView): boolean {
+  const instances = (row.details.instances ?? []) as ModuleInstanceState[];
+  return instances.some((instance) => instance.is_running);
 }
 
 /** Whether a first install still runs on a row whose want is absent. */
