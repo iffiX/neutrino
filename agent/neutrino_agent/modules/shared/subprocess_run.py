@@ -52,6 +52,7 @@ def run(
     input_text: "str | None" = None,
     timeout_s: int = RUN_TIMEOUT_S,
     encoding: "str | None" = None,
+    on_started=None,
 ) -> CommandResult:
     """Run one command to completion.
 
@@ -66,6 +67,7 @@ def run(
         input_text: Text for the command's standard input.
         timeout_s: How long to wait.
         encoding: The encoding the command writes; None is the system's.
+        on_started: Called with the process id once the command started.
 
     Returns:
         The result.
@@ -77,15 +79,24 @@ def run(
             timeout included.
         OSError: When the command cannot be started at all.
     """
-    completed = subprocess.run(
-        command,
-        input=input_text,
-        capture_output=True,
-        text=True,
-        encoding=encoding,
-        errors="replace",
-        timeout=timeout_s,
-    )
+    if on_started is None:
+        completed = subprocess.run(
+            command,
+            input=input_text,
+            capture_output=True,
+            text=True,
+            encoding=encoding,
+            errors="replace",
+            timeout=timeout_s,
+        )
+    else:
+        completed = _run_reporting_start(
+            command,
+            input_text=input_text,
+            timeout_s=timeout_s,
+            encoding=encoding,
+            on_started=on_started,
+        )
     result = CommandResult(
         command=list(command),
         exit_code=completed.returncode,
@@ -100,6 +111,33 @@ def run(
             stderr=result.stderr,
         )
     return result
+
+
+def _run_reporting_start(
+    command: list,
+    *,
+    input_text: "str | None",
+    timeout_s: int,
+    encoding: "str | None",
+    on_started,
+) -> subprocess.CompletedProcess:
+    """Run one command as :func:`subprocess.run` does, calling ``on_started`` with its process id."""
+    with subprocess.Popen(
+        command,
+        stdin=subprocess.PIPE if input_text is not None else None,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding=encoding,
+        errors="replace",
+    ) as process:
+        try:
+            on_started(process.pid)
+            stdout, stderr = process.communicate(input_text, timeout=timeout_s)
+        except BaseException:
+            process.kill()
+            raise
+    return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
 
 
 def command_detail(error: BaseException) -> str:

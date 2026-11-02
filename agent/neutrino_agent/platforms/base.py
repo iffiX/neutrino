@@ -547,6 +547,15 @@ class AgentPlatform:
             path: The unpack, a directory or one file.
         """
 
+    def end_with_agent(self, pid: int) -> None:
+        """Make a child process end when the agent ends.
+
+        Nothing is done here: the agent's unit or job ends its children.
+
+        Args:
+            pid: The child's process id.
+        """
+
     def remove_system_packages(self, names: list) -> str:
         """Remove packages by name with the machine's own package manager.
 

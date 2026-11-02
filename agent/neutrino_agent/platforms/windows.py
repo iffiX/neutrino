@@ -75,7 +75,7 @@ from neutrino_agent.modules.shared.windows_acl import (
 )
 from neutrino_agent.platforms import win32
 from neutrino_agent.platforms.base import AgentPlatform, is_added_name
-from neutrino_agent.platforms.powershell_host import agent_host
+from neutrino_agent.platforms.powershell_host import agent_host, hold_in_agent_job
 from neutrino_agent.platforms.windows_accounts import (
     account_home,
     account_sid,
@@ -966,6 +966,20 @@ class WindowsPlatform(AgentPlatform):
             + [f"firewall rule {name}" for name in rules]
             + [f"batch logon right of {account}" for account in taken]
         )
+
+    def end_with_agent(self, pid: int) -> None:
+        """Put a child process into the job that ends it with the agent.
+
+        A service's end leaves its children running. A process Windows will
+        not put in the job runs on.
+
+        Args:
+            pid: The child's process id.
+        """
+        try:
+            hold_in_agent_job(pid)
+        except OSError:
+            pass
 
     def smb_server_applier(self) -> SambaWindowsApplier:
         """The applier that drives Windows' own SMB server.

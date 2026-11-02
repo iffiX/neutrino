@@ -141,7 +141,7 @@ def start_host_process(argv: list) -> "subprocess.Popen":
         creationflags=win32.CREATE_NO_WINDOW,
     )
     try:
-        _hold_in_agent_job(process.pid)
+        hold_in_agent_job(process.pid)
     except OSError:
         # The end of its standard input still ends the host with the agent.
         pass
@@ -161,8 +161,15 @@ def agent_host() -> "WindowsPowerShellHost":
         return _AGENT_HOST
 
 
-def _hold_in_agent_job(pid: int) -> None:
-    """Put a process into the job that ends everything in it with the agent."""
+def hold_in_agent_job(pid: int) -> None:
+    """Put a process into the job that ends everything in it with the agent.
+
+    Args:
+        pid: The process.
+
+    Raises:
+        OSError: When Windows refuses the job or the process.
+    """
     global _AGENT_JOB
     kernel32 = win32.libraries().kernel32
     with _AGENT_JOB_LOCK:

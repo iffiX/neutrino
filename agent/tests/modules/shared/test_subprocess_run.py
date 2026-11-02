@@ -1,6 +1,7 @@
 """The module appliers' one command helper."""
 
 import subprocess
+import sys
 
 import pytest
 
@@ -110,7 +111,40 @@ def test_a_units_journal_asks_journald_for_its_lines_alone(monkeypatch):
     assert "--quiet" in asked[0]
 
 
-def test_a_blank_standard_error_does_not_hide_the_words_on_standard_output():
+def test_on_started_takes_the_process_id_and_the_result_is_the_same():
+    started = []
+
+    result = subprocess_run.run(
+        [sys.executable, "-c", "import sys; print(sys.stdin.read()); sys.exit(3)"],
+        is_checked=False,
+        input_text="words",
+        on_started=started.append,
+    )
+
+    assert len(started) == 1 and started[0] > 0
+    assert (result.exit_code, result.stdout.strip()) == (3, "words")
+
+
+def test_on_started_a_command_past_its_time_is_killed_and_raises():
+    with pytest.raises(subprocess.TimeoutExpired):
+        subprocess_run.run(
+            [sys.executable, "-c", "import time; time.sleep(30)"],
+            timeout_s=1,
+            on_started=lambda pid: None,
+        )
+
+
+def test_on_started_a_failure_of_the_callback_kills_the_command_and_raises():
+    def refuse(pid):
+        raise OSError("refused")
+
+    with pytest.raises(OSError):
+        subprocess_run.run(
+            [sys.executable, "-c", "import time; time.sleep(30)"],
+            timeout_s=20,
+            on_started=refuse,
+        )
+
     error = subprocess.CalledProcessError(
         56, ["dscl", ".", "-passwd"], output="DS Error: -14136\n", stderr="\n"
     )

@@ -135,8 +135,18 @@ class FakePodman:
         self.is_awake = None
         self.awake_at_calls: list = []
 
-    def __call__(self, command, *, is_checked=True, input_text=None, timeout_s=120):
+    def __call__(
+        self,
+        command,
+        *,
+        is_checked=True,
+        input_text=None,
+        timeout_s=120,
+        on_started=None,
+    ):
         self.calls.append(list(command))
+        if on_started is not None:
+            on_started(4242)
         if self.is_awake is not None:
             self.awake_at_calls.append(self.is_awake())
         verb = command[1]
@@ -407,6 +417,18 @@ def test_an_install_pulls_each_missing_image_by_digest_from_the_fastest_source(s
     pulls = [call for call in podman.calls if call[1] == "pull"]
     assert pulls == [["/usr/bin/podman", "pull", "ghcr.nju.edu.cn/acme/webui@" + WEB]]
     assert lines == ["demo: pulling ghcr.nju.edu.cn/acme/webui@" + WEB]
+
+
+def test_a_pull_is_handed_to_the_platform_to_end_with_the_agent(store):
+    held = []
+    podman = FakePodman()
+    runner = runner_for(FakeContainers(), podman)
+    runner._platform.end_with_agent = held.append
+
+    runner.install(RECIPE)
+
+    assert held == [4242, 4242]
+    assert len([call for call in podman.calls if call[1] == "pull"]) == 2
 
 
 def test_a_failed_pull_goes_on_to_the_next_source(store):

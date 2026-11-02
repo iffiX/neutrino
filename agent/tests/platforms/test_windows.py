@@ -1397,6 +1397,22 @@ def test_a_command_that_never_wrote_its_end_reads_minus_one(monkeypatch, tmp_pat
     assert task.host.ops() == ["task_run_once", "task_remove"]
 
 
+def test_a_child_is_held_in_the_agent_s_job_and_a_refusal_lets_it_run_on(monkeypatch):
+    held = []
+    monkeypatch.setattr(windows_module, "hold_in_agent_job", held.append)
+    platform = WindowsPlatform(powershell=RecordingHost(), kernel32=FakeKernel32())
+
+    platform.end_with_agent(4242)
+
+    assert held == [4242]
+
+    def refuse(pid):
+        raise OSError("access denied")
+
+    monkeypatch.setattr(windows_module, "hold_in_agent_job", refuse)
+    platform.end_with_agent(4243)
+
+
 class SlowEcho(OneShotTask):
     """A script whose redirection makes the end file, whose echo fills it later."""
 

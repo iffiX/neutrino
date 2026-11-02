@@ -579,6 +579,7 @@ class ContainerModuleRunner(ModuleRunner):
                 self._run(
                     [*command, "pull", reference],
                     timeout_s=PODMAN_CONTAINER_PULL_TIMEOUT_S,
+                    on_started=self._platform.end_with_agent,
                 )
             except (OSError, subprocess.SubprocessError) as error:
                 said = command_detail(error).strip().splitlines()
