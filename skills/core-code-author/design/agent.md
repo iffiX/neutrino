@@ -572,6 +572,7 @@ for an msi or a pkg, therefore waits on the system's lock too:
 | --- | --- |
 | apt | `-o DPkg::Lock::Timeout=300` on every `apt-get` |
 | dnf 4, yum | before each run, every 5 seconds up to 300 seconds while a live process holds one of dnf's own locks, `/var/lib/dnf/rpmdb_lock.pid`, `/var/cache/dnf/metadata_lock.pid` and `/var/cache/dnf/download_lock.pid`, each file naming its holder; dnf 4 alone would wait on them with no word and no end |
+| dnf 5.4 | before each run, every 5 seconds up to 300 seconds while `/proc/locks` lists a live process holding `system-repo.lock`, under `/var/lib/dnf` where that directory exists and under `/usr/lib/sysimage/libdnf5` where it does not; the file names no holder, and dnf 5.4 alone would wait on it with no word the row shows |
 | dnf 5 | runs again every 5 seconds, up to 300 seconds, while its output names `rpm transaction lock` |
 | msiexec | waits for the `Global\_MSIExecute` mutex up to 300 seconds, and runs once more on 1618 |
 | pacman | before each run, every 5 seconds up to 300 seconds while `/var/lib/pacman/db.lck` stands and a process named `pacman`, `packagekitd` or `pamac-daemon` runs, and again while its output names `unable to lock database`. The file names no holder, and a file no such process holds is removed |
