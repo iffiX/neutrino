@@ -325,6 +325,9 @@ def _language_from(given) -> str:
 def _proxy_from(given, mode: str) -> WizardProxy:
     """The proxy screen's answers, read rather than asked for.
 
+    A document with no ``is_local`` takes the proxy screen's default, on in
+    server mode and off in the others.
+
     Args:
         given: The document's ``proxy`` object, empty when it has none.
         mode: The network mode, which decides whose traffic goes through.
@@ -348,7 +351,8 @@ def _proxy_from(given, mode: str) -> WizardProxy:
         nodes = tuple(WIZARD_PROXY.parse_share_link(link) for link in links)
     except ValueError as error:
         raise WizardAborted(str(error)) from error
-    return _proxy_answered(nodes, mode, bool(given.get("is_local", False)))
+    is_local = given.get("is_local", mode == ROUTER_MODE_SERVER)
+    return _proxy_answered(nodes, mode, bool(is_local))
 
 
 def _proxy_answered(nodes: tuple, mode: str, is_local: bool) -> WizardProxy:

@@ -569,7 +569,24 @@ def test_a_serving_mode_routes_its_devices():
 
 
 @pytest.mark.feature("proxy")
-def test_a_server_given_nodes_alone_saves_them_and_says_the_proxy_is_off():
+def test_a_server_given_nodes_alone_sends_its_own_traffic_through_them():
+    """A document with no ``is_local`` takes the browser wizard's default."""
+    answers = wizard.from_document(
+        {
+            "password": "a-long-enough-password",
+            "vault_passphrase": VAULT_PASSPHRASE,
+            "network": {"mode": "server"},
+            "proxy": {"links": [SHARE_LINK]},
+        }
+    )
+
+    assert answers.proxy.is_enabled
+    assert answers.proxy.is_local
+    assert len(answers.proxy.nodes) == 1
+
+
+@pytest.mark.feature("proxy")
+def test_a_server_keeping_its_own_traffic_out_saves_the_nodes_and_says_the_proxy_is_off():
     """It serves no network, so its own traffic is all that can go through.
     With that left out nothing uses the nodes, and nothing may say otherwise."""
     answers = wizard.from_document(
@@ -577,7 +594,7 @@ def test_a_server_given_nodes_alone_saves_them_and_says_the_proxy_is_off():
             "password": "a-long-enough-password",
             "vault_passphrase": VAULT_PASSPHRASE,
             "network": {"mode": "server"},
-            "proxy": {"links": [SHARE_LINK]},
+            "proxy": {"links": [SHARE_LINK], "is_local": False},
         }
     )
 
@@ -602,13 +619,12 @@ def test_a_server_sending_its_own_traffic_has_the_proxy_on():
 
 
 @pytest.mark.feature("proxy")
-def test_this_boxs_own_traffic_is_asked_for_rather_than_assumed():
-    """Both readings were defensible, which is why neither is guessed."""
+def test_what_a_document_states_about_this_boxs_own_traffic_stands():
     document = {
         "password": "a-long-enough-password",
         "vault_passphrase": VAULT_PASSPHRASE,
         "network": {"mode": "server", "lan": ["a"], "address": "10.0.0.2"},
-        "proxy": {"links": [SHARE_LINK]},
+        "proxy": {"links": [SHARE_LINK], "is_local": False},
     }
 
     assert not wizard.from_document(document).proxy.is_local
