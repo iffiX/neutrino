@@ -750,7 +750,28 @@ def test_the_hub_s_own_diversion_needs_no_mark_another_table_can_replace():
     assert HUB_DIVERSION in lines
     assert not any(line.startswith('iifname "lo" meta mark') for line in lines)
     assert lines.index(HUB_DIVERSION) > lines.index(
-        "meta l4proto { tcp, udp } socket transparent 1 meta mark set 0x1 accept"
+        "meta l4proto tcp socket transparent 1 meta mark set 0x1 accept"
+    )
+
+
+@pytest.mark.feature("proxy")
+def test_only_tcp_goes_to_a_transparent_socket_without_the_tproxy_rule():
+    """xray's UDP reply socket holds a foreign address and reads nothing, so a
+    UDP packet matched by address reaches that socket and is lost. The tproxy
+    rule finds xray's listener for UDP."""
+    ruleset = render(
+        wan_entry("enp2s0"),
+        lan_entry("enp1s0", address="192.168.100.1"),
+        routing=ROUTING_LOCAL_PROXY,
+    )
+    lines = [line.strip() for line in without_comments(ruleset).splitlines()]
+    matches = [line for line in lines if "socket transparent" in line]
+
+    assert matches == ["meta l4proto tcp socket transparent 1 meta mark set 0x1 accept"]
+    assert HUB_DIVERSION in lines
+    assert (
+        "meta l4proto { tcp, udp } tproxy ip to 127.0.0.1:12345 meta mark set 0x1 "
+        "accept" in lines
     )
 
 
@@ -881,7 +902,7 @@ def test_the_overlay_scope_diverts_the_exposed_overlay_beside_the_lan():
 
 SERVER_OVERLAY_PREROUTING = """    chain prerouting {
         type filter hook prerouting priority mangle + 1; policy accept;
-        meta l4proto { tcp, udp } socket transparent 1 meta mark set 0x1 accept
+        meta l4proto tcp socket transparent 1 meta mark set 0x1 accept
         iifname != { "wt0" } return
         ip daddr @reserved_v4 return
         meta l4proto { tcp, udp } tproxy ip to 127.0.0.1:12345 meta mark set 0x1 accept

@@ -171,9 +171,11 @@ class XrayNftPart:
             "        # policy route looks for on the diverted packet.",
             "        type filter hook prerouting priority mangle + 1; policy accept;",
             "",
-            "        # Packets of an established transparent session: mark for local",
-            "        # delivery and let the existing socket pick them up.",
-            "        meta l4proto { tcp, udp } socket transparent 1 "
+            "        # Packets of an established transparent TCP session: mark for local",
+            "        # delivery and let the existing socket pick them up. UDP stays",
+            "        # out: this match takes any socket bound to the address, and a",
+            "        # UDP packet would reach xray's reply socket, which reads nothing.",
+            "        meta l4proto tcp socket transparent 1 "
             f"meta mark set {hex(ROUTER_FWMARK_TPROXY)} accept",
             "",
         ]
