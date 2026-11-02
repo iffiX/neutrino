@@ -288,6 +288,7 @@ address resolved nothing until the daemon restarted.
 | --- | --- |
 | every exit node down, direct fallback off | forwarded and hub-scope traffic fails, and so do the served networks' names; the panel and the proxy's own lookups keep working |
 | every exit node down, direct fallback on | that traffic leaves through the uplink; dnsmasq asks `direct_dns` after xray does not answer |
+| every enabled exit node down while the scope reads `lan`, `overlay`, `hub` or several | the **Dashboard** and the **Proxy** page show `ui.proxy.dead_exits`, or `ui.proxy.dead_exits_fallback` while traffic falls back; a scope reading `off` or `unused` sends nothing to the exits and shows no notice |
 | the exit node goes down | the hub measures the failure twice, then overrides the balancer with the next node by score |
 | a node other than the exit goes down | the hub records the failure and drops that node from the candidates |
 | the panel process stops | the override xray holds stays in place; a restart of xray drops it and `roundRobin` takes over |
