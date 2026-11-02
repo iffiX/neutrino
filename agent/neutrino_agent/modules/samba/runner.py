@@ -940,7 +940,7 @@ class SambaNativeServerRunner(ModuleRunner):
         """Take the module's shares off the server and stop it; the accounts stay, and the record keeps each share's folder.
 
         The record keeps what the server was when no start has yet, and each
-        service the stop took down with it for the next start. A server the
+        service the stop takes down with it for the next start. A server the
         module never read as serving stays as it is.
 
         Raises:
@@ -951,16 +951,13 @@ class SambaNativeServerRunner(ModuleRunner):
             self._write_record(dict(record, is_served=False))
             return
         record = self._keep_found_server(record)
+        record = self._keep_server_dependents(record)
         try:
             self._applier.withdraw(record, is_removed=False)
-            dependents = self._applier.stop_server()
+            self._applier.stop_server()
         finally:
             self._forget_status()
-        written = dict(record, is_served=False)
-        if dependents:
-            written["server_dependents"] = dependents
-            self._log("samba: stopped with the server: " + ", ".join(dependents))
-        self._write_record(written)
+        self._write_record(dict(record, is_served=False))
 
     def _keep_found_server(self, record: dict) -> dict:
         """The record with what the server was, read and kept once.
@@ -983,6 +980,33 @@ class SambaNativeServerRunner(ModuleRunner):
         kept = dict(record, found_server=self._applier.read_server())
         self._write_record(kept)
         return kept
+
+    def _keep_server_dependents(self, record: dict) -> dict:
+        """The record with each service a stop is about to take down added.
+
+        A stop that fails has taken them down as well. The record then names
+        them for the next start or uninstall.
+
+        Args:
+            record: The record.
+
+        Returns:
+            The record, ``server_dependents`` in it when any is named.
+
+        Raises:
+            OSError: When the host cannot read the server or the record
+                cannot be written.
+        """
+        kept = list(record.get("server_dependents") or [])
+        added = [
+            name for name in self._applier.read_server_dependents() if name not in kept
+        ]
+        if not added:
+            return record
+        self._log("samba: stops with the server: " + ", ".join(added))
+        written = dict(record, server_dependents=kept + added)
+        self._write_record(written)
+        return written
 
     def remove_configuration(self) -> None:
         """Take the shares away and disable the accounts.

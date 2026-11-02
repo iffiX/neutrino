@@ -1584,14 +1584,21 @@ class FakeNativeApplier:
         self.error = None
         self.server = {"start_type": "Automatic", "is_running": True}
         self.dependents: list = []
+        self.stop_refusal = None
 
     def read_server(self):
         return dict(self.server)
 
+    def read_server_dependents(self):
+        return list(self.dependents)
+
     def stop_server(self):
         self.calls.append(("stop_server",))
+        if self.stop_refusal is not None:
+            self.dependents = []
+            raise self.stop_refusal
         self.status = dict(self.status, is_running=False)
-        return list(self.dependents)
+        self.dependents = []
 
     def put_back_server(self, found, dependents):
         self.calls.append(("put_back_server", found, dependents))
@@ -1968,6 +1975,58 @@ def test_the_services_a_native_stop_took_down_start_again_with_the_server(native
 
     assert native.applier.calls[0][2]["server_dependents"] == ["Browser"]
     assert "server_dependents" not in record_of(native)
+
+
+def test_a_native_stop_that_fails_keeps_the_record_for_a_second_press(native):
+    native.apply(WINDOWS_CONFIG)
+    native.applier.dependents = ["Browser"]
+    native.applier.stop_refusal = OSError("the server will not stop")
+
+    with pytest.raises(OSError):
+        native.stop()
+
+    held = record_of(native)
+    assert held["is_served"] is True
+    assert held["found_server"] == FOUND_SERVER
+    assert held["server_dependents"] == ["Browser"]
+    assert native.is_active() is True
+
+    native.applier.stop_refusal = None
+    native.stop()
+
+    held = record_of(native)
+    assert held["is_served"] is False
+    assert held["found_server"] == FOUND_SERVER
+    assert held["server_dependents"] == ["Browser"]
+    assert native.is_active() is False
+
+
+def test_a_start_after_a_native_stop_that_failed_starts_what_the_stop_took_down(native):
+    native.apply(WINDOWS_CONFIG)
+    native.applier.dependents = ["Browser"]
+    native.applier.stop_refusal = OSError("the server will not stop")
+    with pytest.raises(OSError):
+        native.stop()
+    native.applier.calls = []
+
+    native.apply(WINDOWS_CONFIG)
+
+    assert native.applier.calls[0][2]["server_dependents"] == ["Browser"]
+    assert "server_dependents" not in record_of(native)
+
+
+def test_an_uninstall_after_a_native_stop_that_failed_puts_everything_back(native):
+    native.apply(WINDOWS_CONFIG)
+    native.applier.dependents = ["Browser"]
+    native.applier.stop_refusal = OSError("the server will not stop")
+    with pytest.raises(OSError):
+        native.stop()
+    native.remove_configuration()
+
+    native.uninstall({})
+
+    assert native.applier.calls[-1] == ("put_back_server", FOUND_SERVER, ["Browser"])
+    assert "found_server" not in record_of(native)
 
 
 def test_a_native_uninstall_puts_the_server_back_as_the_first_start_found_it(native):

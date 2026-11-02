@@ -8,8 +8,8 @@ kept, refusals as values, errors caught; the task, the one-shot task, the
 file share, the thermal zones and the removal keep what the scripts they
 replace did, the task settings, the login refusal, the fence before any
 share or account, the share accounts' sign-in denial and hiding; the file
-share under ``stopped`` starting no server and making no share; a stop of the
-server disabling it and taking its dependents down, and a put back as it was; the
+share under ``stopped`` starting no server and making no share; a read of the
+server naming its dependents, a stop disabling it first, and a put back as it was; the
 folders' access read listing each folder's own allow rules by SID and
 whether it inherits, and changing nothing; a relay's
 rule allows inbound TCP to its port on its adapter alone; nothing there
@@ -202,15 +202,22 @@ def test_the_file_share_under_stopped_starts_no_server_and_makes_no_share():
     assert unserved < apply.index("Grant-SmbShareAccess")
 
 
-def test_the_server_stop_names_its_dependents_disables_it_and_stops_it():
+def test_the_server_stop_disables_it_and_then_stops_it():
     """A read of an enabled server starts it during a stop, and the stop fails."""
     stop = body("share_server_stop")
     disabled = stop.index("Set-Service -Name LanmanServer -StartupType Disabled")
     read = stop.index("(Get-Service -Name LanmanServer).Status -ne 'Stopped'")
 
-    assert stop.index("DependentServices") < disabled
     assert disabled < read
     assert read < stop.index("Stop-Service -Name LanmanServer -Force")
+
+
+def test_the_server_read_names_the_services_that_depend_on_it_and_run():
+    read = body("share_server_read")
+
+    assert "DependentServices" in read
+    assert "$dependent.Status -eq 'Running'" in read
+    assert "dependents = $dependents" in read
 
 
 def test_the_server_put_back_sets_its_start_type_and_runs_it_as_it_was():

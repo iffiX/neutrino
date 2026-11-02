@@ -694,10 +694,26 @@ def test_a_read_of_the_server_names_its_start_type_and_whether_it_runs():
     }
 
 
-def test_a_stop_of_the_server_names_the_services_that_stopped_with_it():
-    host = RecordingHost({"share_server_stop": {"dependents": ["Browser"]}})
+def test_a_read_of_the_dependents_names_the_services_a_stop_takes_down():
+    host = RecordingHost(
+        {
+            "share_server_read": {
+                "start_type": "Manual",
+                "is_running": True,
+                "dependents": ["Browser"],
+            }
+        }
+    )
 
-    assert applier_with(host).stop_server() == ["Browser"]
+    assert applier_with(host).read_server_dependents() == ["Browser"]
+
+
+def test_a_stop_of_the_server_asks_the_host():
+    host = RecordingHost({"share_server_stop": {}})
+
+    applier_with(host).stop_server()
+
+    assert host.calls == [("share_server_stop", {})]
 
 
 def test_a_put_back_hands_the_host_what_the_server_was():

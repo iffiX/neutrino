@@ -353,17 +353,25 @@ class SambaWindowsApplier:
             "is_running": bool(read.get("is_running")),
         }
 
-    def stop_server(self) -> list:
-        """Stop the server and every service that depends on it, and disable it.
+    def read_server_dependents(self) -> list:
+        """The services a stop of the server takes down with it.
 
         Returns:
-            The names of the services that ran and stopped with it.
+            The names of the services that depend on the server and run.
+
+        Raises:
+            OSError: When the host fails.
+        """
+        read = self._powershell.call("share_server_read", {})
+        return [str(name) for name in _listed(read.get("dependents"))]
+
+    def stop_server(self) -> None:
+        """Disable the server, and stop it and every service that depends on it.
 
         Raises:
             OSError: When the host fails or the server will not stop.
         """
-        answer = self._powershell.call("share_server_stop", {})
-        return [str(name) for name in _listed(answer.get("dependents"))]
+        self._powershell.call("share_server_stop", {})
 
     def put_back_server(self, found: dict, dependents: list) -> None:
         """Put the server back as :meth:`read_server` found it.

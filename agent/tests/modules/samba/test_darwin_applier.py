@@ -609,7 +609,9 @@ def test_the_status_reads_launchd_the_share_list_and_lsof(applier, tools):
 
 
 def test_a_stop_of_the_server_disables_smbd_and_takes_it_out_of_launchd(applier, tools):
-    assert applier.stop_server() == []
+    assert applier.read_server_dependents() == []
+
+    applier.stop_server()
 
     assert tools.ran("launchctl", "disable") == [
         ["launchctl", "disable", "system/com.apple.smbd"]

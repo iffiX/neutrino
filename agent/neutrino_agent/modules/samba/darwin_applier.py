@@ -343,11 +343,16 @@ class SambaDarwinApplier:
         is_enabled = found.group(1) in ("enabled", "false") if found else is_running
         return {"is_enabled": is_enabled, "is_running": is_running}
 
-    def stop_server(self) -> list:
-        """Disable smbd and take it out of launchd.
+    def read_server_dependents(self) -> list:
+        """The services a stop of smbd takes down with it.
 
         Returns:
             Nothing: no service depends on smbd here.
+        """
+        return []
+
+    def stop_server(self) -> None:
+        """Disable smbd and take it out of launchd.
 
         Raises:
             OSError: When a command cannot run.
@@ -356,7 +361,6 @@ class SambaDarwinApplier:
         self._run(["launchctl", "disable", SAMBA_DARWIN_SMBD_TARGET])
         if self._is_loaded():
             self._run(["launchctl", "bootout", SAMBA_DARWIN_SMBD_TARGET])
-        return []
 
     def put_back_server(self, found: dict, dependents: list) -> None:
         """Put the server back as :meth:`read_server` found it.

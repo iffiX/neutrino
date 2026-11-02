@@ -511,22 +511,9 @@ function Remove-NeutrinoShare {
     return @{}
 }
 
-# The SMB server's start type and whether it runs.
+# The SMB server's start type, whether it runs, and the names of the services
+# that depend on it and run.
 function Get-NeutrinoShareServer($Request) {
-    $svc = Get-Service -Name LanmanServer
-    return @{start_type = "$($svc.StartType)"; is_running = ($svc.Status -eq 'Running')}
-}
-
-# Disables the SMB server, and stops it and every service that depends on it.
-# Answers the names of those services that ran.
-function Stop-NeutrinoShareServer {
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'Request')]
-    [CmdletBinding(SupportsShouldProcess = $true)]
-    [OutputType([hashtable])]
-    param($Request)
-    if (-not $PSCmdlet.ShouldProcess('the SMB server')) {
-        return @{dependents = @()}
-    }
     $svc = Get-Service -Name LanmanServer
     $dependents = @()
     foreach ($dependent in @($svc.DependentServices)) {
@@ -534,12 +521,28 @@ function Stop-NeutrinoShareServer {
             $dependents += "$($dependent.Name)"
         }
     }
+    return @{
+        start_type = "$($svc.StartType)"
+        is_running = ($svc.Status -eq 'Running')
+        dependents = $dependents
+    }
+}
+
+# Disables the SMB server, and stops it and every service that depends on it.
+function Stop-NeutrinoShareServer {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'Request')]
+    [CmdletBinding(SupportsShouldProcess = $true)]
+    [OutputType([hashtable])]
+    param($Request)
+    if (-not $PSCmdlet.ShouldProcess('the SMB server')) {
+        return @{}
+    }
     # A read of the server starts it while it is enabled, and a stop then fails.
     Set-Service -Name LanmanServer -StartupType Disabled | Out-Null
     if ((Get-Service -Name LanmanServer).Status -ne 'Stopped') {
         Stop-Service -Name LanmanServer -Force | Out-Null
     }
-    return @{dependents = $dependents}
+    return @{}
 }
 
 # Gives the SMB server the start type it had, and runs or stops it as it did.
