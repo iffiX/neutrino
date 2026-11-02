@@ -1397,6 +1397,88 @@ def test_a_command_that_never_wrote_its_end_reads_minus_one(monkeypatch, tmp_pat
     assert task.host.ops() == ["task_run_once", "task_remove"]
 
 
+class SlowEcho(OneShotTask):
+    """A script whose redirection makes the end file, whose echo fills it later."""
+
+    def run(self, args):
+        answer = super().run(args)
+        self.done_path = args["arguments"][len('/d /c "') : -len('.cmd"')] + ".done"
+        with open(self.done_path, "w", encoding="utf-8"):
+            pass
+        return answer
+
+
+def test_an_empty_end_file_is_no_answer_and_the_code_written_after_it_is(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setenv("ProgramData", f"{tmp_path}/")
+    task = SlowEcho(exit_text=None, output="whole")
+    polls = []
+
+    def sleep(seconds):
+        polls.append(seconds)
+        with open(task.done_path, "w", encoding="utf-8") as stream:
+            stream.write("0\r\n")
+
+    platform = WindowsPlatform(
+        powershell=task.host,
+        run=Icacls(),
+        sleep=sleep,
+        kernel32=FakeKernel32(),
+        batch_logon=FakeBatchLogon(),
+    )
+
+    done = platform.run_as_account("ann", ["cc.exe"], password="pw", timeout_s=30)
+
+    assert (done.returncode, done.stdout) == (0, "whole")
+    assert len(polls) == 1
+
+
+def test_an_end_file_that_stays_empty_reads_minus_one_at_the_timeout(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setenv("ProgramData", f"{tmp_path}/")
+    task = SlowEcho(exit_text=None, output="half")
+    clock = [0.0]
+    monkeypatch.setattr(windows_module.time, "monotonic", lambda: clock[0])
+    waits = []
+
+    def sleep(seconds):
+        waits.append(seconds)
+        clock[0] += seconds
+
+    platform = WindowsPlatform(
+        powershell=task.host,
+        run=Icacls(),
+        sleep=sleep,
+        kernel32=FakeKernel32(),
+        batch_logon=FakeBatchLogon(),
+    )
+
+    done = platform.run_as_account("ann", ["cc.exe"], password="pw", timeout_s=3)
+
+    assert (done.returncode, done.stdout) == (-1, "half")
+    assert sum(waits) >= 3
+
+
+def test_a_command_that_exits_minus_one_reads_it_at_once(monkeypatch, tmp_path):
+    monkeypatch.setenv("ProgramData", f"{tmp_path}/")
+    task = OneShotTask(exit_text="-1\r\n", output="refused")
+    waits = []
+    platform = WindowsPlatform(
+        powershell=task.host,
+        run=Icacls(),
+        sleep=waits.append,
+        kernel32=FakeKernel32(),
+        batch_logon=FakeBatchLogon(),
+    )
+
+    done = platform.run_as_account("ann", ["wsl.exe"], password="pw", timeout_s=30)
+
+    assert (done.returncode, done.stdout) == (-1, "refused")
+    assert waits == []
+
+
 def test_a_login_windows_refuses_leaves_no_task_and_no_file(monkeypatch, tmp_path):
     monkeypatch.setenv("ProgramData", f"{tmp_path}/")
     refusal = ModuleApplyError("credential_invalid", {"account": "ann"})

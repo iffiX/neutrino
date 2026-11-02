@@ -284,12 +284,12 @@ def _file_text(path: str) -> str:
     return data.decode("utf-8", "replace").lstrip("\ufeff")
 
 
-def _exit_code_in(path: str) -> int:
-    """The exit code a one-shot task's script wrote last; -1 when it wrote none."""
+def _exit_code_in(path: str) -> "int | None":
+    """The exit code a one-shot task's script wrote last; None while the file holds none."""
     try:
         return int(_file_text(path).strip())
     except ValueError:
-        return WINDOWS_RUN_AS_NO_EXIT
+        return None
 
 
 def _utf16_text(units) -> str:
@@ -614,9 +614,11 @@ class WindowsPlatform(AgentPlatform):
                     },
                 )
                 deadline = time.monotonic() + timeout_s
-                while not os.path.exists(paths["done"]) and time.monotonic() < deadline:
-                    self._sleep(AGENT_RUN_AS_POLL_S)
+                # The script's redirection makes the file before its echo fills it.
                 code = _exit_code_in(paths["done"])
+                while code is None and time.monotonic() < deadline:
+                    self._sleep(AGENT_RUN_AS_POLL_S)
+                    code = _exit_code_in(paths["done"])
                 output = _file_text(paths["output"])
             finally:
                 try:
@@ -629,6 +631,8 @@ class WindowsPlatform(AgentPlatform):
                     pass
                 for path in paths.values():
                     remove_path(path)
+            if code is None:
+                code = WINDOWS_RUN_AS_NO_EXIT
             return subprocess.CompletedProcess(list(argv), code, output, "")
 
     def run_as_account_answering(
