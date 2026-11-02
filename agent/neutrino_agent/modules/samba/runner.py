@@ -377,7 +377,9 @@ class SambaModuleRunner(SystemPackageModuleRunner):
 
         A Samba already there with no such record is the person's: no package
         manager runs and nothing is recorded. The mark is written before the
-        packages go on and deleted again when the run leaves no Samba.
+        packages go on and deleted again when the run leaves no Samba. A
+        distribution's package starts and enables both units, so they go down
+        here until a start.
 
         Args:
             recipe: The module's recipe.
@@ -397,6 +399,8 @@ class SambaModuleRunner(SystemPackageModuleRunner):
         try:
             super().install(recipe)
         finally:
+            self._server.stop()
+            self._name_server.stop()
             if not self.verify(recipe):
                 self._forget_package()
 

@@ -804,6 +804,39 @@ def test_an_install_that_finds_no_samba_installs_it_and_records_it_as_the_module
     assert packaged.is_software_kept() is False
 
 
+def test_an_install_takes_down_both_units_its_package_started(packaged, monkeypatch):
+    """Ubuntu's samba starts and enables smbd and nmbd. The module's Samba stays
+    down until a Start, across a reboot too."""
+    samba_on_path(monkeypatch, is_there=False)
+    started: list = []
+
+    def arrive():
+        started.extend(FakeUnits.calls)
+        samba_on_path(monkeypatch, is_there=True)
+
+    packaged._platform.on_install = arrive
+
+    packaged.install(RECIPE)
+
+    assert started == []
+    assert FakeUnits.calls == [(SERVER_UNIT, "stop"), (NAME_UNIT, "stop")]
+
+
+def test_a_failed_install_that_left_samba_takes_its_units_down(packaged, monkeypatch):
+    samba_on_path(monkeypatch, is_there=False)
+
+    def arrive():
+        samba_on_path(monkeypatch, is_there=True)
+
+    packaged._platform.on_install = arrive
+    packaged._platform.install_refusal = OSError("a later package failed")
+
+    with pytest.raises(OSError):
+        packaged.install(RECIPE)
+
+    assert FakeUnits.calls == [(SERVER_UNIT, "stop"), (NAME_UNIT, "stop")]
+
+
 def test_an_install_that_finds_samba_runs_no_package_manager_and_records_nothing(
     packaged, monkeypatch
 ):
@@ -814,6 +847,7 @@ def test_an_install_that_finds_samba_runs_no_package_manager_and_records_nothing
     assert packaged._platform.installed == []
     assert not packaged.record_path.exists()
     assert packaged.is_software_kept() is True
+    assert FakeUnits.calls == []
 
 
 def test_a_failed_install_that_leaves_no_samba_records_nothing(packaged, monkeypatch):
