@@ -331,7 +331,7 @@ Change one setting. The names and the values they take are in nclient settings s
 停止运行中的客户端：关窗口，收回所有转发和挂载。""",
         "ssh": """用法：nclient ssh <命令> [参数]
 
-用 ssh 登录被控端。被控端自带 SSH 服务器，只认中枢发给你的密钥，不用密码。
+用 ssh 登录被控端。被控端自带 SSH 服务器，只接受中枢发给你的密钥，不用密码。
 
   list         开了 ssh 的机器、各自启用的账户和本机地址
   open         登录一台机器
@@ -342,7 +342,7 @@ Change one setting. The names and the values they take are in nclient settings s
         "ssh list": """用法：nclient ssh list
 
 列出开了 ssh 的机器：每台机器一行，后面是启用的账户，第一个是默认账户。
-每个账户后面是它的本机地址，给 FileZilla 这类只认主机和端口的软件用；
+每个账户后面是它的本机地址，给 FileZilla 这类只支持主机和端口的软件用；
 客户端运行时一直转发着。
 
 例子：nclient ssh list
@@ -382,7 +382,7 @@ Change one setting. The names and the values they take are in nclient settings s
 
 给 ssh 的 ProxyCommand 用：把标准输入输出接到那台机器上该账户的 SSH 服务器。
 配置文件里写的是 ProxyCommand nclient ssh proxy %r@%h，所以它收到的是
-"账户@机器.nt"：.nt 后缀认得，去掉就是机器名；账户不写就用第一个启用的。
+"账户@机器.nt"：.nt 后缀能识别，去掉就是机器名；账户不写就用第一个启用的。
 需要客户端正在运行。一般不用自己敲。
 
   机器         机器名，带不带 .nt 都行

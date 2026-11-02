@@ -353,7 +353,7 @@ CLIENT_CODE_WORDS = {
         "hub_refused": "中枢拒绝了此客户端的令牌",
         "hub_untrusted": "中枢的密钥对不上；中枢重置过的话就重新加入。",
         "hub_key_missing": "这份绑定来自 0.5，中枢已不再迁移；用新链接重新加入中枢。",
-        "binding_unknown": "这台中枢已不再认识这个客户端，请用新链接重新加入",
+        "binding_unknown": "这台中枢已没有这个客户端的记录，请用新链接重新加入",
         "role_mismatch": "中枢说这不是客户端的链接",
         "hello_invalid": "非法握手：中枢读不懂这个客户端，请更新客户端",
         "unknown_hub": "此客户端没有加入那台中枢",

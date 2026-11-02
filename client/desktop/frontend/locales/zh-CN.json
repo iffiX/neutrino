@@ -8,7 +8,7 @@
   "code.app_in_use": "先停止这个应用，才能改它的本机端口。",
   "code.app_no_page": "这个应用没有可以打开的网页。",
   "code.app_not_in_use": "先点使用。",
-  "code.binding_unknown": "这台中枢已不再认识这个客户端，请用新链接重新加入",
+  "code.binding_unknown": "这台中枢已没有这个客户端的记录，请用新链接重新加入",
   "code.bundle_missing": "此安装未包含 {binary}，请重新安装客户端",
   "code.busy": "仍在处理上一个请求",
   "code.client_disabled": "中枢已关闭此客户端",
