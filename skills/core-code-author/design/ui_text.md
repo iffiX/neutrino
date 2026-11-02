@@ -718,6 +718,13 @@ A UDP port record is in neither number of the page's badge, `{healthy} of
 | `ui.network.field_country_code` | Country code | 国家代码 |
 | `ui.network.error_country_code` | Two letters, such as DE. 5 GHz needs one. | 两个字母，例如 CN。5 GHz 需要国家代码。 |
 
+## The dead exits notice's words
+
+| Key | English | Chinese |
+| --- | --- | --- |
+| `ui.proxy.dead_exits` | Every enabled exit node is unreachable. Traffic sent to the proxy (the LAN's names included) fails until one answers. | 所有启用的出口节点都不可达。在有节点应答之前，送往代理的流量都会失败，局域网的域名解析也一样。 |
+| `ui.proxy.dead_exits_fallback` | Every enabled exit node is unreachable, so traffic sent to the proxy is leaving through the WAN instead, under this machine's own address. | 所有启用的出口节点都不可达，送往代理的流量正改从 WAN 出去，用的是这台机器自己的地址。 |
+
 ## Direct's words
 
 | Key | English | Chinese |
