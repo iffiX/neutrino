@@ -228,7 +228,12 @@ func TestWrongFingerprintFailsTheHandshake(t *testing.T) {
 	address, results := serveGate(t, g)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	other := "00:" + g.Fingerprint()[3:]
+	// A fresh certificate's fingerprint starts with 00 once in 256 runs.
+	first := "00:"
+	if g.Fingerprint()[:3] == first {
+		first = "01:"
+	}
+	other := first + g.Fingerprint()[3:]
 	if _, err := Dial(ctx, address, DialOptions{Ufrag: testUfrag, Password: testPassword, Fingerprint: other}); err == nil {
 		t.Fatal("a wrong fingerprint opened the channel")
 	}
