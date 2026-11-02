@@ -16,7 +16,7 @@ import type { StatsFrame } from "./api_types";
  * which the gateway reports from the applied ruleset.
  *
  * The exit half is one name: the hub pins one exit, and the frame carries its
- * tag for the chip to read.
+ * name for the chip to read.
  */
 
 export type ProxyTone = "direct" | "proxy" | "offline";
@@ -79,6 +79,7 @@ export function describeProxy(frame: StatsFrame | null): ProxyStatus {
       tone: "offline",
     };
   }
-  const exit = nodeIdFromTag(frame.exit_tag) ?? frame.exit_tag;
+  const exit =
+    frame.exit_name || (nodeIdFromTag(frame.exit_tag) ?? frame.exit_tag);
   return { scope, exit, label: `${scope} → ${exit}`, tone: "proxy" };
 }

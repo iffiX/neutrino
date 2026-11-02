@@ -184,6 +184,8 @@ export interface StatsFrame {
   lan_device_count: number;
   /** The outbound tag of the pinned exit, empty when none is pinned. */
   exit_tag: string;
+  /** The name of the node pinned as the exit, empty when no node is or it has none. */
+  exit_name: string;
   /** When that exit was pinned, empty when none is. */
   exit_since: string;
   /** Whether the reference URL answered without the proxy. */

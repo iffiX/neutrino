@@ -178,6 +178,7 @@ class StatsFrame(BaseModel):
     # The exit the hub has pinned in xray and when that pin last moved, so
     # the strip can answer "where is my traffic going" with one name.
     exit_tag: str = ""
+    exit_name: str = ""
     exit_since: str = ""
     # What the last round found: whether the uplink answered directly,
     # whether xray answered its API, and whether xray carries the exits the

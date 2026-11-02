@@ -380,9 +380,9 @@ def stats_readings(runtime) -> dict:
             and the exit controller.
 
     Returns:
-        The frame's ``outbounds``, ``nodes``, ``exit_tag``, ``exit_since``,
-        ``is_wan_reachable``, ``is_xray_reachable``, ``is_in_sync`` and
-        ``enabled_node_count``.
+        The frame's ``outbounds``, ``nodes``, ``exit_tag``, ``exit_name``,
+        ``exit_since``, ``is_wan_reachable``, ``is_xray_reachable``,
+        ``is_in_sync`` and ``enabled_node_count``.
     """
     outbounds = runtime.stats.outbound_traffic()
     node_list = runtime.node_list()
@@ -401,12 +401,21 @@ def stats_readings(runtime) -> dict:
         ],
         "nodes": probes,
         "exit_tag": exit_status.exit_tag,
+        "exit_name": _exit_name(node_list, exit_status.exit_tag),
         "exit_since": exit_status.since.isoformat() if exit_status.since else "",
         "is_wan_reachable": exit_status.is_wan_reachable,
         "is_xray_reachable": exit_status.is_xray_reachable,
         "is_in_sync": exit_status.is_in_sync,
         "enabled_node_count": len(node_list.enabled_nodes),
     }
+
+
+def _exit_name(node_list, exit_tag: str) -> str:
+    """The name of the node pinned as the exit; empty for no such node."""
+    for node in node_list.nodes:
+        if node.tag == exit_tag:
+            return node.name
+    return ""
 
 
 def is_exit_tag(tag: str) -> bool:

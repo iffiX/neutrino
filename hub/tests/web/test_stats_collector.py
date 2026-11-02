@@ -16,7 +16,7 @@ BEATING_DEVICE = "device-one"
 UPLINK = "enp2s0"
 PINNED_AT = datetime(2026, 5, 1, 12, 0, tzinfo=timezone.utc)
 # One switched-on node, as the proxy's node list reads it.
-NODE = SimpleNamespace(tag="node_hk1", is_enabled=True)
+NODE = SimpleNamespace(tag="node_hk1", name="Hong Kong", is_enabled=True)
 
 
 def exit_status(**fields):
@@ -329,7 +329,19 @@ def test_the_frame_carries_the_pinned_exit_and_when_it_was_pinned(uplink):
     pushed = PanelStatsCollector(runtime=StubRuntime()).collect()
 
     assert pushed.exit_tag == "node_hk1"
+    assert pushed.exit_name == "Hong Kong"
     assert pushed.exit_since == PINNED_AT.isoformat()
+
+
+@pytest.mark.feature("proxy")
+def test_an_exit_that_is_no_node_has_no_name_on_the_frame(uplink):
+    """A hub falling back to direct pins the direct outbound, and the strip words it."""
+    del uplink
+    controller = StubExitController(status=exit_status(exit_tag="direct"))
+
+    pushed = PanelStatsCollector(runtime=StubRuntime(controller=controller)).collect()
+
+    assert (pushed.exit_tag, pushed.exit_name) == ("direct", "")
 
 
 @pytest.mark.feature("proxy")
