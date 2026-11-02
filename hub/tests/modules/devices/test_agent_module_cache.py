@@ -532,6 +532,65 @@ def test_with_no_named_modules_given_every_module_keeps_its_files(manifests, roo
     )
 
 
+class ChosenRelease:
+    """The feeds' listing of a fakedesk version some machine chose."""
+
+    def __init__(self, artifacts: dict):
+        self._artifacts = artifacts
+
+    def listed_by_key(self, module, platform_key):
+        if module != "fakedesk" or platform_key != "linux-amd64":
+            return []
+        return [{"version": "2.1", "artifacts": self._artifacts}]
+
+
+def chosen_cache(root, artifacts: dict) -> AgentModuleCache:
+    """A cache for machines naming both modules, one choosing fakedesk 2.1."""
+    return AgentModuleCache(
+        root=root,
+        fetcher=FakeSourceFetcher({"https://other.example/other.tar.gz": OTHER}),
+        named_modules=lambda: {"fakedesk", "otherdesk"},
+        named_versions=lambda: {"fakedesk": ("2.1",)},
+        releases=ChosenRelease(artifacts),
+    )
+
+
+def test_a_chosen_npm_version_stops_no_other_module_s_download(manifests, root):
+    """A listed version names its npm package by npm's ``sha512-`` integrity.
+    That digest names no file, and a new file of any module runs the prune
+    that reads it."""
+    root.mkdir()
+    chosen = GZIP + b"the app's archive of the chosen version"
+    for body in (OLD, chosen):
+        (root / hexed(body)).write_bytes(body)
+    cache = chosen_cache(
+        root,
+        {
+            "app": {"digest": digest(chosen)},
+            "agentpkg": {"digest": "sha512-jwhcx2fbX9dALdH99v/WX4fYgO13cqm97=="},
+        },
+    )
+
+    held = ask(cache, module="otherdesk", artifact="app", body=OTHER)
+
+    assert held.path.read_bytes() == OTHER
+    assert hexed(chosen) in {path.name for path in root.iterdir()}
+    assert hexed(OLD) not in {path.name for path in root.iterdir()}
+
+
+def test_a_digest_the_cache_cannot_read_deletes_nothing_and_fails_no_download(
+    manifests, root
+):
+    root.mkdir()
+    (root / hexed(OLD)).write_bytes(OLD)
+    cache = chosen_cache(root, {"app": {"digest": "sha3-AAAA"}})
+
+    held = ask(cache, module="otherdesk", artifact="app", body=OTHER)
+
+    assert held.path.read_bytes() == OTHER
+    assert hexed(OLD) in {path.name for path in root.iterdir()}
+
+
 def test_cc_switch_is_served_from_the_cache_and_a_checkout_names_no_release_site(
     manifests, root
 ):

@@ -13,6 +13,7 @@ manifests pin, are deleted; cc-switch's pinned files stay.
 Not pure: fetches over the network and writes under the state root.
 """
 
+import logging
 import re
 import shutil
 import threading
@@ -53,6 +54,8 @@ from neutrino_hub.utils.source_fetch import (
     file_sha256,
     hex_of,
 )
+
+LOGGER = logging.getLogger(__name__)
 
 # A file the cache keeps is named by its digest's hex.
 CACHE_NAME_PATTERN = re.compile(r"[0-9a-f]{64}")
@@ -345,14 +348,20 @@ class AgentModuleCache:
             if named is not None and name not in named and name not in tools:
                 continue
             for platform_key, entry in (manifest.get("platforms") or {}).items():
-                for artifact in entry_artifacts(manifest, entry):
-                    if artifact.get("kind") in DEVICE_ARTIFACT_FILE_KINDS:
-                        kept.add(hex_of(artifact["digest"]))
+                files = [
+                    artifact
+                    for artifact in entry_artifacts(manifest, entry)
+                    if artifact.get("kind") in DEVICE_ARTIFACT_FILE_KINDS
+                ]
+                kept.update(hex_of(artifact["digest"]) for artifact in files)
+                # A listed version also names its npm package and its images.
+                # Their digests name no file here, and npm's is no sha256.
+                file_names = {artifact.get("name") for artifact in files}
                 for listed in self._releases.listed_by_key(name, platform_key):
                     if str(listed.get("version", "")) not in versions.get(name, ()):
                         continue
-                    for held in (listed.get("artifacts") or {}).values():
-                        if held.get("digest"):
+                    for artifact_name, held in (listed.get("artifacts") or {}).items():
+                        if artifact_name in file_names and held.get("digest"):
                             kept.add(hex_of(held["digest"]))
         return kept
 
@@ -448,8 +457,13 @@ class AgentModuleCache:
 
     def _prune(self) -> None:
         """Delete every file the cache no longer keeps, and every file of a 0.5
-        hub's naming; one that cannot go stays."""
-        kept = self.kept_digests()
+        hub's naming; one that cannot go stays, and a digest that cannot be
+        read deletes nothing."""
+        try:
+            kept = self.kept_digests()
+        except ValueError as error:
+            LOGGER.warning("module cache not pruned: %s", error)
+            return
         try:
             held = list(self._root.iterdir())
         except OSError:
