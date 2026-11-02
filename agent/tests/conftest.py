@@ -8,7 +8,8 @@ A guard on every process a test starts refuses by name the firewalls, the
 network tools, the service and package managers, Podman and every other
 program that reads or changes the machine or asks for authorization to, an
 agent a test builds on this system's own platform observes none of its
-modules, and each test has a hub clock of its own. An audit hook fails a
+modules, each reconcile worker a test starts reads nothing once the test
+ends, and each test has a hub clock of its own. An audit hook fails a
 test that writes, creates, renames or removes a file outside its temporary
 folders. The fakes here are the ones more than one directory drives:
 the control channel's platform and agent, the injected clock, the link
@@ -23,6 +24,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import zlib
 
 import pytest
@@ -147,6 +149,8 @@ FILE_CHANGE_EVENTS = {
     "shutil.move": ((0, None), (1, None)),
     "shutil.rmtree": ((0, 1),),
 }
+# How long a test's end waits for a pass of a reconcile worker that began.
+RECONCILE_END_WAIT_S = 10.0
 # Every audit event the file guard reads: the changes by name, ``open`` and
 # the bind of a Unix socket.
 FILE_AUDIT_EVENTS = frozenset(FILE_CHANGE_EVENTS) | {"open", "socket.bind"}
@@ -349,6 +353,43 @@ def _no_test_changes_a_file_of_the_machine(tmp_path_factory):
     _file_guard["refused"] = None
     if refused:
         pytest.fail(f"the test tried to change a file of the machine: {refused}")
+
+
+@pytest.fixture(autouse=True)
+def _no_reconcile_worker_outlives_its_test(
+    monkeypatch, _no_test_reaches_the_machine, _no_test_changes_a_file_of_the_machine
+):
+    """End the reads of each reconcile worker the test started, while its guards stand.
+
+    A worker's thread has no end. A pass that runs on after the test's patches
+    go starts the machine's own programs, and the next test's guard refuses
+    them. A pass that began finishes under its own test, and no later pass runs.
+    """
+    passes = threading.Condition()
+    state = {"is_ended": False, "running": 0}
+    real_init = engine_module.ReconcileWorker.__init__
+
+    def run_pass(reconcile) -> None:
+        with passes:
+            if state["is_ended"]:
+                return
+            state["running"] += 1
+        try:
+            reconcile()
+        finally:
+            with passes:
+                state["running"] -= 1
+                passes.notify_all()
+
+    def init(worker, **keywords) -> None:
+        real_init(worker, **keywords)
+        worker._reconcile = functools.partial(run_pass, worker._reconcile)
+
+    monkeypatch.setattr(engine_module.ReconcileWorker, "__init__", init)
+    yield
+    with passes:
+        state["is_ended"] = True
+        passes.wait_for(lambda: not state["running"], RECONCILE_END_WAIT_S)
 
 
 def _moduleless_platform():

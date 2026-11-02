@@ -15,6 +15,9 @@ and the test, even when swallowed. A change under ``tmp_path`` or the
 system's temporary folder, a read, the null device and a bytecode cache
 pass. A removed link is checked in its folder, a write through a link at its
 target, and a name under a folder descriptor in that folder.
+
+A reconcile worker a test started: a pass that began ends under that test, and
+no pass runs once the test ended.
 """
 
 import os
@@ -23,10 +26,12 @@ import socket
 import subprocess
 import sys
 import tempfile
+import threading
 from pathlib import Path
 
 import pytest
 
+from neutrino_agent.core.engine import ReconcileWorker
 from tests.conftest import REFUSED_PROGRAMS, _is_test_owned, _refuses
 
 # A path under a missing folder outside the temporary folders. Without the
@@ -270,3 +275,46 @@ def test_a_name_under_a_folder_descriptor_is_checked_in_that_folder(
         os.path.join(HERE, "no_such_folder")
     ]
     _no_test_changes_a_file_of_the_machine.clear()
+
+
+class SlowWorker(ReconcileWorker):
+    """A worker whose pass names the test running when the pass ends."""
+
+    def __init__(self):
+        self.began = threading.Event()
+        self.ended = threading.Event()
+        self.ended_under = ""
+        self.passes = 0
+        super().__init__(log=lambda message: None)
+
+    def _reconcile(self):
+        self.passes += 1
+        self.began.set()
+        threading.Event().wait(0.3)
+        self.ended_under = os.environ.get("PYTEST_CURRENT_TEST", "")
+        self.ended.set()
+
+
+# The worker the first of the two tests below leaves to the second.
+LEFT_WORKERS: list = []
+
+
+def test_a_reconcile_worker_left_with_a_pass_running():
+    worker = SlowWorker()
+    worker._wakeup.set()
+
+    assert worker.began.wait(5)
+
+    LEFT_WORKERS.append(worker)
+
+
+def test_a_reconcile_worker_ends_its_pass_under_its_test_and_runs_no_other():
+    worker = LEFT_WORKERS.pop()
+
+    assert worker.ended.wait(5)
+    assert "test_a_reconcile_worker_left_with_a_pass_running" in worker.ended_under
+
+    worker._wakeup.set()
+    threading.Event().wait(0.1)
+
+    assert worker.passes == 1
