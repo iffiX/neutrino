@@ -194,7 +194,7 @@ class FakeEngine:
     def configure_steps(self, name, entry, want):
         runner = self.runners[name]
         config = dict(entry.get("config") or {})
-        steps = wait_steps(entry)
+        steps = wait_steps(entry) if want == "running" else []
         steps.append(
             ModuleStep(name="configure", run=functools.partial(_apply, runner, config))
         )
@@ -1863,6 +1863,23 @@ def test_a_container_module_fails_module_needed_while_containers_is_not_to_run(
     assert engine.failures["demo"]["state"] == "install_failed"
 
 
+def test_a_stop_runs_while_the_module_it_requires_is_failed(tmp_path):
+    """Containers failed, a person presses Stop on a module that runs on it. The
+    module stops, its row reads no failure, and Containers keeps its own."""
+    runners = {
+        "podman": FakeRunner(failure=ModuleApplyError("apply_failed")),
+        "demo": FakeRunner(),
+    }
+    engine = FakeEngine(runners)
+    held, _ = applier(runners, engine=engine, tmp_path=tmp_path)
+
+    run(held, container_state(demo="stopped"))
+
+    assert runners["demo"].stops == 1
+    assert engine.results["demo"] == ("", {})
+    assert engine.results["podman"][0] == "apply_failed"
+
+
 def test_a_container_module_fails_when_containers_task_ends_not_running(tmp_path):
     runners = {
         "podman": FakeRunner(failure=ModuleApplyError("machine_unreachable")),
@@ -2165,27 +2182,30 @@ def test_tasks_ending_together_never_put_an_older_set_of_hashes_back(tmp_path):
     assert held._store.read_tried() == {"first": "1", "second": "2"}
 
 
-def test_a_stop_waiting_for_containers_ends_quietly_when_containers_is_stopped_too(
-    tmp_path,
-):
-    """Containers and a container module pressed Stop together: the module's
-    stop waits for Containers' task, and the state that stops Containers
-    arrives meanwhile. The module's task ends with no failure, no tried hash
-    and no step run."""
+def test_a_stop_runs_during_the_task_of_the_module_it_requires(tmp_path):
     gate = threading.Event()
     runners = {"podman": FakeRunner(), "demo": FakeRunner()}
     engine = FakeEngine(runners, absent=("podman",))
     engine.install_gates["podman"] = gate
     held, _ = applier(runners, engine=engine, tmp_path=tmp_path)
-    held.apply(container_state(demo="stopped"))
-    assert wait_until(
-        lambda: engine.last("demo")[2]
-        == {"code": "waiting_for_module", "params": {"module": "podman"}}
-    )
 
-    held.apply(container_state("h2", podman="stopped", demo="stopped"))
+    held.apply(container_state(demo="stopped"))
+    assert wait_until(lambda: runners["demo"].stops == 1)
     gate.set()
     assert held.settle("", SETTLE_S)
+
+    assert engine.results["demo"] == ("", {})
+
+
+def test_a_stop_pressed_with_containers_stop_ends_quietly(tmp_path):
+    """Containers and a container module pressed Stop together: Containers' stop
+    takes the containers down. The module's task ends with no failure, no
+    tried hash and no step run."""
+    runners = {"podman": FakeRunner(), "demo": FakeRunner()}
+    engine = FakeEngine(runners)
+    held, _ = applier(runners, engine=engine, tmp_path=tmp_path)
+
+    run(held, container_state(podman="stopped", demo="stopped"))
 
     assert engine.results["demo"] == ("", {})
     assert "demo" not in engine.failures

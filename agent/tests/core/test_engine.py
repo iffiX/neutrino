@@ -2614,10 +2614,7 @@ def test_a_container_module_plans_its_pulls_then_its_start_and_first_start(
         ("start", {}, (CONTAINERS_SHARED,)),
         *first_start,
     ]
-    assert planned(stop) == [
-        ("wait_module", {"module": "podman"}, ()),
-        ("stop", {}, (CONTAINERS_SHARED,)),
-    ]
+    assert planned(stop) == [("stop", {}, (CONTAINERS_SHARED,))]
     assert planned(engine.uninstall_steps(module, entry)) == [
         ("uninstall", {}, (CONTAINERS_ALONE,))
     ]
@@ -3052,8 +3049,10 @@ def test_a_recipe_s_required_modules_open_its_install_and_configure_plans(tmp_pa
 
     install = engine.install_steps("fakedesk", entry)
     running = engine.configure_steps("fakedesk", entry, "running")
+    stopped = engine.configure_steps("fakedesk", entry, "stopped")
     uninstall = engine.uninstall_steps("fakedesk", entry)
 
+    assert "wait_module" not in [step.name for step in stopped]
     assert planned(install)[:2] == waits
     assert planned(install)[2:] == planned(
         engine.install_steps("fakedesk", WANTED["fakedesk"])

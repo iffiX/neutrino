@@ -807,10 +807,11 @@ class ModuleEngine(ReconcileWorker):
             want: ``running`` or ``stopped``.
 
         Returns:
-            ``wait_module {module}`` per module the recipe requires, then
-            ``configure``, then ``start`` under ``running`` and ``stop``
-            under ``stopped``, with the runner's own changes; a container
-            module's ``start`` and ``stop`` take ``containers`` shared.
+            Under ``running``, ``wait_module {module}`` per module the recipe
+            requires. Then ``configure``, then ``start`` under ``running`` and
+            ``stop`` under ``stopped``, with the runner's own changes; a
+            container module's ``start`` and ``stop`` take ``containers``
+            shared.
         """
         recipe = _recipe_of(entry)
         runner = self._runner_for(name, recipe)
@@ -843,6 +844,8 @@ class ModuleEngine(ReconcileWorker):
         planned = self._with_runner_locks(
             runner, runner.configure_steps(config, want, steps)
         )
+        if want != AGENT_WANT_RUNNING:
+            return planned
         return self._wait_module_steps(recipe, AGENT_MODULE_STATE_FAILED) + planned
 
     def uninstall_steps(self, name: str, entry: dict) -> list:
