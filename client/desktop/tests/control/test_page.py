@@ -1991,6 +1991,14 @@ def test_the_listed_sessions_become_tabs_and_a_gone_one_ends():
     assert "activeShell = shellTabs[0].key;" in merge
 
 
+def test_a_tab_whose_stream_closed_with_a_code_ends_once_its_session_is_gone():
+    merge = body_of("mergeSessions")
+    assert "if (tab.isListed && !isListedNow && tab.state !== 'ended') {" in merge
+    ended = body_of("endTab")
+    assert "tab.state = 'ended';" in ended
+    assert "tab.isRefused = false;" in ended
+
+
 def test_the_active_listed_tab_attaches_when_the_page_opens():
     assert "if (active && active.state === 'idle') {" in body_of("drawTerminals")
     assert "if (tab.state === 'idle') attachShell(tab);" in body_of("selectTab")

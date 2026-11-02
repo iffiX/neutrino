@@ -1598,7 +1598,7 @@ function mergeSessions(state) {
       }
       continue;
     }
-    if (tab.isListed && !isListedNow && ['idle', 'connecting', 'open'].indexOf(tab.state) >= 0) {
+    if (tab.isListed && !isListedNow && tab.state !== 'ended') {
       endTab(tab, t('ui.terminal_ended'));
     }
   }
