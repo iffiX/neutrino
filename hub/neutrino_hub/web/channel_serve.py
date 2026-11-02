@@ -111,6 +111,7 @@ from neutrino_hub.web.constants import (
     WEB_EVENT_DEVICE_REPORT,
     WEB_EVENT_DEVICES,
     WEB_EVENT_METRICS,
+    WEB_PACKAGE_FAILURE_DETAIL_CHARS,
     WEB_TASK_LABEL_MODULE,
 )
 from neutrino_hub.web.identity import hub_id, hub_name
@@ -643,7 +644,33 @@ def join_client(runtime, request: ChannelJoin, ticket: dict, *, public_key: str)
 
 
 async def serve_package_stream(runtime, session, stream) -> None:
-    """Serve a ``package`` stream an agent opened: the bytes, then their digest.
+    """Serve a ``package`` stream an agent opened, and close it whatever fails.
+
+    The agent waits on the stream until it closes. A failure with no code of
+    its own closes it ``module_cache_unwritable {detail}``.
+
+    Args:
+        runtime: The shared runtime.
+        session: The agent's session.
+        stream: The stream, closed here.
+    """
+    try:
+        await _send_package(runtime, session, stream)
+    except AgentOfflineError:
+        return
+    except Exception as error:  # noqa: BLE001 - the agent waits for the close
+        LOGGER.exception("package stream %s failed", dict(stream.args))
+        try:
+            await stream.close(
+                "module_cache_unwritable",
+                {"detail": str(error)[:WEB_PACKAGE_FAILURE_DETAIL_CHARS]},
+            )
+        except AgentOfflineError:
+            return
+
+
+async def _send_package(runtime, session, stream) -> None:
+    """The bytes of a ``package`` stream, then their digest.
 
     ``{module, artifact, digest}`` names one artifact of a module, or of a
     program the agent runs itself such as cc-switch, from the hub's cache by
@@ -658,6 +685,9 @@ async def serve_package_stream(runtime, session, stream) -> None:
         runtime: The shared runtime.
         session: The agent's session.
         stream: The stream, closed here.
+
+    Raises:
+        AgentOfflineError: When the agent's session ended.
     """
     module = str(stream.args.get("module", "") or "")
     artifact = str(stream.args.get("artifact", "") or "")

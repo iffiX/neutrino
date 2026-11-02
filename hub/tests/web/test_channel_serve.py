@@ -92,13 +92,17 @@ class PackageStream:
         self.args = {"artifact": "agent", "digest": ""}
         self.is_offline = is_offline
         self.closed: list = []
+        self.params: list = []
 
     async def send_bytes(self, data):
         if self.is_offline:
             raise AgentOfflineError("d1")
 
     async def close(self, code, params):
+        if self.is_offline:
+            raise AgentOfflineError("d1")
         self.closed.append(code)
+        self.params.append(params)
 
 
 def served_package(monkeypatch, stream, path):
@@ -123,3 +127,32 @@ def test_a_package_stream_names_a_file_it_cannot_read(tmp_path, monkeypatch):
     closed = served_package(monkeypatch, PackageStream(), tmp_path / "gone")
 
     assert closed == ["module_artifact_missing"]
+
+
+def package_stream_failing(monkeypatch, stream, error):
+    def failed(*args):
+        raise error
+
+    monkeypatch.setattr("neutrino_hub.web.channel_serve._package_file", failed)
+    runtime = SimpleNamespace(device_platform={"d1": {"os": "linux"}})
+    session = SimpleNamespace(key="d1", name="machine")
+    asyncio.run(serve_package_stream(runtime, session, stream))
+
+
+def test_a_failure_with_no_code_of_its_own_closes_the_package_stream(monkeypatch):
+    """The agent waits on the stream until it closes, so a failure nothing
+    names must not leave it open."""
+    stream = PackageStream()
+
+    package_stream_failing(monkeypatch, stream, ValueError("no sha256 digest"))
+
+    assert stream.closed == ["module_cache_unwritable"]
+    assert stream.params == [{"detail": "no sha256 digest"}]
+
+
+def test_a_failure_with_the_agent_gone_closes_nothing(monkeypatch):
+    stream = PackageStream(is_offline=True)
+
+    package_stream_failing(monkeypatch, stream, RuntimeError("failed"))
+
+    assert stream.closed == []
