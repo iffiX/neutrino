@@ -128,7 +128,7 @@ CLIENT_MD_CHINESE = {
     "ui.state.no_network": "无网络",
     "ui.state.untrusted": "中枢密钥不符",
     "ui.state.admission_paused": "中枢暂停接纳",
-    "ui.state.unknown_device": "中枢不认识本机",
+    "ui.state.unknown_device": "中枢没有本机的记录",
     "ui.state.too_old": "版本太旧",
     "ui.action.update_client": "更新客户端",
     "ui.state.join_refused": "加入被拒",
@@ -2833,7 +2833,7 @@ UI_TEXT_060 = (
     (
         "code.key_missing",
         "The SSH server of {account} has no key from the hub; apply the module again.",
-        "{account} 的 SSH 服务器没有中枢发的钥匙，重新应用这个模块。",
+        "{account} 的 SSH 服务器没有中枢发的密钥，重新应用这个模块。",
     ),
     (
         "code.op_unknown",

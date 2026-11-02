@@ -297,7 +297,7 @@ CLIENT_CODE_WORDS = {
             "这台机器的终端没有启用的账户，到它的机器页上启用一个。"
         ),
         "account_not_enabled": "这台机器的终端没有启用 {account}。",
-        "key_missing": "{account} 的 SSH 服务器没有中枢发的钥匙，重新应用这个模块。",
+        "key_missing": "{account} 的 SSH 服务器没有中枢发的密钥，重新应用这个模块。",
         "op_unknown": "这个被控端不能对文件做 {op}。",
         "session_not_owned": "这个会话属于别人，且没有共享",
         "session_unknown": "那台机器已不再保留这个会话",
@@ -310,7 +310,7 @@ CLIENT_CODE_WORDS = {
         "overlay_join_failed": "加入虚拟网失败：{detail}",
         "overlay_leave_failed": "离开虚拟网失败：{detail}",
         "overlay_network_invalid": "非法虚拟网名称：中枢给出的名称本客户端不能使用",
-        "overlay_peer_invalid": "非法碰头点：中枢给出的地址本客户端连不上",
+        "overlay_peer_invalid": "非法引导节点：中枢给出的地址本客户端连不上",
         "overlay_secret_missing": "虚拟网的密钥没有送到；请再试一次",
         "overlay_restart_failed": "虚拟网服务无法重启",
         "overlay_console_invalid": (
@@ -408,12 +408,12 @@ CLIENT_CODE_WORDS = {
         "gui_webview2_missing": "窗口需要 {runtime}，请安装后再试",
         "gui_wkwebview_missing": "窗口需要 pyobjc，请安装：pip install {packages}",
         "ssh_entry_unknown": "{machine} 没有给 {account} 开 SSH",
-        "ssh_key_unwritable": "{machine} 的 SSH 钥匙写不进去：{detail}",
+        "ssh_key_unwritable": "{machine} 的 SSH 密钥写不进去：{detail}",
         "transport_missing": "这份安装缺少 neutrino_transport，重新安装客户端",
         "transport_unavailable": "客户端的传输进程没有运行，退出客户端再重新打开",
         "rdp_nobody_seated": "那台机器的屏幕前没有人",
         "rdp_screen_not_allowed": "那台机器还不允许共享屏幕",
-        "unknown_request": "客户端不认识这个请求",
+        "unknown_request": "客户端无法识别这个请求",
     },
 }
 

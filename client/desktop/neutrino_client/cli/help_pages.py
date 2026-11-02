@@ -331,7 +331,7 @@ Change one setting. The names and the values they take are in nclient settings s
 停止运行中的客户端：关窗口，收回所有转发和挂载。""",
         "ssh": """用法：nclient ssh <命令> [参数]
 
-用 ssh 登录被控端。被控端自带 SSH 服务器，只认中枢发给你的钥匙，不用密码。
+用 ssh 登录被控端。被控端自带 SSH 服务器，只认中枢发给你的密钥，不用密码。
 
   list         开了 ssh 的机器、各自启用的账户和本机地址
   open         登录一台机器
@@ -391,7 +391,7 @@ Change one setting. The names and the values they take are in nclient settings s
 
 你绑定的中枢。
 
-  list         每个中枢的连接状态和走的哪条路
+  list         每个中枢的连接状态和连接方式
   join         用链接加入一个中枢
   leave        离开一个中枢
   open         经转发在浏览器打开中枢面板
@@ -399,7 +399,7 @@ Change one setting. The names and the values they take are in nclient settings s
 例子：nclient hub join "neutrino://…\"""",
         "hub list": """用法：nclient hub list
 
-每个中枢一行：名字、连接状态、走的哪条路（局域网、NetBird、EasyTier、SSH 中继、直连、SakuraFrp、OpenFrp）、往返时间。""",
+每个中枢一行：名字、连接状态、连接方式（局域网、NetBird、EasyTier、SSH 中继、直连、SakuraFrp、OpenFrp）、往返时间。""",
         "hub join": """用法：nclient hub join <链接>
 
 用面板生成的链接加入一个中枢。链接只能用一次，30 分钟内有效。
@@ -540,7 +540,7 @@ Linux 和 macOS 是 ~/remote/<机器-共享>，文件夹共享再加 -<账户>�
 例子：nclient rdp connect iffi-mac""",
         "rdp list": """用法：nclient rdp list
 
-共享着桌面的机器一行一台：谁坐在屏幕前、有几个人在看。""",
+共享着桌面的机器一行一台：屏幕前的用户、有几个人在看。""",
         "rdp connect": """用法：nclient rdp connect <机器>
 
 打开查看器连上这台机器的桌面。座位密码客户端自己拿，不用输。""",
