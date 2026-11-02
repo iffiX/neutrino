@@ -1609,10 +1609,14 @@ function mergeSessions(state) {
     }
   }
   const shown = new Set(shellTabs.map((tab) => tab.hub_id + '/' + tab.session_id));
+  // A state can list a new session before its open answers its tab.
+  const opening = new Set(shellTabs.filter((tab) => !tab.session_id && tab.state === 'connecting')
+    .map((tab) => tab.hub_id + '/' + tab.device_id));
   const isFirst = shellTabs.length === 0;
   for (const row of sessions) {
     const key = row.hub_id + '/' + row.session_id;
     if (shown.has(key) || closedSessions.has(key)) continue;
+    if (opening.has(row.hub_id + '/' + row.device_id)) continue;
     const machine = machineOf(state, row.hub_id, row.device_id);
     if (!machine) continue;
     const tab = newTab(row.hub_id, machine, row.session_id);

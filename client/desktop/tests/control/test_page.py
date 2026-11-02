@@ -789,6 +789,16 @@ def test_the_click_of_a_press_draws_at_once():
     assert opened.index("redraw();") < opened.index("startShell(tab);")
 
 
+def test_a_session_listed_before_its_open_answers_gets_no_second_tab():
+    merge = body_of("mergeSessions")
+    assert "!tab.session_id && tab.state === 'connecting'" in merge
+    assert merge.index(
+        "if (opening.has(row.hub_id + '/' + row.device_id)) continue;"
+    ) < (merge.index("newTab(row.hub_id, machine, row.session_id)"))
+    # The open's answer draws, and the merge then adds what no tab shows.
+    assert "redraw();" in body_of("startShell")
+
+
 def test_what_a_press_held_back_draws_once_it_ends():
     end = body_of("endPress")
     assert "setTimeout(() => {" in end
