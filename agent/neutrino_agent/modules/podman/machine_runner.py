@@ -718,7 +718,7 @@ class PodmanMachineModuleRunner(ModuleRunner):
         Images and volumes stay. The machine stays stopped across the
         computer's next boot. With no record the keeper of the account the
         configuration names is stopped and disabled, and its machine
-        stopped.
+        stopped. A machine Stop already stopped has its keeper stopped alone.
 
         Raises:
             ModuleApplyError: ``machine_set_failed`` when Podman cannot stop
@@ -732,6 +732,13 @@ class PodmanMachineModuleRunner(ModuleRunner):
                 self._halt_keeper(self._configured_record())
                 return
             if self._is_halted(record):
+                account_service.stop(
+                    self._keeper_of(
+                        str(record.get("account", "") or ""),
+                        str(record.get("password", "") or ""),
+                    ),
+                    self._service_machine,
+                )
                 return
             machine = self._machine_of_record(record)
             self._run_quietly(machine, machine_stop_script())
@@ -1476,6 +1483,7 @@ class PodmanMachineModuleRunner(ModuleRunner):
                     self._system.resize_disk(machine, disk_gib=disk_gib)
                 notes.append("sized the machine")
         is_changed = account_service.write(keeper, self._service_machine)
+        self._forget_stop(settings.account)
         account_service.start(keeper, self._service_machine, is_restart=is_changed)
         return notes, disk_gib
 
@@ -1710,6 +1718,17 @@ class PodmanMachineModuleRunner(ModuleRunner):
                 except OSError as error:
                     self._log(f"podman: the record was not written: {error}")
         self._log(f"podman: stopped the machine of {machine.account}")
+
+    def _forget_stop(self, account: str) -> None:
+        """Clear the record's mark that Stop stopped the account's machine.
+
+        Raises:
+            OSError: When the record cannot be written.
+        """
+        with self._record_lock:
+            held = self._records.read(account)
+            if held.get("is_stopped"):
+                self._records.write({**held, "is_stopped": False})
 
     def _is_halted(self, record: dict) -> bool:
         """Whether Stop stopped the record's machine and the machine does not answer the read."""

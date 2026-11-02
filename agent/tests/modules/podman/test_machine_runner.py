@@ -1667,7 +1667,7 @@ def test_an_apply_during_stop_keeps_the_configuration_and_wakes_nothing(rig):
     rig.runner.apply(CHANGED_RUN)
     rig.runner.stop()
 
-    assert rig.launchctl.verbs() == []
+    assert rig.launchctl.verbs() == ["disable", "bootout"]
     assert len(rig.world.scripts) == scripts
     assert rig.world.calls == []
     assert rig.system.calls == []
@@ -1701,6 +1701,8 @@ def test_an_uninstall_during_stop_wakes_the_machine_once(rig):
         pass
 
     assert rig.launchctl.verbs() == [
+        "disable",
+        "bootout",
         "enable",
         "bootout",
         "bootstrap",
@@ -1709,6 +1711,39 @@ def test_an_uninstall_during_stop_wakes_the_machine_once(rig):
     ]
     assert rig.world.calls.count(("me", "stop", "")) == 1
     assert rig.record()[0]["is_stopped"] is True
+
+
+def test_a_failed_start_after_a_stop_clears_the_mark_and_a_stop_stops_the_keeper(rig):
+    _stopped_by_stop(rig)
+    rig.launchctl.on_bootstrap = None
+    rig.world.answers_after = 10**6
+
+    steps = rig.runner.configure_steps(CONFIG, "running", [plain_step("configure")])
+    assert refusal(lambda: steps[0].run(None)).code == "machine_unreachable"
+    assert "com.neutrino.podman.me" in rig.launchctl.loaded
+    assert not rig.record()[0]["is_stopped"]
+    rig.launchctl.calls.clear()
+
+    rig.runner.stop()
+
+    assert "com.neutrino.podman.me" not in rig.launchctl.loaded
+    assert rig.launchctl.verbs() == ["disable", "bootout"]
+    assert rig.world.calls[-1] == ("me", "stop", "")
+    assert rig.record()[0]["is_stopped"] is True
+
+
+def test_a_stop_of_a_stopped_machine_stops_a_keeper_left_on(rig):
+    _stopped_by_stop(rig)
+    rig.launchctl.on_bootstrap = None
+    rig.launchctl.loaded.add("com.neutrino.podman.me")
+    scripts = len(rig.world.scripts)
+
+    rig.runner.stop()
+
+    assert "com.neutrino.podman.me" not in rig.launchctl.loaded
+    assert rig.launchctl.verbs() == ["disable", "bootout"]
+    assert len(rig.world.scripts) == scripts
+    assert rig.world.calls == []
 
 
 def test_stop_stops_a_machine_its_keeper_started_again_after_a_stop(rig):
