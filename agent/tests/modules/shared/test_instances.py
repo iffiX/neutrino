@@ -1449,6 +1449,24 @@ def test_an_uninstall_deletes_the_modules_directory(runner, tmp_path):
     assert not (tmp_path / "state" / "demo").exists()
 
 
+def test_an_uninstall_deletes_what_a_first_start_cut_short_wrote(
+    runner, systemd, tmp_path
+):
+    """Cancel during a first start: the engine holds no configured mark, so it
+    removes no configuration, and the template and the record stay otherwise."""
+    runner.apply(CONFIG)
+    assert (tmp_path / "systemd" / "neutrino_demo@.service").exists()
+    systemd.calls.clear()
+
+    runner.uninstall({})
+
+    assert not (tmp_path / "systemd" / "neutrino_demo@.service").exists()
+    assert os.listdir(tmp_path / "config" / "demo") == []
+    assert ["systemctl", "disable", "--now", "neutrino_demo@ann.service"] in (
+        systemd.calls
+    )
+
+
 def test_an_uninstall_stops_the_installs_before_the_directory_goes(
     runner, tmp_path, monkeypatch
 ):

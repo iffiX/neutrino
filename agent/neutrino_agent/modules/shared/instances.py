@@ -573,16 +573,21 @@ class InstancesModuleRunner(ModuleRunner):
         self._forget_states()
 
     def uninstall(self, recipe: dict) -> None:
-        """Stop every install still running and delete the module's directory; each account's own data stays.
+        """Stop every install still running and delete what the applies wrote and the module's directory; each account's own data stays.
+
+        A first start cut short has written the template and no configured
+        mark, so the engine does not remove the configuration first.
 
         Args:
             recipe: The module's recipe.
 
         Raises:
-            OSError: When the system will not stop an install.
+            OSError: When the system will not stop an install or let an
+                instance go.
         """
         self._close_forwarders()
         self._hooks.stop_installs()
+        self.remove_configuration()
         self._remove_module_dir()
 
     def validate(self, config: dict) -> None:
