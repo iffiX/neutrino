@@ -517,6 +517,9 @@ final class HubSession {
         case Channel.codeReplaced: held = .replaced
         case Channel.codeBindingUnknown: held = .unknownDevice
         case Channel.codeProtocolTooOld, Channel.codeProtocolTooNew: held = .tooOld
+        case Channel.codeClientDisabled:
+            endLive()
+            switchedOff()
         default: break
         }
     }

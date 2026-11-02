@@ -367,15 +367,20 @@ class HubSessionTest {
         eventually("disabled") { session.view.value.isDisabled }
     }
 
-    private fun refuseDisabled() {
-        val params = buildJsonObject { put("retry_after_s", 1) }
+    private val disabledParams = buildJsonObject { put("retry_after_s", 1) }
+
+    private fun refuseDisabledFrame() {
         val refused = buildJsonObject {
             put("type", "refused")
             put("code", "client_disabled")
-            put("params", params)
+            put("params", disabledParams)
         }
         fake.frame("b1", refused)
-        fake.event("session_end", "b1", "code" to "client_disabled", "params" to params)
+    }
+
+    private fun refuseDisabled() {
+        refuseDisabledFrame()
+        fake.event("session_end", "b1", "code" to "client_disabled", "params" to disabledParams)
     }
 
     private fun disabledState(isDisabled: Boolean) = buildJsonObject {
@@ -393,6 +398,22 @@ class HubSessionTest {
         assertEquals(HubConnection.WAITING, session.view.value.connection)
         assertEquals(0L, session.view.value.nextRoundAtMillis)
         assertNull(session.view.value.waitRefusal)
+    }
+
+    @Test
+    fun theRefusedFrameReadsDisabledAndEndsTheSessionBeforeItsEndArrives() {
+        val (session, _) = session()
+        connected(session)
+        refuseDisabledFrame()
+        eventually("disabled") { session.view.value.isDisabled }
+        assertEquals(HubConnection.WAITING, session.view.value.connection)
+        assertEquals(0L, session.view.value.nextRoundAtMillis)
+        assertNull(session.view.value.waitRefusal)
+        assertEquals("", session.view.value.connectedAddress)
+        fake.event("session_end", "b1", "code" to "client_disabled", "params" to disabledParams)
+        Thread.sleep(200)
+        assertTrue(session.view.value.isDisabled)
+        assertEquals(HubConnection.WAITING, session.view.value.connection)
     }
 
     @Test

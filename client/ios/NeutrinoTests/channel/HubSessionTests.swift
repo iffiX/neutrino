@@ -255,10 +255,15 @@ final class HubSessionTests: XCTestCase {
         XCTAssertEqual(session.view.nextRoundAt, clock.now + 60)
     }
 
+    private let disabledParams: JSONValue = .object(["retry_after_s": .int(1)])
+
+    private func refuseDisabledFrame() {
+        fake.frame("b1", ["type": .string("refused"), "code": .string("client_disabled"), "params": disabledParams])
+    }
+
     private func refuseDisabled() {
-        let params: JSONValue = .object(["retry_after_s": .int(1)])
-        fake.frame("b1", ["type": .string("refused"), "code": .string("client_disabled"), "params": params])
-        fake.event("session_end", "b1", ["code": .string("client_disabled"), "params": params])
+        refuseDisabledFrame()
+        fake.event("session_end", "b1", ["code": .string("client_disabled"), "params": disabledParams])
     }
 
     private func disabledState(_ isDisabled: Bool) -> [String: JSONValue] {
@@ -273,6 +278,21 @@ final class HubSessionTests: XCTestCase {
         XCTAssertEqual(session.view.connection, .waiting)
         XCTAssertEqual(session.view.nextRoundAt, 0)
         XCTAssertNil(session.view.waitRefusal)
+    }
+
+    func testTheRefusedFrameReadsDisabledAndEndsTheSessionBeforeItsEndArrives() throws {
+        let session = try self.session()
+        connected(session)
+        refuseDisabledFrame()
+        XCTAssertTrue(RunLoopWait.until { session.view.isDisabled })
+        XCTAssertEqual(session.view.connection, .waiting)
+        XCTAssertEqual(session.view.nextRoundAt, 0)
+        XCTAssertNil(session.view.waitRefusal)
+        XCTAssertEqual(session.view.connectedAddress, "")
+        fake.event("session_end", "b1", ["code": .string("client_disabled"), "params": disabledParams])
+        RunLoopWait.turn()
+        XCTAssertTrue(session.view.isDisabled)
+        XCTAssertEqual(session.view.connection, .waiting)
     }
 
     func testAClientRefusedDisabledStaysDisabledUntilTheFrameSaysEnabled() throws {

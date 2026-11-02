@@ -557,8 +557,16 @@ class HubSession(
         log("the hub refused the session: ${refusal.code}")
         when (refusal.code) {
             CLIENT_REFUSAL_CODE_REPLACED -> held = HubWaitReason.REPLACED
+
             CLIENT_REFUSAL_CODE_BINDING_UNKNOWN -> held = HubWaitReason.UNKNOWN_DEVICE
+
             in CLIENT_PROTOCOL_REFUSAL_CODES -> held = HubWaitReason.TOO_OLD
+
+            CLIENT_REFUSAL_CODE_DISABLED -> {
+                endLive()
+                switchedOff()
+            }
+
             else -> Unit
         }
     }
