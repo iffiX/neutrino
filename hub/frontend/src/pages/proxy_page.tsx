@@ -15,7 +15,7 @@ import {
   describeError,
 } from "../api_client";
 import { t, useLanguage } from "../i18n";
-import { describeProxy } from "../proxy_status";
+import { DIRECT_EXIT_TAG, describeProxy } from "../proxy_status";
 import type { ProxyTone } from "../proxy_status";
 import { useApiResource } from "../use_api_resource";
 import { useDraft } from "../use_draft";
@@ -207,7 +207,9 @@ export function ProxyPage() {
         </div>
       </div>
 
-      <DeadExitsNotice isFallingBack={draft.is_direct_fallback_enabled} />
+      <DeadExitsNotice
+        isFallingBack={latestFrame?.exit_tag === DIRECT_EXIT_TAG}
+      />
 
       <NodesPanel onNodesChanged={resource.reload} />
 

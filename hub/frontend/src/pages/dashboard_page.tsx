@@ -26,6 +26,7 @@ import { formatByteRate, formatBytes } from "../format_bytes";
 import { formatCompact } from "../format_compact";
 import { formatDuration, formatLatency } from "../format_duration";
 import { t, useLanguage } from "../i18n";
+import { DIRECT_EXIT_TAG } from "../proxy_status";
 import { toHistorySeries, toTrafficSeries } from "../traffic_series";
 import { useApiResource } from "../use_api_resource";
 import { useDnsLogSocket } from "../use_dns_log_socket";
@@ -150,7 +151,11 @@ export function DashboardPage() {
         />
       )}
 
-      {IS_PROXY_CARRIED && <DeadExitsNotice />}
+      {IS_PROXY_CARRIED && (
+        <DeadExitsNotice
+          isFallingBack={latestFrame?.exit_tag === DIRECT_EXIT_TAG}
+        />
+      )}
 
       <div className="stat_tile_grid dashboard_tiles">
         <StatTile

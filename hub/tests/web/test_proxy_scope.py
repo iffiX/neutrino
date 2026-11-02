@@ -1,5 +1,6 @@
 """Whose traffic the proxy is taking, as the status strip will report it."""
 
+import json
 from pathlib import Path
 
 import pytest
@@ -11,6 +12,30 @@ from neutrino_hub.web import panel_runtime as runtime_module
 from neutrino_hub.web.panel_runtime import PanelRuntime
 
 FRONTEND_SRC_DIR = Path(__file__).resolve().parents[2] / "frontend/src"
+
+# The dead exits notice's words by language, as ui_text.md has them.
+DEAD_EXITS_WORDS = {
+    "en": {
+        "ui.proxy.dead_exits": (
+            "Every enabled exit node is unreachable. Traffic sent to the proxy "
+            "(the LAN's names included) fails until one answers."
+        ),
+        "ui.proxy.dead_exits_fallback": (
+            "Every enabled exit node is unreachable, so traffic sent to the proxy "
+            "is leaving through the WAN instead, under this machine's own address."
+        ),
+    },
+    "zh-CN": {
+        "ui.proxy.dead_exits": (
+            "所有启用的出口节点都不可达。在有节点应答之前，"
+            "送往代理的流量都会失败，局域网的域名解析也一样。"
+        ),
+        "ui.proxy.dead_exits_fallback": (
+            "所有启用的出口节点都不可达，送往代理的流量正改从 WAN 出去，"
+            "用的是这台机器自己的地址。"
+        ),
+    },
+}
 
 # The two tproxy statements the renderer can emit, told apart the way the
 # scope reader tells them apart: the hub's own diversion hairpins through
@@ -319,6 +344,49 @@ def test_the_notice_shows_for_every_scope_that_takes_traffic():
     strip = (FRONTEND_SRC_DIR / "proxy_status.ts").read_text(encoding="utf-8")
     for word in ("lan", "overlay", "hub"):
         assert f'{word}: "state.{word}",' in strip
+
+
+@pytest.mark.feature("proxy")
+@pytest.mark.parametrize("page", ["dashboard_page.tsx", "proxy_page.tsx"])
+def test_each_page_reads_the_notice_s_fallback_from_the_frame(page):
+    source = " ".join(
+        (FRONTEND_SRC_DIR / "pages" / page).read_text(encoding="utf-8").split()
+    )
+    assert "<DeadExitsNotice" in source
+    assert "isFallingBack={latestFrame?.exit_tag === DIRECT_EXIT_TAG}" in source
+
+
+@pytest.mark.feature("proxy")
+def test_the_panel_s_direct_exit_is_the_tag_the_hub_falls_back_to():
+    from neutrino_hub.modules.xray.constants import XRAY_DIRECT_TAG
+
+    strip = (FRONTEND_SRC_DIR / "proxy_status.ts").read_text(encoding="utf-8")
+    assert f'export const DIRECT_EXIT_TAG = "{XRAY_DIRECT_TAG}";' in strip
+
+
+@pytest.mark.feature("proxy")
+def test_the_notice_s_tone_and_words_follow_the_fallback():
+    notice = " ".join(
+        (FRONTEND_SRC_DIR / "components/dead_exits_notice.tsx")
+        .read_text(encoding="utf-8")
+        .split()
+    )
+    assert 'notice--${isFallingBack ? "warn" : "error"}' in notice
+    assert (
+        'isFallingBack ? t("ui.proxy.dead_exits_fallback") : t("ui.proxy.dead_exits")'
+    ) in notice
+
+
+@pytest.mark.feature("proxy")
+@pytest.mark.parametrize("language", sorted(DEAD_EXITS_WORDS))
+def test_the_notice_s_words_in_both_languages(language):
+    catalog = json.loads(
+        (FRONTEND_SRC_DIR / "locales" / language / "network.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    for key, words in DEAD_EXITS_WORDS[language].items():
+        assert catalog[key] == words
 
 
 def test_a_tree_without_the_proxy_is_off(monkeypatch, tmp_path):

@@ -38,6 +38,9 @@ const SCOPE_KEYS: Record<string, string> = {
 };
 const SCOPE_JOINER = "+";
 
+/** The `exit_tag` of a hub falling back to direct. */
+export const DIRECT_EXIT_TAG = "direct";
+
 /**
  * Describe the current scope and exit.
  *

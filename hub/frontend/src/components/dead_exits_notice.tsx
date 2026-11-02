@@ -16,13 +16,11 @@ import { useLiveStats } from "../use_live_stats";
  * own address, which is worth knowing before it goes on for a week.
  */
 interface DeadExitsNoticeProps {
-  /** Whether the person has asked for a dead exit to fall back to direct. */
-  isFallingBack?: boolean;
+  /** Whether the hub has pinned the direct exit. */
+  isFallingBack: boolean;
 }
 
-export function DeadExitsNotice({
-  isFallingBack = false,
-}: DeadExitsNoticeProps) {
+export function DeadExitsNotice({ isFallingBack }: DeadExitsNoticeProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
   const { latestFrame } = useLiveStats();
