@@ -180,7 +180,9 @@ Each `*.example.json` is annotated field-by-field. The load-bearing ones:
   whose reference does not resolve is dropped from the rendered config.
 - **`routing.json`** — `is_geoip_split_enabled` (default `true`: CN domains/IPs
   go direct, everything else through JustMySocks), `is_local_proxy_enabled`
-  (the gateway's own traffic through the proxy, default `false`), and the
+  (the gateway's own traffic through the proxy, default `false`; setup given
+  exit nodes turns it on in `server` mode unless its answers say `is_local:
+  false`), and the
   proxy's two resolver lists, `remote_dns` and `direct_dns`, each a list of
   `{address, port}` asked in order. An empty `direct_dns` follows the
   network's resolvers ([../design/hub_components/proxy.md](../design/hub_components/proxy.md),
