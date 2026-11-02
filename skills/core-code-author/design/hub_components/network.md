@@ -915,8 +915,8 @@ interface holds a role, so there is no network to divert, and the panel does
 not draw that switch in server mode on any system. An overlay member that
 named this box its exit is forwarded in every mode, by the overlay's own
 rules, so that scope exists in every mode. What the panel reports is a
-*scope*: off, unused, ports only, the served networks, the overlays, this
-box, or several. On macOS and Windows the overlay scope and the box's own
+*scope*: off, unused, the served networks, the overlays, this box, or
+several. On macOS and Windows the overlay scope and the box's own
 scope divert through a TUN device rather than a chain
 ([proxy.md](proxy.md), "The TUN on macOS and Windows").
 
