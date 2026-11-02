@@ -73,7 +73,8 @@ on macOS and the adapter `neutrino_tun` on Windows, with a /30 from the
 benchmark range of RFC 2544.
 The routes are the machine's, so with the overlay scope on alone the box's
 own traffic enters the TUN as well: those systems have no routing by
-source interface.
+source interface. The scope then reads `hub`, beside `overlay` while an
+exposed overlay runs.
 
 With both scopes off there is no TUN device and no route. When xray stops,
 the supervisor stops `tun2socks` and withdraws the route, so the machine's
