@@ -46,7 +46,11 @@ from neutrino_agent.modules.samba import applier as applier_module
 from neutrino_agent.modules.samba import runner as runner_module
 from neutrino_agent.modules.samba.applier import SambaUserState, password_digest
 from neutrino_agent.modules.samba.config import SambaConfig
-from neutrino_agent.modules.samba.constants import SAMBA_CONF_MARKER, samba_name_unit
+from neutrino_agent.modules.samba.constants import (
+    SAMBA_CONF_MARKER,
+    SAMBA_NATIVE_STATUS_TTL_S,
+    samba_name_unit,
+)
 from neutrino_agent.modules.shared.base import ModuleStep
 from neutrino_agent.modules.samba.runner import (
     SambaModuleRunner,
@@ -1837,6 +1841,117 @@ def test_a_native_stop_on_a_machine_with_no_first_start_keeps_what_the_server_is
     native.stop()
 
     assert record_of(native)["found_server"] == FOUND_SERVER
+
+
+EMPTY_NATIVE_CONFIG = {"shares": [], "users": [], "passwords": {}}
+
+
+def test_a_server_on_with_no_mark_reads_running(native):
+    assert not os.path.exists(native._record_path)
+
+    assert native.is_active() is True
+    assert native.details({})["is_active"] is True
+
+
+def test_a_server_off_with_no_mark_reads_stopped(native):
+    native.applier.status = dict(native.applier.status, is_running=False)
+
+    assert native.is_active() is False
+
+
+def test_the_first_configure_of_a_server_on_keeps_it_and_reads_running(native):
+    native.apply(EMPTY_NATIVE_CONFIG)
+    native.start()
+
+    assert record_of(native)["found_server"] == FOUND_SERVER
+    assert native.is_active() is True
+    assert ("stop_server",) not in native.applier.calls
+
+
+def test_a_server_on_when_the_module_took_it_comes_back_after_stop_and_uninstall(
+    native,
+):
+    native.apply(EMPTY_NATIVE_CONFIG)
+    native.applier.server = {"start_type": "Disabled", "is_running": False}
+    native.stop()
+    native.remove_configuration()
+
+    native.uninstall({})
+
+    assert native.applier.calls[-1] == ("put_back_server", FOUND_SERVER, [])
+    assert "found_server" not in record_of(native)
+    assert native.is_active() is True
+
+
+def test_a_server_off_is_left_alone_by_the_stopped_module_s_first_configure(native):
+    off = {"start_type": "Manual", "is_running": False}
+    native.applier.status = dict(native.applier.status, is_running=False)
+    native.applier.server = dict(off)
+
+    native.apply_stopped(EMPTY_NATIVE_CONFIG)
+    native.stop()
+
+    assert ("stop_server",) not in native.applier.calls
+    assert not any(call[0] == "withdraw" for call in native.applier.calls)
+    assert "found_server" not in record_of(native)
+    assert record_of(native)["is_served"] is False
+    assert native.is_active() is False
+
+
+def test_a_server_off_comes_back_off_after_a_start_a_stop_and_an_uninstall(native):
+    off = {"start_type": "Manual", "is_running": False}
+    native.applier.status = dict(native.applier.status, is_running=False)
+    native.applier.server = dict(off)
+    native.apply_stopped(EMPTY_NATIVE_CONFIG)
+    native.stop()
+
+    native.apply(EMPTY_NATIVE_CONFIG)
+    assert record_of(native)["found_server"] == off
+    native.stop()
+    assert native.applier.calls[-1] == ("stop_server",)
+    native.remove_configuration()
+    native.uninstall({})
+
+    assert native.applier.calls[-1] == ("put_back_server", off, [])
+
+
+def test_a_server_the_person_started_by_hand_stays_on_through_a_stopped_configure(
+    native,
+):
+    native.applier.status = dict(native.applier.status, is_running=False)
+    native.apply_stopped(EMPTY_NATIVE_CONFIG)
+    native.stop()
+    native.applier.status = dict(native.applier.status, is_running=True)
+    native.clock.now += SAMBA_NATIVE_STATUS_TTL_S + 1
+
+    native.apply_stopped(EMPTY_NATIVE_CONFIG)
+    native.stop()
+
+    assert ("stop_server",) not in native.applier.calls
+    assert "found_server" not in record_of(native)
+    assert native.is_active() is False
+
+
+def test_a_stop_of_a_server_on_with_no_mark_keeps_what_it_was_and_stops_it(native):
+    native.apply_stopped(EMPTY_NATIVE_CONFIG)
+    native.stop()
+
+    assert record_of(native)["found_server"] == FOUND_SERVER
+    assert native.applier.calls[-1] == ("stop_server",)
+    assert native.is_active() is False
+
+
+def test_an_uninstall_with_no_found_server_drops_the_mark(native):
+    native.applier.status = dict(native.applier.status, is_running=False)
+    native.apply_stopped(EMPTY_NATIVE_CONFIG)
+    native.stop()
+    native.remove_configuration()
+    native.applier.calls = []
+
+    native.uninstall({})
+
+    assert native.applier.calls == []
+    assert "is_served" not in record_of(native)
 
 
 def test_the_services_a_native_stop_took_down_start_again_with_the_server(native):

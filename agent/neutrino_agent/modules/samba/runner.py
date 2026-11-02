@@ -677,8 +677,10 @@ class SambaNativeServerRunner(ModuleRunner):
     Windows and macOS carry the server, so there is nothing to install or
     uninstall; the platform's applier converges the shares and the accounts
     and fences nothing. A start starts the server, share or no share, and a
-    stop stops it. The record keeps what the server was at the first start,
-    and an uninstall puts it back. Each
+    stop stops it. Before the first ``configure`` the row reads the server, a
+    server on stays on as the running module's, and a server off stays as it
+    is under a stop. The record keeps what the server was at the first start
+    or the first stop of a serving module, and an uninstall puts it back. Each
     account's password is set from the configuration's ``passwords``
     whenever it differs from the one the module set last. A root-only
     record under the agent's work root lists what the module made and the
@@ -746,6 +748,8 @@ class SambaNativeServerRunner(ModuleRunner):
     def uninstall(self, recipe: dict) -> None:
         """Remove nothing, and put the server back as the record found it. A record with none leaves it as it is.
 
+        The record's mark goes, so the row reads the server again.
+
         Args:
             recipe: The module's recipe.
 
@@ -753,13 +757,15 @@ class SambaNativeServerRunner(ModuleRunner):
             OSError: When the server will not go back.
         """
         record = self._read_record()
+        record.pop("is_served", None)
         found = record.pop("found_server", None)
-        if found is None:
-            return
-        try:
-            self._applier.put_back_server(found, record.pop("server_dependents", []))
-        finally:
-            self._forget_status()
+        if found is not None:
+            try:
+                self._applier.put_back_server(
+                    found, record.pop("server_dependents", [])
+                )
+            finally:
+                self._forget_status()
         self._write_record(record)
 
     def validate(self, config: dict) -> None:
@@ -843,7 +849,7 @@ class SambaNativeServerRunner(ModuleRunner):
         record = dict(record, shares=shares)
         refusal = None
         try:
-            if is_served:
+            if is_served or self.is_active():
                 record = self._keep_found_server(record)
             notes = self._applier.apply(
                 parsed,
@@ -934,12 +940,17 @@ class SambaNativeServerRunner(ModuleRunner):
         """Take the module's shares off the server and stop it; the accounts stay, and the record keeps each share's folder.
 
         The record keeps what the server was when no start has yet, and each
-        service the stop took down with it for the next start.
+        service the stop took down with it for the next start. A server the
+        module never read as serving stays as it is.
 
         Raises:
             OSError: When the server will not let them go or will not stop.
         """
-        record = self._keep_found_server(self._read_record())
+        record = self._read_record()
+        if "found_server" not in record and not self.is_active():
+            self._write_record(dict(record, is_served=False))
+            return
+        record = self._keep_found_server(record)
         try:
             self._applier.withdraw(record, is_removed=False)
             dependents = self._applier.stop_server()
@@ -989,9 +1000,16 @@ class SambaNativeServerRunner(ModuleRunner):
         self._write_record(dict(record, shares={}, passwords={}, is_served=False))
 
     def is_active(self) -> bool:
-        """Whether the server runs and serves the module's shares."""
+        """Whether the module serves.
+
+        A record with no mark, as before the first ``configure``, reads the
+        server. Any other reads the record's mark and the server.
+
+        Returns:
+            True when it serves.
+        """
         is_running = bool(self._read_status().get("is_running"))
-        return is_running and bool(self._read_record()["is_served"])
+        return is_running and self._read_record().get("is_served", True)
 
     def details(self, recipe: dict) -> dict:
         """What the server serves of the module's, and who uses it.
@@ -1048,7 +1066,7 @@ class SambaNativeServerRunner(ModuleRunner):
             self._status = None
 
     def _read_record(self) -> dict:
-        """The record, ``{"shares", "accounts", "passwords", "is_served"}``, and ``found_server`` and ``server_dependents`` where it stores them.
+        """The record, ``{"shares", "accounts", "passwords"}``, and ``is_served``, ``found_server`` and ``server_dependents`` where it stores them.
 
         ``shares`` lists the folder of each share the module configured, on
         the server or not. ``accounts`` leaves out a name without the
@@ -1064,6 +1082,8 @@ class SambaNativeServerRunner(ModuleRunner):
         shares = held.get("shares")
         passwords = held.get("passwords")
         kept = {}
+        if "is_served" in held:
+            kept["is_served"] = bool(held["is_served"])
         if isinstance(held.get("found_server"), dict):
             kept["found_server"] = dict(held["found_server"])
         if isinstance(held.get("server_dependents"), list):
@@ -1081,7 +1101,6 @@ class SambaNativeServerRunner(ModuleRunner):
                 if isinstance(passwords, dict)
                 else {}
             ),
-            "is_served": bool(held.get("is_served", False)),
         }
 
     def _write_record(self, record: dict) -> None:
