@@ -567,7 +567,9 @@ def test_a_chosen_npm_version_stops_no_other_module_s_download(manifests, root):
         root,
         {
             "app": {"digest": digest(chosen)},
-            "agentpkg": {"digest": "sha512-jwhcx2fbX9dALdH99v/WX4fYgO13cqm97=="},
+            "agentpkg": {
+                "digest": "sha512-jwhcx2fbX9dALdH99v/WX4fYgO13cqm97=="  # scan: allow
+            },
         },
     )
 

@@ -89,7 +89,7 @@ def test_a_server_given_nodes_and_not_its_own_traffic_saves_them_with_every_scop
                 "password": "a-long-enough-password",
                 "vault_passphrase": "A-vault-passphrase-16!",  # scan: allow
                 "network": {"mode": "server"},
-                "proxy": {"links": [SHARE_LINK]},
+                "proxy": {"links": [SHARE_LINK], "is_local": False},
             }
         ).proxy
     )
