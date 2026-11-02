@@ -238,7 +238,7 @@ function canRedraw() {
   const selection = window.getSelection ? window.getSelection() : null;
   if (selection && selection.type === 'Range') return false;
   const active = document.activeElement;
-  if (active && ['INPUT', 'TEXTAREA', 'SELECT'].indexOf(active.tagName) >= 0)
+  if (active && ['INPUT', 'SELECT'].indexOf(active.tagName) >= 0)
     return false;
   return true;
 }
@@ -413,8 +413,16 @@ function draw(state) {
   mergeSessions(state);
 
   const content = document.getElementById('content');
-  // Taking the surface out of the page takes the keyboard from its terminal.
-  if (shellSurface && shellSurface.contains(document.activeElement)) shouldFocusShell = true;
+  // Taking the surface out of the page takes the keyboard from its terminal,
+  // and a key pressed until the terminal takes it back is lost.
+  if (shellSurface && shellSurface.contains(document.activeElement)) {
+    if (openTab === 'terminals' && (state.hubs || []).length > 0) {
+      drawAroundSurface(state);
+      scheduleCountdowns();
+      return;
+    }
+    shouldFocusShell = true;
+  }
   clearChildren(content);
   if (openTab === 'hubs') {
     content.appendChild(drawHubs(state));
@@ -1653,21 +1661,39 @@ function tabFlags(tab) {
 function drawTerminals(state) {
   const hubs = state.hubs || [];
   if (hubs.length === 0) return waitCard();
+  const page = document.createElement('div');
+  page.className = 'term_page';
+  page.appendChild(machineStrip(state));
+  page.appendChild(shellPanel(state));
+  settleShells();
+  return page;
+}
+
+// The Terminals page drawn with its surface left in the page: its machines, its
+// tabs and its status line.
+function drawAroundSurface(state) {
+  const panel = shellSurface.parentNode;
+  const page = panel.parentNode;
+  page.replaceChild(machineStrip(state), page.firstChild);
+  panel.replaceChild(shellHead(state), panel.firstChild);
+  panel.replaceChild(statusLine(activeTab()), panel.lastChild);
+  shellSurfaceElement();
+  settleShells();
+}
+
+// Every terminal takes the kept font size, and the next frame fits the active
+// one and attaches its listed session.
+function settleShells() {
   for (const tab of shellTabs) {
     if (tab.term.options.fontSize !== terminalFontSize()) {
       tab.term.options.fontSize = terminalFontSize();
     }
   }
-  const page = document.createElement('div');
-  page.className = 'term_page';
-  page.appendChild(machineStrip(state));
-  page.appendChild(shellPanel(state));
   window.requestAnimationFrame(fitActiveShell);
   const active = activeTab();
   if (active && active.state === 'idle') {
     window.requestAnimationFrame(() => attachShell(active));
   }
-  return page;
 }
 
 // Every machine a connected hub offers a terminal on, one chip each with its
@@ -1803,19 +1829,23 @@ function shellPanel(state) {
   }
   const panel = document.createElement('section');
   panel.className = 'term_panel';
+  panel.appendChild(shellHead(state));
+  panel.appendChild(shellSurfaceElement());
+  panel.appendChild(statusLine(activeTab()));
+  return panel;
+}
+
+// The tab strip. A double click on its empty space opens a new terminal.
+function shellHead(state) {
   const head = document.createElement('div');
   head.className = 'term_head';
   for (const tab of shellTabs) head.appendChild(shellTabButton(tab));
-  // A double click on the strip's empty space opens a new terminal.
   head.ondblclick = (event) => {
     if (event.target !== head) return;
     const picked = pickedMachine(state);
     if (canOpenShell(picked)) openShell(picked.hub, picked.machine, pickedAccount(picked));
   };
-  panel.appendChild(head);
-  panel.appendChild(shellSurfaceElement());
-  panel.appendChild(statusLine(activeTab()));
-  return panel;
+  return head;
 }
 
 // The line under the terminal: where the keys go, or why the shell ended,
@@ -1979,8 +2009,6 @@ function shellSurfaceElement() {
   if (!shellSurface) {
     shellSurface = document.createElement('div');
     shellSurface.className = 'term_surface';
-    // A state held back while a shell had the keyboard draws once it lets go.
-    shellSurface.addEventListener('focusout', () => setTimeout(settle, 0));
     new ResizeObserver(fitActiveShell).observe(shellSurface);
   }
   for (const tab of shellTabs) {

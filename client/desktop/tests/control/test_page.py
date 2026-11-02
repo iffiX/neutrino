@@ -789,6 +789,45 @@ def test_the_click_of_a_press_draws_at_once():
     assert opened.index("redraw();") < opened.index("startShell(tab);")
 
 
+def test_a_terminal_with_the_keyboard_holds_no_state_back():
+    """A form field holds a state back. A terminal's helper textarea does not."""
+    guard = body_of("canRedraw")
+    assert "['INPUT', 'SELECT'].indexOf(active.tagName) >= 0" in guard
+    assert "TEXTAREA" not in PAGE_JS
+    assert "addEventListener('focusout'" not in PAGE_JS
+
+
+def test_a_draw_leaves_a_terminal_with_the_keyboard_in_the_page():
+    """A key pressed during a draw reaches the terminal, and the tabs follow the state."""
+    draw = body_of("draw")
+    around = "drawAroundSurface(state);"
+    assert draw.index("mergeSessions(state);") < draw.index(around)
+    assert draw.index("shellSurface.contains(document.activeElement)") < (
+        draw.index(around)
+    )
+    assert draw.index(around) < draw.index("clearChildren(content);")
+    assert "openTab === 'terminals' && (state.hubs || []).length > 0" in draw
+    around_body = body_of("drawAroundSurface")
+    for replaced in (
+        "page.replaceChild(machineStrip(state), page.firstChild);",
+        "panel.replaceChild(shellHead(state), panel.firstChild);",
+        "panel.replaceChild(statusLine(activeTab()), panel.lastChild);",
+    ):
+        assert replaced in around_body
+    assert "shellPanel" not in around_body
+    assert "clearChildren" not in around_body
+
+
+def test_both_draws_of_the_terminals_page_settle_the_terminals():
+    """A font chord typed in a terminal reaches every terminal."""
+    assert "settleShells();" in body_of("drawTerminals")
+    assert "settleShells();" in body_of("drawAroundSurface")
+    settled = body_of("settleShells")
+    assert "tab.term.options.fontSize = terminalFontSize();" in settled
+    assert "window.requestAnimationFrame(fitActiveShell);" in settled
+    assert "attachShell(active)" in settled
+
+
 def test_a_session_listed_before_its_open_answers_gets_no_second_tab():
     merge = body_of("mergeSessions")
     assert "!tab.session_id && tab.state === 'connecting'" in merge
@@ -1053,7 +1092,6 @@ def test_the_shells_panes_outlive_a_redraw():
     surface = function_body("function shellSurfaceElement()")
 
     assert "if (!shellSurface) {" in surface
-    assert "addEventListener('focusout'" in surface
     assert "const shellTabs = [];" in PAGE_JS
 
 
@@ -2010,7 +2048,7 @@ def test_a_tab_whose_stream_closed_with_a_code_ends_once_its_session_is_gone():
 
 
 def test_the_active_listed_tab_attaches_when_the_page_opens():
-    assert "if (active && active.state === 'idle') {" in body_of("drawTerminals")
+    assert "if (active && active.state === 'idle') {" in body_of("settleShells")
     assert "if (tab.state === 'idle') attachShell(tab);" in body_of("selectTab")
 
 
@@ -2126,7 +2164,7 @@ def test_new_terminal_stands_in_the_machines_card_alone():
 
 def test_a_middle_click_closes_a_tab_and_a_double_click_opens_one():
     assert "if (event.button !== 1) return;" in body_of("shellTabButton")
-    assert "head.ondblclick = (event) => {" in body_of("shellPanel")
+    assert "head.ondblclick = (event) => {" in body_of("shellHead")
 
 
 def test_the_right_click_opens_the_menu_at_the_pointer():
@@ -2797,19 +2835,18 @@ def test_the_account_picker_follows_the_chips_with_two_accounts_or_more():
 
 def test_a_redraw_keeps_the_keyboard_on_the_terminal_that_holds_it():
     """A new terminal takes the keyboard in the frame after its first redraw.
-    The redraw at its open answer takes the surface out of the page, and the
-    terminal takes the keyboard back in the frame after that."""
+    The redraw at its open answer leaves the surface in the page. A draw that
+    takes the surface out has the terminal take the keyboard back in the frame
+    after it."""
     draw = body_of("draw")
-    kept = (
-        "if (shellSurface && shellSurface.contains(document.activeElement)) "
-        "shouldFocusShell = true;"
-    )
+    holds = "if (shellSurface && shellSurface.contains(document.activeElement)) {"
+    kept = "shouldFocusShell = true;"
 
-    assert "shouldFocusShell = true;" in body_of("openShell")
+    assert kept in body_of("openShell")
     assert "redraw();" in body_of("startShell")
-    assert kept in draw
+    assert draw.index(holds) < draw.index(kept)
     assert draw.index(kept) < draw.index("clearChildren(content);")
-    assert "window.requestAnimationFrame(fitActiveShell);" in body_of("drawTerminals")
+    assert "window.requestAnimationFrame(fitActiveShell);" in body_of("settleShells")
     fit = body_of("fitActiveShell")
     assert fit.index("if (shouldFocusShell) {") < fit.index("tab.term.focus();")
 
