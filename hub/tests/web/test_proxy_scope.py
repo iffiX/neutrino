@@ -1,9 +1,16 @@
 """Whose traffic the proxy is taking, as the status strip will report it."""
 
+from pathlib import Path
+
 import pytest
 
+from neutrino_hub.modules.firewall.renderer import FirewallExposure
+from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
+from neutrino_hub.modules.router.nft_renderer import RouterNftRenderer
 from neutrino_hub.web import panel_runtime as runtime_module
 from neutrino_hub.web.panel_runtime import PanelRuntime
+
+FRONTEND_SRC_DIR = Path(__file__).resolve().parents[2] / "frontend/src"
 
 # The two tproxy statements the renderer can emit, told apart the way the
 # scope reader tells them apart: the hub's own diversion hairpins through
@@ -205,6 +212,113 @@ def test_the_overlay_alone_reads_as_overlay(monkeypatch, tmp_path):
     )
 
     assert runtime.proxy_scope() == "overlay+hub"
+
+
+SERVED_INTERFACES = [
+    {"name": "enp2s0", "role": "wan"},
+    {"name": "enp1s0", "role": "lan", "lan": {"address": "192.168.100.1"}},
+]
+NETBIRD_EXPOSED = [{"provider": "netbird", "is_enabled": True, "is_exposed": True}]
+EASYTIER_EXPOSED = [{"provider": "easytier", "is_enabled": True, "is_exposed": True}]
+NETBIRD_CLOSED = [{"provider": "netbird", "is_enabled": True, "is_exposed": False}]
+LAN = {"is_proxy_enabled": True}
+OVERLAY = {"is_overlay_proxy_enabled": True}
+HUB = {"is_local_proxy_enabled": True}
+SERVER = {"mode": "server", "interfaces": [{"name": "enp1s0"}]}
+ROUTER = {"mode": "router", "interfaces": SERVED_INTERFACES}
+SIDE_GATEWAY = {"mode": "side_gateway", "interfaces": SERVED_INTERFACES[1:]}
+
+
+def switches(*scopes: dict) -> dict:
+    """The routing options with the scopes named on and every other off."""
+    routing = {
+        "is_proxy_enabled": False,
+        "is_overlay_proxy_enabled": False,
+        "is_local_proxy_enabled": False,
+    }
+    for scope in scopes:
+        routing.update(scope)
+    return routing
+
+
+@pytest.mark.feature("proxy")
+@pytest.mark.parametrize(
+    ("network", "overlays", "routing", "scope"),
+    [
+        (ROUTER, [], switches(LAN), "lan"),
+        (SIDE_GATEWAY, [], switches(LAN), "lan"),
+        (ROUTER, [], switches(LAN, HUB), "lan+hub"),
+        (ROUTER, NETBIRD_EXPOSED, switches(OVERLAY), "overlay"),
+        (SIDE_GATEWAY, NETBIRD_EXPOSED, switches(OVERLAY), "overlay"),
+        (SERVER, NETBIRD_EXPOSED, switches(OVERLAY), "overlay"),
+        (SERVER, EASYTIER_EXPOSED, switches(OVERLAY), "overlay"),
+        (ROUTER, NETBIRD_EXPOSED, switches(LAN, OVERLAY), "lan+overlay"),
+        (SERVER, NETBIRD_EXPOSED, switches(OVERLAY, HUB), "overlay+hub"),
+        (ROUTER, NETBIRD_EXPOSED, switches(LAN, OVERLAY, HUB), "lan+overlay+hub"),
+        (SERVER, [], switches(HUB), "hub"),
+        (ROUTER, [], switches(HUB), "hub"),
+        (ROUTER, [], switches(OVERLAY), "unused"),
+        (SERVER, [], switches(OVERLAY), "unused"),
+        (SERVER, NETBIRD_CLOSED, switches(OVERLAY), "unused"),
+        (SERVER, [], switches(LAN), "unused"),
+        (SERVER, NETBIRD_EXPOSED, switches(), "off"),
+    ],
+)
+def test_the_ruleset_rendered_for_each_scope_reads_back(
+    monkeypatch, tmp_path, network, overlays, routing, scope
+):
+    network = {**network, "overlays": overlays}
+    ruleset = RouterNftRenderer(
+        network=RouterNetworkConfig.from_dict(network),
+        routing=routing,
+        xray_uid=999,
+        exposure=FirewallExposure(),
+    ).render()
+    runtime = runtime_with(
+        monkeypatch, tmp_path, routing=routing, ruleset=ruleset, network=network
+    )
+
+    assert runtime.proxy_scope() == scope
+
+
+@pytest.mark.feature("proxy")
+@pytest.mark.parametrize(
+    ("overlays", "routing", "scope"),
+    [
+        ([], switches(HUB), "hub"),
+        ([], switches(OVERLAY), "hub"),
+        (NETBIRD_EXPOSED, switches(OVERLAY), "overlay+hub"),
+        (NETBIRD_EXPOSED, switches(OVERLAY, HUB), "overlay+hub"),
+        (NETBIRD_EXPOSED, switches(), "off"),
+    ],
+)
+def test_outside_linux_the_overlay_switch_alone_takes_the_machine(
+    monkeypatch, tmp_path, overlays, routing, scope
+):
+    """The two scopes share one TUN, and its routes are the machine's."""
+    runtime = runtime_with(
+        monkeypatch,
+        tmp_path,
+        routing=routing,
+        ruleset=None,
+        network={**SERVER, "overlays": overlays},
+    )
+    monkeypatch.setattr(runtime_module, "is_linux", lambda: False)
+
+    assert runtime.proxy_scope() == scope
+
+
+@pytest.mark.feature("proxy")
+def test_the_notice_shows_for_every_scope_that_takes_traffic():
+    notice = (FRONTEND_SRC_DIR / "components/dead_exits_notice.tsx").read_text(
+        encoding="utf-8"
+    )
+    assert (
+        'latestFrame.proxy_scope !== "off" && latestFrame.proxy_scope !== "unused";'
+    ) in notice
+    strip = (FRONTEND_SRC_DIR / "proxy_status.ts").read_text(encoding="utf-8")
+    for word in ("lan", "overlay", "hub"):
+        assert f'{word}: "state.{word}",' in strip
 
 
 def test_a_tree_without_the_proxy_is_off(monkeypatch, tmp_path):

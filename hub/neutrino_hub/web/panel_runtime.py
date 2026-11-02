@@ -605,7 +605,10 @@ class PanelRuntime:
             is_overlay_diverted = routing.get(
                 "is_overlay_proxy_enabled", False
             ) and bool(network.exposed_overlay_device_names)
-            is_hub_diverted = bool(routing.get("is_local_proxy_enabled", False))
+            # Outside Linux the overlay scope's TUN routes the whole machine.
+            is_hub_diverted = bool(routing.get("is_local_proxy_enabled", False)) or (
+                not is_linux() and bool(routing.get("is_overlay_proxy_enabled", False))
+            )
         else:
             # The hub's own diversion hairpins through loopback, which is the
             # one tproxy statement naming that interface; the forwarded one
