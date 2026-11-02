@@ -12,7 +12,7 @@ import pytest
 
 FRONTEND_SRC_DIR = Path(__file__).resolve().parents[2] / "frontend/src"
 # The pages with such a table, each by the prefix of its file and its classes.
-PAGES = ["devices"]
+PAGES = ["devices", "clients"]
 
 
 def flat(name: str) -> str:

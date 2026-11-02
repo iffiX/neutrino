@@ -341,7 +341,7 @@ export function ClientsPage() {
                   <th>{t("ui.clients.header_version")}</th>
                   <th>{t("ui.clients.header_status")}</th>
                   <th>{t("ui.clients.header_last_seen")}</th>
-                  <th />
+                  <th className="table_actions_cell" />
                 </tr>
               </thead>
               <tbody>
@@ -573,7 +573,7 @@ function ClientRow({
       <td className="mono">
         {client.is_online ? t("state.online") : formatTimeAgo(client.last_seen)}
       </td>
-      <td>
+      <td className="table_actions_cell">
         <div className="clients_actions">
           {waitingMinutes === null && (
             <button

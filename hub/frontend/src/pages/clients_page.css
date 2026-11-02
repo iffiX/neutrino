@@ -36,7 +36,8 @@
 .clients_table {
   width: 100%;
   min-width: 1002px;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   font-size: 12px;
   table-layout: fixed;
 }
@@ -95,7 +96,10 @@
 /* A row whose name or permission is being edited is lit, as an inline form
    is. */
 .clients_row--editing td {
-  background: var(--color-accent-wash);
+  background-image: linear-gradient(
+    var(--color-accent-wash),
+    var(--color-accent-wash)
+  );
 }
 
 .clients_permission_row td {
