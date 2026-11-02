@@ -21,6 +21,8 @@
     worker.addEventListener("message", (event) => { if (event.data && event.data.type === "announce") announce(); });
     worker.startMessages();
     announce();
+    // The page's tab, sent to the worker before the frame's request. This listener runs ahead of the app's own.
+    window.addEventListener("beforeunload", () => { if (worker.controller) worker.controller.postMessage({ type: "leaving", tab, address: location.href.split("#")[0] }); }, true);
   }
 
   // A form sent in the frame by any method but GET gets this tab added to its

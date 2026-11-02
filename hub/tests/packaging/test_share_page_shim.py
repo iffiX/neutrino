@@ -41,3 +41,29 @@ def test_a_link_that_leaves_no_page_keeps_its_address():
     assert "target.pathname === location.pathname" in handler
     assert "target.protocol !== location.protocol" in handler
     assert "target.origin !== location.origin" in handler
+
+
+def leaving_listener() -> str:
+    """The shim's line that tells the worker a page is about to leave."""
+    start = SHIM.index('window.addEventListener("beforeunload"')
+    return SHIM[start : SHIM.index("\n", start)]
+
+
+def test_a_page_tells_the_worker_before_it_leaves():
+    listener = leaving_listener()
+    assert 'type: "leaving", tab, address: location.href.split("#")[0]' in listener
+    assert listener.endswith(", true);")
+
+
+def test_the_shim_never_holds_a_page_back():
+    assert "beforeunload" in SHIM
+    assert "preventDefault" not in SHIM
+    assert "returnValue" not in SHIM
+
+
+def test_the_listener_goes_on_before_the_app_s_code_can_run():
+    """The shim runs at the top of the page, and the listener in its first block."""
+    assert SHIM.index('window.addEventListener("beforeunload"') < SHIM.index(
+        "const tagAction = (element, attribute) => {"
+    )
+    assert "worker.controller.postMessage" in leaving_listener()

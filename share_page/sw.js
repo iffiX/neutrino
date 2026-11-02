@@ -11,6 +11,10 @@ const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 const REDIRECTS_MAX = 20;
 // How long a request waits for the pages to announce their tabs to a worker that started again.
 const ANNOUNCE_WAIT_MS = 3000;
+// How long an untagged navigation waits before it counts the pages about to leave. A page's message can reach the worker after its navigation.
+const LEAVING_WAIT_MS = 50;
+// How long a page about to leave counts. A prompt turned down, a link to another site, a closed tab and a reload send no navigation to the worker.
+const LEAVING_AGE_MAX_MS = 300;
 const CACHE_BYTES_MAX = 50 * 1024 * 1024;
 const STORED_BYTES_HEADER = "x-neutrino-stored-bytes";
 const STORED_AT_HEADER = "x-neutrino-stored-at";
@@ -21,6 +25,8 @@ const KEPT_TYPES = /^(text\/css|text\/javascript|application\/(x-)?javascript|ap
 const shells = new Map();
 // The tab of every client the worker has routed, by client id.
 const clientTabs = new Map();
+// The pages about to leave, oldest first: {tab, address, at}.
+let leaving = [];
 // Requests in flight, by id.
 const pending = new Map();
 // Checks run at each announcement.
@@ -45,6 +51,10 @@ self.addEventListener("message", (event) => {
     port.postMessage({ type: "ready" });
   } else if (data.type === "client" && clientId && data.tab) {
     clientTabs.set(clientId, data.tab);
+  } else if (data.type === "leaving" && data.tab) {
+    leaving = freshLeaving();
+    leaving.push({ tab: data.tab, address: data.address, at: Date.now() });
+    return;
   } else if (data.type === "claim") {
     event.waitUntil(self.clients.claim());
     return;
@@ -77,11 +87,12 @@ async function route(event, url) {
   if (tab !== null) {
     url.searchParams.delete(TAB_PARAM);
   } else if (isNavigation) {
-    tab = await soleTab();
+    tab = (await soleTab()) || (await leavingTab(request.referrer));
     if (!tab) return request.method === "GET" ? retagPage() : failure("This page could not be routed. Reload it.");
   } else {
     tab = await tabOfClient(event.clientId);
   }
+  if (isNavigation) leaving = leaving.filter((page) => page.tab !== tab);
   const shell = tab ? await shellOf(tab) : null;
   if (!shell) return failure("This page could not be routed. Reload it.");
   if (isNavigation && event.resultingClientId) clientTabs.set(event.resultingClientId, tab);
@@ -94,8 +105,21 @@ async function route(event, url) {
       return fromCache(hit);
     }
   }
-  if (isNavigation || request.redirect !== "follow") return send(shell, sent, false);
+  if (isNavigation) return withTab(await send(shell, sent, false), tab, url);
+  if (request.redirect !== "follow") return send(shell, sent, false);
   return follow(shell, sent);
+}
+
+// A navigation's 3xx to this origin, its Location holding the tab while several shells are open.
+async function withTab(response, tab, url) {
+  const location = response.headers.get("location");
+  if (!REDIRECT_STATUSES.has(response.status) || !location || (await soleTab())) return response;
+  const next = new URL(location, url);
+  if (next.origin !== self.location.origin) return response;
+  next.searchParams.set(TAB_PARAM, tab);
+  const headers = new Headers(response.headers);
+  headers.set("location", next.pathname + next.search + next.hash);
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 
 // Follows the 3xx answers to a request that is not a navigation, by the Fetch standard's rules.
@@ -119,6 +143,20 @@ async function soleTab() {
   const windows = await self.clients.matchAll({ type: "window" });
   const tops = windows.filter((client) => client.frameType === "top-level");
   return tops.length === 1 ? tabOfClient(tops[0].id, false) : null;
+}
+
+// The tab of the pages about to leave, when they are all of one tab and the referrer is one of them, else null.
+async function leavingTab(referrer) {
+  await new Promise((resolve) => setTimeout(resolve, LEAVING_WAIT_MS));
+  leaving = freshLeaving();
+  const tabs = new Set(leaving.map((page) => page.tab));
+  if (tabs.size !== 1 || !leaving.some((page) => page.address === referrer)) return null;
+  return leaving[0].tab;
+}
+
+function freshLeaving() {
+  const oldest = Date.now() - LEAVING_AGE_MAX_MS;
+  return leaving.filter((page) => page.at >= oldest);
 }
 
 // The tab a client belongs to. A client missing from clientTabs makes the worker ask the pages to announce themselves first.
