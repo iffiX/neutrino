@@ -1125,7 +1125,11 @@ class _ClientFrames:
             channel_state.client_state, runtime, self._client.id
         )
         if report.get("is_refresh") is True or document["hash"] != session.state_hash:
-            await session.push_state(document)
+            try:
+                await session.push_state(document)
+            except AgentOfflineError:
+                # The session ended during the report's reads.
+                return
         session.offered_hash = document["hash"]
 
 

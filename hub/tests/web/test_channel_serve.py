@@ -1,7 +1,8 @@
 """A client's ``join``: the link's waiting row binds and keeps the permission
 it waited with, and a machine that has a row lands back on it with the link's
 name and permission while the waiting row goes. A package stream: how it ends
-when the file or the agent goes."""
+when the file or the agent goes. A client's report that lands after its
+session ended: nothing raised and nothing else hidden."""
 
 import asyncio
 from types import SimpleNamespace
@@ -11,6 +12,8 @@ import pytest
 from neutrino_hub.exceptions import AgentOfflineError
 from neutrino_hub.modules.clients.permissions import ClientPermission
 from neutrino_hub.modules.clients.registry import ClientRegistry
+from neutrino_hub.modules.channel.sessions import ChannelSession
+from neutrino_hub.web import channel_serve
 from neutrino_hub.web.channel_serve import join_client, serve_package_stream
 from neutrino_hub.web.models import ChannelJoin
 
@@ -156,3 +159,67 @@ def test_a_failure_with_the_agent_gone_closes_nothing(monkeypatch):
     package_stream_failing(monkeypatch, stream, RuntimeError("failed"))
 
     assert stream.closed == []
+
+
+class RefusingChannel:
+    """A local channel that takes the command ending a session."""
+
+    def __init__(self):
+        self.commands: list = []
+
+    async def send_command(self, command, **fields):
+        self.commands.append(command)
+        return {}
+
+
+def refused_session(client_id) -> ChannelSession:
+    """A client's session the hub refused, whose transport has not ended it yet."""
+
+    async def refuse():
+        session = ChannelSession(
+            key=client_id,
+            role="client",
+            session_id="s1",
+            channel=RefusingChannel(),
+            loop=asyncio.get_running_loop(),
+        )
+        await session.refuse("client_disabled", {})
+        return session
+
+    return asyncio.run(refuse())
+
+
+def test_a_client_s_report_after_its_session_ended_raises_nothing(config, monkeypatch):
+    """A report on its way at a Disable: the hub's log holds no traceback."""
+    client_id = ClientRegistry().create("laptop", link_expires_at=9e12)
+    client = ClientRegistry().get(client_id)
+    session = refused_session(client_id)
+    monkeypatch.setattr(
+        channel_serve.channel_state,
+        "client_state",
+        lambda runtime, client_id: {"hash": "new"},
+    )
+
+    asyncio.run(channel_serve._ClientFrames(Runtime(), session, client).take_report({}))
+
+    assert session.is_closed
+    assert session.offered_hash is None
+
+
+def test_a_client_s_report_keeps_a_failure_that_is_not_its_session_s_end(
+    config, monkeypatch
+):
+    """A compose that fails is the hub's fault, whichever error it names."""
+    client_id = ClientRegistry().create("laptop", link_expires_at=9e12)
+    client = ClientRegistry().get(client_id)
+    session = refused_session(client_id)
+
+    def failed_compose(runtime, client_id):
+        raise AgentOfflineError("another-machine")
+
+    monkeypatch.setattr(channel_serve.channel_state, "client_state", failed_compose)
+
+    with pytest.raises(AgentOfflineError):
+        asyncio.run(
+            channel_serve._ClientFrames(Runtime(), session, client).take_report({})
+        )
