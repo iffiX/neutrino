@@ -77,33 +77,14 @@
 
 /* A row whose name is being edited is lit, as an inline form is. */
 .devices_row--editing td {
-  background: var(--color-accent-wash);
+  background-image: linear-gradient(
+    var(--color-accent-wash),
+    var(--color-accent-wash)
+  );
 }
 
 .devices_table tbody tr:last-child td {
   border-bottom: none;
-}
-
-/* The row's actions stay at the box's right edge, over the cells that scroll
-   under them. A collapsed border would stay behind with the table. */
-.devices_cell--actions {
-  position: sticky;
-  right: 0;
-  z-index: 1;
-  background: var(--color-surface);
-}
-
-.devices_row--editing .devices_cell--actions {
-  background:
-    linear-gradient(var(--color-accent-wash), var(--color-accent-wash)),
-    var(--color-surface);
-}
-
-/* A phone's box is no wider than the actions. */
-@media (max-width: 720px) {
-  .devices_cell--actions {
-    position: static;
-  }
 }
 
 .devices_name {

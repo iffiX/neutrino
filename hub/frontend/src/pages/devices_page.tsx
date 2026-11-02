@@ -354,7 +354,7 @@ export function DevicesPage() {
                 <th>{t("ui.devices.header_status")}</th>
                 <th>{t("ui.devices.header_version")}</th>
                 <th>{t("ui.devices.header_last_seen")}</th>
-                <th className="devices_cell--actions" />
+                <th className="table_actions_cell" />
               </tr>
             </thead>
             <tbody>
@@ -516,7 +516,7 @@ function DeviceRow({
         <td className="mono">
           {isOnline ? t("state.online") : formatTimeAgo(lastSeen(device))}
         </td>
-        <td className="devices_cell--actions">
+        <td className="table_actions_cell">
           <div className="devices_actions">
             {isRenaming ? (
               <>
