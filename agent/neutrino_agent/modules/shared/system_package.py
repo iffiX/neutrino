@@ -296,7 +296,7 @@ def _kernel_lock_pid(path: str) -> int:
     """The process the kernel lists as holding a lock on a file; 0 when none does.
 
     A line matches by the file's inode alone, since Btrfs lists another device
-    number than ``stat`` gives. A line that starts ``->`` is a process waiting.
+    number than ``stat`` gives. A line with ``->`` after its number is a process waiting.
 
     Args:
         path: The locked file.
