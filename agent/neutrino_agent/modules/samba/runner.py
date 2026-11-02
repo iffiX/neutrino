@@ -55,7 +55,9 @@ from neutrino_agent.modules.samba.applier import (
     SambaUnitApplier,
     SambaUserManager,
     check_person_config,
+    conf_digest,
     password_digest,
+    remove_conf,
     testparm,
 )
 from neutrino_agent.modules.samba.config import SambaConfig
@@ -78,8 +80,10 @@ from neutrino_agent.platforms.detect import platform_tuple
 
 # The steps that make or remove the module's accounts.
 ACCOUNT_STEPS = (AGENT_STEP_CONFIGURE, AGENT_STEP_UNINSTALL)
+# The record's digest of an ``smb.conf`` the module made on a machine with none.
+WRITTEN_CONF_KEY = "written_conf_digest"
 # The record's fields a removal of the configuration leaves for the uninstall.
-KEPT_FOR_UNINSTALL = ("is_package_ours", "found_units")
+KEPT_FOR_UNINSTALL = ("is_package_ours", "found_units", WRITTEN_CONF_KEY)
 
 
 def account_step_locks(step: str) -> tuple:
@@ -241,6 +245,7 @@ class SambaModuleRunner(SystemPackageModuleRunner):
         rendered = renderer.render()
         held = read_digests(self._record_path)
         is_serving = bool(parsed.served_shares())
+        was_conf_missing = not conf_digest()
         try:
             changes = []
             applier = SambaConfigApplier(unit=self._unit)
@@ -275,6 +280,8 @@ class SambaModuleRunner(SystemPackageModuleRunner):
             written["is_selinux_boolean_ours"] = True
         if not is_ours:
             written["is_served"] = is_started
+        if was_conf_missing and conf_digest():
+            written[WRITTEN_CONF_KEY] = conf_digest()
         if written != _read_record(self._record_path):
             write_record(self._record_path, written)
         self._config = parsed
@@ -352,7 +359,8 @@ class SambaModuleRunner(SystemPackageModuleRunner):
         """Enable and start the server and the name server, share or no share.
 
         A person's Samba: the record keeps what both units were at the first
-        start.
+        start. On any Samba the record keeps the digest of an ``smb.conf`` this
+        start made.
 
         Raises:
             subprocess.CalledProcessError: If the server will not come up.
@@ -361,8 +369,15 @@ class SambaModuleRunner(SystemPackageModuleRunner):
         record = _read_record(self._record_path)
         if record.get("is_package_ours") is not True:
             self._keep_found_units(record)
-        SambaConfigApplier(unit=self._unit).start()
-        self._name_server.start()
+        was_conf_missing = not conf_digest()
+        try:
+            SambaConfigApplier(unit=self._unit).start()
+            self._name_server.start()
+        finally:
+            if was_conf_missing and conf_digest():
+                record = _read_record(self._record_path)
+                record[WRITTEN_CONF_KEY] = conf_digest()
+                write_record(self._record_path, record)
 
     def is_software_kept(self) -> bool:
         """Whether an uninstall leaves a Samba on the machine: a person's, one the record does not say the module installed.
@@ -408,7 +423,8 @@ class SambaModuleRunner(SystemPackageModuleRunner):
         """Delete every ``neutrino-`` SMB user, then take the packages off a Samba the module installed.
 
         A person's Samba keeps its packages, and its units go back as the
-        record found them.
+        record found them. On either Samba an ``smb.conf`` the module made goes
+        while it holds only what the module wrote.
 
         Args:
             recipe: The module's recipe.
@@ -423,10 +439,26 @@ class SambaModuleRunner(SystemPackageModuleRunner):
             self._log("samba: " + "; ".join(swept))
         if not is_package_ours(self._record_path):
             self._put_units_back()
+            self._remove_written_conf()
             self._log("samba: removed no package")
             return
         super().uninstall(recipe)
+        self._remove_written_conf()
         self._forget_package()
+
+    def _remove_written_conf(self) -> None:
+        """Delete an ``smb.conf`` that still holds only what the module wrote, and drop its digest."""
+        record = _read_record(self._record_path)
+        digest = record.pop(WRITTEN_CONF_KEY, None)
+        if digest is None:
+            return
+        if digest == conf_digest():
+            remove_conf()
+        if record:
+            write_record(self._record_path, record)
+            return
+        with contextlib.suppress(OSError):
+            os.unlink(self._record_path)
 
     def _forget_package(self) -> None:
         """Drop the mark that the module installed Samba."""

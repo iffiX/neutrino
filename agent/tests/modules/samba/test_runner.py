@@ -28,6 +28,7 @@ package manager. An uninstall on either kind deletes every ``neutrino-`` user
 before any package goes.
 """
 
+import hashlib
 import json
 import os
 import stat
@@ -848,6 +849,100 @@ def test_an_install_that_finds_samba_runs_no_package_manager_and_records_nothing
     assert not packaged.record_path.exists()
     assert packaged.is_software_kept() is True
     assert FakeUnits.calls == []
+
+
+STOCK_CONF = b"[global]\n   server role = standalone server\n"
+
+
+@pytest.fixture
+def smb_conf(monkeypatch, tmp_path):
+    """``smb.conf`` under tmp_path. The fake applier's start writes the stock file
+    on a machine with none, as the real one does."""
+    path = tmp_path / "smb.conf"
+    monkeypatch.setattr(applier_module, "SAMBA_CONF_PATH", str(path))
+
+    def start(self):
+        FakeApplier.starts += 1
+        if not path.exists():
+            path.write_bytes(STOCK_CONF)
+
+    monkeypatch.setattr(FakeApplier, "start", start)
+    return path
+
+
+def test_an_uninstall_removes_the_smb_conf_the_module_made_on_its_own_samba(
+    packaged, smb_conf, monkeypatch
+):
+    samba_on_path(monkeypatch, is_there=True)
+    mark_package_ours(packaged)
+    packaged.start()
+    assert smb_conf.read_bytes() == STOCK_CONF
+    samba_on_path(monkeypatch, is_there=False)
+    packaged.remove_configuration()
+
+    packaged.uninstall(RECIPE)
+
+    assert not smb_conf.exists()
+    assert not packaged.record_path.exists()
+
+
+def test_an_uninstall_removes_the_smb_conf_the_module_made_on_a_persons_samba(
+    packaged, smb_conf, monkeypatch
+):
+    samba_on_path(monkeypatch, is_there=True)
+    packaged.start()
+    packaged.remove_configuration()
+
+    packaged.uninstall(RECIPE)
+
+    assert not smb_conf.exists()
+    assert packaged._platform.removed == []
+    assert not packaged.record_path.exists()
+
+
+def test_an_uninstall_keeps_an_smb_conf_edited_after_the_module_made_it(
+    packaged, smb_conf, monkeypatch
+):
+    samba_on_path(monkeypatch, is_there=True)
+    packaged.start()
+    smb_conf.write_bytes(STOCK_CONF + b"   workgroup = HOME\n")
+    packaged.remove_configuration()
+
+    packaged.uninstall(RECIPE)
+
+    assert smb_conf.exists()
+    assert not packaged.record_path.exists()
+
+
+def test_an_uninstall_keeps_an_smb_conf_the_module_did_not_make(
+    packaged, smb_conf, monkeypatch
+):
+    samba_on_path(monkeypatch, is_there=True)
+    smb_conf.write_bytes(STOCK_CONF)
+    packaged.start()
+    packaged.remove_configuration()
+
+    packaged.uninstall(RECIPE)
+
+    assert smb_conf.read_bytes() == STOCK_CONF
+
+
+def test_an_apply_that_makes_the_smb_conf_keeps_its_digest(
+    packaged, smb_conf, monkeypatch
+):
+    def apply(self, rendered, **kw):
+        smb_conf.write_bytes(STOCK_CONF + b"   include = /etc/samba/neutrino.conf\n")
+        return "written"
+
+    monkeypatch.setattr(FakeApplier, "apply", apply)
+    samba_on_path(monkeypatch, is_there=True)
+
+    packaged.apply(CONFIG)
+
+    record = json.loads(packaged.record_path.read_text())
+    assert (
+        record[runner_module.WRITTEN_CONF_KEY] == hashlib.sha256(STOCK_CONF).hexdigest()
+    )
 
 
 def test_a_failed_install_that_leaves_no_samba_records_nothing(packaged, monkeypatch):

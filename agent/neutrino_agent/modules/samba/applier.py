@@ -122,6 +122,24 @@ def read_stock_conf() -> tuple:
     return SAMBA_MINIMAL_CONF.encode("utf-8"), "a one-line [global]"
 
 
+def conf_digest() -> str:
+    """The sha256 of ``smb.conf`` without the module's include line.
+
+    Returns:
+        The hex digest; empty when the machine has no file.
+    """
+    data = read_bytes(SAMBA_CONF_PATH)
+    if data is None:
+        return ""
+    return hashlib.sha256(without_include_line(data)).hexdigest()
+
+
+def remove_conf() -> None:
+    """Delete ``smb.conf``; a file already gone stays gone."""
+    with contextlib.suppress(OSError):
+        os.unlink(SAMBA_CONF_PATH)
+
+
 def include_line() -> bytes:
     """The one line of ``smb.conf`` that is the module's, without its ending."""
     return f"   include = {SAMBA_MODULE_CONF_PATH}".encode("utf-8")
