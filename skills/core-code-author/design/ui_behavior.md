@@ -168,7 +168,9 @@ filter or the size returns to the first page. A table with a bounded number of
 rows carries no controls and shows all of them (`ai_usage_keys.tsx`).
 
 Wide tables scroll inside their own box (`usage_table_scroll`); the page never
-scrolls sideways. Numeric columns are right-aligned (`.num`).
+scrolls sideways. The Agents and Clients tables keep their actions cell at the
+right edge of that box on a window wider than 720 px. Numeric columns are
+right-aligned (`.num`).
 
 A destructive action repeated on every row arms instead of opening a dialog —
 `device_monitor`'s kill button turns red on the first click and acts on the
