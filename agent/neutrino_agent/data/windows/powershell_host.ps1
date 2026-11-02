@@ -517,7 +517,7 @@ function Get-NeutrinoShareServer($Request) {
     return @{start_type = "$($svc.StartType)"; is_running = ($svc.Status -eq 'Running')}
 }
 
-# Stops the SMB server and every service that depends on it, and disables it.
+# Disables the SMB server, and stops it and every service that depends on it.
 # Answers the names of those services that ran.
 function Stop-NeutrinoShareServer {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'Request')]
@@ -534,10 +534,11 @@ function Stop-NeutrinoShareServer {
             $dependents += "$($dependent.Name)"
         }
     }
-    if ($svc.Status -ne 'Stopped') {
+    # A read of the server starts it while it is enabled, and a stop then fails.
+    Set-Service -Name LanmanServer -StartupType Disabled | Out-Null
+    if ((Get-Service -Name LanmanServer).Status -ne 'Stopped') {
         Stop-Service -Name LanmanServer -Force | Out-Null
     }
-    Set-Service -Name LanmanServer -StartupType Disabled | Out-Null
     return @{dependents = $dependents}
 }
 
