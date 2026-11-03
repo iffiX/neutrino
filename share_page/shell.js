@@ -27,7 +27,7 @@ const FROM_PARAM = "__neutrino_from";
 const KEPT_FACTS = "neutrino_share";
 // The Web Lock of the active tab, one per origin.
 const ACTIVE_LOCK = "neutrino_active_tab";
-// The sessionStorage marks of a tab that holds the active lock and of a tab whose app moved to another tab.
+// The sessionStorage marks of a tab that took the active lock and of a tab whose app moved to another tab.
 const KEPT_ACTIVE = "neutrino_active";
 const KEPT_MOVED = "neutrino_moved";
 // The face of each screen, a symbol of the page's sprite.
@@ -1217,11 +1217,13 @@ const active = {
   // Ends the held lock.
   release: null,
   // Resolves once this tab holds the lock. A reload of the active tab takes it back at once.
+  // Any other load removes the tab's active mark first.
   take() {
     return new Promise((resolve) => {
       this.onTaken = resolve;
-      if (isActiveReload()) this.request({ steal: true });
-      else this.request({ ifAvailable: true }).then((isTaken) => { if (!isTaken) this.wait(); });
+      if (isActiveReload()) { this.request({ steal: true }); return; }
+      sessionStorage.removeItem(KEPT_ACTIVE);
+      this.request({ ifAvailable: true }).then((isTaken) => { if (!isTaken) this.wait(); });
     });
   },
   // Asks for the lock, and resolves whether it was granted. Another tab's steal of a granted lock makes the page leave.

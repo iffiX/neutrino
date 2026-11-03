@@ -58,7 +58,7 @@ def test_a_tab_connects_only_once_it_holds_the_lock():
 def test_a_tab_takes_the_free_lock_and_waits_for_a_held_one():
     take = member("  take() {\n    return new Promise((resolve) => {")
     assert (
-        "else this.request({ ifAvailable: true }).then((isTaken) => { if (!isTaken) this.wait(); });"
+        "\n      this.request({ ifAvailable: true }).then((isTaken) => { if (!isTaken) this.wait(); });"
         in take
     )
     wait = member("  wait() {")
@@ -113,11 +113,21 @@ def test_a_tab_is_moved_only_once_its_app_has_shown():
 
 def test_a_reload_of_the_active_tab_steals_the_lock_back():
     take = member("  take() {\n    return new Promise((resolve) => {")
-    assert "if (isActiveReload()) this.request({ steal: true });" in take
+    assert "if (isActiveReload()) { this.request({ steal: true }); return; }" in take
     reload = SHELL[SHELL.index("function isActiveReload() {") :]
     reload = reload[: reload.index("\n}\n")]
     assert 'navigation.type === "reload"' in reload
     assert 'sessionStorage.getItem(KEPT_ACTIVE) === "1"' in reload
+
+
+def test_every_load_but_the_active_tab_s_reload_removes_the_mark_before_it_asks():
+    take = member("  take() {\n    return new Promise((resolve) => {")
+    reload = take.index(
+        "if (isActiveReload()) { this.request({ steal: true }); return; }"
+    )
+    removed = take.index("sessionStorage.removeItem(KEPT_ACTIVE);")
+    asked = take.index("this.request({ ifAvailable: true })")
+    assert reload < removed < asked
 
 
 def test_an_ended_share_releases_the_lock():
