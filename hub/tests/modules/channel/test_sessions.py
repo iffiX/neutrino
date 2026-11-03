@@ -6,8 +6,9 @@ state push is one ``state`` frame that remembers the hash, a refusal is the
 ``session_close`` command, a stream the hub opens is one ``open``
 connection whose records come back, the presence the registry keeps after a
 session ends, a replaced session left to the transport, the reports kept
-per binding, and that a thread's call rides the loop and comes back or is
-given a code.
+per binding, the last report of the session before as the latest report
+until a new session reports, and that a thread's call rides the loop and
+comes back or is given a code.
 """
 
 import asyncio
@@ -257,6 +258,32 @@ def test_reports_are_kept_per_binding_and_counted():
     assert reports == {DEVICE: {"state_hash": "h2", "modules": {"samba": {}}}}
     assert state_hash == "h2"
     assert serial == 1
+
+
+def test_until_a_session_reports_the_latest_report_is_the_last_session_s():
+    async def scenario():
+        channel = FakeLocalChannel()
+        registry = ChannelSessionRegistry(CHANNEL_ROLE_AGENT)
+        first = session(channel, session_id="s1")
+        registry.attach(first)
+        first.record_report({"state_hash": "h1"})
+        registry.detach(first)
+        offline = registry.latest_reports()
+        second = session(channel, session_id="s2")
+        registry.attach(second)
+        back = registry.latest_reports(), registry.reports()
+        second.record_report({"state_hash": "h2"})
+        third = session(channel, session_id="s3")
+        registry.attach(third)
+        replaced = registry.latest_reports()
+        third.record_report({"state_hash": "h3"})
+        return offline, back, replaced, registry.latest_reports()
+
+    offline, back, replaced, reported = run(scenario)
+    assert offline == {}
+    assert back == ({DEVICE: {"state_hash": "h1"}}, {DEVICE: {}})
+    assert replaced == {DEVICE: {"state_hash": "h2"}}
+    assert reported == {DEVICE: {"state_hash": "h3"}}
 
 
 def test_a_binding_with_no_session_is_offline_to_every_ask():

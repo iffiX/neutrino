@@ -412,7 +412,7 @@ def reported_sessions(agent_sessions) -> list:
         ordered by ``started_at``.
     """
     listed = []
-    for device_id, report in agent_sessions.reports().items():
+    for device_id, report in agent_sessions.latest_reports().items():
         machine = report.get("machine") if isinstance(report, dict) else None
         held = machine.get("sessions") if isinstance(machine, dict) else None
         for entry in held if isinstance(held, list) else []:

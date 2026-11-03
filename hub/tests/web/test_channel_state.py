@@ -8,7 +8,8 @@ list moved goes to every live client whose hash differs, and to none whose
 copy already agrees. Two pushes at once reach the binding in the order
 they were composed, and an agent is offered its state only when it has
 another. A list that moves during a compose stops no push, and the client's
-last state holds the newest list.
+last state holds the newest list. A machine back online lists the sessions
+of its last report until it reports again.
 """
 
 import asyncio
@@ -513,6 +514,59 @@ def test_each_terminal_carries_the_sessions_the_client_sees_oldest_first(
     }
     assert terminal["sessions"][1]["is_owned"] is False
     assert after["hash"] != before["hash"]
+
+
+def test_a_machine_back_online_lists_its_last_reported_sessions_until_it_reports(
+    config_dir,
+):
+    """The machine's channel drops and comes back. Before its first report the
+    terminal lists the sessions of its report before the drop, and from that
+    report on what the report lists."""
+    runtime = FakeRuntime()
+    runtime.agent_sessions = ChannelSessionRegistry(CHANNEL_ROLE_AGENT)
+    devices = DeviceRegistry()
+    machine = devices.create("lepton")
+    devices.issue_token(machine.id)
+    client_id = ClientRegistry().create("alice")
+    kept = {
+        "session_id": "kept",
+        "started_at": 1790758800,
+        "owner": f"client:{client_id}",
+        "is_persistent": True,
+    }
+
+    def listed() -> tuple:
+        (terminal,) = channel_state.client_state(runtime, client_id)["terminals"]
+        return terminal["is_online"], [
+            row["session_id"] for row in terminal["sessions"]
+        ]
+
+    def agent(session_id: str) -> ChannelSession:
+        return ChannelSession(
+            key=machine.id,
+            role=CHANNEL_ROLE_AGENT,
+            session_id=session_id,
+            channel=FakeLocalChannel(),
+            loop=asyncio.get_running_loop(),
+        )
+
+    async def scenario():
+        first = agent("s1")
+        runtime.agent_sessions.attach(first)
+        first.record_report({"machine": {"sessions": [kept]}})
+        runtime.agent_sessions.detach(first)
+        offline = listed()
+        second = agent("s2")
+        runtime.agent_sessions.attach(second)
+        back = listed()
+        second.record_report({"machine": {"sessions": []}})
+        return offline, back, listed()
+
+    offline, back, reported = asyncio.run(scenario())
+
+    assert offline == (False, [])
+    assert back == (True, ["kept"])
+    assert reported == (True, [])
 
 
 def test_every_entry_names_the_machine_that_provides_it_by_name_and_id(

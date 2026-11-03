@@ -695,6 +695,9 @@ class FakeChannelSessions:
     def reports(self) -> dict:
         return dict(self.held_reports)
 
+    def latest_reports(self) -> dict:
+        return self.reports()
+
     def by_session_id(self, session_id: str):
         return None
 

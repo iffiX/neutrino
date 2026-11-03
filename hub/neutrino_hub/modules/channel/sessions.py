@@ -292,6 +292,8 @@ class ChannelSessionRegistry:
         self._sessions: dict[str, ChannelSession] = {}
         self._software: dict[str, str] = {}
         self._ended_at: dict[str, str] = {}
+        # The last report of each binding's ended sessions, by key.
+        self._ended_reports: dict[str, dict] = {}
 
     def attach(self, session: ChannelSession) -> None:
         """Make a session the binding's current one.
@@ -311,6 +313,8 @@ class ChannelSessionRegistry:
         session.is_admitted = True
         with self._lock:
             previous = self._sessions.get(session.key)
+            if previous is not None and previous.report:
+                self._ended_reports[session.key] = previous.report
             self._sessions[session.key] = session
             self._software[session.key] = session.software
             self._ended_at.pop(session.key, None)
@@ -335,6 +339,8 @@ class ChannelSessionRegistry:
                 return False
             self._sessions.pop(session.key, None)
             self._ended_at[session.key] = _now()
+            if session.report:
+                self._ended_reports[session.key] = session.report
         self._note_presence()
         return True
 
@@ -390,6 +396,18 @@ class ChannelSessionRegistry:
         """The latest report of every online binding, by key."""
         with self._lock:
             return {key: session.report for key, session in self._sessions.items()}
+
+    def latest_reports(self) -> dict:
+        """The latest report of every online binding, by key.
+
+        Until a session reports, its binding's latest report is the last
+        report of the binding's session before it, or empty.
+        """
+        with self._lock:
+            return {
+                key: session.report or self._ended_reports.get(key, {})
+                for key, session in self._sessions.items()
+            }
 
     async def open_stream(self, key: str, kind: str, args: dict):
         """Open a stream on one binding.
