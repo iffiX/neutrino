@@ -102,7 +102,7 @@ class TerminalTabs(
      * @param hubs Every hub's view.
      */
     fun take(hubs: List<HubView>) {
-        val (listings, listedHubs) = TerminalSessionMerge.listed(hubs)
+        val (listings, listedHubs, offline) = TerminalSessionMerge.listed(hubs)
         val gone = synchronized(dismissed) {
             val listedIds = listings.map { it.session.sessionId }.toSet()
             dismissed.retainAll { id -> id in listedIds }
@@ -111,7 +111,7 @@ class TerminalTabs(
         synchronized(ends) {
             views = hubs
             current.update { tabs ->
-                TerminalSessionMerge.merge(tabs, listings, listedHubs, gone).map {
+                TerminalSessionMerge.merge(tabs, listings, listedHubs, offline, gone).map {
                     if (it.phase == TerminalPhase.DETACHED || it.hubEnd == CLIENT_REFUSAL_CODE_HUB_UNREACHABLE) {
                         lost(it)
                     } else {

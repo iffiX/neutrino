@@ -1591,9 +1591,9 @@ function isLinux() {
 // session no tab shows gets a tab, a tab whose hub's channel dropped attaches
 // again while its session is listed, and a tab whose listed session is gone
 // is ended. Only a connected hub says anything about its sessions: a
-// switched-off one lists none. A tab that waits, or ended at a dropped
-// channel, takes the words of its hub's row once that reads switched off or
-// unknown.
+// switched-off one lists none, and neither does a machine offline. A tab that
+// waits, or ended at a dropped channel, takes the words of its hub's row once
+// that reads switched off or unknown.
 function mergeSessions(state) {
   const sessions = ((state.terminals || {}).sessions) || [];
   const listing = (state.hubs || []).filter((hub) => hub.connection === 'connected')
@@ -1606,6 +1606,8 @@ function mergeSessions(state) {
       continue;
     }
     if (!tab.session_id || listing.indexOf(tab.hub_id) < 0) continue;
+    const machine = machineOf(state, tab.hub_id, tab.device_id);
+    if (machine && !machine.is_online) continue;
     const row = listed.get(tab.hub_id + '/' + tab.session_id);
     const isListedNow = !!row;
     if (isListedNow) {

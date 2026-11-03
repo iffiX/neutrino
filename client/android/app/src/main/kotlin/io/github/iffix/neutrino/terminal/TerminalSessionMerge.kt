@@ -7,23 +7,39 @@ import io.github.iffix.neutrino.channel.HubView
  * How the tab strip follows the session lists the hubs send: a listed session with no tab gets
  * one at the end, a listed tab takes the list's values, and a tab whose session left the list
  * of a connected hub has ended and is neither kept nor shared for this phone. A hub that is not
- * connected leaves its tabs as they are.
+ * connected leaves its tabs as they are, and so does a machine offline.
  */
 object TerminalSessionMerge {
     /**
      * The sessions the connected hubs list, in the hubs' order and each machine's order.
      *
      * @param hubs Every hub's view.
-     * @return The listings, and the bindings whose lists they are.
+     * @return The listings, the bindings whose lists they are, and their machines offline as binding id and
+     *   device id.
      */
-    fun listed(hubs: List<HubView>): Pair<List<Listing>, Set<String>> {
+    fun listed(hubs: List<HubView>): Triple<List<Listing>, Set<String>, Set<Pair<String, String>>> {
         val connected = hubs.filter { it.isConnected }
         val listings = connected.flatMap { hub ->
             hub.terminals.flatMap { machine ->
                 machine.sessions.map { Listing(hub.binding.id, machine.deviceId, machine.name, it) }
             }
         }
-        return listings to connected.map { it.binding.id }.toSet()
+        val offline = connected.flatMap { hub ->
+            hub.terminals.filterNot { it.isOnline }.map { hub.binding.id to it.deviceId }
+        }
+        return Triple(listings, connected.map { it.binding.id }.toSet(), offline.toSet())
+    }
+
+    /**
+     * Whether a tab's hub is connected and lists the tab's machine online.
+     *
+     * @param hubs Every hub's view.
+     * @param tab The tab.
+     * @return True while the hub is connected and the machine is online.
+     */
+    fun isMachineOnline(hubs: List<HubView>, tab: TerminalTab): Boolean = hubs.any { hub ->
+        hub.binding.id == tab.bindingId && hub.isConnected &&
+            hub.terminals.any { it.deviceId == tab.deviceId && it.isOnline }
     }
 
     /**
@@ -32,6 +48,7 @@ object TerminalSessionMerge {
      * @param tabs The tabs before.
      * @param listings The sessions the connected hubs list.
      * @param listedHubs The bindings whose lists [listings] are.
+     * @param offline The machines of [listedHubs] offline, as binding id and device id.
      * @param dismissed Sessions whose tab a person closed; they get no tab again.
      * @return The tabs after.
      */
@@ -39,6 +56,7 @@ object TerminalSessionMerge {
         tabs: List<TerminalTab>,
         listings: List<Listing>,
         listedHubs: Set<String>,
+        offline: Set<Pair<String, String>>,
         dismissed: Set<String>,
     ): List<TerminalTab> {
         val byId = listings.associateBy { it.session.sessionId }
@@ -57,7 +75,8 @@ object TerminalSessionMerge {
                     isListed = true,
                 )
 
-                tab.isListed && tab.bindingId in listedHubs && tab.phase != TerminalPhase.ENDED ->
+                tab.isListed && tab.bindingId in listedHubs && (tab.bindingId to tab.deviceId) !in offline &&
+                    tab.phase != TerminalPhase.ENDED ->
                     tab.copy(phase = TerminalPhase.ENDED, attachedCount = 0, isPersistent = false, isShared = false)
 
                 else -> tab

@@ -26,7 +26,12 @@ class TerminalSessionMergeTest {
         attachedCount = 2,
     )
 
-    private fun hub(id: String, connection: HubConnection, vararg sessions: ChannelTerminalSession) = HubView(
+    private fun hub(
+        id: String,
+        connection: HubConnection,
+        vararg sessions: ChannelTerminalSession,
+        isOnline: Boolean = true,
+    ) = HubView(
         Samples.binding.copy(id = id),
         connection = connection,
         terminals =
@@ -34,15 +39,15 @@ class TerminalSessionMergeTest {
                 ChannelTerminal(
                     "d-$id",
                     "Argon",
-                    isOnline = true,
+                    isOnline = isOnline,
                     sessions = sessions.toList(),
                 ),
             ),
     )
 
     private fun merge(tabs: List<TerminalTab>, vararg hubs: HubView, dismissed: Set<String> = emptySet()) =
-        TerminalSessionMerge.listed(hubs.toList()).let { (listings, listedHubs) ->
-            TerminalSessionMerge.merge(tabs, listings, listedHubs, dismissed)
+        TerminalSessionMerge.listed(hubs.toList()).let { (listings, listedHubs, offline) ->
+            TerminalSessionMerge.merge(tabs, listings, listedHubs, offline, dismissed)
         }
 
     @Test
@@ -99,6 +104,30 @@ class TerminalSessionMergeTest {
         val before = merge(emptyList(), hub("b1", HubConnection.CONNECTED, owned))
         val after = merge(before, hub("b1", HubConnection.WAITING), hub("b2", HubConnection.WAITING, shared))
         assertEquals(before, after)
+    }
+
+    @Test
+    fun aTabWhoseMachineIsOfflineWaitsAndIsJudgedOnceItIsBack() {
+        val before = merge(emptyList(), hub("b1", HubConnection.CONNECTED, owned))
+        val offline = merge(before, hub("b1", HubConnection.CONNECTED, isOnline = false))
+        assertEquals(before, offline)
+        val back = merge(offline, hub("b1", HubConnection.CONNECTED, owned.copy(attachedCount = 0)))
+        assertEquals(TerminalPhase.DETACHED, back.single().phase)
+        assertEquals(true, back.single().isPersistent)
+        val gone = merge(offline, hub("b1", HubConnection.CONNECTED))
+        assertEquals(TerminalPhase.ENDED, gone.single().phase)
+    }
+
+    @Test
+    fun aTabsShellAttachesAgainOnlyWhileItsMachineIsOnline() {
+        val tab = TerminalTab("s1", "b1", "d-b1", "Argon", phase = TerminalPhase.DETACHED)
+        assertEquals(true, TerminalSessionMerge.isMachineOnline(listOf(hub("b1", HubConnection.CONNECTED)), tab))
+        assertEquals(
+            false,
+            TerminalSessionMerge.isMachineOnline(listOf(hub("b1", HubConnection.CONNECTED, isOnline = false)), tab),
+        )
+        assertEquals(false, TerminalSessionMerge.isMachineOnline(listOf(hub("b1", HubConnection.WAITING)), tab))
+        assertEquals(false, TerminalSessionMerge.isMachineOnline(listOf(hub("b2", HubConnection.CONNECTED)), tab))
     }
 
     @Test

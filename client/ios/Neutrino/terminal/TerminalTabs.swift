@@ -87,11 +87,13 @@ final class TerminalTabs {
     /// - Parameter hubs: Every hub's view.
     func take(_ hubs: [HubView]) {
         views = hubs
-        let (listings, listedHubs) = TerminalSessionMerge.listed(hubs)
+        let (listings, listedHubs, offline) = TerminalSessionMerge.listed(hubs)
         let listedIds = Set(listings.map(\.session.sessionId))
         dismissed = dismissed.intersection(listedIds)
-        tabs = TerminalSessionMerge.merge(tabs, listings: listings, listedHubs: listedHubs, dismissed: dismissed)
-            .map { $0.phase == .detached || $0.hubEnd == Channel.codeHubUnreachable ? lost($0) : $0 }
+        tabs = TerminalSessionMerge.merge(
+            tabs, listings: listings, listedHubs: listedHubs, offline: offline, dismissed: dismissed
+        )
+        .map { $0.phase == .detached || $0.hubEnd == Channel.codeHubUnreachable ? lost($0) : $0 }
         if !tabs.contains(where: { $0.sessionId == active }) { active = tabs.first?.sessionId ?? "" }
     }
 

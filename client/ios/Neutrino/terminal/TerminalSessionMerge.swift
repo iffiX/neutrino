@@ -2,13 +2,16 @@ import Foundation
 
 /// How the tab strip follows the session lists the hubs send: a listed session with no tab gets one at the end,
 /// a listed tab takes the list's values, and a tab whose session left the list of a connected hub has ended and
-/// is neither kept nor shared for this phone. A hub that is not connected leaves its tabs as they are.
+/// is neither kept nor shared for this phone. A hub that is not connected leaves its tabs as they are, and so does a
+/// machine offline.
 enum TerminalSessionMerge {
     /// The sessions the connected hubs list, in the hubs' order and each machine's order.
     ///
     /// - Parameter hubs: Every hub's view.
-    /// - Returns: The listings, and the bindings whose lists they are.
-    static func listed(_ hubs: [HubView]) -> (listings: [TerminalListing], listedHubs: Set<String>) {
+    /// - Returns: The listings, the bindings whose lists they are, and their machines offline.
+    static func listed(
+        _ hubs: [HubView]
+    ) -> (listings: [TerminalListing], listedHubs: Set<String>, offline: Set<TerminalMachine>) {
         let connected = hubs.filter(\.isConnected)
         let listings = connected.flatMap { hub in
             hub.terminals.flatMap { machine in
@@ -18,7 +21,25 @@ enum TerminalSessionMerge {
                 }
             }
         }
-        return (listings, Set(connected.map(\.binding.id)))
+        let offline = connected.flatMap { hub in
+            hub.terminals.filter { !$0.isOnline }.map {
+                TerminalMachine(bindingId: hub.binding.id, deviceId: $0.deviceId)
+            }
+        }
+        return (listings, Set(connected.map(\.binding.id)), Set(offline))
+    }
+
+    /// Whether a tab's hub is connected and lists the tab's machine online.
+    ///
+    /// - Parameters:
+    ///   - hubs: Every hub's view.
+    ///   - tab: The tab.
+    /// - Returns: True while the hub is connected and the machine is online.
+    static func isMachineOnline(_ hubs: [HubView], tab: TerminalTab) -> Bool {
+        hubs.contains { hub in
+            hub.binding.id == tab.bindingId && hub.isConnected
+                && hub.terminals.contains { $0.deviceId == tab.deviceId && $0.isOnline }
+        }
     }
 
     /// The tabs after one round of lists.
@@ -27,10 +48,12 @@ enum TerminalSessionMerge {
     ///   - tabs: The tabs before.
     ///   - listings: The sessions the connected hubs list.
     ///   - listedHubs: The bindings whose lists `listings` are.
+    ///   - offline: The machines of `listedHubs` offline.
     ///   - dismissed: Sessions whose tab a person closed; they get no tab again.
     /// - Returns: The tabs after.
     static func merge(
-        _ tabs: [TerminalTab], listings: [TerminalListing], listedHubs: Set<String>, dismissed: Set<String>
+        _ tabs: [TerminalTab], listings: [TerminalListing], listedHubs: Set<String>, offline: Set<TerminalMachine>,
+        dismissed: Set<String>
     ) -> [TerminalTab] {
         let byId = Dictionary(listings.map { ($0.session.sessionId, $0) }, uniquingKeysWith: { first, _ in first })
         let merged = tabs.map { tab -> TerminalTab in
@@ -45,7 +68,10 @@ enum TerminalSessionMerge {
                 next.isShared = listing.session.isShared
                 next.attachedCount = listing.session.attachedCount
                 next.isListed = true
-            } else if tab.isListed && listedHubs.contains(tab.bindingId) && tab.phase != .ended {
+            } else if tab.isListed && listedHubs.contains(tab.bindingId)
+                && !offline.contains(TerminalMachine(bindingId: tab.bindingId, deviceId: tab.deviceId))
+                && tab.phase != .ended
+            {
                 next.phase = .ended
                 next.attachedCount = 0
                 next.isPersistent = false

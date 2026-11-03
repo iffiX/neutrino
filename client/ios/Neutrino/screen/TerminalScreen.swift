@@ -66,8 +66,8 @@ struct TerminalScreen: View {
 
     private var reattachKey: String {
         guard let tab = activeTab else { return "" }
-        let isHubUp = core.hubs.contains { $0.binding.id == tab.bindingId && $0.isConnected }
-        return "\(tab.sessionId)/\(tab.phase)/\(isHubUp)"
+        let isMachineUp = TerminalSessionMerge.isMachineOnline(core.hubs, tab: tab)
+        return "\(tab.sessionId)/\(tab.phase)/\(isMachineUp)"
     }
 
     private func pressKeyboard() {
@@ -79,8 +79,7 @@ struct TerminalScreen: View {
     }
 
     private func reattach() {
-        guard let tab = activeTab, tab.phase == .detached,
-            core.hubs.contains(where: { $0.binding.id == tab.bindingId && $0.isConnected })
+        guard let tab = activeTab, tab.phase == .detached, TerminalSessionMerge.isMachineOnline(core.hubs, tab: tab)
         else { return }
         core.tabs.reattach(tab.sessionId)
     }

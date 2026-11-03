@@ -2069,9 +2069,9 @@ def test_a_dropped_channel_keeps_the_tab_and_its_session():
 def run_terminal_end(is_kept: bool, steps: list) -> list:
     """The page's own loseShell and mergeSessions, run in node with the English
     catalog on one tab of hub h1: each step either ends the tab's stream with
-    no close (``"lose"``), as takeShellPiece does, or draws a state's ``hubs``
-    and ``sessions``. Returns the tab after each step, with the lines its
-    terminal was written."""
+    no close (``"lose"``), as takeShellPiece does, or draws a state's
+    ``hubs``, ``machines`` and ``sessions``. Returns the tab after each step,
+    with the lines its terminal was written."""
     import json
     import shutil
     import subprocess
@@ -2083,6 +2083,7 @@ def run_terminal_end(is_kept: bool, steps: list) -> list:
         "fill",
         "isReachable",
         "hubEndWord",
+        "machineOf",
         "mergeSessions",
         "loseShell",
         "endLostShell",
@@ -2114,7 +2115,8 @@ def run_terminal_end(is_kept: bool, steps: list) -> list:
             "    loseShell(tab, !tab.isKept);",
             "  } else {",
             "    stateSerial += 1;",
-            "    lastState = {hubs: step.hubs, terminals: {sessions: step.sessions || []}};",
+            "    lastState = {hubs: step.hubs, terminals: {",
+            "      machines: step.machines || [], sessions: step.sessions || []}};",
             "    mergeSessions(lastState);",
             "  }",
             "  seen.push({state: tab.state, note: tab.note, isDropped: tab.isDropped,",
@@ -2143,6 +2145,9 @@ TERMINAL_HUB_SILENT = {
     "wait_reason": "hub_silent",
 }
 TERMINAL_SESSION = {"hub_id": "h1", "session_id": "s1", "device_id": "d1"}
+TERMINAL_MACHINE_ONLINE = {"hub_id": "h1", "device_id": "d1", "is_online": True}
+TERMINAL_MACHINE_OFFLINE = {"hub_id": "h1", "device_id": "d1", "is_online": False}
+ENDED_WORDS = "Ended"
 DISABLED_WORDS = "The hub has switched this client off, and this terminal has ended."
 UNKNOWN_WORDS = "The hub has no record of this client, and this terminal has ended."
 UNKNOWN_RUNNING_WORDS = (
@@ -2238,6 +2243,51 @@ def test_a_kept_tab_waits_while_its_hub_has_this_client_switched_off():
     assert row_first[2]["state"] == "idle"
     assert row_first[2]["note"] == DETACHED_WORDS
     assert row_first[3]["state"] == "reattached"
+
+
+def test_a_kept_tab_waits_while_its_machine_is_offline():
+    offline = {
+        "hubs": [TERMINAL_HUB_CONNECTED],
+        "machines": [TERMINAL_MACHINE_OFFLINE],
+    }
+    back = {
+        "hubs": [TERMINAL_HUB_CONNECTED],
+        "machines": [TERMINAL_MACHINE_ONLINE],
+        "sessions": [TERMINAL_SESSION],
+    }
+    seen = run_terminal_end(True, ["lose", offline, offline, back])
+    for step in seen[:3]:
+        assert step["state"] == "idle"
+        assert step["note"] == DETACHED_WORDS
+        assert step["isDropped"] is True
+    assert seen[3]["state"] == "reattached"
+    assert seen[3]["written"] == [DETACHED_WORDS]
+
+
+def test_a_kept_tab_whose_session_ended_while_its_machine_was_offline_ends_once_back():
+    offline = {
+        "hubs": [TERMINAL_HUB_CONNECTED],
+        "machines": [TERMINAL_MACHINE_OFFLINE],
+    }
+    back = {"hubs": [TERMINAL_HUB_CONNECTED], "machines": [TERMINAL_MACHINE_ONLINE]}
+    seen = run_terminal_end(True, ["lose", offline, back])
+    assert seen[1]["state"] == "idle"
+    assert seen[1]["isDropped"] is True
+    assert seen[2]["state"] == "ended"
+    assert seen[2]["note"] == ENDED_WORDS
+    assert seen[2]["isDropped"] is False
+
+
+def test_a_listed_tab_is_not_ended_while_its_machine_is_offline():
+    offline = {
+        "hubs": [TERMINAL_HUB_CONNECTED],
+        "machines": [TERMINAL_MACHINE_OFFLINE],
+    }
+    back = {"hubs": [TERMINAL_HUB_CONNECTED], "machines": [TERMINAL_MACHINE_ONLINE]}
+    seen = run_terminal_end(True, [offline, back])
+    assert seen[0]["state"] == "open"
+    assert seen[1]["state"] == "ended"
+    assert seen[1]["note"] == ENDED_WORDS
 
 
 def test_a_dropped_tab_attaches_again_by_session_id_when_its_hub_lists_it():

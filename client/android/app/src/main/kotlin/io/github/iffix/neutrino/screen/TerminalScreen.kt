@@ -73,6 +73,7 @@ import io.github.iffix.neutrino.terminal.TerminalControl
 import io.github.iffix.neutrino.terminal.TerminalKey
 import io.github.iffix.neutrino.terminal.TerminalModifiers
 import io.github.iffix.neutrino.terminal.TerminalPhase
+import io.github.iffix.neutrino.terminal.TerminalSessionMerge
 import io.github.iffix.neutrino.terminal.TerminalTab
 import io.github.iffix.neutrino.terminal.TerminalTabs
 import io.github.iffix.neutrino.terminal.TerminalView
@@ -166,9 +167,9 @@ fun TerminalScreen(hubs: List<HubView>, tabs: TerminalTabs) {
                 ) {
                     TerminalPane(view, tabs, open.map { it.sessionId }.toSet(), active, modifiers)
                 }
-                val isHubUp = tab != null && hubs.any { it.binding.id == tab.bindingId && it.isConnected }
-                LaunchedEffect(active, tab?.phase, isHubUp) {
-                    if (isHubUp && tab.phase == TerminalPhase.DETACHED) tabs.reattach(active)
+                val isMachineUp = tab != null && TerminalSessionMerge.isMachineOnline(hubs, tab)
+                LaunchedEffect(active, tab?.phase, isMachineUp) {
+                    if (isMachineUp && tab.phase == TerminalPhase.DETACHED) tabs.reattach(active)
                 }
                 StatusLine(
                     tab,
