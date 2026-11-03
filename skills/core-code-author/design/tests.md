@@ -126,7 +126,7 @@ again on its port on the return to the foreground. Its terminal is pinned to
 the 16 colours of the shared palette in both themes and to each theme's
 background, text, cursor and selection; a tab that attaches again keeps its
 output until the replay's first bytes, and keeps it when the session is
-gone. The lines a row's actions wrap into are pinned by their widths, the
+gone, which the Android app's and the desktop client's tests pin too. The lines a row's actions wrap into are pinned by their widths, the
 part of the safe area a keyboard covers by its frame, and the Terminals
 page stays at its end as the software keyboard comes and goes. Its
 share page is pinned
