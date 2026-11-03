@@ -2075,7 +2075,7 @@ function newTab(hubId, machine, sessionId) {
     pane: pane, state: 'connecting', note: '', isRefused: false, typed: '',
     isSending: false, hint: '', session_id: sessionId || '', isListed: false,
     isKept: false, isDropped: false, droppedAt: 0, isDropEnded: false, flags: {},
-    isClearAsked: false, isClearing: false, account: '',
+    isClearAsked: false, isClearing: false, isReplaying: false, account: '',
     clearMark: document.createElement('div'),
   };
   tab.clearMark.className = 'term_clearing hidden';
@@ -2255,12 +2255,12 @@ function attachShell(tab) {
   startShell(tab);
 }
 
-// A tab whose hub came back attaches again by itself; the terminal starts
-// empty, since the attach replays the session's kept output.
+// A tab whose hub came back attaches again by itself. The terminal keeps its
+// output until the replay's first bytes reset it.
 function reattachShell(tab) {
   tab.note = '';
   tab.isRefused = false;
-  tab.term.reset();
+  tab.isReplaying = true;
   window.setTimeout(() => attachShell(tab), 0);
 }
 
@@ -2338,6 +2338,10 @@ function takeShellPiece(piece) {
     return;
   }
   if (piece.data !== undefined) {
+    if (tab.isReplaying) {
+      tab.isReplaying = false;
+      tab.term.reset();
+    }
     if (!tab.isClearing) tab.term.write(base64Bytes(piece.data));
     return;
   }

@@ -134,6 +134,7 @@ class TerminalView(context: Context, private val tabs: TerminalTabs, private val
     /** Stop drawing output; the tabs keep it for the next view. */
     fun detach() {
         tabs.watch(null)
+        tabs.onReplay = null
         removeJavascriptInterface(CLIENT_TERMINAL_BRIDGE)
         destroy()
     }
@@ -161,6 +162,7 @@ class TerminalView(context: Context, private val tabs: TerminalTabs, private val
                 isReady = true
                 pending?.invoke()
                 pending = null
+                tabs.onReplay = { id -> post { call("neutrino.reset('$id')") } }
                 tabs.watch { id, bytes ->
                     val encoded = Base64.encodeToString(bytes, Base64.NO_WRAP)
                     val clears = clearCounts[id] ?: 0

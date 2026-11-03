@@ -295,6 +295,12 @@
       pane.queue.push(fromBase64(encoded));
       pump(pane);
     },
+    reset(id) {
+      const pane = panes[id];
+      if (!pane) return;
+      pane.queue.length = 0;
+      pane.term.reset();
+    },
     close(id) {
       const pane = panes[id];
       if (!pane) return;

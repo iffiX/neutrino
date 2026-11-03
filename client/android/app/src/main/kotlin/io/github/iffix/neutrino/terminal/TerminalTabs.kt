@@ -65,6 +65,7 @@ class TerminalTabs(
     private val dismissed = mutableSetOf<String>()
     private val senders = mutableMapOf<String, Channel<ByteArray>>()
     private val drops = mutableMapOf<String, Drop>()
+    private val replaying = mutableSetOf<String>()
     private val dropping = MutableStateFlow<Set<String>>(emptySet())
     private var sink: ((String, ByteArray) -> Unit)? = null
     private val ends = Any()
@@ -86,6 +87,13 @@ class TerminalTabs(
 
     /** The tabs whose Clear is still dropping what arrives. */
     val clearing: StateFlow<Set<String>> = dropping.asStateFlow()
+
+    /**
+     * Called with a tab attached again before its replay's first bytes, on the reader's thread. The tab's
+     * kept output stays until then, and the replay replaces it.
+     */
+    @Volatile
+    var onReplay: ((String) -> Unit)? = null
 
     /**
      * Follow the hubs' session lists from now on.
@@ -308,6 +316,7 @@ class TerminalTabs(
         synchronized(streams) { streams.remove(sessionId) }?.close()
         synchronized(outputs) {
             outputs.remove(sessionId)
+            replaying.remove(sessionId)
             stopDropping(sessionId)
         }
         synchronized(senders) { senders.remove(sessionId) }?.close()
@@ -347,7 +356,7 @@ class TerminalTabs(
                 is ChannelResult.Refused -> refused(tab.sessionId, isResumed, opened)
 
                 is ChannelResult.Ok -> {
-                    if (isResumed) synchronized(outputs) { outputs.remove(tab.sessionId) }
+                    if (isResumed) synchronized(outputs) { replaying += tab.sessionId }
                     synchronized(streams) { streams[tab.sessionId] = opened.value }
                     change(tab.sessionId) { it.copy(phase = TerminalPhase.OPEN, note = null, isOpening = false) }
                     read(tab.sessionId, opened.value)
@@ -380,7 +389,10 @@ class TerminalTabs(
         }
         stream.close()
         synchronized(streams) { if (streams[sessionId] === stream) streams.remove(sessionId) }
-        synchronized(outputs) { if (drops.containsKey(sessionId)) stopDropping(sessionId) }
+        synchronized(outputs) {
+            replaying.remove(sessionId)
+            if (drops.containsKey(sessionId)) stopDropping(sessionId)
+        }
         synchronized(ends) { ended(sessionId, result) }
     }
 
@@ -422,6 +434,10 @@ class TerminalTabs(
 
     private fun keep(sessionId: String, bytes: ByteArray) {
         synchronized(outputs) {
+            if (replaying.remove(sessionId)) {
+                outputs.remove(sessionId)
+                onReplay?.invoke(sessionId)
+            }
             if (isDropped(sessionId)) return
             val kept = outputs.getOrPut(sessionId) { ByteArrayOutputStream() }
             kept.write(bytes)

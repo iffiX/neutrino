@@ -2299,8 +2299,113 @@ def test_a_dropped_tab_attaches_again_by_session_id_when_its_hub_lists_it():
     assert "endTab(tab, t('ui.terminal_ended'));" in dropped
     assert "if (state !== lastState) stateSerial += 1;" in body_of("draw")
     reattach = body_of("reattachShell")
-    assert "tab.term.reset();" in reattach
+    assert "tab.isReplaying = true;" in reattach
     assert "attachShell(tab)" in reattach
+
+
+def run_terminal_reattach(reply: dict, pieces: list) -> list:
+    """The page's own reattachShell, startShell and takeShellPiece, run in node
+    on a kept tab of hub h1 whose terminal shows ``before``: the attach's open
+    returns ``reply``, then each piece reaches the tab. Returns, after the
+    reattach, after the open and after each piece, the tab's state and what
+    its terminal was given, ``reset`` for a reset."""
+    import json
+    import shutil
+    import subprocess
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("no node to run the page's script")
+    functions = (
+        "fill",
+        "hubEndWord",
+        "reattachShell",
+        "attachShell",
+        "startShell",
+        "takeShellPiece",
+        "endShell",
+        "loseShell",
+        "endLostShell",
+        "endTab",
+    )
+    script = "\n".join(
+        [
+            "const CATALOG = " + json.dumps(EN_WORDS) + ";",
+            "const t = (key, params) => fill(CATALOG[key] || key, params);",
+            "const stateSerial = 1;",
+            "const lastState = {hubs: [], terminals: {machines: [], sessions: []}};",
+            "const earlyOutput = {};",
+            "const given = ['before'];",
+            "const tab = {key: 'shell1', hub_id: 'h1', device_id: 'd1',",
+            "  session_id: 's1', terminal_id: '', state: 'idle', note: '',",
+            "  isRefused: false, isListed: true, isKept: true, isDropped: false,",
+            "  droppedAt: 0, isDropEnded: false, isClearing: false,",
+            "  isReplaying: false, account: '', term: {cols: 80, rows: 24,",
+            "    reset: () => given.push('reset'),",
+            "    write: (data) => given.push(Buffer.from(data).toString().trim())}};",
+            "const shellTabs = [tab];",
+            "const redraw = () => {};",
+            "const fitShell = () => {};",
+            "const isGuarded = () => true;",
+            "const dropShell = () => {};",
+            "const showClearing = () => {};",
+            "const wordCode = (code) => code;",
+            "const base64Bytes = (encoded) => Buffer.from(encoded, 'base64');",
+            "const later = [];",
+            "const window = {setTimeout: (run) => later.push(run)};",
+            "const api = () => Promise.resolve(" + json.dumps(reply) + ");",
+            *[body_of(name) for name in functions],
+            "const pieces = " + json.dumps(pieces) + ";",
+            "const seen = [];",
+            "const look = () => seen.push({state: tab.state, given: given.slice()});",
+            "(async () => {",
+            "  reattachShell(tab);",
+            "  look();",
+            "  for (const run of later.splice(0)) run();",
+            "  await new Promise((done) => setImmediate(done));",
+            "  look();",
+            "  for (const piece of pieces) {",
+            "    takeShellPiece(piece);",
+            "    look();",
+            "  }",
+            "  console.log(JSON.stringify(seen));",
+            "})();",
+        ]
+    )
+    result = subprocess.run(
+        [node, "-e", script], capture_output=True, text=True, timeout=30
+    )
+    assert result.returncode == 0, result.stderr
+    return json.loads(result.stdout)
+
+
+TERMINAL_OPENED = {"terminal_id": "x2", "session_id": "s1"}
+
+
+def test_a_reattached_tab_keeps_its_output_until_the_replays_first_bytes():
+    replay = [
+        {"id": "x2", "data": "YWdhaW4="},
+        {"id": "x2", "data": "IGFuZCBvbg=="},
+    ]
+    seen = run_terminal_reattach(TERMINAL_OPENED, replay)
+    assert seen[0]["given"] == ["before"]
+    assert seen[1]["state"] == "open"
+    assert seen[1]["given"] == ["before"]
+    assert seen[2]["given"] == ["before", "reset", "again"]
+    assert seen[3]["given"] == ["before", "reset", "again", "and on"]
+
+
+def test_a_reattach_to_a_session_the_machine_ended_keeps_the_output():
+    gone = [{"id": "x2", "end": {"code": "session_unknown", "params": {}}}]
+    seen = run_terminal_reattach(TERMINAL_OPENED, gone)
+    assert seen[2]["state"] == "ended"
+    assert seen[2]["given"] == ["before"]
+
+
+def test_a_refused_reattach_keeps_the_output():
+    seen = run_terminal_reattach({"code": "session_unknown", "params": {}}, [])
+    assert seen[1]["state"] == "closed"
+    assert seen[1]["given"] == ["before", "session_unknown"]
 
 
 def test_a_dropped_tab_never_attaches_while_its_hub_is_away():

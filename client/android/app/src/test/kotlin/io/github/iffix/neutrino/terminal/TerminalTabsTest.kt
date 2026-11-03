@@ -355,6 +355,57 @@ class TerminalTabsTest {
         assertEquals("ui.terminal.detached", tabs.tabs.value.single().statusKey)
     }
 
+    private fun TestScope.reattached(tabs: TerminalTabs): Pair<String, MemoryConnection> {
+        val (id, end) = opened(tabs)
+        tabs.persist(id, isPersistent = true, isShared = false)
+        output(end, "before")
+        end.close()
+        eventually { tabs.tabs.value.single().phase == TerminalPhase.DETACHED }
+        tabs.reattach(id)
+        val (open, again) = shells.poll(5, TimeUnit.SECONDS) ?: error("no shell")
+        assertEquals(true, open["is_resumed"]!!.jsonPrimitive.boolean)
+        eventually { tabs.tabs.value.single().phase == TerminalPhase.OPEN }
+        return id to again
+    }
+
+    private fun drawn(tabs: TerminalTabs): String {
+        val seen = StringBuffer()
+        tabs.watch { _, bytes -> seen.append(String(bytes)) }
+        return seen.toString()
+    }
+
+    @Test
+    fun aTabAttachingAgainKeepsItsOutputUntilTheReplaysFirstBytes() = runTest {
+        val tabs = tabs()
+        val replays = CopyOnWriteArrayList<String>()
+        tabs.onReplay = { replays += it }
+        val (id, again) = reattached(tabs)
+        assertEquals("before", drawn(tabs))
+        assertEquals(emptyList<String>(), replays)
+        output(again, "again")
+        eventually { replays.isNotEmpty() }
+        assertEquals(listOf(id), replays)
+        output(again, " and on")
+        eventually { drawn(tabs) == "again and on" }
+        assertEquals(listOf(id), replays)
+    }
+
+    @Test
+    fun aTabAttachingAgainToASessionTheMachineEndedKeepsItsOutput() = runTest {
+        val tabs = tabs()
+        val replays = CopyOnWriteArrayList<String>()
+        tabs.onReplay = { replays += it }
+        val (_, again) = reattached(tabs)
+        val close = buildJsonObject {
+            put("code", "session_unknown")
+            put("params", JsonObject(emptyMap()))
+        }
+        TransportRecord.write(again.output, TRANSPORT_RECORD_CLOSE, close.toString().toByteArray())
+        eventually { tabs.tabs.value.single().phase == TerminalPhase.ENDED }
+        assertEquals(emptyList<String>(), replays)
+        assertEquals("before", drawn(tabs))
+    }
+
     @Test
     fun keysReachTheShellInTheOrderTyped() = runTest {
         val tabs = tabs()
