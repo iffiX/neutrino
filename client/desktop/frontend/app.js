@@ -1590,12 +1590,14 @@ function isLinux() {
 // The sessions the hubs list, merged into the strip by session id: a listed
 // session no tab shows gets a tab, a tab whose hub's channel dropped attaches
 // again while its session is listed, and a tab whose listed session is gone
-// is ended. Only a hub whose socket is up says anything about its sessions.
-// A tab that waits, or ended at a dropped channel, takes the words of its
-// hub's row once that reads switched off or unknown.
+// is ended. Only a connected hub says anything about its sessions: a
+// switched-off one lists none. A tab that waits, or ended at a dropped
+// channel, takes the words of its hub's row once that reads switched off or
+// unknown.
 function mergeSessions(state) {
   const sessions = ((state.terminals || {}).sessions) || [];
-  const reachable = (state.hubs || []).filter(isReachable).map((hub) => hub.hub_id);
+  const listing = (state.hubs || []).filter((hub) => hub.connection === 'connected')
+    .map((hub) => hub.hub_id);
   const listed = new Map(sessions.map((row) => [row.hub_id + '/' + row.session_id, row]));
   for (const tab of shellTabs) {
     const ending = tab.isDropped || tab.isDropEnded ? hubEndWord(state, tab) : '';
@@ -1603,7 +1605,7 @@ function mergeSessions(state) {
       endLostShell(tab, ending, false);
       continue;
     }
-    if (!tab.session_id || reachable.indexOf(tab.hub_id) < 0) continue;
+    if (!tab.session_id || listing.indexOf(tab.hub_id) < 0) continue;
     const row = listed.get(tab.hub_id + '/' + tab.session_id);
     const isListedNow = !!row;
     if (isListedNow) {

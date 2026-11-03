@@ -2223,6 +2223,23 @@ def test_a_kept_tab_ends_saying_its_shell_runs_when_the_hub_forgets_this_client(
     assert row_first[1]["written"] == [UNKNOWN_RUNNING_WORDS]
 
 
+def test_a_kept_tab_waits_while_its_hub_has_this_client_switched_off():
+    back = {"hubs": [TERMINAL_HUB_CONNECTED], "sessions": [TERMINAL_SESSION]}
+    disabled = {"hubs": [TERMINAL_HUB_DISABLED]}
+    stream_first = run_terminal_end(True, ["lose", disabled, disabled, back])
+    for step in stream_first[:3]:
+        assert step["state"] == "idle"
+        assert step["note"] == DETACHED_WORDS
+        assert step["isDropped"] is True
+    assert stream_first[3]["state"] == "reattached"
+
+    row_first = run_terminal_end(True, [disabled, "lose", disabled, back])
+    assert row_first[0]["state"] == "open"
+    assert row_first[2]["state"] == "idle"
+    assert row_first[2]["note"] == DETACHED_WORDS
+    assert row_first[3]["state"] == "reattached"
+
+
 def test_a_dropped_tab_attaches_again_by_session_id_when_its_hub_lists_it():
     merge = body_of("mergeSessions")
     dropped = merge[merge.index("if (tab.isDropped) {") :]
