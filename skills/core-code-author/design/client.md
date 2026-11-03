@@ -781,7 +781,7 @@ hub lists its session.
 | --- | --- | --- |
 | the hub switched this client off (`refused client_disabled`) | ends: `ui.terminal.disabled` | waits: `ui.terminal.detached`, and attaches again after an Enable |
 | the hub no longer knows this client (`binding_unknown`) | ends: `ui.terminal.unknown_device` | ends on this client: `ui.terminal.unknown_device_running`; the session still runs on its machine |
-| the channel dropped | ends at once: `ui.terminal.detached_ended` | waits: `ui.terminal.detached`; when the hub is back it attaches again or ends, as "the hub's channel drops and comes back" says |
+| the channel dropped | ends at once: `ui.terminal.detached_ended` | waits: `ui.terminal.detached`; when the hub and its machine are back it attaches again or ends, as "the hub's channel drops and comes back" says |
 
 | Rule | Reason |
 | --- | --- |
