@@ -738,8 +738,12 @@ class HubSession(
         return waitS
     }
 
-    /** Read `disabled` with no countdown until the next state. The transport dials again by itself. */
+    /**
+     * Read `disabled` with no countdown until the next state. The transport dials again by itself. The
+     * state's hash is emptied, so the hub sends the next session its state.
+     */
     private fun switchedOff() {
+        stateHash = ""
         endRefresh()
         countdown?.cancel()
         current.update { it.waiting(HubWaitReason.DISABLED, null, 0) }

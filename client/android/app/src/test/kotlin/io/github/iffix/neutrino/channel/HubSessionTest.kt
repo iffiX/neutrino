@@ -434,6 +434,24 @@ class HubSessionTest {
     }
 
     @Test
+    fun anEnableBeforeTheNextSessionReadsConnectedAtItsState() {
+        val (session, _) = session()
+        connected(session)
+        fake.frame("b1", disabledState(false))
+        eventually("h1 reported") {
+            fake.nextFrame("report")?.second?.get("state_hash")?.jsonPrimitive?.content == "h1"
+        }
+        refuseDisabled()
+        eventually("disabled") { session.view.value.isDisabled }
+        fake.event("session_open", "b1", "address" to lanUrl, "path" to "lan", "handshake_ms" to 4)
+        fake.frame("b1", welcome())
+        val report = fake.nextFrame("report")?.second ?: error("no report")
+        // The hub sends the state only to a report whose hash differs.
+        if (report["state_hash"]?.jsonPrimitive?.content != "h1") fake.frame("b1", disabledState(false))
+        eventually("enabled") { session.view.value.isConnected && !session.view.value.isDisabled }
+    }
+
+    @Test
     fun aRoundThatFailsAfterTheRefusalReadsTheSilentHub() {
         val (session, _) = session()
         connected(session)

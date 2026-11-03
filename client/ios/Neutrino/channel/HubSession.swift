@@ -675,8 +675,10 @@ final class HubSession {
         return seconds
     }
 
-    /// Read `disabled` with no countdown until the next state. The transport dials again by itself.
+    /// Read `disabled` with no countdown until the next state. The transport dials again by itself. The state's hash
+    /// is emptied, so the hub sends the next session its state.
     private func switchedOff() {
+        stateHash = ""
         endRefresh()
         countdown?.cancel()
         countdown = nil

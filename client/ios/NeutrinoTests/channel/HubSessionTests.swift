@@ -311,6 +311,23 @@ final class HubSessionTests: XCTestCase {
         XCTAssertTrue(RunLoopWait.until { session.view.isConnected && !session.view.isDisabled })
     }
 
+    func testAnEnableBeforeTheNextSessionReadsConnectedAtItsState() throws {
+        let session = try self.session()
+        connected(session)
+        fake.frame("b1", disabledState(false))
+        XCTAssertTrue(RunLoopWait.until { self.fake.written("report").contains { $0.text("state_hash") == "h1" } })
+        refuseDisabled()
+        XCTAssertTrue(RunLoopWait.until { session.view.isDisabled })
+        let reports = fake.written("report").count
+        fake.event("session_open", "b1", ["address": .string(lan), "path": .string("lan"), "handshake_ms": .int(4)])
+        fake.frame("b1", Samples.welcome)
+        XCTAssertTrue(RunLoopWait.until { self.fake.written("report").count > reports })
+        let report = try XCTUnwrap(fake.written("report").last)
+        // The hub sends the state only to a report whose hash differs.
+        if report.text("state_hash") != "h1" { fake.frame("b1", disabledState(false)) }
+        XCTAssertTrue(RunLoopWait.until { session.view.isConnected && !session.view.isDisabled })
+    }
+
     func testARoundThatFailsAfterTheRefusalReadsTheSilentHub() throws {
         let session = try self.session()
         connected(session)
