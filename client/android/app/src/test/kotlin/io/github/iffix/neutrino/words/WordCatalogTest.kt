@@ -3,10 +3,14 @@ package io.github.iffix.neutrino.words
 import io.github.iffix.neutrino.CLIENT_HUB_CODES
 import io.github.iffix.neutrino.CLIENT_LANGUAGES
 import io.github.iffix.neutrino.CLIENT_REACHED_THROUGH
+import io.github.iffix.neutrino.CLIENT_REFUSAL_CODE_BINDING_UNKNOWN
+import io.github.iffix.neutrino.CLIENT_REFUSAL_CODE_DISABLED
 import io.github.iffix.neutrino.CLIENT_THEMES
 import io.github.iffix.neutrino.RepositoryFiles
 import io.github.iffix.neutrino.channel.HubWaitReason
 import io.github.iffix.neutrino.shell.AppScreen
+import io.github.iffix.neutrino.terminal.TerminalPhase
+import io.github.iffix.neutrino.terminal.TerminalTab
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -155,6 +159,26 @@ class WordCatalogTest {
         }
         assertEquals("retrying in 5 s", catalog("en").word("ui.action.retry_in", mapOf("s" to 5)))
         assertEquals("5 秒后重试", catalog("zh-CN").word("ui.action.retry_in", mapOf("s" to 5)))
+    }
+
+    @Test
+    fun everyTerminalStatusIsWordedInEveryLanguage() {
+        val tab = TerminalTab("s1", "b1", "d1", "box")
+        val keys = listOf(
+            tab.copy(phase = TerminalPhase.DETACHED),
+            tab.copy(phase = TerminalPhase.ENDED),
+            tab.copy(phase = TerminalPhase.ENDED, hubEnd = CLIENT_REFUSAL_CODE_DISABLED),
+            tab.copy(phase = TerminalPhase.ENDED, hubEnd = CLIENT_REFUSAL_CODE_BINDING_UNKNOWN),
+        ).mapNotNull { it.statusKey }
+        assertEquals(4, keys.toSet().size)
+        for (language in CLIENT_LANGUAGES) {
+            for (key in keys) assertTrue("$key in $language", catalog(language).has(key))
+        }
+        assertEquals(
+            "The hub has switched this client off, and this terminal has ended.",
+            catalog("en").word("ui.terminal.disabled"),
+        )
+        assertEquals("已断开，正在等待中枢", catalog("zh-CN").word("ui.terminal.detached"))
     }
 
     @Test

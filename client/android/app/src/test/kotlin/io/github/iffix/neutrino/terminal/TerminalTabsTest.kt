@@ -10,6 +10,7 @@ import io.github.iffix.neutrino.channel.ChannelTerminal
 import io.github.iffix.neutrino.channel.ChannelTerminalSession
 import io.github.iffix.neutrino.channel.HubConnection
 import io.github.iffix.neutrino.channel.HubView
+import io.github.iffix.neutrino.channel.HubWaitReason
 import io.github.iffix.neutrino.channel.Samples
 import io.github.iffix.neutrino.transport.FakeTransport
 import io.github.iffix.neutrino.transport.MemoryConnection
@@ -76,6 +77,17 @@ class TerminalTabsTest {
         terminals = listOf(
             ChannelTerminal("d1", "Argon", isOnline = true, accounts = listOf("iffi"), sessions = sessions.toList()),
         ),
+    )
+
+    private val hubEnds = listOf(
+        HubWaitReason.DISABLED to "ui.terminal.disabled",
+        HubWaitReason.UNKNOWN_DEVICE to "ui.terminal.unknown_device",
+    )
+
+    private fun waitingView(reason: HubWaitReason?) = HubView(
+        Samples.binding,
+        connection = if (reason == null) HubConnection.CONNECTING else HubConnection.WAITING,
+        waitReason = reason,
     )
 
     private fun TestScope.eventually(check: () -> Boolean) {
@@ -245,6 +257,71 @@ class TerminalTabsTest {
         val (_, end) = opened(tabs)
         end.close()
         eventually { tabs.tabs.value.single().phase == TerminalPhase.DETACHED }
+    }
+
+    @Test
+    fun aDroppedStreamWaitsForTheHub() = runTest {
+        val tabs = tabs()
+        val (_, end) = opened(tabs)
+        end.close()
+        eventually { tabs.tabs.value.single().phase == TerminalPhase.DETACHED }
+        tabs.take(listOf(waitingView(HubWaitReason.HUB_SILENT)))
+        assertEquals(TerminalPhase.DETACHED, tabs.tabs.value.single().phase)
+        assertEquals("ui.terminal.detached", tabs.tabs.value.single().statusKey)
+    }
+
+    @Test
+    fun aPlainTabEndsWithTheHubsRefusalWhenItsStreamEndsFirst() = runTest {
+        for ((reason, key) in hubEnds) {
+            val tabs = tabs()
+            val (_, end) = opened(tabs)
+            end.close()
+            eventually { tabs.tabs.value.single().phase == TerminalPhase.DETACHED }
+            tabs.take(listOf(waitingView(reason)))
+            assertEquals(TerminalPhase.ENDED, tabs.tabs.value.single().phase)
+            assertEquals(key, tabs.tabs.value.single().statusKey)
+            tabs.take(listOf(waitingView(null)))
+            assertEquals(key, tabs.tabs.value.single().statusKey)
+        }
+    }
+
+    @Test
+    fun aPlainTabEndsWithTheHubsRefusalWhenTheHubsRowComesFirst() = runTest {
+        for ((reason, key) in hubEnds) {
+            val tabs = tabs()
+            val (_, end) = opened(tabs)
+            tabs.take(listOf(waitingView(reason)))
+            assertEquals(TerminalPhase.OPEN, tabs.tabs.value.single().phase)
+            end.close()
+            eventually { tabs.tabs.value.single().phase == TerminalPhase.ENDED }
+            assertEquals(key, tabs.tabs.value.single().statusKey)
+        }
+    }
+
+    @Test
+    fun aKeptTabIsNotEndedByTheHubsRefusal() = runTest {
+        val tabs = tabs()
+        val (id, end) = opened(tabs)
+        tabs.persist(id, isPersistent = true, isShared = false)
+        end.close()
+        eventually { tabs.tabs.value.single().phase == TerminalPhase.DETACHED }
+        tabs.take(listOf(waitingView(HubWaitReason.DISABLED)))
+        assertEquals(TerminalPhase.DETACHED, tabs.tabs.value.single().phase)
+        assertEquals("ui.terminal.detached", tabs.tabs.value.single().statusKey)
+    }
+
+    @Test
+    fun aReattachWhileTheHubIsAwayWaitsWithNoCode() = runTest {
+        var isUp = true
+        val tabs = TerminalTabs({ if (isUp) hub else null }, backgroundScope, { testScheduler.currentTime })
+        val (id, end) = opened(tabs)
+        end.close()
+        eventually { tabs.tabs.value.single().phase == TerminalPhase.DETACHED }
+        isUp = false
+        tabs.reattach(id)
+        assertEquals(TerminalPhase.DETACHED, tabs.tabs.value.single().phase)
+        assertEquals(null, tabs.tabs.value.single().note)
+        assertEquals("ui.terminal.detached", tabs.tabs.value.single().statusKey)
     }
 
     @Test

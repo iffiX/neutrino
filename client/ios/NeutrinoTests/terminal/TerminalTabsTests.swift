@@ -82,6 +82,86 @@ final class TerminalTabsTests: XCTestCase {
         XCTAssertEqual(size["cols"], .int(100))
         XCTAssertEqual(size["rows"], .int(30))
     }
+
+    private let hubEnds: [(HubWaitReason, String)] = [
+        (.disabled, "ui.terminal.disabled"), (.unknownDevice, "ui.terminal.unknown_device"),
+    ]
+
+    private func hubView(_ reason: HubWaitReason?) -> HubView {
+        var hub = HubView(binding: Samples.binding)
+        hub.connection = reason == nil ? .connecting : .waiting
+        hub.waitReason = reason
+        return hub
+    }
+
+    private func openTab(_ tabs: TerminalTabs, isPersistent: Bool = false) throws -> FakeTransportEnd {
+        let index = transport.streams.count
+        let sessionId = tabs.create(bindingId: "b1", deviceId: "d1", name: "box")
+        tabs.sized(sessionId, cols: 80, rows: 24)
+        let stream = try end(index)
+        XCTAssertTrue(RunLoopWait.until { tabs.tabs.first?.phase == .open })
+        if isPersistent { tabs.persist(sessionId, isPersistent: true, isShared: false) }
+        return stream
+    }
+
+    func testADroppedStreamWaitsForTheHubWithNoCode() throws {
+        let tabs = makeTabs()
+        try openTab(tabs).close()
+        XCTAssertTrue(RunLoopWait.until { tabs.tabs.first?.phase == .detached })
+        tabs.take([hubView(.hubSilent)])
+        let tab = try XCTUnwrap(tabs.tabs.first)
+        XCTAssertEqual(tab.phase, .detached)
+        XCTAssertNil(tab.note)
+        XCTAssertEqual(tab.statusKey, "ui.terminal.detached")
+    }
+
+    func testAPlainTabEndsWithTheHubsRefusalWhenItsStreamEndsFirst() throws {
+        for (reason, key) in hubEnds {
+            let tabs = makeTabs()
+            try openTab(tabs).close()
+            XCTAssertTrue(RunLoopWait.until { tabs.tabs.first?.phase == .detached })
+            tabs.take([hubView(reason)])
+            let tab = try XCTUnwrap(tabs.tabs.first)
+            XCTAssertEqual(tab.phase, .ended)
+            XCTAssertNil(tab.note)
+            XCTAssertEqual(tab.statusKey, key)
+            tabs.take([hubView(nil)])
+            XCTAssertEqual(tabs.tabs.first?.statusKey, key)
+        }
+    }
+
+    func testAPlainTabEndsWithTheHubsRefusalWhenTheHubsRowComesFirst() throws {
+        for (reason, key) in hubEnds {
+            let tabs = makeTabs()
+            let stream = try openTab(tabs)
+            tabs.take([hubView(reason)])
+            XCTAssertEqual(tabs.tabs.first?.phase, .open)
+            stream.close()
+            XCTAssertTrue(RunLoopWait.until { tabs.tabs.first?.phase == .ended })
+            XCTAssertEqual(tabs.tabs.first?.statusKey, key)
+        }
+    }
+
+    func testAReattachWhileTheHubIsAwayWaitsWithNoCode() throws {
+        let tabs = makeTabs()
+        try openTab(tabs).close()
+        XCTAssertTrue(RunLoopWait.until { tabs.tabs.first?.phase == .detached })
+        hub = nil
+        tabs.reattach(try XCTUnwrap(tabs.tabs.first?.sessionId))
+        let tab = try XCTUnwrap(tabs.tabs.first)
+        XCTAssertEqual(tab.phase, .detached)
+        XCTAssertNil(tab.note)
+        XCTAssertEqual(tab.statusKey, "ui.terminal.detached")
+    }
+
+    func testAKeptTabIsNotEndedByTheHubsRefusal() throws {
+        let tabs = makeTabs()
+        try openTab(tabs, isPersistent: true).close()
+        XCTAssertTrue(RunLoopWait.until { tabs.tabs.first?.phase == .detached })
+        tabs.take([hubView(.disabled)])
+        XCTAssertEqual(tabs.tabs.first?.phase, .detached)
+        XCTAssertEqual(tabs.tabs.first?.statusKey, "ui.terminal.detached")
+    }
 }
 
 /// One connected hub's terminal questions, its streams on a `FakeTransport`.

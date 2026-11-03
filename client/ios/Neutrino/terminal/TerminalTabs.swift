@@ -5,7 +5,8 @@ import Foundation
 /// new shell is opened with a session id this phone makes, as the account picked on its machine; a listed one is
 /// attached with `is_resumed`, its kept output first. What the person types goes to the tab's stream in the order
 /// typed, a later size as a `resize` record, and `persist` and `stop_session` are frames naming only the session.
-/// Every call runs on the main queue.
+/// A tab whose stream ends with no `close` waits for its hub. A plain session's tab ends instead, with the hub's
+/// refusal, once its hub reads switched off or unknown, in either order. Every call runs on the main queue.
 final class TerminalTabs {
     private let hubOf: (String) -> TerminalHub?
     private let clock: ClientClock
@@ -15,6 +16,7 @@ final class TerminalTabs {
     private var dismissed: Set<String> = []
     private var drops: [String: TerminalDrop] = [:]
     private var replaying: Set<String> = []
+    private var views: [HubView] = []
 
     /// Called after every change of the tabs, the shown tab, the picked machine or the tabs that clear.
     var onChange: (() -> Void)?
@@ -83,10 +85,12 @@ final class TerminalTabs {
     ///
     /// - Parameter hubs: Every hub's view.
     func take(_ hubs: [HubView]) {
+        views = hubs
         let (listings, listedHubs) = TerminalSessionMerge.listed(hubs)
         let listedIds = Set(listings.map(\.session.sessionId))
         dismissed = dismissed.intersection(listedIds)
         tabs = TerminalSessionMerge.merge(tabs, listings: listings, listedHubs: listedHubs, dismissed: dismissed)
+            .map { $0.phase == .detached ? lost($0) : $0 }
         if !tabs.contains(where: { $0.sessionId == active }) { active = tabs.first?.sessionId ?? "" }
     }
 
@@ -255,14 +259,11 @@ final class TerminalTabs {
     }
 
     private func attach(_ tab: TerminalTab, cols: Int, rows: Int) {
+        let isResumed = tab.phase == .detached
         guard let hub = hubOf(tab.bindingId) else {
-            change(tab.sessionId) { tab in
-                tab.phase = .detached
-                tab.note = .refusal(Channel.codeHubUnreachable)
-            }
+            refused(tab.sessionId, isResumed: isResumed, refusal: .refusal(Channel.codeHubUnreachable))
             return
         }
-        let isResumed = tab.phase == .detached
         let open: [String: JSONValue] = [
             "kind": .string(Channel.kindShell),
             "device_id": .string(tab.deviceId),
@@ -276,10 +277,7 @@ final class TerminalTabs {
         change(tab.sessionId) { $0.phase = .connecting }
         switch hub.openShell(open) {
         case .failure(let refusal):
-            change(tab.sessionId) { tab in
-                tab.phase = .detached
-                tab.note = refusal
-            }
+            refused(tab.sessionId, isResumed: isResumed, refusal: refusal)
         case .success(let stream):
             if isResumed { replaying.insert(tab.sessionId) }
             streams[tab.sessionId] = stream
@@ -292,6 +290,14 @@ final class TerminalTabs {
                 guard let self, let stream else { return }
                 self.ended(tab.sessionId, stream: stream, refusal: refusal)
             }
+        }
+    }
+
+    private func refused(_ sessionId: String, isResumed: Bool, refusal: ClientError) {
+        change(sessionId) { tab in
+            tab.phase = .detached
+            tab.note = isResumed && refusal.code == Channel.codeHubUnreachable ? nil : refusal
+            tab = lost(tab)
         }
     }
 
@@ -317,6 +323,10 @@ final class TerminalTabs {
                 tab.note = refusal
                 tab.isPersistent = false
                 tab.isShared = false
+            } else if refusal?.code == Channel.codeHubUnreachable {
+                tab.phase = .detached
+                tab.note = nil
+                tab = lost(tab)
             } else if let refusal {
                 tab.phase = .detached
                 tab.note = refusal
@@ -325,6 +335,21 @@ final class TerminalTabs {
                 tab.note = nil
             }
         }
+    }
+
+    private func lost(_ tab: TerminalTab) -> TerminalTab {
+        guard !tab.isKept, let hub = views.first(where: { $0.binding.id == tab.bindingId }) else { return tab }
+        var ended = tab
+        if hub.isDisabled {
+            ended.hubEnd = Channel.codeClientDisabled
+        } else if hub.waitReason == .unknownDevice {
+            ended.hubEnd = Channel.codeBindingUnknown
+        } else {
+            return tab
+        }
+        ended.phase = .ended
+        ended.note = nil
+        return ended
     }
 
     private func isDropped(_ sessionId: String) -> Bool {

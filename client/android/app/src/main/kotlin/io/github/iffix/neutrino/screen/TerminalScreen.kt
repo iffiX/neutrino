@@ -444,23 +444,7 @@ private fun StatusLine(
                     )
                 }
             }
-            val status =
-                when (tab?.phase) {
-                    TerminalPhase.ENDED -> words.word("ui.terminal_ended")
-                    TerminalPhase.DETACHED -> words.word("ui.terminal_detached")
-                    else -> null
-                }
-            if (status != null) {
-                BasicText(
-                    status,
-                    style = NeutrinoTheme.mono.copy(color = palette.textMuted),
-                    modifier = Modifier.weight(1f),
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            } else {
-                Spacer(Modifier.weight(1f))
-            }
+            Spacer(Modifier.weight(1f))
             if (tab != null) {
                 ToggleSwitch(
                     words.word("ui.terminal_persistent"),
@@ -476,6 +460,7 @@ private fun StatusLine(
                 )
             }
         }
+        tab?.statusKey?.let { BasicText(words.word(it), style = NeutrinoTheme.mono.copy(color = palette.textMuted)) }
         if (tab != null) {
             ErrorLine(tab.note)
             ReasonLine(words.word("ui.reason.not_owned", mapOf("owner" to tab.ownerLabel)).takeIf { !tab.isOwned })

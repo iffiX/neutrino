@@ -44,8 +44,8 @@ struct TerminalStatusLine: View {
             }
             if let tab, let note = tab.note {
                 RowText(text: words.refusal(note), style: .error)
-            } else if let tab, tab.phase == .detached {
-                RowText(text: words.word("ui.terminal_detached"), style: .reason)
+            } else if let tab, let key = tab.statusKey, tab.phase == .detached || !tab.hubEnd.isEmpty {
+                RowText(text: words.word(key), style: .reason)
             }
             if let tab, !tab.isOwned {
                 RowText(text: words.word("ui.reason.not_owned", ["owner": tab.ownerLabel]), style: .reason)

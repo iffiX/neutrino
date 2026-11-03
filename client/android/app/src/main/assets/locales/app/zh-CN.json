@@ -45,7 +45,6 @@
     "scan_hint": "对准中枢客户端页面上的二维码",
     "scan_press": "按“扫码”使用相机。",
     "share_login_needed": "请先在文件页输入这个共享的密码。",
-    "share_reconnecting": "正在重新连接…",
-    "terminal_detached": "已断开，正在等待中枢"
+    "share_reconnecting": "正在重新连接…"
   }
 }

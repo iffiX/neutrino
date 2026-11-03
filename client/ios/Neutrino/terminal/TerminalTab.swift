@@ -47,6 +47,9 @@ struct TerminalTab: Equatable, Identifiable {
     /// Why the shell ended, the stream dropped or a command was refused.
     var note: ClientError?
 
+    /// The hub's refusal the tab ended with, `client_disabled` or `binding_unknown`; empty for none.
+    var hubEnd = ""
+
     /// The tab's id, as a list keys it.
     var id: String { sessionId }
 
@@ -55,6 +58,20 @@ struct TerminalTab: Equatable, Identifiable {
 
     /// Whether the two switches act: the tab is open and this phone opened its session.
     var canPersist: Bool { phase == .open && isOwned }
+
+    /// The key of the words the status line shows for the tab; nil while it is open or opening.
+    var statusKey: String? {
+        switch phase {
+        case .ended:
+            switch hubEnd {
+            case Channel.codeClientDisabled: return "ui.terminal.disabled"
+            case Channel.codeBindingUnknown: return "ui.terminal.unknown_device"
+            default: return "ui.terminal_ended"
+            }
+        case .detached: return "ui.terminal.detached"
+        case .connecting, .open: return nil
+        }
+    }
 
     /// Who opened the session, for the reason line of a tab this phone does not own: the name, else the stamp.
     var ownerLabel: String { ownerName.isEmpty ? owner : ownerName }

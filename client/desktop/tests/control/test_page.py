@@ -2055,7 +2055,7 @@ def test_the_active_listed_tab_attaches_when_the_page_opens():
 def test_a_dropped_channel_keeps_the_tab_and_its_session():
     piece = body_of("takeShellPiece")
     assert "if (end.code === 'hub_unreachable' && tab.session_id) {" in piece
-    assert "loseShell(tab, wordCode(end.code, end.params));" in piece
+    assert "loseShell(tab);" in piece
     lose = body_of("loseShell")
     assert "tab.state = 'idle';" in lose
     assert "tab.isDropped = true;" in lose
@@ -2063,6 +2063,134 @@ def test_a_dropped_channel_keeps_the_tab_and_its_session():
     assert "session_id" not in lose
     start = body_of("startShell")
     assert "if (reply && reply.code === 'hub_unreachable' && tab.session_id) {" in start
+    assert "loseShell(tab);" in start
+
+
+def run_terminal_end(is_kept: bool, steps: list) -> list:
+    """The page's own loseShell and mergeSessions, run in node with the English
+    catalog on one tab of hub h1: each step either ends the tab's stream with
+    no close (``"lose"``) or draws a state's ``hubs`` and ``sessions``.
+    Returns the tab after each step, with the lines its terminal was written."""
+    import json
+    import shutil
+    import subprocess
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("no node to run the page's script")
+    functions = (
+        "function fill(template, params)",
+        "function isReachable(hub)",
+        "function hubEndWord(state, hubId)",
+        "function mergeSessions(state)",
+        "function loseShell(tab)",
+        "function endLostShell(tab, note)",
+        "function endTab(tab, note)",
+    )
+    script = "\n".join(
+        [
+            "const CATALOG = " + json.dumps(EN_WORDS) + ";",
+            "const t = (key, params) => fill(CATALOG[key] || key, params);",
+            "let stateSerial = 0;",
+            "let lastState = null;",
+            "let pendingState = null;",
+            "let activeShell = 'shell1';",
+            "const closedSessions = new Set();",
+            "const written = [];",
+            "const tab = {key: 'shell1', hub_id: 'h1', device_id: 'd1',",
+            "  session_id: 's1', terminal_id: 'x1', state: 'open', note: '',",
+            "  isRefused: false, isListed: true, isKept: " + json.dumps(is_kept) + ",",
+            "  isDropped: false, droppedAt: 0,",
+            "  term: {write: (text) => written.push(text.trim())}};",
+            "const shellTabs = [tab];",
+            "const redraw = () => {};",
+            "const reattachShell = (each) => { each.state = 'reattached'; };",
+            *[f"{name}{function_body(name)}\n}}" for name in functions],
+            "const steps = " + json.dumps(steps) + ";",
+            "const seen = [];",
+            "for (const step of steps) {",
+            "  if (step === 'lose') {",
+            "    loseShell(tab);",
+            "  } else {",
+            "    stateSerial += 1;",
+            "    lastState = {hubs: step.hubs, terminals: {sessions: step.sessions || []}};",
+            "    mergeSessions(lastState);",
+            "  }",
+            "  seen.push({state: tab.state, note: tab.note, isDropped: tab.isDropped,",
+            "    written: written.slice()});",
+            "}",
+            "console.log(JSON.stringify(seen));",
+        ]
+    )
+    result = subprocess.run(
+        [node, "-e", script], capture_output=True, text=True, timeout=30
+    )
+    assert result.returncode == 0, result.stderr
+    return json.loads(result.stdout)
+
+
+TERMINAL_HUB_CONNECTED = {"hub_id": "h1", "connection": "connected", "wait_reason": ""}
+TERMINAL_HUB_DISABLED = {"hub_id": "h1", "connection": "disabled", "wait_reason": ""}
+TERMINAL_HUB_UNKNOWN = {
+    "hub_id": "h1",
+    "connection": "waiting",
+    "wait_reason": "unknown_device",
+}
+TERMINAL_HUB_SILENT = {
+    "hub_id": "h1",
+    "connection": "waiting",
+    "wait_reason": "hub_silent",
+}
+TERMINAL_SESSION = {"hub_id": "h1", "session_id": "s1", "device_id": "d1"}
+DISABLED_WORDS = "The hub has switched this client off, and this terminal has ended."
+UNKNOWN_WORDS = "The hub has no record of this client, and this terminal has ended."
+DETACHED_WORDS = "Detached; waiting for the hub"
+
+
+@pytest.mark.parametrize(
+    "row, words",
+    [(TERMINAL_HUB_DISABLED, DISABLED_WORDS), (TERMINAL_HUB_UNKNOWN, UNKNOWN_WORDS)],
+)
+def test_a_plain_tab_ends_with_the_hubs_refusal_whichever_comes_first(row, words):
+    stream_first = run_terminal_end(
+        False, ["lose", {"hubs": [row]}, {"hubs": [TERMINAL_HUB_CONNECTED]}]
+    )
+    assert stream_first[0]["state"] == "idle"
+    assert stream_first[0]["note"] == DETACHED_WORDS
+    assert stream_first[1]["state"] == "ended"
+    assert stream_first[1]["note"] == words
+    assert stream_first[1]["isDropped"] is False
+    assert stream_first[2]["note"] == words
+    assert stream_first[2]["written"] == [DETACHED_WORDS, words]
+
+    row_first = run_terminal_end(
+        False, [{"hubs": [row]}, "lose", {"hubs": [TERMINAL_HUB_CONNECTED]}]
+    )
+    assert row_first[1]["state"] == "ended"
+    assert row_first[1]["note"] == words
+    assert row_first[2]["note"] == words
+    assert row_first[2]["written"] == [words]
+
+
+def test_a_dropped_channel_waits_and_attaches_again_when_the_hub_lists_it():
+    seen = run_terminal_end(
+        False,
+        [
+            "lose",
+            {"hubs": [TERMINAL_HUB_SILENT]},
+            {"hubs": [TERMINAL_HUB_CONNECTED], "sessions": [TERMINAL_SESSION]},
+        ],
+    )
+    assert [step["note"] for step in seen[:2]] == [DETACHED_WORDS, DETACHED_WORDS]
+    assert seen[1]["isDropped"] is True
+    assert seen[2]["state"] == "reattached"
+
+
+def test_a_kept_tab_is_not_told_its_shell_ended_when_the_hub_forgets_this_client():
+    seen = run_terminal_end(True, ["lose", {"hubs": [TERMINAL_HUB_UNKNOWN]}])
+    assert seen[1]["state"] == "idle"
+    assert seen[1]["note"] == DETACHED_WORDS
+    assert seen[1]["isDropped"] is True
 
 
 def test_a_dropped_tab_attaches_again_by_session_id_when_its_hub_lists_it():
@@ -2931,6 +3059,17 @@ UI_TEXT_060 = (
         "这台机器的终端没有启用的账户。",
     ),
     ("ui.terminal.account", "Account", "账户"),
+    (
+        "ui.terminal.disabled",
+        "The hub has switched this client off, and this terminal has ended.",
+        "中枢已把本机停用，这个终端已结束。",
+    ),
+    (
+        "ui.terminal.unknown_device",
+        "The hub has no record of this client, and this terminal has ended.",
+        "中枢没有本机的记录，这个终端已结束。",
+    ),
+    ("ui.terminal.detached", "Detached; waiting for the hub", "已断开，正在等待中枢"),
     (
         "ui.settings.ssh_include",
         "SSH programs reach the machines",

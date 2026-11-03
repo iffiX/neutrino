@@ -1522,8 +1522,10 @@ async function askAiUse(hub, entry, isOn) {
 
 // Every tab, in the order it appeared: {key, hub_id, device_id, name,
 // session_id, terminal_id, term, fit, pane, state, note, isRefused, typed,
-// isSending, isListed, isDropped, droppedAt, flags, account}; ``account`` is
-// the one a new shell runs as, empty for a listed session. ``state`` is 'idle' for
+// isSending, isListed, isKept, isDropped, droppedAt, flags, account};
+// ``isKept`` is whether the session was persistent or shared when last
+// listed or set, and ``account`` the one a new shell runs as, empty for a
+// listed session. ``state`` is 'idle' for
 // a listed session no window of this page attached to yet, or one whose hub's
 // channel dropped (``isDropped``, at the state count ``droppedAt``),
 // 'connecting', 'open', 'ended' once the hub stopped
@@ -1588,14 +1590,25 @@ function isLinux() {
 // session no tab shows gets a tab, a tab whose hub's channel dropped attaches
 // again while its session is listed, and a tab whose listed session is gone
 // is ended. Only a hub whose socket is up says anything about its sessions.
+// A dropped plain session's tab ends once its hub's row reads switched off
+// or unknown.
 function mergeSessions(state) {
   const sessions = ((state.terminals || {}).sessions) || [];
   const reachable = (state.hubs || []).filter(isReachable).map((hub) => hub.hub_id);
-  const listed = new Set(sessions.map((row) => row.hub_id + '/' + row.session_id));
+  const listed = new Map(sessions.map((row) => [row.hub_id + '/' + row.session_id, row]));
   for (const tab of shellTabs) {
+    const ending = tab.isDropped && !tab.isKept ? hubEndWord(state, tab.hub_id) : '';
+    if (ending) {
+      endLostShell(tab, ending);
+      continue;
+    }
     if (!tab.session_id || reachable.indexOf(tab.hub_id) < 0) continue;
-    const isListedNow = listed.has(tab.hub_id + '/' + tab.session_id);
-    if (isListedNow) tab.isListed = true;
+    const row = listed.get(tab.hub_id + '/' + tab.session_id);
+    const isListedNow = !!row;
+    if (isListedNow) {
+      tab.isListed = true;
+      tab.isKept = !!(row.is_persistent || row.is_shared);
+    }
     if (tab.isDropped) {
       if (stateSerial <= tab.droppedAt) continue;
       tab.isDropped = false;
@@ -1634,6 +1647,19 @@ function mergeSessions(state) {
   if (isFirst && shellTabs.length && !activeShell) {
     activeShell = shellTabs[0].key;
   }
+}
+
+// The words a plain session's tab ends with once its hub's row reads that the
+// hub switched this client off or keeps no record of it; empty for any other
+// row.
+function hubEndWord(state, hubId) {
+  const hub = ((state && state.hubs) || []).filter((row) => row.hub_id === hubId)[0];
+  if (!hub) return '';
+  if (hub.connection === 'disabled') return t('ui.terminal.disabled');
+  if (hub.connection === 'waiting' && hub.wait_reason === 'unknown_device') {
+    return t('ui.terminal.unknown_device');
+  }
+  return '';
 }
 
 function machineOf(state, hubId, deviceId) {
@@ -1903,7 +1929,10 @@ function askPersist(tab, isPersistent, isShared) {
   }).then((reply) => {
     if (!reply) return;
     tab.hint = reply.code ? wordCode(reply.code, reply.params) : '';
-    if (!reply.code) tab.flags = { is_persistent: isPersistent, is_shared: isShared };
+    if (!reply.code) {
+      tab.flags = { is_persistent: isPersistent, is_shared: isShared };
+      tab.isKept = isPersistent || isShared;
+    }
     redraw();
   });
 }
@@ -2039,8 +2068,8 @@ function newTab(hubId, machine, sessionId) {
     device_id: machine.device_id, name: machine.name, term: term, fit: fit,
     pane: pane, state: 'connecting', note: '', isRefused: false, typed: '',
     isSending: false, hint: '', session_id: sessionId || '', isListed: false,
-    isDropped: false, droppedAt: 0, flags: {}, isClearAsked: false, isClearing: false,
-    account: '',
+    isKept: false, isDropped: false, droppedAt: 0, flags: {}, isClearAsked: false,
+    isClearing: false, account: '',
     clearMark: document.createElement('div'),
   };
   tab.clearMark.className = 'term_clearing hidden';
@@ -2237,7 +2266,7 @@ function startShell(tab) {
     account: tab.account,
   }).then((reply) => {
     if (reply && reply.code === 'hub_unreachable' && tab.session_id) {
-      loseShell(tab, wordCode(reply.code, reply.params));
+      loseShell(tab);
       return;
     }
     if (!reply || reply.code || !reply.terminal_id) {
@@ -2316,7 +2345,7 @@ function takeShellPiece(piece) {
   const end = piece.end || {};
   if (!end.code && !tab.isListed && !isGuarded(tab)) { dropShell(tab); return; }
   if (end.code === 'hub_unreachable' && tab.session_id) {
-    loseShell(tab, wordCode(end.code, end.params));
+    loseShell(tab);
     return;
   }
   if (end.code === 'session_unknown') {
@@ -2337,17 +2366,34 @@ function endShell(tab, note, isRefused) {
   redraw();
 }
 
-// A shell whose hub's channel dropped: its tab keeps its session id and its
-// output, and waits for a later state in which the hub is back.
-function loseShell(tab, note) {
+// A shell whose hub's session ended: a plain session's tab ends when its hub's
+// row reads switched off or unknown. Any other tab keeps its session id and
+// its output, and waits for a later state in which the hub is back.
+function loseShell(tab) {
+  const ending = tab.isKept ? '' : hubEndWord(lastState, tab.hub_id);
+  if (ending) {
+    endLostShell(tab, ending);
+    redraw();
+    return;
+  }
   tab.state = 'idle';
   tab.isDropped = true;
   tab.droppedAt = stateSerial;
   tab.terminal_id = '';
-  tab.note = note;
+  tab.note = t('ui.terminal.detached');
   tab.isRefused = false;
-  tab.term.write('\r\n' + note + '\r\n');
+  tab.term.write('\r\n' + tab.note + '\r\n');
   redraw();
+}
+
+// A plain session's tab whose shell ended with its hub's session: it keeps its
+// output and the words of why, on the line under the detached words when the
+// tab waited first.
+function endLostShell(tab, note) {
+  tab.term.write((tab.isDropped ? '' : '\r\n') + note + '\r\n');
+  tab.isDropped = false;
+  tab.terminal_id = '';
+  endTab(tab, note);
 }
 
 // A session the hub stopped listing: its tab stays with its last output.

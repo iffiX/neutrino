@@ -1,5 +1,7 @@
 package io.github.iffix.neutrino.terminal
 
+import io.github.iffix.neutrino.CLIENT_REFUSAL_CODE_BINDING_UNKNOWN
+import io.github.iffix.neutrino.CLIENT_REFUSAL_CODE_DISABLED
 import io.github.iffix.neutrino.channel.ChannelResult
 
 /**
@@ -21,6 +23,8 @@ import io.github.iffix.neutrino.channel.ChannelResult
  * @property phase Where the tab's stream stands.
  * @property note Why the shell ended, the stream dropped or a command was refused.
  * @property isOpening Whether the shell's stream is being opened.
+ * @property hubEnd The hub's refusal the tab ended with, `client_disabled` or `binding_unknown`;
+ *   empty for none.
  */
 data class TerminalTab(
     val sessionId: String,
@@ -39,6 +43,7 @@ data class TerminalTab(
     val phase: TerminalPhase = TerminalPhase.DETACHED,
     val note: ChannelResult.Refused? = null,
     val isOpening: Boolean = false,
+    val hubEnd: String = "",
 ) {
     /** Whether closing the tab ends the session for everyone, which takes two presses. */
     val isKept: Boolean
@@ -47,6 +52,20 @@ data class TerminalTab(
     /** Whether the two switches act: the tab is open and this phone opened its session. */
     val canPersist: Boolean
         get() = phase == TerminalPhase.OPEN && isOwned
+
+    /** The key of the words the status line shows for the tab; null while it is open or opening. */
+    val statusKey: String?
+        get() = when (phase) {
+            TerminalPhase.ENDED -> when (hubEnd) {
+                CLIENT_REFUSAL_CODE_DISABLED -> "ui.terminal.disabled"
+                CLIENT_REFUSAL_CODE_BINDING_UNKNOWN -> "ui.terminal.unknown_device"
+                else -> "ui.terminal_ended"
+            }
+
+            TerminalPhase.DETACHED -> "ui.terminal.detached"
+
+            else -> null
+        }
 
     /** Who opened the session, for the reason line of a tab this phone does not own: the name, else the stamp. */
     val ownerLabel: String

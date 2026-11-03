@@ -44,6 +44,25 @@ final class WordCatalogTests: XCTestCase {
         }
     }
 
+    func testEveryTerminalStatusIsWordedInBothLanguages() {
+        let ends: [(TerminalPhase, String)] = [
+            (.detached, ""), (.ended, ""), (.ended, Channel.codeClientDisabled), (.ended, Channel.codeBindingUnknown),
+        ]
+        let keys = ends.compactMap { phase, hubEnd in
+            TerminalTab(sessionId: "s1", bindingId: "b1", deviceId: "d1", name: "box", phase: phase, hubEnd: hubEnd)
+                .statusKey
+        }
+        XCTAssertEqual(keys.count, 4)
+        for language in Client.languages {
+            let words = WordCatalog.load(language: language, bundle: bundle)
+            for key in keys { XCTAssertTrue(words.has(key), "\(language) words no \(key)") }
+        }
+        let english = WordCatalog.load(language: "en", bundle: bundle)
+        XCTAssertEqual(
+            english.word("ui.terminal.disabled"), "The hub has switched this client off, and this terminal has ended.")
+        XCTAssertEqual(english.word("ui.terminal.detached"), "Detached; waiting for the hub")
+    }
+
     func testTheAppsCatalogAndTheDesktopsHoldNoKeyInCommon() throws {
         for language in Client.languages {
             let desktop = try XCTUnwrap(

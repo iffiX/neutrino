@@ -1,5 +1,7 @@
 package io.github.iffix.neutrino.terminal
 
+import io.github.iffix.neutrino.CLIENT_REFUSAL_CODE_BINDING_UNKNOWN
+import io.github.iffix.neutrino.CLIENT_REFUSAL_CODE_DISABLED
 import io.github.iffix.neutrino.CLIENT_STREAM_KIND_SHELL
 import io.github.iffix.neutrino.CLIENT_TERMINAL_CLEAR_MAX_MS
 import io.github.iffix.neutrino.CLIENT_TERMINAL_CLEAR_QUIET_MS
@@ -9,6 +11,7 @@ import io.github.iffix.neutrino.TRANSPORT_RECORD_DATA
 import io.github.iffix.neutrino.TRANSPORT_RECORD_RESIZE
 import io.github.iffix.neutrino.channel.ChannelResult
 import io.github.iffix.neutrino.channel.HubView
+import io.github.iffix.neutrino.channel.HubWaitReason
 import io.github.iffix.neutrino.transport.TransportStream
 import java.io.ByteArrayOutputStream
 import java.io.IOException
@@ -38,6 +41,9 @@ import kotlinx.serialization.json.put
  *
  * What the person types joins one queue per tab that one coroutine sends in order.
  *
+ * A tab whose stream ends with no `close` waits for its hub. A plain session's tab ends instead,
+ * with the hub's refusal, once its hub reads switched off or unknown, in either order.
+ *
  * @param opener One hub's terminal questions, by binding id, or null while it is not connected.
  * @param scope Where the shells' readers, the tabs' senders and the lists' follower run.
  * @param clock The time in milliseconds that Clear's dropping is measured by.
@@ -59,6 +65,10 @@ class TerminalTabs(
     private val drops = mutableMapOf<String, Drop>()
     private val dropping = MutableStateFlow<Set<String>>(emptySet())
     private var sink: ((String, ByteArray) -> Unit)? = null
+    private val ends = Any()
+
+    @Volatile
+    private var views: List<HubView> = emptyList()
 
     /** Every tab, in the order made. */
     val tabs: StateFlow<List<TerminalTab>> = current.asStateFlow()
@@ -96,7 +106,14 @@ class TerminalTabs(
             dismissed.retainAll { id -> id in listedIds }
             dismissed.toSet()
         }
-        current.update { TerminalSessionMerge.merge(it, listings, listedHubs, gone) }
+        synchronized(ends) {
+            views = hubs
+            current.update { tabs ->
+                TerminalSessionMerge.merge(tabs, listings, listedHubs, gone).map {
+                    if (it.phase == TerminalPhase.DETACHED) lost(it) else it
+                }
+            }
+        }
         settleActive()
     }
 
@@ -302,14 +319,12 @@ class TerminalTabs(
     }
 
     private fun attach(tab: TerminalTab, cols: Int, rows: Int) {
+        val isResumed = tab.phase == TerminalPhase.DETACHED
         val hub = opener(tab.bindingId)
         if (hub == null) {
-            change(tab.sessionId) {
-                it.copy(phase = TerminalPhase.DETACHED, note = ChannelResult.refused("hub_unreachable"))
-            }
+            refused(tab.sessionId, isResumed, ChannelResult.refused("hub_unreachable"))
             return
         }
-        val isResumed = tab.phase == TerminalPhase.DETACHED
         val open = buildJsonObject {
             put("kind", CLIENT_STREAM_KIND_SHELL)
             put("device_id", tab.deviceId)
@@ -323,9 +338,7 @@ class TerminalTabs(
         change(tab.sessionId) { it.copy(phase = TerminalPhase.CONNECTING, isOpening = true) }
         scope.launch(Dispatchers.IO) {
             when (val opened = hub.open(open)) {
-                is ChannelResult.Refused -> change(tab.sessionId) {
-                    it.copy(phase = TerminalPhase.DETACHED, note = opened, isOpening = false)
-                }
+                is ChannelResult.Refused -> refused(tab.sessionId, isResumed, opened)
 
                 is ChannelResult.Ok -> {
                     if (isResumed) synchronized(outputs) { outputs.remove(tab.sessionId) }
@@ -335,6 +348,11 @@ class TerminalTabs(
                 }
             }
         }
+    }
+
+    private fun refused(sessionId: String, isResumed: Boolean, refusal: ChannelResult.Refused) = synchronized(ends) {
+        val note = refusal.takeUnless { isResumed && it.code == "hub_unreachable" }
+        change(sessionId) { lost(it.copy(phase = TerminalPhase.DETACHED, note = note, isOpening = false)) }
     }
 
     private fun read(sessionId: String, stream: TransportStream) {
@@ -357,6 +375,10 @@ class TerminalTabs(
         stream.close()
         synchronized(streams) { if (streams[sessionId] === stream) streams.remove(sessionId) }
         synchronized(outputs) { if (drops.containsKey(sessionId)) stopDropping(sessionId) }
+        synchronized(ends) { ended(sessionId, result) }
+    }
+
+    private fun ended(sessionId: String, result: ChannelResult<JsonObject>?) {
         change(sessionId) { tab ->
             when {
                 result is ChannelResult.Refused && result.code == "session_unknown" -> tab.copy(
@@ -368,7 +390,7 @@ class TerminalTabs(
 
                 result is ChannelResult.Refused -> tab.copy(phase = TerminalPhase.DETACHED, note = result)
 
-                result == null -> tab.copy(phase = TerminalPhase.DETACHED, note = null)
+                result == null -> lost(tab.copy(phase = TerminalPhase.DETACHED, note = null))
 
                 else -> tab.copy(
                     phase = if (tab.isKept) TerminalPhase.DETACHED else TerminalPhase.ENDED,
@@ -376,6 +398,17 @@ class TerminalTabs(
                 )
             }
         }
+    }
+
+    private fun lost(tab: TerminalTab): TerminalTab {
+        if (tab.isKept) return tab
+        val hub = views.firstOrNull { it.binding.id == tab.bindingId } ?: return tab
+        val code = when {
+            hub.isDisabled -> CLIENT_REFUSAL_CODE_DISABLED
+            hub.waitReason == HubWaitReason.UNKNOWN_DEVICE -> CLIENT_REFUSAL_CODE_BINDING_UNKNOWN
+            else -> return tab
+        }
+        return tab.copy(phase = TerminalPhase.ENDED, note = null, hubEnd = code)
     }
 
     private fun keep(sessionId: String, bytes: ByteArray) {
