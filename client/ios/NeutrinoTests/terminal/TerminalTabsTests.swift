@@ -34,6 +34,8 @@ final class TerminalTabsTests: XCTestCase {
         let sessionId = tabs.create(bindingId: "b1", deviceId: "d1", name: "box")
         tabs.sized(sessionId, cols: 80, rows: 24)
         let first = try end(0)
+        XCTAssertTrue(RunLoopWait.until { tabs.tabs.first?.phase == .open })
+        tabs.persist(sessionId, isPersistent: true, isShared: false)
         data(first, "before")
         first.close()
         XCTAssertTrue(RunLoopWait.until { tabs.tabs.first?.phase == .detached })
@@ -94,19 +96,36 @@ final class TerminalTabsTests: XCTestCase {
         return hub
     }
 
-    private func openTab(_ tabs: TerminalTabs, isPersistent: Bool = false) throws -> FakeTransportEnd {
+    private func openTab(
+        _ tabs: TerminalTabs, isPersistent: Bool = false, isShared: Bool = false
+    ) throws -> FakeTransportEnd {
         let index = transport.streams.count
         let sessionId = tabs.create(bindingId: "b1", deviceId: "d1", name: "box")
         tabs.sized(sessionId, cols: 80, rows: 24)
         let stream = try end(index)
         XCTAssertTrue(RunLoopWait.until { tabs.tabs.first?.phase == .open })
-        if isPersistent { tabs.persist(sessionId, isPersistent: true, isShared: false) }
+        if isPersistent || isShared { tabs.persist(sessionId, isPersistent: isPersistent, isShared: isShared) }
         return stream
     }
 
-    func testADroppedStreamWaitsForTheHubWithNoCode() throws {
+    func testAPlainTabEndsAtOnceWhenItsStreamDrops() throws {
         let tabs = makeTabs()
         try openTab(tabs).close()
+        XCTAssertTrue(RunLoopWait.until { tabs.tabs.first?.phase == .ended })
+        XCTAssertNil(tabs.tabs.first?.note)
+        XCTAssertEqual(tabs.tabs.first?.statusKey, "ui.terminal.detached_ended")
+        tabs.take([hubView(.hubSilent)])
+        XCTAssertEqual(tabs.tabs.first?.statusKey, "ui.terminal.detached_ended")
+        var connected = HubView(binding: Samples.binding)
+        connected.connection = .connected
+        tabs.take([connected])
+        XCTAssertEqual(tabs.tabs.first?.phase, .ended)
+        XCTAssertEqual(tabs.tabs.first?.statusKey, "ui.terminal.detached_ended")
+    }
+
+    func testAKeptTabsDroppedStreamWaitsForTheHubWithNoCode() throws {
+        let tabs = makeTabs()
+        try openTab(tabs, isPersistent: true).close()
         XCTAssertTrue(RunLoopWait.until { tabs.tabs.first?.phase == .detached })
         tabs.take([hubView(.hubSilent)])
         let tab = try XCTUnwrap(tabs.tabs.first)
@@ -119,7 +138,8 @@ final class TerminalTabsTests: XCTestCase {
         for (reason, key) in hubEnds {
             let tabs = makeTabs()
             try openTab(tabs).close()
-            XCTAssertTrue(RunLoopWait.until { tabs.tabs.first?.phase == .detached })
+            XCTAssertTrue(RunLoopWait.until { tabs.tabs.first?.phase == .ended })
+            XCTAssertEqual(tabs.tabs.first?.statusKey, "ui.terminal.detached_ended")
             tabs.take([hubView(reason)])
             let tab = try XCTUnwrap(tabs.tabs.first)
             XCTAssertEqual(tab.phase, .ended)
@@ -144,7 +164,7 @@ final class TerminalTabsTests: XCTestCase {
 
     func testAReattachWhileTheHubIsAwayWaitsWithNoCode() throws {
         let tabs = makeTabs()
-        try openTab(tabs).close()
+        try openTab(tabs, isPersistent: true).close()
         XCTAssertTrue(RunLoopWait.until { tabs.tabs.first?.phase == .detached })
         hub = nil
         tabs.reattach(try XCTUnwrap(tabs.tabs.first?.sessionId))
@@ -154,13 +174,31 @@ final class TerminalTabsTests: XCTestCase {
         XCTAssertEqual(tab.statusKey, "ui.terminal.detached")
     }
 
-    func testAKeptTabIsNotEndedByTheHubsRefusal() throws {
+    func testAKeptTabWaitsWhileItsHubHasThisClientSwitchedOff() throws {
         let tabs = makeTabs()
         try openTab(tabs, isPersistent: true).close()
         XCTAssertTrue(RunLoopWait.until { tabs.tabs.first?.phase == .detached })
         tabs.take([hubView(.disabled)])
         XCTAssertEqual(tabs.tabs.first?.phase, .detached)
         XCTAssertEqual(tabs.tabs.first?.statusKey, "ui.terminal.detached")
+    }
+
+    func testAKeptTabEndsSayingItsShellRunsWhenTheHubForgetsThisClient() throws {
+        let running = "ui.terminal.unknown_device_running"
+        let streamFirst = makeTabs()
+        try openTab(streamFirst, isPersistent: true).close()
+        XCTAssertTrue(RunLoopWait.until { streamFirst.tabs.first?.phase == .detached })
+        streamFirst.take([hubView(.unknownDevice)])
+        XCTAssertEqual(streamFirst.tabs.first?.phase, .ended)
+        XCTAssertEqual(streamFirst.tabs.first?.statusKey, running)
+
+        let rowFirst = makeTabs()
+        let stream = try openTab(rowFirst, isShared: true)
+        rowFirst.take([hubView(.unknownDevice)])
+        XCTAssertEqual(rowFirst.tabs.first?.phase, .open)
+        stream.close()
+        XCTAssertTrue(RunLoopWait.until { rowFirst.tabs.first?.phase == .ended })
+        XCTAssertEqual(rowFirst.tabs.first?.statusKey, running)
     }
 }
 

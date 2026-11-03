@@ -45,14 +45,19 @@ final class WordCatalogTests: XCTestCase {
     }
 
     func testEveryTerminalStatusIsWordedInBothLanguages() {
-        let ends: [(TerminalPhase, String)] = [
-            (.detached, ""), (.ended, ""), (.ended, Channel.codeClientDisabled), (.ended, Channel.codeBindingUnknown),
+        let ends: [(TerminalPhase, String, Bool)] = [
+            (.detached, "", false), (.ended, "", false), (.ended, Channel.codeClientDisabled, false),
+            (.ended, Channel.codeBindingUnknown, false), (.ended, Channel.codeBindingUnknown, true),
+            (.ended, Channel.codeHubUnreachable, false),
         ]
-        let keys = ends.compactMap { phase, hubEnd in
-            TerminalTab(sessionId: "s1", bindingId: "b1", deviceId: "d1", name: "box", phase: phase, hubEnd: hubEnd)
-                .statusKey
+        let keys = ends.compactMap { phase, hubEnd, isShared in
+            TerminalTab(
+                sessionId: "s1", bindingId: "b1", deviceId: "d1", name: "box", isShared: isShared, phase: phase,
+                hubEnd: hubEnd
+            )
+            .statusKey
         }
-        XCTAssertEqual(keys.count, 4)
+        XCTAssertEqual(Set(keys).count, 6)
         for language in Client.languages {
             let words = WordCatalog.load(language: language, bundle: bundle)
             for key in keys { XCTAssertTrue(words.has(key), "\(language) words no \(key)") }
@@ -61,6 +66,10 @@ final class WordCatalogTests: XCTestCase {
         XCTAssertEqual(
             english.word("ui.terminal.disabled"), "The hub has switched this client off, and this terminal has ended.")
         XCTAssertEqual(english.word("ui.terminal.detached"), "Detached; waiting for the hub")
+        XCTAssertEqual(english.word("ui.terminal.detached_ended"), "Detached, and this terminal has ended.")
+        XCTAssertEqual(
+            english.word("ui.terminal.unknown_device_running"),
+            "The hub has no record of this client; this terminal still runs on its machine.")
     }
 
     func testTheAppsCatalogAndTheDesktopsHoldNoKeyInCommon() throws {

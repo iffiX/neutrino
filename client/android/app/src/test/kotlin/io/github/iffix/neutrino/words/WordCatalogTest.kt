@@ -5,6 +5,7 @@ import io.github.iffix.neutrino.CLIENT_LANGUAGES
 import io.github.iffix.neutrino.CLIENT_REACHED_THROUGH
 import io.github.iffix.neutrino.CLIENT_REFUSAL_CODE_BINDING_UNKNOWN
 import io.github.iffix.neutrino.CLIENT_REFUSAL_CODE_DISABLED
+import io.github.iffix.neutrino.CLIENT_REFUSAL_CODE_HUB_UNREACHABLE
 import io.github.iffix.neutrino.CLIENT_THEMES
 import io.github.iffix.neutrino.RepositoryFiles
 import io.github.iffix.neutrino.channel.HubWaitReason
@@ -169,8 +170,10 @@ class WordCatalogTest {
             tab.copy(phase = TerminalPhase.ENDED),
             tab.copy(phase = TerminalPhase.ENDED, hubEnd = CLIENT_REFUSAL_CODE_DISABLED),
             tab.copy(phase = TerminalPhase.ENDED, hubEnd = CLIENT_REFUSAL_CODE_BINDING_UNKNOWN),
+            tab.copy(phase = TerminalPhase.ENDED, hubEnd = CLIENT_REFUSAL_CODE_BINDING_UNKNOWN, isShared = true),
+            tab.copy(phase = TerminalPhase.ENDED, hubEnd = CLIENT_REFUSAL_CODE_HUB_UNREACHABLE),
         ).mapNotNull { it.statusKey }
-        assertEquals(4, keys.toSet().size)
+        assertEquals(6, keys.toSet().size)
         for (language in CLIENT_LANGUAGES) {
             for (key in keys) assertTrue("$key in $language", catalog(language).has(key))
         }
@@ -179,6 +182,11 @@ class WordCatalogTest {
             catalog("en").word("ui.terminal.disabled"),
         )
         assertEquals("已断开，正在等待中枢", catalog("zh-CN").word("ui.terminal.detached"))
+        assertEquals("已断开，这个终端已结束。", catalog("zh-CN").word("ui.terminal.detached_ended"))
+        assertEquals(
+            "The hub has no record of this client; this terminal still runs on its machine.",
+            catalog("en").word("ui.terminal.unknown_device_running"),
+        )
     }
 
     @Test

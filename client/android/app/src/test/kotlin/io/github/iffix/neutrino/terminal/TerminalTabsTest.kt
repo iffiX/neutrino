@@ -252,17 +252,24 @@ class TerminalTabsTest {
     }
 
     @Test
-    fun aStreamThatDropsLeavesTheTabDetached() = runTest {
+    fun aPlainTabEndsAtOnceWhenItsStreamDrops() = runTest {
         val tabs = tabs()
         val (_, end) = opened(tabs)
         end.close()
-        eventually { tabs.tabs.value.single().phase == TerminalPhase.DETACHED }
+        eventually { tabs.tabs.value.single().phase == TerminalPhase.ENDED }
+        assertEquals("ui.terminal.detached_ended", tabs.tabs.value.single().statusKey)
+        tabs.take(listOf(waitingView(HubWaitReason.HUB_SILENT)))
+        assertEquals("ui.terminal.detached_ended", tabs.tabs.value.single().statusKey)
+        tabs.take(listOf(hubView()))
+        assertEquals(TerminalPhase.ENDED, tabs.tabs.value.single().phase)
+        assertEquals("ui.terminal.detached_ended", tabs.tabs.value.single().statusKey)
     }
 
     @Test
-    fun aDroppedStreamWaitsForTheHub() = runTest {
+    fun aKeptTabsDroppedStreamWaitsForTheHub() = runTest {
         val tabs = tabs()
-        val (_, end) = opened(tabs)
+        val (id, end) = opened(tabs)
+        tabs.persist(id, isPersistent = true, isShared = false)
         end.close()
         eventually { tabs.tabs.value.single().phase == TerminalPhase.DETACHED }
         tabs.take(listOf(waitingView(HubWaitReason.HUB_SILENT)))
@@ -276,7 +283,8 @@ class TerminalTabsTest {
             val tabs = tabs()
             val (_, end) = opened(tabs)
             end.close()
-            eventually { tabs.tabs.value.single().phase == TerminalPhase.DETACHED }
+            eventually { tabs.tabs.value.single().phase == TerminalPhase.ENDED }
+            assertEquals("ui.terminal.detached_ended", tabs.tabs.value.single().statusKey)
             tabs.take(listOf(waitingView(reason)))
             assertEquals(TerminalPhase.ENDED, tabs.tabs.value.single().phase)
             assertEquals(key, tabs.tabs.value.single().statusKey)
@@ -299,7 +307,7 @@ class TerminalTabsTest {
     }
 
     @Test
-    fun aKeptTabIsNotEndedByTheHubsRefusal() = runTest {
+    fun aKeptTabWaitsWhileItsHubHasThisClientSwitchedOff() = runTest {
         val tabs = tabs()
         val (id, end) = opened(tabs)
         tabs.persist(id, isPersistent = true, isShared = false)
@@ -311,10 +319,33 @@ class TerminalTabsTest {
     }
 
     @Test
+    fun aKeptTabEndsSayingItsShellRunsWhenTheHubForgetsThisClient() = runTest {
+        val running = "ui.terminal.unknown_device_running"
+        val streamFirst = tabs()
+        val (first, firstEnd) = opened(streamFirst)
+        streamFirst.persist(first, isPersistent = true, isShared = false)
+        firstEnd.close()
+        eventually { streamFirst.tabs.value.single().phase == TerminalPhase.DETACHED }
+        streamFirst.take(listOf(waitingView(HubWaitReason.UNKNOWN_DEVICE)))
+        assertEquals(TerminalPhase.ENDED, streamFirst.tabs.value.single().phase)
+        assertEquals(running, streamFirst.tabs.value.single().statusKey)
+
+        val rowFirst = tabs()
+        val (second, secondEnd) = opened(rowFirst)
+        rowFirst.persist(second, isPersistent = false, isShared = true)
+        rowFirst.take(listOf(waitingView(HubWaitReason.UNKNOWN_DEVICE)))
+        assertEquals(TerminalPhase.OPEN, rowFirst.tabs.value.single().phase)
+        secondEnd.close()
+        eventually { rowFirst.tabs.value.single().phase == TerminalPhase.ENDED }
+        assertEquals(running, rowFirst.tabs.value.single().statusKey)
+    }
+
+    @Test
     fun aReattachWhileTheHubIsAwayWaitsWithNoCode() = runTest {
         var isUp = true
         val tabs = TerminalTabs({ if (isUp) hub else null }, backgroundScope, { testScheduler.currentTime })
         val (id, end) = opened(tabs)
+        tabs.persist(id, isPersistent = true, isShared = false)
         end.close()
         eventually { tabs.tabs.value.single().phase == TerminalPhase.DETACHED }
         isUp = false

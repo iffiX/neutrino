@@ -1522,13 +1522,14 @@ async function askAiUse(hub, entry, isOn) {
 
 // Every tab, in the order it appeared: {key, hub_id, device_id, name,
 // session_id, terminal_id, term, fit, pane, state, note, isRefused, typed,
-// isSending, isListed, isKept, isDropped, droppedAt, flags, account};
-// ``isKept`` is whether the session was persistent or shared when last
-// listed or set, and ``account`` the one a new shell runs as, empty for a
-// listed session. ``state`` is 'idle' for
-// a listed session no window of this page attached to yet, or one whose hub's
-// channel dropped (``isDropped``, at the state count ``droppedAt``),
-// 'connecting', 'open', 'ended' once the hub stopped
+// isSending, isListed, isKept, isDropped, droppedAt, isDropEnded, flags,
+// account}; ``isKept`` is whether the session was persistent or shared when
+// last listed or set, ``isDropEnded`` whether a plain session's tab ended at
+// a dropped channel and still takes its hub's row's words, and ``account``
+// the one a new shell runs as, empty for a listed session. ``state`` is
+// 'idle' for a listed session no window of this page attached to yet, or one
+// whose hub's channel dropped (``isDropped``, at the state count
+// ``droppedAt``), 'connecting', 'open', 'ended' once the hub stopped
 // listing the session, or 'closed' once the shell ended. The panes live in
 // one surface that outlives every redraw, so a redraw moves them rather than
 // rebuilding them and the shells keep running.
@@ -1590,16 +1591,16 @@ function isLinux() {
 // session no tab shows gets a tab, a tab whose hub's channel dropped attaches
 // again while its session is listed, and a tab whose listed session is gone
 // is ended. Only a hub whose socket is up says anything about its sessions.
-// A dropped plain session's tab ends once its hub's row reads switched off
-// or unknown.
+// A tab that waits, or ended at a dropped channel, takes the words of its
+// hub's row once that reads switched off or unknown.
 function mergeSessions(state) {
   const sessions = ((state.terminals || {}).sessions) || [];
   const reachable = (state.hubs || []).filter(isReachable).map((hub) => hub.hub_id);
   const listed = new Map(sessions.map((row) => [row.hub_id + '/' + row.session_id, row]));
   for (const tab of shellTabs) {
-    const ending = tab.isDropped && !tab.isKept ? hubEndWord(state, tab.hub_id) : '';
+    const ending = tab.isDropped || tab.isDropEnded ? hubEndWord(state, tab) : '';
     if (ending) {
-      endLostShell(tab, ending);
+      endLostShell(tab, ending, false);
       continue;
     }
     if (!tab.session_id || reachable.indexOf(tab.hub_id) < 0) continue;
@@ -1649,15 +1650,16 @@ function mergeSessions(state) {
   }
 }
 
-// The words a plain session's tab ends with once its hub's row reads that the
-// hub switched this client off or keeps no record of it; empty for any other
-// row.
-function hubEndWord(state, hubId) {
-  const hub = ((state && state.hubs) || []).filter((row) => row.hub_id === hubId)[0];
+// The words a tab ends with once its hub's row reads that the hub switched
+// this client off or keeps no record of it. A persistent or shared session
+// runs on: its tab waits while the hub has this client switched off. Empty
+// for any other row.
+function hubEndWord(state, tab) {
+  const hub = ((state && state.hubs) || []).filter((row) => row.hub_id === tab.hub_id)[0];
   if (!hub) return '';
-  if (hub.connection === 'disabled') return t('ui.terminal.disabled');
+  if (hub.connection === 'disabled') return tab.isKept ? '' : t('ui.terminal.disabled');
   if (hub.connection === 'waiting' && hub.wait_reason === 'unknown_device') {
-    return t('ui.terminal.unknown_device');
+    return t(tab.isKept ? 'ui.terminal.unknown_device_running' : 'ui.terminal.unknown_device');
   }
   return '';
 }
@@ -2068,8 +2070,8 @@ function newTab(hubId, machine, sessionId) {
     device_id: machine.device_id, name: machine.name, term: term, fit: fit,
     pane: pane, state: 'connecting', note: '', isRefused: false, typed: '',
     isSending: false, hint: '', session_id: sessionId || '', isListed: false,
-    isKept: false, isDropped: false, droppedAt: 0, flags: {}, isClearAsked: false,
-    isClearing: false, account: '',
+    isKept: false, isDropped: false, droppedAt: 0, isDropEnded: false, flags: {},
+    isClearAsked: false, isClearing: false, account: '',
     clearMark: document.createElement('div'),
   };
   tab.clearMark.className = 'term_clearing hidden';
@@ -2266,7 +2268,7 @@ function startShell(tab) {
     account: tab.account,
   }).then((reply) => {
     if (reply && reply.code === 'hub_unreachable' && tab.session_id) {
-      loseShell(tab);
+      loseShell(tab, false);
       return;
     }
     if (!reply || reply.code || !reply.terminal_id) {
@@ -2345,7 +2347,7 @@ function takeShellPiece(piece) {
   const end = piece.end || {};
   if (!end.code && !tab.isListed && !isGuarded(tab)) { dropShell(tab); return; }
   if (end.code === 'hub_unreachable' && tab.session_id) {
-    loseShell(tab);
+    loseShell(tab, !tab.isKept);
     return;
   }
   if (end.code === 'session_unknown') {
@@ -2366,13 +2368,15 @@ function endShell(tab, note, isRefused) {
   redraw();
 }
 
-// A shell whose hub's session ended: a plain session's tab ends when its hub's
-// row reads switched off or unknown. Any other tab keeps its session id and
-// its output, and waits for a later state in which the hub is back.
-function loseShell(tab) {
-  const ending = tab.isKept ? '' : hubEndWord(lastState, tab.hub_id);
-  if (ending) {
-    endLostShell(tab, ending);
+// A shell whose hub's session ended, ``isEnded`` when the machine ended the
+// shell with its stream. The tab ends with the words of its hub's row when
+// that reads switched off or unknown, else with the detached words when the
+// shell ended. Any other tab keeps its session id and its output, and waits
+// for a later state in which the hub is back.
+function loseShell(tab, isEnded) {
+  const ending = hubEndWord(lastState, tab);
+  if (ending || isEnded) {
+    endLostShell(tab, ending || t('ui.terminal.detached_ended'), !ending);
     redraw();
     return;
   }
@@ -2386,12 +2390,13 @@ function loseShell(tab) {
   redraw();
 }
 
-// A plain session's tab whose shell ended with its hub's session: it keeps its
-// output and the words of why, on the line under the detached words when the
-// tab waited first.
-function endLostShell(tab, note) {
-  tab.term.write((tab.isDropped ? '' : '\r\n') + note + '\r\n');
+// A tab whose hub's session ended for good: it keeps its output and the words
+// of why, on the line under the words it wrote first when it waited or ended
+// before. ``isDropEnded`` is whether it ended at a dropped channel.
+function endLostShell(tab, note, isDropEnded) {
+  tab.term.write((tab.isDropped || tab.isDropEnded ? '' : '\r\n') + note + '\r\n');
   tab.isDropped = false;
+  tab.isDropEnded = isDropEnded;
   tab.terminal_id = '';
   endTab(tab, note);
 }

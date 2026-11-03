@@ -2055,7 +2055,7 @@ def test_the_active_listed_tab_attaches_when_the_page_opens():
 def test_a_dropped_channel_keeps_the_tab_and_its_session():
     piece = body_of("takeShellPiece")
     assert "if (end.code === 'hub_unreachable' && tab.session_id) {" in piece
-    assert "loseShell(tab);" in piece
+    assert "loseShell(tab, !tab.isKept);" in piece
     lose = body_of("loseShell")
     assert "tab.state = 'idle';" in lose
     assert "tab.isDropped = true;" in lose
@@ -2063,14 +2063,15 @@ def test_a_dropped_channel_keeps_the_tab_and_its_session():
     assert "session_id" not in lose
     start = body_of("startShell")
     assert "if (reply && reply.code === 'hub_unreachable' && tab.session_id) {" in start
-    assert "loseShell(tab);" in start
+    assert "loseShell(tab, false);" in start
 
 
 def run_terminal_end(is_kept: bool, steps: list) -> list:
     """The page's own loseShell and mergeSessions, run in node with the English
     catalog on one tab of hub h1: each step either ends the tab's stream with
-    no close (``"lose"``) or draws a state's ``hubs`` and ``sessions``.
-    Returns the tab after each step, with the lines its terminal was written."""
+    no close (``"lose"``), as takeShellPiece does, or draws a state's ``hubs``
+    and ``sessions``. Returns the tab after each step, with the lines its
+    terminal was written."""
     import json
     import shutil
     import subprocess
@@ -2079,13 +2080,13 @@ def run_terminal_end(is_kept: bool, steps: list) -> list:
     if node is None:
         pytest.skip("no node to run the page's script")
     functions = (
-        "function fill(template, params)",
-        "function isReachable(hub)",
-        "function hubEndWord(state, hubId)",
-        "function mergeSessions(state)",
-        "function loseShell(tab)",
-        "function endLostShell(tab, note)",
-        "function endTab(tab, note)",
+        "fill",
+        "isReachable",
+        "hubEndWord",
+        "mergeSessions",
+        "loseShell",
+        "endLostShell",
+        "endTab",
     )
     script = "\n".join(
         [
@@ -2100,24 +2101,24 @@ def run_terminal_end(is_kept: bool, steps: list) -> list:
             "const tab = {key: 'shell1', hub_id: 'h1', device_id: 'd1',",
             "  session_id: 's1', terminal_id: 'x1', state: 'open', note: '',",
             "  isRefused: false, isListed: true, isKept: " + json.dumps(is_kept) + ",",
-            "  isDropped: false, droppedAt: 0,",
+            "  isDropped: false, droppedAt: 0, isDropEnded: false,",
             "  term: {write: (text) => written.push(text.trim())}};",
             "const shellTabs = [tab];",
             "const redraw = () => {};",
             "const reattachShell = (each) => { each.state = 'reattached'; };",
-            *[f"{name}{function_body(name)}\n}}" for name in functions],
+            *[body_of(name) for name in functions],
             "const steps = " + json.dumps(steps) + ";",
             "const seen = [];",
             "for (const step of steps) {",
             "  if (step === 'lose') {",
-            "    loseShell(tab);",
+            "    loseShell(tab, !tab.isKept);",
             "  } else {",
             "    stateSerial += 1;",
             "    lastState = {hubs: step.hubs, terminals: {sessions: step.sessions || []}};",
             "    mergeSessions(lastState);",
             "  }",
             "  seen.push({state: tab.state, note: tab.note, isDropped: tab.isDropped,",
-            "    written: written.slice()});",
+            "    isDropEnded: tab.isDropEnded, written: written.slice()});",
             "}",
             "console.log(JSON.stringify(seen));",
         ]
@@ -2144,7 +2145,11 @@ TERMINAL_HUB_SILENT = {
 TERMINAL_SESSION = {"hub_id": "h1", "session_id": "s1", "device_id": "d1"}
 DISABLED_WORDS = "The hub has switched this client off, and this terminal has ended."
 UNKNOWN_WORDS = "The hub has no record of this client, and this terminal has ended."
+UNKNOWN_RUNNING_WORDS = (
+    "The hub has no record of this client; this terminal still runs on its machine."
+)
 DETACHED_WORDS = "Detached; waiting for the hub"
+DETACHED_ENDED_WORDS = "Detached, and this terminal has ended."
 
 
 @pytest.mark.parametrize(
@@ -2155,13 +2160,14 @@ def test_a_plain_tab_ends_with_the_hubs_refusal_whichever_comes_first(row, words
     stream_first = run_terminal_end(
         False, ["lose", {"hubs": [row]}, {"hubs": [TERMINAL_HUB_CONNECTED]}]
     )
-    assert stream_first[0]["state"] == "idle"
-    assert stream_first[0]["note"] == DETACHED_WORDS
+    assert stream_first[0]["state"] == "ended"
+    assert stream_first[0]["note"] == DETACHED_ENDED_WORDS
     assert stream_first[1]["state"] == "ended"
     assert stream_first[1]["note"] == words
     assert stream_first[1]["isDropped"] is False
+    assert stream_first[1]["isDropEnded"] is False
     assert stream_first[2]["note"] == words
-    assert stream_first[2]["written"] == [DETACHED_WORDS, words]
+    assert stream_first[2]["written"] == [DETACHED_ENDED_WORDS, words]
 
     row_first = run_terminal_end(
         False, [{"hubs": [row]}, "lose", {"hubs": [TERMINAL_HUB_CONNECTED]}]
@@ -2172,9 +2178,24 @@ def test_a_plain_tab_ends_with_the_hubs_refusal_whichever_comes_first(row, words
     assert row_first[2]["written"] == [words]
 
 
-def test_a_dropped_channel_waits_and_attaches_again_when_the_hub_lists_it():
+def test_a_plain_tab_ends_at_once_when_its_channel_drops():
     seen = run_terminal_end(
         False,
+        [
+            "lose",
+            {"hubs": [TERMINAL_HUB_SILENT]},
+            {"hubs": [TERMINAL_HUB_CONNECTED]},
+        ],
+    )
+    assert [step["state"] for step in seen] == ["ended", "ended", "ended"]
+    assert [step["note"] for step in seen] == [DETACHED_ENDED_WORDS] * 3
+    assert seen[0]["isDropped"] is False
+    assert seen[2]["written"] == [DETACHED_ENDED_WORDS]
+
+
+def test_a_kept_tabs_dropped_channel_waits_and_attaches_again_when_the_hub_lists_it():
+    seen = run_terminal_end(
+        True,
         [
             "lose",
             {"hubs": [TERMINAL_HUB_SILENT]},
@@ -2186,11 +2207,20 @@ def test_a_dropped_channel_waits_and_attaches_again_when_the_hub_lists_it():
     assert seen[2]["state"] == "reattached"
 
 
-def test_a_kept_tab_is_not_told_its_shell_ended_when_the_hub_forgets_this_client():
-    seen = run_terminal_end(True, ["lose", {"hubs": [TERMINAL_HUB_UNKNOWN]}])
-    assert seen[1]["state"] == "idle"
-    assert seen[1]["note"] == DETACHED_WORDS
-    assert seen[1]["isDropped"] is True
+def test_a_kept_tab_ends_saying_its_shell_runs_when_the_hub_forgets_this_client():
+    stream_first = run_terminal_end(True, ["lose", {"hubs": [TERMINAL_HUB_UNKNOWN]}])
+    assert stream_first[0]["state"] == "idle"
+    assert stream_first[0]["note"] == DETACHED_WORDS
+    assert stream_first[1]["state"] == "ended"
+    assert stream_first[1]["note"] == UNKNOWN_RUNNING_WORDS
+    assert stream_first[1]["isDropped"] is False
+    assert stream_first[1]["written"] == [DETACHED_WORDS, UNKNOWN_RUNNING_WORDS]
+
+    row_first = run_terminal_end(True, [{"hubs": [TERMINAL_HUB_UNKNOWN]}, "lose"])
+    assert row_first[0]["state"] == "open"
+    assert row_first[1]["state"] == "ended"
+    assert row_first[1]["note"] == UNKNOWN_RUNNING_WORDS
+    assert row_first[1]["written"] == [UNKNOWN_RUNNING_WORDS]
 
 
 def test_a_dropped_tab_attaches_again_by_session_id_when_its_hub_lists_it():
@@ -3068,6 +3098,16 @@ UI_TEXT_060 = (
         "ui.terminal.unknown_device",
         "The hub has no record of this client, and this terminal has ended.",
         "中枢没有本机的记录，这个终端已结束。",
+    ),
+    (
+        "ui.terminal.detached_ended",
+        "Detached, and this terminal has ended.",
+        "已断开，这个终端已结束。",
+    ),
+    (
+        "ui.terminal.unknown_device_running",
+        "The hub has no record of this client; this terminal still runs on its machine.",
+        "中枢没有本机的记录，这个终端仍在机器上运行。",
     ),
     ("ui.terminal.detached", "Detached; waiting for the hub", "已断开，正在等待中枢"),
     (

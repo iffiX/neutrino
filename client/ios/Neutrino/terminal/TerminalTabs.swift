@@ -5,8 +5,9 @@ import Foundation
 /// new shell is opened with a session id this phone makes, as the account picked on its machine; a listed one is
 /// attached with `is_resumed`, its kept output first. What the person types goes to the tab's stream in the order
 /// typed, a later size as a `resize` record, and `persist` and `stop_session` are frames naming only the session.
-/// A tab whose stream ends with no `close` waits for its hub. A plain session's tab ends instead, with the hub's
-/// refusal, once its hub reads switched off or unknown, in either order. Every call runs on the main queue.
+/// A persistent or shared session's tab whose stream ends with no `close` waits for its hub, and ends once its hub
+/// reads unknown. A plain session's tab ends at once, and takes the hub's refusal once its hub reads switched off or
+/// unknown, in either order. Every call runs on the main queue.
 final class TerminalTabs {
     private let hubOf: (String) -> TerminalHub?
     private let clock: ClientClock
@@ -90,7 +91,7 @@ final class TerminalTabs {
         let listedIds = Set(listings.map(\.session.sessionId))
         dismissed = dismissed.intersection(listedIds)
         tabs = TerminalSessionMerge.merge(tabs, listings: listings, listedHubs: listedHubs, dismissed: dismissed)
-            .map { $0.phase == .detached ? lost($0) : $0 }
+            .map { $0.phase == .detached || $0.hubEnd == Channel.codeHubUnreachable ? lost($0) : $0 }
         if !tabs.contains(where: { $0.sessionId == active }) { active = tabs.first?.sessionId ?? "" }
     }
 
@@ -324,8 +325,9 @@ final class TerminalTabs {
                 tab.isPersistent = false
                 tab.isShared = false
             } else if refusal?.code == Channel.codeHubUnreachable {
-                tab.phase = .detached
+                tab.phase = tab.isKept ? .detached : .ended
                 tab.note = nil
+                tab.hubEnd = tab.isKept ? "" : Channel.codeHubUnreachable
                 tab = lost(tab)
             } else if let refusal {
                 tab.phase = .detached
@@ -338,9 +340,9 @@ final class TerminalTabs {
     }
 
     private func lost(_ tab: TerminalTab) -> TerminalTab {
-        guard !tab.isKept, let hub = views.first(where: { $0.binding.id == tab.bindingId }) else { return tab }
+        guard let hub = views.first(where: { $0.binding.id == tab.bindingId }) else { return tab }
         var ended = tab
-        if hub.isDisabled {
+        if hub.isDisabled && !tab.isKept {
             ended.hubEnd = Channel.codeClientDisabled
         } else if hub.waitReason == .unknownDevice {
             ended.hubEnd = Channel.codeBindingUnknown

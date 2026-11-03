@@ -47,7 +47,8 @@ struct TerminalTab: Equatable, Identifiable {
     /// Why the shell ended, the stream dropped or a command was refused.
     var note: ClientError?
 
-    /// The hub's refusal the tab ended with, `client_disabled` or `binding_unknown`; empty for none.
+    /// The hub's refusal the tab ended with, `client_disabled` or `binding_unknown`, or `hub_unreachable` once a
+    /// plain session's stream dropped; empty for none.
     var hubEnd = ""
 
     /// The tab's id, as a list keys it.
@@ -65,7 +66,9 @@ struct TerminalTab: Equatable, Identifiable {
         case .ended:
             switch hubEnd {
             case Channel.codeClientDisabled: return "ui.terminal.disabled"
-            case Channel.codeBindingUnknown: return "ui.terminal.unknown_device"
+            case Channel.codeBindingUnknown:
+                return isKept ? "ui.terminal.unknown_device_running" : "ui.terminal.unknown_device"
+            case Channel.codeHubUnreachable: return "ui.terminal.detached_ended"
             default: return "ui.terminal_ended"
             }
         case .detached: return "ui.terminal.detached"

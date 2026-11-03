@@ -2,6 +2,7 @@ package io.github.iffix.neutrino.terminal
 
 import io.github.iffix.neutrino.CLIENT_REFUSAL_CODE_BINDING_UNKNOWN
 import io.github.iffix.neutrino.CLIENT_REFUSAL_CODE_DISABLED
+import io.github.iffix.neutrino.CLIENT_REFUSAL_CODE_HUB_UNREACHABLE
 import io.github.iffix.neutrino.CLIENT_STREAM_KIND_SHELL
 import io.github.iffix.neutrino.CLIENT_TERMINAL_CLEAR_MAX_MS
 import io.github.iffix.neutrino.CLIENT_TERMINAL_CLEAR_QUIET_MS
@@ -41,8 +42,9 @@ import kotlinx.serialization.json.put
  *
  * What the person types joins one queue per tab that one coroutine sends in order.
  *
- * A tab whose stream ends with no `close` waits for its hub. A plain session's tab ends instead,
- * with the hub's refusal, once its hub reads switched off or unknown, in either order.
+ * A persistent or shared session's tab whose stream ends with no `close` waits for its hub, and
+ * ends once its hub reads unknown. A plain session's tab ends at once, and takes the hub's refusal
+ * once its hub reads switched off or unknown, in either order.
  *
  * @param opener One hub's terminal questions, by binding id, or null while it is not connected.
  * @param scope Where the shells' readers, the tabs' senders and the lists' follower run.
@@ -110,7 +112,11 @@ class TerminalTabs(
             views = hubs
             current.update { tabs ->
                 TerminalSessionMerge.merge(tabs, listings, listedHubs, gone).map {
-                    if (it.phase == TerminalPhase.DETACHED) lost(it) else it
+                    if (it.phase == TerminalPhase.DETACHED || it.hubEnd == CLIENT_REFUSAL_CODE_HUB_UNREACHABLE) {
+                        lost(it)
+                    } else {
+                        it
+                    }
                 }
             }
         }
@@ -286,7 +292,7 @@ class TerminalTabs(
     private fun stopSession(tab: TerminalTab) {
         val hub = opener(tab.bindingId)
         if (hub == null) {
-            change(tab.sessionId) { it.copy(note = ChannelResult.refused("hub_unreachable")) }
+            change(tab.sessionId) { it.copy(note = ChannelResult.refused(CLIENT_REFUSAL_CODE_HUB_UNREACHABLE)) }
             return
         }
         scope.launch {
@@ -322,7 +328,7 @@ class TerminalTabs(
         val isResumed = tab.phase == TerminalPhase.DETACHED
         val hub = opener(tab.bindingId)
         if (hub == null) {
-            refused(tab.sessionId, isResumed, ChannelResult.refused("hub_unreachable"))
+            refused(tab.sessionId, isResumed, ChannelResult.refused(CLIENT_REFUSAL_CODE_HUB_UNREACHABLE))
             return
         }
         val open = buildJsonObject {
@@ -351,7 +357,7 @@ class TerminalTabs(
     }
 
     private fun refused(sessionId: String, isResumed: Boolean, refusal: ChannelResult.Refused) = synchronized(ends) {
-        val note = refusal.takeUnless { isResumed && it.code == "hub_unreachable" }
+        val note = refusal.takeUnless { isResumed && it.code == CLIENT_REFUSAL_CODE_HUB_UNREACHABLE }
         change(sessionId) { lost(it.copy(phase = TerminalPhase.DETACHED, note = note, isOpening = false)) }
     }
 
@@ -390,7 +396,11 @@ class TerminalTabs(
 
                 result is ChannelResult.Refused -> tab.copy(phase = TerminalPhase.DETACHED, note = result)
 
-                result == null -> lost(tab.copy(phase = TerminalPhase.DETACHED, note = null))
+                result == null && tab.isKept -> lost(tab.copy(phase = TerminalPhase.DETACHED, note = null))
+
+                result == null -> lost(
+                    tab.copy(phase = TerminalPhase.ENDED, note = null, hubEnd = CLIENT_REFUSAL_CODE_HUB_UNREACHABLE),
+                )
 
                 else -> tab.copy(
                     phase = if (tab.isKept) TerminalPhase.DETACHED else TerminalPhase.ENDED,
@@ -401,10 +411,9 @@ class TerminalTabs(
     }
 
     private fun lost(tab: TerminalTab): TerminalTab {
-        if (tab.isKept) return tab
         val hub = views.firstOrNull { it.binding.id == tab.bindingId } ?: return tab
         val code = when {
-            hub.isDisabled -> CLIENT_REFUSAL_CODE_DISABLED
+            hub.isDisabled && !tab.isKept -> CLIENT_REFUSAL_CODE_DISABLED
             hub.waitReason == HubWaitReason.UNKNOWN_DEVICE -> CLIENT_REFUSAL_CODE_BINDING_UNKNOWN
             else -> return tab
         }

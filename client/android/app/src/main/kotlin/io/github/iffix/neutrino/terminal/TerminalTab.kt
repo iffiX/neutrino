@@ -2,6 +2,7 @@ package io.github.iffix.neutrino.terminal
 
 import io.github.iffix.neutrino.CLIENT_REFUSAL_CODE_BINDING_UNKNOWN
 import io.github.iffix.neutrino.CLIENT_REFUSAL_CODE_DISABLED
+import io.github.iffix.neutrino.CLIENT_REFUSAL_CODE_HUB_UNREACHABLE
 import io.github.iffix.neutrino.channel.ChannelResult
 
 /**
@@ -23,8 +24,8 @@ import io.github.iffix.neutrino.channel.ChannelResult
  * @property phase Where the tab's stream stands.
  * @property note Why the shell ended, the stream dropped or a command was refused.
  * @property isOpening Whether the shell's stream is being opened.
- * @property hubEnd The hub's refusal the tab ended with, `client_disabled` or `binding_unknown`;
- *   empty for none.
+ * @property hubEnd The hub's refusal the tab ended with, `client_disabled` or `binding_unknown`,
+ *   or `hub_unreachable` once a plain session's stream dropped; empty for none.
  */
 data class TerminalTab(
     val sessionId: String,
@@ -58,7 +59,12 @@ data class TerminalTab(
         get() = when (phase) {
             TerminalPhase.ENDED -> when (hubEnd) {
                 CLIENT_REFUSAL_CODE_DISABLED -> "ui.terminal.disabled"
-                CLIENT_REFUSAL_CODE_BINDING_UNKNOWN -> "ui.terminal.unknown_device"
+
+                CLIENT_REFUSAL_CODE_BINDING_UNKNOWN ->
+                    if (isKept) "ui.terminal.unknown_device_running" else "ui.terminal.unknown_device"
+
+                CLIENT_REFUSAL_CODE_HUB_UNREACHABLE -> "ui.terminal.detached_ended"
+
                 else -> "ui.terminal_ended"
             }
 
