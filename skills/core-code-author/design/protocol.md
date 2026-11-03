@@ -1137,8 +1137,9 @@ Unix seconds, the title the shell set, who opened it as the hub stamped it,
 whether a stream is attached now, whether it stays when its last stream
 closes, whether every viewer with terminal rights on the machine can attach
 to it, and how many streams are attached. A `terminals` entry lists them by
-`started_at` and is empty for a machine that is offline. The list is an added
-field and keeps `PROTOCOL`.
+`started_at` and is empty for a machine that is offline. A machine whose
+channel opened again lists the sessions of its last report until its first
+report on the new channel. The list is an added field and keeps `PROTOCOL`.
 
 `retry_mark`, in a module's entry and in the `ai_tools` section, is a
 short random token the hub writes when a person presses a failed module's
