@@ -1164,16 +1164,19 @@ const worker = {
   // The id the lock manager gives this page. The worker compares it with the active lock's holder.
   lockClient: "",
   onRequest: null,
-  // Registers the worker and announces this tab once it controls the page.
+  // Registers the worker and announces this tab once the newest worker controls the page.
+  // The worker a newer one replaces can stop before it answers an announcement.
   async start(cache) {
     this.cache = cache;
     window.__neutrinoTab = this.tab;
     this.lockClient = await ownLockClient(this.tab);
     await navigator.serviceWorker.register("/__neutrino/sw.js", { scope: "/" });
     const registration = await navigator.serviceWorker.ready;
-    if (!navigator.serviceWorker.controller) {
+    const controller = navigator.serviceWorker.controller;
+    const isReplaced = Boolean(controller) && (Boolean(registration.installing || registration.waiting) || registration.active.scriptURL !== controller.scriptURL);
+    if (!controller || isReplaced) {
       const changed = new Promise((resolve) => navigator.serviceWorker.addEventListener("controllerchange", resolve, { once: true }));
-      registration.active.postMessage({ type: "claim" });
+      if (!controller) registration.active.postMessage({ type: "claim" });
       await within(changed, performance.now() + TIMING.open);
     }
     navigator.serviceWorker.addEventListener("message", (event) => {

@@ -37,3 +37,16 @@ def test_the_address_the_shell_starts_from_holds_no_fragment():
     assert (
         'if (where && start === "/" && !this.facts.app.path) start = where[1];' in load
     )
+
+
+def test_a_tab_announces_itself_once_the_newest_worker_controls_the_page():
+    start = SHELL[SHELL.index("  async start(cache) {") :]
+    start = start[: start.index("\n  },\n")]
+    assert (
+        "const isReplaced = Boolean(controller) && (Boolean(registration.installing"
+        " || registration.waiting) || registration.active.scriptURL !== controller.scriptURL);"
+        in start
+    )
+    waited = start.index("await within(changed, performance.now() + TIMING.open);")
+    assert start.index("if (!controller || isReplaced) {") < waited
+    assert waited < start.index("await this.announce();")

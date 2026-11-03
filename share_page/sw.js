@@ -243,7 +243,7 @@ function settle(entry, response) {
 
 async function shim() {
   if (shimText === null) {
-    const response = await fetch(SHELL_PREFIX + "shim.js");
+    const response = await fetch("/__neutrino/shim.js");
     shimText = response.ok ? await response.text() : "";
   }
   return shimText;
