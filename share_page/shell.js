@@ -1216,6 +1216,8 @@ const active = {
   onTaken: null,
   // Ends the held lock.
   release: null,
+  // Aborts the queued request.
+  queued: null,
   // Resolves once this tab holds the lock. A reload of the active tab takes it back at once.
   // Any other load removes the tab's active mark first.
   take() {
@@ -1245,13 +1247,18 @@ const active = {
   },
   // Shows the waiting screen and queues a request. Use here takes the lock from the tab that holds it.
   wait() {
-    const queued = new AbortController();
-    this.request({ signal: queued.signal });
+    this.queued = new AbortController();
+    this.request({ signal: this.queued.signal });
     screen.waiting(sessionStorage.getItem(KEPT_MOVED) ? "moved" : "elsewhere", () => {
       if (this.isHeld) return;
-      queued.abort();
+      this.queued.abort();
       this.request({ steal: true });
     });
+  },
+  // Ends the held lock and aborts the queued request.
+  end() {
+    if (this.queued) this.queued.abort();
+    if (this.release) this.release();
   },
 };
 
@@ -1566,6 +1573,18 @@ const page = {
     location.reload();
   },
 
+  // The page went into the back-forward cache. It closes its connection and ends its lock as a closed tab does.
+  // It comes back on the loading screen, with the app's frame removed.
+  hide() {
+    this.isEnded = true;
+    clearInterval(this.watcher);
+    clearTimeout(this.unavailableTimer);
+    if (this.session) { this.session.close(); this.session = null; }
+    active.end();
+    if (this.facts) screen.loading(this.facts.app.title || "");
+    document.getElementById("app").remove();
+  },
+
   // A message of the worker: a request of the app's frame, an abort of one, or a new tab's ask for the facts.
   take(message, port, reply) {
     if (!message) return;
@@ -1623,6 +1642,15 @@ setInterval(() => {
 // A message to the worker every TIMING.awake while it streams a response of the app.
 // Firefox stops a worker 30 seconds after its last event, and the bodies it streams end there.
 setInterval(() => { if (page.serving.size) worker.wake(); }, TIMING.awake);
+
+// A page the browser keeps in its back-forward cache ends its connection and its lock when it leaves the screen.
+// It loads again when it comes back, as a tab that opens the page.
+window.addEventListener("pagehide", (event) => { if (event.persisted) page.hide(); });
+window.addEventListener("pageshow", (event) => {
+  if (!event.persisted) return;
+  sessionStorage.removeItem(KEPT_ACTIVE);
+  location.reload();
+});
 
 // A changed # part loads the page again in a tab with no facts, and when it holds other facts.
 window.addEventListener("hashchange", () => {

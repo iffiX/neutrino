@@ -3,7 +3,8 @@
 The tab that holds the Web Lock of the page's origin connects and shows the
 app. Any other tab shows a waiting screen, connects to nothing and queues a
 request for the lock. Use here steals the lock, and the tab that loses it
-leaves on the moved screen.
+leaves on the moved screen. A page put in the back-forward cache ends its
+lock, and only a reload of the active tab steals it back.
 """
 
 import pathlib
@@ -62,7 +63,7 @@ def test_a_tab_takes_the_free_lock_and_waits_for_a_held_one():
         in take
     )
     wait = member("  wait() {")
-    queued = wait.index("this.request({ signal: queued.signal });")
+    queued = wait.index("this.request({ signal: this.queued.signal });")
     shown = wait.index("screen.waiting(")
     assert queued < shown
 
@@ -70,7 +71,7 @@ def test_a_tab_takes_the_free_lock_and_waits_for_a_held_one():
 def test_use_here_drops_the_queued_request_and_steals_the_lock():
     wait = member("  wait() {")
     held = wait.index("if (this.isHeld) return;")
-    dropped = wait.index("queued.abort();")
+    dropped = wait.index("this.queued.abort();")
     stolen = wait.index("this.request({ steal: true });")
     assert held < dropped < stolen
 
@@ -128,6 +129,34 @@ def test_every_load_but_the_active_tab_s_reload_removes_the_mark_before_it_asks(
     removed = take.index("sessionStorage.removeItem(KEPT_ACTIVE);")
     asked = take.index("this.request({ ifAvailable: true })")
     assert reload < removed < asked
+
+
+def test_a_page_put_in_the_back_forward_cache_ends_its_connection_and_its_lock():
+    assert (
+        'window.addEventListener("pagehide", (event) => { if (event.persisted) page.hide(); });'
+        in SHELL
+    )
+    hide = member("  hide() {")
+    assert "this.isEnded = true;" in hide
+    closed = hide.index("this.session.close();")
+    ended = hide.index("active.end();")
+    loading = hide.index('if (this.facts) screen.loading(this.facts.app.title || "");')
+    removed = hide.index('document.getElementById("app").remove();')
+    assert closed < ended < loading < removed
+    end = member("  // Ends the held lock and aborts the queued request.\n  end() {")
+    assert "if (this.queued) this.queued.abort();" in end
+    assert "if (this.release) this.release();" in end
+    wait = member("  wait() {")
+    assert "this.queued = new AbortController();" in wait
+
+
+def test_a_page_back_from_the_back_forward_cache_loads_again_with_no_mark():
+    shown = SHELL[SHELL.index('window.addEventListener("pageshow", (event) => {') :]
+    shown = shown[: shown.index("\n});\n")]
+    persisted = shown.index("if (!event.persisted) return;")
+    removed = shown.index("sessionStorage.removeItem(KEPT_ACTIVE);")
+    reloaded = shown.index("location.reload();")
+    assert persisted < removed < reloaded
 
 
 def test_an_ended_share_releases_the_lock():
