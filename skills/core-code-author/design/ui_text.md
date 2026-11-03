@@ -941,9 +941,11 @@ page and SSH setting ([client.md](client.md)). A code is in the hub's
 | `ui.app.port_dialog_title` | Local ports of {app} | {app} 的本机端口 |
 | `ui.reason.terminal_no_account` | No account is enabled for this machine's terminal. | 这台机器的终端没有启用的账户。 |
 | `ui.terminal.account` | Account | 账户 |
-| `ui.terminal.disabled`, a terminal tab's status line once the hub switched this client off | The hub has switched this client off, and this terminal has ended. | 中枢已把本机停用，这个终端已结束。 |
+| `ui.terminal.disabled`, a plain session's terminal tab's status line once the hub switched this client off | The hub has switched this client off, and this terminal has ended. | 中枢已把本机停用，这个终端已结束。 |
 | `ui.terminal.unknown_device`, the same once the hub no longer knows this client | The hub has no record of this client, and this terminal has ended. | 中枢没有本机的记录，这个终端已结束。 |
-| `ui.terminal.detached`, the same while the hub's channel is down | Detached; waiting for the hub | 已断开，正在等待中枢 |
+| `ui.terminal.detached_ended`, the same once the hub's channel dropped | Detached, and this terminal has ended. | 已断开，这个终端已结束。 |
+| `ui.terminal.unknown_device_running`, a persistent or shared session's tab's status line once the hub no longer knows this client | The hub has no record of this client; this terminal still runs on its machine. | 中枢没有本机的记录，这个终端仍在机器上运行。 |
+| `ui.terminal.detached`, the same while the hub's channel is down or the hub has this client switched off | Detached; waiting for the hub | 已断开，正在等待中枢 |
 | `ui.settings.ssh_include` | SSH programs reach the machines | 让 SSH 程序直接连被控端 |
 | `ui.settings.ssh_include_hint` | Whether ssh, scp, git and VS Code reach each machine as `<machine>.nt`. | 是否让 ssh、scp、git 和 VS Code 用 `<机器>.nt` 直接连到每台机器。 |
 | `ui.services.apps_title`, the Services page's section | Apps | 应用 |
