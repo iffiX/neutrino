@@ -170,6 +170,19 @@ const MODULE_PANELS: Record<string, (target: PanelTarget) => ReactNode> = {
   ),
 };
 
+/** The source chip of each install method: who installs, updates and
+ * removes the software. A method outside the table shows no chip. */
+const SOURCE_KEYS: Record<string, string> = {
+  agent: "ui.modules.source_agent",
+  builtin: "ui.modules.source_system",
+  system: "ui.modules.source_system",
+  hub: "ui.modules.source_upstream",
+  container: "ui.modules.source_container",
+};
+
+/** The kind chip of every module: a service, which Start and Stop run. */
+const KIND_SERVICE_KEY = "ui.modules.kind_service"; // scan: allow
+
 /** The module whose containers run in an account's Podman machine. */
 const CONTAINERS_MODULE = "podman";
 
@@ -743,6 +756,7 @@ export function MachineModules({
             <>
               <div className="modules_detail_head">
                 <h3>{moduleTitle(activeRow.name, activeRow.title)}</h3>
+                <ModuleChips row={activeRow} />
                 {isRowInTransit(activeRow) && <Spinner size={11} />}
                 <StatusDot
                   tone={dotTone(activeRow)}
@@ -1159,6 +1173,18 @@ function ModuleListRow({ row, isOn, onSelect }: ModuleListRowProps) {
       {isRowInTransit(row) && <Spinner size={11} />}
       <StatusDot tone={dotTone(row)} />
     </button>
+  );
+}
+
+/** The two chips left of a tab's state: the source of the module's software
+ * on this machine, and the module's kind. */
+function ModuleChips({ row }: { row: DeviceModuleView }) {
+  const sourceKey = SOURCE_KEYS[row.method];
+  return (
+    <>
+      {sourceKey !== undefined && <span className="badge">{t(sourceKey)}</span>}
+      <span className="badge">{t(KIND_SERVICE_KEY)}</span>
+    </>
   );
 }
 
