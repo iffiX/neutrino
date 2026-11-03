@@ -415,7 +415,7 @@ class ProxyPanelPart:
 
         Returns:
             Parsed ``config/xray/routing.json``, its two resolver fields read
-            as lists and an earlier build's listeners left out.
+            as lists.
 
         Raises:
             FileNotFoundError: When the box is not set up.
