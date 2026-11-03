@@ -1,32 +1,27 @@
 "use strict";
 // The service worker of an App share. It passes every request of an app's
-// frame to the shell of the frame's own tab, builds the response from what the
+// frame to the shell of the active tab, builds the response from what the
 // shell sends back, and keeps the app's static files in Cache Storage. The
 // shell's own files under /__neutrino/ go to the network.
 
 const SHELL_PREFIX = "/__neutrino/";
-const TAB_PARAM = "__neutrino_tab";
+// The Web Lock of the active tab, one per origin.
+const ACTIVE_LOCK = "neutrino_active_tab";
 const DROPPED_HEADERS = new Set(["set-cookie", "content-security-policy", "content-security-policy-report-only", "x-frame-options", "transfer-encoding", "connection", "keep-alive"]);
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 const REDIRECTS_MAX = 20;
-// How long a request waits for the pages to announce their tabs to a worker that started again.
+// How long a request waits for the active tab to announce its shell to a worker that started again.
 const ANNOUNCE_WAIT_MS = 3000;
-// How long an untagged navigation waits before it counts the pages about to navigate. A page's message can reach the worker after its navigation.
-const NAVIGATING_WAIT_MS = 50;
-// How long a page about to navigate counts. A prompt turned down, a link to another site, a closed tab, a reload and an empty child frame send no navigation to the worker.
-const NAVIGATING_AGE_MAX_MS = 300;
 const CACHE_BYTES_MAX = 50 * 1024 * 1024;
 const STORED_BYTES_HEADER = "x-neutrino-stored-bytes";
 const STORED_AT_HEADER = "x-neutrino-stored-at";
 const KEPT_DESTINATIONS = new Set(["script", "style", "font", "image"]);
 const KEPT_TYPES = /^(text\/css|text\/javascript|application\/(x-)?javascript|application\/ecmascript|font\/|application\/(x-)?font|image\/)/;
 
-// Every shell, by tab: {port, cache}.
-const shells = new Map();
-// The tab of every client the worker has routed, by client id.
-const clientTabs = new Map();
-// The pages about to navigate, oldest first: {tab, address, at}.
-let navigating = [];
+// The shell of the active tab: {tab, port, cache}, the last shell announced by the holder of the active lock.
+let activeShell = null;
+// The announced shells, taken one after another.
+let admitting = Promise.resolve();
 // Requests in flight, by id.
 const pending = new Map();
 // Checks run at each announcement.
@@ -42,32 +37,15 @@ self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim(
 
 self.addEventListener("message", (event) => {
   const data = event.data || {};
-  const clientId = event.source && event.source.id;
   if (data.type === "shell" && event.ports[0]) {
-    const port = event.ports[0];
-    shells.set(data.tab, { port, cache: String(data.cache || "") });
-    if (clientId) clientTabs.set(clientId, data.tab);
-    port.onmessage = (message) => onShellMessage(message.data);
-    port.postMessage({ type: "ready" });
-  } else if (data.type === "client" && clientId && data.tab) {
-    clientTabs.set(clientId, data.tab);
-  } else if (data.type === "navigating" && data.tab) {
-    navigating = freshNavigating();
-    navigating.push({ tab: data.tab, address: data.address, at: Date.now() });
-    return;
+    admitting = admitting.then(() => admit(data, event.ports[0])).catch(() => {});
+    event.waitUntil(admitting);
   } else if (data.type === "claim") {
     event.waitUntil(self.clients.claim());
-    return;
   } else if (data.type === "facts" && event.ports[0]) {
-    const opener = shells.get(data.from);
-    if (opener) opener.port.postMessage({ type: "facts" }, [event.ports[0]]);
-    else event.ports[0].postMessage(null);
-    return;
-  } else {
-    // An awake message does nothing more. Its event alone keeps the worker running.
-    return;
+    event.waitUntil(sendFacts(data.from, event.ports[0]));
   }
-  for (const check of [...announced]) check();
+  // An awake message does nothing more. Its event alone keeps the worker running.
 });
 
 self.addEventListener("fetch", (event) => {
@@ -83,19 +61,8 @@ async function route(event, url) {
   const request = event.request;
   const isNavigation = request.mode === "navigate";
   if (isNavigation && request.destination === "document") return shellPage();
-  let tab = url.searchParams.get(TAB_PARAM);
-  if (tab !== null) {
-    url.searchParams.delete(TAB_PARAM);
-  } else if (isNavigation) {
-    tab = (await soleTab()) || (await navigatingTab(request.referrer));
-    if (!tab) return request.method === "GET" ? retagPage() : failure("This page could not be routed. Reload it.");
-  } else {
-    tab = await tabOfClient(event.clientId);
-  }
-  if (isNavigation) navigating = navigating.filter((page) => page.tab !== tab);
-  const shell = tab ? await shellOf(tab) : null;
+  const shell = await shellOf();
   if (!shell) return failure("This page could not be routed. Reload it.");
-  if (isNavigation && event.resultingClientId) clientTabs.set(event.resultingClientId, tab);
   const body = request.method === "GET" || request.method === "HEAD" ? null : await request.arrayBuffer();
   const sent = { method: request.method, url, headers: headerList(request.headers), body, destination: request.destination };
   if (request.method === "GET" && !isNavigation && !request.headers.has("range") && shell.cache) {
@@ -105,21 +72,8 @@ async function route(event, url) {
       return fromCache(hit);
     }
   }
-  if (isNavigation) return withTab(await send(shell, sent, false), tab, url);
-  if (request.redirect !== "follow") return send(shell, sent, false);
+  if (isNavigation || request.redirect !== "follow") return send(shell, sent, false);
   return follow(shell, sent);
-}
-
-// A navigation's 3xx to this origin, its Location holding the tab while several shells are open.
-async function withTab(response, tab, url) {
-  const location = response.headers.get("location");
-  if (!REDIRECT_STATUSES.has(response.status) || !location || (await soleTab())) return response;
-  const next = new URL(location, url);
-  if (next.origin !== self.location.origin) return response;
-  next.searchParams.set(TAB_PARAM, tab);
-  const headers = new Headers(response.headers);
-  headers.set("location", next.pathname + next.search + next.hash);
-  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 
 // Follows the 3xx answers to a request that is not a navigation, by the Fetch standard's rules.
@@ -138,40 +92,38 @@ async function follow(shell, sent) {
   }
 }
 
-// The tab of the one shell open, else null.
-async function soleTab() {
-  const windows = await self.clients.matchAll({ type: "window" });
-  const tops = windows.filter((client) => client.frameType === "top-level");
-  return tops.length === 1 ? tabOfClient(tops[0].id, false) : null;
+// Takes an announced shell as the active tab's, unless the lock manager names another page as the holder of the active lock.
+async function admit(data, port) {
+  if (await isHolder(data.lockClient)) {
+    activeShell = { tab: data.tab, port, cache: String(data.cache || "") };
+    port.onmessage = (message) => onShellMessage(message.data);
+  }
+  port.postMessage({ type: "ready" });
+  for (const check of [...announced]) check();
 }
 
-// The tab of the pages about to navigate, when they are all of one tab and the referrer is one of them, else null.
-async function navigatingTab(referrer) {
-  await new Promise((resolve) => setTimeout(resolve, NAVIGATING_WAIT_MS));
-  navigating = freshNavigating();
-  const tabs = new Set(navigating.map((page) => page.tab));
-  if (tabs.size !== 1 || !navigating.some((page) => page.address === referrer)) return null;
-  return navigating[0].tab;
+// Whether the page with this lock client holds the active lock. A worker with no Web Locks, and a lock no page holds, take every shell.
+async function isHolder(lockClient) {
+  if (!self.navigator.locks || !lockClient) return true;
+  const { held } = await self.navigator.locks.query();
+  const lock = held.find((each) => each.name === ACTIVE_LOCK);
+  return !lock || lock.clientId === lockClient;
 }
 
-function freshNavigating() {
-  const oldest = Date.now() - NAVIGATING_AGE_MAX_MS;
-  return navigating.filter((page) => page.at >= oldest);
+// The active tab's shell. A worker that started again asks the pages to announce it first.
+async function shellOf() {
+  if (!activeShell) await waitFor(() => activeShell !== null);
+  return activeShell;
 }
 
-// The tab a client belongs to. A client missing from clientTabs makes the worker ask the pages to announce themselves first.
-async function tabOfClient(clientId, isSoleTried = true) {
-  if (clientId && !clientTabs.has(clientId)) await waitFor(() => clientTabs.has(clientId));
-  if (clientId && clientTabs.has(clientId)) return clientTabs.get(clientId);
-  return isSoleTried ? soleTab() : null;
+// Sends the share's facts to a tab the app opened, from the shell of the tab that opened it, else null.
+async function sendFacts(from, port) {
+  const opener = await shellOf();
+  if (opener && opener.tab === from) opener.port.postMessage({ type: "facts" }, [port]);
+  else port.postMessage(null);
 }
 
-async function shellOf(tab) {
-  if (!shells.has(tab)) await waitFor(() => shells.has(tab));
-  return shells.get(tab) || null;
-}
-
-// Asks every page to announce its tab, and waits until done() is true or the wait runs out.
+// Asks every page to announce its shell, and waits until done() is true or the wait runs out.
 function waitFor(done) {
   if (Date.now() - lastBroadcast > ANNOUNCE_WAIT_MS) {
     lastBroadcast = Date.now();
@@ -191,12 +143,6 @@ function waitFor(done) {
 async function shellPage() {
   const page = await fetch(SHELL_PREFIX, { cache: "no-cache" });
   return new Response(await page.text(), { status: page.status, headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
-}
-
-// A page that loads its own address again with its tab added.
-function retagPage() {
-  const script = "var u=new URL(location.href);u.searchParams.set(" + JSON.stringify(TAB_PARAM) + ",top.__neutrinoTab);location.replace(u.href)";
-  return new Response("<!doctype html><script>" + script + "</script>", { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
 }
 
 function failure(text) {

@@ -16,14 +16,15 @@ def load_method() -> str:
     return SHELL[start : SHELL.index("\n  },\n", start)]
 
 
-def test_the_frame_opens_at_the_tab_s_own_fragment():
+def test_the_frame_opens_at_the_tab_s_own_fragment_with_no_tab_tag():
     load = load_method()
-    tagged = load.index("url.searchParams.set(TAB_PARAM, worker.tab);")
     passed = load.index(
         "if (isOwnAddress && location.hash && !linkedFacts()) url.hash = location.hash;"
     )
     framed = load.index("frame.src = url.pathname + url.search + url.hash;")
-    assert tagged < passed < framed
+    assert passed < framed
+    assert "searchParams" not in load
+    assert "TAB_PARAM" not in SHELL
 
 
 def test_the_address_the_shell_starts_from_holds_no_fragment():

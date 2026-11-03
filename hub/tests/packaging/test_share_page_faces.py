@@ -18,6 +18,8 @@ FACES_OF_SCREENS = {
     "link": "sad",
     "hub": "sleep",
     "unavailable": "error",
+    "elsewhere": "wink",
+    "moved": "wink",
 }
 
 

@@ -1,58 +1,11 @@
 "use strict";
 // The shim the service worker puts at the top of every page of the app: the
 // app's cookies live in the shell's jar, its WebSockets ride the shell's
-// streams, and its own service worker is never installed. The page sends the
-// worker its tab, and the shim removes the tab's tag from the address before
-// the app reads it.
+// streams, and its own service worker is never installed.
 (function () {
-  const TAB_PARAM = "__neutrino_tab";
   let shell = null, tab = "";
   try { shell = window.top !== window ? window.top.__neutrino : null; tab = window.top.__neutrinoTab; } catch (e) { shell = null; }
   if (!shell) return;
-
-  const url = new URL(location.href);
-  if (url.searchParams.has(TAB_PARAM)) {
-    url.searchParams.delete(TAB_PARAM);
-    history.replaceState(history.state, "", url.pathname + url.search + url.hash);
-  }
-  const worker = navigator.serviceWorker;
-  if (worker) {
-    const announce = () => { if (worker.controller) worker.controller.postMessage({ type: "client", tab }); };
-    worker.addEventListener("message", (event) => { if (event.data && event.data.type === "announce") announce(); });
-    worker.startMessages();
-    announce();
-    // The page's tab, sent to the worker before the frame's request. This listener runs ahead of the app's own.
-    const tellNavigating = () => { if (worker.controller) worker.controller.postMessage({ type: "navigating", tab, address: location.href.split("#")[0] }); };
-    window.addEventListener("beforeunload", tellNavigating, true);
-    // A child frame's first load fires beforeunload in the frame's empty document alone, and the shim does not run there. The page sends the message when it gains the frame and at that beforeunload.
-    const seenFrames = new WeakSet();
-    new MutationObserver(() => {
-      for (let i = 0; i < window.length; i++) {
-        if (seenFrames.has(window[i])) continue;
-        seenFrames.add(window[i]);
-        tellNavigating();
-        try { window[i].addEventListener("beforeunload", tellNavigating, true); } catch (e) { /* a frame of another origin */ }
-      }
-    }).observe(document, { childList: true, subtree: true });
-  }
-
-  // A form sent in the frame by any method but GET gets this tab added to its
-  // action. A GET form loses its query, and the worker tags its page again.
-  const tagAction = (element, attribute) => {
-    const target = new URL(element[attribute] || location.href, location.href);
-    if (target.origin !== location.origin) return;
-    target.searchParams.set(TAB_PARAM, tab);
-    element[attribute] = target.href;
-  };
-  const tagForm = (form, submitter) => {
-    const method = String((submitter && submitter.getAttribute("formmethod")) || form.method || "get").toLowerCase();
-    if (method === "get" || method === "dialog") return;
-    if (submitter && submitter.hasAttribute("formaction")) tagAction(submitter, "formAction");
-    else tagAction(form, "action");
-  };
-  document.addEventListener("submit", (event) => { if (event.target instanceof HTMLFormElement) tagForm(event.target, event.submitter); }, true);
-  const submit = HTMLFormElement.prototype.submit;
-  HTMLFormElement.prototype.submit = function () { tagForm(this, null); return submit.call(this); };
 
   // A same-origin address opened in another tab gets this tab added. The new
   // tab's shell takes the share's facts from this tab through the worker.
@@ -78,30 +31,13 @@
   document.addEventListener("click", tagAnchor, true);
   document.addEventListener("auxclick", tagAnchor, true);
 
-  // A link followed in this frame gets this tab added, once the app's own
-  // handlers have run. The worker then answers it with no page of its own while
-  // several shells are open, and a download leaves this page in the frame.
-  const tagFollowed = (event) => {
-    if (event.defaultPrevented || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
-    const anchor = event.target instanceof Element ? event.target.closest("a[href]") : null;
-    if (!(anchor instanceof HTMLAnchorElement) || (anchor.target && !/^_self$/i.test(anchor.target))) return;
-    let target;
-    try { target = new URL(anchor.href, location.href); } catch (e) { return; }
-    if (target.protocol !== location.protocol || target.origin !== location.origin) return;
-    if (target.hash && target.pathname === location.pathname && target.search === location.search) return;
-    const original = anchor.getAttribute("href");
-    target.searchParams.set(TAB_PARAM, tab);
-    anchor.href = target.href;
-    setTimeout(() => anchor.setAttribute("href", original), 0);
-  };
-  window.addEventListener("click", tagFollowed);
-
   Object.defineProperty(document, "cookie", {
     configurable: true,
     get() { return shell.cookieGet(); },
     set(text) { shell.cookieSet(String(text)); },
   });
 
+  const worker = navigator.serviceWorker;
   if (worker) {
     try {
       Object.defineProperty(worker, "register", { configurable: true, value: () => new Promise(() => {}) });

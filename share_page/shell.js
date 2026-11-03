@@ -22,13 +22,16 @@ const HTTP = { host: "127.0.0.1", streamsSlow: 8, streamsFast: 32, preparing: 20
 const LINE = { windowMs: 250, openMin: 2, fastBytesPerSecond: 1024 * 1024, slowWindows: 2 };
 // The request destinations that go before every other request waiting for a stream.
 const FIRST_DESTINATIONS = ["font", "style"];
-// The query parameter that tags a navigation of the app's frame with its tab.
-const TAB_PARAM = "__neutrino_tab";
 // The query parameter that names the tab a new tab was opened from.
 const FROM_PARAM = "__neutrino_from";
 const KEPT_FACTS = "neutrino_share";
+// The Web Lock of the active tab, one per origin.
+const ACTIVE_LOCK = "neutrino_active_tab";
+// The sessionStorage marks of a tab that holds the active lock and of a tab whose app moved to another tab.
+const KEPT_ACTIVE = "neutrino_active";
+const KEPT_MOVED = "neutrino_moved";
 // The face of each screen, a symbol of the page's sprite.
-const FACES = { loading: "waiting", intro: "wink", incomplete: "sad", link: "sad", hub: "sleep", unavailable: "error" };
+const FACES = { loading: "waiting", intro: "wink", incomplete: "sad", link: "sad", hub: "sleep", unavailable: "error", elsewhere: "wink", moved: "wink" };
 // images/icons/neutrino_client/wolf_wink_16.png, on the introduction's tab.
 const WINK_ICON_16 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAyUlEQVR4nJWSvQ2DMBCFH2mRaVNGSh1lACbIEOxGhzJBRsgEdElDSRUJRGfppcGOf86GPMkSOvx9OvsMrDnfSQD/rF9C+MjdsjzcarLV5NhlhT5sBK32oZTkgCBjUYSlzSTbM13sPkLdD6z7QZSk9hT2NtfU/QAAeF5O2FO3gmlebLFSpXhWs8f9H11ipUpPFsLhdyTIpVKl2B3ftxcBcJoXTvMSPSJpCoaBUPAmsAH7Y4TwlF0BG1/2uT7sBCOJK2LDLCxKcsuFv7EqGoqvgTPAAAAAAElFTkSuQmCC";  // scan: allow
 const WORDS = {
@@ -41,6 +44,9 @@ const WORDS = {
     link: ["This link is no longer valid.", "Ask the person who shared it for a new one."],
     hub: ["The hub is offline.", "The computer that shares this app cannot be reached right now."],
     unavailable: ["The app cannot be opened right now.", "It opens by itself once it is back."],
+    elsewhere: ["An app is already open in another tab.", "Only one can be open at a time."],
+    moved: ["This app is now open in another tab."],
+    useHere: "Use here",
   },
   zh: {
     opening: "正在打开 {app}…",
@@ -51,6 +57,9 @@ const WORDS = {
     link: ["这个链接已失效。", "请向分享给你的人要一个新链接。"],
     hub: ["中枢已离线。", "分享这个应用的电脑现在连不上。"],
     unavailable: ["应用暂时打不开。", "恢复后会自动打开。"],
+    elsewhere: ["已经在另一个标签页打开了一个应用。", "一次只能打开一个。"],
+    moved: ["这个应用已在另一个标签页打开。"],
+    useHere: "在这里使用",
   },
 };
 // The codes that show the app-unavailable screen, and those that end the share.
@@ -207,6 +216,7 @@ const screen = {
     this.serial++;
     const line = words.opening.replace(title ? "{app}" : " {app}", title || "");
     this.element("box").classList.add("loading");
+    this.element("use").classList.add("hidden");
     this.face("loading");
     this.element("title").textContent = line;
     this.element("screen").classList.remove("hidden");
@@ -231,16 +241,25 @@ const screen = {
     this.tab(line);
   },
   refuse(kind) {
-    const [title, detail] = words[kind];
+    const [title, detail = ""] = words[kind];
     this.kind = kind;
     this.serial++;
     this.element("box").classList.remove("loading");
+    this.element("use").classList.add("hidden");
     this.face(kind);
     this.element("title").textContent = title;
     this.element("detail").textContent = detail;
     this.element("screen").classList.remove("hidden");
     this.tab(title);
     stats.screen = kind;
+  },
+  // The screen of a tab that is not active, with the button that makes it the active tab.
+  waiting(kind, onUse) {
+    this.refuse(kind);
+    const button = this.element("use");
+    button.textContent = words.useHere;
+    button.onclick = () => { button.classList.add("hidden"); onUse(); };
+    button.classList.remove("hidden");
   },
   // The introduction, with the wink on the tab: the hand-drawn file at 16 px, the sprite's face above it.
   intro() {
@@ -1142,11 +1161,14 @@ const mirror = {
 
 const worker = {
   tab: crypto.randomUUID(),
+  // The id the lock manager gives this page. The worker compares it with the active lock's holder.
+  lockClient: "",
   onRequest: null,
   // Registers the worker and announces this tab once it controls the page.
   async start(cache) {
     this.cache = cache;
     window.__neutrinoTab = this.tab;
+    this.lockClient = await ownLockClient(this.tab);
     await navigator.serviceWorker.register("/__neutrino/sw.js", { scope: "/" });
     const registration = await navigator.serviceWorker.ready;
     if (!navigator.serviceWorker.controller) {
@@ -1176,10 +1198,76 @@ const worker = {
         if (event.data && event.data.type === "ready") { resolve(); return; }
         if (this.onRequest) this.onRequest(event.data, channel.port1, event.ports[0]);
       };
-      target.postMessage({ type: "shell", tab: this.tab, cache: this.cache }, [channel.port2]);
+      target.postMessage({ type: "shell", tab: this.tab, lockClient: this.lockClient, cache: this.cache }, [channel.port2]);
     });
   },
 };
+
+// --- the active tab ----------------------------------------------------------
+
+// One tab of a browser holds ACTIVE_LOCK, and that tab connects and shows the app. Another tab
+// with a share shows a waiting screen, connects to nothing, and queues a request for the lock.
+// The browser grants the lock to the first request queued once the holder closes, crashes or
+// releases it.
+const active = {
+  // Counts the grants of the lock to this tab. A lost grant other than the last is a steal of this tab's own.
+  grants: 0,
+  isHeld: false,
+  onTaken: null,
+  // Ends the held lock.
+  release: null,
+  // Resolves once this tab holds the lock. A reload of the active tab takes it back at once.
+  take() {
+    return new Promise((resolve) => {
+      this.onTaken = resolve;
+      if (isActiveReload()) this.request({ steal: true });
+      else this.request({ ifAvailable: true }).then((isTaken) => { if (!isTaken) this.wait(); });
+    });
+  },
+  // Asks for the lock, and resolves whether it was granted. Another tab's steal of a granted lock makes the page leave.
+  request(options) {
+    return new Promise((answered) => {
+      let grant = 0;
+      navigator.locks.request(ACTIVE_LOCK, options, (lock) => {
+        answered(lock !== null);
+        if (!lock) return null;
+        grant = ++this.grants;
+        if (!this.isHeld) {
+          this.isHeld = true;
+          sessionStorage.setItem(KEPT_ACTIVE, "1");
+          this.onTaken();
+        }
+        return new Promise((release) => { this.release = release; });
+      }).catch(() => { if (grant && grant === this.grants) page.leave(); });
+    });
+  },
+  // Shows the waiting screen and queues a request. Use here takes the lock from the tab that holds it.
+  wait() {
+    const queued = new AbortController();
+    this.request({ signal: queued.signal });
+    screen.waiting(sessionStorage.getItem(KEPT_MOVED) ? "moved" : "elsewhere", () => {
+      if (this.isHeld) return;
+      queued.abort();
+      this.request({ steal: true });
+    });
+  },
+};
+
+// The id the lock manager gives this page, read from a lock named for this tab alone.
+function ownLockClient(tab) {
+  const name = "neutrino_tab_" + tab;
+  return navigator.locks.request(name, async () => {
+    const { held } = await navigator.locks.query();
+    const own = held.find((lock) => lock.name === name);
+    return own ? own.clientId : "";
+  });
+}
+
+// Whether this load reloads the tab that held the active lock.
+function isActiveReload() {
+  const [navigation] = performance.getEntriesByType("navigation");
+  return !!navigation && navigation.type === "reload" && sessionStorage.getItem(KEPT_ACTIVE) === "1";
+}
 
 // --- the page ----------------------------------------------------------------
 
@@ -1212,6 +1300,8 @@ const page = {
     const from = takeOpener();
     this.facts = readFacts() || (await factsFromOpener(from));
     if (!this.facts) { this.showFactless(from !== ""); return; }
+    await active.take();
+    stats.startedAt = performance.now();
     const title = this.facts.app.title || "";
     screen.loading(title);
     setTimeout(() => screen.slow(), TIMING.slow);
@@ -1313,6 +1403,7 @@ const page = {
     }
     if (this.session === session && screen.serial === loadingSerial) {
       this.hasAppShown = true;
+      sessionStorage.removeItem(KEPT_MOVED);
       screen.app();
     }
   },
@@ -1327,7 +1418,6 @@ const page = {
       if (where && start === "/" && !this.facts.app.path) start = where[1];
     }
     const url = new URL(start, location.origin);
-    url.searchParams.set(TAB_PARAM, worker.tab);
     if (isOwnAddress && location.hash && !linkedFacts()) url.hash = location.hash;
     const frame = document.getElementById("app");
     const loaded = new Promise((resolve) => frame.addEventListener("load", resolve, { once: true }));
@@ -1455,7 +1545,23 @@ const page = {
     screen.refuse("link");
     this.failWaiting();
     sessionStorage.removeItem(KEPT_FACTS);
+    sessionStorage.removeItem(KEPT_ACTIVE);
+    if (active.release) active.release();
     if (self.caches) caches.delete(cacheName(this.facts)).catch(() => {});
+  },
+
+  // Another tab took the active lock. The page closes its connection, removes the app's frame
+  // and loads again. A tab whose app had shown then shows the moved screen.
+  leave() {
+    this.isEnded = true;
+    clearInterval(this.watcher);
+    clearTimeout(this.unavailableTimer);
+    if (this.session) { this.session.close(); this.session = null; }
+    sessionStorage.removeItem(KEPT_ACTIVE);
+    if (this.hasAppShown) sessionStorage.setItem(KEPT_MOVED, "1");
+    screen.refuse(sessionStorage.getItem(KEPT_MOVED) ? "moved" : "elsewhere");
+    document.getElementById("app").remove();
+    location.reload();
   },
 
   // A message of the worker: a request of the app's frame, an abort of one, or a new tab's ask for the facts.
