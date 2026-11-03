@@ -264,7 +264,7 @@ after the ` · ` is what ends the wait:
 | `ui.state.too_old`, Version too old | 版本太旧 | `protocol_too_new` | nothing automatic; a refresh after an upgrade |
 | `ui.state.join_refused` · `<the code's wording>`, Join refused · `<reason>` | 加入被拒 · 原因 | the hub refused the ticket (`ticket_spent`, any refusal of the join), or the binding is of the 0.5 shape, with no hub key (`hub_key_missing`), and the client dials nothing for it ([transport.md](transport.md), "A peer of 0.5") | nothing; **Leave** |
 | `ui.state.replaced` · **Reconnect**, Replaced by another client · Reconnect | 已被替换 · 重新连接 | `replaced` | the press on **Reconnect** |
-| `ui.state.disabled`, Disabled by the hub | 已停用 | the frame says the client is disabled, or the session ends `refused client_disabled` | the frame says enabled |
+| `ui.state.disabled`, Disabled by the hub | 已停用 | the frame says the client is disabled, or the session ends `refused client_disabled`, or the hub's `refused client_disabled` frame arrives | the frame says enabled |
 
 A countdown is live: the state carries the moment of the next round, and
 the page redraws the seconds left once a second; at 0 the line reads
@@ -759,6 +759,7 @@ Each has `session_id`, `device_id`, `owner`, `is_owned`, `is_persistent`,
 | Event | What the strip does |
 | --- | --- |
 | a session is in the list and in no tab | a tab appears at the end; it attaches when first selected |
+| a session is listed while an open on its machine waits for its answer | it gets no tab until the answer |
 | a tab's session is gone from the list | the tab's label becomes `ui.terminal_ended`; the terminal keeps its last output; **×** removes the tab |
 | the page opens with listed sessions | tabs for all; the first one is active and attaches as the page opens, with its kept output replayed |
 | a tab's session reports `attached_count` | the tab shows the count as a badge when above one |
@@ -803,6 +804,7 @@ attaches receives the kept output first, then the live stream.
 | Ctrl+`+` and Ctrl+`-` change the font size, kept per client. | A person's eyes do not change per machine. |
 | The font is MesloLGS NF, loaded through the resident, so powerline prompts draw. | A prompt in boxes is unreadable. |
 | A middle click on a tab closes it as **×** does; a double click on the strip's empty space opens a new terminal on the picked machine. | The two gestures every tabbed window has. |
+| A draw with the keyboard in a terminal leaves its surface in the page and replaces the machines card, the tabs and the status line. | Taking the surface out of the page takes the keyboard from its terminal, and a key pressed until the terminal takes it back is lost. |
 
 `nclient terminal` is the same terminal on the command line ("The command
 line").
