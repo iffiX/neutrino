@@ -27,9 +27,9 @@ from tests.web.module_api_box import DEVICE, OFFLINE, module_box
 
 ACCEPTED_AT = "2026-10-05T08:00:00+00:00"
 EIGHT = [
-    "samba",
     "terminal",
     "ssh_server",
+    "samba",
     "vscode",
     "code_server",
     "cloudcli",

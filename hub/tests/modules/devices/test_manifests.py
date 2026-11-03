@@ -415,24 +415,22 @@ def packaging_constants():
 # --- the shipped manifests ---
 
 
-def test_the_manifests_come_back_in_the_order_both_surfaces_draw():
-    """What the agent carries, then what the system holds or installs, then
-    what the module's installer fetches, then container images, and by title
-    inside each."""
+def test_the_manifests_come_back_in_the_order_every_list_of_modules_shows():
+    """The description table's order: the File share below Remote desktop."""
     assert list(load_module_manifests()) == [
-        "remote_desktop",
-        "ssh_server",
         "terminal",
-        "podman",
+        "ssh_server",
+        "remote_desktop",
         "samba",
-        "cloudcli",
-        "code_server",
-        "codeg",
         "gitea",
-        "siyuan",
         "vscode",
-        "ayakaleaf",
+        "code_server",
+        "cloudcli",
+        "codeg",
+        "siyuan",
+        "podman",
         "hermes_webui",
+        "ayakaleaf",
     ]
 
 

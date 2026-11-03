@@ -195,25 +195,9 @@ def _row(name: str, kind: str, **fields) -> DeviceModuleRow:
     return DeviceModuleRow(name=name, kind=kind, **fields)
 
 
-# The rows in the order the machine page lists them: the modules every system
-# runs first.
+# The rows in the order every list of modules shows them: the modules every
+# system runs first.
 DEVICE_MODULE_ROWS = (
-    _row(
-        DEVICE_SAMBA_MODULE,
-        DEVICE_MODULE_KIND_SYSTEM_PACKAGE,
-        is_account_layer=True,
-        sealed_fields=(
-            SealedField(
-                key=DEVICE_SAMBA_PASSWORD_KEY,
-                opened_key="password",
-                aad=DEVICE_SAMBA_PASSWORD_AAD,
-                secret_bytes=DEVICE_SAMBA_PASSWORD_BYTES,
-            ),
-        ),
-        description_code=SERVICES_DESCRIPTION_SAMBA_MODULE,
-        panel=DEVICE_MODULE_PANEL_INSTANCES,
-        token_field=DEVICE_SAMBA_PASSWORD_KEY,
-    ),
     _row(
         DEVICE_TERMINAL_MODULE,
         DEVICE_MODULE_KIND_AGENT,
@@ -242,6 +226,22 @@ DEVICE_MODULE_ROWS = (
         token_field=DEVICE_SSH_SERVER_KEY_KEY,
     ),
     _row(DEVICE_REMOTE_DESKTOP_MODULE, DEVICE_MODULE_KIND_AGENT, is_in_picker=False),
+    _row(
+        DEVICE_SAMBA_MODULE,
+        DEVICE_MODULE_KIND_SYSTEM_PACKAGE,
+        is_account_layer=True,
+        sealed_fields=(
+            SealedField(
+                key=DEVICE_SAMBA_PASSWORD_KEY,
+                opened_key="password",
+                aad=DEVICE_SAMBA_PASSWORD_AAD,
+                secret_bytes=DEVICE_SAMBA_PASSWORD_BYTES,
+            ),
+        ),
+        description_code=SERVICES_DESCRIPTION_SAMBA_MODULE,
+        panel=DEVICE_MODULE_PANEL_INSTANCES,
+        token_field=DEVICE_SAMBA_PASSWORD_KEY,
+    ),
     _row(
         DEVICE_GITEA_MODULE,
         DEVICE_MODULE_KIND_SERVICE_ACCOUNT,

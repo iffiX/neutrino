@@ -15,16 +15,15 @@ stripped the same way the rest of ``config/`` is.
 entry; the catalog's row, the Modules page's list, the cache and the state's
 recipe all read it.
 
-**The modules come back in the order both surfaces draw them**: what the
-agent's own package carries, what the system holds or its package manager
-installs, what the module's installer fetches, then container images, and by
-title inside each.
+**The modules come back in the order every list of modules shows them**, the
+description table's, and a manifest the table lacks after them by title.
 """
 
 import json
 import re
 
 from neutrino_hub import HUB_VERSION
+from neutrino_hub.modules.devices.module_table import DEVICE_MODULE_ROWS
 from neutrino_hub.modules.devices.source_sets import load_source_sets
 from neutrino_hub.modules.devices.constants import (
     DEVICE_ACCOUNT_DATA_DIR_DEFAULT_OS,
@@ -40,7 +39,6 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_METHOD_BUILTIN,
     DEVICE_METHOD_CONTAINER,
     DEVICE_METHOD_HUB,
-    DEVICE_METHOD_RANKS,
     DEVICE_METHOD_SYSTEM,
     DEVICE_METHODS_WITH_LICENSE,
     DEVICE_PLATFORM_OS,
@@ -135,8 +133,8 @@ def load_module_manifests() -> dict:
     """Read every module manifest, keyed by module name, in display order.
 
     Returns:
-        Module name to its parsed manifest, comment keys removed, ordered by
-        method and then by title.
+        Module name to its parsed manifest, comment keys removed, in the
+        description table's order.
 
     Raises:
         ValueError: For a manifest whose keys or ``params`` fall outside the
@@ -522,9 +520,10 @@ def _read_manifests() -> list:
 
 
 def _display_order(pair: tuple) -> tuple:
-    """Where one ``(name, manifest)`` sorts: by its first method's rank, then title."""
+    """Where one ``(name, manifest)`` sorts: by its table row, then by title."""
     name, manifest = pair
-    rank = min(DEVICE_METHOD_RANKS[method] for method in manifest_methods(manifest))
+    names = [row.name for row in DEVICE_MODULE_ROWS]
+    rank = names.index(name) if name in names else len(names)
     return rank, str(manifest.get("title", name)).lower()
 
 

@@ -47,16 +47,6 @@ DEVICE_METHOD_BUILTIN = "builtin"
 DEVICE_METHOD_SYSTEM = "system"
 DEVICE_METHOD_HUB = "hub"
 DEVICE_METHOD_CONTAINER = "container"
-# The order both surfaces draw the modules in, by the first method a
-# manifest names: what the agent carries, what the system holds or installs,
-# what the hub's cache fetches, then container images.
-DEVICE_METHOD_RANKS = {
-    DEVICE_METHOD_AGENT: 0,
-    DEVICE_METHOD_BUILTIN: 1,
-    DEVICE_METHOD_SYSTEM: 1,
-    DEVICE_METHOD_HUB: 2,
-    DEVICE_METHOD_CONTAINER: 3,
-}
 # The methods whose entry the catalog shows a licence and a source address for.
 DEVICE_METHODS_WITH_LICENSE = (DEVICE_METHOD_HUB, DEVICE_METHOD_CONTAINER)
 # The version a system entry names: the system's own.

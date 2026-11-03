@@ -170,24 +170,6 @@ const MODULE_PANELS: Record<string, (target: PanelTarget) => ReactNode> = {
   ),
 };
 
-/** The tabs' order: the modules every system runs first. A module not
- * named here, a container module, comes after them by name. */
-const TAB_ORDER = [
-  "samba",
-  "terminal",
-  "ssh_server",
-  "remote_desktop",
-  "gitea",
-  "vscode",
-  "code_server",
-  "cloudcli",
-  "codeg",
-  "siyuan",
-  "podman",
-  "hermes_webui",
-  "ayakaleaf",
-];
-
 /** The module whose containers run in an account's Podman machine. */
 const CONTAINERS_MODULE = "podman";
 
@@ -1107,25 +1089,12 @@ function manifestTitlesOf(
   );
 }
 
-/** The tabs the page shows, in the page's order: the rows the hub marks
+/** The tabs the page shows, in the hub's order: the rows the hub marks
  * shown that the machine can run. */
 function shownModules(list: DeviceModuleListView | null): string[] {
-  const names = (list?.modules ?? [])
+  return (list?.modules ?? [])
     .filter((row) => row.is_shown && row.is_supported)
     .map((row) => row.name);
-  return names.sort((left, right) => tabRank(left, right));
-}
-
-function tabRank(left: string, right: string): number {
-  const leftAt = TAB_ORDER.indexOf(left);
-  const rightAt = TAB_ORDER.indexOf(right);
-  if (leftAt >= 0 && rightAt >= 0) {
-    return leftAt - rightAt;
-  }
-  if (leftAt >= 0 || rightAt >= 0) {
-    return leftAt >= 0 ? -1 : 1;
-  }
-  return left.localeCompare(right);
 }
 
 /** Whether the machine has the module and the hub holds no want for it, as

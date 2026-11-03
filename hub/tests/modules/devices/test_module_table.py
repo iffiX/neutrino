@@ -37,12 +37,12 @@ from neutrino_hub.modules.devices.module_table import (
 )
 
 
-def test_the_rows_come_in_the_order_the_machine_page_lists_them():
+def test_the_rows_come_in_the_order_every_list_of_modules_shows():
     assert [row.name for row in DEVICE_MODULE_ROWS] == [
-        "samba",
         "terminal",
         "ssh_server",
         "remote_desktop",
+        "samba",
         "gitea",
         "vscode",
         "code_server",
@@ -82,9 +82,9 @@ def test_every_row_is_one_of_the_five_kinds():
 
 def test_the_account_layer_is_eight_rows_in_table_order():
     assert account_layer_names() == (
-        "samba",
         "terminal",
         "ssh_server",
+        "samba",
         "vscode",
         "code_server",
         "cloudcli",
