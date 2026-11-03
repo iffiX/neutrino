@@ -1509,7 +1509,8 @@ class ClientHubSession:
         protocol refusal waits for a new client, and every other code waits
         for the transport's next round. A session's refusal names no next
         round, and the transport dials again after its ``retry_after_s``,
-        else a minute later.
+        else a minute later. ``client_disabled`` empties the state's hash,
+        so the hub sends the next session its state.
         """
         name = code["code"]
         if name == CLIENT_REFUSAL_CODE_BINDING_UNKNOWN:
@@ -1517,6 +1518,8 @@ class ClientHubSession:
         elif name == CODE_REPLACED:
             self._stand_aside()
         elif name == CLIENT_REFUSAL_CODE_DISABLED:
+            with self._lock:
+                self._state_hash = ""
             self._take_disabled(True)
             self._end_wait()
         elif name in CLIENT_PROTOCOL_REFUSAL_CODES:

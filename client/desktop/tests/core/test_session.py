@@ -427,10 +427,15 @@ def test_a_client_refused_disabled_stays_disabled_until_the_frame_says_enabled(h
 
 def test_an_enable_before_the_next_session_reads_connected_at_its_state(harness):
     harness.connect()
+    harness.transport.frame("c1", STATE)
+    assert harness.transport.next_frame("report")["frame"]["state_hash"] == "s1"
     refuse_disabled(harness)
     assert wait_for(lambda: harness.session.connection() == CONNECTION_DISABLED)
     open_next_session(harness)
-    harness.transport.frame("c1", STATE)
+    report = harness.transport.next_frame("report")["frame"]
+    # The hub sends the state only to a report whose hash differs.
+    if report["state_hash"] != STATE["hash"]:
+        harness.transport.frame("c1", STATE)
     assert wait_for(lambda: harness.session.connection() == CONNECTION_CONNECTED)
     assert harness.session.waiting() is None
 
