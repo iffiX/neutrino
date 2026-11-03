@@ -134,13 +134,15 @@ The **Proxy** page turns any scope on or off later.
 ## A configuration from an earlier build
 
 A `routing.json` written by 0.5 or by an earlier 0.6 build may hold
-`socks_ports`. It loads with no error, nothing reads the key, and the next
-write of that file drops it. A backup that holds it restores the same way.
+`socks_ports`. It loads with no error and nothing reads the key. A save on the
+**Proxy** page drops it, and the other writes of that file keep it. A backup
+that holds it restores the same way.
 
 A Linux package's script runs `nhub apply` and so a routing pass. The macOS and
-Windows packages run none, so the panel's address sample, within half a minute
-of its start, runs a pass while the file holds the key and writes the key away
-once the pass has tried every step. That pass restarts xray with no such
+Windows packages run none, so the ports stay open until the next pass. The
+panel's address sample runs one when the box's networks differ from the last
+pass's record. A hub of 0.5 has no such record, so the first sample, within half
+a minute of the panel's start, runs one. A pass restarts xray with no such
 inbound and closes what those ports opened:
 
 | System | How |
