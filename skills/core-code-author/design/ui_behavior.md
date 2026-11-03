@@ -812,7 +812,8 @@ page opens and the picked one kept in the address as `?module=`, each
 row the module's icon (`images/icons/modules/<module>.svg`, the generic glyph
 for a module without one) and its title, and under it **+ Add module**, a
 bordered button as wide as the list; on the right the picked module's tab.
-A tab reads, top to bottom: its state line; `ui.modules.log_title` and the
+A tab reads, top to bottom: its state line, which holds the module's title,
+its two chips and its state; `ui.modules.log_title` and the
 log box; `ui.modules.config_title` and the module's panel, which **Configure**
 opens and **Hide configuration** closes; and the buttons **Install**,
 **Start**, **Stop**, **Uninstall** and **Configure** at the bottom, aligned
@@ -821,6 +822,17 @@ it and **Stop** stops it, whatever instances it has. **Configure** opens the
 panel and writes no `want`, after the first import of Gitea or Containers, and
 the module stays as it is until its **Start** ([protocol.md](protocol.md), "The
 modules section, one entry per module").
+
+The two chips are plain `badge`s between the title and the state, the
+source chip first; what each means and which install method reads as which
+source is [agent/module_install.md](agent/module_install.md), "The source chip
+and the kind chip", and their words [ui_text.md](ui_text.md), "The machine
+page's words":
+
+| Chip | What it reads |
+| --- | --- |
+| source | the row's `method`, the install method of the module's entry for the machine's platform; a method outside the five shows no chip |
+| kind | Service on every module of today |
 
 In a window 880 px wide or narrower, or one no wider than it is tall, the
 split is one column. The module list is then one row above the picked
@@ -1087,10 +1099,13 @@ shows under its step, as any `failed` module's code does, with the old
 version on the version line.
 
 The rows of the module list, each a tab, come in one order, the modules
-every system runs first: File share, Terminal, the SSH server, Remote
-desktop, Gitea, VS Code, code-server, CloudCLI, Codeg, SiYuan, Containers, Hermes
-WebUI, Ayakaleaf. The eight modules of the account layer are drawn by one
-`instances_panel.tsx` from the hub's description table. Its apply bar and frame
+every system runs first: Terminal, the SSH server, Remote desktop, File
+share, Gitea, VS Code, code-server, CloudCLI, Codeg, SiYuan, Containers, Hermes
+WebUI, Ayakaleaf. The order is the row order of the hub's description table
+([agent/module_template.md](agent/module_template.md), "The hub side"), in
+which `GET /api/agent/module` sends the rows, and the page keeps it. The
+eight modules of the account layer are drawn by one `instances_panel.tsx`
+from the hub's description table. Its apply bar and frame
 are lit while the module reads `failed` or `install_failed`, and its apply with
 nothing changed sends `POST /api/agent/module/<name>/apply`. A module the machine cannot
 run is left out, as before ([agent.md](agent.md), "Which modules each system

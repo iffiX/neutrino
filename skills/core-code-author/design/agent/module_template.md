@@ -147,7 +147,9 @@ The hub describes every module once, in the description table
 `modules/devices/module_table.py`: its kind, its configuration file name under
 `config/devices/<id>/`, the fields the vault seals in it, the published
 entry's `description_code`, and the panel kind the machine page draws. The
-five programs run as an account share one router,
+table's rows are in the one order every list of modules shows, and the
+manifest loader returns the modules in it ([ui_behavior.md](../ui_behavior.md),
+"The machine page"). The five programs run as an account share one router,
 `routers/agent/module_instances.py`, which serves `GET
 /api/agent/module/<module>` and `POST /api/agent/module/<module>/set` for
 each from that table; VS Code's terms acceptance stays in
@@ -255,3 +257,17 @@ drawn with `generic.svg` in the same directory.
 | The per-account data | `~/.local/share/neutrino/agent/<module>/` | `~/Library/Application Support/Neutrino/agent/<module>/` | `%LOCALAPPDATA%\Neutrino\agent\<module>\` |
 | The service definition | the unit `neutrino_<module>@<account>.service` | `/Library/LaunchDaemons/com.neutrino.<module>.<account>.plist` | the scheduled task `neutrino_<module>_<account>` |
 | The log | the unit's journal | `/Library/Logs/Neutrino/agent/<module>_<account>.log`, or the file the module names | `<account>.log` beside the program, or the file the module names |
+
+The module's directory is `<module>/` under the state root, the first row's
+path without `<directory>`. Each install class
+([module_install.md](module_install.md), "Artifacts") lands in one place:
+
+| Class | Where it lands |
+| --- | --- |
+| archive | unpacked into `<directory>/` in the module's directory, or into the module's directory itself for an artifact that names no `directory`, as VS Code's CLI does, and sealed |
+| installer | kept as `<directory>/<name>.msi` or `<directory>/<name>.pkg` in the module's directory; the system's installer then puts the program where it installs it, which the entry's `verify` names: Podman in `C:\Program Files\Podman\` and `/opt/podman/` |
+| disk image | the program copied or unpacked into `<directory>/` in the module's directory, or into the module's directory itself for an artifact that names no `directory`, and sealed |
+| machine image | kept as `<directory>/<name>.tar.zst` or `<directory>/<name>.raw.zst` in the module's directory, which `podman machine init --image` reads; Podman keeps the machine it builds in its own place for the run account |
+| container image | Podman's own store, root's on Linux and the Podman machine's on Windows and macOS; nothing lands in the module's directory |
+| single program | on Linux `/usr/local/bin/<program>`; on macOS `<program>` and on Windows `<program>.exe` in the module's directory; a new version replaces it in one rename |
+| npm package | as the account, under the module's per-account data directory: CloudCLI's `npm` artifact in `app/`, with npm's cache `.npm` and an empty `.npmrc` inside it; the packages Codeg installs with npm itself, its adapters, in `npm/`, with the cache `npm_cache/` beside it |

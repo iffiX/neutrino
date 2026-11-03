@@ -200,7 +200,7 @@ rules follow from that:
 | --- | --- |
 | A module page that names third-party software says that the owner installs it on that machine. | `You install VS Code Server on this machine under Microsoft's license terms.` |
 | A module page names the publisher's terms only where the publisher asks for acceptance; VS Code is the one such module ([ui_behavior.md](ui_behavior.md), "Terms before a module opens"). CloudCLI's, Codeg's and SiYuan's pages carry no licence line. | |
-| No surface says the hub downloads, provides, bundles or distributes third-party software, in either language (代为下载, 提供, 自带). A sentence about the mechanism, in a standard page or a code comment, makes the module's installer its subject. | `The module's installer fetches the archive.`, never `The hub downloads VS Code.` |
+| No surface says the hub downloads, provides, bundles or distributes third-party software, in either language (代为下载, 提供, 自带). A sentence about the mechanism, in a standard page or a code comment, makes the module's installer its subject. The source chip's 自带 marks the modules the agent carries alone, and never one of these programs ("The machine page's words"). | `The module's installer fetches the archive.`, never `The hub downloads VS Code.` |
 | The **About** card on the Settings page credits only the components the hub's own package carries on that system and in that edition, such as xray, CLIProxyAPI, NetBird, EasyTier, frp and tun2socks. Gitea, VS Code, code-server, CloudCLI, Codeg, SiYuan, Hermes WebUI and Ayakaleaf are never on it. | |
 
 The VS Code notice and its button:
@@ -375,6 +375,8 @@ where they fit.
 | `ui.machine.not_found` | This machine is not on record. | 没有这台机器的记录。 |
 | `ui.ai_tools.gateway_default` | Gateway default | 网关默认 |
 | `ui.modules.tabs_title` | Module configuration | 模块配置 |
+| `ui.modules.source_agent`, `ui.modules.source_system`, `ui.modules.source_upstream`, `ui.modules.source_container`, the source chip of a module's tab | Built-in, System, Upstream, Container | 自带、系统、外部源、容器 |
+| `ui.modules.kind_service`, the kind chip of a module's tab | Service | 服务 |
 | `ui.modules.log_title` | Log · last 200 lines | 日志 · 最后 200 行 |
 | `ui.modules.config_title` | Configuration | 配置 |
 | `ui.modules.enabled_accounts` | Enabled accounts | 启用的账户 |
@@ -431,6 +433,25 @@ where they fit.
 | `code.version_unknown` | Version {version} is not listed for this machine. | 这台机器没有版本 {version}。 |
 | `code.version_locked` | The version of {module} follows the system or the agent and cannot be chosen. | {module} 的版本跟随系统或被控端，不能选择。 |
 | `ui.modules.stopped_hint`, the hint of every apply bar of a module's panel while its module's `want` is not `running`, and under the file share's folder shares. The panels of the modules the agent carries keep their own hint | The module is stopped; these settings take effect at the next Start. | 模块已停止，这些设置在下次启动时生效。 |
+
+A module tab's two chips take one word each. What each word says, and which
+install method reads as which source, is
+[agent/module_install.md](agent/module_install.md), "The source chip and the
+kind chip":
+
+| Chip | English | Chinese |
+| --- | --- | --- |
+| source | Built-in | 自带 |
+| source | System | 系统 |
+| source | Upstream | 外部源 |
+| source | Container | 容器 |
+| source | User-installed | 用户安装 |
+| kind | Service | 服务 |
+| kind | Program | 普通程序 |
+
+No module of today reads User-installed or Program. Their keys,
+`ui.modules.source_user` and `ui.modules.kind_program`, enter the catalog
+with the first command-line tool, such as Claude Code or Codex.
 
 The keys of the Modules page's machine picker and **Global configuration**,
 `ui.modules.no_pick`, `ui.modules.no_pick_hint`, `ui.modules.global_title`,

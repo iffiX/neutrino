@@ -87,6 +87,19 @@ Their platform entries name the method `agent`, they are never in the Modules
 page's picker, always a tab, and the four presses on them are refused
 `module_not_optional` ([agent.md](../agent.md), "The kinds of module").
 
+### The source chip and the kind chip
+
+A module's tab shows two chips beside its state
+([../ui_behavior.md](../ui_behavior.md), "The machine page"), whose words are
+in [../ui_text.md](../ui_text.md), "The machine page's words".
+
+| Rule | Reason |
+| --- | --- |
+| The source chip names who installs, updates and removes the module's software on the machine: Built-in (自带), the agent, which carries it; System (系统), the system, through its package manager or as part of itself; Upstream (外部源), the module's installer, from the publisher's release at the version the hub sets; Container (容器), the Containers module's Podman, which pulls the images; User-installed (用户安装), the person, who installed it outside the system's package manager, as a vendor's script or npm puts a command-line tool in their home, while the module only finds it and uses it and never updates or removes it. | Who manages the software decides what an update and an uninstall do to it, and who first pressed **Install** changes neither. |
+| `agent` reads Built-in, `builtin` and `system` read System, `hub` reads Upstream, and `container` reads Container; no method reads User-installed yet, and the command-line tools to come are the first that will. | The method of the machine's entry is what the hub knows of who places the software, and the module row carries it as `method`. |
+| A Samba or a Podman that was on a Linux machine before its module reads System, as the one the module installed does. | The system's package manager updates and removes a package whoever installed it. |
+| The kind chip reads Service (服务) for a module with **Start** and **Stop**, and Program (普通程序) for one with neither. Every module of today is a service; the carried ones too, though their tab holds no **Start**, since the agent runs them. | A person reads from the kind whether the software runs by itself until stopped, or only when a person runs it, as a command-line tool does. |
+
 ## Artifacts
 
 An artifact is one file a `hub` or `container` entry installs:
@@ -96,10 +109,29 @@ the program in. An artifact whose sources are an
 ecosystem's names `source_set`, the set's name, in place of `sources`
 ("Source sets").
 
+Each kind belongs to one of seven classes, by how the agent places the
+software it holds. Where each class lands on each system is
+[module_template.md](module_template.md), "Disk layout".
+
+| Class | Kinds | What the agent does with it | Used today by |
+| --- | --- | --- | --- |
+| archive (压缩包) | `tar_gz`, `zip` | unpacks it into the module's directory and seals it | VS Code, code-server, Codeg's server, SiYuan on Linux, and the Node.js of CloudCLI and Codeg |
+| installer (安装包) | `msi`, `pkg` | keeps it in the module's directory and has the system's installer install it | Containers: Podman and WSL on Windows, Podman on macOS |
+| disk image (磁盘映像) | `dmg`, `nsis` | copies the program out of it into the module's directory and seals it; nothing in it runs | SiYuan on macOS and Windows |
+| machine image (虚拟机映像) | `tar_zst`, `raw_zst` | keeps it in the module's directory, and Podman builds its machine from it | Containers on Windows and macOS |
+| container image (容器镜像) | `image` | has the Containers module's Podman pull it from a registry | Hermes WebUI, Ayakaleaf |
+| single program (单个程序文件) | `binary` | keeps the publisher's bytes as one program and makes it executable | Gitea |
+| npm package (npm 包) | `npm` | installs it with npm, run as the account | CloudCLI |
+
+| Rule | Reason |
+| --- | --- |
+| A machine image and a container image are two classes. | A machine image is one file that comes down the `package` stream from the hub's cache into the module's directory, and Podman builds a machine from it; a container image Podman pulls itself from a registry into its own store, and the hub caches none. |
+| A new class is added only when a new way of placing software on a machine appears, and a new kind joins the class whose way it shares. | A class fixes where its software lands, so a kind placed the way another is lands where that one does. |
+
 | `kind` | The file | What happens to it on the machine |
 | --- | --- | --- |
 | `tar_gz`, `zip` | an archive | unpacked under `agent/<module>/<directory>/` in the state root and sealed |
-| `binary` | one program, as Gitea publishes it | kept as the publisher's bytes where the module's own page says, and made executable |
+| `binary` | one program, as Gitea publishes it | kept as the publisher's bytes where [module_template.md](module_template.md), "Disk layout", puts a single program, and made executable |
 | `msi` | a Windows Installer package | kept under `agent/<module>/<directory>/`, then installed with `installers.install_msi` |
 | `pkg` | a macOS installer package | kept under `agent/<module>/<directory>/`, then installed with `installers.install_pkg` |
 | `tar_zst` | a zstd-compressed tar, such as Podman's machine image for WSL | kept under `agent/<module>/<directory>/`, its path given to the module's program |
@@ -107,7 +139,7 @@ ecosystem's names `source_set`, the set's name, in place of `sources`
 | `dmg` | a macOS disk image, such as SiYuan's desktop build | attached with `hdiutil attach -nobrowse -readonly` at a temporary mount point; the folder `member` names is copied with `ditto` to `agent/<module>/<directory>/` and sealed, and the image is detached |
 | `nsis` | a Windows installer made with NSIS that holds a 7z archive stored whole, such as SiYuan's | the 7z archive found inside the installer by its signature and read by the agent's own reader with Python's `lzma`, its files unpacked under `agent/<module>/<directory>/` and sealed; nothing in the installer runs |
 | `image` | a container image, its `sources` image references with no tag | pulled by the Containers module's Podman |
-| `npm` | an npm package, named by `package`, its `source_set` the `npm` set | installed by npm, as the module's own page says |
+| `npm` | an npm package, named by `package`, its `source_set` the `npm` set | installed by npm run as the account, where [module_template.md](module_template.md), "Disk layout", puts an npm package |
 
 | Rule | Reason |
 | --- | --- |
