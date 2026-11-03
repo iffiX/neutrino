@@ -768,7 +768,7 @@ Each has `session_id`, `device_id`, `owner`, `is_owned`, `is_persistent`,
 | the page opens with listed sessions | tabs for all; the first one is active and attaches as the page opens, with its kept output replayed |
 | a tab's session reports `attached_count` | the tab shows the count as a badge when above one |
 | a tab's stream is closed `session_not_owned`, as when the owner stops sharing the session | the tab keeps its output and writes the code's words below it, as for every stream the hub closes with a code; the next state frame no longer lists the session, and the tab's label becomes `ui.terminal_ended` |
-| the hub's channel drops and comes back | a persistent or shared session's tab whose session is in the new list attaches again by itself and replays the kept output, its terminal keeping what it showed until the replay's first bytes arrive; one whose session is gone reads `ui.terminal_ended` and keeps its last output; a plain session's tab ended when the channel dropped, as the table below says; nothing stays on "not connected" after the hub is back |
+| the hub's channel drops and comes back | a persistent or shared session's tab whose session is in the new list attaches again by itself and replays the kept output, its terminal keeping what it showed until the replay's first bytes arrive; one whose session is gone reads `ui.terminal_ended` and keeps its last output; a plain session's tab ended when the channel dropped, as the table below says; nothing stays on "not connected" after the hub and the tab's machine are back |
 
 A tab's stream ends with no `close` when its hub's session ends, and the
 tab's status line then says why, in the same words on every client
@@ -788,6 +788,7 @@ hub lists its session.
 | The words say what happens to the shell. A refusal of the session or a dropped channel closes each of its streams, and the machine ends a plain session when its last stream closes, so a plain session's tab says it ended. A persistent or shared session runs on: its tab waits while its hub can take it back, and says the shell still runs once the hub keeps no record of this client. | A tab that waits for a shell the machine ended waits for nothing, and a tab that ends a shell the machine keeps loses it. A hub with no record of this client never lists its sessions to it again. |
 | A tab is judged by its hub's row, `disabled` or `unknown_device`, when its stream ends, and again when the row changes while the tab waits or reads `ui.terminal.detached_ended`. | The refusal and the end of the stream reach the client by separate ways, in either order. |
 | A hub whose row reads `disabled` lists no sessions, and a tab's session missing from that list ends no tab. | A persistent session ended on that empty list would be lost to its tab after the Enable. |
+| A machine whose terminals entry reads `is_online` false lists no sessions, and a tab's session missing from that list ends no tab; the tab is judged at the first list that has its machine online. | A persistent session ended on that empty list would be lost to its tab when its machine comes back. |
 
 A tab shows these badges after its label: `kept` for a persistent session,
 `shared` for a shared one, the count of attached windows when above one.
