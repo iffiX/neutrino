@@ -321,6 +321,9 @@ link's `app.title`.
 | The link no longer works | This link is no longer valid. / Ask the person who shared it for a new one. | 这个链接已失效。/ 请向分享给你的人要一个新链接。 |
 | The hub is offline | The hub is offline. / The computer that shares this app cannot be reached right now. | 中枢已离线。/ 分享这个应用的电脑现在连不上。 |
 | The app is unavailable | The app cannot be opened right now. / It opens by itself once it is back. | 应用暂时打不开。/ 恢复后会自动打开。 |
+| Another tab has an app | An app is already open in another tab. / Only one can be open at a time. | 已经在另一个标签页打开了一个应用。/ 一次只能打开一个。 |
+| The app moved to another tab | This app is now open in another tab. | 这个应用已在另一个标签页打开。 |
+| The button of those two screens | Use here | 在这里使用 |
 
 ## The AI page's words
 
