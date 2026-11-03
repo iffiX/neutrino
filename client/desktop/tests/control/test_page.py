@@ -3089,6 +3089,12 @@ def test_the_words_of_ui_text_are_in_both_catalogs_as_written(key, english, chin
     assert CATALOGS["zh-CN"][key] == chinese
 
 
+def test_a_disabled_client_reads_in_chinese_as_its_disabled_reason():
+    chinese = CATALOGS["zh-CN"]
+    assert chinese["code.client_disabled"] == "中枢已把本机停用"
+    assert chinese["ui.reason.disabled"] == chinese["code.client_disabled"] + "。"
+
+
 def test_a_chinese_invalid_code_opens_with_its_noun():
     for key, wording in CATALOGS["zh-CN"].items():
         if key.startswith("code.") and key.endswith("_invalid"):

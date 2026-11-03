@@ -11,7 +11,7 @@
   "code.binding_unknown": "这台中枢已没有这个客户端的记录，请用新链接重新加入",
   "code.bundle_missing": "此安装未包含 {binary}，请重新安装客户端",
   "code.busy": "仍在处理上一个请求",
-  "code.client_disabled": "中枢已关闭此客户端",
+  "code.client_disabled": "中枢已把本机停用",
   "code.client_held": "{account} 的客户端正在这台电脑上运行；一台电脑同一时间只运行一个人的客户端",
   "code.client_internal": "客户端遇到意外错误（{error}），请查看它的日志",
   "code.client_not_running": "客户端没有运行，先 nclient gui。",

@@ -97,6 +97,10 @@ def test_the_chinese_refusals_are_the_help_pages_own(chinese):
     assert wording.word_code("client_not_running") == "客户端没有运行，先 nclient gui。"
 
 
+def test_a_disabled_client_reads_as_the_pages_chinese(chinese):
+    assert wording.word_code("client_disabled") == "中枢已把本机停用"
+
+
 def test_the_detail_codes_are_the_pages_own():
     assert set(wording.CLIENT_DETAIL_CODES) == set(DETAIL_FALLBACK_CODES)
     for code in wording.CLIENT_DETAIL_CODES:

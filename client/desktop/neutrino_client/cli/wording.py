@@ -343,7 +343,7 @@ CLIENT_CODE_WORDS = {
         "control_socket_unavailable": "客户端在这个会话里启动不了",
         "control_channel_closed": "客户端不再应答，请重新打开它",
         "client_internal": "客户端遇到意外错误，请查看它的日志",
-        "client_disabled": "中枢已关闭此客户端",
+        "client_disabled": "中枢已把本机停用",
         "link_missing": "粘贴中枢客户端页面上的链接",
         "link_unreadable": "这不是加入链接，请从中枢复制整行",
         "link_incomplete": "此链接不带中枢地址和令牌",
