@@ -23,7 +23,9 @@ The `conftest.py` of the agent, client and hub blocks has two guards. A
 process guard fails a test on any program that changes the machine or asks
 for authorization, such as `systemctl`, `nft`, `apt` or `sudo`. An audit hook
 fails a test that writes, creates, renames or removes a file outside its
-temporary folders. Its failure message names the path and the test.
+temporary folders. Its failure message names the path and the test. The agent
+block's `conftest.py` ends the reads of each reconcile worker at the end of its
+test.
 
 ## The mirror rule
 
