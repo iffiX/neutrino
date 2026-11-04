@@ -17,6 +17,7 @@ capabilities are not advertised.
 from __future__ import annotations
 
 import ctypes
+import errno
 import ntpath
 import os
 import re
@@ -34,6 +35,7 @@ from neutrino_agent.constants import (
     AGENT_COMMAND_TIMEOUT_S,
     AGENT_CONTROL_PIPE_NAME,
     AGENT_RUN_AS_DIR_NAME,
+    AGENT_RUN_AS_ENDS_DIR_NAME,
     AGENT_RUN_AS_POLL_S,
     AGENT_RUN_AS_TASK_PREFIX,
     AGENT_STEP_DOWN_TIMEOUT_S,
@@ -64,12 +66,12 @@ from neutrino_agent.modules.shared.account_service.constants import (
     ACCOUNT_SERVICE_WINDOWS_SHELL,
 )
 from neutrino_agent.modules.shared.account_service.windows import (
+    is_reparse_point,
     remove_path,
     write_text,
 )
 from neutrino_agent.modules.shared.subprocess_run import run as run_command
 from neutrino_agent.modules.shared.windows_acl import (
-    grant_account_alone,
     let_users_through,
     open_to_users,
 )
@@ -84,6 +86,7 @@ from neutrino_agent.platforms.windows_accounts import (
     read_users,
 )
 from neutrino_agent.platforms.windows_batch_logon import WindowsBatchLogonRight
+from neutrino_agent.platforms.windows_folder import WindowsFolderAccess
 from neutrino_agent.platforms.windows_net import read_interfaces
 from neutrino_agent.platforms.windows_relay import rule_changes, wsl_addresses_from
 from neutrino_agent.platforms.windows_processes import (
@@ -292,6 +295,35 @@ def _exit_code_in(path: str) -> "int | None":
         return None
 
 
+def _wait_for_end(done: str, output: str, timeout_s: float, sleep) -> tuple:
+    """A one-shot task's exit code and output, waited for; run acting as the account.
+
+    Returns:
+        ``(code, output)``; the code None when the script never wrote its
+        end in time.
+    """
+    deadline = time.monotonic() + timeout_s
+    # The script's redirection makes the file before its echo fills it.
+    code = _exit_code_in(done)
+    while code is None and time.monotonic() < deadline:
+        sleep(AGENT_RUN_AS_POLL_S)
+        code = _exit_code_in(done)
+    return code, _file_text(output)
+
+
+def _empty_folder(path: str) -> None:
+    """Delete everything a folder holds; run acting as the account."""
+    for name in os.listdir(path):
+        held = ntpath.join(path, name)
+        if os.path.isdir(held) and not os.path.islink(held):
+            shutil.rmtree(held, ignore_errors=True)
+        else:
+            try:
+                os.unlink(held)
+            except OSError:
+                pass
+
+
 def _utf16_text(units) -> str:
     """A fixed array of UTF-16 units, up to its first null."""
     return bytes(units).decode("utf-16-le", "replace").split("\x00", 1)[0].strip()
@@ -363,6 +395,7 @@ class WindowsPlatform(AgentPlatform):
         seat=None,
         sleep=time.sleep,
         batch_logon=None,
+        folders=None,
     ):
         """
         Args:
@@ -391,6 +424,8 @@ class WindowsPlatform(AgentPlatform):
             batch_logon: The batch logon right of the accounts, as
                 :class:`WindowsBatchLogonRight` holds it; None keeps its record
                 under the state root.
+            folders: Folders' access lists set on handles, as
+                :class:`WindowsFolderAccess` sets them; None sets them.
         """
         self._kernel32 = kernel32
         self._shell32 = shell32
@@ -400,6 +435,9 @@ class WindowsPlatform(AgentPlatform):
         self._seat = seat if seat is not None else WindowsSeat()
         self._run = run if run is not None else run_command
         self._sleep = sleep
+        self._folders = (
+            folders if folders is not None else WindowsFolderAccess(libraries=None)
+        )
         # One lock per account, by its lower-case name, around a one-shot
         # task's whole cycle: the account's runs share the task's name and
         # its directory.
@@ -547,14 +585,17 @@ class WindowsPlatform(AgentPlatform):
     ) -> "subprocess.CompletedProcess":
         """Run a command as an account, in a one-shot scheduled task under its login.
 
-        The task runs with a limited token in the account's profile; its
-        script, its standard input, its output and its exit code are files
-        in a directory only the account, SYSTEM and the administrators
-        reach, all removed with the task once the exit code is read. The
-        account holds the batch logon right while the task runs. Two
-        runs for one account take turns, the second waiting until the
-        first's task and files are removed; runs for two accounts do not
-        wait on each other.
+        The task runs with a limited token in the account's profile. Its
+        script and its standard input are files in a folder of SYSTEM's
+        that the account only reads; its output and its exit code are
+        files in a folder under it, made afresh for the run, that the
+        account writes, and SYSTEM reads and removes them only acting as
+        the account. Each folder's access list is set on its handle,
+        following no junction. All are removed with the task once the exit
+        code is read. The account holds the batch logon right while the task
+        runs. Two runs for one account take turns, the second waiting
+        until the first's task and files are removed; runs for two
+        accounts do not wait on each other.
 
         Args:
             account: The account.
@@ -572,22 +613,29 @@ class WindowsPlatform(AgentPlatform):
         Raises:
             ModuleApplyError: ``credential_invalid {account}`` when Windows
                 refuses the login.
-            OSError: When the files cannot be written, the account cannot
-                be granted the batch logon right, or the host cannot register
-                or start the task.
+            OSError: When the files cannot be written, a folder cannot be
+                left to the account, the account cannot be granted the batch
+                logon right, or the host cannot register or start the task.
         """
         with self._run_as_lock(account):
             directory = ntpath.join(
                 self.agent_var_dir(), AGENT_RUN_AS_DIR_NAME, account
             )
+            ends = ntpath.join(directory, AGENT_RUN_AS_ENDS_DIR_NAME)
             paths = {
                 name: ntpath.join(directory, f"command.{name}")
-                for name in ("cmd", "input", "output", "done")
+                for name in ("cmd", "input")
             }
-            os.makedirs(directory, exist_ok=True)
-            grant_account_alone(self._run, directory, account, "M", is_tree=True)
-            for name in ("output", "done"):
-                remove_path(paths[name])
+            paths.update(
+                {
+                    name: ntpath.join(ends, f"command.{name}")
+                    for name in ("output", "done")
+                }
+            )
+            self._leave_folder(directory, account, "R")
+            self._empty_ends(ends, account, password)
+            os.mkdir(ends)
+            self._leave_folder(ends, account, "M")
             task = AGENT_RUN_AS_TASK_PREFIX + account
             try:
                 write_text(
@@ -613,13 +661,15 @@ class WindowsPlatform(AgentPlatform):
                         "timeout_s": int(timeout_s),
                     },
                 )
-                deadline = time.monotonic() + timeout_s
-                # The script's redirection makes the file before its echo fills it.
-                code = _exit_code_in(paths["done"])
-                while code is None and time.monotonic() < deadline:
-                    self._sleep(AGENT_RUN_AS_POLL_S)
-                    code = _exit_code_in(paths["done"])
-                output = _file_text(paths["output"])
+                code, output = self.as_account(
+                    account,
+                    _wait_for_end,
+                    paths["done"],
+                    paths["output"],
+                    timeout_s,
+                    self._sleep,
+                    password=password,
+                )
             finally:
                 try:
                     self.powershell_host.call("task_remove", {"task": task})
@@ -629,11 +679,51 @@ class WindowsPlatform(AgentPlatform):
                     self.batch_logon.release(account, task)
                 except OSError:
                     pass
-                for path in paths.values():
-                    remove_path(path)
+                for name in ("cmd", "input"):
+                    remove_path(paths[name])
+                try:
+                    self._empty_ends(ends, account, password)
+                except (OSError, ModuleApplyError):
+                    pass
             if code is None:
                 code = WINDOWS_RUN_AS_NO_EXIT
             return subprocess.CompletedProcess(list(argv), code, output, "")
+
+    def _leave_folder(self, directory: str, account: str, right: str) -> None:
+        """Make a folder of SYSTEM's and leave it to one account, its access list set on its handle.
+
+        A junction where the folder goes is removed, never followed, and
+        the folder made again.
+
+        Raises:
+            OSError: When the folder cannot be made or left.
+        """
+        os.makedirs(directory, exist_ok=True)
+        try:
+            self._folders.leave_to(directory, account, right)
+            return
+        except OSError as error:
+            if error.errno != errno.ELOOP:
+                raise
+        os.rmdir(directory)
+        os.makedirs(directory)
+        self._folders.leave_to(directory, account, right)
+
+    def _empty_ends(self, ends: str, account: str, password: str) -> None:
+        """Take a run's output folder away: what it holds as the account, the folder itself by SYSTEM.
+
+        A junction there is removed, never followed.
+
+        Raises:
+            ModuleApplyError: ``credential_invalid {account}`` when Windows
+                refuses the login.
+            OSError: When it cannot be taken away.
+        """
+        if not os.path.lexists(ends):
+            return
+        if not is_reparse_point(ends):
+            self.as_account(account, _empty_folder, ends, password=password)
+        os.rmdir(ends)
 
     def run_as_account_answering(
         self,

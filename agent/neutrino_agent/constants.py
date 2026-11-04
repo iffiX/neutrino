@@ -250,6 +250,9 @@ AGENT_ANSWER_READ_BYTES = 4096
 # console inside such a task.
 AGENT_RUN_AS_TASK_PREFIX = "neutrino_run_as_"
 AGENT_RUN_AS_DIR_NAME = "run_as"
+# The folder under an account's one-shot task folder that its run writes
+# its output and its exit code into, made afresh for each run.
+AGENT_RUN_AS_ENDS_DIR_NAME = "out"
 AGENT_RUN_AS_POLL_S = 0.5
 AGENT_ANSWER_VERB = "answer"
 # The right a task under an account's login signs in with on Windows, and

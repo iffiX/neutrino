@@ -12,6 +12,8 @@ firewall rules read and written through the host.
 """
 
 import contextlib
+import errno
+import os
 import ctypes
 import subprocess
 import threading
@@ -1295,16 +1297,45 @@ class OneShotTask:
             self.seen["script"] = stream.read()
         with open(directory + "\\command.input", encoding="utf-8") as stream:
             self.seen["input"] = stream.read()
-        with open(directory + "\\command.output", "w", encoding="utf-8") as stream:
+        with open(directory + "\\out\\command.output", "w", encoding="utf-8") as stream:
             stream.write(self.output)
         if self.exit_text is not None:
-            with open(directory + "\\command.done", "w", encoding="utf-8") as stream:
+            with open(
+                directory + "\\out\\command.done", "w", encoding="utf-8"
+            ) as stream:
                 stream.write(self.exit_text)
         return {}
 
 
+class Folders:
+    """Folders left to an account on their handles, recorded; a refusal raised when asked."""
+
+    def __init__(self, refusal=None):
+        self.calls: list = []
+        self.refusal = refusal
+
+    def leave_to(self, path, account, right):
+        self.calls.append((path, account, right))
+        if self.refusal is not None:
+            raise self.refusal
+
+
+class RunAsPlatform(WindowsPlatform):
+    """The Windows platform whose steps as an account run on the test's thread, each recorded."""
+
+    def __init__(self, **tools):
+        tools.setdefault("folders", Folders())
+        super().__init__(**tools)
+        self.folders = tools["folders"]
+        self.as_accounts: list = []
+
+    def as_account(self, account, step, *arguments, password=""):
+        self.as_accounts.append((account, step.__name__, password))
+        return step(*arguments)
+
+
 def run_as_platform(task, icacls=None, batch_logon=None):
-    return WindowsPlatform(
+    return RunAsPlatform(
         kernel32=FakeKernel32(),
         powershell=task.host,
         run=icacls if icacls is not None else Icacls(),
@@ -1347,26 +1378,24 @@ def test_windows_runs_as_an_account_in_a_one_shot_task_under_its_login(
         ("task_remove", {"task": "neutrino_run_as_ann"}),
         ("batch_logon_release", {"account": "ann", "task": "neutrino_run_as_ann"}),
     ]
-    assert icacls.calls == [
-        [
-            "icacls.exe",
-            directory,
-            "/inheritance:r",
-            "/grant:r",
-            "ann:(OI)(CI)M",
-            "*S-1-5-18:(OI)(CI)F",
-            "*S-1-5-32-544:(OI)(CI)F",
-        ]
+    assert icacls.calls == []
+    assert platform.folders.calls == [
+        (directory, "ann", "R"),
+        (f"{directory}\\out", "ann", "M"),
+    ]
+    assert [step for _account, step, _password in platform.as_accounts] == [
+        "_wait_for_end",
+        "_empty_folder",
     ]
     assert task.seen["input"] == "in"
     lines = task.seen["script"].split("\r\n")
     assert lines[1] == 'cd /d "%USERPROFILE%"'
     assert lines[2] == (
         '"C:\\P F\\cc-switch.exe" "--app" "claude" < '
-        f'"{directory}\\command.input" > "{directory}\\command.output" 2>&1'
+        f'"{directory}\\command.input" > "{directory}\\out\\command.output" 2>&1'
     )
-    assert lines[3] == f'>"{directory}\\command.done" echo %errorlevel%'
-    assert sorted(path.name for path in tmp_path.iterdir()) == [
+    assert lines[3] == f'>"{directory}\\out\\command.done" echo %errorlevel%'
+    assert sorted(path.name for path in tmp_path.iterdir() if path.is_dir()) == [
         "Neutrino\\agent\\state\\run_as\\ann"
     ]
 
@@ -1382,7 +1411,7 @@ def test_a_command_that_never_wrote_its_end_reads_minus_one(monkeypatch, tmp_pat
         waits.append(seconds)
         clock[0] += seconds
 
-    platform = WindowsPlatform(
+    platform = RunAsPlatform(
         powershell=task.host,
         run=Icacls(),
         sleep=sleep,
@@ -1418,7 +1447,8 @@ class SlowEcho(OneShotTask):
 
     def run(self, args):
         answer = super().run(args)
-        self.done_path = args["arguments"][len('/d /c "') : -len('.cmd"')] + ".done"
+        script = args["arguments"][len('/d /c "') : -len('"')]
+        self.done_path = script[: -len("command.cmd")] + "out\\command.done"
         with open(self.done_path, "w", encoding="utf-8"):
             pass
         return answer
@@ -1436,7 +1466,7 @@ def test_an_empty_end_file_is_no_answer_and_the_code_written_after_it_is(
         with open(task.done_path, "w", encoding="utf-8") as stream:
             stream.write("0\r\n")
 
-    platform = WindowsPlatform(
+    platform = RunAsPlatform(
         powershell=task.host,
         run=Icacls(),
         sleep=sleep,
@@ -1463,7 +1493,7 @@ def test_an_end_file_that_stays_empty_reads_minus_one_at_the_timeout(
         waits.append(seconds)
         clock[0] += seconds
 
-    platform = WindowsPlatform(
+    platform = RunAsPlatform(
         powershell=task.host,
         run=Icacls(),
         sleep=sleep,
@@ -1481,7 +1511,7 @@ def test_a_command_that_exits_minus_one_reads_it_at_once(monkeypatch, tmp_path):
     monkeypatch.setenv("ProgramData", f"{tmp_path}/")
     task = OneShotTask(exit_text="-1\r\n", output="refused")
     waits = []
-    platform = WindowsPlatform(
+    platform = RunAsPlatform(
         powershell=task.host,
         run=Icacls(),
         sleep=waits.append,
@@ -1499,7 +1529,7 @@ def test_a_login_windows_refuses_leaves_no_task_and_no_file(monkeypatch, tmp_pat
     monkeypatch.setenv("ProgramData", f"{tmp_path}/")
     refusal = ModuleApplyError("credential_invalid", {"account": "ann"})
     host = RecordingHost({"task_run_once": refusal})
-    platform = WindowsPlatform(
+    platform = RunAsPlatform(
         powershell=host,
         run=Icacls(),
         kernel32=FakeKernel32(),
@@ -1521,20 +1551,87 @@ def test_a_login_windows_refuses_leaves_no_task_and_no_file(monkeypatch, tmp_pat
     ]
 
 
-def test_a_run_folder_icacls_refuses_starts_no_task(monkeypatch, tmp_path):
+def test_a_run_folder_windows_refuses_starts_no_task(monkeypatch, tmp_path):
     monkeypatch.setenv("ProgramData", f"{tmp_path}/")
     host = RecordingHost()
-    platform = WindowsPlatform(
+    platform = RunAsPlatform(
         powershell=host,
-        run=Icacls(5),
         kernel32=FakeKernel32(),
         batch_logon=FakeBatchLogon(host.calls),
+        folders=Folders(OSError(5, "Windows refused the folder")),
     )
 
-    with pytest.raises(OSError, match="icacls refused"):
+    with pytest.raises(OSError, match="Windows refused the folder"):
         platform.run_as_account("ann", ["cc.exe"], password="pw")
 
     assert host.calls == []
+
+
+def test_a_junction_at_the_run_folder_is_removed_and_never_followed(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setenv("ProgramData", f"{tmp_path}/")
+    task = OneShotTask()
+
+    class Junction(Folders):
+        """The first folder left is a junction; the second, made again, is not."""
+
+        def leave_to(self, path, account, right):
+            self.calls.append((path, account, right))
+            if len(self.calls) == 1:
+                raise OSError(errno.ELOOP, f"{path} is a junction or a link")
+
+    platform = run_as_platform(task)
+    platform.folders = platform._folders = Junction()
+    removed = []
+    real_rmdir = os.rmdir
+    monkeypatch.setattr(
+        windows_module.os,
+        "rmdir",
+        lambda path: removed.append(path) or real_rmdir(path),
+    )
+
+    done = platform.run_as_account("ann", ["cc.exe"], password="pw", timeout_s=30)
+
+    directory = f"{tmp_path}/Neutrino\\agent\\state\\run_as\\ann"
+    assert done.returncode == 3
+    assert removed[0] == directory
+    assert [call[0] for call in platform.folders.calls] == [
+        directory,
+        directory,
+        f"{directory}\\out",
+    ]
+
+
+def test_the_run_s_output_is_read_and_removed_only_acting_as_the_account(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setenv("ProgramData", f"{tmp_path}/")
+    task = OneShotTask()
+    platform = run_as_platform(task)
+    read_as_system = []
+    real_open = open
+
+    def watched(path, mode="r", *args, **kwargs):
+        if "\\out\\" in str(path) and "r" in mode and not platform.is_acting:
+            read_as_system.append(path)
+        return real_open(path, mode, *args, **kwargs)
+
+    platform.is_acting = False
+
+    def as_account(account, step, *arguments, password=""):
+        platform.is_acting = True
+        try:
+            return step(*arguments)
+        finally:
+            platform.is_acting = False
+
+    platform.as_account = as_account
+    monkeypatch.setattr("builtins.open", watched)
+
+    platform.run_as_account("ann", ["cc.exe"], password="pw", timeout_s=30)
+
+    assert read_as_system == []
 
 
 def test_windows_answers_a_question_through_its_own_program_inside_the_task(
