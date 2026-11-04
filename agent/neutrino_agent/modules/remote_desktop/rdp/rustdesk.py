@@ -14,13 +14,16 @@ A session's host copies the service's settings only when that file holds
 both, and keeps its own otherwise; empty options mean upstream's public
 server.
 
-**The owner is part of the file.** A seated account's copy is written by
-this root daemon but read and written by RustDesk running as that person;
-on Wayland it stores the screen-capture permission there, so a copy left
-owned by root costs that person the permission dialog on every connection.
-A file keeps the owner and mode it had, and a new one under a home is made
-as that home's owner, as is each folder made for it there; a folder there
-that root owns is given to that owner.
+**An account's copy is read and written as that account.** A seated
+account's copy is read and written by RustDesk running as that person; on
+Wayland it stores the screen-capture permission there, so a copy left owned
+by root costs that person the permission dialog on every connection. Every
+read and write of a file under a home runs as the home's account through
+:class:`AccountFiles`, keeping the mode the file had; the file and each
+folder made for it are that account's. A folder there that root owns,
+which RustDesk run as root leaves, is given to that account on its open
+descriptor, each level opened with no link followed. Root's own copies
+keep the owner and mode they had.
 
 **RustDesk seals the password when it rewrites the file**: ``00``, then
 base64 of the format byte 1, a 24-byte nonce and the secretbox, keyed by the
@@ -43,7 +46,8 @@ import secrets
 import stat
 import sys
 
-from neutrino_agent.exceptions import InstallError
+from neutrino_agent.exceptions import InstallError, ModuleApplyError
+from neutrino_agent.modules.shared.handle_walk import WALK_DIR_FLAGS, open_dir
 from neutrino_agent.modules.remote_desktop.rdp.ed25519 import (
     ED25519_SEED_BYTES,
     public_key,
@@ -85,6 +89,8 @@ RUSTDESK_NO_LOGIN_SHELLS = ("nologin", "false")
 # A sealed value's prefix, and the format byte its decoded bytes open with.
 RUSTDESK_SEALED_PREFIX = "00"
 RUSTDESK_SEALED_FORMAT = 1
+# The mode of a settings file made under a home.
+RUSTDESK_ACCOUNT_FILE_MODE = 0o644
 
 
 def rustdesk_os() -> str:
@@ -274,9 +280,22 @@ def read_options(path: str) -> dict:
     """
     try:
         with open(path, "r", encoding="utf-8") as stream:
-            lines = stream.read().splitlines()
+            return options_in(stream.read())
     except (OSError, UnicodeDecodeError):
         return {}
+
+
+def options_in(text: str) -> dict:
+    """The options table of one ``RustDesk2.toml``'s text. Pure.
+
+    Args:
+        text: The file's text.
+
+    Returns:
+        Each option's value without its quotes; empty when the text holds
+        no such table.
+    """
+    lines = text.splitlines()
     stripped = [line.strip() for line in lines]
     if RUSTDESK_OPTIONS_TABLE not in stripped:
         return {}
@@ -411,7 +430,7 @@ def give_back_dirs(directory: str, home: str) -> list:
     Raises:
         OSError: If a folder's owner cannot be changed.
     """
-    return _give_dirs(os.path.normpath(directory), home, ())
+    return _give_dirs(os.path.normpath(directory), home)
 
 
 def is_below_link(path: str, home: str) -> bool:
@@ -479,16 +498,26 @@ def write_config(path: str, options: tuple) -> bool:
     return write_settings(path, lambda existing: render_config(existing, options))
 
 
-def would_change(path: str, render) -> bool:
+def would_change(path: str, render, files=None) -> bool:
     """Whether writing one settings file would change it.
 
     Args:
         path: The file.
         render: Called with the file's text; returns the text to write.
+        files: The :class:`AccountFiles` of the account whose home holds
+            the file, which reads it; None reads root's own file.
 
     Returns:
-        True when the file is missing or its text would change.
+        True when the file is missing, cannot be read or its text would
+        change.
     """
+    if files is not None:
+        try:
+            held = files.read(path)
+            existing = held.decode("utf-8") if held is not None else None
+        except (OSError, UnicodeDecodeError, ModuleApplyError):
+            existing = None
+        return existing is None or render(existing) != existing
     try:
         with open(path, "r", encoding="utf-8") as stream:
             existing = stream.read()
@@ -497,16 +526,34 @@ def would_change(path: str, render) -> bool:
     return render(existing) != existing
 
 
-def write_settings(path: str, render, home: str = "") -> bool:
-    """Write one settings file through a renderer, keeping its owner and mode.
+def read_account_text(path: str, files) -> str:
+    """One settings file under a home, read as its account.
+
+    Args:
+        path: The file.
+        files: The :class:`AccountFiles` of the home's account.
+
+    Returns:
+        Its text; empty when it is missing, cannot be read or is no text.
+    """
+    try:
+        held = files.read(path)
+        return held.decode("utf-8") if held is not None else ""
+    except (OSError, UnicodeDecodeError, ModuleApplyError):
+        return ""
+
+
+def write_settings(path: str, render, home: str = "", files=None) -> bool:
+    """Write one settings file through a renderer, keeping its mode.
 
     Args:
         path: The file to write.
         render: Called with the file's current text, empty when there is
             none; returns the text to write.
-        home: The home of the account the file belongs to; each folder made
-            under it is given the home's owner. Empty makes every folder as
-            this process.
+        home: Unused; the account's own writes make its folders.
+        files: The :class:`AccountFiles` of the account whose home holds
+            the file, which reads and writes it as that account; None
+            writes root's own file, keeping its owner.
 
     Returns:
         True when the file's text is not what it was.
@@ -514,9 +561,11 @@ def write_settings(path: str, render, home: str = "") -> bool:
     Raises:
         InstallError: If the file cannot be written.
     """
+    if files is not None:
+        return _write_account_settings(path, render, files)
     try:
         existing = ""
-        _make_dirs(os.path.dirname(path) or ".", home)
+        _make_dirs(os.path.dirname(path) or ".")
         kept = _owner_of(path)
         if os.path.isfile(path):
             with open(path, "r", encoding="utf-8") as stream:
@@ -532,6 +581,29 @@ def write_settings(path: str, render, home: str = "") -> bool:
             os.chmod(temporary, kept[2])
         os.replace(temporary, path)
     except OSError as error:
+        raise InstallError(f"could not write {path}: {error}")
+    return rendered != existing
+
+
+def _write_account_settings(path: str, render, files) -> bool:
+    """Write one settings file under a home as its account, keeping its mode; unchanged text is not written.
+
+    Raises:
+        InstallError: If the file cannot be read or written as the account.
+    """
+    try:
+        held = files.read(path)
+        existing = held.decode("utf-8") if held is not None else ""
+        rendered = render(existing)
+        if held is None or rendered != existing:
+            status = _lstat(path)
+            mode = (
+                stat.S_IMODE(status.st_mode)
+                if status is not None and stat.S_ISREG(status.st_mode)
+                else RUSTDESK_ACCOUNT_FILE_MODE
+            )
+            files.write(path, rendered.encode("utf-8"), mode)
+    except (OSError, UnicodeDecodeError, ModuleApplyError) as error:
         raise InstallError(f"could not write {path}: {error}")
     return rendered != existing
 
@@ -616,50 +688,49 @@ def _unquoted(value: str) -> str:
     return value
 
 
-def _make_dirs(directory: str, home: str) -> None:
-    """Make a folder and each missing one above it; each under ``home``
-    that was made here or that root owns is given the home's owner."""
-    directory = os.path.normpath(directory)
-    missing = []
-    current = directory
-    while current and not os.path.isdir(current):
-        missing.append(current)
-        parent = os.path.dirname(current)
-        if parent == current:
-            break
-        current = parent
-    made = []
-    for level in reversed(missing):
-        try:
-            os.mkdir(level)
-        except FileExistsError:
-            continue
-        made.append(level)
-    _give_dirs(directory, home, made)
+def _make_dirs(directory: str) -> None:
+    """Make one of root's folders and each missing one above it."""
+    os.makedirs(os.path.normpath(directory), exist_ok=True)
 
 
-def _give_dirs(directory: str, home: str, made) -> list:
-    """Give each folder below ``home`` down to ``directory`` that is in
-    ``made`` or that root owns to the home's owner; symbolic links are
-    skipped."""
-    owner = _stat(home) if home else None
-    if owner is None or not hasattr(os, "chown"):
+def _give_dirs(directory: str, home: str) -> list:
+    """Give each folder below ``home`` down to ``directory`` that root owns
+    to the home's owner, each level opened from the home with no link
+    followed and given on its descriptor; the walk stops at a link or at a
+    level that is missing."""
+    levels = _levels_below(home, directory)
+    if not home or not levels or not hasattr(os, "fchown"):
+        return []
+    try:
+        descriptor = open_dir(home)
+    except OSError:
         return []
     given = []
-    for level in _levels_below(home, directory):
-        status = _lstat(level)
-        if status is None or not stat.S_ISDIR(status.st_mode):
-            continue
-        if level in made or (status.st_uid == 0 and owner.st_uid != 0):
-            os.chown(level, owner.st_uid, owner.st_gid)
-            given.append(level)
+    try:
+        owner = os.fstat(descriptor)
+        if owner.st_uid == 0:
+            return []
+        for level in levels:
+            try:
+                below = os.open(
+                    os.path.basename(level), WALK_DIR_FLAGS, dir_fd=descriptor
+                )
+            except OSError:
+                break
+            os.close(descriptor)
+            descriptor = below
+            if os.fstat(descriptor).st_uid == 0:
+                os.fchown(descriptor, owner.st_uid, owner.st_gid)
+                given.append(level)
+    finally:
+        os.close(descriptor)
     return given
 
 
 def _levels_below(home: str, directory: str) -> list:
     """Each folder from just below ``home`` down to ``directory``, empty
     when ``directory`` is not under ``home``."""
-    if not _is_under(directory, home):
+    if not is_under(directory, home):
         return []
     top = os.path.normpath(home)
     levels = []
@@ -673,7 +744,7 @@ def _levels_below(home: str, directory: str) -> list:
     return list(reversed(levels))
 
 
-def _is_under(path: str, directory: str) -> bool:
+def is_under(path: str, directory: str) -> bool:
     """Whether a path lies below a folder."""
     parent = os.path.normpath(directory).rstrip(os.sep) + os.sep
     return os.path.normpath(path).startswith(parent)

@@ -29,6 +29,8 @@ from neutrino_agent.modules.remote_desktop.rdp.rustdesk import (
     write_settings,
 )
 
+from tests.conftest import fd_owners
+
 
 def write_password(path, password):
     """One ``RustDesk.toml`` written with a password, as the share writes it."""
@@ -284,34 +286,60 @@ def _owners(monkeypatch, owners):
     return chowned
 
 
-def test_each_folder_made_under_a_home_is_given_the_homes_owner(monkeypatch, tmp_path):
+class _Files:
+    """An account's files, read and written by the test as that account would."""
+
+    def __init__(self):
+        self.written = []
+
+    def read(self, path):
+        try:
+            with open(path, "rb") as stream:
+                return stream.read()
+        except FileNotFoundError:
+            return None
+
+    def write(self, path, data, mode):
+        self.written.append((path, mode))
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "wb") as stream:
+            stream.write(data)
+
+
+def test_an_accounts_settings_are_written_through_its_files_keeping_the_mode(
+    monkeypatch, tmp_path
+):
     """RustDesk running as that person writes its own files into these
-    folders; one left to root fails to store its configuration."""
+    folders, and the person can put a link where root would write."""
     home = tmp_path / "pat"
-    home.mkdir()
-    chowned = _owners(monkeypatch, {str(home): (4242, 4343)})
     path = home / ".config" / "rustdesk" / "RustDesk2.toml"
+    path.parent.mkdir(parents=True)
+    path.write_text("[options]\n")
+    path.chmod(0o600)
+    files = _Files()
+    chowned = []
+    monkeypatch.setattr(rustdesk.os, "chown", lambda *args: chowned.append(args))
 
-    rustdesk.write_settings(str(path), lambda existing: "[options]\n", str(home))
+    assert rustdesk.write_settings(
+        str(path), lambda existing: existing + "a = 'b'\n", files=files
+    )
 
-    assert chowned == [
-        (str(home / ".config"), 4242, 4343),
-        (str(home / ".config" / "rustdesk"), 4242, 4343),
-        (f"{path}.tmp", 4242, 4343),
-    ]
-    assert path.is_file()
+    assert files.written == [(str(path), 0o600)]
+    assert chowned == []
+    assert (
+        rustdesk.write_settings(str(path), lambda existing: existing, files=files)
+        is False
+    )
+    assert files.written == [(str(path), 0o600)]
 
 
-def test_a_folder_that_was_there_keeps_its_owner(monkeypatch, tmp_path):
-    home = tmp_path / "pat"
-    (home / ".config").mkdir(parents=True)
-    chowned = _owners(monkeypatch, {str(home): (4242, 4343)})
-    path = home / ".config" / "rustdesk" / "RustDesk2.toml"
+def test_a_new_accounts_settings_file_is_made_0644(tmp_path):
+    path = tmp_path / "pat" / ".config" / "rustdesk" / "RustDesk2.toml"
+    files = _Files()
 
-    rustdesk.write_settings(str(path), lambda existing: "[options]\n", str(home))
+    rustdesk.write_settings(str(path), lambda existing: "[options]\n", files=files)
 
-    folders = [target for target, _, _ in chowned if not target.endswith(".tmp")]
-    assert folders == [str(home / ".config" / "rustdesk")]
+    assert files.written == [(str(path), 0o644)]
 
 
 def test_folders_outside_the_home_are_made_as_this_process(monkeypatch, tmp_path):
@@ -327,19 +355,6 @@ def test_folders_outside_the_home_are_made_as_this_process(monkeypatch, tmp_path
     assert "seat-pass" in path.read_text()
 
 
-def _lstat_owners(monkeypatch, uids):
-    """Make ``_lstat`` report the given owner of each named folder."""
-    real_lstat = rustdesk._lstat
-
-    def lstat(target):
-        found = real_lstat(target)
-        if found is None or target not in uids:
-            return found
-        return _Owned(uids[target], uids[target], found.st_mode)
-
-    monkeypatch.setattr(rustdesk, "_lstat", lstat)
-
-
 def _seat_folders(tmp_path):
     home = tmp_path / "pat"
     settings = home / ".config" / "rustdesk"
@@ -351,59 +366,58 @@ def test_folders_root_owns_under_a_home_are_given_to_its_owner(monkeypatch, tmp_
     """A machine an earlier agent shared has the seat's folders made as
     root."""
     home, config, settings = _seat_folders(tmp_path)
-    chowned = _owners(monkeypatch, {str(home): (4242, 4343)})
-    _lstat_owners(monkeypatch, {str(config): 0, str(settings): 0})
-
-    given = rustdesk.give_back_dirs(str(settings), str(home))
-
-    assert given == [str(config), str(settings)]
-    assert chowned == [(str(config), 4242, 4343), (str(settings), 4242, 4343)]
-
-
-def test_writing_into_a_settings_folder_root_owns_gives_it_back(monkeypatch, tmp_path):
-    home, config, settings = _seat_folders(tmp_path)
-    chowned = _owners(monkeypatch, {str(home): (4242, 4343)})
-    _lstat_owners(monkeypatch, {str(settings): 0})
-
-    rustdesk.write_settings(
-        str(settings / "RustDesk2.toml"), lambda existing: "[options]\n", str(home)
+    given = fd_owners(
+        monkeypatch,
+        {str(home): (4242, 4343), str(config): (0, 0), str(settings): (0, 0)},
     )
 
-    assert chowned == [
-        (str(settings), 4242, 4343),
-        (str(settings / "RustDesk2.toml.tmp"), 4242, 4343),
+    assert rustdesk.give_back_dirs(str(settings), str(home)) == [
+        str(config),
+        str(settings),
     ]
+    assert given == [(str(config), 4242, 4343), (str(settings), 4242, 4343)]
 
 
 def test_a_folder_another_person_owns_keeps_its_owner(monkeypatch, tmp_path):
     home, config, settings = _seat_folders(tmp_path)
-    chowned = _owners(monkeypatch, {str(home): (4242, 4343)})
-    _lstat_owners(monkeypatch, {str(config): 1001, str(settings): 0})
+    given = fd_owners(
+        monkeypatch,
+        {str(home): (4242, 4343), str(config): (1001, 1001), str(settings): (0, 0)},
+    )
 
     assert rustdesk.give_back_dirs(str(settings), str(home)) == [str(settings)]
-    assert [target for target, _, _ in chowned] == [str(settings)]
+    assert [path for path, _, _ in given] == [str(settings)]
 
 
 def test_under_roots_own_home_nothing_is_given(monkeypatch, tmp_path):
     home, config, settings = _seat_folders(tmp_path)
-    chowned = _owners(monkeypatch, {str(home): (0, 0)})
-    _lstat_owners(monkeypatch, {str(config): 0, str(settings): 0})
+    given = fd_owners(
+        monkeypatch,
+        {str(home): (0, 0), str(config): (0, 0), str(settings): (0, 0)},
+    )
 
     assert rustdesk.give_back_dirs(str(settings), str(home)) == []
     assert rustdesk.give_back_dirs(str(tmp_path / "elsewhere"), str(home)) == []
-    assert chowned == []
+    assert given == []
 
 
-def test_a_symbolic_link_on_the_way_is_not_given(monkeypatch, tmp_path):
+def test_a_symbolic_link_on_the_way_stops_the_giving(monkeypatch, tmp_path):
     home = tmp_path / "pat"
     home.mkdir()
     (tmp_path / "dotfiles" / "rustdesk").mkdir(parents=True)
     (home / ".config").symlink_to(tmp_path / "dotfiles")
     settings = home / ".config" / "rustdesk"
-    _owners(monkeypatch, {str(home): (4242, 4343)})
-    _lstat_owners(monkeypatch, {str(home / ".config"): 0, str(settings): 0})
+    given = fd_owners(
+        monkeypatch,
+        {
+            str(home): (4242, 4343),
+            str(tmp_path / "dotfiles"): (0, 0),
+            str(tmp_path / "dotfiles" / "rustdesk"): (0, 0),
+        },
+    )
 
-    assert rustdesk.give_back_dirs(str(settings), str(home)) == [str(settings)]
+    assert rustdesk.give_back_dirs(str(settings), str(home)) == []
+    assert given == []
 
 
 # --- what RustDesk itself writes into RustDesk.toml ---

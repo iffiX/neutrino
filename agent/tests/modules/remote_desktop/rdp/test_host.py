@@ -10,6 +10,7 @@ in its own file.
 
 import ast
 import os
+import pwd
 import shutil
 import socket
 
@@ -17,8 +18,11 @@ import pytest
 
 from neutrino_agent.core.store import MachineStateStore
 from neutrino_agent.exceptions import ModuleApplyError
+from neutrino_agent.modules.shared.account_files import WRITE_SHELL, AccountFiles
 from neutrino_agent.platforms.base import AgentPlatform
 from neutrino_agent.modules.remote_desktop.rdp.host import RdpShareHost
+
+from tests.conftest import fd_owners
 
 COPY = "/opt/agent/rustdesk/rustdesk"
 
@@ -134,16 +138,24 @@ class FakeApplier:
 
 
 class _Platform(AgentPlatform):
+    """A machine whose accounts' commands run as the test's own user, each recorded."""
+
     def __init__(self, root):
         super().__init__()
         self.root = root
+        self.as_accounts = []
 
     def account_home(self, account):
         return os.path.join(self.root, "home", account)
 
+    def account_process(self, account, argv):
+        self.as_accounts.append((account, list(argv)))
+        return list(argv), {}
+
 
 @pytest.fixture()
 def host(tmp_path):
+    (tmp_path / "home" / "pat").mkdir(parents=True)
     store = MachineStateStore(path=str(tmp_path / "state.json"))
     applier = FakeApplier(str(tmp_path))
     made = RdpShareHost(
@@ -689,78 +701,116 @@ def test_two_processes_giving_rustdesk_back_take_turns(host, tmp_path):
 # --- the seat's settings folders ---
 
 
-def test_the_seats_settings_folders_are_made_as_the_seats_own(host, monkeypatch):
+def test_the_seats_settings_are_written_as_the_seats_account(host, monkeypatch):
     """RustDesk running as the person at the screen cannot store its
-    configuration in a folder left to root."""
-    from neutrino_agent.modules.remote_desktop.rdp import rustdesk
-
+    configuration in a folder left to root, and the person can put a link
+    where root would write."""
     home = host.root / "home" / "pat"
-    home.mkdir(parents=True)
-    real_stat = rustdesk._stat
+    settings = home / ".config" / "rustdesk" / "RustDesk2.toml"
+    account = pwd.getpwuid(os.getuid()).pw_name
     chowned = []
-
-    class _Pat:
-        st_uid = 4242
-        st_gid = 4343
-        st_mode = 0o755
-
-    def stat(target):
-        return _Pat() if target == str(home) else real_stat(target)
-
-    def chown(target, uid, gid):
-        chowned.append((target, uid, gid))
-
-    monkeypatch.setattr(rustdesk, "_stat", stat)
-    monkeypatch.setattr(rustdesk.os, "chown", chown)
+    monkeypatch.setattr(os, "chown", lambda *given, **_: chowned.append(given))
 
     host.set_switch(True)
 
-    folders = [entry for entry in chowned if not entry[0].endswith(".tmp")]
-    assert folders == [
-        (str(home / ".config"), 4242, 4343),
-        (str(home / ".config" / "rustdesk"), 4242, 4343),
+    assert "direct-server = 'Y'" in settings.read_text()
+    written = [
+        argv[-2]
+        for name, argv in host._platform.as_accounts
+        if name == account and argv[:3] == ["/bin/sh", "-c", WRITE_SHELL]
     ]
+    assert written == [str(settings)]
+    assert [given for given in chowned if str(home) in str(given[0])] == []
+
+
+class _UnrunPlatform(_Platform):
+    """A machine whose accounts' commands are recorded and never run."""
+
+    def account_process(self, account, argv):
+        self.as_accounts.append((account, list(argv)))
+        return ["/bin/true"], {}
+
+
+def _linked_seat_folder(host):
+    """The seat's ``.config`` a link to a folder elsewhere that holds a
+    ``rustdesk`` folder; returns that folder."""
+    home = host.root / "home" / "pat"
+    home.mkdir(parents=True, exist_ok=True)
+    elsewhere = host.root / "elsewhere"
+    (elsewhere / "rustdesk").mkdir(parents=True)
+    os.chmod(elsewhere / "rustdesk", 0o700)
+    (home / ".config").symlink_to(elsewhere)
+    return elsewhere / "rustdesk"
+
+
+def _chowns(monkeypatch) -> list:
+    """Every change of owner, by path or by descriptor."""
+    given = []
+    monkeypatch.setattr(os, "chown", lambda *args, **_: given.append(args))
+    monkeypatch.setattr(os, "fchown", lambda *args: given.append(args))
+    return given
+
+
+def test_a_link_planted_at_the_seats_folder_after_the_check_is_never_written_through(
+    host, monkeypatch
+):
+    from neutrino_agent.modules.remote_desktop.rdp import rustdesk
+
+    host._platform = _UnrunPlatform(str(host.root))
+    elsewhere = _linked_seat_folder(host)
+    monkeypatch.setattr(rustdesk, "is_below_link", lambda path, home: False)
+    given = _chowns(monkeypatch)
+
+    host.set_switch(True)
+
+    assert os.listdir(elsewhere) == []
+    assert oct(elsewhere.stat().st_mode & 0o777) == oct(0o700)
+    assert [args for args in given if "root_settings" not in str(args[0])] == []
+    assert any(
+        argv[:3] == ["/bin/sh", "-c", WRITE_SHELL]
+        for _name, argv in host._platform.as_accounts
+    )
+
+
+def test_a_link_planted_before_the_switch_off_is_never_written_through(
+    host, monkeypatch
+):
+    home = host.root / "home" / "pat"
+    settings = home / ".config" / "rustdesk"
+    settings.mkdir(parents=True)
+    (settings / "RustDesk2.toml").write_text("[options]\nkept = 'Y'\n")
+    host.seat.homes.append(str(home))
+    host.set_switch(True)
+    shutil.rmtree(home / ".config")
+    host._platform = _UnrunPlatform(str(host.root))
+    elsewhere = _linked_seat_folder(host)
+    given = _chowns(monkeypatch)
+
+    host.set_switch(False)
+
+    assert os.listdir(elsewhere) == []
+    assert given == []
+    assert any(
+        argv[:3] == ["/bin/sh", "-c", WRITE_SHELL]
+        for _name, argv in host._platform.as_accounts
+    )
 
 
 def _seat_folders_root_owns(host, monkeypatch):
-    """The seat's settings folders there, reported as root's, under a home
-    that reads as uid 4242; returns the ``chown`` calls."""
-    from neutrino_agent.modules.remote_desktop.rdp import rustdesk
-
+    """The seat's settings folders there, read on their descriptors as
+    root's, under a home that reads as uid 4242; returns the changes of
+    owner made on a descriptor."""
     home = host.root / "home" / "pat"
     settings = home / ".config" / "rustdesk"
     settings.mkdir(parents=True, exist_ok=True)
-    rooted = {str(home / ".config"), str(settings)}
-    real_stat = rustdesk._stat
-    real_lstat = rustdesk._lstat
-    chowned = []
-
-    class _Owned:
-        def __init__(self, uid, mode):
-            self.st_uid = uid
-            self.st_gid = uid + 101
-            self.st_mode = mode
-
-    def stat(target):
-        found = real_stat(target)
-        if target == str(home) and found is not None:
-            return _Owned(4242, found.st_mode)
-        return found
-
-    def lstat(target):
-        found = real_lstat(target)
-        if target in rooted and found is not None:
-            return _Owned(0, found.st_mode)
-        return found
-
-    def chown(target, uid, gid):
-        chowned.append((target, uid, gid))
-        rooted.discard(target)
-
-    monkeypatch.setattr(rustdesk, "_stat", stat)
-    monkeypatch.setattr(rustdesk, "_lstat", lstat)
-    monkeypatch.setattr(rustdesk.os, "chown", chown)
-    return chowned
+    return fd_owners(
+        monkeypatch,
+        {
+            str(home): (4242, 4343),
+            str(home / ".config"): (0, 0),
+            str(settings): (0, 0),
+        },
+    )
 
 
 def test_a_standing_share_gives_the_seats_folders_root_owns_back(host, monkeypatch):
@@ -1215,10 +1265,10 @@ def test_an_account_whose_home_refuses_is_logged_and_the_share_goes_on(
     _account(host, "sam")
     written = rustdesk.write_settings
 
-    def refuse(path, render, home=""):
+    def refuse(path, render, home="", files=None):
         if os.sep + "sam" + os.sep in path:
             raise InstallError(f"could not write {path}")
-        return written(path, render, home)
+        return written(path, render, home, files)
 
     monkeypatch.setattr(rustdesk, "write_settings", refuse)
 
@@ -1248,14 +1298,14 @@ def test_a_home_that_refuses_a_removal_is_logged_and_the_switch_goes_off(
     host.seat.seated = []
     _account(host, "sam")
     host.set_switch(True)
-    unlink = os.unlink
+    remove = AccountFiles.remove
 
-    def refuse(path, *args, **kwargs):
+    def refuse(files, path):
         if os.sep + "sam" + os.sep in str(path):
             raise PermissionError(f"refused {path}")
-        unlink(path, *args, **kwargs)
+        remove(files, path)
 
-    monkeypatch.setattr(os, "unlink", refuse)
+    monkeypatch.setattr(AccountFiles, "remove", refuse)
 
     host.set_switch(False)
 
@@ -1457,14 +1507,14 @@ def test_a_later_home_that_refuses_a_removal_is_logged_and_the_switch_goes_off(
     linux_host, monkeypatch
 ):
     settings = _later_account(linux_host)
-    unlink = os.unlink
+    remove = AccountFiles.remove
 
-    def refuse(path, *args, **kwargs):
+    def refuse(files, path):
         if os.sep + "late" + os.sep in str(path):
             raise PermissionError(f"refused {path}")
-        unlink(path, *args, **kwargs)
+        remove(files, path)
 
-    monkeypatch.setattr(os, "unlink", refuse)
+    monkeypatch.setattr(AccountFiles, "remove", refuse)
 
     linux_host.set_switch(False)
 

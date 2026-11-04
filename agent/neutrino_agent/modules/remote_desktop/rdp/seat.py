@@ -12,12 +12,14 @@ from neutrino_agent.modules.remote_desktop.rdp.linux_seat import LinuxSeat
 from neutrino_agent.modules.remote_desktop.rdp.windows_seat import WindowsSeat
 
 
-def seat_for(os_name: str):
+def seat_for(os_name: str, platform=None):
     """The seat of one operating system.
 
     Args:
         os_name: The platform's ``os_name``: ``linux``, ``windows`` or
             ``darwin``.
+        platform: The machine's platform, which the Linux seat steps down
+            with to read an account's copy of RustDesk's settings.
 
     Returns:
         That platform's seat; any other name gets the Linux one.
@@ -26,4 +28,4 @@ def seat_for(os_name: str):
         return WindowsSeat()
     if os_name == "darwin":
         return DarwinSeat()
-    return LinuxSeat()
+    return LinuxSeat(platform)

@@ -226,7 +226,9 @@ def test_a_wayland_seat_without_the_permission_says_so(monkeypatch):
     screen. A peer that dials before somebody answers it waits in
     "connecting" forever, so the fleet is told first."""
     monkeypatch.setattr(seat_module, "is_wayland_seat", lambda: True)
-    monkeypatch.setattr(seat_module, "has_screen_permission", lambda home: False)
+    monkeypatch.setattr(
+        seat_module, "has_screen_permission", lambda home, files=None: False
+    )
 
     assert LinuxSeat().screen_attention("/home/pat") == "rdp_screen_not_allowed"
 
@@ -236,7 +238,9 @@ def test_a_seat_that_already_granted_it_says_nothing(monkeypatch):
     homes = []
     monkeypatch.setattr(seat_module, "is_wayland_seat", lambda: True)
     monkeypatch.setattr(
-        seat_module, "has_screen_permission", lambda home: homes.append(home) or True
+        seat_module,
+        "has_screen_permission",
+        lambda home, files=None: homes.append(home) or True,
     )
 
     assert LinuxSeat().screen_attention("/home/pat") == ""

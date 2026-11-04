@@ -16,6 +16,8 @@ import os
 import subprocess
 
 from neutrino_agent.modules.remote_desktop.rdp import rustdesk
+from neutrino_agent.modules.shared.account_files import AccountFiles
+from neutrino_agent.modules.shared.account_service import read_regular
 from neutrino_agent.modules.remote_desktop.rdp.constants import (
     RDP_ATTENTION_SCREEN_NOT_ALLOWED,
     RDP_GRAPHICAL_SESSION_TYPES,
@@ -156,24 +158,26 @@ def is_wayland_seat() -> bool:
     return "wayland" in (shown or "")
 
 
-def has_screen_permission(account_home: str) -> bool:
+def has_screen_permission(account_home: str, files=None) -> bool:
     """Whether RustDesk already holds this machine's screen permission.
 
     Args:
         account_home: The home of the account the share is for.
+        files: The :class:`AccountFiles` of that account, which reads its
+            copy as the account; None reads it through no link and waiting
+            on no pipe.
 
     Returns:
-        True when the option is in a configuration RustDesk reads, and
-        on a machine whose files cannot be read, which is not an
-        invitation to nag.
+        True when the option is in a configuration RustDesk reads.
     """
-    for path in rustdesk.config_paths(account_home):
-        try:
-            with open(path, "r", encoding="utf-8") as stream:
-                if RDP_WAYLAND_TOKEN_OPTION in stream.read():
-                    return True
-        except OSError:
-            continue
+    paths = rustdesk.config_paths(account_home)
+    for index, path in enumerate(paths):
+        if index > 0 and files is not None:
+            text = rustdesk.read_account_text(path, files)
+        else:
+            text = (read_regular(path) or b"").decode("utf-8", "replace")
+        if RDP_WAYLAND_TOKEN_OPTION in text:
+            return True
     return False
 
 
@@ -227,6 +231,15 @@ def _session_types() -> list:
 class LinuxSeat:
     """The Linux seat, behind the seat seam the share host reads."""
 
+    def __init__(self, platform=None):
+        """
+        Args:
+            platform: The machine's platform, which steps down to read an
+                account's copy of RustDesk's settings as that account; None
+                reads it through no link.
+        """
+        self._platform = platform
+
     def graphical_accounts(self) -> "list | None":
         """The accounts signed in at the screen; None where nothing says."""
         return graphical_accounts()
@@ -263,9 +276,19 @@ class LinuxSeat:
         """
         if not is_wayland_seat():
             return ""
-        if has_screen_permission(account_home):
+        if has_screen_permission(account_home, self._account_files(account_home)):
             return ""
         return RDP_ATTENTION_SCREEN_NOT_ALLOWED
+
+    def _account_files(self, account_home: str) -> "AccountFiles | None":
+        """The places of the account whose home this is, reached as that account; None without a platform or an owner."""
+        if self._platform is None or not account_home or pwd is None:
+            return None
+        try:
+            account = pwd.getpwuid(os.stat(account_home).st_uid).pw_name
+        except (KeyError, OSError):
+            return None
+        return AccountFiles(platform=self._platform, account=account)
 
     def ask_for_permissions(self, account: str) -> None:
         """Ask the seated person for what RustDesk needs: nothing up front on

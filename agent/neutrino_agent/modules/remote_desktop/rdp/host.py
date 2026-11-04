@@ -73,6 +73,7 @@ from neutrino_agent.modules.remote_desktop.records import (
     remove_json,
     write_json,
 )
+from neutrino_agent.modules.shared.account_files import AccountFiles
 from neutrino_agent.modules.shared.subprocess_run import command_detail
 from neutrino_agent.modules.remote_desktop.rdp.constants import (
     RDP_ATTENTION_NOBODY_SEATED,
@@ -161,7 +162,7 @@ class RdpShareHost:
             applier: The system's registration; None is the platform's own.
         """
         self._platform = platform
-        self._seat = seat if seat is not None else seat_for(platform.os_name)
+        self._seat = seat if seat is not None else seat_for(platform.os_name, platform)
         self._store = store
         self._credentials_dir = credentials_dir
         self._dir = os.path.join(state_dir, REMOTE_DESKTOP_DIR_NAME)
@@ -433,6 +434,10 @@ class RdpShareHost:
         account, home, uid = self._seat_of()
         password = self._seat_password or self._read_password()
         paths = self._settings_paths(home)
+        files = self._account_files(home)
+        if files is None:
+            paths = paths[:2]
+        seat_paths = paths[2:]
         # The password, the id and the key pair go into the service's own file
         # alone: the session's host copies them from there.
         service_file = paths[1] if password or self._is_seat_synced() else ""
@@ -443,7 +448,10 @@ class RdpShareHost:
         ]
         self._give_back_seat_dirs(home)
         registered = read_json(self._registered_path())
-        is_changed = any(self._is_unsettled(path, password) for path in written)
+        is_changed = any(
+            self._is_unsettled(path, password, files if path in seat_paths else None)
+            for path in written
+        )
         if (
             registered
             and not is_changed
@@ -465,10 +473,14 @@ class RdpShareHost:
             is_share_older = bool(registered.get("settings"))
             for path in paths[:2]:
                 self._keep_settings(registered, path)
-            self._keep_account_settings(registered, paths[2:], is_share_older)
+            self._keep_account_settings(registered, seat_paths, is_share_older, files)
             write_json(self._registered_path(), registered)
             for path in written:
-                rustdesk.write_settings(path, self._render(path, password), home)
+                rustdesk.write_settings(
+                    path,
+                    self._render(path, password),
+                    files=files if path in seat_paths else None,
+                )
             self._settle_other_accounts(registered, home, is_share_older)
             step = STEP_REGISTER
             applier.register()
@@ -510,12 +522,13 @@ class RdpShareHost:
         shutil.rmtree(self._kept_dir, ignore_errors=True)
         self._log("remote_desktop: RustDesk is given back")
 
-    def _is_unsettled(self, path: str, password: str) -> bool:
+    def _is_unsettled(self, path: str, password: str, files=None) -> bool:
         """Whether one settings file is not yet what the share writes; the
         service's password file by its id and key pair and by the password
-        RustDesk reads from it, sealed or not."""
+        RustDesk reads from it, sealed or not. ``files`` reads a file
+        under a home as its account."""
         if not _is_password_file(path):
-            return rustdesk.would_change(path, self._render(path, password))
+            return rustdesk.would_change(path, self._render(path, password), files)
         if self._is_seat_synced() and not rustdesk.has_identity(path):
             return True
         return bool(password) and (
@@ -557,11 +570,16 @@ class RdpShareHost:
             if home == seat_home:
                 continue
             try:
+                files = self._account_files(home)
                 paths = self._settings_paths(home)[2:]
-                self._keep_account_settings(registered, paths, is_share_older)
+                if files is None:
+                    continue
+                self._keep_account_settings(registered, paths, is_share_older, files)
                 for path in paths:
                     if not _is_password_file(path):
-                        rustdesk.write_settings(path, self._render(path, ""), home)
+                        rustdesk.write_settings(
+                            path, self._render(path, ""), files=files
+                        )
             except STEP_ERRORS as error:
                 self._log(f"remote_desktop: {command_detail(error)}"[:500])
         write_json(self._registered_path(), registered)
@@ -661,29 +679,43 @@ class RdpShareHost:
         ]
         return [path for path in paths if not rustdesk.is_below_link(path, home)]
 
-    def _keep_settings(self, registered: dict, path: str) -> None:
+    def _keep_settings(self, registered: dict, path: str, files=None) -> None:
         """Copy one settings file aside before its first write.
 
         Args:
             registered: The record, whose ``settings`` maps each path to its
                 kept copy, empty for a file that was not there.
             path: The file.
+            files: The :class:`AccountFiles` of the account whose home
+                holds the file, which reads it; None reads root's own.
 
         Raises:
-            OSError: When the copy cannot be made.
+            OSError: When the copy cannot be made, or the account's file
+                cannot be read.
         """
         settings = registered.setdefault("settings", {})
         if path in settings:
             return
-        if not os.path.isfile(path):
+        if files is not None:
+            data = files.read(path)
+        elif os.path.isfile(path):
+            with open(path, "rb") as stream:
+                data = stream.read()
+        else:
+            data = None
+        if data is None:
             settings[path] = ""
             return
         kept_dir = os.path.join(self._kept_dir, REMOTE_DESKTOP_KEPT_SETTINGS_DIR_NAME)
         os.makedirs(kept_dir, mode=0o700, exist_ok=True)
         kept = os.path.join(kept_dir, f"{len(settings)}.toml")
-        shutil.copy2(path, kept)
-        status = os.stat(path)
+        with open(kept, "wb") as stream:
+            stream.write(data)
         settings[path] = kept
+        try:
+            status = os.lstat(path)
+        except OSError:
+            return
         registered.setdefault("owners", {})[path] = [
             status.st_uid,
             status.st_gid,
@@ -691,7 +723,7 @@ class RdpShareHost:
         ]
 
     def _keep_account_settings(
-        self, registered: dict, paths: list, is_share_older: bool
+        self, registered: dict, paths: list, is_share_older: bool, files
     ) -> None:
         """Copy one account's settings files aside before their first write.
 
@@ -703,37 +735,58 @@ class RdpShareHost:
             paths: The account's settings files.
             is_share_older: Whether the record already named kept files before
                 this press.
+            files: The :class:`AccountFiles` of the account, which reads
+                them; None for nobody, which keeps nothing.
 
         Raises:
             OSError: When a copy cannot be made.
         """
+        if files is None:
+            return
         named = registered.get("settings") or {}
         if (
             is_share_older
             and not any(path in named for path in paths)
-            and _holds_share_servers(paths)
+            and _holds_share_servers(paths, files)
         ):
             return
         for path in paths:
-            self._keep_settings(registered, path)
+            self._keep_settings(registered, path, files)
 
     def _restore_settings(self, registered: dict) -> None:
         """Put every settings file back as it was before the first write.
+
+        Root's own files are put back by root, keeping their owner; a file
+        under a home is put back as that home's account, with the mode it
+        had, and one under no home of the machine's any more is left.
 
         Raises:
             OSError: When a file cannot be put back.
         """
         owners = registered.get("owners") or {}
         for path, kept in (registered.get("settings") or {}).items():
-            if not kept:
-                self._remove_settings(path)
+            is_root, files = self._files_for_path(path)
+            if not is_root and files is None:
                 continue
-            if not os.path.isfile(kept) or not os.path.isdir(os.path.dirname(path)):
+            if not kept:
+                self._remove_settings(path, files)
+                continue
+            if not os.path.isfile(kept):
+                continue
+            with open(kept, "rb") as stream:
+                data = stream.read()
+            owner = owners.get(path)
+            if files is not None:
+                mode = int(owner[2]) if owner else rustdesk.RUSTDESK_ACCOUNT_FILE_MODE
+                if os.path.isdir(os.path.dirname(path)):
+                    files.write(path, data, mode)
+                continue
+            if not os.path.isdir(os.path.dirname(path)):
                 continue
             if os.path.islink(path):
                 os.unlink(path)
-            shutil.copy2(kept, path)
-            owner = owners.get(path)
+            with open(path, "wb") as stream:
+                stream.write(data)
             if owner and hasattr(os, "chown"):
                 os.chown(path, int(owner[0]), int(owner[1]))
                 os.chmod(path, int(owner[2]))
@@ -750,16 +803,27 @@ class RdpShareHost:
         if not named:
             return
         for home in self._seat.account_homes():
+            files = self._account_files(home)
+            if files is None:
+                continue
             paths = self._settings_paths(home)[2:]
             if any(path in named for path in paths):
                 continue
-            if _holds_share_servers(paths):
+            if _holds_share_servers(paths, files):
                 for path in paths:
-                    self._remove_settings(path)
+                    self._remove_settings(path, files)
 
-    def _remove_settings(self, path: str) -> None:
+    def _remove_settings(self, path: str, files=None) -> None:
         """Delete one settings file nobody had before the share, and its folder
-        when that leaves it empty. A home that refuses is logged."""
+        when that leaves it empty; one under a home as the home's account. A
+        home that refuses is logged."""
+        if files is not None:
+            try:
+                files.remove(path)
+                files.remove_empty_dirs([os.path.dirname(path)])
+            except (OSError, ModuleApplyError) as error:
+                self._log(f"remote_desktop: could not delete {path}: {error}")
+            return
         try:
             if os.path.islink(path) or os.path.isfile(path):
                 os.unlink(path)
@@ -767,6 +831,40 @@ class RdpShareHost:
             self._log(f"remote_desktop: could not delete {path}: {error}")
         with contextlib.suppress(OSError):
             os.rmdir(os.path.dirname(path))
+
+    def _account_files(self, home: str) -> "AccountFiles | None":
+        """The places of the account whose home this is, reached as that account; None for no home or one of root's."""
+        if not home:
+            return None
+        try:
+            import pwd
+
+            owner = os.stat(home).st_uid
+            if owner == 0:
+                return None
+            account = pwd.getpwuid(owner).pw_name
+        except (ImportError, KeyError, OSError):
+            return None
+        return AccountFiles(platform=self._platform, account=account)
+
+    def _files_for_path(self, path: str) -> tuple:
+        """Who one recorded settings file is written by.
+
+        Returns:
+            ``(True, None)`` for root's own; ``(False, files)`` for one
+            under a home, ``files`` the :class:`AccountFiles` of the home's
+            account; ``(False, None)`` for one under no home of the
+            machine's any more.
+        """
+        if any(
+            os.path.dirname(path) == os.path.normpath(directory)
+            for directory in self._applier.settings_dirs("")
+        ):
+            return True, None
+        for home in self._seat.account_homes():
+            if rustdesk.is_under(path, home):
+                return False, self._account_files(home)
+        return False, None
 
     def _is_on(self) -> bool:
         """Whether the switch, or before the first state an earlier agent's
@@ -904,12 +1002,13 @@ def _is_password_file(path: str) -> bool:
     return os.path.basename(path) == REMOTE_DESKTOP_PASSWORD_FILE
 
 
-def _holds_share_servers(paths: list) -> bool:
-    """Whether the ``RustDesk2.toml`` among an account's settings files is a
-    regular file that holds the loopback servers."""
-    return any(
-        not _is_password_file(path)
-        and os.path.isfile(path)
-        and rustdesk.holds_options(path, REMOTE_DESKTOP_SERVER_OPTIONS)
-        for path in paths
-    )
+def _holds_share_servers(paths: list, files) -> bool:
+    """Whether the ``RustDesk2.toml`` among an account's settings files,
+    read as the account, holds the loopback servers."""
+    for path in paths:
+        if _is_password_file(path):
+            continue
+        held = rustdesk.options_in(rustdesk.read_account_text(path, files))
+        if all(held.get(key) == value for key, value in REMOTE_DESKTOP_SERVER_OPTIONS):
+            return True
+    return False
