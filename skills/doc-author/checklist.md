@@ -27,7 +27,7 @@ Run the greps from the repository root with the page path as `$P`.
 | No counted lead-in before a list. `[grep]` | `grep -nEi '\b(two|three|four|five) (ways|things|steps|parts|reasons|kinds)|[两三四五]个(方面|部分|原因|步骤)|分[两三四五]步' $P` |
 | No contrastive pivot. `[grep]` | `grep -nEi '\bnot [^.]*, but\b|rather than|不是[^。]*而是|不在[^。]*而在' $P` |
 | No sentence pattern from the register file used more than once. | grep the page for the shape of each pattern used |
-| No opener shared across the site: the first sentence's first four words appear on no other page. `[grep]` | `for f in $(git ls-files 'docs/guide/**.md'); do awk 'NF && !/^(---|#|!|:::|title:)/{print substr($0,1,16); exit}' $f; done \| sort \| uniq -c \| sort -rn \| head` (every count is 1) |
+| No opener shared across the site: the first sentence's first four words appear on no other page. `[grep]` | `for f in $(git ls-files 'docs/**.md'); do awk 'NF && !/^(---|#|!|:::|title:)/{print substr($0,1,16); exit}' $f; done \| sort \| uniq -c \| sort -rn \| head` (every count is 1) |
 | Product terms are the fixed ones. `[grep]` | `grep -n '中微子' $P` |
 | The step budget holds: no procedure over nine items. | count each list |
 | Each step of installing and using has a picture, and the page meets the checks in `layout.md`. | open the page at 1920, 1440 and 390 px wide |

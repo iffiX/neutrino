@@ -134,6 +134,8 @@ is and how to use it. These failures were found in a draft of the manual.
 | Colloquial from top to bottom on a security or architecture page | "Can other programs on my computer get at it?" | Plain answers go in one section, `Quick answers`. `Technical architecture` is for technical readers and holds the protocol, the routing and the architecture diagram. |
 | Stating protection thresholds, which help someone tune an attack | "Each connection is read for 20 to 100 bytes and held for 5 to 30 seconds. At most 128 connections wait for admission." | State the mechanism and leave out any number the reader can do without: "The hub reads a random number of bytes, holds the connection for a random time, then resets it. Connections awaiting admission have a limit." A number the reader acts on stays, such as a link valid for 30 minutes. |
 | Stating a date, when the page describes the product as it is now | "These results were measured on 2026-10-26." | Delete the date: "The measured results are:" Only a table surveying vendors states a reading date. |
+| A feeling as a condition | "Changed your mind?" | "If you no longer need it" |
+| `Same as above` in a table | "Same as above" | Write the content in full. |
 | Definition with a sales tail | "code-server is the open source web VS Code, no Microsoft terms, write code on your phone." | End the definition at the period. The next fact is its own sentence, addressed to `you`. |
 | One thing under several names | "Open a road back to the hub when you are out." | One name per thing, the name the interface shows. |
 | Dangling reference: it, that side, the other end | "When that side connects, the app tries again." | Name the noun: "When NetBird or EasyTier connects, the app tries again." |
