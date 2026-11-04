@@ -47,6 +47,7 @@ from neutrino_agent.constants import (
     AGENT_PROGRAM_PATH_COMMAND,
     AGENT_PROGRAM_RECORD_NAME,
     AGENT_PROGRAM_SHELL_TIMEOUT_S,
+    AGENT_PROGRAM_VERIFY_HOME_DIR_NAME,
     AGENT_PROGRAM_VERSION_TIMEOUT_S,
     AGENT_PROGRAM_WINDOWS_FIND_PARTS,
     AGENT_PROGRAM_WINDOWS_PATH_PARTS,
@@ -297,6 +298,9 @@ class ProgramHooks:
             is looked for, ``~`` being the account's home on Linux and macOS
             and Windows' variables expanded as the account.
         launcher_variables: ``(name, value)`` pairs the launcher sets.
+        home_variable: The variable naming the folder the program writes its
+            own files in, which its ``verify`` points into the module's
+            directory; empty for a program that needs none.
         config_class: The module's configuration, with ``from_dict``.
     """
 
@@ -306,6 +310,7 @@ class ProgramHooks:
     program = ""
     known_places: dict = {}
     launcher_variables: tuple = ()
+    home_variable = ""
     config_class = ProgramConfig
 
     def __init__(self, *, platform):
@@ -448,6 +453,26 @@ class ProgramsModuleRunner(ModuleRunner):
             True while the program's file is there.
         """
         return os.path.isfile(self.program_path)
+
+    def verify_environment(self) -> dict:
+        """The variables the recipe's ``verify`` runs with: the program's home folder in the module's directory.
+
+        The folder is made root-only while the module's copy is there and
+        the folder is missing. A folder that is not there is still named,
+        and the program then writes no file of its own.
+
+        Returns:
+            ``{<home variable>: <module>/verify_home}``; empty for a program
+            that names no home variable.
+        """
+        name = self._hooks.home_variable
+        if not name:
+            return {}
+        folder = self._join(self.module_dir, AGENT_PROGRAM_VERIFY_HOME_DIR_NAME)
+        if self.has_module_copy():
+            with contextlib.suppress(OSError):
+                os.makedirs(folder, mode=0o700, exist_ok=True)
+        return {name: folder}
 
     def has_module_copy(self) -> bool:
         """Whether the module's own copy is in the module's directory.

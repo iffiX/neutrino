@@ -1256,7 +1256,9 @@ def linux(runner, monkeypatch, tmp_path):
     (tmp_path / "configured" / "samba").unlink()
     samba = engine.module_runners["samba"]
     monkeypatch.setattr(
-        engine_module, "verify_passes", lambda command: samba.verify({})
+        engine_module,
+        "verify_passes",
+        lambda command, environment=None: samba.verify({}),
     )
     monkeypatch.setattr(
         runner_module,

@@ -367,10 +367,12 @@ AGENT_STEP_FIND = "find"
 # with their launcher folders.
 AGENT_PROGRAM_MODULES = ("claude_code", "codex")
 # Under a command line program's directory in the state root: the module's
-# own copy, the launcher's folder, and the record of each account's copy.
+# own copy, the launcher's folder, the record of each account's copy, and the
+# folder its verify points the program's own home folder at.
 AGENT_PROGRAM_PACKAGE_DIR_NAME = "package"
 AGENT_PROGRAM_LAUNCHER_DIR_NAME = "bin"
 AGENT_PROGRAM_RECORD_NAME = "record.json"
+AGENT_PROGRAM_VERIFY_HOME_DIR_NAME = "verify_home"
 # The copy an account uses: its own, or the module's.
 AGENT_PROGRAM_COPY_USER = "user"
 AGENT_PROGRAM_COPY_MODULE = "module"

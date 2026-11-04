@@ -457,6 +457,16 @@ def test_an_artifact_that_cannot_be_staged_is_install_failed(tmp_path):
     assert refused.value.code == "install_failed"
 
 
+def test_a_verify_command_runs_with_the_variables_its_runner_gives():
+    command = 'test "$NEUTRINO_VERIFY_HOME" = /verify/home'
+    given = {"NEUTRINO_VERIFY_HOME": "/verify/home"}
+
+    assert verify_passes(command, given) is True
+    assert verify_passes(command) is False
+    assert verify_detail(command, given) == ""
+    assert verify_detail(command) == "exit 1"
+
+
 def test_a_failed_verify_is_named_by_its_own_output():
     assert verify_detail("true") == ""
     assert verify_detail("echo broken >&2; exit 3") == "broken"

@@ -3,7 +3,8 @@
 The module's copy is OpenAI's npm build for the machine's platform,
 unpacked into ``package`` in the module's directory. Its program is
 ``vendor/<target>/bin/codex`` there, beside the helpers Codex finds through
-``codex-package.json``. The launcher starts it and sets nothing.
+``codex-package.json``. The launcher starts it and sets nothing, and its
+``verify`` runs with ``CODEX_HOME`` in the module's directory.
 
 Not pure: reads the machine's platform.
 """
@@ -11,6 +12,7 @@ Not pure: reads the machine's platform.
 from neutrino_agent.modules.codex.config import CodexConfig
 from neutrino_agent.modules.codex.constants import (
     CODEX_BIN_DIR_NAME,
+    CODEX_HOME_VARIABLE,
     CODEX_KNOWN_PLACES,
     CODEX_NAME,
     CODEX_PROGRAM,
@@ -31,6 +33,7 @@ class CodexHooks(ProgramHooks):
     runner = CODEX_RUNNER
     program = CODEX_PROGRAM
     known_places = CODEX_KNOWN_PLACES
+    home_variable = CODEX_HOME_VARIABLE
     config_class = CodexConfig
 
     def program_parts(self) -> tuple:

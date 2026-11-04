@@ -780,3 +780,27 @@ def test_a_local_bin_either_program_made_goes_with_the_last_link_in_it(
 
     codex.uninstall({})
     assert not os.path.exists(local_bin)
+
+
+def test_codex_s_verify_runs_with_codex_home_in_the_module_s_folder(tmp_path):
+    """codex.md: every start of Codex, ``--version`` too, writes under its
+    home folder, so ``verify`` points it at ``verify_home`` in the module's
+    directory and nothing lands in root's home. The folder is made only
+    while the module's copy is there, so a read after an uninstall leaves no
+    module directory behind."""
+    runner, _platform = runner_for(tmp_path, hooks=CodexHooks)
+    folder = os.path.join(runner.module_dir, "verify_home")
+
+    assert runner.verify_environment() == {"CODEX_HOME": folder}
+    assert not os.path.exists(runner.module_dir)
+
+    copy_at(runner.program_path, "0.166.0")
+    assert runner.verify_environment() == {"CODEX_HOME": folder}
+    assert stat.S_IMODE(os.stat(folder).st_mode) == 0o700
+
+
+def test_claude_code_s_verify_runs_with_no_variable_of_its_own(tmp_path):
+    runner, _platform = runner_for(tmp_path)
+
+    assert runner.verify_environment() == {}
+    assert not os.path.exists(os.path.join(runner.module_dir, "verify_home"))

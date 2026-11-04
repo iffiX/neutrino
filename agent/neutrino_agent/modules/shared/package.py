@@ -59,11 +59,13 @@ STAGED_SUFFIX = ".new"
 REPLACED_SUFFIX = ".old"
 
 
-def verify_passes(command: str) -> bool:
+def verify_passes(command: str, environment: "dict | None" = None) -> bool:
     """Whether a recipe's verify command exits zero on this machine.
 
     Args:
         command: The shell command the hub resolved for this platform.
+        environment: Variables it runs with beside the agent's own; None
+            adds none.
 
     Returns:
         True when it exits zero; False when it does not, cannot run, or is
@@ -73,7 +75,11 @@ def verify_passes(command: str) -> bool:
         return False
     try:
         result = subprocess.run(
-            command, shell=True, capture_output=True, timeout=VERIFY_TIMEOUT_S
+            command,
+            shell=True,
+            capture_output=True,
+            timeout=VERIFY_TIMEOUT_S,
+            env=_with_variables(environment),
         )
     except (OSError, subprocess.SubprocessError):
         return False
@@ -108,11 +114,13 @@ def program_stamp(command: str) -> "tuple | None":
     return (program, found.st_mtime_ns, found.st_size, found.st_ino)
 
 
-def verify_detail(command: str) -> str:
+def verify_detail(command: str, environment: "dict | None" = None) -> str:
     """Why a recipe's verify command fails on this machine, empty when it passes.
 
     Args:
         command: The shell command the hub resolved for this platform.
+        environment: Variables it runs with beside the agent's own; None
+            adds none.
 
     Returns:
         Empty when it exits zero; its last output otherwise, or why it could
@@ -122,7 +130,11 @@ def verify_detail(command: str) -> str:
         return "no verify command"
     try:
         result = subprocess.run(
-            command, shell=True, capture_output=True, timeout=VERIFY_TIMEOUT_S
+            command,
+            shell=True,
+            capture_output=True,
+            timeout=VERIFY_TIMEOUT_S,
+            env=_with_variables(environment),
         )
     except (OSError, subprocess.SubprocessError) as error:
         return str(error) or type(error).__name__
@@ -600,3 +612,10 @@ def remove_path(path: str) -> None:
         os.chmod(path, 0o700)
     with contextlib.suppress(OSError):
         os.unlink(path)
+
+
+def _with_variables(environment: "dict | None") -> "dict | None":
+    """The agent's own environment with a verify command's variables added; None for none added."""
+    if not environment:
+        return None
+    return {**os.environ, **environment}

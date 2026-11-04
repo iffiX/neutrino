@@ -148,6 +148,14 @@ class ModuleRunner:
         """
         return False
 
+    def verify_environment(self) -> dict:
+        """The variables a recipe's ``verify`` runs with, beside the agent's own.
+
+        Returns:
+            Empty for a module whose ``verify`` needs none.
+        """
+        return {}
+
     def details(self, recipe: dict) -> dict:
         """What the surfaces show beside this module's row.
 

@@ -514,7 +514,10 @@ class ModuleEngine(ReconcileWorker):
         runner = self._runner_for(name, recipe)
         if runner is None or self._has_uninstalled_mark(runner.name):
             return False
-        return self._verify_passes(str(params_of(recipe).get("verify", "") or ""))
+        return self._verify_passes(
+            str(params_of(recipe).get("verify", "") or ""),
+            runner.verify_environment(),
+        )
 
     def find_steps(self, name: str, entry: dict) -> list:
         """A command line program's ``find``, planned from its record as it stands.
@@ -1178,7 +1181,10 @@ class ModuleEngine(ReconcileWorker):
                     runner.install_artifact(recipe, dict(artifact), path)
                 finally:
                     remove_received(path)
-            detail = verify_detail(str(params_of(recipe).get("verify", "") or ""))
+            detail = verify_detail(
+                str(params_of(recipe).get("verify", "") or ""),
+                runner.verify_environment(),
+            )
         except Exception as error:  # noqa: BLE001 - every failure puts the old back
             swapped = getattr(error, "swapped", swapped)
             detail = str(error) or type(error).__name__
@@ -1647,23 +1653,28 @@ class ModuleEngine(ReconcileWorker):
         if self._has_uninstalled_mark(runner.name):
             return False
         if method in VERIFIED_METHODS:
-            if self._verify_passes(str(params_of(recipe).get("verify", "") or "")):
+            if self._verify_passes(
+                str(params_of(recipe).get("verify", "") or ""),
+                runner.verify_environment(),
+            ):
                 return True
             return (
                 isinstance(runner, ProgramsModuleRunner) and runner.has_person_copies()
             )
         return bool(runner.verify(recipe))
 
-    def _verify_passes(self, command: str) -> bool:
+    def _verify_passes(self, command: str, environment: "dict | None" = None) -> bool:
         """Whether a verify command passes, run again only once the program file it names changed.
 
-        A command whose program is found on ``PATH`` runs every time.
+        A command whose program is found on ``PATH`` runs every time. The
+        command runs with the variables its runner gives beside the agent's
+        own.
         """
         stamp = program_stamp(command)
         with self._verified_lock:
             if stamp is not None and self._verified.get(command) == stamp:
                 return True
-        is_passed = verify_passes(command)
+        is_passed = verify_passes(command, environment)
         with self._verified_lock:
             if is_passed and stamp is not None:
                 self._verified[command] = stamp

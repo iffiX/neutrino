@@ -6,6 +6,9 @@ CODEX_NAME = "codex"
 CODEX_RUNNER = "codex"
 CODEX_TITLE = "Codex"
 CODEX_PROGRAM = "codex"
+# The variable naming the folder Codex writes its own files in, ~/.codex by
+# default, which its verify points into the module's directory.
+CODEX_HOME_VARIABLE = "CODEX_HOME"
 
 # The places after PATH an account's own Codex is looked for, by system:
 # the publisher's install scripts, Homebrew's cask and npm.

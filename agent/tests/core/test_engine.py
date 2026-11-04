@@ -929,7 +929,9 @@ def test_the_recipes_verify_decides_presence_and_no_runner_check_stands_before_i
     engine.mark_configured("samba")
     asked: list = []
     monkeypatch.setattr(
-        engine_module, "verify_passes", lambda command: asked.append(command) or True
+        engine_module,
+        "verify_passes",
+        lambda command, environment=None: asked.append(command) or True,
     )
 
     engine._refresh(is_forced=True)
@@ -947,7 +949,9 @@ def test_a_recipe_whose_verify_fails_is_absent_whatever_the_runner_says(
 ):
     runner = ConfigurableRunner(is_installed=True, is_active_now=True)
     engine = module_engine(runner, module_wanted("running", "system"), tmp_path)
-    monkeypatch.setattr(engine_module, "verify_passes", lambda command: False)
+    monkeypatch.setattr(
+        engine_module, "verify_passes", lambda command, environment=None: False
+    )
 
     engine._refresh(is_forced=True)
 
@@ -968,7 +972,7 @@ def test_a_verify_naming_a_program_file_runs_once_per_file(monkeypatch, tmp_path
     monkeypatch.setattr(
         engine_module,
         "verify_passes",
-        lambda command: asked.append(command) or next(answers),
+        lambda command, environment=None: asked.append(command) or next(answers),
     )
 
     assert [engine.is_installed("samba") for _ in range(3)] == [True] * 3
@@ -992,7 +996,9 @@ def test_a_module_the_agent_carries_is_there_without_any_check(monkeypatch):
     }
     engine = module_engine(runner, wanted)
     monkeypatch.setattr(
-        engine_module, "verify_passes", lambda command: pytest.fail("no verify")
+        engine_module,
+        "verify_passes",
+        lambda command, environment=None: pytest.fail("no verify"),
     )
 
     assert engine.is_installed("samba") is True
@@ -1107,7 +1113,7 @@ def test_an_uninstall_of_a_system_recipe_keeps_no_uninstalled_mark(tmp_path):
         wanted=module_wanted("absent", "system"),
         tmp_path=tmp_path,
     )
-    engine._verify_passes = lambda command: True
+    engine._verify_passes = lambda command, environment=None: True
 
     assert uninstall(engine, "samba") == {
         "code": "uninstall_unconfirmed",
@@ -1830,7 +1836,9 @@ class HubPackagesPlatform(SmbServerPlatform):
 def test_a_system_that_unpacks_the_hub_s_software_runs_vs_code_from_its_bytes(
     monkeypatch, tmp_path
 ):
-    monkeypatch.setattr(engine_module, "verify_passes", lambda command: False)
+    monkeypatch.setattr(
+        engine_module, "verify_passes", lambda command, environment=None: False
+    )
     engine = ModuleEngine(
         platform=HubPackagesPlatform(str(tmp_path / "Neutrino")),
         configured_dir=str(tmp_path / "configured"),
@@ -2750,7 +2758,11 @@ def switched(tmp_path, monkeypatch):
         return {"path": str(path), "sha256": digests[artifact["name"]]}
 
     detail = {"text": ""}
-    monkeypatch.setattr(engine_module, "verify_detail", lambda command: detail["text"])
+    monkeypatch.setattr(
+        engine_module,
+        "verify_detail",
+        lambda command, environment=None: detail["text"],
+    )
     return engine, module, journal, asked, receive, detail, digests
 
 
@@ -2881,7 +2893,9 @@ def test_an_msi_is_switched_by_uninstalling_the_old_package_before_installing(
         return {"path": str(path), "sha256": digest}
 
     with pytest.MonkeyPatch.context() as patch:
-        patch.setattr(engine_module, "verify_detail", lambda command: "")
+        patch.setattr(
+            engine_module, "verify_detail", lambda command, environment=None: ""
+        )
         assert switch(engine, "fakedesk", receive=receive) == {}
 
     assert journal == ["stop", ("uninstall", "app"), ("install", "app")]
@@ -3328,7 +3342,9 @@ def program_entry(verify: str) -> dict:
 def test_a_program_is_present_while_an_account_runs_its_own_supported_copy(
     monkeypatch, tmp_path
 ):
-    monkeypatch.setattr(engine_module, "verify_passes", lambda command: False)
+    monkeypatch.setattr(
+        engine_module, "verify_passes", lambda command, environment=None: False
+    )
     engine = ModuleEngine(
         platform=ProgramPlatform(str(tmp_path / "state")),
         configured_dir=str(tmp_path / "configured"),
@@ -3359,3 +3375,29 @@ def test_a_program_is_present_while_an_account_runs_its_own_supported_copy(
     assert engine.is_module_copy_installed("claude_code", entry) is False
     copy.unlink()
     assert engine.is_installed("claude_code", entry) is False
+
+
+def test_a_program_s_verify_runs_with_the_variables_its_runner_gives(
+    monkeypatch, tmp_path
+):
+    """codex.md: Codex's ``verify`` runs with ``CODEX_HOME`` in the module's
+    directory, for the presence check and for the module copy's own check."""
+    seen: list = []
+    monkeypatch.setattr(
+        engine_module,
+        "verify_passes",
+        lambda command, environment=None: seen.append(environment) or False,
+    )
+    engine = ModuleEngine(
+        platform=ProgramPlatform(str(tmp_path / "state")),
+        configured_dir=str(tmp_path / "configured"),
+    )
+    entry = program_entry(f"{tmp_path}/state/codex/package/codex --version")
+    entry["install"]["runner"] = "codex"
+    engine.module_runners["codex"].take_recipe(entry["install"])
+
+    engine.is_installed("codex", entry)
+    engine.is_module_copy_installed("codex", entry)
+
+    home = {"CODEX_HOME": str(tmp_path / "state" / "codex" / "verify_home")}
+    assert seen == [home, home]
