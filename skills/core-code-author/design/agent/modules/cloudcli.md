@@ -67,10 +67,14 @@ is not carried. An agent that finds an account's `app/` removes it and
 installs CloudCLI again in `npm/` at the module's next apply, which an
 agent of another build runs for every module the state names
 ([agent.md](../../agent.md), "A retry is the same press again"): the
-account's `npm {account}` step removes `app/` and installs into `npm/`, and
-its `account {account}` step writes the service that runs from `npm/`. An
-`app/` whose files are still open, as on Windows while the instance still
+account's `npm {account}` step installs into `npm/`, then removes `app/`,
+and its `account {account}` step writes the service that runs from `npm/`.
+An `app/` whose files are still open, as on Windows while the instance still
 runs from it, goes at a later apply, as an old Node.js directory does.
+
+| Rule | Reason |
+| --- | --- |
+| The `npm {account}` step removes `app/` after the install into `npm/`, and also when `npm/` already holds a whole install. | An install that fails keeps `app/`, so the account keeps the CloudCLI files it had. |
 
 **Every npm run starts from a clean prefix.** Each attempt, on every
 system, first deletes `npm/package-lock.json`, then the rest of `npm/`, and
