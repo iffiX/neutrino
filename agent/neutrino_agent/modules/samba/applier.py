@@ -55,6 +55,8 @@ from neutrino_agent.modules.samba.constants import (
     SAMBA_USERS_DIR,
     SAMBA_USERS_FILE_SUFFIX,
 )
+from neutrino_agent.modules.shared.account_files import AccountFiles
+from neutrino_agent.modules.shared.handle_walk import make_dirs, open_dir, place_owner
 from neutrino_agent.modules.shared.subprocess_run import run, unit_state
 
 try:
@@ -643,12 +645,16 @@ class SambaUserManager:
 class SambaConfigApplier:
     """Writes the module's own file, keeps ``smb.conf`` including it, and loads both."""
 
-    def __init__(self, *, unit: str):
+    def __init__(self, *, unit: str, platform=None):
         """
         Args:
             unit: The unit this machine's Samba runs as.
+            platform: The machine's platform, which steps down to make a
+                share's missing folder in an account's place; None leaves
+                such a folder unmade.
         """
         self._unit = unit
+        self._platform = platform
 
     def plan(self, *, is_served: bool) -> tuple:
         """``smb.conf`` as the next apply leaves it.
@@ -709,7 +715,7 @@ class SambaConfigApplier:
                 notes.append("reloaded")
             return "; ".join(notes or ["unchanged"])
         testparm(smb_conf, rendered)
-        self._ensure_share_directories(config)
+        notes += self._ensure_share_directories(config)
         self._write_user_files(dict(user_files or {}))
         _write_file(SAMBA_MODULE_CONF_PATH, rendered.encode("utf-8"))
         if smb_conf != current:
@@ -767,16 +773,65 @@ class SambaConfigApplier:
             _write_smb_conf(read_stock_conf()[0])
         run(["systemctl", "enable", "--now", self._unit])
 
-    def _ensure_share_directories(self, config: SambaConfig) -> None:
-        """Make a share's folder that is missing, owned by the one account it writes as."""
+    def _ensure_share_directories(self, config: SambaConfig) -> list:
+        """Make a share's folder that is missing, as whoever owns the place it goes in.
+
+        Where an account owns a level of the path, the folder is made as
+        that account, under umask 022. In root's place root makes it, each
+        level opened with no link followed, and gives it to the one account
+        the share writes as, on its open descriptor. A path through a link
+        or a folder others may write is left unmade.
+
+        Returns:
+            One note for each folder left unmade.
+        """
+        notes = []
         for share in config.shares:
             if os.path.isdir(share.path):
                 continue
-            os.makedirs(share.path, exist_ok=True)
-            account = share_owner(share, config)
-            if account and pwd is not None:
-                entry = pwd.getpwnam(account)
-                os.chown(share.path, entry.pw_uid, entry.pw_gid)
+            try:
+                owner = place_owner(share.path)
+                if owner is None:
+                    notes.append(f"left {share.path} unmade: a link or a shared folder")
+                elif owner != 0:
+                    self._make_as(owner, share.path)
+                else:
+                    self._make_as_root(share.path, share_owner(share, config))
+            except (OSError, KeyError, ModuleApplyError) as error:
+                notes.append(f"left {share.path} unmade: {error}")
+        return notes
+
+    def _make_as(self, uid: int, path: str) -> None:
+        """Make a folder as the account that owns its place.
+
+        Raises:
+            KeyError: When the machine has no account of the uid.
+            OSError: When the platform cannot step down, or the folder
+                cannot be made.
+        """
+        if self._platform is None or pwd is None:
+            raise OSError("no account to make it as")
+        account = pwd.getpwuid(uid).pw_name
+        AccountFiles(platform=self._platform, account=account).make_dir(
+            path, umask=0o022
+        )
+
+    def _make_as_root(self, path: str, account: str) -> None:
+        """Make a folder in root's place, and give it to the account the share writes as.
+
+        Raises:
+            KeyError: When the machine lacks the account.
+            OSError: When a level is a link or the folder cannot be made.
+        """
+        made = make_dirs(path, 0o755)
+        if not made or not account or pwd is None:
+            return
+        entry = pwd.getpwnam(account)
+        descriptor = open_dir(path)
+        try:
+            os.fchown(descriptor, entry.pw_uid, entry.pw_gid)
+        finally:
+            os.close(descriptor)
 
     def _write_user_files(self, user_files: dict) -> None:
         """Write each user's file under the users directory and drop the rest."""

@@ -248,7 +248,7 @@ class SambaModuleRunner(SystemPackageModuleRunner):
         was_conf_missing = not conf_digest()
         try:
             changes = []
-            applier = SambaConfigApplier(unit=self._unit)
+            applier = SambaConfigApplier(unit=self._unit, platform=self._platform)
             if self._is_first_apply():
                 changes += users.sweep()
                 if not is_withdrawn:

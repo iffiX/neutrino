@@ -131,8 +131,9 @@ class FakeApplier:
     # Whether the unit is active as the applier reads it.
     is_unit_active = True
 
-    def __init__(self, *, unit):
+    def __init__(self, *, unit, platform=None):
         self.unit = unit
+        self.platform = platform
 
     def plan(self, *, is_served):
         FakeApplier.served.append(is_served)

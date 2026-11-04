@@ -33,6 +33,7 @@ of the machine's is ``account_unknown``; ``setsebool -P`` runs only when
 import itertools
 import os
 import stat
+import types
 
 import pytest
 
@@ -58,7 +59,10 @@ from neutrino_agent.modules.samba.applier import (
 from neutrino_agent.modules.samba.config import SambaConfig
 from neutrino_agent.modules.samba.constants import SAMBA_CONF_MARKER
 from neutrino_agent.modules.samba.renderer import SambaConfigRenderer
+from neutrino_agent.modules.shared.account_files import MAKE_DIR_SHELL
 from neutrino_agent.modules.shared.subprocess_run import CommandResult
+
+from tests.conftest import chowned_path
 
 # What Samba 4.15.13 on Ubuntu 22.04 prints; it does not know ``--json``.
 SMBSTATUS_4_15_PROCESSES_IDLE = (
@@ -184,6 +188,7 @@ def box(monkeypatch, tmp_path):
     )
     monkeypatch.setattr(applier_module, "unit_state", lambda unit: "inactive")
     monkeypatch.setattr(applier_module, "pwd", None)
+    (tmp_path / "srv/s").mkdir(parents=True)
     return commands, tmp_path
 
 
@@ -1304,3 +1309,130 @@ def test_a_machine_with_no_getenforce_runs_nothing(monkeypatch, turn):
     assert getattr(SambaSelinuxApplier(), turn)() is False
 
     assert commands.calls == []
+
+
+# --- a share's missing folder ---
+
+
+class _Platform:
+    """A machine whose accounts' commands are recorded, and run as the test's own user or not at all."""
+
+    os_name = "linux"
+
+    def __init__(self, *, is_run=True):
+        self.is_run = is_run
+        self.as_accounts = []
+
+    def account_process(self, account, argv):
+        self.as_accounts.append((account, list(argv)))
+        return (list(argv) if self.is_run else ["/bin/true"]), {}
+
+
+class _Accounts:
+    """The account database: the test's own uid is ``ann``; ``u``'s Home share forces ``ann``."""
+
+    @staticmethod
+    def getpwuid(uid):
+        return types.SimpleNamespace(pw_name="ann", pw_uid=uid, pw_gid=uid)
+
+    @staticmethod
+    def getpwnam(name):
+        return types.SimpleNamespace(pw_name=name, pw_uid=4242, pw_gid=4343)
+
+
+def _missing_share(path) -> SambaConfig:
+    return SambaConfig.from_dict(
+        {
+            "shares": [{"name": "s", "path": str(path), "valid_users": ["u"]}],
+            "users": ["u"],
+        }
+    )
+
+
+def test_a_missing_folder_in_an_accounts_place_is_made_as_that_account(
+    box, monkeypatch
+):
+    _, tmp_path = box
+    monkeypatch.setattr(applier_module, "pwd", _Accounts)
+    platform = _Platform()
+    path = tmp_path / "home" / "ann" / "share"
+    applier = SambaConfigApplier(unit="smbd.service", platform=platform)
+
+    applier.apply(f"{MARKER}\n", config=_missing_share(path))
+
+    assert path.is_dir()
+    assert platform.as_accounts == [
+        ("ann", ["/bin/sh", "-c", MAKE_DIR_SHELL, str(path), "022"])
+    ]
+
+
+def test_a_link_at_a_level_an_account_owns_is_never_followed_by_root(box, monkeypatch):
+    _, tmp_path = box
+    monkeypatch.setattr(applier_module, "pwd", _Accounts)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (tmp_path / "home" / "ann").mkdir(parents=True)
+    (tmp_path / "home" / "ann" / "link").symlink_to(elsewhere)
+    given = []
+    monkeypatch.setattr(os, "chown", lambda *args, **_: given.append(args))
+    monkeypatch.setattr(os, "fchown", lambda *args: given.append(args))
+    platform = _Platform(is_run=False)
+    applier = SambaConfigApplier(unit="smbd.service", platform=platform)
+
+    applier.apply(
+        f"{MARKER}\n",
+        config=_missing_share(tmp_path / "home" / "ann" / "link" / "share"),
+    )
+
+    assert os.listdir(elsewhere) == []
+    assert given == []
+    assert [account for account, _argv in platform.as_accounts] == ["ann"]
+
+
+def test_a_missing_folder_in_roots_place_is_made_by_handle_and_given(box, monkeypatch):
+    _, tmp_path = box
+    monkeypatch.setattr(applier_module, "pwd", _Accounts)
+    monkeypatch.setattr(applier_module, "place_owner", lambda path: 0)
+    given = []
+    monkeypatch.setattr(
+        os,
+        "fchown",
+        lambda descriptor, uid, gid: given.append((chowned_path(descriptor), uid, gid)),
+    )
+    path = tmp_path / "srv" / "new" / "share"
+    config = SambaConfig.from_dict(
+        {
+            "shares": [
+                {"name": "s", "path": str(path), "valid_users": ["u"]},
+                {
+                    "name": "ann",
+                    "path": str(tmp_path / "srv" / "s"),
+                    "valid_users": ["u"],
+                    "force_user": "ann",
+                },
+            ],
+            "users": ["u"],
+        }
+    )
+    applier = SambaConfigApplier(unit="smbd.service", platform=_Platform())
+
+    applier.apply(f"{MARKER}\n", config=config)
+
+    assert path.is_dir()
+    assert given == [(str(path), 4242, 4343)]
+
+
+def test_a_missing_folder_behind_a_link_in_roots_place_is_left_unmade(box, monkeypatch):
+    _, tmp_path = box
+    monkeypatch.setattr(applier_module, "place_owner", lambda path: 0)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (tmp_path / "srv" / "link").symlink_to(elsewhere)
+    applier = SambaConfigApplier(unit="smbd.service", platform=_Platform())
+
+    note = applier.apply(
+        f"{MARKER}\n", config=_missing_share(tmp_path / "srv" / "link" / "share")
+    )
+
+    assert os.listdir(elsewhere) == []
+    assert "unmade" in note

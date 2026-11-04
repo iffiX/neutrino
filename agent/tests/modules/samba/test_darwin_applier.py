@@ -21,6 +21,8 @@ was set.
 """
 
 import json
+import os
+import types
 
 import pytest
 
@@ -945,3 +947,93 @@ def test_a_share_no_longer_served_takes_the_entries_of_the_user_and_its_account(
         if call[-1] == "/Volumes/data/lab"
     }
     assert taken == {"user:neutrino-ann", "user:ann"}
+
+
+# --- a folder in an account's place ---
+
+
+class _Platform:
+    """A Mac whose accounts' commands are recorded, and run as the test's own user or not at all."""
+
+    os_name = "darwin"
+
+    def __init__(self, *, is_run=True):
+        self.is_run = is_run
+        self.as_accounts = []
+
+    def account_process(self, account, argv):
+        self.as_accounts.append((account, list(argv)))
+        return (["/bin/true"] if not self.is_run else list(argv)), {}
+
+
+class _Accounts:
+    """The account database: every uid is ``ann``."""
+
+    @staticmethod
+    def getpwuid(uid):
+        return types.SimpleNamespace(pw_name="ann", pw_uid=uid, pw_gid=20)
+
+
+def _folder_share(path) -> SambaConfig:
+    return SambaConfig.from_dict(
+        {
+            "shares": [{"name": "ann", "path": str(path), "valid_users": ["ann"]}],
+            "users": ["ann"],
+        }
+    )
+
+
+def test_a_folder_in_an_accounts_place_is_made_and_granted_as_that_account(
+    tools, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(applier_module, "pwd", _Accounts)
+    platform = _Platform(is_run=False)
+    applier = SambaDarwinApplier(
+        rules_path=str(tmp_path / "rules"), run=tools, platform=platform
+    )
+    tools.users["ann"] = account()
+    path = tmp_path / "home" / "ann"
+
+    applier.apply(_folder_share(path), {})
+
+    assert [call for call in tools.calls if str(path) in call] == [
+        call for call in tools.ran("sharing", "-a")
+    ]
+    ran = [argv[:2] for _account, argv in platform.as_accounts]
+    assert ["mkdir", "-p"] in ran
+    assert ["chmod", "+a"] in ran
+    assert {name for name, _argv in platform.as_accounts} == {"ann"}
+
+
+def test_a_link_at_a_folder_an_account_owns_turns_no_entry_of_roots(
+    tools, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(applier_module, "pwd", _Accounts)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (tmp_path / "ann").mkdir()
+    (tmp_path / "ann" / "link").symlink_to(elsewhere)
+    platform = _Platform(is_run=False)
+    applier = SambaDarwinApplier(
+        rules_path=str(tmp_path / "rules"), run=tools, platform=platform
+    )
+    tools.users["ann"] = account()
+
+    applier.apply(_folder_share(tmp_path / "ann" / "link"), {})
+
+    assert tools.ran("chmod") == []
+    assert tools.ran("mkdir") == []
+    assert os.listdir(elsewhere) == []
+
+
+def test_a_folder_behind_a_link_in_roots_place_is_left_ungranted(
+    applier, tools, monkeypatch
+):
+    monkeypatch.setattr(applier_module, "place_owner", lambda path: None)
+    tools.users["ann"] = account()
+
+    notes = applier.apply(_folder_share("/Volumes/data/ann"), {})
+
+    assert tools.ran("chmod", "+a") == []
+    assert tools.ran("mkdir") == []
+    assert any("left /Volumes/data/ann ungranted" in note for note in notes)

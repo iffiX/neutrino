@@ -678,7 +678,8 @@ class DarwinPlatform(AgentPlatform):
             earlier version kept under the work root.
         """
         return SambaDarwinApplier(
-            rules_path=os.path.join(self.agent_var_dir(), SAMBA_DARWIN_PF_RULES_NAME)
+            rules_path=os.path.join(self.agent_var_dir(), SAMBA_DARWIN_PF_RULES_NAME),
+            platform=self,
         )
 
     def read_machine_id(self) -> str:

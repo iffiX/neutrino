@@ -5,9 +5,12 @@ with ``sharing``, their record names starting with the module's prefix, SMB
 only, no guest, never encrypted. Accounts are made with ``sysadminctl``,
 without a login shell or a home, hidden, and given an SMB password with the
 NT hash turned on first. Folders are granted to each SMB user and its
-machine account with ``chmod +a``. The module fences nothing: the pf sub-anchor an earlier version fenced SMB in is
-emptied, and the rules file it kept deleted, at the first apply that finds
-the file.
+machine account with ``chmod +a``, made where they are missing with
+``mkdir -p``, each as whoever owns the folder's place: the account that
+owns a level of its path, else root, and a path through a link or a
+folder others may write is left alone. The module fences nothing: the pf
+sub-anchor an earlier version fenced SMB in is emptied, and the rules file
+it kept deleted, at the first apply that finds the file.
 
 ``sysadminctl`` and ``dscl`` take a password only on the command line, so a
 password set here is visible in the process list while the command runs.
@@ -45,7 +48,15 @@ from neutrino_agent.modules.samba.constants import (
     SAMBA_DARWIN_SMBD_LABEL,
     SAMBA_DARWIN_SMBD_TARGET,
 )
+from neutrino_agent.modules.shared.account_files import AccountFiles
+from neutrino_agent.modules.shared.handle_walk import place_owner
+from neutrino_agent.modules.shared.subprocess_run import CommandResult
 from neutrino_agent.modules.shared.subprocess_run import run as run_command
+
+try:
+    import pwd
+except ImportError:  # Windows has no account database module.
+    pwd = None
 
 # One established connection to the server in ``lsof -nP`` output: the
 # peer's address after the arrow.
@@ -153,7 +164,7 @@ def _sweep_note(kind: str, name: str, result) -> str:
 class SambaDarwinApplier:
     """Converges macOS's SMB server with the module's configuration."""
 
-    def __init__(self, *, rules_path: str, run=None):
+    def __init__(self, *, rules_path: str, run=None, platform=None):
         """
         Args:
             rules_path: Where an earlier version kept the fence's pf rules;
@@ -161,9 +172,13 @@ class SambaDarwinApplier:
                 that finds it.
             run: Runs one command as :func:`subprocess_run.run` does; None
                 runs it.
+            platform: The machine's platform, which steps down to change a
+                folder in an account's place; None leaves such a folder
+                alone.
         """
         self._rules_path = rules_path
         self._run = run if run is not None else run_command
+        self._platform = platform
 
     def read_status(self, record: dict) -> dict:
         """What the server holds of the module's, read now.
@@ -633,10 +648,15 @@ class SambaDarwinApplier:
             if path and path not in grants:
                 self._take_back(path, known)
         for path, rights in grants.items():
-            self._run(["mkdir", "-p", path])
-            self._take_back(path, known)
-            for name, entry in rights.items():
-                self._run(["chmod", "+a", f"user:{name} allow {entry}", path])
+            try:
+                self._in_place(path, ["mkdir", "-p", path])
+                self._take_back(path, known)
+                for name, entry in rights.items():
+                    self._in_place(
+                        path, ["chmod", "+a", f"user:{name} allow {entry}", path]
+                    )
+            except (OSError, KeyError, subprocess.CalledProcessError) as error:
+                notes.append(f"left {path} ungranted: {error}")
         if not is_served:
             return notes
         for share in served:
@@ -671,10 +691,52 @@ class SambaDarwinApplier:
         """Take every access-control entry the module grants these accounts off a folder."""
         for name in names:
             for entry in (SAMBA_DARWIN_ACL_CHANGE, SAMBA_DARWIN_ACL_READ):
-                self._run(
-                    ["chmod", "-a", f"user:{name} allow {entry}", path],
-                    is_checked=False,
-                )
+                try:
+                    self._in_place(
+                        path,
+                        ["chmod", "-a", f"user:{name} allow {entry}", path],
+                        is_checked=False,
+                    )
+                except (OSError, KeyError, subprocess.CalledProcessError):
+                    continue
+
+    def _in_place(self, path: str, command: list, *, is_checked: bool = True):
+        """Run one command on a folder as whoever owns the folder's place.
+
+        Args:
+            path: The folder.
+            command: The command.
+            is_checked: Whether a non-zero exit is an error.
+
+        Returns:
+            The :class:`CommandResult`.
+
+        Raises:
+            OSError: When a level of the path is a link or a folder others
+                may write, or the account's command cannot run.
+            KeyError: When the machine has no account of the owner's uid.
+            subprocess.CalledProcessError: When a checked command fails.
+        """
+        owner = place_owner(path)
+        if owner is None:
+            raise OSError("a link or a folder others may write is on its way")
+        if owner == 0:
+            return self._run(command, is_checked=is_checked)
+        if self._platform is None or pwd is None:
+            raise OSError("no account to change it as")
+        account = pwd.getpwuid(owner).pw_name
+        done = AccountFiles(platform=self._platform, account=account).run(command)
+        result = CommandResult(
+            list(command),
+            done.returncode,
+            done.stdout.decode("utf-8", "replace"),
+            done.stderr.decode("utf-8", "replace"),
+        )
+        if is_checked and done.returncode != 0:
+            raise subprocess.CalledProcessError(
+                done.returncode, command, output=result.stdout, stderr=result.stderr
+            )
+        return result
 
     def _share_points(self) -> list:
         return parse_share_points(self._read(["sharing", "-l", "-f", "json"]))
