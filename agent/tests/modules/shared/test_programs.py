@@ -357,6 +357,27 @@ def test_an_older_copy_reads_copy_version_unsupported_and_uses_the_module_s(tmp_
     assert os.path.isfile(old)
 
 
+def test_an_older_copy_at_the_link_s_path_keeps_its_one_code(tmp_path):
+    """module_template.md: an account's row holds one code at a time,
+    ``copy_version_unsupported`` before ``link_name_taken``."""
+    runner, platform = runner_for(tmp_path)
+    module_copy(runner)
+    runner.apply(CONFIG)
+    old = copy_at(os.path.join(home_of(tmp_path), ".local", "bin", "claude"), "1.0.9")
+    platform.paths["ann"] = ""
+    find(runner)
+
+    runner.configure_steps(CONFIG, "running", [])[1].run(None)
+
+    record = records(runner)["ann"]
+    assert record["is_link_made"] is False
+    assert (record["code"], record["params"]) == (
+        "copy_version_unsupported",
+        {"account": "ann", "version": "1.0.9", "min": FLOOR},
+    )
+    assert os.path.isfile(old) and not os.path.islink(old)
+
+
 @pytest.mark.parametrize(
     "error",
     [subprocess.TimeoutExpired(["zsh"], 5), OSError("no such shell")],
@@ -691,6 +712,23 @@ def test_windows_adds_the_launcher_folder_to_the_user_path_as_the_account(tmp_pa
     assert runner.remove_ways_in() == ["claude_code: removed the way in of ann"]
     assert json.loads(platform.runs[-1]["stdin"])["verb"] == "remove"
     assert platform.runs[-1]["password"] == "pw"
+
+
+def test_windows_removes_an_account_s_entry_with_the_login_its_record_keeps(tmp_path):
+    """module_template.md: the state names no login for an account it no
+    longer enables, so the record's root-only login removes its entry."""
+    runner, platform = runner_for(tmp_path, "windows")
+    platform.answers = [answer(path="", version=""), answer(result="added")]
+    find(runner, WINDOWS_CONFIG)
+    runner.configure_steps(WINDOWS_CONFIG, "running", [])[1].run(None)
+    platform.answers = [answer(result="removed")]
+
+    runner.apply({"accounts": []})
+
+    run = platform.runs[-1]
+    assert json.loads(run["stdin"]) == {"verb": "remove", "folder": runner.launcher_dir}
+    assert (run["account"], run["password"]) == ("ann", "pw")
+    assert records(runner) == {}
 
 
 CHANGED_PATH_DRIVER = """
