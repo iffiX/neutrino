@@ -325,13 +325,13 @@ export function ClientsPage() {
           <div className="clients_table_scroll">
             <table className="clients_table">
               <colgroup>
-                <col />
+                <col className="clients_col--name" />
                 <col className="clients_col--hostname" />
                 <col className="clients_col--platform" />
                 <col className="clients_col--version" />
                 <col className="clients_col--status" />
                 <col className="clients_col--seen" />
-                <col className="clients_col--actions" />
+                <col />
               </colgroup>
               <thead>
                 <tr>

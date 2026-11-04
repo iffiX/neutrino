@@ -5,15 +5,21 @@
   padding: var(--space-2) 0;
 }
 
-/* Fixed column widths, one set for the header and every row; the name
-   takes whatever the other columns leave. */
+/* Fixed column widths, one set for the header and every row, each holding its
+   header's words in either language. The actions take whatever the other
+   columns leave, and the minimum width leaves them room for their buttons on
+   two lines. */
 .devices_table {
   width: 100%;
-  min-width: 1140px;
+  min-width: 968px;
   border-collapse: separate;
   border-spacing: 0;
   font-size: 12px;
   table-layout: fixed;
+}
+
+.devices_col--name {
+  width: 160px;
 }
 
 .devices_col--address {
@@ -29,15 +35,11 @@
 }
 
 .devices_col--version {
-  width: 64px;
+  width: 72px;
 }
 
 .devices_col--seen {
   width: 88px;
-}
-
-.devices_col--actions {
-  width: 382px;
 }
 
 .devices_table th {
@@ -132,6 +134,7 @@
 
 .devices_actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 2px;
   justify-content: flex-end;
 }

@@ -338,13 +338,13 @@ export function DevicesPage() {
         <div className="card devices_table_scroll">
           <table className="devices_table">
             <colgroup>
-              <col />
+              <col className="devices_col--name" />
               <col className="devices_col--address" />
               <col className="devices_col--mac" />
               <col className="devices_col--status" />
               <col className="devices_col--version" />
               <col className="devices_col--seen" />
-              <col className="devices_col--actions" />
+              <col />
             </colgroup>
             <thead>
               <tr>

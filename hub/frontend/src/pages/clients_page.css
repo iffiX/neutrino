@@ -31,15 +31,20 @@
 
 /* Fixed column widths, one set for the header and every row, so a badge in
    the name cell wraps inside that cell and never moves the columns after it.
-   The name takes whatever the other columns leave. The minimum width leaves
-   the name room for its widest badge. */
+   Each column holds its header's words in either language. The actions take
+   whatever the other columns leave, and the minimum width leaves them room
+   for their buttons on two lines. */
 .clients_table {
   width: 100%;
-  min-width: 1002px;
+  min-width: 860px;
   border-collapse: separate;
   border-spacing: 0;
   font-size: 12px;
   table-layout: fixed;
+}
+
+.clients_col--name {
+  width: 160px;
 }
 
 .clients_col--hostname {
@@ -47,11 +52,11 @@
 }
 
 .clients_col--platform {
-  width: 76px;
+  width: 88px;
 }
 
 .clients_col--version {
-  width: 72px;
+  width: 76px;
 }
 
 .clients_col--status {
@@ -60,10 +65,6 @@
 
 .clients_col--seen {
   width: 100px;
-}
-
-.clients_col--actions {
-  width: 360px;
 }
 
 .clients_table th {
@@ -121,6 +122,7 @@
 
 .clients_actions {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-2);
   justify-content: flex-end;
   white-space: nowrap;
