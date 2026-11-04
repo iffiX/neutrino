@@ -40,6 +40,9 @@ const INSTALL_ERROR_KEYS: Record<string, string> = {
 
 const DEFAULT_SSH_PORT = 22;
 
+// The last line of an install's output, `[exit N]`.
+const EXIT_LINE = /^\[exit (-?\d+)\]$/;
+
 /** Which of the two the person is signing in with. */
 type CredentialKind = "key" | "login";
 
@@ -92,6 +95,7 @@ export function InstallAgentModal({
     }
   }, [task.isRunning, onFinished]);
 
+  const exitCode = shownExitCode(task.lines, task.exitCode);
   const isPortValid = isValidPort(port);
   const hasCredential =
     credentialKind === "key" ? keyId !== null : loginId !== null;
@@ -253,19 +257,19 @@ export function InstallAgentModal({
               tone={
                 task.isRunning
                   ? "warn"
-                  : task.exitCode === 0
-                    ? "ok"
-                    : task.exitCode === null
-                      ? "idle"
+                  : exitCode === null
+                    ? "idle"
+                    : exitCode === 0
+                      ? "ok"
                       : "error"
               }
               isPulsing={task.isRunning}
               label={
                 task.isRunning
                   ? t("ui.install_agent.running_label")
-                  : t("ui.install_agent.done_label", {
-                      code: task.exitCode ?? "",
-                    })
+                  : exitCode === null
+                    ? t("ui.task.stream_closed")
+                    : t("ui.install_agent.done_label", { code: exitCode })
               }
             />
           </div>
@@ -297,6 +301,23 @@ function describeInstallError(cause: unknown): string {
     }
   }
   return describeError(cause);
+}
+
+/**
+ * The exit status a finished install shows: the N of the `[exit N]` line its
+ * output ends with, when the task ended with that same status; null when the
+ * output ends with no such line or the task ended with no status.
+ */
+function shownExitCode(
+  lines: readonly string[],
+  exitCode: number | null,
+): number | null {
+  const last = lines.filter((line) => line.trim() !== "").at(-1) ?? "";
+  const match = EXIT_LINE.exec(last.trim());
+  if (match === null || Number(match[1]) !== exitCode) {
+    return null;
+  }
+  return exitCode;
 }
 
 function isValidPort(value: string): boolean {
