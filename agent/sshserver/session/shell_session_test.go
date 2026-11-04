@@ -36,11 +36,20 @@ func startSessions(t *testing.T) *sessionPair {
 // connection with shell until the test ends.
 func startSessionsWithShell(t *testing.T, shell string) *sessionPair {
 	t.Helper()
+	return startSessionsWithPathFolders(t, shell, "")
+}
+
+// startSessionsWithPathFolders serves every session channel of one
+// loopback connection with shell and the path folders file pathFolders
+// until the test ends.
+func startSessionsWithPathFolders(t *testing.T, shell, pathFolders string) *sessionPair {
+	t.Helper()
 	home := t.TempDir()
 	account := Account{
 		Shell:       shell,
 		Home:        home,
 		Environment: []string{"HOME=" + home, "PATH=" + SessionDefaultPath},
+		PathFolders: pathFolders,
 	}
 	_, private, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -170,6 +179,70 @@ func TestExecPassesTheLocaleAndThePeerAlone(t *testing.T) {
 	fields := strings.Split(strings.TrimSpace(string(output)), "|")
 	if fields[0] != "C.UTF-8" || fields[1] != "" || !strings.HasPrefix(fields[2], "127.0.0.1 ") {
 		t.Fatalf("got %q", output)
+	}
+}
+
+// writeSwapped writes text whole beside path and renames it into place.
+func writeSwapped(t *testing.T, path, text string) {
+	t.Helper()
+	if err := os.WriteFile(path+".new", []byte(text), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(path+".new", path); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// sessionPath returns the PATH an exec of one new session sees.
+func sessionPath(t *testing.T, pair *sessionPair) string {
+	t.Helper()
+	output, err := pair.open(t).Output(`printf '%s' "$PATH"`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(output)
+}
+
+func TestEachSessionsPathStartsWithTheFoldersItsFileNamesAtItsStart(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "path_folders")
+	pair := startSessionsWithPathFolders(t, "/bin/sh", file)
+	writeSwapped(t, file, "/opt/a/bin\n/opt/b/bin\n")
+	open := pair.open(t)
+	input, err := open.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var held bytes.Buffer
+	open.Stdout = &held
+	if err := open.Start(`read line; printf '%s' "$PATH"`); err != nil {
+		t.Fatal(err)
+	}
+
+	if got, want := sessionPath(t, pair), "/opt/a/bin:/opt/b/bin:"+SessionDefaultPath; got != want {
+		t.Fatalf("first session PATH %q, want %q", got, want)
+	}
+	writeSwapped(t, file, "/opt/c/bin\n")
+	if got, want := sessionPath(t, pair), "/opt/c/bin:"+SessionDefaultPath; got != want {
+		t.Fatalf("PATH after the change %q, want %q", got, want)
+	}
+	writeSwapped(t, file, "")
+	if got := sessionPath(t, pair); got != SessionDefaultPath {
+		t.Fatalf("PATH with no folders %q", got)
+	}
+	if err := os.Remove(file); err != nil {
+		t.Fatal(err)
+	}
+	if got := sessionPath(t, pair); got != SessionDefaultPath {
+		t.Fatalf("PATH with no file %q", got)
+	}
+
+	io.WriteString(input, "go on\n")
+	input.Close()
+	if err := open.Wait(); err != nil {
+		t.Fatalf("the open session ended with %v", err)
+	}
+	if got, want := held.String(), "/opt/a/bin:/opt/b/bin:"+SessionDefaultPath; got != want {
+		t.Fatalf("the open session's PATH %q, want %q", got, want)
 	}
 }
 

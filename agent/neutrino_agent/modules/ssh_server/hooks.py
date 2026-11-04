@@ -6,10 +6,13 @@ program, kept root's alone under the module's directory. Each instance runs
 the program as its account on ``127.0.0.1`` at the port the shared runner
 takes for it from 22000 up and keeps in its record, reading a copy of the
 host key and its one authorized key from its run directory, which the
-account owns. No forwarder stands in front of it: the hub reaches it
-through the agent's ``connect`` stream.
+account owns. Beside them ``path_folders`` names the launcher folders of
+the command line programs the account is enabled in, which the program
+reads as each session starts; a change of them rewrites that file alone.
+No forwarder stands in front of it: the hub reaches it through the agent's
+``connect`` stream.
 
-Not pure: makes the host key.
+Not pure: makes the host key and writes the path folders file.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -39,10 +42,11 @@ from neutrino_agent.modules.ssh_server.constants import (
     SSH_SERVER_DARWIN_PATH,
     SSH_SERVER_FALLBACK_SHELL,
     SSH_SERVER_HOST_KEY_NAME,
-    SSH_SERVER_LINUX_PATH,
     SSH_SERVER_LISTEN_HOST,
     SSH_SERVER_MAKE_HOST_KEY_TIMEOUT_S,
     SSH_SERVER_NAME,
+    SSH_SERVER_PATH_FOLDERS_NAME,
+    SSH_SERVER_PATH_FOLDERS_STAGED_SUFFIX,
     SSH_SERVER_PORT_VARIABLE,
     SSH_SERVER_RECORD_FIELDS,
     SSH_SERVER_RUN_DIR_NAME,
@@ -50,7 +54,6 @@ from neutrino_agent.modules.ssh_server.constants import (
     SSH_SERVER_SHELL_VARIABLE,
     SSH_SERVER_TITLE,
     SSH_SERVER_WINDOWS_BINARY_NAME,
-    SSH_SERVER_WINDOWS_PATH,
     SSH_SERVER_WINDOWS_POWERSHELL_PARTS,
     SSH_SERVER_WINDOWS_SYSTEM_ROOT_DEFAULT,
 )
@@ -58,7 +61,20 @@ from neutrino_agent.modules.ssh_server.openssh_key import (
     fingerprint,
     public_line_of_private,
 )
-from neutrino_agent.platforms.base import with_launcher_folders
+from neutrino_agent.platforms.base import launcher_folders
+
+# How the path folders file is read and written: no link followed, no wait
+# on a pipe, and the new file made afresh.
+PATH_FOLDERS_READ_FLAGS = (
+    os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+)
+PATH_FOLDERS_WRITE_FLAGS = (
+    os.O_WRONLY
+    | os.O_CREAT
+    | os.O_EXCL
+    | getattr(os, "O_NOFOLLOW", 0)
+    | getattr(os, "O_BINARY", 0)
+)
 
 
 def binary_path(platform) -> str:
@@ -73,6 +89,50 @@ def binary_path(platform) -> str:
     if platform.os_name == "windows":
         return ntpath.join(platform.agent_bin_dir(), SSH_SERVER_WINDOWS_BINARY_NAME)
     return os.path.join(platform.agent_bin_dir(), SSH_SERVER_BINARY_NAME)
+
+
+def write_swapped(path: str, text: str) -> bool:
+    """Write one file whole beside its place and rename it in, unless it holds this text.
+
+    The new file is made afresh, mode 0644, following no link; the file it
+    replaces is never opened for writing.
+
+    Args:
+        path: The file.
+        text: What it holds afterwards.
+
+    Returns:
+        Whether it changed.
+
+    Raises:
+        OSError: When the file cannot be written or renamed into place.
+    """
+    data = text.encode("utf-8")
+    try:
+        descriptor = os.open(path, PATH_FOLDERS_READ_FLAGS)
+    except OSError:
+        held = None
+    else:
+        try:
+            with os.fdopen(descriptor, "rb") as stream:
+                held = stream.read(len(data) + 1)
+        except OSError:
+            held = None
+    if held == data:
+        return False
+    staged = path + SSH_SERVER_PATH_FOLDERS_STAGED_SUFFIX
+    with contextlib.suppress(FileNotFoundError):
+        os.unlink(staged)
+    descriptor = os.open(staged, PATH_FOLDERS_WRITE_FLAGS, 0o644)
+    try:
+        with os.fdopen(descriptor, "wb") as stream:
+            stream.write(data)
+        os.replace(staged, path)
+    except OSError:
+        with contextlib.suppress(OSError):
+            os.unlink(staged)
+        raise
+    return True
 
 
 def windows_powershell() -> str:
@@ -173,6 +233,33 @@ class SshServerHooks(InstanceHooks):
         self._make_host_key()
         return ["made the host key"]
 
+    def prepare(
+        self, parsed: SshServerConfig, instance: SshServerInstance, entry: AccountEntry
+    ) -> list:
+        """Write the launcher folders of the account's programs into its ``path_folders``.
+
+        Args:
+            parsed: The parsed configuration.
+            instance: The instance, whose ``programs`` name the folders.
+            entry: Its account.
+
+        Returns:
+            ``wrote the path folders of <account>`` when the file changed.
+
+        Raises:
+            OSError: When the run directory or the file cannot be written.
+        """
+        run_dir = self.run_dir(instance.account)
+        os.makedirs(run_dir, mode=0o700, exist_ok=True)
+        folders = launcher_folders(
+            self._platform.agent_var_dir(), self._os_name, instance.programs
+        )
+        text = "".join(folder + "\n" for folder in folders)
+        path = self._join(run_dir, SSH_SERVER_PATH_FOLDERS_NAME)
+        if not write_swapped(path, text):
+            return []
+        return [f"wrote the path folders of {instance.account}"]
+
     def service(
         self, instance: SshServerInstance, entry: AccountEntry, record: dict
     ) -> AccountService:
@@ -189,36 +276,27 @@ class SshServerHooks(InstanceHooks):
         run_dir = self.run_dir(instance.account)
         host_key = self._join(run_dir, SSH_SERVER_HOST_KEY_NAME)
         authorized_key = self._join(run_dir, SSH_SERVER_AUTHORIZED_KEY_NAME)
+        path_folders = self._join(run_dir, SSH_SERVER_PATH_FOLDERS_NAME)
         port = int(record.get("port", 0) or 0)
         shell = self._shell(instance, entry)
-        var_dir = self._platform.agent_var_dir()
         if self._os_name == "linux":
             listen = f"{SSH_SERVER_LISTEN_HOST}:${{{SSH_SERVER_PORT_VARIABLE}}}"
             shell_argument = f"${{{SSH_SERVER_SHELL_VARIABLE}}}"
             environment = {
                 SSH_SERVER_PORT_VARIABLE: str(port),
                 SSH_SERVER_SHELL_VARIABLE: shell,
-                "PATH": with_launcher_folders(
-                    SSH_SERVER_LINUX_PATH, var_dir, "linux", instance.programs
-                ),
             }
         else:
             listen = f"{SSH_SERVER_LISTEN_HOST}:{port}"
             shell_argument = shell
-            environment = {
-                "PATH": with_launcher_folders(
-                    SSH_SERVER_WINDOWS_PATH, var_dir, "windows", instance.programs
-                )
-            }
+            environment = {}
         if self._os_name == "darwin":
             environment = {
                 "HOME": entry.home,
                 "USER": instance.account,
                 "LOGNAME": instance.account,
                 "SHELL": shell,
-                "PATH": with_launcher_folders(
-                    SSH_SERVER_DARWIN_PATH, var_dir, "darwin", instance.programs
-                ),
+                "PATH": SSH_SERVER_DARWIN_PATH,
             }
         return AccountService(
             name=self.name,
@@ -234,6 +312,8 @@ class SshServerHooks(InstanceHooks):
                 authorized_key,
                 "--shell",
                 shell_argument,
+                "--path-folders",
+                path_folders,
             ),
             environment=environment,
             working_directory="" if self._os_name == "windows" else "~",

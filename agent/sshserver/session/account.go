@@ -17,13 +17,16 @@ type Account struct {
 	// Environment is the server's own environment without its own
 	// variables, SHELL naming Shell.
 	Environment []string
+	// PathFolders is the file naming, one per line, the folders a shell's
+	// or a command's PATH starts with; empty names none.
+	PathFolders string
 }
 
 // CurrentAccount returns the account the process runs as, its sessions
-// starting shell. On Linux and macOS a HOME, USER, LOGNAME or PATH the
-// process was started without is filled in from the account database and
-// SessionDefaultPath.
-func CurrentAccount(shell string) Account {
+// starting shell with the PATH folders the file pathFolders names. On
+// Linux and macOS a HOME, USER, LOGNAME or PATH the process was started
+// without is filled in from the account database and SessionDefaultPath.
+func CurrentAccount(shell, pathFolders string) Account {
 	environment := []string{}
 	for _, entry := range os.Environ() {
 		if !strings.HasPrefix(entry, SessionServerVariablePrefix) {
@@ -43,7 +46,7 @@ func CurrentAccount(shell string) Account {
 		environment = withDefault(environment, "PATH", SessionDefaultPath)
 	}
 	environment = withVariable(environment, "SHELL", shell)
-	return Account{Shell: shell, Home: home, Environment: environment}
+	return Account{Shell: shell, Home: home, Environment: environment, PathFolders: pathFolders}
 }
 
 // withDefault returns environment with name set to value unless it names

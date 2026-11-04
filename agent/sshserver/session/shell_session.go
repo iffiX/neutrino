@@ -152,12 +152,15 @@ func (s *ShellSession) takeWindowChange(payload []byte) bool {
 }
 
 // start runs the account's shell, as a login shell or with command, on the
-// terminal asked for or on pipes; a process that cannot start ends the
-// session with its error on the extended data and SessionExitUnstartable.
+// terminal asked for or on pipes, its PATH starting with the folders the
+// account's path folders file names now; a process that cannot start ends
+// the session with its error on the extended data and
+// SessionExitUnstartable.
 func (s *ShellSession) start(kind, command string, isLogin bool) {
 	s.kind = kind
 	cmd := shellCommand(s.account, command, isLogin)
-	cmd.Env = withVariables(withVariables(append([]string{}, s.account.Environment...), s.peer), s.environment)
+	environment := withVariables(withVariables(sessionEnvironment(s.account), s.peer), s.environment)
+	cmd.Env = withPathFolders(environment, readPathFolders(s.account.PathFolders))
 	var process runningProcess
 	var err error
 	if s.terminal != nil {

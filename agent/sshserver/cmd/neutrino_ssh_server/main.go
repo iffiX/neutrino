@@ -19,6 +19,7 @@ func main() {
 	hostKey := flag.String("host-key", "", "the host key file, OpenSSH form")
 	authorizedKey := flag.String("authorized-key", "", "the file holding the one public key admitted")
 	shell := flag.String("shell", "", "the shell a session starts, an absolute path")
+	pathFolders := flag.String("path-folders", "", "the file naming, one per line, the folders a session's PATH starts with")
 	makeHostKey := flag.String("make-host-key", "", "write a new Ed25519 host key to this file, print its public key and exit")
 	isVersion := flag.Bool("version", false, "print the version and exit")
 	flag.Parse()
@@ -42,7 +43,7 @@ func main() {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if err := server.Run(ctx, *listen, *hostKey, *authorizedKey, *shell, writeEvent); err != nil {
+	if err := server.Run(ctx, *listen, *hostKey, *authorizedKey, *shell, *pathFolders, writeEvent); err != nil {
 		writeEvent("exited", "error", err.Error())
 		os.Exit(1)
 	}

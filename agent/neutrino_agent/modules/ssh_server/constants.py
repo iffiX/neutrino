@@ -18,10 +18,14 @@ SSH_SERVER_LISTEN_HOST = "127.0.0.1"
 
 # Under the module's directory in the state root: the machine's host key,
 # root's alone, and one run directory per account, which holds what its
-# instance reads, the account's own.
+# instance reads, the account's own, and the launcher folders a session's
+# PATH starts with, root's.
 SSH_SERVER_HOST_KEY_NAME = "host_key"
 SSH_SERVER_RUN_DIR_NAME = "run"
 SSH_SERVER_AUTHORIZED_KEY_NAME = "authorized_key"
+SSH_SERVER_PATH_FOLDERS_NAME = "path_folders"
+# What the path folders file is written as before it is renamed into place.
+SSH_SERVER_PATH_FOLDERS_STAGED_SUFFIX = ".new"
 
 # Linux: the variables of each instance's environment file the template
 # unit's command line reads.
@@ -42,12 +46,6 @@ SSH_SERVER_WINDOWS_POWERSHELL_PARTS = (
 
 # macOS: the environment a LaunchDaemon's instance starts with.
 SSH_SERVER_DARWIN_PATH = "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
-# The PATH an instance starts with after the launcher folders of the
-# command line programs its account is enabled in: systemd's own for a
-# service on Linux, and the account's own on Windows, which the task's
-# script expands.
-SSH_SERVER_LINUX_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-SSH_SERVER_WINDOWS_PATH = "%PATH%"
 
 # The fields one instance's record holds.
 SSH_SERVER_RECORD_FIELDS = ("account", "port")

@@ -237,13 +237,12 @@ def test_a_linux_instance_reads_its_port_and_shell_from_its_environment(tmp_path
         os.path.join(run_dir, "authorized_key"),
         "--shell",
         "${NEUTRINO_SSH_SERVER_SHELL}",
+        "--path-folders",
+        os.path.join(run_dir, "path_folders"),
     )
     assert service.environment == {
         "NEUTRINO_SSH_SERVER_PORT": "22000",
         "NEUTRINO_SSH_SERVER_SHELL": "/bin/bash",
-        "PATH": "/var/lib/neutrino/agent/claude_code/bin:"
-        "/var/lib/neutrino/agent/codex/bin:"
-        "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
     }
     assert service.files == (
         (os.path.join(run_dir, "host_key"), private_key_text()),
@@ -281,14 +280,13 @@ def test_a_mac_instance_carries_the_account_s_environment(tmp_path):
     )
 
     assert service.command[1:3] == ("--listen", "127.0.0.1:22001")
-    assert service.command[-2:] == ("--shell", "/bin/zsh")
+    assert service.command[-4:-2] == ("--shell", "/bin/zsh")
     assert service.environment == {
         "HOME": "/Users/lab",
         "USER": "lab",
         "LOGNAME": "lab",
         "SHELL": "/bin/zsh",
-        "PATH": "/Library/Application Support/Neutrino/agent/state/claude_code/bin:"
-        "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+        "PATH": "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
     }
     assert service.log_name == ""
 
@@ -310,18 +308,105 @@ def test_a_windows_instance_signs_in_with_its_password_and_logs_under_the_log_ro
     )
 
     assert service.command[1:3] == ("--listen", "127.0.0.1:22002")
-    assert service.command[-2:] == ("--shell", windows_powershell())
+    assert service.command[-4:] == (
+        "--shell",
+        windows_powershell(),
+        "--path-folders",
+        hooks.run_dir("lab") + "\\path_folders",
+    )
     assert windows_powershell() == (
         "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
     )
     assert service.password == "pw"  # scan: allow
-    assert service.environment == {
-        "PATH": "C:\\ProgramData\\Neutrino\\agent\\state\\codex\\bin;%PATH%"
-    }
+    assert service.environment == {}
     assert service.working_directory == ""
     assert service.log_name == (
         "C:\\ProgramData\\Neutrino\\agent\\log\\ssh_server_lab.log"
     )
+
+
+@pytest.mark.parametrize("os_name", ["linux", "darwin", "windows"])
+def test_the_service_does_not_change_with_the_account_s_programs(tmp_path, os_name):
+    hooks = hooks_for(tmp_path, os_name)
+    entry = AccountEntry(1001, 1001, "/home/lab", "/bin/bash")
+
+    services = [
+        hooks.service(
+            instance(password="pw", programs=programs),  # scan: allow
+            entry,
+            {"account": "lab", "port": 22000},
+        )
+        for programs in ((), ("codex",), ("codex", "claude_code"))
+    ]
+
+    assert services[0] == services[1] == services[2]
+
+
+# --- the PATH of a session ---
+
+
+def path_folders_of(hooks, account="lab"):
+    return os.path.join(hooks.run_dir(account), "path_folders")
+
+
+def test_the_path_folders_file_names_each_launcher_folder_and_changes_only_with_them(
+    tmp_path,
+):
+    hooks = hooks_for(tmp_path)
+    hooks.prepare_module()
+    path = path_folders_of(hooks)
+
+    notes = hooks.prepare(None, instance(programs=("codex", "claude_code")), LAB)
+
+    assert notes == ["wrote the path folders of lab"]
+    with open(path, encoding="utf-8") as stream:
+        assert stream.read() == (
+            "/var/lib/neutrino/agent/claude_code/bin\n"
+            "/var/lib/neutrino/agent/codex/bin\n"
+        )
+    assert stat.S_IMODE(os.stat(path).st_mode) == 0o644
+    written = os.stat(path)
+
+    assert hooks.prepare(None, instance(programs=("claude_code", "codex")), LAB) == []
+    assert (os.stat(path).st_ino, os.stat(path).st_mtime_ns) == (
+        written.st_ino,
+        written.st_mtime_ns,
+    )
+
+    assert hooks.prepare(None, instance(), LAB) == ["wrote the path folders of lab"]
+    with open(path, encoding="utf-8") as stream:
+        assert stream.read() == ""
+    assert os.listdir(hooks.run_dir("lab")) == ["path_folders"]
+
+
+def test_a_new_account_s_path_folders_file_is_written_before_its_run_directory_exists(
+    tmp_path,
+):
+    hooks = hooks_for(tmp_path)
+
+    hooks.prepare(None, instance(account="dev", programs=("codex",)), DEV)
+
+    with open(path_folders_of(hooks, "dev"), encoding="utf-8") as stream:
+        assert stream.read() == "/var/lib/neutrino/agent/codex/bin\n"
+
+
+def test_a_link_in_the_run_directory_turns_no_write_onto_another_file(tmp_path):
+    hooks = hooks_for(tmp_path)
+    hooks.prepare_module()
+    os.makedirs(hooks.run_dir("lab"))
+    path = path_folders_of(hooks)
+    held = tmp_path / "held"
+    held.write_text("kept\n")
+    os.symlink(held, path)
+    os.symlink(held, path + ".new")
+
+    hooks.prepare(None, instance(programs=("codex",)), LAB)
+
+    assert held.read_text() == "kept\n"
+    assert not os.path.islink(path)
+    with open(path, encoding="utf-8") as stream:
+        assert stream.read() == "/var/lib/neutrino/agent/codex/bin\n"
+    assert not os.path.lexists(path + ".new")
 
 
 # --- the port ---
@@ -354,10 +439,15 @@ def runner(tmp_path):
     )
 
 
-def config(*accounts):
+def config(*accounts, programs=()):
     return {
         "instances": [
-            {"account": account, "authorized_key": PUBLIC_KEY, "shell_path": ""}
+            {
+                "account": account,
+                "authorized_key": PUBLIC_KEY,
+                "shell_path": "",
+                "programs": list(programs),
+            }
             for account in accounts
         ]
     }
@@ -409,6 +499,29 @@ def test_a_disabled_account_loses_its_unit_and_its_run_directory(runner, tmp_pat
     assert ["systemctl", "disable", "--now", "neutrino_ssh_server@dev.service"] in calls
     assert not (tmp_path / "state" / "ssh_server" / "run" / "dev").exists()
     assert [row["account"] for row in runner.details({})["instances"]] == ["lab"]
+
+
+def test_a_change_of_programs_rewrites_the_file_alone_and_restarts_no_instance(
+    runner, tmp_path
+):
+    runner.apply(config("lab", programs=["codex"]))
+    unit = tmp_path / "systemd" / "neutrino_ssh_server@.service"
+    environment = tmp_path / "config" / "ssh_server" / "lab.env"
+    held = (unit.read_text(), environment.read_text())
+    path = tmp_path / "state" / "ssh_server" / "run" / "lab" / "path_folders"
+    assert path.read_text() == "/var/lib/neutrino/agent/codex/bin\n"
+    calls = runner.machine.run.calls
+    first = len(calls)
+
+    runner.apply(config("lab", programs=["codex", "claude_code"]))
+    runner.apply(config("lab"))
+
+    assert path.read_text() == ""
+    assert (unit.read_text(), environment.read_text()) == held
+    assert (
+        calls[first:]
+        == [["systemctl", "enable", "--now", "neutrino_ssh_server@lab.service"]] * 2
+    )
 
 
 def test_no_account_enabled_reads_stopped(runner):

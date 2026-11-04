@@ -56,6 +56,10 @@ const (
 	// server was started without one.
 	SessionDefaultPath = "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
+	// SessionPathFoldersLimit is how many bytes of the path folders file
+	// are read.
+	SessionPathFoldersLimit = 64 * 1024
+
 	// SessionCopyBufferBytes is the size of one copy buffer.
 	SessionCopyBufferBytes = 32 * 1024
 

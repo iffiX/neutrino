@@ -170,9 +170,10 @@ func Listen(address string) (net.Listener, error) {
 
 // Run serves the account until ctx ends: it reads the host key and the
 // authorized key, listens on the loopback address listen, and starts each
-// session with shell. It returns the first error that keeps it from
-// serving, and nil once ctx ended.
-func Run(ctx context.Context, listen, hostKeyPath, authorizedKeyPath, shell string, onEvent EventFunc) error {
+// session with shell, its PATH starting with the folders the file
+// pathFoldersPath names as the session starts. It returns the first error
+// that keeps it from serving, and nil once ctx ended.
+func Run(ctx context.Context, listen, hostKeyPath, authorizedKeyPath, shell, pathFoldersPath string, onEvent EventFunc) error {
 	hostKey, err := ReadHostKey(hostKeyPath)
 	if err != nil {
 		return err
@@ -186,6 +187,6 @@ func Run(ctx context.Context, listen, hostKeyPath, authorizedKeyPath, shell stri
 		return err
 	}
 	onEvent("listening", "address", listener.Addr().String(), "authorized_key", ssh.FingerprintSHA256(authorizedKey))
-	server := NewAccountServer(hostKey, authorizedKey, session.CurrentAccount(shell), onEvent)
+	server := NewAccountServer(hostKey, authorizedKey, session.CurrentAccount(shell, pathFoldersPath), onEvent)
 	return server.Serve(ctx, listener)
 }
