@@ -842,8 +842,8 @@ page's words":
 
 | Chip | What it reads |
 | --- | --- |
-| source | the row's `method`, the install method of the module's entry for the machine's platform; a method outside the five shows no chip |
-| kind | Service on every module of today |
+| source | the row's `source`, the word the hub derives from the install method of the module's entry for the machine's platform and, for a command line program, from whether its own copy is on the machine; a word outside the five shows no chip |
+| kind | the row's `kind`: Program on Codex and Claude Code, Service on every other module |
 
 In a window 880 px wide or narrower, or one no wider than it is tall, the
 split is one column. The module list is then one row above the picked
@@ -864,7 +864,7 @@ has no manifest of yet is drawn with no check. The dialog's foot holds
 **Close** alone.
 
 A tab of the account layer, File share, Terminal, the SSH server, VS Code,
-code-server, CloudCLI, Codeg and SiYuan, holds **Enabled accounts**
+code-server, CloudCLI, Codeg, SiYuan, Codex and Claude Code, holds **Enabled accounts**
 (`ui.modules.enabled_accounts`) in its panel: one check row per available
 account, Terminal's showing each account's shell and the file share's each
 account's share path, and `ui.modules.no_accounts` pointing at **Available
@@ -875,8 +875,8 @@ module's own field, its running dot and its code's words. Terminal's row shows
 since a terminal runs no program until a person opens one, and its apply waits
 for the module's state alone. The bar's hint is
 `ui.modules.stopped_hint` while the module's `want` is not `running`, and the
-module's own hint otherwise, on every tab but Terminal's and the SSH
-server's, which have no **Start**. An apply starts nothing on a module not
+module's own hint otherwise, on every tab but Terminal's, the SSH
+server's and the command line programs', which have no **Start**. An apply starts nothing on a module not
 running and writes no `want` there, and its bar waits for the `want` the
 module has. A
 running module of this layer with no enabled account reads
@@ -884,6 +884,28 @@ running module of this layer with no enabled account reads
 machine layer,
 Remote desktop, Gitea, Containers and the container modules, hold no
 accounts. No module asks for a port: the agent takes them.
+
+The tab of a command line program, Codex or Claude Code
+([agent/modules/codex.md](agent/modules/codex.md),
+[agent/modules/claude_code.md](agent/modules/claude_code.md)), draws the
+line `ui.codex.owner_notice` or `ui.claude_code.owner_notice` over its
+state line, and **Install**, **Uninstall** and **Configure** alone at the
+bottom, since it has no **Start** or **Stop** ([agent.md](agent.md), "The
+kinds of module"). Its state line reads `state.ready` in place of
+`running`, as Terminal's rows do, since a program runs only when a person
+runs it. A program the machine reports `installed` while the hub holds no
+`want` has **Install** live, which writes `running`.
+
+| Part of the panel | Idiom |
+| --- | --- |
+| **Enabled accounts** | one check row per available account, configurable, with its apply bar and `ui.program.apply_hint` as the bar's hint |
+| An enabled account's row | as last reported: the copy the account uses as a plain `badge`, `ui.modules.source_user` for the person's own copy and `ui.modules.source_upstream` for the module's; the copy's path in mono; its version; and the account's AI tools state in the words of its row under **Available accounts**, `state.ai_tools_switched` or `state.ai_tools_switched_back`, shown and never set here; an account's code shows its words under the row |
+| The version line | shown while the module's own copy is on the machine; **Install another version…** picks the version of that copy |
+
+| Rule | Reason |
+| --- | --- |
+| The panel shows each account's AI tools state and holds no switch for it. The account's form under **Available accounts** is the one place it is set. | Installing a program changes no switch, and one form per account holds the account's settings ([agent.md](agent.md), "The two layers and the accounts"). |
+| The row names the copy by the source chip's own words. | A person reads the same word for who manages a copy on the chip and on the row. |
 
 The File share tab's panel holds two panels, one under the other, one for
 each kind of share ([agent/modules/file_share.md](agent/modules/file_share.md)):
@@ -1111,11 +1133,11 @@ version on the version line.
 
 The rows of the module list, each a tab, come in one order, the modules
 every system runs first: Terminal, the SSH server, Remote desktop, File
-share, Gitea, VS Code, code-server, CloudCLI, Codeg, SiYuan, Containers, Hermes
-WebUI, Ayakaleaf. The order is the row order of the hub's description table
+share, Gitea, VS Code, code-server, CloudCLI, Codeg, Claude Code, Codex, SiYuan,
+Containers, Hermes WebUI, Ayakaleaf. The order is the row order of the hub's description table
 ([agent/module_template.md](agent/module_template.md), "The hub side"), in
 which `GET /api/agent/module` sends the rows, and the page keeps it. The
-eight modules of the account layer are drawn by one `instances_panel.tsx`
+ten modules of the account layer are drawn by one `instances_panel.tsx`
 from the hub's description table. Its apply bar and frame
 are lit while the module reads `failed` or `install_failed`, and its apply with
 nothing changed sends `POST /api/agent/module/<name>/apply`. A module the machine cannot

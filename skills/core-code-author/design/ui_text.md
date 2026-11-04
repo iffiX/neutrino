@@ -185,6 +185,8 @@ Chinese: SiYuan is 思源笔记.
 | `code_server` | code-server | code-server |
 | `cloudcli` | CloudCLI | CloudCLI |
 | `codeg` | Codeg | Codeg |
+| `codex` | Codex | Codex |
+| `claude_code` | Claude Code | Claude Code |
 | `hermes_webui` | Hermes WebUI | Hermes WebUI |
 | `ayakaleaf` | Ayakaleaf | Ayakaleaf |
 | `siyuan` | SiYuan | 思源笔记 |
@@ -192,8 +194,8 @@ Chinese: SiYuan is 思源笔记.
 
 ## Software the owner installs
 
-Gitea, VS Code, code-server, CloudCLI, Codeg, SiYuan, Hermes WebUI and
-Ayakaleaf are programs the machine's owner installs on their own machine through a module. The text
+Gitea, VS Code, code-server, CloudCLI, Codeg, SiYuan, Hermes WebUI,
+Ayakaleaf, Codex and Claude Code are programs the machine's owner installs on their own machine through a module. The text
 rules follow from that:
 
 | Rule | Example |
@@ -201,7 +203,7 @@ rules follow from that:
 | A module page that names third-party software says that the owner installs it on that machine. | `You install VS Code Server on this machine under Microsoft's license terms.` |
 | A module page names the publisher's terms only where the publisher asks for acceptance; VS Code is the one such module ([ui_behavior.md](ui_behavior.md), "Terms before a module opens"). CloudCLI's, Codeg's and SiYuan's pages carry no licence line. | |
 | No surface says the hub downloads, provides, bundles or distributes third-party software, in either language (代为下载, 提供, 自带). A sentence about the mechanism, in a standard page or a code comment, makes the module's installer its subject. The source chip's 自带 marks the modules the agent carries alone, and never one of these programs ("The machine page's words"). | `The module's installer fetches the archive.`, never `The hub downloads VS Code.` |
-| The **About** card on the Settings page credits only the components the hub's own package carries on that system and in that edition, such as xray, CLIProxyAPI, NetBird, EasyTier, frp and tun2socks. Gitea, VS Code, code-server, CloudCLI, Codeg, SiYuan, Hermes WebUI and Ayakaleaf are never on it. | |
+| The **About** card on the Settings page credits only the components the hub's own package carries on that system and in that edition, such as xray, CLIProxyAPI, NetBird, EasyTier, frp and tun2socks. Gitea, VS Code, code-server, CloudCLI, Codeg, SiYuan, Hermes WebUI, Ayakaleaf, Codex and Claude Code are never on it. | |
 
 The VS Code notice and its button:
 
@@ -379,8 +381,8 @@ where they fit.
 | `ui.machine.not_found` | This machine is not on record. | 没有这台机器的记录。 |
 | `ui.ai_tools.gateway_default` | Gateway default | 网关默认 |
 | `ui.modules.tabs_title` | Module configuration | 模块配置 |
-| `ui.modules.source_agent`, `ui.modules.source_system`, `ui.modules.source_upstream`, `ui.modules.source_container`, the source chip of a module's tab | Built-in, System, Upstream, Container | 自带、系统、外部源、容器 |
-| `ui.modules.kind_service`, the kind chip of a module's tab | Service | 服务 |
+| `ui.modules.source_agent`, `ui.modules.source_system`, `ui.modules.source_upstream`, `ui.modules.source_container`, `ui.modules.source_user`, the source chip of a module's tab | Built-in, System, Upstream, Container, User-installed | 自带、系统、外部源、容器、用户安装 |
+| `ui.modules.kind_service`, `ui.modules.kind_program`, the kind chip of a module's tab | Service, Program | 服务、普通程序 |
 | `ui.modules.log_title` | Log · last 200 lines | 日志 · 最后 200 行 |
 | `ui.modules.config_title` | Configuration | 配置 |
 | `ui.modules.enabled_accounts` | Enabled accounts | 启用的账户 |
@@ -453,9 +455,9 @@ kind chip":
 | kind | Service | 服务 |
 | kind | Program | 普通程序 |
 
-No module of today reads User-installed or Program. Their keys,
-`ui.modules.source_user` and `ui.modules.kind_program`, enter the catalog
-with the first command-line tool, such as Claude Code or Codex.
+Codex and Claude Code read Program, and User-installed while every enabled
+account runs a copy of the person's. An account's row on their tab names
+the copy it uses with the same two source words.
 
 The keys of the Modules page's machine picker and **Global configuration**,
 `ui.modules.no_pick`, `ui.modules.no_pick_hint`, `ui.modules.global_title`,
@@ -506,6 +508,7 @@ sentences.
 | `ui.modules.step.tex` | Install TeX packages | 安装 TeX 宏包 |
 | `ui.modules.step.guests` | Create the App share guests | 建好应用分享的访客账户 |
 | `ui.modules.step.tools` | Set the AI tools of {account} | 设置 {account} 的 AI 工具 |
+| `ui.modules.step.find` | Look for each account's own copy | 查找各账户自己安装的副本 |
 | `ui.modules.failed_step`, the first line of a failed row's notice, `{step}` being one of the step words above | Failed at step {index} of {count}: {step} | 第 {index}/{count} 步失败：{step} |
 
 An `artifact` step reads its artifact's own words,
@@ -575,6 +578,8 @@ machine's system.
 | `code_server` | no | Each account's code-server settings and extensions stay in its home folder. | 每个账户的 code-server 设置和扩展都留在它的主目录里。 |
 | `cloudcli` | no | Each account's CloudCLI data stays in {data_dir}. | 每个账户的 CloudCLI 数据留在 {data_dir}。 |
 | `codeg` | no | Each account's Codeg data stays in {data_dir}. | 每个账户的 Codeg 数据留在 {data_dir}。 |
+| `codex` | no | Each account's settings in ~/.codex stay, and so does a copy of Codex installed outside this module. | 每个账户在 ~/.codex 里的设置都保留，在本模块之外安装的 Codex 也保留。 |
+| `claude_code` | no | Each account's settings in ~/.claude stay, and so does a copy of Claude Code installed outside this module. | 每个账户在 ~/.claude 里的设置都保留，在本模块之外安装的 Claude Code 也保留。 |
 | `siyuan` | no | Each account's notes stay in {data_dir}. | 每个账户的笔记留在 {data_dir}。 |
 | `hermes_webui` | yes | The conversations, settings and workspace files are deleted and cannot be recovered. | 对话、设置和工作区里的文件都会删除，无法恢复。 |
 | `ayakaleaf` | yes | The papers and projects are deleted and cannot be recovered. | 论文和项目都会删除，无法恢复。 |
@@ -616,6 +621,25 @@ account and the shell program it set before.
 | `code.shell_program_unusable` | {path} is not a program this machine can run. | {path} 不是这台机器能运行的程序。 |
 | `code.rdp_takeover_failed` | Remote desktop could not start at {step}: {detail} | 远程桌面在 {step} 这一步没能启动：{detail} |
 | `code.rdp_restore_failed` | Remote desktop could not put back the machine's RustDesk at {step}: {detail} | 远程桌面在 {step} 这一步没能还原机器原来的 RustDesk：{detail} |
+
+## The command line programs' words
+
+The tabs of Codex and Claude Code ([ui_behavior.md](ui_behavior.md), "The
+machine page"). The `ui.*` keys are in `locales/<language>/modules.json`
+and the `code.*` keys in `codes.json`. The catalog's one entry
+`ai_cli` goes, with `ui.module_catalog.ai_cli` and `ui.module_title.ai_cli`,
+whose line named Gemini; each tool is one entry of the `code` category.
+
+| Key | English | Chinese |
+| --- | --- | --- |
+| `ui.module_catalog.codex` | Codex on the command line, for each account. | 命令行里的 Codex，每个账户都能用。 |
+| `ui.module_catalog.claude_code` | Claude Code on the command line, for each account. | 命令行里的 Claude Code，每个账户都能用。 |
+| `ui.codex.owner_notice` | You install Codex, Apache-2.0-licensed, on this machine. | 你在这台机器上安装 Codex，它以 Apache-2.0 许可发布。 |
+| `ui.claude_code.owner_notice` | You install Claude Code on this machine under Anthropic's legal agreements. | 你在这台机器上按 Anthropic 的法律协议安装 Claude Code。 |
+| `ui.program.apply_hint` | Looks for each checked account's own copy, and gives an account with none this module's copy. | 查找每个勾选账户自己安装的副本，没有的账户改用本模块安装的副本。 |
+| `code.copy_version_unsupported` | {account}'s own copy is version {version}, older than {min}; {account} uses this module's copy. | {account} 自己安装的副本是 {version}，低于 {min}，改用本模块安装的副本。 |
+| `code.link_name_taken` | {path} already exists, so {account}'s shells do not find this module's copy by its name; Neutrino's terminal does. | {path} 已经存在，{account} 的 shell 按名字找不到本模块安装的副本，微子的终端里可以。 |
+| `code.module_not_service` | {module} is a program and has no Start or Stop. | “{module}”是普通程序，没有启动和停止。 |
 
 ## The Hermes WebUI tab's words
 
