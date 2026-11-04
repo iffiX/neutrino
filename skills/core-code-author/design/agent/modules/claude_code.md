@@ -104,8 +104,9 @@ carries the module's mark, and the record. Its line in the uninstall dialog
 is "Each account's settings in ~/.claude stay, and so does a copy of Claude
 Code installed outside this module."
 
-`details` is `{has_module_copy, accounts: [{account, copy, path, version,
-code, params}]}`, `copy` being `user` or `module`. An apply refuses
+`details` is `{has_module_copy, version, accounts: [{account, copy, path,
+version, code, params}]}`, the first `version` being the module's copy's,
+empty while it has none, and `copy` being `user` or `module`. An apply refuses
 `account_unknown {account}` for an account the machine does not have, and
 on Windows `account_no_profile {account}`, `credential_missing {account}`
 and `credential_invalid {account}`, as Codeg's does. Its journal is the

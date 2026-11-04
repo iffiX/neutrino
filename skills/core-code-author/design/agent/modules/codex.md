@@ -100,8 +100,9 @@ mark, and the record. Its line in the uninstall dialog is "Each account's
 settings in ~/.codex stay, and so does a copy of Codex installed outside
 this module."
 
-`details` is `{has_module_copy, accounts: [{account, copy, path, version,
-code, params}]}`, `copy` being `user` or `module`. An apply refuses what
+`details` is `{has_module_copy, version, accounts: [{account, copy, path,
+version, code, params}]}`, the first `version` being the module's copy's,
+empty while it has none, and `copy` being `user` or `module`. An apply refuses what
 Claude Code's refuses ([claude_code.md](claude_code.md)). Its journal is the
 agent's lines that name the module ([../../agent.md](../../agent.md), "Which
 modules each system runs").
