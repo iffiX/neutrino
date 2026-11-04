@@ -748,3 +748,35 @@ def test_the_user_path_entry_keeps_every_other_entry_byte_for_byte(tmp_path):
         held,
         "<same>",
     ]
+
+
+class CodexAt(CodexHooks):
+    """Codex, its known places under the test's own folder."""
+
+    known_places = {"linux": ("~/.local/bin/codex",)}
+
+
+def test_a_local_bin_either_program_made_goes_with_the_last_link_in_it(
+    monkeypatch, tmp_path
+):
+    from neutrino_agent.modules.codex import hooks as codex_hooks
+
+    monkeypatch.setattr(codex_hooks, "platform_tuple", lambda: {"arch": "amd64"})
+    claude, _platform = runner_for(tmp_path)
+    codex, _other = runner_for(tmp_path, hooks=CodexAt)
+    os.makedirs(home_of(tmp_path))
+    local_bin = os.path.join(home_of(tmp_path), ".local", "bin")
+    for runner in (claude, codex):
+        runner.take_config(CONFIG)
+        module_copy(runner)
+        runner.apply(CONFIG)
+        find(runner)
+        runner.configure_steps(CONFIG, "running", [])[1].run(None)
+    assert records(claude)["ann"]["is_local_bin_made"] is True
+    assert records(codex)["ann"]["is_local_bin_made"] is True
+
+    claude.uninstall({})
+    assert os.listdir(local_bin) == ["codex"]
+
+    codex.uninstall({})
+    assert not os.path.exists(local_bin)

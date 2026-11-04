@@ -42,6 +42,7 @@ from neutrino_agent.constants import (
     AGENT_PROGRAM_JOURNAL_SCAN_LINES,
     AGENT_PROGRAM_LAUNCHER_DIR_NAME,
     AGENT_PROGRAM_LINK_DIR_PARTS,
+    AGENT_PROGRAM_MODULES,
     AGENT_PROGRAM_PACKAGE_DIR_NAME,
     AGENT_PROGRAM_PATH_COMMAND,
     AGENT_PROGRAM_RECORD_NAME,
@@ -597,7 +598,7 @@ class ProgramsModuleRunner(ModuleRunner):
                 continue
             password = passwords.get(account) or str(record.get("password", "") or "")
             try:
-                self._let_go(account, record, password)
+                is_folder_left = self._let_go(account, record, password)
             except (ModuleApplyError, OSError, subprocess.SubprocessError) as error:
                 said = error.code if isinstance(error, ModuleApplyError) else str(error)
                 lines.append(f"{self.name}: the way in of {account} stays: {said}")
@@ -609,7 +610,7 @@ class ProgramsModuleRunner(ModuleRunner):
                     held[account] = {
                         **held[account],
                         "is_link_made": False,
-                        "is_local_bin_made": False,
+                        "is_local_bin_made": is_folder_left,
                     }
                     self._write_record(held)
         return lines
@@ -771,10 +772,11 @@ class ProgramsModuleRunner(ModuleRunner):
             record = self._found_record(item, None, {}, self._floor())
         try:
             if record.get("copy") == AGENT_PROGRAM_COPY_USER:
+                is_folder_left = False
                 if record.get("is_link_made"):
-                    self._let_go(account, record, item.password)
+                    is_folder_left = self._let_go(account, record, item.password)
                 record["is_link_made"] = False
-                record["is_local_bin_made"] = False
+                record["is_local_bin_made"] = is_folder_left
                 note = f"{account} runs its own copy"
             else:
                 note = self._make_way_in(item, entry, record)
@@ -997,7 +999,7 @@ class ProgramsModuleRunner(ModuleRunner):
                 "apply_failed", {"detail": f"the link {link}: {detail}"}
             )
         outcome, made = words
-        if made == "1":
+        if made == "1" or self._is_folder_made_by_sibling(account):
             record["is_local_bin_made"] = True
         if outcome == LINK_TAKEN:
             record["is_link_made"] = False
@@ -1010,8 +1012,14 @@ class ProgramsModuleRunner(ModuleRunner):
             record["code"], record["params"] = "", {}
         return f"{account} reaches the module's copy through {link}"
 
-    def _let_go(self, account: str, record: dict, password: str) -> None:
+    def _let_go(self, account: str, record: dict, password: str) -> bool:
         """Remove an account's link or ``PATH`` entry while it carries the module's mark.
+
+        A ``~/.local/bin`` this module or the other command line program
+        made goes with it once it is empty.
+
+        Returns:
+            Whether such a folder still stands, holding something else.
 
         Raises:
             ModuleApplyError: ``credential_invalid {account}`` or
@@ -1028,23 +1036,43 @@ class ProgramsModuleRunner(ModuleRunner):
                 AGENT_PROGRAM_WINDOWS_PATH_PARTS,
                 {"verb": "remove", "folder": self.launcher_dir},
             )
-            return
+            return False
         try:
             entry = self._machine.lookup_account(account)
         except KeyError:
-            return
+            return False
         link = self._link_path(entry.home)
-        folder = (
-            self._join(entry.home, *AGENT_PROGRAM_LINK_DIR_PARTS)
-            if record.get("is_local_bin_made")
-            else ""
-        )
+        folder = self._join(entry.home, *AGENT_PROGRAM_LINK_DIR_PARTS)
+        is_made = bool(
+            record.get("is_local_bin_made")
+        ) or self._is_folder_made_by_sibling(account)
         self._platform.run_as_account(
             account,
-            ["/bin/sh", "-c", UNLINK_SHELL, link, self.launcher_path, folder],
+            ["/bin/sh", "-c", UNLINK_SHELL, link, self.launcher_path]
+            + [folder if is_made else ""],
             stdin="",
             timeout_s=AGENT_PROGRAM_VERSION_TIMEOUT_S,
         )
+        return is_made and os.path.isdir(folder)
+
+    def _is_folder_made_by_sibling(self, account: str) -> bool:
+        """Whether the other command line program's record says it made the account's ``~/.local/bin``."""
+        for module in AGENT_PROGRAM_MODULES:
+            if module == self.name:
+                continue
+            path = self._join(
+                self._platform.agent_var_dir(), module, AGENT_PROGRAM_RECORD_NAME
+            )
+            try:
+                with open(path, "r", encoding="utf-8") as stream:
+                    held = json.load(stream)
+            except (OSError, ValueError):
+                continue
+            accounts = held.get("accounts") if isinstance(held, dict) else None
+            record = accounts.get(account) if isinstance(accounts, dict) else None
+            if isinstance(record, dict) and record.get("is_local_bin_made"):
+                return True
+        return False
 
     def _link_path(self, home: str) -> str:
         """An account's link, ``~/.local/bin/<name>``."""
