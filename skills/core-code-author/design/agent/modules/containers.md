@@ -132,6 +132,7 @@ exit_code}`.
 | The agent never restarts the computer. A person does, with the tab's **Restart now** or the device's **Reboot**. | A restart closes every program open on the computer. |
 | While the restart is owed, Containers' task waits in its step `restart`, holding no step lock, checks every 30 seconds and keeps no tried hash until it ends; other modules' tasks go on ([agent.md](../../agent.md), "The steps"). | The install goes on after the restart with no press, and nothing else on the machine waits for the restart. |
 | On macOS the pkg's receipt is `com.redhat.podman`. Its scripts write `/etc/paths.d/podman-pkg` and `/usr/local/etc/man.d/podman.man.conf`, and run `podman-mac-helper install`, which installs nothing when the agent runs the installer. | The helper installs for the account `SUDO_USER` or `USER` names and refuses root, and the agent runs as root with no `SUDO_USER`. |
+| A task under a present `want` plans the install while the module's directory keeps no machine image, whoever installed Podman, though `verify` passes. Its steps are every install's: the Windows features, the WSL msi by its own rule, Podman's msi or pkg kept and handed to the installer only as "A person's Podman and the module's" says, and the image kept. | With a person's Podman `verify` passes, so no install ran and no image was kept, and the step `machine` failed `machine_image_missing` at every retry. |
 
 ### A person's Podman and the module's
 
@@ -146,7 +147,7 @@ counts as the person's. A Podman the mark stands for is the module's.
 
 | | A person's Podman | A Podman the module installed |
 | --- | --- | --- |
-| **Install** | runs no installer on Podman and writes no mark; the msi or the pkg is kept in the module's directory all the same | writes the mark, then installs Podman's msi or pkg |
+| **Install** | runs no installer on Podman and writes no mark; the msi or the pkg and the machine image are kept in the module's directory all the same | writes the mark, then installs Podman's msi or pkg |
 | Another version | uninstalls and installs nothing, and Podman stays at the person's version | uninstalls the old package and installs the chosen one; the mark stays |
 | **Uninstall** | leaves Podman installed: on Windows its msi, on macOS `/opt/podman/`, the two files the pkg's scripts write and the receipt | uninstalls Podman as "The uninstall" says, and deletes the mark with the module's directory |
 
