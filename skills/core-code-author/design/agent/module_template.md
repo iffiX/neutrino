@@ -19,7 +19,7 @@ a module the agent has no runner for reads `unsupported`.
 | A service with a system account of its own | Gitea, `gitea` | makes the account and the service, and the publisher's layout holds on every system | its configuration, one applier per system, the rendered `app.ini` ([modules/gitea.md](modules/gitea.md)) |
 | A program run as a person's account | VS Code, `vscode`; code-server, `code_server`; CloudCLI, `cloudcli`; Codeg, `codeg`; SiYuan, `siyuan` | the whole flow of this page: one account service per instance, the forwarder, the `web` entry, the shared router and the shared panel | `config.py`, `constants.py` and `hooks.py` ([modules/vscode.md](modules/vscode.md), [modules/code_server.md](modules/code_server.md), [modules/cloudcli.md](modules/cloudcli.md), [modules/codeg.md](modules/codeg.md), [modules/siyuan.md](modules/siyuan.md)) |
 | Container images | Hermes WebUI and Ayakaleaf, `container` | runs the images as hub containers on the Containers module, one network per module, and the forwarder where the module has a page | its images in the manifest, the containers it composes on the hub, and its `hooks.py` where it has a page or a step after its first start ([module_install.md](module_install.md), "From container images", [modules/hermes_webui.md](modules/hermes_webui.md), [modules/ayakaleaf.md](modules/ayakaleaf.md)) |
-| A command line program per account | Codex, `codex`; Claude Code, `claude_code` | `modules/shared/programs.py`: the `find` of each enabled account's own copy, the module's copy while an account needs it, the launcher, the record, and each account's link or `PATH` entry ([agent.md](../agent.md), "Parallel, never take over"); no service, no port, no forwarder and no published entry | `config.py`, `constants.py` and `hooks.py`: the program's name, the places a person's copy is looked for, how its version reads, and what its launcher sets ([modules/codex.md](modules/codex.md), [modules/claude_code.md](modules/claude_code.md)) |
+| A command line program per account | Codex, `codex`; Claude Code, `claude_code` | `modules/shared/programs.py` and `modules/shared/program_path.py`: the module's copy, the launcher, the record, each enabled account's `PATH` put first and the `find` of the copy its shell runs ([agent.md](../agent.md), "Parallel, never take over"); no service, no port, no forwarder and no published entry | `config.py`, `constants.py` and `hooks.py`: the program's name, the places a person's copy is looked for, how its version reads, and what its launcher sets ([modules/codex.md](modules/codex.md), [modules/claude_code.md](modules/claude_code.md)) |
 
 `runner` names the agent runner, and an agent that has no runner of that
 name reports the module `unsupported`. Where a module's software comes
@@ -31,8 +31,8 @@ methods.
 ## The run
 
 A command line program runs nothing of its own, and this section and "The
-publish" do not reach it; "The launcher and the link" holds what it puts on
-the machine.
+publish" do not reach it; "The launcher and the account's `PATH`" holds what
+it puts on the machine.
 
 One instance runs per enabled account of the module, an available account of
 the machine ([agent.md](../agent.md), "The two layers and the accounts"). The
@@ -150,37 +150,40 @@ frame hands.
 
 ### The find
 
-A command line program's task begins with `find`, which looks for each
-enabled account's own copy ([../agent.md](../agent.md), "Parallel, never
-take over"). The places a module looks in besides `PATH` are its own page's.
+A command line program's `find` reads the copies of the program an
+account's shell reaches ([../agent.md](../agent.md), "Parallel, never take
+over"). It runs for the panel's dialog before the account is checked, as the
+module's `find` verb, and in each `account` step. The places a module looks
+in besides `PATH` are its own page's.
 
 | Rule | Reason |
 | --- | --- |
 | On Linux and macOS `find` runs the account's login shell, the one its passwd entry names, through the step-down as a login and interactive shell, `<shell> -l -i -c 'printf "%s\n" "$PATH"'`, with empty input and at most 5 seconds, and reads the last line it prints. | Ubuntu's `~/.bashrc` returns early in a shell that is not interactive, and nvm adds its directory at the end of that file. A profile that prints a banner prints it before the last line. |
-| On Windows `find` is one `run_as_account` per account: it reads the system's `PATH` and then the account's user `PATH`, expanded, as Windows joins them for a new process, and looks for `<name>.exe`, then `<name>.cmd`, in each folder in order, passing over the module's own launcher folder. | A shell starts a program from the first folder that holds it, and npm puts a `.cmd` for each command it installs. |
+| On Windows `find` is one `run_as_account` per account: it reads the system's `PATH` and then the account's user `PATH`, expanded, as Windows joins them for a new process, and looks for `<name>.exe`, then `<name>.cmd`, in each folder in order. | A shell starts a program from the first folder that holds it, and npm puts a `.cmd` for each command it installs. |
+| `find` answers the first copy on that `PATH` that is not the module's launcher, else the first in the module's known places, with its version; whether it is on `PATH`; on Windows whether its folder is in the system `PATH`; and whether the module's launcher comes before it. | The dialog names the copy the module's would run in place of, and the account's row the copy its shell runs before the module's. |
 | A shell that fails or runs past its time leaves the account with the module's known places alone, and one line in the agent's log names the account and the shell. | A broken profile is the person's, and the module still finds a copy in the usual places. |
-| A copy's version is the first dotted number its `--version` prints, run as the account with at most 10 seconds. A copy whose version cannot be read counts as not found. | `claude --version` prints `2.1.311 (Claude Code)` and `codex --version` prints `codex-cli 0.166.0`. |
-| A `find` that changes whether an enabled account needs the module's copy ends its task, and the task is planned again from the record `find` wrote. | The task's plan holds the module copy's install only while an account needs it, and the plan was made from the record before `find` ran. |
-| An account's row holds one code at a time: `copy_version_unsupported` before `link_name_taken`. | The row has one line for a code, and the older copy is the one the person can replace to need no link at all. |
+| A copy's version is the first dotted number its `--version` prints, run as the account with at most 10 seconds, and empty when it prints none. | `claude --version` prints `2.1.311 (Claude Code)` and `codex --version` prints `codex-cli 0.166.0`. A program of the name that prints no version still runs in the module's place. |
+| An `account` step reads the account's code from what `find` answers: none while the module's launcher comes first; `copy_in_system_path {account, path, version}` for a copy in Windows' system `PATH`; `copy_runs_first {account, path, version}` for another copy on `PATH`; and `copy_unreached {account}` while the shell finds no copy. | The row has one line for a code, and the first two name the copy the shell runs. |
 
-### The launcher and the link
+### The launcher and the account's `PATH`
 
 A command line program's own copy is unpacked under its module's directory
 like any archive, and the module writes one launcher for it, `bin/<name>`
 in the module's directory, `bin\<name>.cmd` on Windows. The launcher is a
 script that sets what the module's page names and starts the copy with the
-arguments it was given. The account's link and the account's `PATH` entry
-both reach the copy through it ([agent.md](../agent.md), "Parallel, never
+arguments it was given. Each enabled account's `PATH` reaches the copy
+through the launcher's folder ([agent.md](../agent.md), "Parallel, never
 take over").
 
 | Rule | Reason |
 | --- | --- |
-| The launcher is the one file in `bin/`, root's and read-only to every account as the unpack is, and on Linux with SELinux `bin/` is labelled `bin_t` with the unpack ([module_install.md](module_install.md), "From the hub's cache"). | The folder a Windows `PATH` entry and Neutrino's own sessions name holds the program's name and none of its helpers. |
+| The launcher is the one file in `bin/`, root's and read-only to every account as the unpack is, and on Linux with SELinux `bin/` is labelled `bin_t` with the unpack ([module_install.md](module_install.md), "From the hub's cache"). | The folder a `PATH` names holds the program's name and none of its helpers. |
 | The launcher sets only what the module's copy needs, such as `DISABLE_UPDATES` for Claude Code. The gateway's address and key stay in the files the machine's AI tools setting writes ([ai_tools.md](ai_tools.md)). | One mechanism writes the gateway, and the person's copy reads the same files. |
-| On Linux and macOS the account's link, `~/.local/bin/<name>`, points at the launcher. The module makes `~/.local/bin` as the account when it is missing and records that it made it. When it removes a link, at **Uninstall**, for an account no longer enabled or for one that now runs its own copy, it also removes `~/.local/bin` once that is empty, if either command line program's module made it. | A directory the person had stays theirs, and one either program made goes with the last link in it, whichever module removes that link. Debian's and Ubuntu's `~/.profile` put `~/.local/bin` on `PATH` only when it exists at login, so a shell opened before the module made it reaches the link from the next login. |
-| On Windows the account's user `PATH` gains the launcher's folder at its end, its full path spelled out. The value is read unexpanded with its own type, `REG_EXPAND_SZ` or `REG_SZ`, written back with that type and every other entry as it was, and Windows is told the environment changed, which shells opened afterwards read. | A write that expands or retypes the value breaks the person's entries that name `%USERPROFILE%` or another variable. |
+| On Linux and macOS `env.sh` in the account's Neutrino tree and the line in each startup file put the launcher's folder first ([agent.md](../agent.md), "The account's startup files"). The module makes no link, and `~/.local/bin` is not touched. | A folder at the front of `PATH` is found before every copy, where a link in `~/.local/bin` comes after every folder in front of it, and macOS puts `~/.local/bin` on no `PATH`. |
+| On Windows the account's user `PATH` gains the launcher's folder at its front, its full path spelled out. The value is read unexpanded with its own type, `REG_EXPAND_SZ` or `REG_SZ`, written back with that type and every other entry as it was, and Windows is told the environment changed, which processes started afterwards read. A value the module made is deleted once its entry goes and leaves it empty. | A write that expands or retypes the value breaks the person's entries that name `%USERPROFILE%` or another variable, and an account unchecked gets its value back as it was. |
+| **Put this module's copy first** on Windows takes every entry naming the folder out of the user `PATH` and puts one at the front. | An entry the person moved back is moved again only by the person's press. |
 | On Windows the module's record keeps each account's login, root-only as the whole record is, and the entry of an account no longer enabled is removed with that login. | Removing the entry runs as the account, and the state names no login for an account it no longer enables. |
-| A program whose module the state does not name makes no link and no entry, and reads `installed` only while its module's copy is in the module's directory. | A link appears only for an account the person enabled, and a person's own copy alone does not make a machine show the module. |
+| A program whose module the state does not name changes no account's `PATH`, and reads `installed` only while its module's copy is in the module's directory. | A `PATH` changes only for an account the person enabled, and a person's own copy alone does not make a machine show the module. |
 
 ## The hub side
 
@@ -279,7 +282,8 @@ under `modules/<module>/`, which the `container` runner calls.
 | `windows_acl.py` | running `icacls.exe` for a module on Windows, the exit code read and the output dropped |
 | `account_service/` | one file per system: write the service definition for an account, start, stop, disable, enable, remove and query it; its `__init__.py` also holds `write_if_changed`, which writes a file only when its text differs, so an apply that changes nothing rewrites no file |
 | `instances.py` | the generic runner of the account-program kind, which drives the hooks of each module |
-| `programs.py` | the generic runner of the command line program kind, which drives the hooks of each module: the `find`, the choice of copy per account, the record, the launcher, the links and the Windows `PATH` entries ("The launcher and the link") |
+| `programs.py` | the generic runner of the command line program kind, which drives the hooks of each module: the module's copy, the launcher, the record, the `find`, the `account` step and the Windows `PATH` entries ("The launcher and the account's `PATH`") |
+| `program_path.py` | each account's `env.sh`, its `env.fish`, and the marked line in its startup files on Linux and macOS, which every command line program shares, with their record `program_path.json` ([agent.md](../agent.md), "The account's startup files") |
 
 An applier on Windows runs its cmdlets through the agent's one PowerShell
 host in `platforms/` ([agent.md](../agent.md), "The PowerShell host on
@@ -301,8 +305,9 @@ drawn with `generic.svg` in the same directory.
 | The service definition | the unit `neutrino_<module>@<account>.service` | `/Library/LaunchDaemons/com.neutrino.<module>.<account>.plist` | the scheduled task `neutrino_<module>_<account>` |
 | The log | the unit's journal | `/Library/Logs/Neutrino/agent/<module>_<account>.log`, or the file the module names | `<account>.log` beside the program, or the file the module names |
 | A command line program's launcher | `/var/lib/neutrino/agent/<module>/bin/<name>` | `/Library/Application Support/Neutrino/agent/state/<module>/bin/<name>` | `%ProgramData%\Neutrino\agent\state\<module>\bin\<name>.cmd` |
-| A command line program's way in from a shell | the link `~/.local/bin/<name>` | the link `~/.local/bin/<name>` | the launcher's folder at the end of the account's user `PATH` |
+| A command line program's way in from a shell | the launcher's folder in `~/.local/share/neutrino/agent/env.sh`, which a line at the end of each startup file loads | the launcher's folder in `~/Library/Application Support/Neutrino/agent/env.sh`, which a line at the end of each startup file loads | the launcher's folder at the front of the account's user `PATH` |
 | A command line program's record | `/var/lib/neutrino/agent/<module>/record.json` | `/Library/Application Support/Neutrino/agent/state/<module>/record.json` | `%ProgramData%\Neutrino\agent\state\<module>\record.json` |
+| The record of the accounts' startup files | `/var/lib/neutrino/agent/program_path.json` | `/Library/Application Support/Neutrino/agent/state/program_path.json` | none |
 
 The module's directory is `<module>/` under the state root, the first row's
 path without `<directory>`. Each install class

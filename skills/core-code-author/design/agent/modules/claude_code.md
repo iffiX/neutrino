@@ -12,9 +12,10 @@ rest. Its configuration is `{accounts: [{account, password}]}`, `password`
 being the account's login, sent to a Windows machine alone
 ([../../protocol.md](../../protocol.md), "The account layer in the state").
 
-**An account's own Claude Code comes first.** `find` reads the account's
-`PATH`, then these places, as the account ([../../agent.md](../../agent.md),
-"Parallel, never take over"):
+**The module's copy runs first for each enabled account.** Before an
+account is checked, `find` reads the account's `PATH`, then these places, as
+the account, and a copy found is named in the panel's dialog
+([../../agent.md](../../agent.md), "Parallel, never take over"):
 
 | System | The places after `PATH` |
 | --- | --- |
@@ -22,14 +23,11 @@ being the account's login, sent to a Windows machine alone
 | macOS | `~/.local/bin/claude`, the native installer's; `/opt/homebrew/bin/claude` and `/usr/local/bin/claude`, Homebrew's casks |
 | Windows | `%USERPROFILE%\.local\bin\claude.exe`, the native installer's; `%LOCALAPPDATA%\Microsoft\WinGet\Links\claude.exe`, WinGet's; `%APPDATA%\npm\claude.cmd`, npm's |
 
-A copy at the manifest's `user_copy_min_version` or newer is the account's,
-and the module installs nothing for it. `user_copy_min_version` is 2.1.311,
-the tested version. An older one keeps running in the
-account's own shell, and the account uses the module's copy, its row
-reading `copy_version_unsupported {account, version, min}`. The person's
-copy keeps its own updater: the native installer and npm update it in the
-background, and Homebrew, WinGet, apt, dnf and apk when the person
-upgrades.
+On the person's yes the account's `PATH` names the module's launcher
+folder first, and the person's copy stays where it is. It keeps its own
+updater: the native installer and npm update it in the background, and
+Homebrew, WinGet, apt, dnf and apk when the person upgrades, and each of them
+removes it.
 
 **The module's copy is Anthropic's npm package for the platform.**
 `data/manifests/claude_code.json` names one artifact per platform, of kind
@@ -99,14 +97,16 @@ with, and each runs that copy, so neither requires this module
 launcher do not reach that copy.
 
 **An uninstall keeps every account's own files.** It removes
-`claude_code/` under the state root, every link and `PATH` entry that still
-carries the module's mark, and the record. Its line in the uninstall dialog
+`claude_code/` under the state root, the record, and each enabled account's
+line, `env.sh` and Windows entry as [../module_install.md](../module_install.md),
+"What an uninstall removes", says. Its line in the uninstall dialog
 is "Each account's settings in ~/.claude stay, and so does a copy of Claude
 Code installed outside this module."
 
-`details` is `{has_module_copy, version, accounts: [{account, copy, path,
-version, code, params}]}`, the first `version` being the module's copy's,
-empty while it has none, and `copy` being `user` or `module`. An apply refuses
+`details` is `{has_module_copy, version, accounts: [{account, code,
+params}]}`, `version` being the module's copy's, empty while it has none, and
+an account's `code` the copy its shell runs before the module's
+([../module_template.md](../module_template.md), "The find"). An apply refuses
 `account_unknown {account}` for an account the machine does not have, and
 on Windows `account_no_profile {account}`, `credential_missing {account}`
 and `credential_invalid {account}`, as Codeg's does. Its journal is the

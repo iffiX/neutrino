@@ -10,9 +10,10 @@ rest. Its configuration is `{accounts: [{account, password}]}`, `password`
 being the account's login, sent to a Windows machine alone
 ([../../protocol.md](../../protocol.md), "The account layer in the state").
 
-**An account's own Codex comes first.** `find` reads the account's `PATH`,
-then these places, as the account ([../../agent.md](../../agent.md),
-"Parallel, never take over"):
+**The module's copy runs first for each enabled account.** Before an
+account is checked, `find` reads the account's `PATH`, then these places, as
+the account, and a copy found is named in the panel's dialog
+([../../agent.md](../../agent.md), "Parallel, never take over"):
 
 | System | The places after `PATH` |
 | --- | --- |
@@ -20,11 +21,9 @@ then these places, as the account ([../../agent.md](../../agent.md),
 | macOS | `~/.local/bin/codex`; `/opt/homebrew/bin/codex` and `/usr/local/bin/codex`, Homebrew's cask |
 | Windows | `%LOCALAPPDATA%\Programs\OpenAI\Codex\bin\codex.exe`, the publisher's `install.ps1`; `%APPDATA%\npm\codex.cmd`, npm's |
 
-A copy at the manifest's `user_copy_min_version` or newer is the account's,
-and the module installs nothing for it. `user_copy_min_version` is 0.166.0,
-the tested version. An older one keeps running in the account's own shell,
-and the account uses the module's copy, its row reading
-`copy_version_unsupported {account, version, min}`.
+On the person's yes the account's `PATH` names the module's launcher
+folder first, and the person's copy stays where it is, for its own
+installer to update or remove.
 
 **The module's copy is OpenAI's npm build for the platform.**
 `data/manifests/codex.json` names one artifact per platform, of kind
@@ -101,14 +100,14 @@ adapter it installs, so neither requires this module
 ([cloudcli.md](cloudcli.md), [codeg.md](codeg.md)).
 
 **An uninstall keeps every account's own files.** It removes `codex/` under
-the state root, every link and `PATH` entry that still carries the module's
-mark, and the record. Its line in the uninstall dialog is "Each account's
+the state root, the record, and each enabled account's line, `env.sh` and
+Windows entry as [../module_install.md](../module_install.md), "What an
+uninstall removes", says. Its line in the uninstall dialog is "Each account's
 settings in ~/.codex stay, and so does a copy of Codex installed outside
 this module."
 
-`details` is `{has_module_copy, version, accounts: [{account, copy, path,
-version, code, params}]}`, the first `version` being the module's copy's,
-empty while it has none, and `copy` being `user` or `module`. An apply refuses what
+`details` is `{has_module_copy, version, accounts: [{account, code,
+params}]}`, as Claude Code's is ([claude_code.md](claude_code.md)). An apply refuses what
 Claude Code's refuses ([claude_code.md](claude_code.md)). Its journal is the
 agent's lines that name the module ([../../agent.md](../../agent.md), "Which
 modules each system runs").
