@@ -1160,7 +1160,7 @@ carries them:
 | Tab | Its panel | Idiom |
 | --- | --- | --- |
 | Terminal | **Enabled accounts**, each check row showing the account's shell | one configurable `settings_group` with its own apply bar, `ui.terminal_module.apply` |
-| SSH server | **Enabled accounts**, and the machine's host key fingerprint in mono under them, `ui.ssh_server.host_key` | one configurable `settings_group` with its own apply bar, `ui.ssh_server.apply` |
+| SSH server | **Enabled accounts**, each enabled account's row ending with its instance's host key fingerprint in mono, `ui.ssh_server.host_key` | one configurable `settings_group` with its own apply bar, `ui.ssh_server.apply` |
 | Remote desktop | one switch, `ui.remote_desktop_module.switch`, with its description | one configurable `settings_group` with its own apply bar, `ui.remote_desktop_module.apply`; a failed step shows its code's words under it, and the apply bar's Apply tries again |
 
 The Hermes WebUI tab draws the line `ui.hermes_webui.owner_notice`, or

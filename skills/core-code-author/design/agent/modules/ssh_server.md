@@ -23,22 +23,29 @@ are, and no client's Apps page and not the panel's Services page shows it.
 The agent starts each instance as `neutrino_ssh_server --listen
 127.0.0.1:<port> --host-key <file> --authorized-key <file> --shell <shell>
 --path-folders <file>`, the three files in `ssh_server/run/<account>/` under
-the state root, the directory the account's own and mode 700. The host key
-and the authorized key are the account's, mode 600, written again at every
-apply. `path_folders`, root's and mode 644, holds the launcher folders a
-session's `PATH` starts with, one per line ("The `PATH` of a session").
+the state root, the account's run folder. `path_folders` holds the
+launcher folders a session's `PATH` starts with, one per line ("The `PATH`
+of a session").
+
+| Rule | Reason |
+| --- | --- |
+| The run folder and every file in it are root's, SYSTEM's on Windows, and the account reads them and changes nothing: on Linux the folder is mode 750 and each file 640, both of the account's group; on macOS the folder is mode 700 and each file 600, both of `wheel`, each with an access entry that lets the account read it; on Windows the folder's access list, set whole on its handle, gives the account Read, SYSTEM and the administrators full control, inherited by every file and nothing inherited from above. | The agent writes the three files, and root writes only into a folder no account can change ([../../privilege.md](../../privilege.md), "The agent touches an account's files as that account"). Every account of a Mac is in `staff`, so a group there would let every account read every host key. |
+| The agent writes each file whole: a new file made afresh beside it, following no link, given its mode and owner on the open file, and renamed in. A file that holds its text already is not written. | A session reads the old text or the new one, never part of one. |
+| A run folder an earlier version gave the account is taken back at the first apply: on Linux and macOS given to root on its open descriptor, following no link, on Windows its access list set again on its handle, a junction where the folder goes removed and never followed. Once it is root's, every file the account had in it is deleted on Linux and macOS, links among them, and on Windows the copy of the machine's host key it held, `host_key`; the instance's own key is `instance_host_key`. What stays the agent reads none of. | The layout cuts over at the first apply, and no code reads the old one ([../../agent.md](../../agent.md), "One session, everything on it"). |
+| Linux takes the account's group as its own: each account's primary group is a group of its own on every distribution the agent ships for. | A primary group several accounts share lets each of them read the others' host keys; such a machine is not one the agent is built for. |
 
 ## Keys
 
 | Key | Made by | Kept | Reaches |
 | --- | --- | --- | --- |
-| the host key, one per machine | the agent, at the module's first apply: Ed25519 in OpenSSH form | `ssh_server/host_key` under the state root, root's alone, and a copy in each instance's run directory | the hub as the public key in the module's `details`, and each client as the `service` frame's `host_key` |
+| the host key, one per instance | the agent, at the instance's first apply, with `neutrino_ssh_server --make-host-key`: Ed25519 in OpenSSH form | `instance_host_key` in the account's run folder alone, root's, which the account reads | the hub as the public key in the instance's row of the module's `details`, and each client as the `service` frame's `host_key` of the account's `ssh` entry |
 | the account's key, one per machine and enabled account | the hub, when the account is first enabled: Ed25519 | the private half sealed under the vault's data key in `config/devices/<id>/ssh_server.json`, kept while the account is available | the agent as the public half, the instance's one authorized key; a client as the private half in the `service` frame, which the client writes under `~/.ssh/neutrino/` ([../../client.md](../../client.md), "SSH for other programs") |
 
 | Rule | Reason |
 | --- | --- |
 | An instance admits public-key authentication by the account's key alone. It offers no password and no keyboard-interactive method, and it reads no `sshd_config` and no `authorized_keys` of the account's. | The hub's key is the one credential, and nothing the person set up for the machine's own sshd changes what this server admits. |
 | The host key stays on the machine; the hub holds only its public half. | A copy of the private half elsewhere is a second machine that can answer as this one. |
+| Each instance has a host key of its own, and an account reads its own alone. Disabling an account deletes its run folder with its host key, and enabling it again makes a new one. The one machine host key of an earlier version, `ssh_server/host_key`, is deleted at the first apply, and a client takes each instance's key with its next `service` frame. | The server runs as the account and reads its host key, so each account holds the private half of what it serves; with one key per machine every enabled account could answer as every other one. |
 | Removing an available account deletes its key; enabling it again makes a new one. | A key outlives no account the person took away. |
 | **Rotate** on the Credentials page makes a new pair for that account: the state carries the new public half, which replaces the instance's one authorized key at the apply, and the `ssh` entry's `account_key_fingerprint` changes, so each client reads the new private half ([../../ui_behavior.md](../../ui_behavior.md), "The Credentials page"). | A key copied off a client stops opening the machine at once. |
 
@@ -60,7 +67,7 @@ loopback keeps the server from being a way onto the machine's LAN.
 
 | Rule | Reason |
 | --- | --- |
-| The agent writes `path_folders` from the instance's `programs` in the state, the launcher folder of each program in the order of the command line programs, at the account's `account` step, and writes it only when its text changes. The new text is written whole beside the file, in a file the agent makes new and that follows no link, and renamed into its place; the file is not handed to the account. | A session reads the old list or the new one, never part of one. A link the account puts in its own run directory cannot turn the agent's write or a change of owner onto another file. |
+| The agent writes `path_folders` from the instance's `programs` in the state, the launcher folder of each program in the order of the command line programs, at the account's `account` step, and writes it only when its text changes, whole, as the run folder's other files are written. | A session reads the old list or the new one, never part of one. |
 | The instance's service, its arguments and its environment do not change with the account's programs, and checking or unchecking a program starts no instance again. | Every open session of the account stays connected while the person checks or unchecks a program. |
 | The server reads the file each time a shell or an `exec` starts and puts its folders at the front of that process's `PATH`, each once. A session already open keeps the `PATH` it started with, and a session started afterwards has the new folders, or none after the last program lets the account go. The `sftp` subsystem reads nothing. | A process's environment is fixed at its start, so the next session is the first that can carry a change. |
 | A missing or unreadable file gives the session no folders, and the session starts. | A file the account removed from its own run directory costs the account its folders, never its sessions. |
@@ -74,10 +81,10 @@ shell_path, password, programs}]}`, `authorized_key` the account key's public
 half in OpenSSH form, `shell_path` the account row's, `password` the
 account's login, sent to a Windows machine alone, and `programs` the command
 line programs the account is enabled in ([../../protocol.md](../../protocol.md),
-"The account layer in the state"). `details` is `{host_key,
-host_key_fingerprint, instances: [{account, port, is_running, code}]}`,
-`host_key` the public host key in OpenSSH form and `host_key_fingerprint`
-its `SHA256:<base64>`. An apply refuses `account_invalid`,
+"The account layer in the state"). `details` is `{instances: [{account,
+port, is_running, code, host_key, host_key_fingerprint}]}`, `host_key` the
+instance's public host key in OpenSSH form and `host_key_fingerprint` its
+`SHA256:<base64>`, both empty before the key is made. An apply refuses `account_invalid`,
 `account_duplicate`, `key_missing`, each naming the `account`, and
 `account_unknown {account}`; on Windows `account_no_profile {account}` for an
 account that never signed in, `credential_missing {account}` and
