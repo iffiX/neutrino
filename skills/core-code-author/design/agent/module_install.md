@@ -19,8 +19,6 @@ is the module's identity, the same on every platform:
 | `title` | the name every surface shows |
 | `description` | one line on what the module does |
 | `publisher` | who publishes the software, such as `coder/code-server` or `Microsoft` |
-| `license` | the licence the publisher gives the software |
-| `corresponding_source` | the address of the source the licence asks for, with `{version}` where the version goes |
 | `is_data_forward_only` | true when the software migrates its data forward and never back, as Gitea does; absent is false ("Module versions") |
 | `uninstall_data` | `{is_deleted, text}`: what an uninstall does to the module's data, the line the uninstall dialog shows ([../ui_behavior.md](../ui_behavior.md), "The machine page"); `is_deleted` is true when the data goes with the module, and `text` is the line in each language of the panel, keyed `en` and `zh-CN` |
 | `memory_mib` | optional, and only on a module whose entries name the `container` method: the memory in MiB its containers run in without swapping from their first start, a whole number above 0; on Windows and macOS the hub sums it over the container modules of a machine against the Podman machine's memory ([modules/containers.md](modules/containers.md), "Memory for the container modules") |
@@ -42,7 +40,7 @@ A platform entry is `{runner, min_version, install, requires}`:
 | `resolve_platform_entry(manifest, platform)` in `modules/devices/manifests.py` is the one function that picks a machine's entry. The catalog's row, the machine page's tabs, the cache and the state's recipe all read it. | Two resolvers can disagree about which entry a machine has. |
 | A machine whose platform has no entry, or whose system version is below the entry's `min_version`, cannot run the module. The machine page's catalog greys it out, and a press on it is refused `no_platform_build {module}` ([protocol.md](../protocol.md), "The modules section, one entry per module"). | A machine that reports no system version is not ruled out, since its floor is unknown. |
 | A machine where a module the entry requires resolves no entry cannot run the module either, and the press is refused `no_platform_build {module}` naming the required module. | Hermes WebUI and Ayakaleaf name one `linux` entry, and Containers has none for a Linux whose agent reports no family, such as Alpine. |
-| The catalog shows the licence and the source address for a `hub` or a `container` entry alone. | The other methods install the system's own software or the agent's. |
+| A manifest names no licence and no source address, and the loader refuses `license` and `corresponding_source`. No row, catalog entry or credit names one for a module. | A module only installs the publisher's software from the publisher's sources, and no package of Neutrino's carries it. The **About** card credits only what Neutrino's own packages carry ([../ui_text.md](../ui_text.md), "Software the owner installs"). |
 | The loader refuses a manifest whose keys or `params` fall outside the shapes on this page, so a wrong file fails the suite. | The hub acts on a manifest as root on every managed machine. |
 | Every manifest of a module a person can uninstall names `uninstall_data`, with a line in both languages; a module whose entries name the method `agent` names none. The loader refuses a manifest without it, and one whose `is_deleted` disagrees with its entries: true beside a `system` or `builtin` entry or a `hub` entry whose `is_data_kept` is true, false beside a `container` entry or a `hub` entry whose `is_data_kept` is false. | Every module's uninstall shows one dialog, and the line in it is the one place a person reads what happens to their data before it happens. |
 | A line names the data by what the person keeps in it, and where it stays when it stays. `{data_dir}` in a line is the module's per-account data directory on the machine's system ([module_template.md](module_template.md), "Disk layout"), which the hub writes in before it sends the row. | A path is the answer to "where are my notes now"; the hub knows the machine's system, and one line serves all three. |
@@ -57,6 +55,9 @@ A platform entry is `{runner, min_version, install, requires}`:
 its version at the top level, and `artifacts` alone in each platform entry,
 with no runner and no method. The catalog leaves it out, and the agent takes
 it from the hub's cache for the machine's AI tools ([ai_tools.md](ai_tools.md)).
+It names no licence and no source address either: the client's package
+carries cc-switch, and the client's **About** card credits it from the
+client's own pin.
 
 ## Install methods
 
