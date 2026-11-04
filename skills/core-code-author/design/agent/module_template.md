@@ -62,6 +62,14 @@ job", `SeBatchLogonRight`:
 | The agent grants the account the right when it registers a task under the account's login, and takes it away when it removes the account's last such task. The tasks are an instance's, a one-shot task of `run_as_account` and CloudCLI's install task alike. | An administrator has the right through its group, and a standard account does not. On Windows 11 a task registered under a standard account's login read "has not yet run" after its start, and with the grant that account's SiYuan instance ran and the right was gone after the module's uninstall. The right is granted when a task needs it and taken away when none does. |
 | An account that passes a batch logon before the agent registers its first task, an administrator or an account the person granted the right, is never granted it. `batch_logon.json` under the state root lists each account with a task, its tasks and whether its right is the agent's grant. The agent takes away only its own grants, at the last task's removal and at the uninstall's cleanup. | The right an account had before the agent is the person's ([agent.md](../agent.md), "Parallel, never take over"). |
 
+The files the service names are written by the layer in folders root
+owns: a file the account runs or owns, such as VS Code's token, is the
+account's in a folder of root's, and a file the account must only read,
+such as the SSH server's host key, is root's, SYSTEM's on Windows, in a
+folder of root's that the account alone reads beside root
+([modules/ssh_server.md](modules/ssh_server.md), "What runs"). The layer
+writes into no folder an account can change.
+
 The service's environment is written from scratch, with nothing inherited
 from a login profile or a version manager, and the module's `hooks.py`
 composes it: the command line, the variables, the `umask` the module asks
@@ -129,7 +137,11 @@ browser loads can send it requests:
 The per-account data, what the program writes for that account, is under
 the account's own Neutrino tree, `~/.local/share/neutrino/agent/<module>/` on
 Linux, `~/Library/Application Support/Neutrino/agent/<module>/` on macOS and
-`%LOCALAPPDATA%\Neutrino\agent\<module>\` on Windows, made as the account.
+`%LOCALAPPDATA%\Neutrino\agent\<module>\` on Windows, made as the account:
+on Linux and macOS through the step-down, on Windows on a thread acting as
+the account under its login. Every read, write and removal the agent makes
+there, a log it reads for the journal among them, runs as the account
+([../agent.md](../agent.md), "Acting for an account").
 An uninstall removes the service definitions, the forwarder's records and
 the unpack under the state root, and keeps the per-account data directory
 and every file in the account's home, as `is_data_kept` says in every
@@ -285,6 +297,8 @@ under `modules/<module>/`, which the `container` runner calls.
 | `instances.py` | the generic runner of the account-program kind, which drives the hooks of each module |
 | `programs.py` | the generic runner of the command line program kind, which drives the hooks of each module: the module's copy, the launcher, the record, the `find`, the `account` step and the Windows `PATH` entries ("The launcher and the account's `PATH`") |
 | `program_path.py` | each account's `env.sh`, its `env.fish`, and the marked line in its startup files on Linux and macOS, which every command line program shares, with their record `program_path.json` ([agent.md](../agent.md), "The account's startup files") |
+| `account_files.py` | the one way every module reads, writes, makes and removes a file or a folder in a place an account can write: as the account, through the platform's step-down on Linux and macOS and on a thread acting as the account under its login on Windows ([../agent.md](../agent.md), "Acting for an account") |
+| `handle_walk.py` | a path walked one folder at a time by open descriptor, following no link, on Linux and macOS: a folder made or opened in root's place, a tree another uid owns given to an account, and who can change a path, root or the account that owns a level of it |
 
 An applier on Windows runs its cmdlets through the agent's one PowerShell
 host in `platforms/` ([agent.md](../agent.md), "The PowerShell host on
@@ -309,6 +323,7 @@ drawn with `generic.svg` in the same directory.
 | A command line program's way in from a shell | the launcher's folder in `~/.local/share/neutrino/agent/env.sh`, which a line at the end of each startup file loads | the launcher's folder in `~/Library/Application Support/Neutrino/agent/env.sh`, which a line at the end of each startup file loads | the launcher's folder at the front of the account's user `PATH` |
 | A command line program's record | `/var/lib/neutrino/agent/<module>/record.json` | `/Library/Application Support/Neutrino/agent/state/<module>/record.json` | `%ProgramData%\Neutrino\agent\state\<module>\record.json` |
 | The record of the accounts' startup files | `/var/lib/neutrino/agent/program_path.json` | `/Library/Application Support/Neutrino/agent/state/program_path.json` | none |
+| A folder root owns that one account reads, the SSH server's run folder | `/var/lib/neutrino/agent/ssh_server/run/<account>/`, root's, mode 750, of the account's group | `/Library/Application Support/Neutrino/agent/state/ssh_server/run/<account>/`, root's, mode 700, with an access entry for the account | `%ProgramData%\Neutrino\agent\state\ssh_server\run\<account>\`, SYSTEM's, the account granted Read |
 
 The module's directory is `<module>/` under the state root, the first row's
 path without `<directory>`. Each install class

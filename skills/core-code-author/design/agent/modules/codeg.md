@@ -27,7 +27,12 @@ agent's own floor, so the Linux entries name no `min_version`.
 Support/Neutrino/agent/codeg/` on macOS and
 `%LOCALAPPDATA%\Neutrino\agent\codeg\` on Windows, made as the account: the
 database `codeg.db`, `uploads/`, `logs/`, and the prefix and cache of the
-npm packages Codeg installs. Codeg's own `~/.codeg`, where it keeps its
+npm packages Codeg installs. On Linux and macOS the agent makes it and
+each folder missing above it through the step-down, each mode 700; on
+Windows on a thread acting as the account under the login its row names,
+where it takes the access list of the account's profile and the agent
+grants nothing. A junction or a link the account puts at any level then
+leads only where the account reaches itself. Codeg's own `~/.codeg`, where it keeps its
 installed skills, is the account's, and the module reads and writes nothing
 there.
 
@@ -51,7 +56,7 @@ starts write is the account's alone; Codex copies the whole environment,
 discarded on every system, because codeg-server prints the token to stderr
 at startup. The `journal` verb reads Codeg's own daily log,
 `logs/codeg-server.<date>.log` under the data directory, which holds no
-token.
+token; the agent lists `logs/` and reads the log's end as the account.
 
 **The forwarder trades a token for the browser's login.** It listens on
 `127.0.0.1` at the instance's port, where the agent's end of a `connect`

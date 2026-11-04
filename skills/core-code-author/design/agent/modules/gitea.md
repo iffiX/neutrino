@@ -12,7 +12,7 @@ are the same on every system.
 | --- | --- | --- | --- |
 | Binary | `/usr/local/bin/gitea` | `gitea/gitea` under the state root | `gitea\gitea.exe` under the state root |
 | Data: the database, the repositories, the log, `custom/` | `/var/lib/gitea` | `gitea_data/` under the state root, owned by the account, mode 700 | `gitea_data\` under the state root, SYSTEM and the administrators alone as the root is |
-| `app.ini` | `/etc/gitea/app.ini`, root and the group `git`, mode 640 | `gitea_data/custom/conf/app.ini`, the account's, mode 600 | `gitea_data\custom\conf\app.ini` |
+| `app.ini` | `/etc/gitea/app.ini`, the account's, mode 640, in `/etc/gitea`, the account's, mode 770 | `gitea_data/custom/conf/app.ini`, the account's, mode 600 | `gitea_data\custom\conf\app.ini` |
 | Listens on | `127.0.0.1` alone, at the configured port | the same | the same |
 | Runs as | the system account `git` the module makes | the hidden account `neutrino_gitea`, made with `sysadminctl` the way the file share makes its accounts, with the full name `Neutrino Gitea`, the shell `/usr/bin/false` and the data directory as its home, and read back before it counts | LocalSystem, `RUN_USER` being `<computer name>$` as Gitea's page prescribes |
 | Service | `neutrino_gitea.service`, disabled at **Stop** and enabled at **Start** | the LaunchDaemon `com.neutrino.gitea` with `UserName`, its output in `/Library/Logs/Neutrino/agent/gitea.log`, disabled with `launchctl disable` at **Stop** and enabled at **Start** | the service `neutrino_gitea`, made with `sc.exe`, started at boot and again after a failure; its start type `disabled` at **Stop** and `auto` at **Start** |
@@ -95,6 +95,19 @@ files root cannot give away. A handover gives each folder after what it
 holds, so one cut short runs again at the next start. A `git` account
 removed by hand comes back with a new uid, and Gitea fails to start on
 data the old uid owns. A symbolic link under the data keeps its owner.
+
+**What is in the account's folders is touched as the account.** The data
+directory and, on Linux, `/etc/gitea` are the server account's, so the
+account can put a link anywhere in them
+([../../privilege.md](../../privilege.md), "The agent touches an account's
+files as that account"):
+
+| Rule | Reason |
+| --- | --- |
+| The folders inside the data directory, `.ssh` and its mode 700 among them, and `app.ini` are made, written, read and removed as the server's account: through `runuser -u git` on Linux and through a process of the account's uid and group on macOS. | As the account, a link it planted reaches only what it reaches itself. |
+| The data directory, `/var/lib/gitea` on Linux and `gitea_data/` on macOS, and `/etc/gitea` sit in folders of root's: root makes each and gives it to the account on its open descriptor, each level opened with no link followed. | Each is a name in root's folder, which no account can replace. |
+| A handover is root's, since no account can take the files another uid owns: each entry is opened from its folder's open descriptor with no link followed and given on that descriptor, a link is left as it is, and a file that has a second name elsewhere is left, since that name may be a file of root's. | A link or a second name planted in the data then turns no change of owner onto a file outside it. |
+| On Linux root reads `app.ini` for its port and its address through no link and waiting on no pipe; on macOS the account reads it. | The file sits in the account's folder. |
 
 **A start waits for the server.** A `configure` that runs the server waits
 until it listens on `127.0.0.1` at its port, at most 60 seconds, and

@@ -254,12 +254,15 @@ overrides both, which is what makes a second instance testable. Details of the f
                             .locks/ holds one lock file per account; bin/
                             holds the cc-switch fetched from the hub, read
                             and run by every account
-        run_as/             Windows only: per account, the script, input,
-                            output and exit code of one one-shot task,
-                            removed once the task ends
-        ssh_server/         host_key, the machine's SSH host key, root only;
-                            run/<account>/, what each instance reads, its
-                            account's own
+        run_as/             Windows only: per account, SYSTEM's folder the
+                            account reads, the script and input of one
+                            one-shot task, and out/ under it, made afresh
+                            for each run, the output and exit code the
+                            account writes; removed once the task ends
+        ssh_server/         run/<account>/, what each instance reads: its
+                            own instance_host_key, its authorized key and
+                            path_folders, root's, which the account reads
+                            and does not change
         remote_desktop/     registered.json, what the Remote desktop module
                             registered under RustDesk's names; kept/, what
                             was registered there before and is put back
@@ -343,10 +346,22 @@ anybody else had: router mode stops the manager that was running and writes
 down which units those were, so handing the machine back starts exactly
 those. Losing the file costs one `systemctl unmask` by hand.
 
-`agent/run_as/<account>/` is the one place under the agent's state an
-account writes: its ACL grants that account modify, so the account's
-one-shot task can read its script and input and write its output and exit
-code, and every file in it goes when the task ends.
+`agent/run_as/<account>/out/` is the one place under the agent's state an
+account writes: SYSTEM makes it afresh for each run and its access list,
+set whole on its handle, grants that account modify, so the account's
+one-shot task can write its output and exit code there. `run_as/<account>/`
+above it is SYSTEM's, its access list set the same way, and the account
+reads its script and input there and changes nothing. SYSTEM reads and
+removes what `out/` holds only acting as the account, and removes `out/`
+itself, a junction there included, without following it, when the task
+ends ([privilege.md](privilege.md), "The agent touches an account's files
+as that account").
+
+`agent/ssh_server/run/<account>/` is root's, SYSTEM's on Windows, and the
+account reads it and changes nothing: on Linux mode 750 and of the
+account's group, on macOS mode 700 with an access entry for the account,
+on Windows Read for the account on its access list
+([agent/modules/ssh_server.md](agent/modules/ssh_server.md)).
 
 `agent/vscode/`, `agent/code_server/`, `agent/cloudcli/`, `agent/codeg/` and
 `agent/siyuan/` hold programs the accounts of the machine run, so those directories alone

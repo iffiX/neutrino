@@ -72,6 +72,12 @@ went on holds no such file and takes the service's settings alone; at the switch
 off its two files are deleted when its `RustDesk2.toml` holds the two servers at
 the loopback, and stay otherwise, with the same skips.
 
+| Rule | Reason |
+| --- | --- |
+| Every read, write and removal of a settings file under a home, the seat's and every other account's, runs as the home's account through the platform's step-down: the copy to `kept/` is read as the account, a file is written whole beside its place and renamed in as the account with the mode it had, 644 when it is new, and put back at the switch off as the account. A file under no home of the machine's any more is not put back. Root's own two files are written by root. | The account can put a link where root would write, and as the account the write reaches only what the account reaches itself ([../../privilege.md](../../privilege.md), "The agent touches an account's files as that account"). |
+| A settings folder under the seat's home that root owns, left by a RustDesk run as root, is given to the home's owner before the agent writes there, each level opened from the home with no link followed and given on its descriptor; the walk stops at a link. | No account can take a folder root owns, so this one change is root's, made on the folder it opened and never through a path the account can change. |
+| On a Wayland seat the account's `RustDesk2.toml`, where RustDesk stores the screen permission, is read as the account; root's is read through no link and waiting on no pipe. | The seat's attention is read every 15 seconds, and a pipe at that path would stop the agent. |
+
 While the switch is on, the agent reads the service's two settings files when
 it starts, before any host starts, and at each report. When `RustDesk2.toml`
 no longer holds the two servers at the loopback, or `RustDesk.toml` no longer

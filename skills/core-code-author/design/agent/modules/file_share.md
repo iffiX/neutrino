@@ -219,24 +219,39 @@ configure under `stopped`, so a share or an account removed while the module is
 stopped still has its folder's grants taken off: a record a **Stop** emptied
 left `neutrino-lab2` on `C:\Users\lab2` and `neutrino-lab` on a removed folder
 share's folder after the next **Start**. On Windows each
-share's folder is granted to the SMB users of its accounts with `icacls`,
-one user for a Home share and each checked account's for a folder share,
+share's folder is granted to the SMB users of its accounts on the
+folder's handle ("A share's folder"), one user for a Home share and each checked account's for a folder share,
 and a `.ssh` folder directly under a share's folder, the account's own
 under its home, is taken out of that grant: the folder's
 inheritance is broken with its entries kept, so the owner, SYSTEM and
 Administrators stay, and the module's users are removed from it, so
 OpenSSH's permission check on the account's own `~/.ssh` files passes.
 Each apply reads these folders' access lists through the PowerShell host
-first and runs `icacls` only for an entry that differs. Every change
-`icacls` makes walks the whole tree under the folder, and a home folder
-holds the account's whole profile: granting it again at every apply held
-`system_accounts` for 40 to 150 seconds. An account's grant replaces its
+first and changes a folder only for an entry that differs. Every change
+walks the whole tree under the folder as Windows carries an inherited
+entry down, and a home folder holds the account's whole profile: granting
+it again at every apply held `system_accounts` for 40 to 150 seconds. An account's grant replaces its
 own entries on the folder, so a right that changed takes effect. On
 macOS the grant is an ACL entry beside the mode, which OpenSSH does not
 read, so the `.ssh` folder needs nothing. On macOS each account takes the
 same entry as its SMB user, since a file the SMB user writes has the SMB
 user as its owner. Removing a folder share, or an account from it, takes the
 module's grant to that user off the folder on both systems.
+
+## A share's folder
+
+A share's folder is often in an account's home or in a folder an account
+owns, where the account can put a link or a junction at the folder or at a
+folder above it ([../../privilege.md](../../privilege.md), "The agent
+touches an account's files as that account").
+
+| Rule | Reason |
+| --- | --- |
+| On Linux and macOS whoever owns the folder's place makes it when it is missing and, on macOS, sets and takes off its access entries: the account that owns the first level of the path an account owns, through the step-down, a missing folder made under umask 022; else root, each level of the path being root's and none a link or a folder others may write. A path through a link or such a folder is left alone with a note, and its share served as it is. | As the account, a link it planted reaches only what it reaches itself; in root's place no account can plant one. |
+| On Linux a folder root makes in its own place for a share that writes as one account is given to that account on the folder's open descriptor. | The account writes into its share as it always did. |
+| On Windows SYSTEM sets the grants itself, the one change to an account's folder the agent does not make as the account ([../../agent.md](../../agent.md), "Acting for an account"). Each folder, a share's and the `.ssh` folder under it, is opened by handle with the reparse point opened and never followed; a folder that is a junction or a link, or whose final path is not the path asked because a folder above it is a junction, is refused, left ungranted with a note. The access list is read and set on that handle, the account's entries folded in as `icacls /grant:r` and `/remove:g` fold them, and the `.ssh` folder's inherited entries made its own and protected as `/inheritance:d` does. | A grant by path follows a junction, so `icacls` on a folder whose path an account changed granted the share's user a folder of the account's choosing. The handle holds the folder that was checked, so a junction planted after the check changes nothing. Logging on as each account to set the grants would ask SYSTEM to hold every account's login for a folder the account cannot grant anyway: the entries name the share's SMB user. |
+| On Windows a share's missing folder is made by the agent before the PowerShell host shares it, each level checked by handle once made, and the host makes no folder. A share whose folder cannot be made through no reparse point stays off the server, with a note. | `New-Item` follows a junction in the path, and `New-SmbShare` refuses a folder that is not there. |
+| A grant set on a share's folder reaches what the folder holds as Windows carries an inherited entry down, and Windows carries none through a junction inside the folder. | On the R144 lab machine an account's junction inside its Home share's folder led to a folder of SYSTEM's; after the agent granted the share's folder again, that folder's access list read as before, with no entry of the share's user. |
 
 ## Removing the agent
 
