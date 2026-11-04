@@ -1,0 +1,323 @@
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("/fonts/JetBrainsMono-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+
+:root {
+  --vp-c-brand-1: #0e7490;
+  --vp-c-brand-2: #0891b2;
+  --vp-c-brand-3: #0e7490;
+  --vp-c-brand-soft: rgba(14, 116, 144, 0.12);
+  --vp-font-family-base:
+    "Inter", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+  --vp-font-family-mono:
+    "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+}
+
+.dark {
+  --vp-c-brand-1: #67e8f9;
+  --vp-c-brand-2: #22d3ee;
+  --vp-c-brand-3: #0e7490;
+  --vp-c-brand-soft: rgba(34, 211, 238, 0.12);
+}
+
+/* The outline's parts: who the page is for, a picture still to come, where
+   the page comes from and what is unconfirmed. */
+.vp-doc .draft-for {
+  margin: 8px 0 20px;
+  color: var(--vp-c-text-2);
+  font-size: 15px;
+}
+
+.vp-doc .pic-holder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 150px;
+  margin: 20px 0;
+  padding: 24px;
+  border: 1px dashed var(--vp-c-divider);
+  border-radius: 8px;
+  background: var(--vp-c-bg-soft);
+  color: var(--vp-c-text-2);
+  font-size: 14px;
+  text-align: center;
+}
+
+.vp-doc .draft-foot {
+  margin-top: 36px;
+  padding-top: 12px;
+  border-top: 1px solid var(--vp-c-divider);
+  color: var(--vp-c-text-3);
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+
+.vp-doc img {
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 8px;
+}
+
+/* The wolf's face needs more room than a letter did. */
+:root {
+  --vp-nav-logo-height: 40px;
+}
+
+/* The phone landing page has one job and no page bar. */
+.app-download .VPLocalNav {
+  display: none;
+}
+
+/* Phone pictures stay phone-sized. */
+.vp-doc img[src*="/access_android_"],
+.vp-doc img[src*="/access_install_client_01_release_page"],
+.vp-doc img[src*="/access_install_client_02_downloaded"],
+.vp-doc img[src*="/access_install_client_03_blocked"],
+.vp-doc img[src*="/access_install_client_04_allow_source"],
+.vp-doc img[src*="/access_install_client_05_install"],
+.vp-doc img[src*="/access_install_client_06_installed"],
+.vp-doc img[src*="/access_install_client_07_first_open"],
+.vp-doc img[src*="_phone."] {
+  max-width: 300px;
+}
+
+/* The reading layout: skills/doc-author/layout.md. */
+@media (min-width: 1280px) {
+  .VPDoc.has-aside .content-container {
+    max-width: 800px !important;
+  }
+  .VPDoc.has-sidebar .content {
+    max-width: 880px !important;
+  }
+}
+.vp-doc > div > p,
+.vp-doc > div > ul,
+.vp-doc li > p {
+  max-width: 720px;
+}
+
+/* A numbered list is a rail: a numbered circle per step and a line joining them. */
+.vp-doc ol {
+  counter-reset: step;
+  list-style: none;
+  padding-left: 0;
+  margin: 20px 0;
+}
+.vp-doc ol > li {
+  position: relative;
+  counter-increment: step;
+  margin: 0;
+  padding: 2px 0 22px 44px;
+}
+.vp-doc ol > li::before {
+  content: counter(step);
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 1;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--vp-c-bg-soft);
+  border: 1px solid var(--vp-c-divider);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--vp-c-text-1);
+}
+.vp-doc ol > li:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  left: 14px;
+  top: 28px;
+  bottom: 0;
+  border-left: 1px solid var(--vp-c-divider);
+}
+.vp-doc ol > li > p:first-child {
+  margin-top: 0;
+}
+
+/* Rows of pictures: one height, each as wide as its own shape. */
+.vp-doc .shots {
+  display: flex;
+  gap: 12px;
+  margin: 14px 0 4px;
+  align-items: flex-start;
+  clear: both;
+}
+.vp-doc .shots figure {
+  flex: var(--r, 1.6) 1 0;
+  min-width: 0;
+  margin: 0;
+}
+.vp-doc .shots img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 8px;
+  cursor: zoom-in;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+}
+.vp-doc .shots figcaption {
+  margin-top: 8px;
+  font-size: 13.5px;
+  line-height: 20px;
+  color: var(--vp-c-text-2);
+}
+.vp-doc .shots figcaption i {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--vp-c-brand-soft);
+  color: var(--vp-c-brand-1);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 600;
+}
+.vp-doc .shots.phones {
+  max-width: 720px;
+}
+.vp-doc .shots.phones figure {
+  flex: 1 1 0;
+  max-width: 25%;
+}
+.vp-doc .shots.solo-phone {
+  width: 190px;
+}
+.vp-doc .shots.solo-phone figure {
+  flex: 1 1 100%;
+}
+
+/* A mostly blank state screen: a small picture in a table row, all at one size. */
+.vp-doc td img {
+  display: block;
+  width: 220px;
+  max-width: none;
+  height: auto;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 6px;
+  cursor: zoom-in;
+}
+.vp-doc tr:has(td img) td:first-child > strong {
+  white-space: nowrap;
+}
+@media (max-width: 640px) {
+  .vp-doc td img {
+    width: 150px;
+  }
+}
+
+/* One phone picture sits to the right of its step's text. */
+.vp-doc li:has(> .shots.solo-phone) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 190px;
+  column-gap: 24px;
+}
+.vp-doc li:has(> .shots.solo-phone) > :not(.shots) {
+  grid-column: 1;
+}
+.vp-doc li:has(> .shots.solo-phone) > .shots {
+  grid-column: 2;
+  grid-row: 1 / span 9;
+  margin-top: 0;
+}
+
+@media (max-width: 640px) {
+  .vp-doc ol > li {
+    padding-left: 38px;
+  }
+  .vp-doc .shots {
+    flex-wrap: wrap;
+  }
+  .vp-doc .shots figure {
+    flex: 1 1 100%;
+  }
+  .vp-doc .shots.phones figure {
+    flex: 1 1 calc(50% - 6px);
+    max-width: calc(50% - 6px);
+  }
+  .vp-doc li:has(> .shots.solo-phone) {
+    display: block;
+  }
+  .vp-doc .shots.solo-phone {
+    width: 200px;
+  }
+}
+
+.pswp__doc-caption {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 14px;
+  width: fit-content;
+  margin: 0 auto;
+  padding: 4px 12px;
+  border-radius: 6px;
+  background: rgba(10, 12, 16, 0.78);
+  text-align: center;
+  color: #e6e9ee;
+  font-size: 14px;
+  pointer-events: none;
+}
+
+/* One row under a page's opening: which systems and editions, and since which version. */
+.vp-doc .doc-facts {
+  display: flex;
+  flex-wrap: wrap;
+  margin: 16px 0 8px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 8px;
+  background: var(--vp-c-bg-soft);
+  overflow: hidden;
+}
+.vp-doc .doc-facts-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 16px;
+  border-right: 1px solid var(--vp-c-divider);
+}
+.vp-doc .doc-facts-cell:last-child {
+  border-right: 0;
+}
+.vp-doc .doc-facts-label {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--vp-c-text-2);
+}
+.vp-doc .doc-facts-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.vp-doc .doc-chip {
+  padding: 1px 9px;
+  border-radius: 999px;
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 500;
+  border: 1px solid transparent;
+}
+.vp-doc .doc-chip.is-on {
+  background: var(--vp-c-green-soft);
+  color: var(--vp-c-green-1);
+}
+.vp-doc .doc-chip.is-off {
+  background: transparent;
+  border-color: var(--vp-c-divider);
+  color: var(--vp-c-text-3);
+  text-decoration: line-through;
+}
+.vp-doc .doc-chip.is-since {
+  background: var(--vp-c-brand-soft);
+  color: var(--vp-c-brand-1);
+}
