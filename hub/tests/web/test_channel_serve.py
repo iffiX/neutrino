@@ -119,6 +119,44 @@ def served_package(monkeypatch, stream, path):
     return stream.closed
 
 
+class NamedDevices:
+    """The registry of one device, ``d1``, named in the panel."""
+
+    def get(self, device_id):
+        return SimpleNamespace(id=device_id, name="Lab box", ipv4_address="")
+
+
+def test_a_module_package_s_sending_line_names_the_machine_s_panel_name(
+    tmp_path, monkeypatch
+):
+    package = tmp_path / "package"
+    package.write_bytes(b"bytes")
+    lines: list = []
+    monkeypatch.setattr(
+        "neutrino_hub.web.channel_serve._package_file",
+        lambda *args: (package, "Codex 0.166.0", "codex.tgz"),
+    )
+    monkeypatch.setattr(
+        "neutrino_hub.web.channel_serve.load_module_manifests", lambda: {"codex": {}}
+    )
+    monkeypatch.setattr("neutrino_hub.web.channel_serve.DeviceRegistry", NamedDevices)
+    monkeypatch.setattr(
+        "neutrino_hub.web.channel_serve.publish_module_line",
+        lambda runtime, label, line: lines.append(line),
+    )
+    stream = PackageStream()
+    stream.args = {"module": "codex", "artifact": "codex", "digest": ""}
+    runtime = SimpleNamespace(
+        device_platform={"d1": {"os": "linux"}}, device_hostname={"d1": "ubuntu"}
+    )
+
+    asyncio.run(
+        serve_package_stream(runtime, SimpleNamespace(key="d1", name="ubuntu"), stream)
+    )
+
+    assert lines and all(line.endswith(" MB to Lab box") for line in lines)
+
+
 def test_a_package_stream_says_nothing_to_an_agent_gone_mid_send(tmp_path, monkeypatch):
     package = tmp_path / "package"
     package.write_bytes(b"bytes")

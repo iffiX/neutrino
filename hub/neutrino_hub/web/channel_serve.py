@@ -118,6 +118,7 @@ from neutrino_hub.web.constants import (
 from neutrino_hub.web.identity import hub_id, hub_name
 from neutrino_hub.web.models import ChannelHello, ChannelJoin
 from neutrino_hub.web.panel_sign_in import SESSION_END_LEFT, end_client_panel_sessions
+from neutrino_hub.web.shell_bridge import device_name
 from neutrino_hub.web.web_share_access import push_shares
 
 LOGGER = logging.getLogger(__name__)
@@ -728,9 +729,10 @@ async def _send_package(runtime, session, stream) -> None:
     progress = None
     size = 0
     if is_module:
+        device = await asyncio.to_thread(DeviceRegistry().get, session.key)
         progress = AgentModuleSendProgress(
             title=title,
-            recipient=session.name,
+            recipient=device_name(runtime, device) if device else session.name,
             on_line=functools.partial(
                 publish_module_line, runtime, module_task_label(session.key, module)
             ),
