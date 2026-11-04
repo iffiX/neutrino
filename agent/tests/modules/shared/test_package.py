@@ -132,6 +132,20 @@ def test_verify_passes_runs_the_recipes_command_and_reads_its_exit(monkeypatch):
     assert seen == ["smbd -V ok", "smbd -V"]
 
 
+def test_a_verify_command_has_120_seconds(monkeypatch):
+    timeouts: list = []
+
+    def fake_run(command, **kwargs):
+        timeouts.append(kwargs["timeout"])
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    assert verify_passes("claude.exe --version") is True
+    assert verify_detail("claude.exe --version") == ""
+    assert timeouts == [120, 120]
+
+
 def test_a_verify_commands_program_is_its_first_word_or_quoted_part(
     tmp_path, monkeypatch
 ):

@@ -52,7 +52,8 @@ from neutrino_agent.modules.shared.unpacked_tree import (
 )
 from neutrino_agent.streams.package import CODE_DIGEST_MISMATCH
 
-VERIFY_TIMEOUT_S = 30
+# How long a verify command runs at most.
+VERIFY_TIMEOUT_S = 120
 # What a staged file and a replaced one are named after the file they stand
 # beside during a version switch.
 STAGED_SUFFIX = ".new"
