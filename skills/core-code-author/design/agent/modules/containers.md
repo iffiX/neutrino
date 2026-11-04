@@ -29,7 +29,7 @@ packages").
 | --- | --- |
 | Every declared container and every hub container is a systemd unit, `/etc/systemd/system/<name>.service`, whose `ExecStart` runs `podman run`. The unit uses only what Podman 3.4 has, and is the same on every Podman version. | The supported distributions have Podman 3.4 and later ([min_support.md](../../min_support.md)), so one unit format serves every machine. |
 | The unit has `Wants=` and `After=network-online.target` and a `RequiresMountsFor=` for each host folder a volume binds; `Type=notify`, `NotifyAccess=all`, `Delegate=yes`, `KillMode=mixed`, `Environment=PODMAN_SYSTEMD_UNIT=%n`, `Restart=on-failure`, `SuccessExitStatus=143` and a hub container's `success_exit_codes` after it, `TimeoutStartSec=900` and `TimeoutStopSec=<stop>`; `ExecStartPre=-/bin/rm -f %t/%N.cid`; `ExecStart=podman run --cidfile=%t/%N.cid --cgroups=split --runtime runc --sdnotify=conmon -d --replace --rm --name <name>`; `ExecStop=podman stop --ignore -t <timeout> --cidfile=%t/%N.cid`; and `ExecStopPost=-podman rm -f --ignore --cidfile=%t/%N.cid`. `<timeout>` is 10, or a hub container's `stop_timeout_s` ("Hub containers"), and `<stop>` is `<timeout>` plus 60. | These are the settings `podman generate systemd --new` and Quadlet write. `conmon` is the unit's main process, so a stopped unit's container stays stopped, a container killed from outside fails the unit and systemd starts it again, and a container a hard stop left is replaced at the next start. A container that ends on the stop's SIGTERM exits 143 and reads stopped, while one killed from outside with SIGKILL exits 137, a failure that `Restart=` answers. A first pull takes longer than the default start timeout. Podman 3.4's `podman rm` has no `-t`, and its `podman run` fails on a cid file that is already there. |
-| Every unit's `podman run` names `--runtime runc`. Every family's entry installs `runc` beside `podman`, and its `verify` checks both, `podman --version && runc --version`. The install leaves `runc` out where a `runc` is already on the machine's path, and an uninstall removes `podman` and keeps `runc`. | Ubuntu 22.04's crun 0.17 answers EPERM to `fchmodat2`, so an image built on glibc 2.39 or later fails at its first start: Hermes WebUI's first start looped there. Docker CE's `containerd.io` includes its own `runc` and conflicts with the distribution's package, and another program can run on the same `runc`. |
+| Every unit's `podman run` names `--runtime runc`. Every family's entry installs `runc` beside `podman`, and its `verify` checks both, `podman --version && runc --version`. The install leaves `runc` out where a `runc` is already on the machine's path, and an uninstall removes `podman` only where the module installed it ("A person's Podman on Linux") and always keeps `runc`. | Ubuntu 22.04's crun 0.17 answers EPERM to `fchmodat2`, so an image built on glibc 2.39 or later fails at its first start: Hermes WebUI's first start looped there. Docker CE's `containerd.io` includes its own `runc` and conflicts with the distribution's package, and another program can run on the same `runc`. |
 | A container's environment is one root-only file, `/var/lib/neutrino/agent/podman/env/<name>.env`, mode 0600 in a directory of mode 0700, which the unit's `podman run` reads with `--env-file`. The unit file is mode 0644 and holds no value of the environment, and neither does the command line. | Every account on the machine reads a unit file and a process's command line, and the environment holds secrets, such as Hermes WebUI's password and the module's gateway key. Podman reads an environment file the same way from 3.4 on: one `KEY=value` per line, the value as written, and `#` starting a comment line. |
 | Every unit ends with `[Install]` and `WantedBy=multi-user.target`. Every apply runs `systemctl enable --no-reload` on the unit of each container that starts with the box, and `systemctl disable --no-reload` on each other one, before its `daemon-reload`; a removed unit is disabled before its file goes. | A unit's `[Install]` section starts nothing at boot until the unit is enabled, so a module's Stop and Start change no unit file. A unit that dropped the section at Stop changed, and the apply restarted the running container before the module's stop ended it in the middle of its start. |
 | After its `daemon-reload` every apply restarts each container whose unit or environment file changed when it starts with the box or its unit is active, and starts each other container that starts with the box and whose unit is not active. | An apply makes the declared containers true, and a container that starts with the box runs after it whether or not its files changed. |
@@ -63,6 +63,30 @@ a host folder by its path and a named volume by its name. It leaves out an
 anonymous volume, the one Podman names with 64 hex digits: every unit runs
 `podman run --rm`, and Podman removes a container's anonymous volumes with
 the container.
+
+### A person's Podman on Linux
+
+A Podman that was on the machine before the module installed one is the
+person's, as on Windows and macOS ("A person's Podman and the module's"). The
+install writes the mark `package_mark`, root-only, into the module's directory
+under the state root, `/var/lib/neutrino/agent/podman/`, right before the
+package manager runs, when Podman's program, `/usr/bin/podman`, was not on the
+machine. It deletes the mark again when the run leaves no program there. With
+no such mark the Podman is the person's, so a machine where an earlier build
+installed Podman, 0.5.x among them, counts as the person's from this build on,
+and an uninstall keeps that Podman. A Podman the mark stands for is the
+module's.
+
+| | A person's Podman | A Podman the module installed |
+| --- | --- | --- |
+| **Install** | leaves `podman` out of the packages and writes no mark; a `runc` the machine lacks is installed, as on every machine | writes the mark, then installs `podman` and a `runc` the machine lacks |
+| **Uninstall** | removes no package, so `podman` stays at its version | removes `podman`, then deletes the mark |
+| `runc` | never removed | never removed |
+
+| Rule | Reason |
+| --- | --- |
+| After an **Uninstall** on a person's Podman the module reads `absent` through the uninstalled mark `uninstalled/podman`, the one the file share takes on a person's Samba ([module_install.md](../module_install.md), "From the system's packages"), across a restart of the agent. A later **Install** finds Podman there, installs no `podman`, writes no mark, and its `verify` deletes the uninstalled mark. | Podman stays on the machine, so its presence check alone reads `failed` `uninstall_unconfirmed`, with no press that clears it. |
+| The rest of the uninstall is the same on either Podman: its **Stop**, and the removal of the declared and hub containers' units, their environment files and the mirrors drop-in. Images and volumes stay. | The units and the files are the module's own, whoever installed Podman. |
 
 ## Windows and macOS
 

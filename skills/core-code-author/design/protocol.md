@@ -1303,7 +1303,7 @@ from the same facts, whoever installed the software:
 
 | `state` | Meaning |
 | --- | --- |
-| `absent` | the software is missing, or a `builtin` module or a person's Samba was uninstalled and not installed again; the row can hold a kept failure's `{code, params}` ([agent.md](agent.md), "A failure outlives a restart") |
+| `absent` | the software is missing, or a `builtin` module, a person's Samba or a person's Podman was uninstalled and not installed again; the row can hold a kept failure's `{code, params}` ([agent.md](agent.md), "A failure outlives a restart") |
 | `installed` | the software is present and the hub has never configured it; `is_active` says whether it runs |
 | `install_failed` | the last install failed with `{code, params}`, whatever it left on the machine |
 | `stopped` | the hub has configured it and the unit is stopped |
