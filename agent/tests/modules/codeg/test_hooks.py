@@ -42,9 +42,12 @@ from neutrino_agent.modules.codeg.hooks import (
     CodegHooks,
     cookie_name,
     data_dir,
-    make_account_directory,
     newest_log,
     service_environment,
+)
+from neutrino_agent.modules.shared.account_files import (
+    MAKE_DIR_SHELL,
+    READ_TAIL_SHELL,
 )
 from neutrino_agent.modules.shared.account_service import (
     AccountEntry,
@@ -85,8 +88,20 @@ WIN_STATE = "C:\\ProgramData\\Neutrino\\agent\\state\\codeg"
 
 
 class Platform(AgentPlatform):
-    def __init__(self, os_name="linux"):
+    """A machine whose accounts' commands run as the test's own user, and whose Windows steps run on this thread, each recorded."""
+
+    def __init__(self, os_name="linux", *, is_run=True):
         self.os_name = os_name
+        self.is_run = is_run
+        self.as_accounts: list = []
+
+    def account_process(self, account, argv):
+        self.as_accounts.append((account, list(argv)))
+        return (list(argv) if self.is_run else ["/bin/true"]), {}
+
+    def as_account(self, account, step, *arguments, password=""):
+        self.as_accounts.append((account, step.__name__, arguments, password))
+        return step(*arguments) if self.is_run else None
 
 
 class Recorder:
@@ -103,9 +118,13 @@ class Recorder:
         return CommandResult(list(command), 0, "", "")
 
 
-def hooks_for(os_name, module_dir, *, home="/home/ann", **kwargs) -> CodegHooks:
+def hooks_for(
+    os_name, module_dir, *, home="/home/ann", is_run=True, **kwargs
+) -> CodegHooks:
     tools = {key: kwargs.pop(key) for key in ("run", "chown") if key in kwargs}
-    hooks = CodegHooks(platform=Platform(os_name), log=lambda line: None, **kwargs)
+    hooks = CodegHooks(
+        platform=Platform(os_name, is_run=is_run), log=lambda line: None, **kwargs
+    )
     join = ntpath.join if os_name == "windows" else os.path.join
     entry = {"linux": ANN, "darwin": MAC_ANN, "windows": WIN_ANN}[os_name]
     if home != entry.home:
@@ -303,18 +322,15 @@ def test_a_windows_service_carries_the_login_and_the_same_shape():
 # --- the data directory ---
 
 
-def test_the_data_directory_is_made_as_the_account_mode_700_once(tmp_path):
-    owners = []
+def test_the_data_directory_is_made_as_the_account_mode_700_once(tmp_path, monkeypatch):
     home = str(tmp_path / "home" / "ann")
     os.makedirs(home)
-    hooks = hooks_for(
-        "linux",
-        str(tmp_path / "codeg"),
-        home=home,
-        chown=lambda path, uid, gid: owners.append((path, uid, gid)),
-    )
+    hooks = hooks_for("linux", str(tmp_path / "codeg"), home=home)
     config = hooks.parse(CONFIG)
     entry = AccountEntry(1000, 1001, home, "/bin/bash")
+    chowned = []
+    monkeypatch.setattr(os, "chown", lambda *args, **_: chowned.append(args))
+    monkeypatch.setattr(os, "fchown", lambda *args: chowned.append(args))
 
     notes = hooks.prepare(config, config.instances[0], entry)
     again = hooks.prepare(config, config.instances[0], entry)
@@ -322,41 +338,60 @@ def test_the_data_directory_is_made_as_the_account_mode_700_once(tmp_path):
     directory = os.path.join(home, ".local", "share", "neutrino", "agent", "codeg")
     assert notes == ["made the data directory of ann"]
     assert again == []
-    assert stat.S_IMODE(os.stat(directory).st_mode) == 0o700
-    made = [path for path, _uid, _gid in owners]
-    assert made == [
+    assert hooks._platform.as_accounts == [
+        ("ann", ["/bin/sh", "-c", MAKE_DIR_SHELL, directory, "077"])
+    ]
+    assert chowned == []
+    for path in (
         os.path.join(home, ".local"),
         os.path.join(home, ".local", "share"),
         os.path.join(home, ".local", "share", "neutrino"),
         os.path.join(home, ".local", "share", "neutrino", "agent"),
         directory,
-    ]
-    assert {(uid, gid) for _path, uid, gid in owners} == {(1000, 1001)}
-    for path in made:
+    ):
         assert stat.S_IMODE(os.stat(path).st_mode) == 0o700
 
 
-def test_an_existing_tree_is_left_as_it_is(tmp_path):
-    owners = []
-    share = tmp_path / ".local" / "share"
+def test_an_existing_folder_above_the_data_directory_is_left_as_it_is(tmp_path):
+    home = tmp_path / "home" / "ann"
+    share = home / ".local" / "share"
     share.mkdir(parents=True)
     os.chmod(share, 0o755)
+    hooks = hooks_for("linux", str(tmp_path / "codeg"), home=str(home))
+    config = hooks.parse(CONFIG)
 
-    assert (
-        make_account_directory(
-            str(share / "neutrino"),
-            AccountEntry(1000, 1000, str(tmp_path)),
-            lambda path, uid, gid: owners.append(path),
-        )
-        is True
-    )
-    assert make_account_directory(str(share / "neutrino"), ANN, owners.append) is False
+    hooks.prepare(config, config.instances[0], AccountEntry(1000, 1000, str(home)))
 
-    assert owners == [str(share / "neutrino")]
     assert stat.S_IMODE(os.stat(share).st_mode) == 0o755
+    assert stat.S_IMODE(os.stat(share / "neutrino").st_mode) == 0o700
 
 
-def test_on_windows_the_data_directory_is_made_and_left_to_the_account(tmp_path):
+def test_a_link_at_a_level_of_the_data_directory_is_never_followed_by_root(
+    tmp_path, monkeypatch
+):
+    home = tmp_path / "home" / "ann"
+    (home / ".local").mkdir(parents=True)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    os.chmod(elsewhere, 0o755)
+    (home / ".local" / "share").symlink_to(elsewhere)
+    hooks = hooks_for("linux", str(tmp_path / "codeg"), home=str(home), is_run=False)
+    config = hooks.parse(CONFIG)
+    chowned = []
+    monkeypatch.setattr(os, "chown", lambda *args, **_: chowned.append(args))
+    monkeypatch.setattr(os, "fchown", lambda *args: chowned.append(args))
+
+    hooks.prepare(config, config.instances[0], AccountEntry(1000, 1000, str(home)))
+
+    assert os.listdir(elsewhere) == []
+    assert stat.S_IMODE(os.stat(elsewhere).st_mode) == 0o755
+    assert chowned == []
+    assert [name for name, *_ in hooks._platform.as_accounts] == ["ann"]
+
+
+def test_on_windows_the_data_directory_is_made_as_the_account_under_its_login(
+    tmp_path,
+):
     grants = []
 
     def icacls(command, **_):
@@ -373,22 +408,27 @@ def test_on_windows_the_data_directory_is_made_and_left_to_the_account(tmp_path)
 
     assert notes == ["made the data directory of ann"]
     assert os.path.isdir(directory)
-    assert grants == [
-        [
-            "icacls.exe",
-            directory,
-            "/inheritance:r",
-            "/grant:r",
-            "ann:(OI)(CI)M",
-            "*S-1-5-18:(OI)(CI)F",
-            "*S-1-5-32-544:(OI)(CI)F",
-        ]
+    assert grants == []
+    assert hooks._platform.as_accounts == [
+        ("ann", "_step_make_dir", (directory,), "login-pw")
     ]
     assert hooks.prepare(config, config.instances[0], entry) == []
-    assert len(grants) == 1
     assert data_dir("C:\\Users\\ann", "windows", ntpath.join) == (
         "C:\\Users\\ann\\AppData\\Local\\Neutrino\\agent\\codeg"
     )
+
+
+def test_on_windows_a_junction_on_the_way_is_never_followed_by_system(tmp_path):
+    home = str(tmp_path / "ann")
+    hooks = hooks_for("windows", WIN_STATE, home=home, is_run=False)
+    config = hooks.parse(WINDOWS_CONFIG)
+
+    hooks.prepare(config, config.instances[0], AccountEntry(0, 0, home, ""))
+
+    assert not os.path.exists(home)
+    assert [step for _name, step, *_ in hooks._platform.as_accounts] == [
+        "_step_make_dir"
+    ]
 
 
 # --- the journal ---
@@ -416,7 +456,38 @@ def test_the_journal_reads_the_newest_daily_log(tmp_path):
         logs, "codeg-server.2026-10-11.log"
     )
     assert hooks.journal_log(dict(record, account="bob")) == ""
-    assert newest_log(os.path.join(logs, "missing")) == ""
+    assert newest_log(os.path.join(logs, "missing"), None) == ""
+    assert {name for name, *_ in hooks._platform.as_accounts} == {"ann"}
+
+
+def test_the_journal_reads_the_daily_log_as_the_account(tmp_path):
+    home = str(tmp_path / "home" / "ann")
+    hooks = hooks_for("linux", str(tmp_path / "codeg"), home=home)
+    logs = os.path.join(home, ".local", "share", "neutrino", "agent", "codeg", "logs")
+    os.makedirs(logs)
+    path = os.path.join(logs, "codeg-server.2026-10-11.log")
+    with open(path, "w", encoding="utf-8") as stream:
+        stream.write("one\ntwo\nthree\n")
+
+    assert hooks.read_journal("ann", path, 2) == ["two", "three"]
+    assert hooks._platform.as_accounts[-1][1][:3] == [
+        "/bin/sh",
+        "-c",
+        READ_TAIL_SHELL,
+    ]
+
+
+def test_a_link_at_the_daily_log_is_never_read_by_root(tmp_path):
+    home = str(tmp_path / "home" / "ann")
+    hooks = hooks_for("linux", str(tmp_path / "codeg"), home=home, is_run=False)
+    logs = os.path.join(home, ".local", "share", "neutrino", "agent", "codeg", "logs")
+    os.makedirs(logs)
+    secret = tmp_path / "secret"
+    secret.write_text("root only\n")
+    path = os.path.join(logs, "codeg-server.2026-10-11.log")
+    os.symlink(secret, path)
+
+    assert hooks.read_journal("ann", path, 10) == []
 
 
 # --- the forwarder, against a fake Codeg ---

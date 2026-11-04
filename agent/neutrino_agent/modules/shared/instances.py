@@ -413,6 +413,23 @@ class InstanceHooks:
         """
         return ""
 
+    def read_journal(self, account: str, path: str, lines: int) -> list:
+        """The last lines of one log file of an instance, oldest first.
+
+        Args:
+            account: The instance's account.
+            path: The file, as :meth:`journal_log` or the service names it.
+            lines: How many lines to return at most.
+
+        Returns:
+            The lines; none while the file does not exist.
+
+        Raises:
+            OSError: When the file exists and cannot be read.
+            ModuleApplyError: When it cannot be read as the account.
+        """
+        return file_tail(path, lines)
+
     def install_log(self, account: str) -> str:
         """The log of an install that runs for one account.
 
@@ -788,7 +805,9 @@ class InstancesModuleRunner(ModuleRunner):
         share = max(1, lines // len(logs)) if logs else 0
         own = []
         for account, path in logs:
-            read = self._read_source(path, functools.partial(file_tail, path, share))
+            read = self._read_source(
+                path, functools.partial(self._hooks.read_journal, account, path, share)
+            )
             own += [f"{account}: {line}" for line in read]
         held = self._with_agent_lines(own, lines)
         return (held + tail)[-lines:]

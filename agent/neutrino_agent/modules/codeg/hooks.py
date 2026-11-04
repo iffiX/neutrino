@@ -5,13 +5,14 @@ module's ``server`` and ``node`` artifacts and land under those directories
 in the module's own, never on a ``PATH``. Each instance runs ``codeg-server``
 as its account, from an environment written from scratch, on a loopback
 port the agent picks and keeps in the record, with its data directory
-under the account's home and its output discarded on every system. The
+under the account's home, made as the account, and its output discarded on
+every system; its daily log there is read as the account too. The
 forwarder trades the hub's token for its own login cookie, named by the
 instance's ``cookie_name``, and a redirect to a page that keeps the instance
 token in the browser, and passes on a request carrying that token as its Bearer header or as the
 subprotocol of Codeg's WebSocket, or carrying a good cookie.
 
-Not pure: writes the data directory and talks to Codeg.
+Not pure: makes the data directory as the account and talks to Codeg.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -27,6 +28,7 @@ import subprocess
 import time
 
 from neutrino_agent.constants import AGENT_FORWARD_UPSTREAM_TIMEOUT_S
+from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.codeg.config import (
     CodegConfig,
     CodegInstance,
@@ -74,6 +76,7 @@ from neutrino_agent.modules.codeg.constants import (
     CODEG_WINDOWS_SERVICE_PATH,
     CODEG_WORKSPACE_PATH,
 )
+from neutrino_agent.modules.shared.account_files import AccountFiles
 from neutrino_agent.modules.shared.account_service import (
     AccountEntry,
     AccountService,
@@ -87,7 +90,7 @@ from neutrino_agent.modules.shared.http_forward import (
     refused,
 )
 from neutrino_agent.modules.shared.instances import InstanceHooks
-from neutrino_agent.modules.shared.windows_acl import grant_account_alone
+from neutrino_agent.modules.shared.log_tail import file_tail, tail_limit, tail_lines
 
 # The header a request carries the instance token in, and its scheme.
 AUTHORIZATION_HEADER = "authorization"
@@ -163,54 +166,23 @@ def service_environment(
     return environment
 
 
-def newest_log(directory: str, join=os.path.join) -> str:
-    """Codeg's newest daily log in its log directory.
+def newest_log(directory: str, names, join=os.path.join) -> str:
+    """Codeg's newest daily log in its log directory. Pure.
 
     Args:
         directory: The ``logs`` directory under the data directory.
+        names: The names the directory holds; None when it is not there.
         join: How the system joins a path.
 
     Returns:
         The file's path, empty when there is none yet.
     """
-    try:
-        names = os.listdir(directory)
-    except OSError:
-        return ""
     logs = sorted(
         name
-        for name in names
+        for name in names or []
         if name.startswith(CODEG_LOG_PREFIX) and name.endswith(CODEG_LOG_SUFFIX)
     )
     return join(directory, logs[-1]) if logs else ""
-
-
-def make_account_directory(path: str, entry: AccountEntry, chown) -> bool:
-    """Make one directory the account's own, mode 700, with the missing ones above it.
-
-    Args:
-        path: The directory.
-        entry: The account.
-        chown: Changes a file's owner as :func:`os.chown` does.
-
-    Returns:
-        Whether a directory was made.
-
-    Raises:
-        OSError: When a directory cannot be made.
-    """
-    missing = []
-    current = path
-    while not os.path.isdir(current):
-        missing.append(current)
-        parent = os.path.dirname(current)
-        if parent == current:
-            break
-        current = parent
-    for directory in reversed(missing):
-        os.mkdir(directory, 0o700)
-        chown(directory, entry.uid, entry.gid)
-    return bool(missing)
 
 
 def has_bearer(request, token: str) -> bool:
@@ -313,6 +285,9 @@ class CodegHooks(InstanceHooks):
         self._clock = clock
         # The server binary's size and time, and the version it printed.
         self._version: tuple = ((), "")
+        # Each account's login the last apply named, which Windows reads
+        # its log under.
+        self._passwords: dict = {}
 
     @property
     def server_path(self) -> str:
@@ -376,18 +351,16 @@ class CodegHooks(InstanceHooks):
             One note when the directory was made.
 
         Raises:
-            OSError: When the directory cannot be made or granted.
+            OSError: When the directory cannot be made as the account.
+            ModuleApplyError: ``credential_invalid`` when Windows refuses
+                the account's login.
         """
+        self._passwords[instance.account] = instance.password
         directory = data_dir(entry.home, self._os_name, self._join)
         if os.path.isdir(directory):
             return []
-        if self._os_name == "windows":
-            os.makedirs(directory, exist_ok=True)
-            grant_account_alone(
-                self.machine.run, directory, instance.account, "M", is_tree=True
-            )
-        else:
-            make_account_directory(directory, entry, self.machine.chown)
+        if not self._files(instance.account).make_dir(directory):
+            return []
         return [f"made the data directory of {instance.account}"]
 
     def record(self, parsed: CodegConfig, instance: CodegInstance, held: dict) -> dict:
@@ -540,14 +513,52 @@ class CodegHooks(InstanceHooks):
             The file's path, empty when there is none yet or the machine no
             longer has the account.
         """
+        account = str(record.get("account", "") or "")
+        directory = self._log_dir(account)
+        if not directory:
+            return ""
         try:
-            entry = self.machine.lookup_account(str(record.get("account", "") or ""))
+            names = self._files(account).names(directory)
+        except (OSError, ModuleApplyError):
+            return ""
+        return newest_log(directory, names, self._join)
+
+    def read_journal(self, account: str, path: str, lines: int) -> list:
+        """The last lines of one log file: a daily log under the account's data directory read as the account, any other as root.
+
+        Raises:
+            OSError: When the file exists and cannot be read.
+            ModuleApplyError: When it cannot be read as the account.
+        """
+        directory = self._log_dir(account)
+        if not directory or self._dirname(path) != directory:
+            return file_tail(path, lines)
+        held = self._files(account).read_tail(path, tail_limit())
+        if held is None:
+            return []
+        size, data = held
+        return tail_lines(data, size > len(data), lines)
+
+    def _log_dir(self, account: str) -> str:
+        """The account's Codeg log directory; empty for an account the machine lacks."""
+        try:
+            entry = self.machine.lookup_account(account)
         except KeyError:
             return ""
-        directory = self._join(
+        return self._join(
             data_dir(entry.home, self._os_name, self._join), CODEG_LOG_DIR_NAME
         )
-        return newest_log(directory, self._join)
+
+    def _files(self, account: str) -> AccountFiles:
+        """The account's places, reached as the account."""
+        return AccountFiles(
+            platform=self._platform,
+            account=account,
+            password=self._passwords.get(account, ""),
+        )
+
+    def _dirname(self, path: str) -> str:
+        return (ntpath.dirname if self._os_name == "windows" else os.path.dirname)(path)
 
     @property
     def _os_name(self) -> str:
