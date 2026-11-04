@@ -90,8 +90,8 @@ def device_view(
         an enabled account with no share path whose home the machine has not
         reported carries ``account_home_unknown {account}``. A command line
         program's row names the copy the account uses, its path and its
-        version, as the module's ``details.accounts`` report them, and the
-        account's last AI tools result.
+        version, as the module's ``details.accounts`` report them, the
+        account's last AI tools result and its AI tools switch.
     """
     store = DeviceAccountStore(runtime.desired_states)
     enabled = runtime.desired_states.enabled_accounts(context.key, row.name)
@@ -129,6 +129,7 @@ def device_view(
             for name in ("copy", "path", "version"):
                 fields[name] = str(seen.get(name, "") or "")
             fields["ai_tools"] = AccountToolsView(**tools.get(account.account, {}))
+            fields["is_ai_tools_enabled"] = account.is_ai_tools_enabled
         if row.name == DEVICE_SAMBA_MODULE:
             fields["share_path"] = account.share_path
             fields["user"] = smb_user(account.account, platform)

@@ -2583,13 +2583,15 @@ class EnabledAccountRowView(BaseModel):
     share_path: str | None = None
     user: str | None = None
     # A command line program's: the copy the account uses, ``user`` or
-    # ``module``, its path and its version as reported, empty before; and
-    # the account's last AI tools result. The copy is ``copy`` on the wire,
-    # the field's alias: a field of that name would shadow BaseModel.copy.
+    # ``module``, its path and its version as reported, empty before; the
+    # account's last AI tools result, and its AI tools switch. The copy is
+    # ``copy`` on the wire, the field's alias: a field of that name would
+    # shadow BaseModel.copy.
     copy_used: str | None = Field(default=None, alias="copy")
     path: str | None = None
     version: str | None = None
     ai_tools: AccountToolsView | None = None
+    is_ai_tools_enabled: bool | None = None
 
 
 class EnabledAccountsView(ModuleDeviceFields):

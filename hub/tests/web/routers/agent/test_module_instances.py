@@ -608,6 +608,29 @@ def test_a_command_line_program_s_row_carries_its_account_s_code(api):
     )
 
 
+@pytest.mark.parametrize("module", ["claude_code", "codex"])
+def test_a_command_line_program_s_rows_carry_each_account_s_ai_tools_switch(
+    api, module
+):
+    """protocol.md: ``is_ai_tools_enabled`` beside ``ai_tools``, the account's
+    switch as its form set it, so a failed switch back reads as one."""
+    client, runtime = api
+    DeviceAccountStore(DesiredStateStore()).add(
+        DEVICE, DeviceAccount(account="carol", is_ai_tools_enabled=True)
+    )
+    client.post(
+        f"/api/agent/module/{module}/set",
+        json={"device_id": DEVICE, "accounts": ["alice", "carol"]},
+    )
+
+    body = client.get(
+        f"/api/agent/module/{module}", params={"device_id": DEVICE}
+    ).json()
+
+    switches = {row["account"]: row["is_ai_tools_enabled"] for row in body["accounts"]}
+    assert switches == {"alice": False, "bob": False, "carol": True}
+
+
 def test_a_program_row_keeps_copy_as_its_wire_name_and_shadows_no_model_method():
     """A field named ``copy`` shadows BaseModel.copy, which Pydantic warns
     of, so the field holds another name and ``copy`` is its alias."""
@@ -625,5 +648,8 @@ def test_a_row_of_another_module_names_no_copy(api):
     body = client.get("/api/agent/module/codeg", params={"device_id": DEVICE}).json()
 
     assert all(
-        row["copy"] is None and row["ai_tools"] is None for row in body["accounts"]
+        row["copy"] is None
+        and row["ai_tools"] is None
+        and row["is_ai_tools_enabled"] is None
+        for row in body["accounts"]
     )
