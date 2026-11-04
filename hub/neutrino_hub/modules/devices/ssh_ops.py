@@ -143,6 +143,14 @@ def _normalise_machine(machine: str) -> str:
     return MACHINE_TO_ARCH.get(machine, machine)
 
 
+def _connection_failure(error: Exception) -> str:
+    """A failed connection's words: HOST_KEY_CHANGED_MESSAGE for a changed host
+    key, the error's own text otherwise."""
+    if isinstance(error, asyncssh.HostKeyNotVerifiable):
+        return HOST_KEY_CHANGED_MESSAGE
+    return str(error)
+
+
 def login_password(login_id: str | None) -> str | None:
     """Open one referenced login's password.
 
@@ -300,7 +308,7 @@ class DeviceSshOperator:
                 output = (result.stdout or "") + (result.stderr or "")
                 return result.exit_status or 0, output.strip()
         except (OSError, asyncssh.Error, asyncio.TimeoutError) as error:
-            return SSH_UNREACHABLE_STATUS, str(error)
+            return SSH_UNREACHABLE_STATUS, _connection_failure(error)
 
     async def run_privileged_once(
         self,
@@ -403,7 +411,7 @@ class DeviceSshOperator:
                 await process.wait()
                 yield f"\n[exit {process.exit_status}]\n"
         except (OSError, asyncssh.Error) as error:
-            yield f"\n[connection failed: {error}]\n"
+            yield f"\n[connection failed: {_connection_failure(error)}]\n"
 
     async def run_privileged_stream(
         self,
@@ -559,7 +567,7 @@ class DeviceSshOperator:
             yield f"\n[exit {SSH_UNSUPPORTED_OS_STATUS}]\n"
             raise TaskExitStatusError(SSH_UNSUPPORTED_OS_STATUS) from error
         except (OSError, asyncssh.Error, KeyMaterialError) as error:
-            yield f"\n[connection failed: {error}]\n"
+            yield f"\n[connection failed: {_connection_failure(error)}]\n"
             yield f"\n[exit {SSH_UNREACHABLE_STATUS}]\n"
             raise TaskExitStatusError(SSH_UNREACHABLE_STATUS) from error
 

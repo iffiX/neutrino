@@ -25,6 +25,7 @@ from neutrino_hub.modules.devices.constants import (
     SSH_UNSUPPORTED_OS_STATUS,
 )
 from neutrino_hub.modules.devices.ssh_ops import (
+    HOST_KEY_CHANGED_MESSAGE,
     DeviceSshOperator,
     SshCredentials,
     epel_command,
@@ -466,6 +467,18 @@ def refused_login(op, packages):
     capture_privileged_once(op)
 
 
+def changed_host_key(op, packages):
+    @asynccontextmanager
+    async def connect():
+        raise asyncssh.HostKeyNotVerifiable(
+            "Host key is not trusted for host 192.168.100.2"
+        )
+        yield
+
+    op._connect = connect
+    capture_privileged_once(op)
+
+
 def refused_upload(op, packages):
     connection = UploadRefusingConnection(tools=("dpkg",))
     op._connect = fake_connect(connection)
@@ -519,6 +532,11 @@ def joined(op, packages):
         (no_package_manager, SSH_UNSUPPORTED_OS_STATUS, "enrollment link instead"),
         (unproduced_package, SSH_UNSUPPORTED_OS_STATUS, "could not be produced"),
         (refused_login, SSH_UNREACHABLE_STATUS, "[connection failed: Permission"),
+        (
+            changed_host_key,
+            SSH_UNREACHABLE_STATUS,
+            f"[connection failed: {HOST_KEY_CHANGED_MESSAGE}]",
+        ),
         (refused_upload, 1, "[upload failed: Permission denied]"),
         (refused_epel, 1, "[EPEL could not be enabled"),
         (failed_install, 100, "[installing the deb package]"),
@@ -530,6 +548,7 @@ def joined(op, packages):
         "no_package_manager",
         "unproduced_package",
         "refused_login",
+        "changed_host_key",
         "refused_upload",
         "refused_epel",
         "failed_install",
@@ -549,6 +568,16 @@ def test_every_end_of_the_install_is_its_exit_line_and_its_task_status(
     assert any(words in line for line in stream.buffer)
     assert stream.buffer[-1] == f"\n[exit {status}]\n"
     assert stream.exit_code == status
+
+
+def test_a_changed_host_key_is_worded_by_the_hub_not_by_asyncssh():
+    """A changed host key showed asyncssh's "Host key is not trusted"."""
+    op = operator()
+    changed_host_key(op, None)
+
+    code, output = asyncio.run(op.run_once("uname -s"))
+
+    assert (code, output) == (SSH_UNREACHABLE_STATUS, HOST_KEY_CHANGED_MESSAGE)
 
 
 def test_each_install_uploads_into_a_directory_made_for_it(packages):
