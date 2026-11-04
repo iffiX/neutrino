@@ -76,16 +76,33 @@ file in use; a deletion that still fails ends that attempt.
 **A prefix holds a whole install once it holds npm's lockfile.** npm
 writes `package-lock.json` last, and the deletion above removes it first, so a
 tree that a cut or a failure left has none. An install is taken as there only
-with the lockfile, the package at the recipe's version and the three native
-modules' `package.json`, and anything less runs npm.
+with the lockfile, the package at the recipe's version, the three native
+modules' `package.json` and the Agent SDK's `claude` for the platform, and
+anything less runs npm.
 
 **The service's environment is written from scratch**: `HOST=127.0.0.1`,
-`SERVER_PORT` (CloudCLI's own name for its port) and `PATH`. Nothing is
+`SERVER_PORT` (CloudCLI's own name for its port), `CLAUDE_CLI_PATH` ("Claude
+sessions run the Agent SDK's Claude Code") and `PATH`. Nothing is
 inherited from a login profile or a version manager, and nothing names the
 gateway. The tools CloudCLI starts read the account's own files: Claude
 Code its `~/.claude/settings.json`, Codex its `~/.codex/auth.json` and
 `~/.codex/config.toml`. Pointing those at the gateway is the machine's AI
 tools setting ([ai_tools.md](../ai_tools.md)).
+
+**Claude sessions run the Agent SDK's Claude Code.** CloudCLI's npm package
+depends on `@anthropic-ai/claude-agent-sdk`, whose package for the platform,
+`@anthropic-ai/claude-agent-sdk-<platform>` in npm's names (`linux-x64`,
+`linux-arm64`, `darwin-x64`, `darwin-arm64`, `win32-x64`, `win32-arm64`, the
+glibc build on Linux), holds `claude`, `claude.exe` on Windows, a Claude
+Code of the version that SDK was built with. `CLAUDE_CLI_PATH` names that
+file, absolute, in the account's prefix, on every system: the package as
+Node resolves it from the SDK's own directory, the glibc build first on
+Linux, as Codeg's adapter `claude-agent-acp` resolves it for itself.
+
+| Rule | Reason |
+| --- | --- |
+| `CLAUDE_CLI_PATH` names the SDK's own program, never a copy on `PATH` and never the Claude Code module's. CloudCLI requires no other module. | CloudCLI 1.37.3 hands the SDK the bare name `claude` on Linux and macOS when the variable is empty, so a Claude session fails on a machine whose service `PATH` holds no `claude`; on Windows it runs the first `claude.exe` that `where.exe` finds, else the SDK's own program. The SDK's program is the version the SDK names: SDK 0.3.318 names `claudeCodeVersion` 2.1.318. Codeg's adapter runs the SDK's program the same way ([codeg.md](codeg.md)), so the two pages run Claude Code by one mechanism. |
+| The account's settings in `~/.claude` are read by that program as by any other copy, the gateway's among them ([../ai_tools.md](../ai_tools.md)). | One mechanism points every copy of Claude Code at the gateway. |
 
 **The service's `PATH` names directories, never a tool.** After Node's own
 directory it lists the account's `~/.local/bin` and `~/bin`, with `~` from

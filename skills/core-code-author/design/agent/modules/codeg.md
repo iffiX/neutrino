@@ -105,7 +105,9 @@ the one download whose source the hub does not choose
 entries are the adapters `claude-agent-acp` and `codex-acp`, which read the
 account's `~/.claude/settings.json` and `~/.codex/config.toml`, the files
 cc-switch writes, so the machine's AI tools setting points them at the
-gateway ([ai_tools.md](../ai_tools.md)). Codeg's own **Model Providers**
+gateway ([ai_tools.md](../ai_tools.md)). `claude-agent-acp` runs the Claude
+Code that its Agent SDK's package for the platform holds, as CloudCLI does
+([cloudcli.md](cloudcli.md)), so Codeg requires no other module. Codeg's own **Model Providers**
 settings write the same files, so the setting wins at the next state.
 
 An open session costs about 300 MB on the machine while its page is open,
