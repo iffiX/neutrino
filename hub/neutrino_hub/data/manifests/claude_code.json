@@ -1,5 +1,5 @@
 {
-  "_comment": "Claude Code, Anthropic's coding agent for the terminal, as a command line program per account. Claude Code is proprietary, and Anthropic's legal agreements govern its use; no release of Neutrino's carries it. One artifact per platform, the tarball of @anthropic-ai/claude-code-<platform>, Anthropic's npm package of the program for that platform; its source set is npm and its digest the integrity registry.npmjs.org names. The agent unpacks it without package/ into claude_code/package, where the program keeps the publisher's mode 755. The versions and their digests come from the npm feed of each platform's own package; the tested version is one of Anthropic's stable channel. Claude Code runs on macOS 13 or later and Windows 10 1809, build 17763, or later. user_copy_min_version is the lowest version of a person's own copy the module uses.",
+  "_comment": "Claude Code, Anthropic's coding agent for the terminal, as a command line program per account. Claude Code is proprietary, and Anthropic's legal agreements govern its use; no release of Neutrino's carries it. One artifact per platform, the tarball of @anthropic-ai/claude-code-<platform>, Anthropic's npm package of the program for that platform; its source set is npm and its digest the integrity registry.npmjs.org names. The agent unpacks it without package/ into claude_code/package, where the program keeps the publisher's mode 755. The versions and their digests come from the npm feed of each platform's own package; the tested version is one of Anthropic's stable channel. Claude Code runs on macOS 13 or later and Windows 10 1809, build 17763, or later. user_copy_min_version is the lowest version of a person's own copy the module uses, the tested version.",
   "name": "claude_code",
   "title": "Claude Code",
   "description": "Anthropic's coding agent on the command line, for each account",
@@ -19,7 +19,7 @@
         "method": "hub",
         "params": {
           "version": "2.1.311",
-          "user_copy_min_version": "2.1.0",
+          "user_copy_min_version": "2.1.311",
           "releases": [{"kind": "npm", "sources": ["https://registry.npmjs.org"], "package": "@anthropic-ai/claude-code-linux-x64"}],
           "artifacts": [
             {
@@ -42,7 +42,7 @@
         "method": "hub",
         "params": {
           "version": "2.1.311",
-          "user_copy_min_version": "2.1.0",
+          "user_copy_min_version": "2.1.311",
           "releases": [{"kind": "npm", "sources": ["https://registry.npmjs.org"], "package": "@anthropic-ai/claude-code-linux-arm64"}],
           "artifacts": [
             {
@@ -66,7 +66,7 @@
         "method": "hub",
         "params": {
           "version": "2.1.311",
-          "user_copy_min_version": "2.1.0",
+          "user_copy_min_version": "2.1.311",
           "releases": [{"kind": "npm", "sources": ["https://registry.npmjs.org"], "package": "@anthropic-ai/claude-code-darwin-x64"}],
           "artifacts": [
             {
@@ -90,7 +90,7 @@
         "method": "hub",
         "params": {
           "version": "2.1.311",
-          "user_copy_min_version": "2.1.0",
+          "user_copy_min_version": "2.1.311",
           "releases": [{"kind": "npm", "sources": ["https://registry.npmjs.org"], "package": "@anthropic-ai/claude-code-darwin-arm64"}],
           "artifacts": [
             {
@@ -114,7 +114,7 @@
         "method": "hub",
         "params": {
           "version": "2.1.311",
-          "user_copy_min_version": "2.1.0",
+          "user_copy_min_version": "2.1.311",
           "releases": [{"kind": "npm", "sources": ["https://registry.npmjs.org"], "package": "@anthropic-ai/claude-code-win32-x64"}],
           "artifacts": [
             {
@@ -138,7 +138,7 @@
         "method": "hub",
         "params": {
           "version": "2.1.311",
-          "user_copy_min_version": "2.1.0",
+          "user_copy_min_version": "2.1.311",
           "releases": [{"kind": "npm", "sources": ["https://registry.npmjs.org"], "package": "@anthropic-ai/claude-code-win32-arm64"}],
           "artifacts": [
             {

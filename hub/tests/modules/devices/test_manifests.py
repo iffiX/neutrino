@@ -904,7 +904,7 @@ def test_codex_pins_openais_npm_build_per_platform_from_the_npm_set():
     """One tarball per platform, the {version}-<platform> build of
     @openai/codex under npm's integrity, fetched from the npm set alone and
     unpacked into codex/package; the versions from the npm feed of the
-    package, and the person's own copy used from the floor up."""
+    package, and the person's own copy used from the tested version up."""
     manifest = load_module_manifests()["codex"]
 
     assert (manifest["title"], manifest["license"]) == ("Codex", "Apache-2.0")
@@ -917,7 +917,7 @@ def test_codex_pins_openais_npm_build_per_platform_from_the_npm_set():
         assert "min_version" not in entry and "requires" not in entry
         params = entry_params(entry)
         assert params["version"] == CODEX_VERSION
-        assert params["user_copy_min_version"] == "0.100.0"
+        assert params["user_copy_min_version"] == CODEX_VERSION
         assert params["releases"] == [
             {
                 "kind": "npm",
@@ -964,7 +964,7 @@ def test_claude_code_pins_anthropics_npm_package_per_platform_from_the_npm_set()
         assert entry.get("min_version") == floor, key
         params = entry_params(entry)
         assert params["version"] == CLAUDE_CODE_VERSION
-        assert params["user_copy_min_version"] == "2.1.0"
+        assert params["user_copy_min_version"] == CLAUDE_CODE_VERSION
         assert params["releases"] == [
             {
                 "kind": "npm",
@@ -1013,7 +1013,7 @@ def test_a_command_line_program_recipe_keeps_its_floor_and_drops_the_set():
 
     recipe = module_recipe(manifest["platforms"]["linux-amd64"])
 
-    assert recipe["params"]["user_copy_min_version"] == "2.1.0"
+    assert recipe["params"]["user_copy_min_version"] == CLAUDE_CODE_VERSION
     assert recipe["params"]["artifacts"] == [
         {
             "name": "claude_code",
