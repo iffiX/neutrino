@@ -116,6 +116,7 @@ from neutrino_agent.modules.cloudcli.constants import (
 from neutrino_agent.modules.shared.account_service import (
     AccountEntry,
     AccountService,
+    read_regular,
 )
 from neutrino_agent.modules.shared.account_service.constants import (
     ACCOUNT_SERVICE_LOGON_FAILURES,
@@ -293,13 +294,17 @@ def installed_version(prefix: str) -> str:
         prefix: The npm prefix.
 
     Returns:
-        The version its ``package.json`` names, empty when there is none.
+        The version its ``package.json`` names, empty when there is none,
+        it is a link or no regular file. The file is read through no link
+        and waiting on no pipe: the prefix is the account's.
     """
     path = os.path.join(prefix, *CLOUDCLI_PACKAGE_PARTS, "package.json")
+    held = read_regular(path)
+    if held is None:
+        return ""
     try:
-        with open(path, "r", encoding="utf-8") as stream:
-            return str(json.load(stream).get("version", "") or "")
-    except (OSError, ValueError, AttributeError):
+        return str(json.loads(held.decode("utf-8")).get("version", "") or "")
+    except (ValueError, AttributeError):
         return ""
 
 

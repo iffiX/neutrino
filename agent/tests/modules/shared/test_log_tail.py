@@ -8,6 +8,8 @@ reads as no lines, and a path that is no file is an OSError. The mask hides a to
 a line of its own, and leaves every other line as it was.
 """
 
+import os
+
 import pytest
 
 import neutrino_agent.modules.shared.log_tail as log_tail_module
@@ -122,3 +124,17 @@ def test_a_line_that_is_more_than_one_word_is_left_as_it_was():
     ]
 
     assert mask_secrets("\n".join(lines)) == "\n".join(lines)
+
+
+def test_a_log_that_is_a_link_or_a_pipe_is_refused_and_never_read(tmp_path):
+    secret = tmp_path / "secret"
+    secret.write_text("root only\n")
+    link = tmp_path / "linked.log"
+    link.symlink_to(secret)
+    pipe = tmp_path / "pipe.log"
+    os.mkfifo(pipe)
+
+    with pytest.raises(OSError):
+        file_tail(str(link), 10)
+    with pytest.raises(OSError):
+        file_tail(str(pipe), 10)

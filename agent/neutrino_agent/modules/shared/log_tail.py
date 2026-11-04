@@ -2,7 +2,8 @@
 
 Only the end of the file is read. The file is opened for reading alone,
 which on Windows shares it with the handle the agent's logging writes
-through. A file its program has not written yet reads as no lines.
+through, following no link at its last level and waiting on no pipe. A
+file its program has not written yet reads as no lines.
 :func:`mask_secrets` hides a token in a URL's query and a token printed on
 a line of its own.
 
@@ -15,12 +16,21 @@ from __future__ import annotations
 
 import os
 import re
+import stat
 
 from neutrino_agent.constants import (
     AGENT_MODULE_LOG_SEARCH_BYTES,
     AGENT_MODULE_LOG_TAIL_BYTES,
 )
 
+# How a log file is opened: no link followed at its last level and no wait
+# on a pipe.
+LOG_READ_FLAGS = (
+    os.O_RDONLY
+    | getattr(os, "O_NOFOLLOW", 0)
+    | getattr(os, "O_NONBLOCK", 0)
+    | getattr(os, "O_BINARY", 0)
+)
 # What a masked token reads as.
 SECRET_MASK = "***"
 # A token in a URL's query: ``?tkn=...``, ``&token=...``.
@@ -65,21 +75,48 @@ def file_tail(path: str, lines: int, *, needle: str = "", skipped: str = "") -> 
         found among many others.
 
     Raises:
-        OSError: When the file exists and cannot be read, or the path is no
-            file.
+        OSError: When the file exists and cannot be read, or the path is a
+            link or no file.
     """
-    limit = AGENT_MODULE_LOG_SEARCH_BYTES if needle else AGENT_MODULE_LOG_TAIL_BYTES
+    limit = tail_limit(needle)
     try:
-        stream = open(path, "rb")
+        descriptor = os.open(path, LOG_READ_FLAGS)
     except FileNotFoundError:
         return []
-    with stream:
+    with os.fdopen(descriptor, "rb") as stream:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise OSError(f"{path} is no file")
         size = stream.seek(0, os.SEEK_END)
         start = max(0, size - limit)
         stream.seek(start)
         data = stream.read()
+    return tail_lines(data, start > 0, lines, needle=needle, skipped=skipped)
+
+
+def tail_limit(needle: str = "") -> int:
+    """How many bytes of a log's end are read: more when a needle is looked for. Pure."""
+    return AGENT_MODULE_LOG_SEARCH_BYTES if needle else AGENT_MODULE_LOG_TAIL_BYTES
+
+
+def tail_lines(
+    data: bytes, is_cut: bool, lines: int, *, needle: str = "", skipped: str = ""
+) -> list:
+    """The last lines of a log's end, oldest first. Pure.
+
+    Args:
+        data: The end of the file.
+        is_cut: Whether the file holds more before it; its first line, a
+            part of one, is then left out.
+        lines: How many lines to return at most.
+        needle: Text a line holds to be returned; empty returns every line.
+        skipped: A pattern matched at a line's start; a line it matches is
+            left out. Empty leaves none out.
+
+    Returns:
+        The non-blank lines.
+    """
     held = data.decode("utf-8", errors="replace").splitlines()
-    if start > 0 and held:
+    if is_cut and held:
         held = held[1:]
     kept = [
         line

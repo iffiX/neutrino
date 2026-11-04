@@ -53,12 +53,14 @@ import pytest
 from neutrino_agent.exceptions import ModuleApplyError, ModuleInstallPending
 from neutrino_agent.modules.cloudcli import hooks as hooks_module
 from neutrino_agent.modules.cloudcli.config import CloudcliConfig, jwt_secret
+from neutrino_agent.modules.cloudcli.constants import CLOUDCLI_PACKAGE_PARTS
 from neutrino_agent.modules.cloudcli.hooks import (
     INSTALL_ATTEMPT_MARK,
     NATIVE_CHECK_EXIT,
     CloudcliHooks,
     cookie_name,
     install_output,
+    installed_version,
     is_install_whole,
     is_login_valid,
     node_dir,
@@ -2124,3 +2126,21 @@ def test_a_set_the_state_does_not_carry_is_download_failed(tmp_path):
 
     assert caught.value.code == "download_failed"
     assert machine.tried == []
+
+
+def test_the_version_file_is_read_through_no_link_and_no_pipe(tmp_path):
+    package = tmp_path.joinpath("npm", *CLOUDCLI_PACKAGE_PARTS)
+    package.mkdir(parents=True)
+    secret = tmp_path / "secret.json"
+    secret.write_text('{"version": "9.9.9"}')
+    (package / "package.json").symlink_to(secret)
+
+    assert installed_version(str(tmp_path / "npm")) == ""
+
+    (package / "package.json").unlink()
+    os.mkfifo(package / "package.json")
+    assert installed_version(str(tmp_path / "npm")) == ""
+
+    (package / "package.json").unlink()
+    (package / "package.json").write_text('{"version": "1.2.3"}')
+    assert installed_version(str(tmp_path / "npm")) == "1.2.3"
