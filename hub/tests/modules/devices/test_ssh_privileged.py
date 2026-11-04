@@ -14,16 +14,22 @@ import asyncio
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
+import asyncssh
 import pytest
 
+from neutrino_hub.exceptions import AgentArtifactFetchError
 from neutrino_hub.modules.devices.agent_package import AgentPackageCache
-from neutrino_hub.modules.devices.constants import SSH_UNSUPPORTED_OS_STATUS
+from neutrino_hub.modules.devices.constants import (
+    SSH_UNREACHABLE_STATUS,
+    SSH_UNSUPPORTED_OS_STATUS,
+)
 from neutrino_hub.modules.devices.ssh_ops import (
     DeviceSshOperator,
     SshCredentials,
     epel_command,
     package_tools,
 )
+from neutrino_hub.web.task_stream import TaskStream, TaskStreamRegistry
 
 SUDO_PASSWORD = "a-sudo-password"  # scan: allow
 LINK = "neutrino://enroll/eyJmYWtlIjogdHJ1ZX0"
@@ -45,6 +51,13 @@ class FakeSftp:
 
     async def put(self, local_path, remote_path):
         self._uploads.append((local_path, remote_path))
+
+
+class RefusingSftp(FakeSftp):
+    """Refuses every upload the way sftp-server refuses a file it cannot write."""
+
+    async def put(self, local_path, remote_path):
+        raise asyncssh.SFTPPermissionDenied("Permission denied")
 
 
 class FakeConnection:
@@ -247,15 +260,25 @@ def packages(tmp_path) -> AgentPackageCache:
     )
 
 
+async def install_task(
+    op: DeviceSshOperator, packages: AgentPackageCache, sudo_password=None
+) -> TaskStream:
+    """The install run as the panel starts it, a task, once it has finished."""
+    stream = TaskStreamRegistry().start(
+        label="install_client d1",
+        source=op.install_client(
+            packages=packages, enrollment_link=LINK, sudo_password=sudo_password
+        ),
+    )
+    while not stream.is_finished:
+        await asyncio.sleep(0)
+    return stream
+
+
 async def install_lines(
     op: DeviceSshOperator, packages: AgentPackageCache, sudo_password=None
 ) -> list[str]:
-    lines = []
-    async for chunk in op.install_client(
-        packages=packages, enrollment_link=LINK, sudo_password=sudo_password
-    ):
-        lines.append(chunk)
-    return lines
+    return (await install_task(op, packages, sudo_password)).buffer
 
 
 def capture_privileged_once(op: DeviceSshOperator, codes=(0, 0, 0)) -> list:
@@ -373,6 +396,108 @@ def test_a_failed_install_never_reaches_the_join(packages):
 
     assert len(calls) == 2
     assert lines[-1] == "\n[exit 1]\n"
+
+
+class UploadRefusingConnection(FakeConnection):
+    """A device whose sftp-server refuses the package."""
+
+    def start_sftp_client(self):
+        return RefusingSftp(self.uploads)
+
+
+def not_linux(op, packages):
+    op._connect = fake_connect(FakeConnection(kernel="Darwin"))
+    capture_privileged_once(op)
+
+
+def no_package_manager(op, packages):
+    op._connect = fake_connect(FakeConnection(tools=()))
+    capture_privileged_once(op)
+
+
+def unproduced_package(op, packages):
+    def package(*, family, architecture):
+        raise AgentArtifactFetchError("artifact_unreachable", platform="linux/amd64")
+
+    packages.package = package
+    op._connect = fake_connect(FakeConnection(tools=("dpkg",)))
+    capture_privileged_once(op)
+
+
+def refused_login(op, packages):
+    @asynccontextmanager
+    async def connect():
+        raise asyncssh.PermissionDenied(
+            "Permission denied for user iffi on host 192.168.100.2"
+        )
+        yield
+
+    op._connect = connect
+    capture_privileged_once(op)
+
+
+def refused_upload(op, packages):
+    op._connect = fake_connect(UploadRefusingConnection(tools=("dpkg",)))
+    capture_privileged_once(op)
+
+
+def refused_epel(op, packages):
+    op._connect = fake_connect(FakeConnection(tools=("rpm",), os_release=ROCKY))
+    capture_privileged_once(op, codes=(1,))
+
+
+def failed_install(op, packages):
+    op._connect = fake_connect(FakeConnection(tools=("dpkg",)))
+    capture_privileged_once(op, codes=(0, 100))
+
+
+def failed_join(op, packages):
+    op._connect = fake_connect(FakeConnection(tools=("dpkg",)))
+    capture_privileged_once(op, codes=(0, 0, 3))
+
+
+def joined(op, packages):
+    op._connect = fake_connect(FakeConnection(tools=("dpkg",)))
+    capture_privileged_once(op)
+
+
+@pytest.mark.parametrize(
+    "prepare, status, words",
+    [
+        (not_linux, SSH_UNSUPPORTED_OS_STATUS, "[unsupported OS Darwin"),
+        (no_package_manager, SSH_UNSUPPORTED_OS_STATUS, "enrollment link instead"),
+        (unproduced_package, SSH_UNSUPPORTED_OS_STATUS, "could not be produced"),
+        (refused_login, SSH_UNREACHABLE_STATUS, "[connection failed: Permission"),
+        (refused_upload, 1, "[upload failed: Permission denied]"),
+        (refused_epel, 1, "[EPEL could not be enabled"),
+        (failed_install, 100, "[installing the deb package]"),
+        (failed_join, 3, "[joining this hub]"),
+        (joined, 0, "[joining this hub]"),
+    ],
+    ids=[
+        "not_linux",
+        "no_package_manager",
+        "unproduced_package",
+        "refused_login",
+        "refused_upload",
+        "refused_epel",
+        "failed_install",
+        "failed_join",
+        "joined",
+    ],
+)
+def test_every_end_of_the_install_is_its_exit_line_and_its_task_status(
+    packages, prepare, status, words
+):
+    """A refused upload ended with no exit line and its task read "exit 0"."""
+    op = operator()
+    prepare(op, packages)
+
+    stream = asyncio.run(install_task(op, packages))
+
+    assert any(words in line for line in stream.buffer)
+    assert stream.buffer[-1] == f"\n[exit {status}]\n"
+    assert stream.exit_code == status
 
 
 def test_the_deb_install_refreshes_the_package_lists_before_it_installs(packages):

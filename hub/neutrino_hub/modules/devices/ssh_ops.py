@@ -23,7 +23,7 @@ from pathlib import Path
 
 import asyncssh
 
-from neutrino_hub.exceptions import AgentArtifactFetchError
+from neutrino_hub.exceptions import AgentArtifactFetchError, TaskExitStatusError
 from neutrino_hub.modules.credentials.vault import SecretVault
 from neutrino_hub.modules.devices.agent_package import AgentPackageCache
 from neutrino_hub.modules.devices.constants import (
@@ -434,10 +434,15 @@ class DeviceSshOperator:
                 install; None when the account is expected not to be asked.
 
         Yields:
-            Progress lines and the remote tools' output. A device that is not
-            Linux, or whose package manager or machine the hub carries no
-            package for, ends the task before anything lands on it; EPEL that
-            cannot be enabled ends it before the package.
+            Progress lines and the remote tools' output, then the line
+            ``[exit N]``. A device that is not Linux, or whose package manager
+            or machine the hub carries no package for, ends the task before
+            anything lands on it; EPEL that cannot be enabled ends it before
+            the package.
+
+        Raises:
+            TaskExitStatusError: After an ``[exit N]`` line whose N is not 0,
+                with that N.
         """
         family = None
         package_path = None
@@ -452,7 +457,7 @@ class DeviceSshOperator:
                         f"installs over SSH on Linux devices]\n"
                     )
                     yield f"\n[exit {SSH_UNSUPPORTED_OS_STATUS}]\n"
-                    return
+                    raise TaskExitStatusError(SSH_UNSUPPORTED_OS_STATUS)
                 # The package carries an interpreter, so the machine decides
                 # which file as much as the package manager does.
                 result = await connection.run("uname -m", check=False)
@@ -483,22 +488,28 @@ class DeviceSshOperator:
                         "join this machine with an enrollment link instead]\n"
                     )
                     yield f"\n[exit {SSH_UNSUPPORTED_OS_STATUS}]\n"
-                    return
+                    raise TaskExitStatusError(SSH_UNSUPPORTED_OS_STATUS)
                 if family == "rpm":
                     epel = epel_command(os_release, machine)
                 remote_package = f"/tmp/{package_path.name}"
                 yield f"[uploading {package_path.name}]\n"
-                async with connection.start_sftp_client() as sftp:
-                    await sftp.put(str(package_path), remote_package)
+                try:
+                    async with connection.start_sftp_client() as sftp:
+                        await sftp.put(str(package_path), remote_package)
+                except (OSError, asyncssh.Error) as error:
+                    yield f"\n[upload failed: {error}]\n"
+                    yield "\n[exit 1]\n"
+                    raise TaskExitStatusError(1) from error
         except AgentArtifactFetchError as error:
             platform = error.params.get("platform", "this machine")
             yield f"\n[the agent package for {platform} could not be produced: "
             yield f"{error.code}]\n"
             yield f"\n[exit {SSH_UNSUPPORTED_OS_STATUS}]\n"
-            return
+            raise TaskExitStatusError(SSH_UNSUPPORTED_OS_STATUS) from error
         except (OSError, asyncssh.Error) as error:
-            yield f"\n[upload failed: {error}]\n"
-            return
+            yield f"\n[connection failed: {error}]\n"
+            yield f"\n[exit {SSH_UNREACHABLE_STATUS}]\n"
+            raise TaskExitStatusError(SSH_UNREACHABLE_STATUS) from error
 
         if family == "deb":
             # The package names dependencies apt resolves from the device's
@@ -553,7 +564,7 @@ class DeviceSshOperator:
                 if code != 0:
                     yield "[EPEL could not be enabled; the package was not installed]\n"
                     yield f"\n[exit {code}]\n"
-                    return
+                    raise TaskExitStatusError(code)
             install_command = (
                 f"dnf reinstall -y {shlex.quote(remote_package)} || "
                 f"dnf install -y {shlex.quote(remote_package)} || "
@@ -567,7 +578,7 @@ class DeviceSshOperator:
             yield output + "\n"
         if code != 0:
             yield f"\n[exit {code}]\n"
-            return
+            raise TaskExitStatusError(code)
 
         yield "[joining this hub]\n"
         code, output = await self.run_privileged_once(
@@ -577,6 +588,8 @@ class DeviceSshOperator:
         if output:
             yield output + "\n"
         yield f"\n[exit {code}]\n"
+        if code != 0:
+            raise TaskExitStatusError(code)
 
     async def _sudo_plan(
         self,
