@@ -7,10 +7,11 @@ shows `ui.program.apply_hint` and waits for the module's state alone; the
 owner notice over the state line; no Start and no Stop on a program, whose
 state line reads `state.ready` with a dot that does not pulse; Install live on
 a program with no want and on a failed one wanting `running`; the version line
-only while the module's own copy is on the machine; and each enabled
-account's row naming its copy by the source chip's words, then its version
-and its AI tools state in the words of its row under Available accounts, with
-no switch of its own, and the copy's path whole on a line of its own.
+only while the module's own copy is on the machine; each enabled account's
+row naming its copy by the source chip's words, then its version and its AI
+tools state in the words of its row under Available accounts, read with the
+account's switch and with no switch of its own, and the copy's path whole on
+a line of its own.
 """
 
 import json
@@ -126,21 +127,35 @@ def test_ui_behavior_draws_the_tab_as_these_check():
         "over its state line, and **Install**, **Uninstall** and **Configure** "
         "alone at the bottom"
     ) in text
-    assert "Its state line reads `state.ready` in place of `running`" in text
+    assert (
+        "Its state line reads `state.ready` in place of `running`, as Terminal's "
+        "rows do, with or without an enabled account"
+    ) in text
     assert (
         "A program the machine reports `installed` while the hub holds no "
-        "`want` has **Install** live, which writes `running`."
+        "`want` has **Install** live, which writes `running`, and so does a "
+        "program that reads `failed` while its `want` is `running`."
     ) in text
     assert (
         "`ui.modules.source_user` for the person's own copy and "
-        "`ui.modules.source_upstream` for the module's; the copy's path in mono; "
-        "its version; and the account's AI tools state in the words of its row "
-        "under **Available accounts**"
+        "`ui.modules.source_upstream` for the module's; its version; the "
+        "account's AI tools state in the words of its row under **Available "
+        "accounts**, shown and never set here; then the copy's path whole, in "
+        "mono, on a line of its own; an account's code shows its words under "
+        "the row in the error colour"
     ) in text
+    assert (
+        "`state.ai_tools_switched_back` for an account the machine has not " "reported"
+    ) in text
+    assert "read with the account's switch, `is_ai_tools_enabled`" in text
     assert (
         "| The version line | shown while the module's own copy is on the machine;"
     ) in text
-    assert "with its apply bar and `ui.program.apply_hint` as the bar's hint" in text
+    assert (
+        "with its apply bar, `ui.codex.apply` or `ui.claude_code.apply` its "
+        "button and `ui.program.apply_hint` its hint; the apply waits for the "
+        "module's state alone"
+    ) in text
 
 
 def test_the_owner_notice_is_drawn_over_the_state_line():
@@ -295,14 +310,14 @@ def test_the_ai_tools_state_reads_as_its_row_under_available_accounts():
     assert (
         '<span className="instances_row_tools"> '
         '<StatusDot tone={AI_TOOLS_TONES[tools.state] ?? "idle"} '
-        "label={aiToolsWords(row.account, tools, true)} /> </span>"
+        "label={aiToolsWords( row.account, tools, "
+        "row.is_ai_tools_enabled === true, )} /> </span>"
     ) in row
     assert (
         "const AI_TOOLS_UNREPORTED: AccountAiToolsView = { "
         'state: "switched_back", code: "", params: {}, };'
     ) in instances
     assert "<input" not in row
-    assert "is_ai_tools_enabled" not in row
 
 
 @pytest.mark.parametrize("module", PROGRAMS)

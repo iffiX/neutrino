@@ -1459,6 +1459,9 @@ export interface EnabledAccountView {
   /** A command line program's: the account's last AI tools result; null on
    * every other module. */
   ai_tools?: AccountAiToolsView | null;
+  /** A command line program's: the account's AI tools switch; null on every
+   * other module. */
+  is_ai_tools_enabled?: boolean | null;
 }
 
 /** An account-layer module on one machine: Terminal, the file share, the SSH

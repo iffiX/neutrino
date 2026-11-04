@@ -349,7 +349,11 @@ function ProgramAccountRow({
         <span className="instances_row_tools">
           <StatusDot
             tone={AI_TOOLS_TONES[tools.state] ?? "idle"}
-            label={aiToolsWords(row.account, tools, true)}
+            label={aiToolsWords(
+              row.account,
+              tools,
+              row.is_ai_tools_enabled === true,
+            )}
           />
         </span>
       )}
