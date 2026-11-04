@@ -515,7 +515,7 @@ moved. Its steps and their order are [network.md](hub_components/network.md),
 | `POST /api/hub/device/remove` | `{device_id}` | **Forget**: forgets the device; its session is ended with `binding_unknown` |
 | `POST /api/hub/device/wake` | `{device_id}` | Wake-on-LAN to the last link MAC, broadcast on every network of the exposed IPv4 segments, in every mode, never on an overlay; `wol_no_mac` when none is stored, `no_reachable_address` when there is no such network |
 | `POST /api/hub/device/agent/install` | `{device_id, ...}` | installs the agent over SSH; `TaskStarted`; the task's output ends with a line `[exit N]` and the task ends with status N: 95 for a machine that is not Linux or that the hub has no package for, 255 when the machine cannot be reached, refuses the login or presents a host key other than the recorded one, 1 for a refused upload, and otherwise the status of the step that failed |
-| `POST /api/hub/device/agent/reinstall` | `{device_id}` | the `reinstall` verb over the channel: the agent installs the package the hub holds for its platform, the machine page's **Update agent** |
+| `POST /api/hub/device/agent/reinstall` | `{device_id}` | the `reinstall` verb over the channel: the agent installs the package the hub holds for its platform, the machine page's **Update agent**; `TaskStarted`; the task's output ends with a line `[exit N]` and the task ends with status N: the status the agent's install reported, 124 when no result came in time, and 1 when the machine has no live agent |
 | `POST /api/hub/device/reboot` | `{device_id}` | the `reboot` verb |
 | `POST /api/hub/device/shutdown` | `{device_id}` | the `shutdown` verb |
 | `POST /api/hub/device/process/kill` | `{device_id, pid}` | the `kill` verb |
