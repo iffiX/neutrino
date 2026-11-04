@@ -233,6 +233,7 @@ that page, its count or its sidebar entry as a device changes with it:
 | `ui.install_agent.running_label`, the dot over the install output while it runs | installing | 安装中 |
 | `ui.install_agent.done_label`, the dot once the output ends with `[exit N]` | exit {code} | 退出码 {code} |
 | `ui.task.stream_closed`, the dot when the output ends with no such line | The task ended without a result | 任务没有返回结果就中断了 |
+| `code.key_passphrase_not_stored`, the install dialog's refusal of an encrypted key stored with no passphrase | This key is passphrase-protected and the hub cannot open it. Add it on the Credentials page with its passphrase. | 这个密钥有口令保护，中枢打不开它。请在凭据页带上口令添加这个密钥。 |
 
 The keys of the LAN scan and of unmanaged devices, `ui.devices.scan`,
 `ui.devices.scanning`, `ui.devices.add_by_address`, `ui.devices.search_placeholder`,
