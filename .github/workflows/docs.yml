@@ -4,8 +4,6 @@ on:
   pull_request:
     paths:
       - "docs/**"
-      - "images/icons/**"
-      - "images/web/**"
       - "packaging/build/build_docs.py"
       - "packaging/ci/count_tests.py"
       - ".github/workflows/docs.yml"
