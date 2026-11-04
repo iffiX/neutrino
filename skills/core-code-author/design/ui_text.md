@@ -636,7 +636,10 @@ whose line named Gemini; each tool is one entry of the `code` category.
 | `ui.module_catalog.claude_code` | Claude Code on the command line, for each account. | 命令行里的 Claude Code，每个账户都能用。 |
 | `ui.codex.owner_notice` | You install Codex, Apache-2.0-licensed, on this machine. | 你在这台机器上安装 Codex，它以 Apache-2.0 许可发布。 |
 | `ui.claude_code.owner_notice` | You install Claude Code on this machine under Anthropic's legal agreements. | 你在这台机器上按 Anthropic 的法律协议安装 Claude Code。 |
+| `ui.codex.apply` | Apply Codex | 应用 Codex |
+| `ui.claude_code.apply` | Apply Claude Code | 应用 Claude Code |
 | `ui.program.apply_hint` | Looks for each checked account's own copy, and gives an account with none this module's copy. | 查找每个勾选账户自己安装的副本，没有的账户改用本模块安装的副本。 |
+| `ui.program.macos_path_hint` | On macOS, add ~/.local/bin to each account's PATH so its own shells find this module's copy by its name. Neutrino's terminal finds it already. | 在 macOS 上，请把 ~/.local/bin 加进每个账户的 PATH，它自己的 shell 才能按名字找到本模块安装的副本。微子的终端里已经能找到。 |
 | `code.copy_version_unsupported` | {account}'s own copy is version {version}, older than {min}; {account} uses this module's copy. | {account} 自己安装的副本是 {version}，低于 {min}，改用本模块安装的副本。 |
 | `code.link_name_taken` | {path} already exists, so {account}'s shells do not find this module's copy by its name; Neutrino's terminal does. | {path} 已经存在，{account} 的 shell 按名字找不到本模块安装的副本，微子的终端里可以。 |
 | `code.module_not_service` | {module} is a program and has no Start or Stop. | “{module}”是普通程序，没有启动和停止。 |

@@ -892,20 +892,25 @@ line `ui.codex.owner_notice` or `ui.claude_code.owner_notice` over its
 state line, and **Install**, **Uninstall** and **Configure** alone at the
 bottom, since it has no **Start** or **Stop** ([agent.md](agent.md), "The
 kinds of module"). Its state line reads `state.ready` in place of
-`running`, as Terminal's rows do, since a program runs only when a person
-runs it. A program the machine reports `installed` while the hub holds no
-`want` has **Install** live, which writes `running`.
+`running`, as Terminal's rows do, with or without an enabled account, since
+a program runs only when a person runs it. A program the machine reports
+`installed` while the hub holds no `want` has **Install** live, which writes
+`running`, and so does a program that reads `failed` while its `want` is
+`running`.
 
 | Part of the panel | Idiom |
 | --- | --- |
-| **Enabled accounts** | one check row per available account, configurable, with its apply bar and `ui.program.apply_hint` as the bar's hint |
-| An enabled account's row | as last reported: the copy the account uses as a plain `badge`, `ui.modules.source_user` for the person's own copy and `ui.modules.source_upstream` for the module's; the copy's path in mono; its version; and the account's AI tools state in the words of its row under **Available accounts**, `state.ai_tools_switched` or `state.ai_tools_switched_back`, shown and never set here; an account's code shows its words under the row |
+| **Enabled accounts** | one check row per available account, configurable, with its apply bar, `ui.codex.apply` or `ui.claude_code.apply` its button and `ui.program.apply_hint` its hint; the apply waits for the module's state alone, since no account runs an instance |
+| An enabled account's row | as last reported: the copy the account uses as a plain `badge`, `ui.modules.source_user` for the person's own copy and `ui.modules.source_upstream` for the module's; its version; the account's AI tools state in the words of its row under **Available accounts**, shown and never set here; then the copy's path whole, in mono, on a line of its own; an account's code shows its words under the row in the error colour |
+| The AI tools state | `state.ai_tools_switched` or `state.ai_tools_switched_back`, and `state.ai_tools_switched_back` for an account the machine has not reported, whose tools keep their own settings; a failure in its code's words, read with the account's switch, `is_ai_tools_enabled`, as the row under **Available accounts** reads it, so a failed switch back reads `ui.ai_tools.switch_back_failed` |
+| The macOS line | on a macOS machine, while an enabled account uses the module's copy, `ui.program.macos_path_hint` under the rows |
 | The version line | shown while the module's own copy is on the machine; **Install another version…** picks the version of that copy |
 
 | Rule | Reason |
 | --- | --- |
 | The panel shows each account's AI tools state and holds no switch for it. The account's form under **Available accounts** is the one place it is set. | Installing a program changes no switch, and one form per account holds the account's settings ([agent.md](agent.md), "The two layers and the accounts"). |
 | The row names the copy by the source chip's own words. | A person reads the same word for who manages a copy on the chip and on the row. |
+| A macOS machine's tab tells the person to put `~/.local/bin` on `PATH`. | macOS puts `~/.local/bin` on no `PATH`, so a person's own shell does not find the module's link there until the person adds it. Neutrino's own sessions find the launcher already ([agent.md](agent.md), "Parallel, never take over"). |
 
 The File share tab's panel holds two panels, one under the other, one for
 each kind of share ([agent/modules/file_share.md](agent/modules/file_share.md)):
