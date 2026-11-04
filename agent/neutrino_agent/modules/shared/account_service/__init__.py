@@ -6,7 +6,9 @@ start and enable, stop and disable, remove and query the service, each
 dispatched to the system's own file: a systemd unit with ``User=`` on Linux,
 a LaunchDaemon with ``UserName`` on macOS, a scheduled task registered with
 the account's login on Windows. A stopped instance stays stopped across a
-reboot.
+reboot. A file the program reads that its account must not change is
+root's, SYSTEM's on Windows, in a folder root owns that the account alone
+reads beside root.
 
 Not pure: the system files write definitions and drive the service manager.
 """
@@ -15,9 +17,11 @@ Not pure: the system files write definitions and drive the service manager.
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
+import contextlib
 import importlib
 import os
 import shutil
+import stat
 from dataclasses import dataclass, field
 
 from neutrino_agent.exceptions import PlatformUnsupportedError
@@ -25,6 +29,8 @@ from neutrino_agent.modules.shared.account_service.constants import (
     ACCOUNT_SERVICE_DARWIN_LOG_DIR,
     ACCOUNT_SERVICE_LAUNCHD_DIR,
     ACCOUNT_SERVICE_LAUNCHD_PREFIX,
+    ACCOUNT_SERVICE_READ_LIMIT,
+    ACCOUNT_SERVICE_STAGED_SUFFIX,
     ACCOUNT_SERVICE_SYSTEMD_DIR,
     ACCOUNT_SERVICE_TASK_PREFIX,
     ACCOUNT_SERVICE_UNIT_PREFIX,
@@ -32,6 +38,24 @@ from neutrino_agent.modules.shared.account_service.constants import (
 )
 from neutrino_agent.modules.shared.subprocess_run import run as run_command
 
+# How a file in root's folder is read: no link followed and no wait on a
+# pipe.
+ROOT_FILE_READ_FLAGS = (
+    os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+)
+# How a file in root's folder is made: afresh, no link followed.
+ROOT_FILE_WRITE_FLAGS = (
+    os.O_WRONLY
+    | os.O_CREAT
+    | os.O_EXCL
+    | getattr(os, "O_NOFOLLOW", 0)
+    | getattr(os, "O_BINARY", 0)
+)
+# How an account's directory in root's folder is opened to take it back: a
+# folder, no link followed.
+ROOT_DIR_FLAGS = (
+    os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+)
 # The systems the layer has a file for, by the platform's name.
 SYSTEM_MODULES = {
     "linux": "neutrino_agent.modules.shared.account_service.linux",
@@ -92,7 +116,12 @@ class AccountService:
         is_environment_secret: Whether the environment holds a secret: the
             file that carries it is root-only and every value is quoted.
         files: ``(path, text)`` pairs the program reads as the account:
-            each is written whole, mode 0600, the account's own.
+            each is written whole, mode 0600, the account's own, in a
+            folder root owns.
+        read_files: ``(path, text)`` pairs the program reads and the
+            account must not change: each is written whole and kept
+            root's, SYSTEM's on Windows, in a folder root owns that the
+            account alone reads beside root.
         directories: Directories the account owns: made mode 0700 before
             the service starts, deleted with it.
         is_output_discarded: Whether stdout and stderr are discarded: the
@@ -116,6 +145,7 @@ class AccountService:
     environment_dir: str = ""
     is_environment_secret: bool = False
     files: tuple = ()
+    read_files: tuple = ()
     directories: tuple = ()
     is_output_discarded: bool = False
     is_process_group_abandoned: bool = False
@@ -140,6 +170,8 @@ class ServiceMachine:
             :class:`WindowsProcessTable` does; None elsewhere.
         batch_logon: Windows: the batch logon right of the accounts, held
             and released as :class:`WindowsBatchLogonRight` does; None elsewhere.
+        folders: Windows: folders' access lists set on handles, as
+            :class:`WindowsFolderAccess` sets them; None sets them.
         systemd_dir: Where the template unit is written.
         launchd_dir: Where the plists are written.
         log_dir: Where the macOS log files are.
@@ -154,6 +186,7 @@ class ServiceMachine:
     powershell: object = None
     processes: object = None
     batch_logon: object = None
+    folders: object = None
     systemd_dir: str = ACCOUNT_SERVICE_SYSTEMD_DIR
     launchd_dir: str = ACCOUNT_SERVICE_LAUNCHD_DIR
     log_dir: str = ACCOUNT_SERVICE_DARWIN_LOG_DIR
@@ -187,6 +220,209 @@ def write_if_changed(path: str, text: str, mode: int) -> bool:
     return True
 
 
+def read_regular(path: str, limit: int = ACCOUNT_SERVICE_READ_LIMIT) -> "bytes | None":
+    """The first bytes of one regular file, read through no link and waiting on no pipe.
+
+    Args:
+        path: The file.
+        limit: How many bytes are read at most.
+
+    Returns:
+        Its bytes; None for a path that is missing, a link, no regular file
+        or unreadable.
+    """
+    try:
+        descriptor = os.open(path, ROOT_FILE_READ_FLAGS)
+    except OSError:
+        return None
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            return None
+        parts = []
+        left = limit
+        while left > 0:
+            part = os.read(descriptor, left)
+            if not part:
+                break
+            parts.append(part)
+            left -= len(part)
+        return b"".join(parts)
+    except OSError:
+        return None
+    finally:
+        os.close(descriptor)
+
+
+def write_root_file(
+    path: str, data: bytes, mode: int, *, owner: tuple, chown, staged=None
+) -> bool:
+    """Write one file of root's whole, beside its place and renamed in, unless it holds these bytes.
+
+    The new file is made afresh, following no link, and given its mode and
+    its owner on the open file; the file it replaces is never opened for
+    writing.
+
+    Args:
+        path: The file, in a folder root owns.
+        data: What it holds afterwards.
+        mode: Its permission bits.
+        owner: ``(uid, gid)`` it is given.
+        chown: Changes an open file's owner as :func:`os.chown` does with a
+            descriptor.
+        staged: Called with the new file's path before it is renamed in;
+            None calls nothing.
+
+    Returns:
+        Whether it was written.
+
+    Raises:
+        OSError: When the file cannot be made, written or renamed in.
+    """
+    if read_regular(path, len(data) + 1) == data:
+        return False
+    new = path + ACCOUNT_SERVICE_STAGED_SUFFIX
+    with contextlib.suppress(FileNotFoundError):
+        os.unlink(new)
+    descriptor = os.open(new, ROOT_FILE_WRITE_FLAGS, 0o600)
+    try:
+        try:
+            view = memoryview(data)
+            while view:
+                view = view[os.write(descriptor, view) :]
+            chown(descriptor, owner[0], owner[1])
+            os.fchmod(descriptor, mode)
+        finally:
+            os.close(descriptor)
+        if staged is not None:
+            staged(new)
+        os.replace(new, path)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(new)
+        raise
+    return True
+
+
+def clear_files(descriptor: int) -> list:
+    """Delete every name an open folder holds that is no folder, following no link.
+
+    Args:
+        descriptor: The open folder, one of root's.
+
+    Returns:
+        The names deleted.
+
+    Raises:
+        OSError: When a name cannot be deleted.
+    """
+    cleared = []
+    for name in os.listdir(descriptor):
+        try:
+            status = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
+        except FileNotFoundError:
+            continue
+        if stat.S_ISDIR(status.st_mode):
+            continue
+        os.unlink(name, dir_fd=descriptor)
+        cleared.append(name)
+    return cleared
+
+
+def make_read_dir(directory: str, account: str, machine) -> None:
+    """Make a folder root owns that one account alone reads beside root, or take one back.
+
+    A folder an earlier version gave the account is taken back on its open
+    descriptor, following no link, before anything is written in it, and
+    every file the account had in it is deleted once it is root's.
+
+    Args:
+        directory: The folder.
+        account: The account that reads it.
+        machine: The machine.
+
+    Raises:
+        PlatformUnsupportedError: On a system the layer has no file for.
+        KeyError: When the machine does not have the account.
+        OSError: When the folder cannot be made or given.
+    """
+    _system(machine).make_read_dir(directory, account, machine)
+
+
+def write_read_file(path: str, text: str, account: str, machine) -> bool:
+    """Write one file root keeps that one account alone reads, unless it holds this text.
+
+    Args:
+        path: The file, in a folder :func:`make_read_dir` made.
+        text: What it holds afterwards.
+        account: The account that reads it.
+        machine: The machine.
+
+    Returns:
+        Whether it was written.
+
+    Raises:
+        PlatformUnsupportedError: On a system the layer has no file for.
+        KeyError: When the machine does not have the account.
+        OSError: When the file cannot be written.
+    """
+    return _system(machine).write_read_file(path, text, account, machine)
+
+
+def write_read_files(service: AccountService, machine) -> bool:
+    """Write the files a service's program reads and its account must not change.
+
+    Args:
+        service: The service.
+        machine: The machine.
+
+    Returns:
+        Whether a file's text changed.
+
+    Raises:
+        KeyError: When the machine does not have the account.
+        OSError: When a folder or a file cannot be written.
+    """
+    is_changed = False
+    for directory in read_dirs(service, _system(machine).dirname):
+        make_read_dir(directory, service.account, machine)
+    for path, text in service.read_files:
+        is_changed |= write_read_file(path, text, service.account, machine)
+    return is_changed
+
+
+def remove_read_files(service: AccountService, dirname=os.path.dirname) -> None:
+    """Delete the folders of a service's read files, with every file in them.
+
+    Only names in root's folder are deleted, and no folder in it is
+    entered: a folder that holds one stays.
+
+    Args:
+        service: The service.
+        dirname: How the system takes a path's folder.
+    """
+    for directory in read_dirs(service, dirname):
+        try:
+            entries = list(os.scandir(directory))
+        except OSError:
+            continue
+        for entry in entries:
+            with contextlib.suppress(OSError):
+                if not entry.is_dir(follow_symlinks=False):
+                    os.unlink(entry.path)
+        with contextlib.suppress(OSError):
+            os.rmdir(directory)
+
+
+def read_dirs(service: AccountService, dirname=os.path.dirname) -> list:
+    """The folders of a service's read files, each once, in their order. Pure."""
+    directories: list = []
+    for path, _text in service.read_files:
+        directory = dirname(path)
+        if directory not in directories:
+            directories.append(directory)
+    return directories
+
+
 def write_account_files(service: AccountService, entry: AccountEntry, machine) -> bool:
     """Write the files and make the directories a service's account owns.
 
@@ -213,18 +449,37 @@ def write_account_files(service: AccountService, entry: AccountEntry, machine) -
     return is_changed
 
 
-def remove_account_files(service: AccountService) -> None:
+def remove_account_files(service: AccountService, chown=None) -> None:
     """Delete the files and the directories a service's account owned.
+
+    Each directory, in a folder of root's, is taken back to root on its
+    open descriptor, following no link, before what it holds is deleted:
+    the account changes nothing in it from then on. A directory that
+    cannot be taken back stays.
 
     Args:
         service: The service.
+        chown: Changes an open directory's owner as :func:`os.chown` does
+            with a descriptor; None is :func:`os.chown`.
     """
+    chown = chown if chown is not None else getattr(os, "chown", _no_chown)
     for path, _text in service.files:
         try:
             os.unlink(path)
         except OSError:
             pass
     for directory in service.directories:
+        try:
+            descriptor = os.open(directory, ROOT_DIR_FLAGS)
+        except OSError:
+            continue
+        try:
+            chown(descriptor, 0, 0)
+            os.fchmod(descriptor, 0o700)
+        except OSError:
+            continue
+        finally:
+            os.close(descriptor)
         shutil.rmtree(directory, ignore_errors=True)
 
 

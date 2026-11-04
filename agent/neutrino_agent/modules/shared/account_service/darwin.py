@@ -4,7 +4,10 @@ Each instance is a LaunchDaemon whose plist names the account in
 ``UserName``, so root's launchd starts the program as that account with no
 password, its output appended to the instance's file under the agents' log
 directory. The log file belongs to the account, mode 0600. A plist that
-changed, or a job launchd does not hold, is loaded again.
+changed, or a job launchd does not hold, is loaded again. A file the
+program reads that its account must not change is root's, mode 0600, in a
+folder of root's, mode 0700, each with an access entry that lets the
+account alone read it: every account's group on a Mac is ``staff``.
 
 Not pure: writes under ``/Library`` and drives launchd.
 """
@@ -16,18 +19,31 @@ from __future__ import annotations
 import contextlib
 import os
 import plistlib
+import stat
 import subprocess
 
 from neutrino_agent.modules.shared.account_service import (
+    clear_files,
     label,
     remove_account_files,
+    remove_read_files,
     write_account_files,
     write_if_changed,
+    write_read_files,
+    write_root_file,
 )
 from neutrino_agent.modules.shared.account_service.constants import (
+    ACCOUNT_SERVICE_DARWIN_READ_DIR_RIGHTS,
+    ACCOUNT_SERVICE_DARWIN_READ_FILE_RIGHTS,
     ACCOUNT_SERVICE_LOG_SUFFIX,
     ACCOUNT_SERVICE_PLIST_SUFFIX,
+    ACCOUNT_SERVICE_READ_DIR_MODE,
+    ACCOUNT_SERVICE_READ_FILE_MODE,
 )
+from neutrino_agent.modules.shared.handle_walk import make_dirs, open_dir
+
+# How the layer takes a path's folder here.
+dirname = os.path.dirname
 
 
 def render_plist(service, *, home: str, log_path: str) -> bytes:
@@ -78,10 +94,72 @@ def define(template, machine) -> bool:
     return False
 
 
+def make_read_dir(directory: str, account: str, machine) -> None:
+    """Make root's folder, mode 0700, with an access entry that lets the account read it.
+
+    Raises:
+        KeyError: When the machine does not have the account.
+        OSError: When a level is a link, or the folder cannot be made or
+            given.
+        subprocess.CalledProcessError: When ``chmod`` refuses the entry.
+    """
+    machine.lookup_account(account)
+    mode = ACCOUNT_SERVICE_READ_DIR_MODE["darwin"]
+    make_dirs(directory, mode)
+    descriptor = open_dir(directory)
+    try:
+        held = os.fstat(descriptor)
+        if (held.st_uid, held.st_gid) != (0, 0):
+            machine.chown(descriptor, 0, 0)
+        if stat.S_IMODE(held.st_mode) != mode:
+            os.fchmod(descriptor, mode)
+        if held.st_uid != 0:
+            clear_files(descriptor)
+    finally:
+        os.close(descriptor)
+    entry = _read_entry(account, ACCOUNT_SERVICE_DARWIN_READ_DIR_RIGHTS)
+    listed = machine.run(["/bin/ls", "-led", directory], is_checked=False)
+    held = [
+        line.split(":", 1)[1].strip()
+        for line in (listed.stdout or "").splitlines()[1:]
+        if ":" in line
+    ]
+    if held == [entry]:
+        return
+    machine.run(["/bin/chmod", "-N", directory], is_checked=False)
+    machine.run(["/bin/chmod", "+a", entry, directory])
+
+
+def write_read_file(path: str, text: str, account: str, machine) -> bool:
+    """Write one file root's, mode 0600, that the account reads by an access entry, unless it holds this text.
+
+    Raises:
+        KeyError: When the machine does not have the account.
+        OSError: When the file cannot be written.
+        subprocess.CalledProcessError: When ``chmod`` refuses the entry.
+    """
+    machine.lookup_account(account)
+    entry = _read_entry(account, ACCOUNT_SERVICE_DARWIN_READ_FILE_RIGHTS)
+    return write_root_file(
+        path,
+        text.encode("utf-8"),
+        ACCOUNT_SERVICE_READ_FILE_MODE["darwin"],
+        owner=(0, 0),
+        chown=machine.chown,
+        staged=lambda new: machine.run(["/bin/chmod", "+a", entry, new]),
+    )
+
+
+def _read_entry(account: str, rights: str) -> str:
+    """The access entry that lets one account read a file or a folder. Pure."""
+    return f"user:{account} allow {rights}"
+
+
 def write(service, machine) -> bool:
-    """Write the account's files, its log and its plist; whether one changed."""
+    """Write the account's files, its read files, its log and its plist; whether one changed."""
     entry = machine.lookup_account(service.account)
     is_changed = write_account_files(service, entry, machine)
+    is_changed = write_read_files(service, machine) or is_changed
     log = log_path(service.name, service.account, machine, service.log_name)
     if not service.is_output_discarded:
         os.makedirs(machine.log_dir, mode=0o755, exist_ok=True)
@@ -125,7 +203,8 @@ def remove(service, machine) -> None:
     for path in paths:
         with contextlib.suppress(OSError):
             os.unlink(path)
-    remove_account_files(service)
+    remove_account_files(service, machine.chown)
+    remove_read_files(service)
 
 
 def states(services: list, machine) -> dict:

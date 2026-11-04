@@ -27,6 +27,8 @@ from neutrino_agent.modules.shared.account_service.linux import (
 )
 from neutrino_agent.modules.shared.subprocess_run import CommandResult
 
+from tests.conftest import chowned_path
+
 
 class Systemd:
     """systemctl, recorded; every unit the test names active reads active."""
@@ -80,7 +82,9 @@ def machine(systemd, tmp_path, owners):
         record_dir=str(tmp_path / "config" / "demo"),
         lookup_account=lookup,
         run=systemd,
-        chown=lambda path, uid, gid: owners.append((os.path.basename(path), uid, gid)),
+        chown=lambda path, uid, gid: owners.append(
+            (os.path.basename(chowned_path(path)), uid, gid)
+        ),
         systemd_dir=str(tmp_path / "systemd"),
     )
 

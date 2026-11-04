@@ -5,6 +5,11 @@ systemd's name for the instance's account, from a per-account environment
 file when the service has one. An instance whose files changed is started
 again; an unchanged one is only kept up.
 
+A file the program reads that its account must not change is root's,
+mode 0640, in a folder of root's, mode 0750, both of the account's group,
+which the account alone is in where the system gives each account a group
+of its own.
+
 Not pure: writes under ``/etc`` and the state root, and drives systemd.
 """
 
@@ -14,20 +19,31 @@ from __future__ import annotations
 
 import contextlib
 import os
+import stat
 import subprocess
 
 from neutrino_agent.modules.shared.account_service import (
+    clear_files,
     remove_account_files,
+    remove_read_files,
     unit_name,
     write_account_files,
     write_if_changed,
+    write_read_files,
+    write_root_file,
 )
 from neutrino_agent.modules.shared.account_service.constants import (
     ACCOUNT_SERVICE_ENVIRONMENT_SUFFIX,
+    ACCOUNT_SERVICE_READ_DIR_MODE,
+    ACCOUNT_SERVICE_READ_FILE_MODE,
     ACCOUNT_SERVICE_TEMPLATE_ACCOUNT,
     ACCOUNT_SERVICE_UNIT_PREFIX,
     ACCOUNT_SERVICE_UNIT_SUFFIX,
 )
+from neutrino_agent.modules.shared.handle_walk import make_dirs, open_dir
+
+# How the layer takes a path's folder here.
+dirname = os.path.dirname
 
 
 def render_unit(template, *, environment_dir: str) -> str:
@@ -113,10 +129,52 @@ def define(template, machine) -> bool:
     return is_changed
 
 
+def make_read_dir(directory: str, account: str, machine) -> None:
+    """Make root's folder, mode 0750, of the account's group, by open descriptor.
+
+    Raises:
+        KeyError: When the machine does not have the account.
+        OSError: When a level is a link, or the folder cannot be made or
+            given.
+    """
+    entry = machine.lookup_account(account)
+    mode = ACCOUNT_SERVICE_READ_DIR_MODE["linux"]
+    make_dirs(directory, mode)
+    descriptor = open_dir(directory)
+    try:
+        held = os.fstat(descriptor)
+        if (held.st_uid, held.st_gid) != (0, entry.gid):
+            machine.chown(descriptor, 0, entry.gid)
+        if stat.S_IMODE(held.st_mode) != mode:
+            os.fchmod(descriptor, mode)
+        if held.st_uid != 0:
+            clear_files(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def write_read_file(path: str, text: str, account: str, machine) -> bool:
+    """Write one file root's, mode 0640, of the account's group, unless it holds this text.
+
+    Raises:
+        KeyError: When the machine does not have the account.
+        OSError: When the file cannot be written.
+    """
+    entry = machine.lookup_account(account)
+    return write_root_file(
+        path,
+        text.encode("utf-8"),
+        ACCOUNT_SERVICE_READ_FILE_MODE["linux"],
+        owner=(0, entry.gid),
+        chown=machine.chown,
+    )
+
+
 def write(service, machine) -> bool:
-    """Write the account's files and the environment file; whether one changed."""
+    """Write the account's files, its read files and the environment file; whether one changed."""
     entry = machine.lookup_account(service.account)
     is_changed = write_account_files(service, entry, machine)
+    is_changed = write_read_files(service, machine) or is_changed
     if not service.environment:
         return is_changed
     directory, mode = _environment_dir(service, machine)
@@ -157,7 +215,8 @@ def remove(service, machine) -> None:
     directory, _mode = _environment_dir(service, machine)
     with contextlib.suppress(OSError):
         os.unlink(_environment_path(directory, service.account))
-    remove_account_files(service)
+    remove_account_files(service, machine.chown)
+    remove_read_files(service)
 
 
 def states(services: list, machine) -> dict:

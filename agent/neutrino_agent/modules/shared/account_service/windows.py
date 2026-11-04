@@ -27,6 +27,7 @@ the local security policy and ends processes.
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import ntpath
@@ -34,10 +35,15 @@ import os
 import shutil
 import subprocess
 
-from neutrino_agent.modules.shared.account_service import task_name
+from neutrino_agent.modules.shared.account_service import (
+    remove_read_files,
+    task_name,
+    write_read_files,
+)
 from neutrino_agent.modules.shared.account_service.constants import (
     ACCOUNT_SERVICE_LOG_SUFFIX,
     ACCOUNT_SERVICE_LOGON_FAILURES,
+    ACCOUNT_SERVICE_STAGED_SUFFIX,
     ACCOUNT_SERVICE_TASK_MARKER,
     ACCOUNT_SERVICE_TASK_PREFIX,
     ACCOUNT_SERVICE_WINDOWS_NULL_DEVICE,
@@ -48,7 +54,13 @@ from neutrino_agent.modules.shared.account_service.constants import (
     ACCOUNT_SERVICE_WINDOWS_TASK_RUNNING,
 )
 from neutrino_agent.modules.shared.windows_acl import grant_account_alone
+from neutrino_agent.platforms.windows_folder import WindowsFolderAccess
 from neutrino_agent.platforms.windows_processes import lineage, process_tree
+
+# How the layer takes a path's folder here.
+dirname = ntpath.dirname
+# The attribute of a junction, a mount point or a link.
+FILE_ATTRIBUTE_REPARSE_POINT = 0x400
 
 
 def task_arguments(program: str, arguments: list, log_file: str) -> str:
@@ -187,6 +199,72 @@ def arguments_of(service, machine) -> str:
     return task_arguments(service.command[0], list(service.command[1:]), log)
 
 
+def is_reparse_point(path: str) -> bool:
+    """Whether a path is itself a junction, a mount point or a link.
+
+    Args:
+        path: The path.
+
+    Returns:
+        True for a reparse point; False for anything else and a path that
+        is not there.
+    """
+    try:
+        status = os.lstat(path)
+    except OSError:
+        return False
+    return bool(getattr(status, "st_file_attributes", 0) & FILE_ATTRIBUTE_REPARSE_POINT)
+
+
+def make_read_dir(directory: str, account: str, machine) -> None:
+    """Make SYSTEM's folder that the account alone reads beside SYSTEM and the administrators.
+
+    The folder's access list is set whole on its handle, following no
+    junction; a junction where the folder goes is removed and the folder
+    made again.
+
+    Raises:
+        OSError: When the folder cannot be made or left to the account.
+    """
+    folders = machine.folders if machine.folders is not None else WindowsFolderAccess()
+    os.makedirs(directory, exist_ok=True)
+    try:
+        folders.leave_to(directory, account, "R")
+        return
+    except OSError as error:
+        if error.errno != errno.ELOOP:
+            raise
+    os.rmdir(directory)
+    os.makedirs(directory)
+    folders.leave_to(directory, account, "R")
+
+
+def write_read_file(path: str, text: str, account: str, machine) -> bool:
+    """Write one file in such a folder, beside its place and renamed in, unless it holds this text.
+
+    The file takes the folder's access list.
+
+    Raises:
+        OSError: When the file cannot be written.
+    """
+    data = text.encode("utf-8")
+    try:
+        with open(path, "rb") as stream:
+            if stream.read(len(data) + 1) == data:
+                return False
+    except OSError:
+        pass
+    new = path + ACCOUNT_SERVICE_STAGED_SUFFIX
+    if is_reparse_point(new) or os.path.isdir(new):
+        os.rmdir(new)
+    elif os.path.lexists(new):
+        os.unlink(new)
+    with open(new, "xb") as stream:
+        stream.write(data)
+    os.replace(new, path)
+    return True
+
+
 def write(service, machine) -> bool:
     """Write the account's files and its log, and register the task when it changed.
 
@@ -203,6 +281,7 @@ def write(service, machine) -> bool:
         grant_account_alone(
             machine.run, file["path"], service.account, "R", is_tree=False
         )
+    write_read_files(service, machine)
     for directory in service.directories:
         os.makedirs(directory, exist_ok=True)
         grant_account_alone(machine.run, directory, service.account, "M", is_tree=True)
@@ -211,7 +290,9 @@ def write(service, machine) -> bool:
             write_text(log, "")
         grant_account_alone(machine.run, log, service.account, "M", is_tree=False)
     arguments = arguments_of(service, machine)
-    description = task_description(arguments, service, [file["text"] for file in files])
+    texts = [file["text"] for file in files]
+    texts += [text for _path, text in service.read_files]
+    description = task_description(arguments, service, texts)
     task = task_name(service.name, service.account)
     if machine.batch_logon is not None:
         machine.batch_logon.hold(service.account, task, service.password)
@@ -273,6 +354,7 @@ def remove(service, machine) -> None:
     paths += list(service.directories)
     for path in paths:
         remove_path(path)
+    remove_read_files(service, ntpath.dirname)
 
 
 def states(services: list, machine) -> dict:

@@ -25,6 +25,8 @@ from neutrino_agent.modules.shared.account_service import (
 from neutrino_agent.modules.shared.account_service.darwin import render_plist
 from neutrino_agent.modules.shared.subprocess_run import CommandResult
 
+from tests.conftest import chowned_path
+
 LABEL = "com.neutrino.demo.ann"
 
 
@@ -86,7 +88,9 @@ def machine(launchd, tmp_path, owners):
         record_dir=str(tmp_path / "config" / "demo"),
         lookup_account=lookup,
         run=launchd,
-        chown=lambda path, uid, gid: owners.append((os.path.basename(path), uid, gid)),
+        chown=lambda path, uid, gid: owners.append(
+            (os.path.basename(chowned_path(path)), uid, gid)
+        ),
         launchd_dir=str(tmp_path / "LaunchDaemons"),
         log_dir=str(tmp_path / "Logs"),
     )

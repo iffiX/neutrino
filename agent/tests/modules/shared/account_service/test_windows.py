@@ -20,10 +20,17 @@ remove releases it after the task is unregistered. Every request the host
 is sent is pinned whole.
 """
 
+import dataclasses
+import errno
+import os
+
 import pytest
 
 from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.shared import account_service
+from neutrino_agent.modules.shared.account_service import (
+    windows as account_service_windows,
+)
 from neutrino_agent.modules.shared.account_service import (
     AccountService,
     ServiceMachine,
@@ -583,3 +590,71 @@ def test_forget_removes_the_rules_an_older_build_opened(module_dir):
     account_service.forget("demo", machine_with(module_dir, host))
 
     assert host.calls == [("rules_forget", {"prefix": "neutrino_demo_port_"})]
+
+
+# --- a folder of SYSTEM's the account reads ---
+
+
+class Folders:
+    """Folders left to an account on their handles; the first ``junctions`` asks are refused as junctions."""
+
+    def __init__(self, junctions=0):
+        self.calls: list = []
+        self.junctions = junctions
+
+    def leave_to(self, path, account, right):
+        self.calls.append((path, account, right))
+        if self.junctions:
+            self.junctions -= 1
+            raise OSError(errno.ELOOP, f"{path} is a junction or a link")
+
+
+def test_a_read_file_is_written_in_systems_folder_left_to_the_account_to_read(
+    tmp_path,
+):
+    folders = Folders()
+    host = RecordingHost({"task_read": {"is_present": False}})
+    run_dir = str(tmp_path / "run")
+    key = run_dir + "/host_key"
+    service = service_with(str(tmp_path), read_files=((key, "secret\n"),))
+    machine = machine_with(str(tmp_path), host)
+    machine = dataclasses.replace(machine, folders=folders)
+
+    assert account_service.write(service, machine)
+    assert account_service.write_read_files(service, machine) is False
+
+    assert read(key) == b"secret\n"
+    assert folders.calls == [(run_dir, "hanha", "R")] * 2
+    assert not os.path.exists(key + ".new")
+
+
+def test_a_junction_where_systems_folder_goes_is_removed_and_never_followed(
+    tmp_path,
+):
+    folders = Folders(junctions=1)
+    run_dir = str(tmp_path / "run")
+    os.makedirs(run_dir)
+    machine = dataclasses.replace(
+        machine_with(str(tmp_path), RecordingHost()), folders=folders
+    )
+
+    account_service.make_read_dir(run_dir, "hanha", machine)
+
+    assert folders.calls == [(run_dir, "hanha", "R")] * 2
+    assert os.path.isdir(run_dir)
+
+
+def test_a_staged_file_the_account_left_is_made_afresh(tmp_path):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    held = tmp_path / "held"
+    held.write_text("kept\n")
+    (run_dir / "authorized_key.new").symlink_to(held)
+
+    account_service_windows.write_read_file(
+        str(run_dir / "authorized_key"), "key\n", "hanha", None
+    )
+
+    assert held.read_text() == "kept\n"
+    assert (run_dir / "authorized_key").read_text() == "key\n"
+    assert not (run_dir / "authorized_key").is_symlink()

@@ -16,16 +16,19 @@ SSH_SERVER_WINDOWS_BINARY_NAME = "neutrino_ssh_server.exe"
 SSH_SERVER_BASE_PORT = 22000
 SSH_SERVER_LISTEN_HOST = "127.0.0.1"
 
-# Under the module's directory in the state root: the machine's host key,
-# root's alone, and one run directory per account, which holds what its
-# instance reads, the account's own, and the launcher folders a session's
-# PATH starts with, root's.
+# Under the module's directory in the state root, one run directory per
+# account, root's, which the account alone reads beside root: the
+# instance's host key, its one authorized key, and the launcher folders a
+# session's PATH starts with. ``host_key``, under the module's directory and
+# in each run directory, is the one host key of an earlier version and its
+# copies, each deleted at the first apply.
+SSH_SERVER_INSTANCE_KEY_NAME = "instance_host_key"
 SSH_SERVER_HOST_KEY_NAME = "host_key"
 SSH_SERVER_RUN_DIR_NAME = "run"
 SSH_SERVER_AUTHORIZED_KEY_NAME = "authorized_key"
 SSH_SERVER_PATH_FOLDERS_NAME = "path_folders"
-# What the path folders file is written as before it is renamed into place.
-SSH_SERVER_PATH_FOLDERS_STAGED_SUFFIX = ".new"
+# What the program writes a new host key as, beside the instance's host key.
+SSH_SERVER_MADE_HOST_KEY_SUFFIX = ".made"
 
 # Linux: the variables of each instance's environment file the template
 # unit's command line reads.

@@ -2,19 +2,23 @@
 
 What these pin: the program is the one under the agent's ``bin`` on each
 system, the platform's own directory first; the module needs no install;
-the host key is made once with the program, root's alone under the
-module's directory, and a failed making leaves nothing and refuses
-``apply_failed``; each instance runs the program as its account on
-``127.0.0.1`` at its port, with the copy of the host key and its one
-authorized key in its run directory, the account's own, its shell the
-row's, else the login shell, else ``/bin/sh``, and PowerShell on Windows;
-on Linux the template unit reads the port and the shell from each
-account's environment file, on macOS the job carries the account's
-environment, and on Windows the task signs in with the password and logs
-under the agent's log root; the shared runner takes each instance's port
-from 22000 up; the details carry the host key and its fingerprint; and
-through the shared runner two accounts run, a third refused, one disabled
-losing its unit and its run directory.
+each instance's host key is made once with the program in its run
+directory, and a failed making leaves nothing and refuses
+``apply_failed``; the one host key of an earlier version is deleted; each
+run directory and every file in it is root's, of the account's group,
+0750 and 0640, and one an earlier version gave the account is taken back;
+a link at a file, at its ``.new``, at the made key or at the run directory
+turns no write, mode or owner onto another file; each instance runs the
+program as its account on ``127.0.0.1`` at its port, with its host key and
+its one authorized key in its run directory, its shell the row's, else the
+login shell, else ``/bin/sh``, and PowerShell on Windows; on Linux the
+template unit reads the port and the shell from each account's
+environment file, on macOS the job carries the account's environment, and
+on Windows the task signs in with the password and logs under the agent's
+log root; the shared runner takes each instance's port from 22000 up;
+each instance's details carry its host key and its fingerprint; and
+through the shared runner two accounts run, each with its own host key, a
+third refused, one disabled losing its unit and its run directory.
 """
 
 import functools
@@ -24,6 +28,7 @@ import stat
 import pytest
 
 from neutrino_agent.exceptions import ModuleApplyError
+from neutrino_agent.modules.shared import account_service
 from neutrino_agent.modules.shared.account_service import (
     AccountEntry,
     ServiceMachine,
@@ -38,6 +43,7 @@ from neutrino_agent.modules.ssh_server.hooks import (
 )
 from neutrino_agent.platforms.base import AgentPlatform
 
+from tests.conftest import chowned_path, fd_owners
 from tests.modules.ssh_server.conftest import (
     PUBLIC_KEY,
     PUBLIC_KEY_FINGERPRINT,
@@ -119,7 +125,25 @@ def lookup(account):
     return accounts[account]
 
 
-def machine_at(tmp_path, os_name="linux", run=None):
+@pytest.fixture(autouse=True)
+def owned(monkeypatch):
+    """Owners given on a descriptor, read back by ``os.fstat`` as root would see them."""
+    return fd_owners(monkeypatch, {})
+
+
+class Owners:
+    """Every change of owner, by the path of the open file or of the path given."""
+
+    def __init__(self):
+        self.given: list = []
+
+    def __call__(self, target, uid, gid):
+        self.given.append((chowned_path(target), uid, gid))
+        if isinstance(target, int):
+            os.fchown(target, uid, gid)
+
+
+def machine_at(tmp_path, os_name="linux", run=None, chown=None):
     (tmp_path / "systemd").mkdir(exist_ok=True)
     return ServiceMachine(
         os_name=os_name,
@@ -127,16 +151,16 @@ def machine_at(tmp_path, os_name="linux", run=None):
         record_dir=str(tmp_path / "config" / "ssh_server"),
         lookup_account=lookup,
         run=run if run is not None else Machine(),
-        chown=lambda path, uid, gid: None,
+        chown=chown if chown is not None else Owners(),
         systemd_dir=str(tmp_path / "systemd"),
     )
 
 
-def hooks_for(tmp_path, os_name="linux", *, run=None, log_path=""):
+def hooks_for(tmp_path, os_name="linux", *, run=None, log_path="", chown=None):
     hooks = SshServerHooks(
         platform=Platform(os_name, log_path), log=lambda line: None, binary=BINARY
     )
-    hooks.bind(machine_at(tmp_path, os_name, run), None)
+    hooks.bind(machine_at(tmp_path, os_name, run, chown), None)
     return hooks
 
 
@@ -173,18 +197,30 @@ def test_the_module_needs_no_install(tmp_path):
 # --- the host key ---
 
 
-def test_the_host_key_is_made_once_and_kept_root_s_alone(tmp_path):
+def host_key_of(hooks, account="lab"):
+    return os.path.join(hooks.run_dir(account), "instance_host_key")
+
+
+def test_each_instance_s_host_key_is_made_once_in_its_run_directory(tmp_path):
     run = Machine()
-    hooks = hooks_for(tmp_path, run=run)
+    owners = Owners()
+    hooks = hooks_for(tmp_path, run=run, chown=owners)
+    hooks.prepare_module()
+    path = host_key_of(hooks)
 
-    assert hooks.prepare_module() == ["made the host key"]
-    assert hooks.prepare_module() == []
-
-    assert run.made_keys() == [
-        [BINARY, "--make-host-key", hooks.host_key_path + ".new"]
+    assert hooks.prepare(None, instance(), LAB) == [
+        "made the host key of lab",
+        "wrote the path folders of lab",
     ]
-    assert stat.S_IMODE(os.stat(hooks.host_key_path).st_mode) == 0o600
-    assert not os.path.exists(hooks.host_key_path + ".new")
+    assert hooks.prepare(None, instance(), LAB) == []
+
+    assert run.made_keys() == [[BINARY, "--make-host-key", path + ".made"]]
+    with open(path, encoding="ascii") as stream:
+        assert stream.read() == private_key_text()
+    assert stat.S_IMODE(os.stat(path).st_mode) == 0o640
+    assert (path, 0, 1001) in owners.given
+    assert not os.path.exists(path + ".made")
+    assert not os.path.exists(path + ".new")
     for directory in (hooks.machine.module_dir, os.path.dirname(hooks.run_dir("x"))):
         assert stat.S_IMODE(os.stat(directory).st_mode) == 0o755
 
@@ -193,24 +229,135 @@ def test_a_host_key_that_cannot_be_made_refuses_and_leaves_nothing(tmp_path):
     hooks = hooks_for(tmp_path, run=Machine(is_failing=True))
 
     with pytest.raises(ModuleApplyError) as refusal:
-        hooks.prepare_module()
+        hooks.prepare(None, instance(), LAB)
 
     assert refusal.value.code == "apply_failed"
     assert "no such program" in refusal.value.params["detail"]
-    assert not os.path.exists(hooks.host_key_path)
-    assert not os.path.exists(hooks.host_key_path + ".new")
+    assert not os.path.exists(host_key_of(hooks))
+    assert not os.path.exists(host_key_of(hooks) + ".made")
 
 
-def test_the_details_carry_the_host_key_and_its_fingerprint(tmp_path):
+def test_the_one_host_key_of_an_earlier_version_is_deleted(tmp_path):
     hooks = hooks_for(tmp_path)
-    assert hooks.module_details() == {"host_key": "", "host_key_fingerprint": ""}
+    machine_key = tmp_path / "state" / "ssh_server" / "host_key"
+    machine_key.parent.mkdir(parents=True)
+    machine_key.write_text(private_key_text())
 
-    hooks.prepare_module()
+    assert hooks.prepare_module() == ["removed the machine's host key"]
+    assert hooks.prepare_module() == []
+    assert not machine_key.exists()
 
-    assert hooks.module_details() == {
+
+def test_each_instance_s_details_carry_its_host_key_and_its_fingerprint(tmp_path):
+    hooks = hooks_for(tmp_path)
+    assert hooks.details_extra({"account": "lab"}) == {
+        "host_key": "",
+        "host_key_fingerprint": "",
+    }
+
+    hooks.prepare(None, instance(), LAB)
+
+    assert hooks.details_extra({"account": "lab"}) == {
         "host_key": PUBLIC_KEY,
         "host_key_fingerprint": PUBLIC_KEY_FINGERPRINT,
     }
+    assert hooks.module_details() == {}
+
+
+# --- the run directory ---
+
+
+def test_the_run_directory_is_root_s_and_the_account_s_group_reads_it(tmp_path):
+    owners = Owners()
+    hooks = hooks_for(tmp_path, chown=owners)
+    run_dir = hooks.run_dir("lab")
+
+    hooks.prepare(None, instance(), LAB)
+
+    assert stat.S_IMODE(os.stat(run_dir).st_mode) == 0o750
+    assert (run_dir, 0, 1001) in owners.given
+    for name in ("instance_host_key", "path_folders"):
+        path = os.path.join(run_dir, name)
+        assert stat.S_IMODE(os.stat(path).st_mode) == 0o640
+        assert (path, 0, 1001) in owners.given
+
+
+def test_a_run_directory_an_earlier_version_gave_the_account_is_taken_back(
+    tmp_path,
+):
+    owners = Owners()
+    run = Machine()
+    hooks = hooks_for(tmp_path, chown=owners, run=run)
+    run_dir = hooks.run_dir("lab")
+    os.makedirs(run_dir, mode=0o700)
+    os.chmod(run_dir, 0o700)
+    copy = os.path.join(run_dir, "host_key")
+    with open(copy, "w", encoding="ascii") as stream:
+        stream.write("the machine's host key")
+
+    planted = os.path.join(run_dir, "authorized_key.new")
+    os.symlink("/etc/passwd", planted)
+
+    hooks.prepare(None, instance(), LAB)
+
+    assert stat.S_IMODE(os.stat(run_dir).st_mode) == 0o750
+    assert owners.given[0] == (run_dir, 0, 1001)
+    assert not os.path.exists(copy)
+    assert not os.path.lexists(planted)
+    assert len(run.made_keys()) == 1
+
+
+@pytest.mark.parametrize(
+    "planted",
+    [
+        "instance_host_key.made",
+        "instance_host_key.new",
+        "path_folders",
+        "path_folders.new",
+        "authorized_key",
+        "authorized_key.new",
+    ],
+)
+def test_a_link_in_the_run_directory_turns_no_write_mode_or_owner_onto_another_file(
+    tmp_path, planted
+):
+    owners = Owners()
+    hooks = hooks_for(tmp_path, chown=owners)
+    run_dir = hooks.run_dir("lab")
+    os.makedirs(run_dir)
+    held = tmp_path / "held"
+    held.write_text("kept\n")
+    os.chmod(held, 0o600)
+    os.symlink(held, os.path.join(run_dir, planted))
+    service = None
+
+    hooks.prepare(None, instance(programs=("codex",)), LAB)
+    service = hooks.service(instance(), LAB, {"account": "lab", "port": 22000})
+    for path, text in service.read_files:
+        account_service.write_read_file(path, text, "lab", hooks.machine)
+
+    assert held.read_text() == "kept\n"
+    assert stat.S_IMODE(held.stat().st_mode) == 0o600
+    assert str(held) not in [path for path, _uid, _gid in owners.given]
+    for name in ("instance_host_key", "path_folders", "authorized_key"):
+        assert not os.path.islink(os.path.join(run_dir, name))
+
+
+def test_a_link_at_the_run_directory_is_never_followed(tmp_path):
+    owners = Owners()
+    hooks = hooks_for(tmp_path, chown=owners)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    os.chmod(elsewhere, 0o700)
+    os.makedirs(os.path.dirname(hooks.run_dir("lab")))
+    os.symlink(elsewhere, hooks.run_dir("lab"))
+
+    with pytest.raises(OSError):
+        hooks.prepare(None, instance(), LAB)
+
+    assert os.listdir(elsewhere) == []
+    assert stat.S_IMODE(elsewhere.stat().st_mode) == 0o700
+    assert owners.given == []
 
 
 # --- the instance ---
@@ -218,7 +365,7 @@ def test_the_details_carry_the_host_key_and_its_fingerprint(tmp_path):
 
 def test_a_linux_instance_reads_its_port_and_shell_from_its_environment(tmp_path):
     hooks = hooks_for(tmp_path)
-    hooks.prepare_module()
+    hooks.prepare(None, instance(), LAB)
     run_dir = hooks.run_dir("lab")
 
     service = hooks.service(
@@ -232,7 +379,7 @@ def test_a_linux_instance_reads_its_port_and_shell_from_its_environment(tmp_path
         "--listen",
         "127.0.0.1:${NEUTRINO_SSH_SERVER_PORT}",
         "--host-key",
-        os.path.join(run_dir, "host_key"),
+        os.path.join(run_dir, "instance_host_key"),
         "--authorized-key",
         os.path.join(run_dir, "authorized_key"),
         "--shell",
@@ -244,11 +391,12 @@ def test_a_linux_instance_reads_its_port_and_shell_from_its_environment(tmp_path
         "NEUTRINO_SSH_SERVER_PORT": "22000",
         "NEUTRINO_SSH_SERVER_SHELL": "/bin/bash",
     }
-    assert service.files == (
-        (os.path.join(run_dir, "host_key"), private_key_text()),
+    assert service.read_files == (
+        (os.path.join(run_dir, "instance_host_key"), private_key_text()),
         (os.path.join(run_dir, "authorized_key"), PUBLIC_KEY + "\n"),
     )
-    assert service.directories == (run_dir,)
+    assert service.files == ()
+    assert service.directories == ()
     assert service.working_directory == "~"
     assert service.listen_port == 22000
     assert service.account == "lab"
@@ -353,7 +501,7 @@ def test_the_path_folders_file_names_each_launcher_folder_and_changes_only_with_
     tmp_path,
 ):
     hooks = hooks_for(tmp_path)
-    hooks.prepare_module()
+    hooks.prepare(None, instance(), LAB)
     path = path_folders_of(hooks)
 
     notes = hooks.prepare(None, instance(programs=("codex", "claude_code")), LAB)
@@ -364,7 +512,7 @@ def test_the_path_folders_file_names_each_launcher_folder_and_changes_only_with_
             "/var/lib/neutrino/agent/claude_code/bin\n"
             "/var/lib/neutrino/agent/codex/bin\n"
         )
-    assert stat.S_IMODE(os.stat(path).st_mode) == 0o644
+    assert stat.S_IMODE(os.stat(path).st_mode) == 0o640
     written = os.stat(path)
 
     assert hooks.prepare(None, instance(programs=("claude_code", "codex")), LAB) == []
@@ -376,7 +524,10 @@ def test_the_path_folders_file_names_each_launcher_folder_and_changes_only_with_
     assert hooks.prepare(None, instance(), LAB) == ["wrote the path folders of lab"]
     with open(path, encoding="utf-8") as stream:
         assert stream.read() == ""
-    assert os.listdir(hooks.run_dir("lab")) == ["path_folders"]
+    assert sorted(os.listdir(hooks.run_dir("lab"))) == [
+        "instance_host_key",
+        "path_folders",
+    ]
 
 
 def test_a_new_account_s_path_folders_file_is_written_before_its_run_directory_exists(
@@ -388,25 +539,6 @@ def test_a_new_account_s_path_folders_file_is_written_before_its_run_directory_e
 
     with open(path_folders_of(hooks, "dev"), encoding="utf-8") as stream:
         assert stream.read() == "/var/lib/neutrino/agent/codex/bin\n"
-
-
-def test_a_link_in_the_run_directory_turns_no_write_onto_another_file(tmp_path):
-    hooks = hooks_for(tmp_path)
-    hooks.prepare_module()
-    os.makedirs(hooks.run_dir("lab"))
-    path = path_folders_of(hooks)
-    held = tmp_path / "held"
-    held.write_text("kept\n")
-    os.symlink(held, path)
-    os.symlink(held, path + ".new")
-
-    hooks.prepare(None, instance(programs=("codex",)), LAB)
-
-    assert held.read_text() == "kept\n"
-    assert not os.path.islink(path)
-    with open(path, encoding="utf-8") as stream:
-        assert stream.read() == "/var/lib/neutrino/agent/codex/bin\n"
-    assert not os.path.lexists(path + ".new")
 
 
 # --- the port ---
@@ -465,17 +597,24 @@ def test_two_accounts_run_each_on_its_own_port(runner, tmp_path):
     assert "NEUTRINO_SSH_SERVER_PORT=22000" in environment.read_text()
     for account in ("lab", "dev"):
         run_dir = tmp_path / "state" / "ssh_server" / "run" / account
-        assert stat.S_IMODE(run_dir.stat().st_mode) == 0o700
-        for name in ("host_key", "authorized_key"):
-            assert stat.S_IMODE((run_dir / name).stat().st_mode) == 0o600
+        assert stat.S_IMODE(run_dir.stat().st_mode) == 0o750
+        for name in ("instance_host_key", "authorized_key", "path_folders"):
+            assert stat.S_IMODE((run_dir / name).stat().st_mode) == 0o640
+    assert len(runner.machine.run.made_keys()) == 2
     details = runner.details({})
-    assert details["host_key"] == PUBLIC_KEY
-    assert details["host_key_fingerprint"] == PUBLIC_KEY_FINGERPRINT
+    assert "host_key" not in details
     assert [
-        (row["account"], row["port"], row["is_running"]) for row in details["instances"]
+        (
+            row["account"],
+            row["port"],
+            row["is_running"],
+            row["host_key"],
+            row["host_key_fingerprint"],
+        )
+        for row in details["instances"]
     ] == [
-        ("dev", 22001, True),
-        ("lab", 22000, True),
+        ("dev", 22001, True, PUBLIC_KEY, PUBLIC_KEY_FINGERPRINT),
+        ("lab", 22000, True, PUBLIC_KEY, PUBLIC_KEY_FINGERPRINT),
     ]
     assert runner.is_active() is True
 

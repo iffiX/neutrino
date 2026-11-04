@@ -35,3 +35,15 @@ ACCOUNT_SERVICE_WINDOWS_TASK_RUNNING = "Running"
 
 # The end of every instance's log file.
 ACCOUNT_SERVICE_LOG_SUFFIX = ".log"
+
+# A folder root owns that an instance's account reads, and the files the
+# agent writes in it: on Linux root's with the account's group reading, on
+# macOS root's alone with an access entry for the account.
+ACCOUNT_SERVICE_READ_DIR_MODE = {"linux": 0o750, "darwin": 0o700}
+ACCOUNT_SERVICE_READ_FILE_MODE = {"linux": 0o640, "darwin": 0o600}
+ACCOUNT_SERVICE_DARWIN_READ_DIR_RIGHTS = "list,search,readattr,readextattr,readsecurity"
+ACCOUNT_SERVICE_DARWIN_READ_FILE_RIGHTS = "read,readattr,readextattr,readsecurity"
+# What a file is written as beside its place before it is renamed in.
+ACCOUNT_SERVICE_STAGED_SUFFIX = ".new"
+# How many bytes of a file in such a folder are read at most to compare it.
+ACCOUNT_SERVICE_READ_LIMIT = 1024 * 1024
