@@ -34,11 +34,6 @@ dev = [
     # when it happens to be installed, but it is a Go binary and not required.
     "detect-secrets>=1.5",
 ]
-# The guide's screenshot tool, packaging/screenshots/capture.py.
-screenshots = [
-    "playwright>=1.47",
-    "qrcode[pil]>=8.0",
-]
 
 [tool.black]
 line-length = 88
