@@ -116,6 +116,7 @@ SURVIVING_MODULES = {
     "neutrino_agent.modules.podman.machine_keeper",
     "neutrino_agent.modules.podman.machine_paths",
     "neutrino_agent.modules.podman.machine_runner",
+    "neutrino_agent.modules.podman.package_mark",
     "neutrino_agent.modules.podman.page_ports",
     "neutrino_agent.modules.podman.renderer",
     "neutrino_agent.modules.podman.runner",

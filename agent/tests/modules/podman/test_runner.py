@@ -4,15 +4,21 @@ What these pin beside the verbs: ``observe()`` reads the binary, the unit
 and the details in one go, and each container's details are what
 ``podman ps -a --format json`` and ``podman inspect`` say, image, ports,
 volumes, environment and whether a unit stands for it, so containers
-somebody started by hand are reported the way the hub imports them.
+somebody started by hand are reported the way the hub imports them. The
+``podman`` package installed and removed only with the package mark: a
+Podman found before the install is the person's, left out of the packages
+and kept by an uninstall, a ``runc`` the machine lacks installed beside it,
+and ``runc`` never removed.
 """
 
 import json
+import os
+import shutil
 import subprocess
 
 import pytest
 
-from neutrino_agent.exceptions import ModuleApplyError
+from neutrino_agent.exceptions import InstallError, ModuleApplyError
 from neutrino_agent.modules.shared import system_package as system_package_module
 from neutrino_agent.modules.podman import applier as applier_module
 from neutrino_agent.modules.podman import runner as runner_module
@@ -332,15 +338,60 @@ def test_a_refused_socket_is_apply_failed(runner, system):
     assert refused.value.code == "apply_failed"
 
 
-def test_the_install_turns_the_socket_on_after_the_packages(runner, system):
-    installed: list = []
-    runner._platform.install_system_packages = (
-        lambda names: installed.append(names) or ""
-    )
+class FakeMachine:
+    """The machine's programs on the path and its package manager: a package
+    installed puts its program on the path, and one removed takes it off."""
+
+    def __init__(self, monkeypatch, runner, programs=()):
+        self.programs = set(programs)
+        self.installed: list = []
+        self.removed: list = []
+        self.install_error = None
+        self.is_installing = True
+        monkeypatch.setattr(shutil, "which", self.which)
+        runner._platform.install_system_packages = self.install
+        runner._platform.remove_system_packages = self.remove
+
+    def which(self, name):
+        found = os.path.basename(name)
+        return f"/usr/bin/{found}" if found in self.programs else None
+
+    def install(self, names):
+        self.installed.append(list(names))
+        if self.install_error is not None:
+            raise self.install_error
+        if self.is_installing:
+            self.programs.update(names)
+        return ""
+
+    def remove(self, names):
+        self.removed.append(list(names))
+        self.programs.difference_update(names)
+        return ""
+
+
+RECIPE = {
+    "method": "system",
+    "params": {
+        "packages": ["podman", "runc"],
+        "verify": "podman --version && runc --version",
+        "uninstall": {"packages": ["podman"], "post_uninstall": []},
+    },
+}
+
+
+def package_mark(tmp_path):
+    return tmp_path / "podman" / "package_mark"
+
+
+def test_the_install_turns_the_socket_on_after_the_packages(
+    runner, system, monkeypatch
+):
+    machine = FakeMachine(monkeypatch, runner)
 
     runner.install({"method": "system", "params": {"packages": ["podman"]}})
 
-    assert installed == [["podman"]]
+    assert machine.installed == [["podman"]]
     assert system.calls == [["systemctl", "enable", "--now", "podman.socket"]]
 
 
@@ -349,19 +400,115 @@ def test_the_install_leaves_runc_out_where_a_runc_is_on_the_path(
 ):
     """Docker CE's containerd.io includes a runc and conflicts with the
     distribution's package, which apt would remove Docker for."""
-    installed: list = []
-    runner._platform.install_system_packages = (
-        lambda names: installed.append(names) or ""
-    )
-    recipe = {"method": "system", "params": {"packages": ["podman", "runc"]}}
+    machine = FakeMachine(monkeypatch, runner, programs={"runc"})
 
-    monkeypatch.setattr(runner_module.shutil, "which", lambda name: None)
-    runner.install(recipe)
-    monkeypatch.setattr(runner_module.shutil, "which", lambda name: f"/usr/bin/{name}")
-    runner.install(recipe)
+    runner.install(RECIPE)
 
-    assert installed == [["podman", "runc"], ["podman"]]
-    assert recipe["params"]["packages"] == ["podman", "runc"]
+    assert machine.installed == [["podman"]]
+    assert RECIPE["params"]["packages"] == ["podman", "runc"]
+
+
+def test_a_machine_with_no_podman_gets_the_packages_and_the_package_mark(
+    runner, system, monkeypatch, tmp_path
+):
+    machine = FakeMachine(monkeypatch, runner)
+
+    runner.install(RECIPE)
+
+    assert machine.installed == [["podman", "runc"]]
+    assert package_mark(tmp_path).is_file()
+    assert oct(package_mark(tmp_path).stat().st_mode & 0o777) == oct(0o600)
+    assert runner.is_software_kept() is False
+    assert system.calls == [["systemctl", "enable", "--now", "podman.socket"]]
+
+
+def test_a_persons_podman_gets_no_package_manager_and_no_mark(
+    runner, system, monkeypatch, tmp_path
+):
+    lines: list = []
+    runner._log = lines.append
+    machine = FakeMachine(monkeypatch, runner, programs={"podman", "runc"})
+
+    runner.install(RECIPE)
+
+    assert machine.installed == []
+    assert not package_mark(tmp_path).exists()
+    assert "podman: found the machine's own Podman, left its package out" in lines
+    assert runner.is_software_kept() is True
+    assert system.calls == [["systemctl", "enable", "--now", "podman.socket"]]
+
+
+def test_a_persons_podman_with_no_runc_gets_runc_alone(
+    runner, system, monkeypatch, tmp_path
+):
+    machine = FakeMachine(monkeypatch, runner, programs={"podman"})
+
+    runner.install(RECIPE)
+
+    assert machine.installed == [["runc"]]
+    assert not package_mark(tmp_path).exists()
+    assert runner.is_software_kept() is True
+
+
+def test_the_module_s_podman_goes_to_the_package_manager_again_with_its_mark(
+    runner, system, monkeypatch, tmp_path
+):
+    machine = FakeMachine(monkeypatch, runner)
+    runner.install(RECIPE)
+
+    runner.install(RECIPE)
+
+    assert machine.installed == [["podman", "runc"], ["podman"]]
+    assert package_mark(tmp_path).is_file()
+
+
+@pytest.mark.parametrize("is_failed", [True, False])
+def test_a_run_that_leaves_no_podman_leaves_no_mark(
+    runner, system, monkeypatch, tmp_path, is_failed
+):
+    machine = FakeMachine(monkeypatch, runner)
+    machine.is_installing = False
+    if is_failed:
+        machine.install_error = InstallError("apt-get failed", exit_code=100)
+
+    try:
+        runner.install(RECIPE)
+    except InstallError:
+        assert is_failed
+
+    assert machine.installed == [["podman", "runc"]]
+    assert not package_mark(tmp_path).exists()
+    assert runner.is_software_kept() is False
+
+
+def test_an_uninstall_with_the_mark_removes_podman_and_the_mark_and_keeps_runc(
+    runner, system, monkeypatch, tmp_path
+):
+    machine = FakeMachine(monkeypatch, runner)
+    runner.install(RECIPE)
+
+    runner.uninstall(RECIPE)
+
+    assert machine.removed == [["podman"]]
+    assert machine.programs == {"runc"}
+    assert not package_mark(tmp_path).exists()
+    assert runner.verify({}) is False
+
+
+def test_an_uninstall_of_a_persons_podman_removes_no_package(
+    runner, system, monkeypatch, tmp_path
+):
+    lines: list = []
+    runner._log = lines.append
+    machine = FakeMachine(monkeypatch, runner, programs={"podman", "runc"})
+    runner.install(RECIPE)
+
+    runner.uninstall(RECIPE)
+
+    assert machine.removed == []
+    assert machine.programs == {"podman", "runc"}
+    assert "podman: removed no package" in lines
+    assert runner.is_software_kept() is True
 
 
 def test_is_active_is_the_units_word(runner, monkeypatch):

@@ -12,7 +12,10 @@ up by hand. The names of the declared and hub containers are kept in a
 root-only record, read until the first apply after a start. Every step of
 the module's task takes the step lock ``containers`` alone. **Stop** stops
 and disables every declared and hub unit, and an apply under ``stopped``
-enables and starts none of them.
+enables and starts none of them. A Podman on the machine before the install
+is the person's: the install leaves the ``podman`` package out and an
+uninstall removes no package, and only a Podman the package mark stands for
+is the module's.
 
 Not pure: drives podman and systemd through the applier.
 """
@@ -31,6 +34,7 @@ import subprocess
 from neutrino_agent.constants import AGENT_STEP_CONFIGURE, AGENT_WANT_STOPPED
 from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.shared.base import command_outcome
+from neutrino_agent.modules.shared.package import params_of
 from neutrino_agent.modules.podman.applier import (
     PodmanContainerController,
     PodmanRegistriesApplier,
@@ -56,11 +60,13 @@ from neutrino_agent.modules.podman.constants import (
     PODMAN_CONTAINER_ACTIONS,
     PODMAN_DEFAULT_NETWORK,
     PODMAN_JOURNAL_LINES,
+    PODMAN_PACKAGE,
     PODMAN_RECORD_ACCOUNT,
     PODMAN_RECORD_FIELDS,
     PODMAN_RUNTIME,
     PODMAN_UNIT,
 )
+from neutrino_agent.modules.podman.package_mark import PodmanPackageMark
 from neutrino_agent.modules.podman.page_ports import PodmanPagePortStore
 from neutrino_agent.modules.podman.renderer import (
     PodmanRegistriesRenderer,
@@ -72,6 +78,24 @@ from neutrino_agent.modules.shared.record_store import InstanceRecordStore
 from neutrino_agent.modules.shared.step_locks import CONTAINERS_ALONE_LOCKS
 from neutrino_agent.modules.shared.subprocess_run import command_detail, run, unit_state
 from neutrino_agent.modules.shared.system_package import SystemPackageModuleRunner
+
+
+def without_package(recipe: dict, package: str) -> dict:
+    """A recipe whose packages leave one package out.
+
+    Args:
+        recipe: The module's recipe.
+        package: The package's name.
+
+    Returns:
+        A copy with the package out of ``params.packages``; the recipe as it
+        is when it names no params.
+    """
+    params = recipe.get("params") if isinstance(recipe, dict) else None
+    if not isinstance(params, dict):
+        return recipe
+    packages = [name for name in params.get("packages") or [] if name != package]
+    return {**recipe, "params": {**params, "packages": packages}}
 
 
 def without_present_runtime(recipe: dict) -> dict:
@@ -87,11 +111,9 @@ def without_present_runtime(recipe: dict) -> dict:
         A copy with ``runc`` out of ``params.packages`` where one is on the
         path; the recipe as it is otherwise.
     """
-    params = recipe.get("params") if isinstance(recipe, dict) else None
-    if not isinstance(params, dict) or shutil.which(PODMAN_RUNTIME) is None:
+    if shutil.which(PODMAN_RUNTIME) is None:
         return recipe
-    packages = [name for name in params.get("packages") or [] if name != PODMAN_RUNTIME]
-    return {**recipe, "params": {**params, "packages": packages}}
+    return without_package(recipe, PODMAN_RUNTIME)
 
 
 class PodmanModuleRunner(SystemPackageModuleRunner):
@@ -113,6 +135,9 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
             directory=os.path.join(var_dir, self.name), fields=PODMAN_RECORD_FIELDS
         )
         self._page_ports = PodmanPagePortStore(directory=var_dir, log=self._log)
+        self._package_mark = PodmanPackageMark(
+            module_dir=os.path.join(var_dir, self.name)
+        )
 
     def take_config(self, config: dict) -> None:
         """Take the configuration the state names, before any apply of it.
@@ -133,7 +158,11 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
     def install(self, recipe: dict) -> None:
         """Install the packages, then turn ``podman.socket`` on.
 
-        ``runc`` is left out where a ``runc`` is already on the path.
+        ``runc`` is left out where a ``runc`` is already on the path. A
+        Podman on the machine with no package mark is the person's: the
+        ``podman`` package is left out as well, and no mark is written. The
+        mark is written before the package manager runs on a machine with no
+        Podman, and deleted again when the run leaves no Podman.
 
         Args:
             recipe: The module's recipe.
@@ -142,9 +171,48 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
             InstallError: If a step or the package manager refuses.
             PlatformUnsupportedError: If this platform installs nothing.
             subprocess.CalledProcessError: If systemd refuses the socket.
+            OSError: When the mark cannot be written.
         """
-        super().install(without_present_runtime(recipe))
+        recipe = without_present_runtime(recipe)
+        if not self._package_mark.is_kept() and self.verify(recipe):
+            self._log("podman: found the machine's own Podman, left its package out")
+            recipe = without_package(recipe, PODMAN_PACKAGE)
+            if params_of(recipe).get("packages"):
+                super().install(recipe)
+        else:
+            self._package_mark.keep()
+            try:
+                super().install(recipe)
+            finally:
+                if not self.verify(recipe):
+                    self._package_mark.forget()
         run(["systemctl", "enable", "--now", PODMAN_UNIT])
+
+    def uninstall(self, recipe: dict) -> None:
+        """Take the ``podman`` package off where the package mark stands, then delete the mark.
+
+        A Podman with no mark is the person's: no package is removed.
+
+        Args:
+            recipe: The module's recipe.
+
+        Raises:
+            InstallError: If the uninstall refuses.
+            PlatformUnsupportedError: If this platform removes nothing.
+        """
+        if not self._package_mark.is_kept():
+            self._log("podman: removed no package")
+            return
+        super().uninstall(recipe)
+        self._package_mark.forget()
+
+    def is_software_kept(self) -> bool:
+        """Whether an uninstall leaves a Podman on the machine: a person's, one with no package mark.
+
+        Returns:
+            True while such a Podman is on the machine.
+        """
+        return not self._package_mark.is_kept() and self.verify({})
 
     def step_locks(self, step: str) -> tuple:
         """``containers`` alone, for every step of the module's own task.

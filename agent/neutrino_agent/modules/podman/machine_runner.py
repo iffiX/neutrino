@@ -83,7 +83,6 @@ from neutrino_agent.modules.podman.constants import (
     PODMAN_MACHINE_RUNNER,
     PODMAN_MACHINE_RECORD_FIELDS,
     PODMAN_MODULE_NAME,
-    PODMAN_PACKAGE_MARK,
     PODMAN_SOURCE_MANUAL,
     PODMAN_STEP_MACHINE,
     PODMAN_STEP_RESTART,
@@ -93,6 +92,7 @@ from neutrino_agent.modules.podman.constants import (
 from neutrino_agent.modules.podman.machine import PodmanMachine
 from neutrino_agent.modules.podman.machine_keeper import keeper_service
 from neutrino_agent.modules.podman.machine_paths import to_host_source
+from neutrino_agent.modules.podman.package_mark import PodmanPackageMark
 from neutrino_agent.modules.podman.page_ports import PodmanPagePortStore
 from neutrino_agent.modules.podman.renderer import (
     PodmanMachineScriptRenderer,
@@ -408,6 +408,9 @@ class PodmanMachineModuleRunner(ModuleRunner):
         self._sleep = sleep
         self._probe = PodmanServiceProbe()
         self._join = ntpath.join if platform.os_name == "windows" else os.path.join
+        self._package_mark = PodmanPackageMark(
+            module_dir=self._service_machine.module_dir, join=self._join
+        )
         self._lock = threading.Lock()
         # One apply, stop or removal at a time.
         self._apply_lock = threading.Lock()
@@ -569,16 +572,16 @@ class PodmanMachineModuleRunner(ModuleRunner):
         if artifact.get("name") == PODMAN_WINDOWS_WSL_ARTIFACT:
             self._system.install_artifact(dict(artifact), kept)
             return
-        if not self._is_package_ours():
+        if not self._package_mark.is_kept():
             if self.verify(recipe):
                 self._log("podman: found the computer's own Podman, installed nothing")
                 return
-            self._keep_package_mark()
+            self._package_mark.keep()
         try:
             self._system.install_artifact(dict(artifact), kept)
         finally:
             if not self.verify(recipe):
-                self._forget_package_mark()
+                self._package_mark.forget()
 
     def uninstall_package(self, recipe: dict, artifact: dict) -> None:
         """Uninstall the Podman package before another version's is installed.
@@ -598,7 +601,7 @@ class PodmanMachineModuleRunner(ModuleRunner):
         """
         if artifact.get("name") == PODMAN_WINDOWS_WSL_ARTIFACT:
             return
-        if not self._is_package_ours():
+        if not self._package_mark.is_kept():
             self._log("podman: the computer's own Podman stays for another version")
             return
         self._system.uninstall()
@@ -624,7 +627,7 @@ class PodmanMachineModuleRunner(ModuleRunner):
             held = self._configured_record()
             if held:
                 self._retire(held)
-        if self._is_package_ours():
+        if self._package_mark.is_kept():
             self._system.uninstall()
         else:
             self._log("podman: removed no package")
@@ -636,7 +639,7 @@ class PodmanMachineModuleRunner(ModuleRunner):
         Returns:
             True while such a Podman is on the computer.
         """
-        return not self._is_package_ours() and self.verify({})
+        return not self._package_mark.is_kept() and self.verify({})
 
     def validate(self, config: dict) -> None:
         """Parse and check a configuration against this computer.
@@ -1354,31 +1357,6 @@ class PodmanMachineModuleRunner(ModuleRunner):
         """The last apply's record, empty when none is held."""
         records = self._records.read_all()
         return records[0] if records else {}
-
-    def _package_mark_path(self) -> str:
-        """The mark that the module installed the computer's Podman."""
-        return self._join(self._service_machine.module_dir, PODMAN_PACKAGE_MARK)
-
-    def _is_package_ours(self) -> bool:
-        """Whether the package mark stands."""
-        return os.path.isfile(self._package_mark_path())
-
-    def _keep_package_mark(self) -> None:
-        """Write the package mark, root-only.
-
-        Raises:
-            OSError: When the mark cannot be written.
-        """
-        os.makedirs(self._service_machine.module_dir, exist_ok=True)
-        path = self._package_mark_path()
-        with open(path, "a", encoding="utf-8"):
-            pass
-        os.chmod(path, 0o600)
-
-    def _forget_package_mark(self) -> None:
-        """Delete the package mark, when there is one."""
-        with contextlib.suppress(FileNotFoundError):
-            os.unlink(self._package_mark_path())
 
     def _default_memory_gib(self) -> int:
         """The memory a 0 in the Run settings gives, the computer's memory read once."""
