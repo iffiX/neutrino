@@ -22,7 +22,7 @@ def test_a_failed_row_keeps_the_version_block():
     assert "const FAILED_STATES" not in page
     assert (
         "{(isPresent || FAILED_STATES.includes(activeRow.state)) && !isCarriedRow && "
-        "( <ModuleVersionBlock"
+        "(!isProgram || hasModuleCopy(activeRow)) && ( <ModuleVersionBlock"
     ) in page
     assert "canPress={isAgentOnline && !isInTransit}" in page
 

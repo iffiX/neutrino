@@ -3,6 +3,7 @@ import { useState } from "react";
 import { ApplyBar } from "./apply_bar";
 import { ErrorPanel } from "./error_panel";
 import { StatusDot } from "./status_dot";
+import { AI_TOOLS_TONES, aiToolsWords } from "../ai_tools_words";
 import { apiPath, apiPost, describeError } from "../api_client";
 import { codeParams } from "../code_params";
 import { hasWord, t, useLanguage } from "../i18n";
@@ -17,6 +18,7 @@ import { HUB_EVENT_CONFIG, HUB_EVENT_DEVICE_REPORT } from "../use_hub_events";
 import type { ReportedModule } from "../use_settled_apply";
 import type { ModuleDescriptor } from "../module_descriptors";
 import type {
+  AccountAiToolsView,
   EnabledAccountsUpdate,
   EnabledAccountsView,
   EnabledAccountView,
@@ -32,7 +34,9 @@ import "./instances_panel.css";
  * of the order, and the apply bar writes the whole list. While the module
  * reads failed the bar is lit, and its apply with nothing changed tries the
  * module again. An apply writes no want on a module not running. A row shows the module's own field of the account, whether
- * its instance runs, and its code's words. The SSH server shows the machine's
+ * its instance runs, and its code's words. A command line program's row shows
+ * the copy the account uses, its path, its version and the account's AI
+ * tools state. The SSH server shows the machine's
  * host key under the rows. The module's words come from its descriptor.
  */
 
@@ -52,6 +56,21 @@ const WANT_RUNNING = "running";
 const FIELD_DEFAULT_KEYS: Record<string, string> = {
   shell_path: "ui.modules.login_shell",
   share_path: "ui.modules.home_folder",
+};
+
+/** The copy a command line program's account uses, in the source chip's
+ * words. */
+const COPY_KEYS: Record<string, string> = {
+  user: "ui.modules.source_user",
+  module: "ui.modules.source_upstream",
+};
+
+/** The AI tools result of an account the machine has not reported: its tools
+ * keep their own settings. */
+const AI_TOOLS_UNREPORTED: AccountAiToolsView = {
+  state: "switched_back",
+  code: "",
+  params: {},
 };
 
 /** The enabled accounts, in the order they were checked. */
@@ -99,7 +118,7 @@ export function InstancesPanel({
   const [error, setError] = useState<string | null>(null);
   const settle = useSettledApply(
     reportOf(saved, descriptor),
-    isWaitingForStart ? want : WANT_RUNNING,
+    isWaitingForStart || descriptor.isProgram === true ? want : WANT_RUNNING,
   );
 
   if (resource.error !== null && saved === null) {
@@ -172,19 +191,31 @@ export function InstancesPanel({
           <p className="field_hint">{t("ui.modules.no_accounts")}</p>
         ) : (
           <div className="instances_rows">
-            {saved.accounts.map((row) => (
-              <AccountRow
-                key={row.account}
-                row={row}
-                descriptor={descriptor}
-                isReady={isReady}
-                isChecked={draft.accounts.includes(row.account)}
-                isDisabled={isLocked}
-                onToggle={(isOn) => {
-                  toggle(row.account, isOn);
-                }}
-              />
-            ))}
+            {saved.accounts.map((row) =>
+              descriptor.isProgram === true ? (
+                <ProgramAccountRow
+                  key={row.account}
+                  row={row}
+                  isChecked={draft.accounts.includes(row.account)}
+                  isDisabled={isLocked}
+                  onToggle={(isOn) => {
+                    toggle(row.account, isOn);
+                  }}
+                />
+              ) : (
+                <AccountRow
+                  key={row.account}
+                  row={row}
+                  descriptor={descriptor}
+                  isReady={isReady}
+                  isChecked={draft.accounts.includes(row.account)}
+                  isDisabled={isLocked}
+                  onToggle={(isOn) => {
+                    toggle(row.account, isOn);
+                  }}
+                />
+              ),
+            )}
           </div>
         )}
         {descriptor.name === SSH_SERVER_MODULE &&
@@ -248,17 +279,12 @@ function AccountRow({
   const fieldValue = field === null ? "" : (row[field] ?? "");
   return (
     <div className="instances_row">
-      <label className="instances_row_check">
-        <input
-          type="checkbox"
-          checked={isChecked}
-          disabled={isDisabled}
-          onChange={(event) => {
-            onToggle(event.target.checked);
-          }}
-        />
-        <span className="mono">{row.account}</span>
-      </label>
+      <AccountCheck
+        account={row.account}
+        isChecked={isChecked}
+        isDisabled={isDisabled}
+        onToggle={onToggle}
+      />
       {field !== null && (
         <span className="instances_row_field mono">
           {fieldValue !== "" ? (
@@ -286,6 +312,88 @@ function AccountRow({
   );
 }
 
+interface ProgramAccountRowProps {
+  row: EnabledAccountView;
+  isChecked: boolean;
+  isDisabled: boolean;
+  onToggle: (isOn: boolean) => void;
+}
+
+/** One available account of a command line program: its check, and once it
+ * is enabled the copy it uses, that copy's version, its AI tools state, shown
+ * and never set here, and the copy's path on a line of its own. */
+function ProgramAccountRow({
+  row,
+  isChecked,
+  isDisabled,
+  onToggle,
+}: ProgramAccountRowProps) {
+  const copyKey = COPY_KEYS[row.copy ?? ""];
+  const reported = row.ai_tools ?? AI_TOOLS_UNREPORTED;
+  const tools = reported.state === "" ? AI_TOOLS_UNREPORTED : reported;
+  return (
+    <div className="instances_row">
+      <AccountCheck
+        account={row.account}
+        isChecked={isChecked}
+        isDisabled={isDisabled}
+        onToggle={onToggle}
+      />
+      {row.is_enabled && copyKey !== undefined && (
+        <>
+          <span className="badge">{t(copyKey)}</span>
+          <span className="instances_row_version mono">{row.version}</span>
+        </>
+      )}
+      {row.is_enabled && (
+        <span className="instances_row_tools">
+          <StatusDot
+            tone={AI_TOOLS_TONES[tools.state] ?? "idle"}
+            label={aiToolsWords(row.account, tools, true)}
+          />
+        </span>
+      )}
+      {row.is_enabled && copyKey !== undefined && (
+        <span className="instances_row_path mono">{row.path}</span>
+      )}
+      {row.code !== "" && (
+        <span className="field_error instances_row_error">
+          {describeCode(row)}
+        </span>
+      )}
+    </div>
+  );
+}
+
+interface AccountCheckProps {
+  account: string;
+  isChecked: boolean;
+  isDisabled: boolean;
+  onToggle: (isOn: boolean) => void;
+}
+
+/** An account's check and its name, at the start of its row. */
+function AccountCheck({
+  account,
+  isChecked,
+  isDisabled,
+  onToggle,
+}: AccountCheckProps) {
+  return (
+    <label className="instances_row_check">
+      <input
+        type="checkbox"
+        checked={isChecked}
+        disabled={isDisabled}
+        onChange={(event) => {
+          onToggle(event.target.checked);
+        }}
+      />
+      <span className="mono">{account}</span>
+    </label>
+  );
+}
+
 /** What the form starts from: the enabled accounts in their order. */
 function draftOf(view: EnabledAccountsView): EnabledDraft {
   return {
@@ -296,7 +404,8 @@ function draftOf(view: EnabledAccountsView): EnabledDraft {
 }
 
 /** The module as an apply waits on it: its state and its enabled rows. A
- * module without a program waits for its state alone. */
+ * module without a program waits for its state alone, and a command line
+ * program for its state with no row. */
 function reportOf(
   view: EnabledAccountsView | null,
   descriptor: ModuleDescriptor,
@@ -306,12 +415,16 @@ function reportOf(
   }
   return {
     state: view.state,
-    instances: view.accounts
-      .filter((row) => row.is_enabled)
-      .map((row) => ({
-        is_running: row.is_running || descriptor.isWithoutProgram === true,
-        code: row.code,
-      })),
+    instances:
+      descriptor.isProgram === true
+        ? []
+        : view.accounts
+            .filter((row) => row.is_enabled)
+            .map((row) => ({
+              is_running:
+                row.is_running || descriptor.isWithoutProgram === true,
+              code: row.code,
+            })),
   };
 }
 

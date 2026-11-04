@@ -4,8 +4,8 @@
  *
  * One `instances_panel.tsx` draws each tab's **Enabled accounts**. What
  * differs between them is here: the apply bar's words, the account's own
- * field a row shows beside its name, and the line saying the owner installs
- * the software.
+ * field a row shows beside its name, the line saying the owner installs
+ * the software, and whether the module is a command line program.
  */
 
 /** The account's field a module's row shows beside the account's name. */
@@ -29,6 +29,9 @@ export interface ModuleDescriptor {
   ownerNoticeVersion?: string;
   /** Whether the module runs no program until a person opens one. */
   isWithoutProgram?: boolean;
+  /** Whether the module is a command line program: each row shows the copy
+   * its account uses. */
+  isProgram?: boolean;
 }
 
 export const MODULE_DESCRIPTORS: Record<string, ModuleDescriptor> = {
@@ -78,6 +81,20 @@ export const MODULE_DESCRIPTORS: Record<string, ModuleDescriptor> = {
     apply: "ui.codeg.apply",
     applyHint: "ui.codeg.apply_hint",
     field: null,
+  },
+  claude_code: {
+    name: "claude_code",
+    apply: "ui.claude_code.apply",
+    applyHint: "ui.program.apply_hint",
+    field: null,
+    isProgram: true,
+  },
+  codex: {
+    name: "codex",
+    apply: "ui.codex.apply",
+    applyHint: "ui.program.apply_hint",
+    field: null,
+    isProgram: true,
   },
   siyuan: {
     name: "siyuan",

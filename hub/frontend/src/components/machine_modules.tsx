@@ -68,8 +68,9 @@ import "./machine_modules.css";
  * `Log · last 200 lines` and the log box,
  * `Configuration` and the module's panel while Configure holds it open, and
  * the presses at the right edge. The modules the agent carries show their
- * state line and their panel alone. The picked tab is kept in the address
- * as `?module=`.
+ * state line and their panel alone. A command line program has no Start or
+ * Stop, and its version line shows while its own copy is on the machine.
+ * The picked tab is kept in the address as `?module=`.
  */
 
 /** The machine a module's own panels are pointed at. */
@@ -87,6 +88,8 @@ interface PanelTarget {
   /** Whether the agent's package carries the module, with no Start of its
    * own. */
   isCarried: boolean;
+  /** Whether the module is a command line program, with no Start. */
+  isProgram: boolean;
   /** Each module's title as its manifest gives it, by name. */
   manifestTitles: Record<string, string>;
 }
@@ -113,7 +116,11 @@ const ACCOUNT_LAYER_PANELS: Record<string, (target: PanelTarget) => ReactNode> =
           deviceId={target.deviceId}
           basePath={target.basePath}
           isEditable={target.isEditable}
-          isWaitingForStart={!target.isCarried && target.want !== WANT_RUNNING}
+          isWaitingForStart={
+            !target.isCarried &&
+            !target.isProgram &&
+            target.want !== WANT_RUNNING
+          }
           want={target.want}
         />
       ),
@@ -170,18 +177,32 @@ const MODULE_PANELS: Record<string, (target: PanelTarget) => ReactNode> = {
   ),
 };
 
-/** The source chip of each install method: who installs, updates and
- * removes the software. A method outside the table shows no chip. */
+/** The source chip of each word the hub derives: who installs, updates and
+ * removes the software. A word outside the table shows no chip. */
 const SOURCE_KEYS: Record<string, string> = {
   agent: "ui.modules.source_agent",
-  builtin: "ui.modules.source_system",
   system: "ui.modules.source_system",
-  hub: "ui.modules.source_upstream",
+  upstream: "ui.modules.source_upstream",
   container: "ui.modules.source_container",
+  user: "ui.modules.source_user",
 };
 
-/** The kind chip of every module: a service, which Start and Stop run. */
-const KIND_SERVICE_KEY = "ui.modules.kind_service"; // scan: allow
+/** The kind chip of each kind: a service, which Start and Stop run, or a
+ * program, which a person runs. A word outside the table shows no chip. */
+const KIND_KEYS: Record<string, string> = {
+  service: "ui.modules.kind_service",
+  program: "ui.modules.kind_program",
+};
+
+/** The kind of a command line program, which has no Start or Stop. */
+const KIND_PROGRAM = "program";
+
+/** The line over a command line program's state line, saying the owner
+ * installs it. */
+const PROGRAM_NOTICES: Record<string, string> = {
+  claude_code: "ui.claude_code.owner_notice",
+  codex: "ui.codex.owner_notice",
+};
 
 /** The module whose containers run in an account's Podman machine. */
 const CONTAINERS_MODULE = "podman";
@@ -627,6 +648,9 @@ export function MachineModules({
   const panels =
     activeModule === null ? undefined : MODULE_PANELS[activeModule];
   const isCarriedRow = activeRow?.is_carried === true;
+  const isProgram = activeRow?.kind === KIND_PROGRAM;
+  const programNotice =
+    activeRow === undefined ? undefined : PROGRAM_NOTICES[activeRow.name];
   const isConfiguring =
     activeModule !== null &&
     panels !== undefined &&
@@ -732,6 +756,9 @@ export function MachineModules({
           {activeRow.name === AYAKALEAF_MODULE && (
             <p className="field_hint">{t("ui.ayakaleaf.owner_notice")}</p>
           )}
+          {programNotice !== undefined && (
+            <p className="field_hint">{t(programNotice)}</p>
+          )}
 
           {activeModule === TERMS_MODULE && (
             <>
@@ -761,6 +788,7 @@ export function MachineModules({
                 <StatusDot
                   tone={dotTone(activeRow)}
                   label={stateWord(activeRow)}
+                  isPulsing={isProgram ? false : undefined}
                 />
               </div>
               {stepsTask !== null && reportedRow !== undefined && (
@@ -773,7 +801,8 @@ export function MachineModules({
                 />
               )}
               {(isPresent || FAILED_STATES.includes(activeRow.state)) &&
-                !isCarriedRow && (
+                !isCarriedRow &&
+                (!isProgram || hasModuleCopy(activeRow)) && (
                   <ModuleVersionBlock
                     key={activeRow.name}
                     deviceId={deviceId}
@@ -877,6 +906,7 @@ export function MachineModules({
                       platformOs,
                       want: wantAtApply(activeRow),
                       isCarried: isCarriedRow,
+                      isProgram: isProgram,
                       manifestTitles,
                     })}
                   </fieldset>
@@ -898,7 +928,10 @@ export function MachineModules({
                         canAct &&
                         (activeRow.state === "absent" ||
                           activeRow.state === "install_failed" ||
-                          isRetried(activeRow, "installed"))
+                          isRetried(activeRow, "installed") ||
+                          (isProgram &&
+                            (isUnclaimed(activeRow) ||
+                              isRetried(activeRow, WANT_RUNNING))))
                       }
                       disabledReason={
                         isPresent ? t("ui.modules.install_present") : undefined
@@ -907,32 +940,36 @@ export function MachineModules({
                       onClick={() => void askInstall()}
                     />
                   )}
-                  <ActionButton
-                    action="start"
-                    isEnabled={
-                      canAct &&
-                      (activeRow.state === "installed" ||
-                        activeRow.state === "stopped" ||
-                        isUnclaimed(activeRow) ||
-                        isRetried(activeRow, "running") ||
-                        isRequiredModuleNeeded(activeRow))
-                    }
-                    isBusy={busyAction === "start"}
-                    onClick={() => void act("start")}
-                  />
-                  <ActionButton
-                    action="stop"
-                    isEnabled={
-                      canAct &&
-                      (activeRow.state === "running" ||
-                        (activeRow.state === "installed" &&
-                          activeRow.is_active) ||
-                        isRetried(activeRow, "stopped") ||
-                        isKeeperStoppable(activeRow))
-                    }
-                    isBusy={busyAction === "stop"}
-                    onClick={askStop}
-                  />
+                  {!isProgram && (
+                    <>
+                      <ActionButton
+                        action="start"
+                        isEnabled={
+                          canAct &&
+                          (activeRow.state === "installed" ||
+                            activeRow.state === "stopped" ||
+                            isUnclaimed(activeRow) ||
+                            isRetried(activeRow, "running") ||
+                            isRequiredModuleNeeded(activeRow))
+                        }
+                        isBusy={busyAction === "start"}
+                        onClick={() => void act("start")}
+                      />
+                      <ActionButton
+                        action="stop"
+                        isEnabled={
+                          canAct &&
+                          (activeRow.state === "running" ||
+                            (activeRow.state === "installed" &&
+                              activeRow.is_active) ||
+                            isRetried(activeRow, "stopped") ||
+                            isKeeperStoppable(activeRow))
+                        }
+                        isBusy={busyAction === "stop"}
+                        onClick={askStop}
+                      />
+                    </>
+                  )}
                   <ActionButton
                     action="uninstall"
                     isEnabled={
@@ -1177,15 +1214,22 @@ function ModuleListRow({ row, isOn, onSelect }: ModuleListRowProps) {
 }
 
 /** The two chips left of a tab's state: the source of the module's software
- * on this machine, and the module's kind. */
+ * on this machine, and the module's kind, each the word the hub sends. */
 function ModuleChips({ row }: { row: DeviceModuleView }) {
-  const sourceKey = SOURCE_KEYS[row.method];
+  const sourceKey = SOURCE_KEYS[row.source];
+  const kindKey = KIND_KEYS[row.kind];
   return (
     <>
       {sourceKey !== undefined && <span className="badge">{t(sourceKey)}</span>}
-      <span className="badge">{t(KIND_SERVICE_KEY)}</span>
+      {kindKey !== undefined && <span className="badge">{t(kindKey)}</span>}
     </>
   );
+}
+
+/** Whether a command line program's own copy is on the machine, as its
+ * `details` report it. */
+function hasModuleCopy(row: DeviceModuleView): boolean {
+  return row.details.has_module_copy === true;
 }
 
 /** Whether a module is in transit: a state of the busy set, or a task that
@@ -1281,8 +1325,12 @@ function restartOwner(
 }
 
 /** The word a module's state wears; a token outside the table reads as a
- * machine that has not reported. */
+ * machine that has not reported. A command line program reads ready in
+ * place of running. */
 function stateWord(row: DeviceModuleView): string {
+  if (row.state === "running" && row.kind === KIND_PROGRAM) {
+    return t("state.ready");
+  }
   if (row.state === "running" && row.is_without_accounts) {
     return t("state.running_no_accounts");
   }

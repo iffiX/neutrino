@@ -4,8 +4,10 @@ What these pin: ``ui.modules.stopped_hint`` says in both languages what
 ui_text.md writes; the account layer's apply bar shows it in place of the
 module's own hint while the module's want is not ``running``, an ``installed``
 row never started among them, and its apply then waits for the want it has;
-Terminal's and the SSH server's tabs, which the agent's package carries, never
-show it; the folder shares and Containers' Run settings show it the same way.
+Terminal's and the SSH server's tabs, which the agent's package carries, and
+the command line programs' tabs, which have no Start, never show it, and a
+program's apply waits for the want it has; the folder shares and Containers'
+Run settings show it the same way.
 Every apply bar the machine page reaches is listed here by its panel, and each
 shows it in place of its own hint, Remote desktop's alone keeping its own. A
 row with no want that reads ``running`` reaches its panels as wanted ``running``,
@@ -99,16 +101,18 @@ def test_the_account_layer_s_apply_bar_shows_it_and_waits_for_the_want_it_has():
     )
     assert (
         "useSettledApply( reportOf(saved, descriptor), "
-        "isWaitingForStart ? want : WANT_RUNNING, )" in panel
+        "isWaitingForStart || descriptor.isProgram === true ? want : WANT_RUNNING, )"
+        in panel
     )
 
 
-def test_a_carried_module_never_shows_it_and_the_folder_shares_do():
+def test_a_carried_module_or_a_program_never_shows_it_and_the_folder_shares_do():
     page = flat(source("machine_modules.tsx"))
     shares = flat(source("folder_shares_panel.tsx"))
 
     assert (
-        "isWaitingForStart={!target.isCarried && target.want !== WANT_RUNNING}" in page
+        "isWaitingForStart={ !target.isCarried && !target.isProgram && "
+        "target.want !== WANT_RUNNING }" in page
     )
     assert "isWaitingForStart={target.want !== WANT_RUNNING}" in page
     assert "isCarried: isCarriedRow," in page

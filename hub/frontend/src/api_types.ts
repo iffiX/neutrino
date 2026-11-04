@@ -1236,6 +1236,12 @@ export interface DeviceModuleView {
   title: string;
   /** The install method of its entry for the machine's platform. */
   method: string;
+  /** The source chip's word: `agent`, `system`, `upstream`, `container` or
+   * `user`. */
+  source: string;
+  /** The kind chip's word: `service`, or `program` for a command line
+   * program. */
+  kind: string;
   /** absent, installed, stopped or running; empty when the hub asks nothing. */
   want: string;
   state: string;
@@ -1445,10 +1451,19 @@ export interface EnabledAccountView {
   /** The file share's fields: the share path and the SMB user. */
   share_path?: string;
   user?: string;
+  /** A command line program's fields, as last reported: the copy the
+   * account uses, `user` or `module`, its path and its version. */
+  copy?: string;
+  path?: string;
+  version?: string;
+  /** A command line program's: the account's last AI tools result; null on
+   * every other module. */
+  ai_tools?: AccountAiToolsView | null;
 }
 
 /** An account-layer module on one machine: Terminal, the file share, the SSH
- * server, VS Code, code-server, CloudCLI or Codeg. */
+ * server, VS Code, code-server, CloudCLI, Codeg, SiYuan, Codex or Claude
+ * Code. */
 export interface EnabledAccountsView extends ModuleDeviceState {
   device_id: string;
   accounts: EnabledAccountView[];

@@ -4,10 +4,10 @@ import { AccountForm } from "./account_form";
 import { ErrorPanel } from "./error_panel";
 import { Icon } from "./icon";
 import { StatusDot } from "./status_dot";
-import type { StatusTone } from "./status_dot";
+import { AI_TOOLS_TONES, aiToolsWords } from "../ai_tools_words";
 import { apiPath, apiPost, describeError } from "../api_client";
 import { codeParams } from "../code_params";
-import { hasWord, t, useLanguage } from "../i18n";
+import { t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
 import { useConfirm } from "../use_confirm";
 import { HUB_EVENT_CONFIG, HUB_EVENT_DEVICE_REPORT } from "../use_hub_events";
@@ -31,19 +31,6 @@ import "./accounts_panel.css";
  */
 
 const ACCOUNTS_PATH = "/agent/module/account";
-
-/** The word and the tone of each reported AI tools result. */
-const AI_TOOLS_KEYS: Record<string, string> = {
-  switched: "state.ai_tools_switched",
-  switched_back: "state.ai_tools_switched_back",
-};
-const AI_TOOLS_TONES: Record<string, StatusTone> = {
-  switched: "ok",
-  switched_back: "idle",
-  failed: "error",
-};
-const AI_TOOLS_FAILED = "failed";
-const CODE_SWITCH_FAILED = "switch_failed";
 
 /** Which form is open: a new account's, or an account's by name. */
 const NEW_ACCOUNT = "";
@@ -162,7 +149,11 @@ export function AccountsPanel({ deviceId, isEditable }: AccountsPanelProps) {
                     {account.is_ai_tools_enabled && (
                       <StatusDot
                         tone={AI_TOOLS_TONES[account.ai_tools.state] ?? "idle"}
-                        label={describeAiTools(account)}
+                        label={aiToolsWords(
+                          account.account,
+                          account.ai_tools,
+                          account.is_ai_tools_enabled,
+                        )}
                       />
                     )}
                     <span className="accounts_row_actions">
@@ -212,32 +203,4 @@ export function AccountsPanel({ deviceId, isEditable }: AccountsPanelProps) {
       {confirm.modal}
     </section>
   );
-}
-
-/** The machine's last word on an account's AI tools; a failure in its
- * code's words, a detail that is itself a code worded too. */
-function describeAiTools(account: AvailableAccountView): string {
-  const result = account.ai_tools;
-  if (result.state !== AI_TOOLS_FAILED) {
-    return t(AI_TOOLS_KEYS[result.state] ?? "ui.device_monitor.waiting");
-  }
-  const key =
-    !account.is_ai_tools_enabled && result.code === CODE_SWITCH_FAILED
-      ? "ui.ai_tools.switch_back_failed"
-      : `code.${result.code}`;
-  const params: Record<string, string | number> = {
-    account: account.account,
-    ...codeParams(result.params),
-  };
-  const detailKey = `code.${String(params.detail ?? "")}`;
-  if (
-    params.detail !== undefined &&
-    hasWord(detailKey) &&
-    !/\{\w+\}/.test(t(detailKey))
-  ) {
-    params.detail = t(detailKey);
-  }
-  return hasWord(key)
-    ? t(key, params)
-    : t("ui.modules.failed_code", { code: result.code });
 }

@@ -39,6 +39,31 @@
   white-space: nowrap;
 }
 
+/* A command line program's row: the copy's version and the account's AI
+   tools state on the first line, the copy's path whole on the next. */
+.instances_row_version {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.instances_row_tools {
+  margin-left: auto;
+}
+
+.instances_row_path {
+  flex: 1 0 100%;
+  padding-left: calc(140px + var(--space-3));
+  color: var(--color-text-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
 .instances_row_error {
   flex: 1 0 100%;
+}
+
+@media (max-aspect-ratio: 1 / 1), (max-width: 880px) {
+  .instances_row_path {
+    padding-left: 0;
+  }
 }

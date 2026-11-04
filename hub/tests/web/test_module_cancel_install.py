@@ -287,5 +287,7 @@ def test_a_failed_install_keeps_install_and_uninstall_and_has_no_cancel():
     )
     assert (
         'action="install" isEnabled={ canAct && (activeRow.state === "absent" || '
-        'activeRow.state === "install_failed" || isRetried(activeRow, "installed")) }'
+        'activeRow.state === "install_failed" || isRetried(activeRow, "installed") || '
+        "(isProgram && (isUnclaimed(activeRow) || "
+        "isRetried(activeRow, WANT_RUNNING)))) }"
     ) in page()

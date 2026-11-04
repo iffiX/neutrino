@@ -1,11 +1,14 @@
 """The machine page's module order and each tab's two chips, held against the standard.
 
 What these pin: ``GET /api/agent/module`` sends the rows in the description
-table's order, the one ui_behavior.md names, and the page keeps it; each
-install method reads as its source chip, so every shipped module on Linux,
-Windows and macOS shows the chip ui_behavior.md gives it; every tab shows the
-kind chip Service; the two chips sit between the title and the state; and the
-words say in both languages what ui_text.md writes.
+table's order, the one ui_behavior.md names, and the page keeps it; the page
+reads the source chip from the row's ``source`` and the kind chip from its
+``kind``, the words the hub sends, each word its own key and a word outside
+the table no chip; so every shipped module on Linux, Windows and macOS shows
+the chips ui_behavior.md gives it, Codex and Claude Code reading Program, and
+User-installed while the machine reports no copy of their own; the two chips
+sit between the title and the state; and the words say in both languages what
+ui_text.md writes.
 """
 
 import json
@@ -14,8 +17,6 @@ from pathlib import Path
 
 import pytest
 
-from neutrino_hub.modules.devices.catalog import resolve_module
-from neutrino_hub.modules.devices.manifests import load_module_manifests
 from neutrino_hub.modules.devices.module_table import DEVICE_MODULE_ROWS
 from neutrino_hub.web.routers.agent import module as device_modules
 from tests.web.module_api_box import DEVICE, module_box
@@ -36,29 +37,39 @@ ORDER = [
     "code_server",
     "cloudcli",
     "codeg",
+    "claude_code",
+    "codex",
     "siyuan",
     "podman",
     "hermes_webui",
     "ayakaleaf",
 ]
+# The command line programs, whose kind chip reads Program.
+PROGRAMS = ("claude_code", "codex")
 WORDS = {
     "en": {
         "ui.modules.source_agent": "Built-in",
         "ui.modules.source_system": "System",
         "ui.modules.source_upstream": "Upstream",
         "ui.modules.source_container": "Container",
+        "ui.modules.source_user": "User-installed",
         "ui.modules.kind_service": "Service",
+        "ui.modules.kind_program": "Program",
     },
     "zh-CN": {
         "ui.modules.source_agent": "自带",
         "ui.modules.source_system": "系统",
         "ui.modules.source_upstream": "外部源",
         "ui.modules.source_container": "容器",
+        "ui.modules.source_user": "用户安装",
         "ui.modules.kind_service": "服务",
+        "ui.modules.kind_program": "普通程序",
     },
 }
-# Each module's source chip on Linux, Windows and macOS; None where the
-# system has no entry for it.
+SOURCE_WORDS = ("agent", "system", "upstream", "container", "user")
+KIND_WORDS = ("service", "program")
+# Each module's source chip on Linux, Windows and macOS before the machine
+# reports it; None where the system has no entry for it.
 SOURCES = {
     "terminal": ("source_agent",) * 3,
     "ssh_server": ("source_agent",) * 3,
@@ -69,6 +80,8 @@ SOURCES = {
     "code_server": ("source_upstream", None, "source_upstream"),
     "cloudcli": ("source_upstream",) * 3,
     "codeg": ("source_upstream",) * 3,
+    "claude_code": ("source_upstream",) * 3,
+    "codex": ("source_upstream",) * 3,
     "siyuan": ("source_upstream",) * 3,
     "podman": ("source_system", "source_upstream", "source_upstream"),
     "hermes_webui": ("source_container",) * 3,
@@ -85,23 +98,35 @@ def design(name: str) -> str:
     return " ".join((DESIGN_DIR / name).read_text(encoding="utf-8").split())
 
 
-def panel_sources() -> dict:
-    """The panel's table of install method to source chip key."""
+def panel_table(name: str, prefix: str) -> dict:
+    """One of the panel's tables of a row's word to its chip key."""
     body = page()
-    start = body.index("const SOURCE_KEYS: Record<string, string> = {")
+    start = body.index(f"const {name}: Record<string, string> = {{")
     table = body[start : body.index("};", start)]
-    return dict(re.findall(r'(\w+): "ui\.modules\.(source_\w+)"', table))
+    return dict(re.findall(rf'(\w+): "ui\.modules\.({prefix}_\w+)"', table))
+
+
+def chips_of(client) -> dict:
+    """Each row's two chip keys as the page reads them, by module name."""
+    sources = panel_table("SOURCE_KEYS", "source")
+    kinds = panel_table("KIND_KEYS", "kind")
+    rows = client.get("/api/agent/module", params={"device_id": DEVICE}).json()
+    return {
+        row["name"]: (sources.get(row["source"]), kinds.get(row["kind"]))
+        for row in rows["modules"]
+    }
 
 
 @pytest.fixture
 def api(monkeypatch, tmp_path):
     client, runtime = module_box(monkeypatch, tmp_path, device_modules.router)
     runtime.device_platform[DEVICE] = DEBIAN
-    return client
+    return client, runtime
 
 
 def test_the_list_sends_the_rows_in_the_description_table_s_order(api):
-    rows = api.get("/api/agent/module", params={"device_id": DEVICE}).json()
+    client, _ = api
+    rows = client.get("/api/agent/module", params={"device_id": DEVICE}).json()
 
     assert [row["name"] for row in rows["modules"]] == ORDER
     assert [row.name for row in DEVICE_MODULE_ROWS] == ORDER
@@ -131,34 +156,62 @@ def test_ui_behavior_names_the_table_s_order():
 
 
 @pytest.mark.parametrize("index,platform", list(enumerate((DEBIAN, WINDOWS, MACOS))))
-def test_each_module_reads_its_source_chip_from_its_method(index, platform):
-    sources = panel_sources()
-    read = {}
-    for name, manifest in load_module_manifests().items():
-        method = resolve_module(manifest, platform)["method"]
-        read[name] = sources.get(method) if method else None
+def test_each_module_shows_the_chips_of_the_hub_s_words(api, index, platform):
+    client, runtime = api
+    runtime.device_platform[DEVICE] = platform
 
-    assert read == {name: chips[index] for name, chips in SOURCES.items()}
-
-
-def test_every_method_has_a_source_chip():
-    assert panel_sources() == {
-        "agent": "source_agent",
-        "builtin": "source_system",
-        "system": "source_system",
-        "hub": "source_upstream",
-        "container": "source_container",
+    assert chips_of(client) == {
+        name: (
+            chips[index],
+            "kind_program" if name in PROGRAMS else "kind_service",
+        )
+        for name, chips in SOURCES.items()
     }
 
 
-def test_every_tab_reads_service():
+@pytest.mark.parametrize("module", PROGRAMS)
+@pytest.mark.parametrize(
+    "has_module_copy, chip", [(True, "source_upstream"), (False, "source_user")]
+)
+def test_a_program_reads_user_installed_while_no_copy_of_its_own_is_there(
+    api, module, has_module_copy, chip
+):
+    client, runtime = api
+    runtime.device_modules[DEVICE] = {
+        module: {
+            "state": "running",
+            "details": {"has_module_copy": has_module_copy, "accounts": []},
+        }
+    }
+
+    assert chips_of(client)[module] == (chip, "kind_program")
+
+
+def test_every_source_word_has_a_chip():
+    assert panel_table("SOURCE_KEYS", "source") == {
+        word: f"source_{word}" for word in SOURCE_WORDS
+    }
+
+
+def test_every_kind_word_has_a_chip():
+    assert panel_table("KIND_KEYS", "kind") == {
+        word: f"kind_{word}" for word in KIND_WORDS
+    }
+
+
+def test_the_chips_read_the_row_s_source_and_kind():
     body = page()
     chips = body[body.index("function ModuleChips(") :]
+    chips = chips[: chips.index("/** ")]
 
-    assert 'const KIND_SERVICE_KEY = "ui.modules.kind_service";' in body  # scan: allow
-    assert '<span className="badge">{t(KIND_SERVICE_KEY)}</span>' in chips
+    assert "row.method" not in chips
+    assert "const sourceKey = SOURCE_KEYS[row.source];" in chips
+    assert "const kindKey = KIND_KEYS[row.kind];" in chips
     assert (
         '{sourceKey !== undefined && <span className="badge">{t(sourceKey)}</span>}'
+    ) in chips
+    assert (
+        '{kindKey !== undefined && <span className="badge">{t(kindKey)}</span>}'
     ) in chips
 
 
@@ -180,26 +233,20 @@ def test_the_words_say_what_ui_text_writes(language):
         assert words[key] == word
 
 
-def test_ui_text_writes_both_languages_of_each_chip():
+@pytest.mark.parametrize("chip,names", [("source", SOURCE_WORDS), ("kind", KIND_WORDS)])
+def test_ui_text_writes_both_languages_of_each_chip(chip, names):
     text = design("ui_text.md")
     en, zh = WORDS["en"], WORDS["zh-CN"]
-    sources = [f"ui.modules.source_{name}" for name in ("agent", "system")]
-    sources += [f"ui.modules.source_{name}" for name in ("upstream", "container")]
+    keys = [f"ui.modules.{chip}_{name}" for name in names]
 
     assert (
         "| "
-        + ", ".join(f"`{key}`" for key in sources)
-        + ", the source chip of a module's tab | "
-        + ", ".join(en[key] for key in sources)
+        + ", ".join(f"`{key}`" for key in keys)
+        + f", the {chip} chip of a module's tab | "
+        + ", ".join(en[key] for key in keys)
         + " | "
-        + "、".join(zh[key] for key in sources)
+        + "、".join(zh[key] for key in keys)
         + " |"
     ) in text
-    assert (
-        "| `ui.modules.kind_service`, the kind chip of a module's tab | Service | 服务 |"
-    ) in text
-    for chip, english, chinese in (
-        ("source", "User-installed", "用户安装"),
-        ("kind", "Program", "普通程序"),
-    ):
-        assert f"| {chip} | {english} | {chinese} |" in text
+    for key in keys:
+        assert f"| {chip} | {en[key]} | {zh[key]} |" in text

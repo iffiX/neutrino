@@ -73,7 +73,7 @@ def test_its_apply_waits_for_the_module_s_state_alone():
 
     assert (
         "useSettledApply( reportOf(saved, descriptor), "
-        "isWaitingForStart ? want : WANT_RUNNING, )"
+        "isWaitingForStart || descriptor.isProgram === true ? want : WANT_RUNNING, )"
     ) in text
     assert "const report = reportOf(saved, descriptor);" in text
     assert (
