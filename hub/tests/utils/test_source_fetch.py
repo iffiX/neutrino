@@ -6,6 +6,7 @@ stalls, what bytes it serves and what status it answers. The fetcher runs with
 its waits scaled down so a stall or a measure takes a fraction of a second.
 """
 
+import base64
 import hashlib
 import json
 import threading
@@ -19,6 +20,7 @@ from neutrino_hub.exceptions import DownloadFailedError, DownloadTooLargeError
 from neutrino_hub.utils.source_fetch import (
     SourceFetcher,
     SourceProbe,
+    file_hex,
     hex_of,
     rank_probes,
 )
@@ -166,7 +168,7 @@ def test_the_download_starts_on_the_fastest_source(tmp_path, serve):
     download, lines = fetch(tmp_path, [slow.url, fast.url])
     assert download.source == fast.url
     assert download.path.read_bytes() == BODY
-    assert download.sha256 == hashlib.sha256(BODY).hexdigest()
+    assert download.digest_hex == hashlib.sha256(BODY).hexdigest()
     assert lines[0] == "hub: fetching file.bin from 127.0.0.1"
     # The fastest probe's bytes start the file; the rest comes by a Range.
     assert fast.behaviour.ranges[-1] == f"bytes={32 * 1024}-"
@@ -277,6 +279,36 @@ def test_a_digest_of_another_form_is_refused(tmp_path):
             directory=tmp_path,
             limit=1024,
         )
+
+
+def test_an_npm_integrity_names_the_hex_of_its_sha512():
+    integrity = "sha512-" + base64.b64encode(hashlib.sha512(BODY).digest()).decode()
+
+    assert hex_of(integrity) == hashlib.sha512(BODY).hexdigest()
+    with pytest.raises(ValueError):
+        hex_of("sha512-" + base64.b64encode(b"short").decode())
+    with pytest.raises(ValueError):
+        hex_of("sha512-not base64!")
+
+
+def test_a_download_named_by_an_npm_integrity_is_checked_by_its_sha512(tmp_path, serve):
+    integrity = "sha512-" + base64.b64encode(hashlib.sha512(BODY).digest()).decode()
+    wrong = serve(body=b"z" * len(BODY))
+    right = serve(chunk_delay_s=0.01)
+
+    download = fetcher().fetch_file(
+        file="codex-0.166.0-linux-x64.tgz",
+        sources=[wrong.url, right.url],
+        digest=integrity,
+        directory=tmp_path,
+        limit=10 * 1024 * 1024,
+    )
+
+    assert download.source == right.url
+    assert download.path.read_bytes() == BODY
+    assert download.digest_hex == hashlib.sha512(BODY).hexdigest()
+    assert file_hex(download.path, integrity) == hashlib.sha512(BODY).hexdigest()
+    assert file_hex(download.path, DIGEST) == hashlib.sha256(BODY).hexdigest()
 
 
 def test_a_document_is_the_first_valid_answer(serve):

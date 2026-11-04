@@ -2,9 +2,11 @@
 
 ``GET /api/agent/module/<module>`` and ``POST /api/agent/module/<module>/set``
 are served for each account-layer row of the description table: Terminal,
-the file share, the SSH server, VS Code, code-server, CloudCLI, Codeg and
-SiYuan. The view lists every available account with whether the module
-enables it and what the machine reports of its instance; the set replaces
+the file share, the SSH server, VS Code, code-server, CloudCLI, Codeg,
+Claude Code, Codex and SiYuan. The view lists every available account with
+whether the module enables it and what the machine reports of its instance,
+or for a command line program the copy the account uses and its last AI
+tools result; the set replaces
 the enabled accounts, generating each newly enabled account's secrets, a
 SiYuan account's gateway key among them and voided for an account it
 disables, and writes no ``want`` on a module not running (protocol.md, "The
@@ -36,11 +38,13 @@ from neutrino_hub.modules.devices.folder_shares import folder_shares
 from neutrino_hub.modules.devices.module_table import (
     DeviceModuleRow,
     account_layer_rows,
+    command_line_program_names,
     gateway_instance_names,
 )
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.web.dependencies import get_runtime
 from neutrino_hub.web.models import (
+    AccountToolsView,
     EnabledAccountRowView,
     EnabledAccountsUpdate,
     EnabledAccountsView,
@@ -58,6 +62,7 @@ from neutrino_hub.web.routers.agent.module import (
     require_terms,
     write_module_config,
 )
+from neutrino_hub.web.routers.agent.module_account import reported_tools
 
 CODE_ACCOUNT_UNKNOWN = "account_unknown"
 CODE_ACCOUNT_DUPLICATE = "account_duplicate"
@@ -83,15 +88,21 @@ def device_view(
         view fields beside them. A file share row runs while the machine
         reports the module active and its Home share served, and the row of
         an enabled account with no share path whose home the machine has not
-        reported carries ``account_home_unknown {account}``.
+        reported carries ``account_home_unknown {account}``. A command line
+        program's row names the copy the account uses, its path and its
+        version, as the module's ``details.accounts`` report them, and the
+        account's last AI tools result.
     """
     store = DeviceAccountStore(runtime.desired_states)
     enabled = runtime.desired_states.enabled_accounts(context.key, row.name)
     platform = runtime.device_platform.get(context.key, {})
     homes = runtime.device_account_details.get(context.key, {})
+    is_program = row.name in command_line_program_names()
+    tools = reported_tools(runtime, context.key) if is_program else {}
     reported = {
         str(instance.get("account", "")): instance
-        for instance in context.details.get("instances") or []
+        for instance in context.details.get("accounts" if is_program else "instances")
+        or []
         if isinstance(instance, dict)
     }
     is_serving = bool(context.details.get("is_active"))
@@ -114,6 +125,10 @@ def device_view(
         }
         if row.name in (DEVICE_TERMINAL_MODULE, DEVICE_SSH_SERVER_MODULE):
             fields["shell_path"] = account.shell_path
+        if is_program:
+            for name in ("copy", "path", "version"):
+                fields[name] = str(seen.get(name, "") or "")
+            fields["ai_tools"] = AccountToolsView(**tools.get(account.account, {}))
         if row.name == DEVICE_SAMBA_MODULE:
             fields["share_path"] = account.share_path
             fields["user"] = smb_user(account.account, platform)

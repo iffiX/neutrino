@@ -6,7 +6,9 @@ at the top, and one entry per platform, ``{runner, min_version, install:
 {method, params}, requires}``, the ``params`` shaped by the method and
 ``requires`` naming the modules the entry runs on. A manifest that
 says ``is_module: false`` names a program the agent runs itself, cc-switch,
-with its version at the top and ``artifacts`` alone in each entry. The
+with its version at the top and ``artifacts`` alone in each entry. A
+``hub`` artifact whose file is a package of an ecosystem with a source set
+names the set in place of its sources, and the set's sources serve it. The
 loader refuses a manifest whose keys or ``params`` fall outside those shapes,
 so a wrong file fails the suite instead of shipping. Comment keys are
 stripped the same way the rest of ``config/`` is.
@@ -23,7 +25,10 @@ import json
 import re
 
 from neutrino_hub import HUB_VERSION
-from neutrino_hub.modules.devices.module_table import DEVICE_MODULE_ROWS
+from neutrino_hub.modules.devices.module_table import (
+    DEVICE_MODULE_ROWS,
+    command_line_program_names,
+)
 from neutrino_hub.modules.devices.source_sets import load_source_sets
 from neutrino_hub.modules.devices.constants import (
     DEVICE_ACCOUNT_DATA_DIR_DEFAULT_OS,
@@ -33,6 +38,7 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_ARTIFACT_KIND_DMG,
     DEVICE_ARTIFACT_KIND_IMAGE,
     DEVICE_ARTIFACT_KIND_NPM,
+    DEVICE_ARTIFACT_KIND_TAR_GZ,
     DEVICE_FEED_KEYS,
     DEVICE_GUEST_LOGINS,
     DEVICE_METHOD_AGENT,
@@ -97,20 +103,26 @@ PARAMS_REQUIRED = {
 }
 PARAMS_OPTIONAL = {
     DEVICE_METHOD_SYSTEM: {"pre_install"},
-    DEVICE_METHOD_HUB: {"packages"},
+    DEVICE_METHOD_HUB: {"packages", "user_copy_min_version"},
     DEVICE_METHOD_CONTAINER: {"releases", "source_sets"},
 }
+# The lowest version of a person's own copy a command line program uses,
+# which its hub entries name and no other entry does.
+PROGRAM_FLOOR_KEY = "user_copy_min_version"
 UNINSTALL_KEYS = {
     DEVICE_METHOD_SYSTEM: {"packages", "post_uninstall"},
     DEVICE_METHOD_HUB: {"post_uninstall", "is_data_kept"},
 }
 # The artifact keys each kind names, beside ``name``, ``kind`` and ``digest``.
+# A file artifact names ``sources``, or ``source_set`` where its file is an
+# npm package's tarball.
 FILE_ARTIFACT_KEYS = {
     "name",
     "kind",
     "digest",
     "file",
     "sources",
+    "source_set",
     "directory",
     "member",
 }
@@ -371,7 +383,8 @@ def artifact_sources(
     ``{file}`` is the artifact's file and ``{version}`` the version
     installed; a source naming ``{release}`` becomes one address per release
     site the hub's build stamped, at the release the hub came from, and none
-    in a checkout.
+    in a checkout. An artifact that names a source set is its file under each
+    of the set's sources, the first source first.
 
     Args:
         artifact: The artifact.
@@ -383,6 +396,11 @@ def artifact_sources(
         The addresses, in the manifest's order.
     """
     file = artifact_file(artifact, version)
+    if artifact.get("source_set"):
+        held = load_source_sets().get(str(artifact["source_set"])) or {}
+        return [
+            f"{str(source).rstrip('/')}/{file}" for source in held.get("sources") or []
+        ]
     filled = []
     for source in artifact.get("sources") or []:
         text = str(source).replace(UTILS_SOURCE_FILE, file)
@@ -587,9 +605,12 @@ def _check_identity(file_name: str, manifest: dict, *, is_licensed: bool) -> Non
         _check_text(file_name, field, manifest.get(field))
     if manifest["name"] != file_name.removesuffix(".json"):
         _refuse(file_name, "name", "must be the file's own name")
-    for field in ("license", "corresponding_source"):
-        if is_licensed or field in manifest:
-            _check_text(file_name, field, manifest.get(field))
+    if is_licensed or "license" in manifest:
+        _check_text(file_name, "license", manifest.get("license"))
+    if "corresponding_source" in manifest:
+        _check_text(
+            file_name, "corresponding_source", manifest.get("corresponding_source")
+        )
     if "is_data_forward_only" in manifest and not isinstance(
         manifest["is_data_forward_only"], bool
     ):
@@ -657,8 +678,39 @@ def _check_module(file_name: str, manifest: dict) -> None:
                 file_name, f"{where} method", f"is no install method, not {method!r}"
             )
         _check_params(file_name, where, method, install["params"])
+        _check_program_floor(file_name, where, manifest["name"], method, install)
         if "requires" in entry:
             _check_requires(file_name, where, manifest["name"], entry["requires"])
+
+
+def _check_program_floor(
+    file_name: str, where: str, module: str, method: str, install: dict
+) -> None:
+    """Refuse a command line program's ``hub`` entry without the floor of a
+    person's own copy, and the floor on any other entry.
+
+    Raises:
+        ValueError: Naming the place and what is wrong.
+    """
+    params = install.get("params") if isinstance(install, dict) else None
+    params = params if isinstance(params, dict) else {}
+    is_program = module in command_line_program_names() and method == DEVICE_METHOD_HUB
+    if not is_program:
+        if PROGRAM_FLOOR_KEY in params:
+            _refuse(
+                file_name,
+                f"{where} {PROGRAM_FLOOR_KEY}",
+                "is named by a command line program's hub entry alone",
+            )
+        return
+    if PROGRAM_FLOOR_KEY not in params:
+        _refuse(file_name, f"{where} params", f"must name {PROGRAM_FLOOR_KEY}")
+    _check_text(
+        file_name,
+        f"{where} {PROGRAM_FLOOR_KEY}",
+        params[PROGRAM_FLOOR_KEY],
+        pattern=MANIFEST_VERSION_PATTERN,
+    )
 
 
 def _check_requires(file_name: str, where: str, module: str, requires) -> None:
@@ -880,15 +932,19 @@ def _check_artifacts(file_name: str, where: str, artifacts, kinds: tuple) -> Non
                 file_name, named, artifact, IMAGE_ARTIFACT_KEYS, IMAGE_ARTIFACT_KEYS
             )
         else:
-            required = FILE_ARTIFACT_KEYS - {"directory", "member"}
+            is_on_set = "source_set" in artifact
+            required = FILE_ARTIFACT_KEYS - {"directory", "member", "source_set"}
             if kind in DEVICE_ARTIFACT_DIRECTORY_KINDS:
-                required = FILE_ARTIFACT_KEYS - {"member"}
+                required = FILE_ARTIFACT_KEYS - {"member", "source_set"}
             allowed = FILE_ARTIFACT_KEYS - {"member"}
             if kind == "binary":
                 allowed = FILE_ARTIFACT_KEYS - {"directory", "member"}
             if kind == DEVICE_ARTIFACT_KIND_DMG:
                 required = required | {"member"}
                 allowed = FILE_ARTIFACT_KEYS
+            if is_on_set:
+                required = (required - {"sources"}) | {"source_set"}
+                allowed = allowed - {"sources"}
             _check_keys(file_name, named, artifact, allowed, required)
             _check_text(file_name, f"{named} file", artifact["file"])
             if "member" in artifact:
@@ -910,6 +966,9 @@ def _check_artifacts(file_name: str, where: str, artifacts, kinds: tuple) -> Non
                         file_name, named, f"unpacks into {directory!r} beside another"
                     )
                 directories.add(directory)
+            if is_on_set:
+                _check_set_tarball(file_name, named, artifact)
+                continue
         _check_text(
             file_name,
             f"{named} digest",
@@ -927,6 +986,27 @@ def _check_artifacts(file_name: str, where: str, artifacts, kinds: tuple) -> Non
                         f"{named} source",
                         f"must name {{file}}, not {source!r}",
                     )
+
+
+def _check_set_tarball(file_name: str, named: str, artifact: dict) -> None:
+    """Refuse a file artifact on a source set other than an npm package's
+    tarball under npm's integrity.
+
+    Raises:
+        ValueError: Naming the artifact and what is wrong.
+    """
+    if artifact["kind"] != DEVICE_ARTIFACT_KIND_TAR_GZ:
+        _refuse(file_name, f"{named} source_set", "is named by a tar_gz alone")
+    if artifact["source_set"] != DEVICE_ARTIFACT_KIND_NPM:
+        _refuse(file_name, f"{named} source_set", "must be the npm set")
+    if artifact["source_set"] not in load_source_sets():
+        _refuse(file_name, f"{named} source_set", "names no set")
+    _check_text(
+        file_name,
+        f"{named} digest",
+        artifact["digest"],
+        pattern=MANIFEST_INTEGRITY_PATTERN,
+    )
 
 
 def _check_tool(file_name: str, manifest: dict) -> None:

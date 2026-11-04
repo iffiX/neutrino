@@ -1,0 +1,156 @@
+{
+  "_comment": "Codex, OpenAI's coding agent for the terminal, as a command line program per account. One artifact per platform, the tarball of @openai/codex@{version}-<platform>, OpenAI's npm build of the program for that platform; its source set is npm and its digest the integrity registry.npmjs.org names for that build. The agent unpacks it without package/ into codex/package, so the program is package/vendor/<target>/bin/codex, beside codex-path/rg and codex-resources/. The versions are the dotted ones of @openai/codex, which leaves the alpha versions and the platform builds out, and each platform's digest is the build whose dist.tarball path is the artifact's file. user_copy_min_version is the lowest version of a person's own copy the module uses.",
+  "name": "codex",
+  "title": "Codex",
+  "description": "OpenAI's coding agent on the command line, for each account",
+  "publisher": "OpenAI",
+  "license": "Apache-2.0",
+  "corresponding_source": "https://github.com/openai/codex/tree/rust-v{version}", "_source_scan": "scan: allow",
+  "uninstall_data": {
+    "is_deleted": false,
+    "text": {
+      "en": "Each account's settings in ~/.codex stay, and so does a copy of Codex installed outside this module.",
+      "zh-CN": "每个账户在 ~/.codex 里的设置都保留，在本模块之外安装的 Codex 也保留。"
+    }
+  },
+  "platforms": {
+    "linux-amd64": {
+      "runner": "codex",
+      "install": {
+        "method": "hub",
+        "params": {
+          "version": "0.166.0",
+          "user_copy_min_version": "0.100.0",
+          "releases": [{"kind": "npm", "sources": ["https://registry.npmjs.org"], "package": "@openai/codex"}],
+          "artifacts": [
+            {
+              "name": "codex",
+              "kind": "tar_gz",
+              "directory": "package",
+              "file": "@openai/codex/-/codex-{version}-linux-x64.tgz",
+              "digest": "sha512-CxDm3+D1cpbGJeHrdzINoG+3wn9BVncP4qpZaaNYkxe8iPtRJOYyCJnnPoVjWRIBvI9vPKbRoifsMSA5xDaUpw==", "_digest_scan": "scan: allow",
+              "source_set": "npm"
+            }
+          ],
+          "verify": "/var/lib/neutrino/agent/codex/package/vendor/x86_64-unknown-linux-musl/bin/codex --version",
+          "uninstall": {"post_uninstall": [], "is_data_kept": true}
+        }
+      }
+    },
+    "linux-arm64": {
+      "runner": "codex",
+      "install": {
+        "method": "hub",
+        "params": {
+          "version": "0.166.0",
+          "user_copy_min_version": "0.100.0",
+          "releases": [{"kind": "npm", "sources": ["https://registry.npmjs.org"], "package": "@openai/codex"}],
+          "artifacts": [
+            {
+              "name": "codex",
+              "kind": "tar_gz",
+              "directory": "package",
+              "file": "@openai/codex/-/codex-{version}-linux-arm64.tgz",
+              "digest": "sha512-w0ScAsBr9aZKtIFrh6HN6KU2yjKKeSCzYfbb7DB0Ccj4BYPzeZtUeQprbycLCwuX3AFQdbdjapmLho2iot74jQ==", "_digest_scan": "scan: allow",
+              "source_set": "npm"
+            }
+          ],
+          "verify": "/var/lib/neutrino/agent/codex/package/vendor/aarch64-unknown-linux-musl/bin/codex --version",
+          "uninstall": {"post_uninstall": [], "is_data_kept": true}
+        }
+      }
+    },
+    "darwin-amd64": {
+      "runner": "codex",
+      "install": {
+        "method": "hub",
+        "params": {
+          "version": "0.166.0",
+          "user_copy_min_version": "0.100.0",
+          "releases": [{"kind": "npm", "sources": ["https://registry.npmjs.org"], "package": "@openai/codex"}],
+          "artifacts": [
+            {
+              "name": "codex",
+              "kind": "tar_gz",
+              "directory": "package",
+              "file": "@openai/codex/-/codex-{version}-darwin-x64.tgz",
+              "digest": "sha512-Vj5wXJPizKmrzNtnRNQf9PP6FJkG3iJU/UO3NE4WvkENZGoQfmImdwf4MVRI5NgwjSuC6LT0HbBRHPVVnwGHuw==", "_digest_scan": "scan: allow",
+              "source_set": "npm"
+            }
+          ],
+          "verify": "\"/Library/Application Support/Neutrino/agent/state/codex/package/vendor/x86_64-apple-darwin/bin/codex\" --version",
+          "uninstall": {"post_uninstall": [], "is_data_kept": true}
+        }
+      }
+    },
+    "darwin-arm64": {
+      "runner": "codex",
+      "install": {
+        "method": "hub",
+        "params": {
+          "version": "0.166.0",
+          "user_copy_min_version": "0.100.0",
+          "releases": [{"kind": "npm", "sources": ["https://registry.npmjs.org"], "package": "@openai/codex"}],
+          "artifacts": [
+            {
+              "name": "codex",
+              "kind": "tar_gz",
+              "directory": "package",
+              "file": "@openai/codex/-/codex-{version}-darwin-arm64.tgz",
+              "digest": "sha512-5fWH6qqUInACcRADIewjlnRxDb4QLe0uriwehiZz0+viuAAB8I+WWefqw4xwHvyKaxeiGX4uK56+vrgfvFk3FQ==", "_digest_scan": "scan: allow",
+              "source_set": "npm"
+            }
+          ],
+          "verify": "\"/Library/Application Support/Neutrino/agent/state/codex/package/vendor/aarch64-apple-darwin/bin/codex\" --version",
+          "uninstall": {"post_uninstall": [], "is_data_kept": true}
+        }
+      }
+    },
+    "windows-amd64": {
+      "runner": "codex",
+      "install": {
+        "method": "hub",
+        "params": {
+          "version": "0.166.0",
+          "user_copy_min_version": "0.100.0",
+          "releases": [{"kind": "npm", "sources": ["https://registry.npmjs.org"], "package": "@openai/codex"}],
+          "artifacts": [
+            {
+              "name": "codex",
+              "kind": "tar_gz",
+              "directory": "package",
+              "file": "@openai/codex/-/codex-{version}-win32-x64.tgz",
+              "digest": "sha512-NS8Ps5oG5r19pCrMCUXwUqOui6odnUIoBlQkrjCJ+h1k6KiwCzC/+mI9d3nSZCqFoVONPBTmqyq8NYq3YaFGyA==", "_digest_scan": "scan: allow",
+              "source_set": "npm"
+            }
+          ],
+          "verify": "\"%ProgramData%\\Neutrino\\agent\\state\\codex\\package\\vendor\\x86_64-pc-windows-msvc\\bin\\codex.exe\" --version",
+          "uninstall": {"post_uninstall": [], "is_data_kept": true}
+        }
+      }
+    },
+    "windows-arm64": {
+      "runner": "codex",
+      "install": {
+        "method": "hub",
+        "params": {
+          "version": "0.166.0",
+          "user_copy_min_version": "0.100.0",
+          "releases": [{"kind": "npm", "sources": ["https://registry.npmjs.org"], "package": "@openai/codex"}],
+          "artifacts": [
+            {
+              "name": "codex",
+              "kind": "tar_gz",
+              "directory": "package",
+              "file": "@openai/codex/-/codex-{version}-win32-arm64.tgz",
+              "digest": "sha512-LWO1cyGlxbKgeUM7QJ1a6QMSsJi++3PqgIi6BmIUBoj/kzZqRIR69UDMQgeU/9izzJFYMSbwt++lHnUFyjQXlA==", "_digest_scan": "scan: allow",
+              "source_set": "npm"
+            }
+          ],
+          "verify": "\"%ProgramData%\\Neutrino\\agent\\state\\codex\\package\\vendor\\aarch64-pc-windows-msvc\\bin\\codex.exe\" --version",
+          "uninstall": {"post_uninstall": [], "is_data_kept": true}
+        }
+      }
+    }
+  }
+}

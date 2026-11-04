@@ -97,6 +97,7 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_HERMES_WEBUI_MODULE,
     DEVICE_INSTANCE_GATEWAY_FORWARD_URL,
     DEVICE_INSTANCE_LOGIN_KEY,
+    DEVICE_MODULE_KIND_COMMAND_LINE_PROGRAM,
     DEVICE_MODULES_FILE,
     DEVICE_PACKAGES_DIR_NAME,
     DEVICE_HUB_CONTAINERS_KEY,
@@ -292,6 +293,7 @@ def account_layer_agent_config(
 
     Returns:
         The Terminal module's ``{accounts: [{account, shell_path,
+        password}]}``; a command line program's ``{accounts: [{account,
         password}]}``; the file share's ``{shares, users, passwords}``; the
         others' ``{...config_head, instances: [{account, <opened fields>,
         password, local_name, cookie_name}]}``, the last two on a module
@@ -323,6 +325,17 @@ def account_layer_agent_config(
         }
     if row.name == DEVICE_SAMBA_MODULE:
         return _samba_config(row, enabled, by_name, platform, details, stored)
+    if row.kind == DEVICE_MODULE_KIND_COMMAND_LINE_PROGRAM:
+        return {
+            DEVICE_ENABLED_ACCOUNTS_KEY: [
+                _with_password(
+                    {"account": record["account"]},
+                    by_name[record["account"]],
+                    is_windows,
+                )
+                for record in enabled
+            ]
+        }
     config = dict(row.config_head)
     instances = []
     for record in enabled:

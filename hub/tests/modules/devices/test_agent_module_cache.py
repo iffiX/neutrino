@@ -8,6 +8,7 @@ artifact, digest}`` names, the file named by its digest, the head check, the
 2 GiB limit, two askers sharing one fetch, and the files a new one leaves.
 """
 
+import base64
 import hashlib
 import threading
 
@@ -684,6 +685,111 @@ def test_a_send_is_counted_in_sending_lines_naming_the_machine():
         "hub: sending Containers 6.1.4 (image), 4.0 / 40.0 MB to nmxwin",
         "hub: sending Containers 6.1.4 (image), 40.0 / 40.0 MB to nmxwin",
     ]
+
+
+# A command line program's tarball on the npm set, under npm's integrity.
+TARBALL = GZIP + b"codex's npm build"
+TARBALL_FILE = "@openai/codex/-/codex-{version}-linux-x64.tgz"
+
+
+def integrity(body: bytes) -> str:
+    return "sha512-" + base64.b64encode(hashlib.sha512(body).digest()).decode()
+
+
+def sha512_hexed(body: bytes) -> str:
+    return hashlib.sha512(body).hexdigest()
+
+
+@pytest.fixture
+def program_manifests(monkeypatch):
+    """A command line program whose tarball names the npm set."""
+    held = {
+        "codex": {
+            "name": "codex",
+            "title": "Codex",
+            "platforms": {
+                "linux-amd64": hub_entry(
+                    "0.166.0",
+                    [
+                        {
+                            "name": "codex",
+                            "kind": "tar_gz",
+                            "directory": "package",
+                            "file": TARBALL_FILE,
+                            "digest": integrity(TARBALL),
+                            "source_set": "npm",
+                        }
+                    ],
+                )
+            },
+        }
+    }
+    monkeypatch.setattr(agent_module_cache, "load_module_manifests", lambda: held)
+    monkeypatch.setattr(agent_module_cache, "load_tool_manifests", lambda: {})
+    return held
+
+
+def ask_program(cache, body=TARBALL, **kw):
+    return cache.artifact(
+        module="codex",
+        artifact="codex",
+        digest=integrity(body),
+        platform=LINUX,
+        **kw,
+    )
+
+
+def test_a_tarball_on_the_npm_set_is_fetched_from_each_registry_under_its_integrity(
+    program_manifests, root
+):
+    file = TARBALL_FILE.format(version="0.166.0")
+    fetcher = FakeSourceFetcher({f"https://registry.npmmirror.com/{file}": TARBALL})
+    lines: list = []
+
+    held = ask_program(make_cache(root, fetcher), on_progress=lines.append)
+
+    assert fetcher.asked == [
+        (
+            "file",
+            file,
+            [
+                f"https://registry.npmjs.org/{file}",
+                f"https://registry.npmmirror.com/{file}",
+                f"https://mirrors.cloud.tencent.com/npm/{file}",
+            ],
+        )
+    ]
+    assert held.path == root / sha512_hexed(TARBALL)
+    assert held.path.read_bytes() == TARBALL
+    assert held.title == "Codex 0.166.0"
+    assert lines == [f"hub: fetching {file} from registry.npmmirror.com"]
+
+
+def test_a_held_tarball_is_checked_by_its_sha512(program_manifests, root):
+    root.mkdir()
+    (root / sha512_hexed(TARBALL)).write_bytes(TARBALL)
+
+    held = ask_program(make_cache(root, FakeSourceFetcher()))
+
+    assert held.path.read_bytes() == TARBALL
+    (root / sha512_hexed(TARBALL)).write_bytes(b"a cut download")
+    with pytest.raises(AgentArtifactFetchError) as refusal:
+        ask_program(make_cache(root, FakeSourceFetcher()))
+    assert refusal.value.code == "download_failed"
+
+
+def test_a_tarball_no_version_pins_is_pruned_and_the_pinned_one_kept(
+    program_manifests, root
+):
+    root.mkdir()
+    stale = GZIP + b"an older codex build"
+    (root / sha512_hexed(stale)).write_bytes(stale)
+    file = TARBALL_FILE.format(version="0.166.0")
+    fetcher = FakeSourceFetcher({f"https://registry.npmjs.org/{file}": TARBALL})
+
+    ask_program(make_cache(root, fetcher, named={"codex"}))
+
+    assert [path.name for path in root.iterdir()] == [sha512_hexed(TARBALL)]
 
 
 def test_clearing_the_cache_drops_every_file(manifests, root):

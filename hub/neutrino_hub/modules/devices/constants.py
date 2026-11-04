@@ -74,6 +74,9 @@ DEVICE_ARTIFACT_DIRECTORY_KINDS = ("msi", "pkg", "tar_zst", "raw_zst")
 # The kind that names ``member``, the folder a macOS disk image holds the
 # program in.
 DEVICE_ARTIFACT_KIND_DMG = "dmg"
+# The kind of an npm package's tarball, which a hub artifact on the npm set
+# names.
+DEVICE_ARTIFACT_KIND_TAR_GZ = "tar_gz"
 DEVICE_ARTIFACT_KIND_NPM = "npm"
 DEVICE_ARTIFACT_KIND_IMAGE = "image"
 # A source set's name, and a variable its ecosystem's tools read the
@@ -146,22 +149,39 @@ AGENT_MODULE_PACKAGE_MAGIC = {
 AGENT_MODULE_PACKAGE_TAIL_MAGIC = {"dmg": b"koly"}
 AGENT_MODULE_PACKAGE_TAIL_BYTES = 512
 
-# The five kinds of device module the description table sorts every module
+# The six kinds of device module the description table sorts every module
 # into: carried by the agent's own package, installed from the system's own
 # sources, a service with a system account of its own, a program run as a
-# person's account, and container images run on the Containers module.
+# person's account, container images run on the Containers module, and a
+# command line program per account.
 DEVICE_MODULE_KIND_AGENT = "agent"
 DEVICE_MODULE_KIND_SYSTEM_PACKAGE = "system_package"
 DEVICE_MODULE_KIND_SERVICE_ACCOUNT = "service_account"
 DEVICE_MODULE_KIND_ACCOUNT_PROGRAM = "account_program"
 DEVICE_MODULE_KIND_CONTAINER = "container"
+DEVICE_MODULE_KIND_COMMAND_LINE_PROGRAM = "command_line_program"
 DEVICE_MODULE_KINDS = (
     DEVICE_MODULE_KIND_AGENT,
     DEVICE_MODULE_KIND_SYSTEM_PACKAGE,
     DEVICE_MODULE_KIND_SERVICE_ACCOUNT,
     DEVICE_MODULE_KIND_ACCOUNT_PROGRAM,
     DEVICE_MODULE_KIND_CONTAINER,
+    DEVICE_MODULE_KIND_COMMAND_LINE_PROGRAM,
 )
+# The words a module row's two chips read (module_install.md, "The source
+# chip and the kind chip"): who installs, updates and removes the software,
+# by the install method of the machine's entry, and whether the module runs
+# by itself until stopped or only when a person runs it.
+DEVICE_SOURCE_AGENT = "agent"
+DEVICE_SOURCE_SYSTEM = "system"
+DEVICE_SOURCE_UPSTREAM = "upstream"
+DEVICE_SOURCE_CONTAINER = "container"
+DEVICE_SOURCE_USER = "user"
+DEVICE_KIND_SERVICE = "service"
+DEVICE_KIND_PROGRAM = "program"
+# The ``details`` field of a command line program's report that says
+# whether the module's own copy is on the machine.
+DEVICE_PROGRAM_MODULE_COPY_KEY = "has_module_copy"
 # The panel the Modules page draws every program run as an account with;
 # every other module is drawn by a panel named after it.
 DEVICE_MODULE_PANEL_INSTANCES = "instances"
@@ -183,6 +203,8 @@ DEVICE_MODULE_NAMES = (
     "code_server",
     "cloudcli",
     "codeg",
+    "claude_code",
+    "codex",
     "siyuan",
 )
 # The directory under ``config/`` that holds one directory per device.
@@ -471,6 +493,10 @@ DEVICE_CODEG_MODULE = "codeg"
 DEVICE_CODEG_SECRET_KEY = "secret_sealed"  # scan: allow
 DEVICE_CODEG_SECRET_AAD = b"device_codeg:secret"
 DEVICE_CODEG_SECRET_BYTES = 32
+# Claude Code and Codex, the command line programs: each enabled account's
+# record holds the account alone, and on Windows the state sends its login.
+DEVICE_CLAUDE_CODE_MODULE = "claude_code"
+DEVICE_CODEX_MODULE = "codex"
 # SiYuan, once per account. Each enabled account's record holds, beside the
 # account, the secret its tokens are signed with and the kernel's access
 # code, which the hub generates once and keeps sealed, and while the account

@@ -616,6 +616,8 @@ SUPPORTED_OFF_LINUX = {
     "cloudcli": (True, True),
     "code_server": (False, True),
     "codeg": (True, True),
+    "claude_code": (True, True),
+    "codex": (True, True),
     "siyuan": (True, True),
     "gitea": (True, True),
     "podman": (True, True),
@@ -1885,3 +1887,143 @@ def test_siyuans_uninstall_voids_its_keys_and_its_install_settles_them(
         assert answer.status_code == 200, press
 
     assert called == [("settle", DEVICE, "siyuan"), ("revoke", DEVICE, "siyuan")]
+
+
+# --- a command line program: no Start or Stop, and its two chips ---
+
+LINUX = {"os": "linux", "family": "debian", "arch": "amd64"}
+WINDOWS = {"os": "windows", "family": "", "arch": "amd64", "version": "26100"}
+
+
+@pytest.fixture
+def shipped(api, monkeypatch):
+    client, runtime = api
+    monkeypatch.setattr(device_modules, "load_module_manifests", shipped_manifests)
+    runtime.agent_sessions.online.add(DEVICE)
+    runtime.device_platform[DEVICE] = dict(LINUX)
+    return client, runtime
+
+
+@pytest.mark.parametrize("module", ["claude_code", "codex"])
+def test_install_writes_running_on_a_command_line_program(shipped, tmp_path, module):
+    client, runtime = shipped
+
+    answer = client.post(
+        f"{MODULE_PATH}/install", json={"device_id": DEVICE, "module": module}
+    )
+
+    assert answer.status_code == 200, answer.text
+    assert modules_file(tmp_path) == {
+        module: {"want": "running", "is_settled": False, "version": ""}
+    }
+    assert [push[0] for push in runtime.agent_sessions.pushes] == [DEVICE]
+
+
+@pytest.mark.parametrize("press", ["start", "stop"])
+@pytest.mark.parametrize("module", ["claude_code", "codex"])
+def test_start_and_stop_are_refused_on_a_command_line_program(
+    shipped, tmp_path, press, module
+):
+    client, runtime = shipped
+
+    refused = client.post(
+        f"{MODULE_PATH}/{press}", json={"device_id": DEVICE, "module": module}
+    )
+
+    assert refused.status_code == 400
+    assert refused.json()["detail"] == {
+        "code": "module_not_service",
+        "params": {"module": module},
+    }
+    assert modules_file(tmp_path) == {}
+    assert runtime.agent_sessions.pushes == []
+
+
+def rows_by_name(client) -> dict:
+    rows = client.get(MODULE_PATH, params={"device_id": DEVICE}).json()["modules"]
+    return {row["name"]: row for row in rows}
+
+
+@pytest.mark.parametrize(
+    "platform, sources",
+    [
+        (
+            LINUX,
+            {
+                "terminal": "agent",
+                "ssh_server": "agent",
+                "remote_desktop": "agent",
+                "samba": "system",
+                "gitea": "upstream",
+                "vscode": "upstream",
+                "code_server": "upstream",
+                "cloudcli": "upstream",
+                "codeg": "upstream",
+                "claude_code": "upstream",
+                "codex": "upstream",
+                "siyuan": "upstream",
+                "podman": "system",
+                "hermes_webui": "container",
+                "ayakaleaf": "container",
+            },
+        ),
+        (
+            WINDOWS,
+            {
+                "terminal": "agent",
+                "ssh_server": "agent",
+                "remote_desktop": "agent",
+                "samba": "system",
+                "gitea": "upstream",
+                "vscode": "upstream",
+                "code_server": "",
+                "cloudcli": "upstream",
+                "codeg": "upstream",
+                "claude_code": "upstream",
+                "codex": "upstream",
+                "siyuan": "upstream",
+                "podman": "upstream",
+                "hermes_webui": "container",
+                "ayakaleaf": "container",
+            },
+        ),
+    ],
+)
+def test_each_row_reads_its_source_from_its_method_and_its_kind_from_the_table(
+    shipped, platform, sources
+):
+    client, runtime = shipped
+    runtime.device_platform[DEVICE] = dict(platform)
+
+    rows = rows_by_name(client)
+
+    assert {name: row["source"] for name, row in rows.items()} == sources
+    assert {name: row["kind"] for name, row in rows.items()} == {
+        name: "program" if name in ("claude_code", "codex") else "service"
+        for name in sources
+    }
+
+
+@pytest.mark.parametrize(
+    "state, has_module_copy, source",
+    [
+        ("running", False, "user"),
+        ("installed", False, "user"),
+        ("failed", False, "user"),
+        ("running", True, "upstream"),
+        ("absent", False, "upstream"),
+        ("installing", False, "upstream"),
+    ],
+)
+def test_a_command_line_program_reads_user_installed_while_no_copy_of_its_own_is_there(
+    shipped, state, has_module_copy, source
+):
+    client, runtime = shipped
+    runtime.device_modules[DEVICE] = {
+        "codex": {
+            "state": state,
+            "details": {"has_module_copy": has_module_copy, "accounts": []},
+        }
+    }
+
+    assert rows_by_name(client)["codex"]["source"] == source

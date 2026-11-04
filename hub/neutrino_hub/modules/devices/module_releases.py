@@ -5,7 +5,11 @@ once a day (module_install.md, "Module versions"): the first lists the
 versions, each read as a dotted number, newest first, and each artifact takes
 its digest from the feed whose release holds its file. An ``oci`` feed gives
 the digest the registry names for each tag to the image whose sources name
-the feed's repository, and every other image keeps its own. What was read is kept
+the feed's repository, and every other image keeps its own. An ``npm`` feed
+reads the registry's short document of its package: an ``npm`` artifact of
+the package takes the integrity of the version itself, and a ``tar_gz``
+artifact the integrity of the version whose ``dist.tarball`` path is the
+artifact's file, such as Codex's ``0.166.0-linux-x64`` at 0.166.0. What was read is kept
 in ``module_releases.json`` under the state root, ``{read_at, modules:
 {<module>: {<platform key>: [{version, artifacts: {<name>: {digest,
 sources}}}]}}}``, and a version is listed for a platform only when every
@@ -73,6 +77,12 @@ OCI_INDEX_TYPES = (
 # A registry's bearer challenge: ``Bearer realm="…",service="…"``.
 BEARER_FIELD_PATTERN = re.compile(r'(\w+)="([^"]*)"')
 NPM_PACKAGE_PATH = "/{package}"
+# The registry's short document of a package, which still holds each
+# version's ``dist``.
+NPM_SHORT_DOCUMENT_HEADERS = {"Accept": "application/vnd.npm.install-v1+json"}
+# What leads a version string: its dotted number, ``0.166.0`` of
+# ``0.166.0-linux-x64``.
+VERSION_HEAD_PATTERN = re.compile(r"^\d+(\.\d+)*")
 # How many of Microsoft's newest releases are read for their hash, and of a
 # registry's newest tags for their digest, since each one is a document of
 # its own.
@@ -264,6 +274,34 @@ def parse_npm_package(document) -> dict:
         integrity = str((entry.get("dist") or {}).get("integrity", "") or "")
         if integrity:
             found[str(version)] = integrity
+    return found
+
+
+def parse_npm_tarballs(document) -> dict:
+    """The tarball of every version an npm package document names, with its integrity.
+
+    Args:
+        document: The registry's answer for the package.
+
+    Returns:
+        Each version's ``dist.tarball`` path, with no leading ``/``, to
+        ``(version, integrity)``; every version, a platform build and an
+        alpha among them.
+
+    Raises:
+        ValueError: When the document names no versions.
+    """
+    if not isinstance(document, dict) or not isinstance(document.get("versions"), dict):
+        raise ValueError("a package document names versions")
+    found = {}
+    for version, entry in document["versions"].items():
+        if not isinstance(entry, dict):
+            continue
+        dist = entry.get("dist") or {}
+        integrity = str(dist.get("integrity", "") or "")
+        path = urllib.parse.urlsplit(str(dist.get("tarball", "") or "")).path
+        if integrity and path:
+            found[path.lstrip("/")] = (str(version), integrity)
     return found
 
 
@@ -591,15 +629,13 @@ class ModuleReleaseReader:
                 file = artifact_file(artifact, version)
                 held = next(
                     (
-                        answer[version].get(file)
-                        or answer[version].get(artifact["name"])
-                        or answer[version].get(_ANY_FILE)
-                        for answer in answers
+                        found_now
+                        for feed, answer in zip(feeds, answers)
                         if version in answer
                         and (
-                            answer[version].get(file)
-                            or answer[version].get(artifact["name"])
-                            or answer[version].get(_ANY_FILE)
+                            found_now := _held_for(
+                                answer[version], feed, artifact, file
+                            )
                         )
                     ),
                     None,
@@ -677,11 +713,18 @@ class ModuleReleaseReader:
                     for source in sources
                 ],
                 parse=json.loads,
+                limit=DEVICE_MODULE_RELEASES_LISTING_LIMIT_BYTES,
+                headers=dict(NPM_SHORT_DOCUMENT_HEADERS),
             )
-            return {
+            versions = {
                 version: {_ANY_FILE: {"digest": integrity}}
                 for version, integrity in parse_npm_package(document).items()
             }
+            for path, (version, integrity) in parse_npm_tarballs(document).items():
+                head = VERSION_HEAD_PATTERN.match(version)
+                if head is not None and head.group() in versions:
+                    versions[head.group()][path] = {"digest": integrity}
+            return versions
         raise ValueError(f"no feed of kind {kind!r}")
 
     def _read_oci(self, feed: dict, sources: list) -> dict:
@@ -785,6 +828,27 @@ def _is_versioned(artifact: dict, feeds: list) -> bool:
     ):
         return True
     return any(_answers_for_any_file(feed, artifact) for feed in feeds)
+
+
+def _held_for(listed: dict, feed: dict, artifact: dict, file: str) -> "dict | None":
+    """What one feed's answer for one version names for one artifact.
+
+    Args:
+        listed: The feed's answer for the version, file or name to
+            ``{digest, sources?}``.
+        feed: The feed.
+        artifact: The artifact.
+        file: The artifact's file at the version.
+
+    Returns:
+        The entry of the artifact's file or name; the feed's one entry for
+        any file only where the feed answers for any file of the artifact;
+        None otherwise.
+    """
+    held = listed.get(file) or listed.get(artifact["name"])
+    if held is None and _answers_for_any_file(feed, artifact):
+        held = listed.get(_ANY_FILE)
+    return held
 
 
 def _answers_for_any_file(feed: dict, artifact: dict) -> bool:

@@ -1,9 +1,12 @@
 """The Modules page of a device, and one door for every module block.
 
 ``/api/agent/module`` reads every module a device could host, each as its
-agent last reported it beside what the hub asks of it, and its four presses
-write one ``want`` each into ``config/devices/<id>/modules.json``: install
-``installed``, start ``running``, stop ``stopped``, uninstall ``absent``.
+agent last reported it beside what the hub asks of it, with the words of
+its source chip and its kind chip, and its four presses write one ``want``
+each into ``config/devices/<id>/modules.json``: install ``installed``, start
+``running``, stop ``stopped``, uninstall ``absent``. A command line program,
+Codex or Claude Code, has no Start or Stop, and its install writes
+``running``.
 The state is pushed at once, and what the machine reports afterwards is
 shown, each row with its module's task as the agent reports it; a task's
 lines arrive on a ``log`` stream the agent opens, which the list names by
@@ -70,11 +73,16 @@ from neutrino_hub.modules.clients.ai_keys import (
     revoke_module_key,
     settle_instance_keys,
 )
-from neutrino_hub.modules.devices.catalog import resolve_module
+from neutrino_hub.modules.devices.catalog import (
+    module_kind,
+    module_source,
+    resolve_module,
+)
 from neutrino_hub.modules.devices import ayakaleaf, hermes_webui
 from neutrino_hub.modules.devices.machine_memory import memory_need
 from neutrino_hub.modules.devices.module_table import (
     account_layer_names,
+    command_line_program_names,
     gateway_instance_names,
     gateway_module_names,
 )
@@ -122,6 +130,7 @@ CODE_DEVICE_UNKNOWN = "device_unknown"
 CODE_COMMAND_FAILED = "command_failed"
 CODE_MODULE_UNKNOWN = "module_unknown"
 CODE_MODULE_NOT_OPTIONAL = "module_not_optional"
+CODE_MODULE_NOT_SERVICE = "module_not_service"
 CODE_NO_PLATFORM_BUILD = "no_platform_build"
 CODE_MODULE_CONFIGURED = "module_configured"
 CODE_TERMS_NOT_ACCEPTED = "terms_not_accepted"
@@ -230,6 +239,10 @@ def list_modules(
                 description=resolved["description"],
                 runner=resolved["runner"],
                 method=resolved["method"],
+                source=module_source(
+                    name, resolved["method"], reported["state"], reported["details"]
+                ),
+                kind=module_kind(name),
                 # With no platform reported yet, nothing is ruled out: the
                 # agent will say what it cannot do once it beats.
                 is_supported=(
@@ -489,12 +502,16 @@ def install_module(
 ) -> DeviceModuleListView:
     """Ask for one module's package on a device, and nothing configured.
 
+    A command line program, which nothing starts, is asked ``running``: made
+    ready for each enabled account.
+
     Args:
         request: The device and the module.
         runtime: The shared runtime.
 
     Returns:
-        The modules after ``want: installed`` was written and pushed.
+        The modules after ``want: installed``, or ``running`` for a command
+        line program, was written and pushed.
 
     Raises:
         HTTPException: 404 ``module_unknown`` for a module with no manifest,
@@ -510,6 +527,8 @@ def install_module(
         and gives a container module its configuration and its gateway key
         where it has none.
     """
+    if request.module in command_line_program_names():
+        return _set_want(runtime, request, CHANNEL_MODULE_STATE_RUNNING)
     return _set_want(runtime, request, CHANNEL_MODULE_STATE_INSTALLED)
 
 
@@ -527,8 +546,10 @@ def start_module(
         The modules after ``want: running`` was written and pushed.
 
     Raises:
-        HTTPException: As :func:`install_module`.
+        HTTPException: As :func:`install_module`, and 400
+            ``module_not_service {module}`` for a command line program.
     """
+    _refuse_program(request.module)
     return _set_want(runtime, request, CHANNEL_MODULE_STATE_RUNNING)
 
 
@@ -546,9 +567,26 @@ def stop_module(
         The modules after ``want: stopped`` was written and pushed.
 
     Raises:
-        HTTPException: As :func:`install_module`.
+        HTTPException: As :func:`install_module`, and 400
+            ``module_not_service {module}`` for a command line program.
     """
+    _refuse_program(request.module)
     return _set_want(runtime, request, CHANNEL_MODULE_STATE_STOPPED)
+
+
+def _refuse_program(module: str) -> None:
+    """Refuse a Start or a Stop of a command line program, which has neither.
+
+    Args:
+        module: The module the press names.
+
+    Raises:
+        HTTPException: 400 ``module_not_service {module}``.
+    """
+    if module in command_line_program_names():
+        raise _refusal(
+            status.HTTP_400_BAD_REQUEST, CODE_MODULE_NOT_SERVICE, module=module
+        )
 
 
 @router.post("/uninstall", response_model=DeviceModuleListView)

@@ -25,6 +25,7 @@ import hashlib
 import json
 import logging
 import math
+import posixpath
 import time
 
 from pydantic import ValidationError
@@ -912,7 +913,8 @@ def _package_file(
 
     Returns:
         ``(path, title, name)``: the file, what progress lines call it,
-        empty for the agent's own package, and the name the close gives it.
+        empty for the agent's own package, and the name the close gives it,
+        the artifact's file with no directory.
 
     Raises:
         AgentArtifactFetchError: The caches' own typed reasons.
@@ -929,7 +931,7 @@ def _package_file(
         platform=platform,
         on_progress=on_progress,
     )
-    return held.path, held.title, held.file
+    return held.path, held.title, posixpath.basename(held.file)
 
 
 def _sessions_of(report: dict) -> list:

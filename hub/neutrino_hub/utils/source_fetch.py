@@ -16,6 +16,8 @@ why it failed.
 Not pure: opens network connections and writes files.
 """
 
+import base64
+import binascii
 import collections
 import contextlib
 import functools
@@ -52,6 +54,9 @@ from neutrino_hub.utils.constants import (
 from neutrino_hub.utils.tls_trust import public_ssl_context
 
 DIGEST_PREFIX = "sha256:"
+# npm's ``integrity``: the base64 of a tarball's SHA-512.
+INTEGRITY_PREFIX = "sha512-"
+INTEGRITY_BYTES = 64
 PARTIAL_PREFIX = ".partial_"
 # The reasons a source fails, as ``download_failed`` names them.
 REASON_UNREACHABLE = "unreachable"
@@ -71,25 +76,26 @@ class DownloadedFile:
     Attributes:
         path: The temporary file.
         size: How many bytes it holds.
-        sha256: Their digest, in hex.
+        digest_hex: Their digest in hex, of the algorithm the download's
+            digest names.
         head: Its first bytes, for a check of what kind of file it is.
         source: The source that served its last byte.
     """
 
     def __init__(
-        self, *, path: Path, size: int, sha256: str, head: bytes, source: str = ""
+        self, *, path: Path, size: int, digest_hex: str, head: bytes, source: str = ""
     ):
         """
         Args:
             path: The temporary file.
             size: How many bytes it holds.
-            sha256: Their digest, in hex.
+            digest_hex: Their digest, in hex.
             head: Its first bytes.
             source: The source that served its last byte.
         """
         self.path = path
         self.size = size
-        self.sha256 = sha256
+        self.digest_hex = digest_hex
         self.head = head
         self.source = source
 
@@ -173,24 +179,70 @@ def file_sha256(path: Path) -> str:
 
 
 def hex_of(digest: str) -> str:
-    """The hex of a ``sha256:<hex>`` digest.
+    """The hex of a ``sha256:<hex>`` digest, or of an npm ``sha512-<base64>`` integrity.
 
     Args:
         digest: The digest as a manifest names it.
 
     Returns:
-        The lowercase hex.
+        The lowercase hex of the digest's bytes: 64 characters for a
+        sha256 digest, 128 for an integrity.
 
     Raises:
         ValueError: For a digest of another form.
     """
     value = str(digest or "")
+    if value.startswith(INTEGRITY_PREFIX):
+        try:
+            held = base64.b64decode(value[len(INTEGRITY_PREFIX) :], validate=True)
+        except (binascii.Error, ValueError) as error:
+            raise ValueError(f"{digest!r} is no sha512 integrity") from error
+        if len(held) != INTEGRITY_BYTES:
+            raise ValueError(f"{digest!r} is no sha512 integrity")
+        return held.hex()
     hexed = value[len(DIGEST_PREFIX) :].lower()
     if not value.startswith(DIGEST_PREFIX) or len(hexed) != 64:
         raise ValueError(f"{digest!r} is no sha256 digest")
     if any(letter not in "0123456789abcdef" for letter in hexed):
         raise ValueError(f"{digest!r} is no sha256 digest")
     return hexed
+
+
+def digest_hash(digest: str):
+    """A fresh hash of the algorithm one digest names.
+
+    Args:
+        digest: A ``sha256:<hex>`` digest or a ``sha512-<base64>`` integrity.
+
+    Returns:
+        A ``hashlib`` object: SHA-512 for an integrity, SHA-256 otherwise.
+    """
+    if str(digest or "").startswith(INTEGRITY_PREFIX):
+        return hashlib.sha512()
+    return hashlib.sha256()
+
+
+def file_hex(path: Path, digest: str) -> str:
+    """A file's hash in hex, of the algorithm one digest names, read in chunks.
+
+    Args:
+        path: The file.
+        digest: The digest whose algorithm the file is hashed with.
+
+    Returns:
+        The hex.
+
+    Raises:
+        OSError: When it cannot be read.
+    """
+    hashed = digest_hash(digest)
+    with open(path, "rb") as stream:
+        while True:
+            chunk = stream.read(UTILS_FETCH_CHUNK_BYTES)
+            if not chunk:
+                break
+            hashed.update(chunk)
+    return hashed.hexdigest()
 
 
 def is_near(one: float, other: float) -> bool:
@@ -372,7 +424,8 @@ class SourceFetcher:
         Args:
             file: The file's name, as ``download_failed`` names it.
             sources: Every address that serves it.
-            digest: Its ``sha256:<hex>`` digest.
+            digest: Its ``sha256:<hex>`` digest, or npm's ``sha512-<base64>``
+                integrity.
             directory: Where the temporary file is made, beside its place.
             limit: The largest file taken, in bytes.
             on_line: Called with ``hub: fetching <file> from <host>`` when a
@@ -385,7 +438,7 @@ class SourceFetcher:
         Raises:
             DownloadFailedError: When every source failed.
             DownloadTooLargeError: When a source names a size past ``limit``.
-            ValueError: For a digest that is not ``sha256:<hex>``.
+            ValueError: For a digest of neither form.
             OSError: When the temporary file cannot be written.
         """
         wanted = hex_of(digest)
@@ -427,7 +480,7 @@ class SourceFetcher:
                                 for item in listed
                             ],
                         )
-                    if self._is_digest(stream, wanted, source, state):
+                    if self._is_digest(stream, digest, source, state):
                         break
                     source = None
                 stream.seek(0)
@@ -437,7 +490,7 @@ class SourceFetcher:
                 os.unlink(path)
             raise
         return DownloadedFile(
-            path=path, size=state.offset, sha256=wanted, head=head, source=source
+            path=path, size=state.offset, digest_hex=wanted, head=head, source=source
         )
 
     def fetch_document(
@@ -663,7 +716,7 @@ class SourceFetcher:
 
         Args:
             stream: The temporary file.
-            wanted: The digest's hex.
+            wanted: The digest, whose form names the algorithm.
             source: The source that served the last byte.
             state: The download, whose offset goes back to the start on a
                 mismatch.
@@ -673,10 +726,10 @@ class SourceFetcher:
         """
         stream.flush()
         stream.seek(0)
-        digest = hashlib.sha256()
+        digest = digest_hash(wanted)
         for chunk in iter(functools.partial(stream.read, UTILS_FETCH_CHUNK_BYTES), b""):
             digest.update(chunk)
-        if digest.hexdigest() == wanted:
+        if digest.hexdigest() == hex_of(wanted):
             return True
         state.failures[source] = failure_entry(
             source, REASON_DIGEST_MISMATCH, f"the file hashes to {digest.hexdigest()}"

@@ -2286,6 +2286,13 @@ class DeviceModuleView(BaseModel):
     # manager installs it), hub (the module's installer fetches it) or
     # container (its images run on Containers).
     method: str = ""
+    # The source chip's word: agent, system, upstream or container by the
+    # method, user for a command line program running no copy of its own;
+    # empty where the platform has no entry.
+    source: str = ""
+    # The kind chip's word: program for a command line program, service for
+    # every other module.
+    kind: str = ""
     is_supported: bool = True
     # The line the uninstall dialog shows under its body. None for a module
     # the agent carries.
@@ -2579,6 +2586,13 @@ class EnabledAccountRowView(BaseModel):
     # The file share's: the account row's share path and its SMB user.
     share_path: str | None = None
     user: str | None = None
+    # A command line program's: the copy the account uses, ``user`` or
+    # ``module``, its path and its version as reported, empty before; and
+    # the account's last AI tools result.
+    copy: str | None = None
+    path: str | None = None
+    version: str | None = None
+    ai_tools: AccountToolsView | None = None
 
 
 class EnabledAccountsView(ModuleDeviceFields):

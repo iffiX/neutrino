@@ -132,6 +132,25 @@ def test_a_package_stream_names_a_file_it_cannot_read(tmp_path, monkeypatch):
     assert closed == ["module_artifact_missing"]
 
 
+def test_a_module_package_closes_with_its_file_s_own_name_and_no_directory(tmp_path):
+    """An npm tarball's file names its package's path on the registry; the
+    close names the file alone, as its release gave it."""
+    held = SimpleNamespace(
+        path=tmp_path / "held",
+        title="Codex 0.166.0",
+        file="@openai/codex/-/codex-0.166.0-linux-x64.tgz",
+    )
+    runtime = SimpleNamespace(
+        agent_modules=SimpleNamespace(artifact=lambda **kwargs: held)
+    )
+
+    path, title, name = channel_serve._package_file(
+        runtime, "codex", {"os": "linux"}, None, "codex", "sha512-x"
+    )
+
+    assert (path, title, name) == (held.path, held.title, "codex-0.166.0-linux-x64.tgz")
+
+
 def package_stream_failing(monkeypatch, stream, error):
     def failed(*args):
         raise error

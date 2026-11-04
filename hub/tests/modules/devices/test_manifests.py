@@ -427,6 +427,8 @@ def test_the_manifests_come_back_in_the_order_every_list_of_modules_shows():
         "code_server",
         "cloudcli",
         "codeg",
+        "claude_code",
+        "codex",
         "siyuan",
         "podman",
         "hermes_webui",
@@ -464,6 +466,8 @@ def test_every_shipped_entry_names_its_runner_and_method():
         ("code_server", CODE_SERVER_BUILDS),
         ("cloudcli", NODE_BUILDS),
         ("codeg", CODEG_SERVER_BUILDS),
+        ("codex", CODEX_BUILDS),
+        ("claude_code", CLAUDE_CODE_BUILDS),
     ):
         assert shipped[name] == {key: (name, "hub") for key in keys}, name
 
@@ -485,6 +489,8 @@ def test_every_shipped_manifest_names_its_publisher():
         "code_server": "coder/code-server",
         "cloudcli": "siteboon/claudecodeui",
         "codeg": "spacering-net/codeg",
+        "codex": "OpenAI",
+        "claude_code": "Anthropic",
         "siyuan": "siyuan-note/siyuan",
         "hermes_webui": "nesquena/hermes-webui and NousResearch/hermes-agent",
         "ayakaleaf": "ayaka-notes/ayakaleaf-pro",
@@ -813,6 +819,212 @@ def test_codeg_pins_the_server_bundle_and_cloudclis_node_per_platform():
     assert resolve_platform_entry(manifest, {**WINDOWS, "arch": "arm64"}) == ("", None)
 
 
+# Codex's npm build per platform: npm's platform name, the target the
+# tarball's vendor/ holds, and npm's integrity for 0.166.0, as
+# registry.npmjs.org's document of @openai/codex names it.
+CODEX_VERSION = "0.166.0"
+CODEX_BUILDS = {
+    "linux-amd64": (
+        "linux-x64",
+        "x86_64-unknown-linux-musl",
+        "sha512-CxDm3+D1cpbGJeHrdzINoG+3wn9BVncP4qpZaaNYkxe8iPtRJOYyCJnnPoVjWRIBvI9vPKbRoifsMSA5xDaUpw==",  # scan: allow
+    ),
+    "linux-arm64": (
+        "linux-arm64",
+        "aarch64-unknown-linux-musl",
+        "sha512-w0ScAsBr9aZKtIFrh6HN6KU2yjKKeSCzYfbb7DB0Ccj4BYPzeZtUeQprbycLCwuX3AFQdbdjapmLho2iot74jQ==",  # scan: allow
+    ),
+    "darwin-amd64": (
+        "darwin-x64",
+        "x86_64-apple-darwin",
+        "sha512-Vj5wXJPizKmrzNtnRNQf9PP6FJkG3iJU/UO3NE4WvkENZGoQfmImdwf4MVRI5NgwjSuC6LT0HbBRHPVVnwGHuw==",  # scan: allow
+    ),
+    "darwin-arm64": (
+        "darwin-arm64",
+        "aarch64-apple-darwin",
+        "sha512-5fWH6qqUInACcRADIewjlnRxDb4QLe0uriwehiZz0+viuAAB8I+WWefqw4xwHvyKaxeiGX4uK56+vrgfvFk3FQ==",  # scan: allow
+    ),
+    "windows-amd64": (
+        "win32-x64",
+        "x86_64-pc-windows-msvc",
+        "sha512-NS8Ps5oG5r19pCrMCUXwUqOui6odnUIoBlQkrjCJ+h1k6KiwCzC/+mI9d3nSZCqFoVONPBTmqyq8NYq3YaFGyA==",  # scan: allow
+    ),
+    "windows-arm64": (
+        "win32-arm64",
+        "aarch64-pc-windows-msvc",
+        "sha512-LWO1cyGlxbKgeUM7QJ1a6QMSsJi++3PqgIi6BmIUBoj/kzZqRIR69UDMQgeU/9izzJFYMSbwt++lHnUFyjQXlA==",  # scan: allow
+    ),
+}
+# Claude Code's npm package per platform and npm's integrity for 2.1.311,
+# as registry.npmjs.org's document of each platform package names it.
+CLAUDE_CODE_VERSION = "2.1.311"
+CLAUDE_CODE_BUILDS = {
+    "linux-amd64": (
+        "linux-x64",
+        "sha512-dk1lVMt7n+NlYucKM7dLp/PfrK32pa/4oKQkacfazlSj8rG+hkH67wnDnaFG9Gs2al3OjK8PTVHgZ2WGHXoWUg==",  # scan: allow
+    ),
+    "linux-arm64": (
+        "linux-arm64",
+        "sha512-yZwDmtXmoZcFcCjCaoznOKqjrjjdQyc6PVuh6brANqQcaKpP+WZGuFlgUjgQh86u8HBybHZBB60WWOumKpO6uQ==",  # scan: allow
+    ),
+    "darwin-amd64": (
+        "darwin-x64",
+        "sha512-DEMAnoIk6qVaZ7r+o/QsFH532HOO9c6I+0mE2WuTygq5H8Gr7jgzpK7HVB6d1xzAuliu6MEw32G+oo//gYuvqw==",  # scan: allow
+    ),
+    "darwin-arm64": (
+        "darwin-arm64",
+        "sha512-PHxqWpXJ7ED6ZD+2xNiTfiPoK9Aq5siPMhZ2lLHwA1HB10XluHP4dSJ6YSA24Hb4cD/P3nTlhFMauk2VPdMMNA==",  # scan: allow
+    ),
+    "windows-amd64": (
+        "win32-x64",
+        "sha512-fKXnBqsAPxVeIc20kCdzI4GznhuCJxumy1ZbwkyIfgZRsZXKHzMaayrJ/Ro2O+Dfb/s9rG/gAqGkqJCsA3FgJg==",  # scan: allow
+    ),
+    "windows-arm64": (
+        "win32-arm64",
+        "sha512-Gc9o60Ji5RuP6xm7MBJsLUJE/AGymq8HF11idETBANHnLqg4uITD4O3tdOFE0yR7y6zEz2wl5D/7n4NlrY16Yg==",  # scan: allow
+    ),
+}
+NPM_REGISTRIES = [
+    "https://registry.npmjs.org",
+    "https://registry.npmmirror.com",
+    "https://mirrors.cloud.tencent.com/npm",
+]
+
+
+def _state_path(key: str, *parts: str) -> str:
+    """Where the agent unpacks a module on one platform key's system."""
+    if key.startswith("windows"):
+        return "%ProgramData%\\Neutrino\\agent\\state\\" + "\\".join(parts)
+    if key.startswith("darwin"):
+        return "/Library/Application Support/Neutrino/agent/state/" + "/".join(parts)
+    return "/var/lib/neutrino/agent/" + "/".join(parts)
+
+
+def test_codex_pins_openais_npm_build_per_platform_from_the_npm_set():
+    """One tarball per platform, the {version}-<platform> build of
+    @openai/codex under npm's integrity, fetched from the npm set alone and
+    unpacked into codex/package; the versions from the npm feed of the
+    package, and the person's own copy used from the floor up."""
+    manifest = load_module_manifests()["codex"]
+
+    assert (manifest["title"], manifest["license"]) == ("Codex", "Apache-2.0")
+    assert manifest["corresponding_source"] == (
+        "https://github.com/openai/codex/tree/rust-v{version}"
+    )
+    assert set(manifest["platforms"]) == set(CODEX_BUILDS)
+    for key, (build, target, integrity) in CODEX_BUILDS.items():
+        entry = manifest["platforms"][key]
+        assert "min_version" not in entry and "requires" not in entry
+        params = entry_params(entry)
+        assert params["version"] == CODEX_VERSION
+        assert params["user_copy_min_version"] == "0.100.0"
+        assert params["releases"] == [
+            {
+                "kind": "npm",
+                "sources": ["https://registry.npmjs.org"],
+                "package": "@openai/codex",
+            }
+        ]
+        (artifact,) = entry_artifacts(manifest, entry)
+        assert artifact == {
+            "name": "codex",
+            "kind": "tar_gz",
+            "directory": "package",
+            "file": f"@openai/codex/-/codex-{{version}}-{build}.tgz",
+            "digest": integrity,
+            "source_set": "npm",
+        }
+        assert artifact_sources(artifact, CODEX_VERSION) == [
+            f"{registry}/@openai/codex/-/codex-{CODEX_VERSION}-{build}.tgz"
+            for registry in NPM_REGISTRIES
+        ]
+        program = "codex.exe" if key.startswith("windows") else "codex"
+        path = _state_path(key, "codex", "package", "vendor", target, "bin", program)
+        is_quoted = not key.startswith("linux")
+        assert params["verify"] == (
+            f'"{path}" --version' if is_quoted else f"{path} --version"
+        )
+        assert params["uninstall"] == {"post_uninstall": [], "is_data_kept": True}
+
+
+def test_claude_code_pins_anthropics_npm_package_per_platform_from_the_npm_set():
+    """One tarball per platform, @anthropic-ai/claude-code-<platform> under
+    npm's integrity, fetched from the npm set alone and unpacked into
+    claude_code/package; the versions from each platform package's own npm
+    feed; macOS 13 and Windows 10 1809 the floors."""
+    manifest = load_module_manifests()["claude_code"]
+
+    assert (manifest["title"], manifest["license"]) == ("Claude Code", "Proprietary")
+    assert "corresponding_source" not in manifest
+    assert set(manifest["platforms"]) == set(CLAUDE_CODE_BUILDS)
+    for key, (build, integrity) in CLAUDE_CODE_BUILDS.items():
+        entry = manifest["platforms"][key]
+        package = f"@anthropic-ai/claude-code-{build}"
+        floor = {"darwin": "13", "windows": "17763"}.get(key.split("-")[0])
+        assert entry.get("min_version") == floor, key
+        params = entry_params(entry)
+        assert params["version"] == CLAUDE_CODE_VERSION
+        assert params["user_copy_min_version"] == "2.1.0"
+        assert params["releases"] == [
+            {
+                "kind": "npm",
+                "sources": ["https://registry.npmjs.org"],
+                "package": package,
+            }
+        ]
+        (artifact,) = entry_artifacts(manifest, entry)
+        assert artifact == {
+            "name": "claude_code",
+            "kind": "tar_gz",
+            "directory": "package",
+            "file": f"{package}/-/claude-code-{build}-{{version}}.tgz",
+            "digest": integrity,
+            "source_set": "npm",
+        }
+        assert artifact_sources(artifact, CLAUDE_CODE_VERSION) == [
+            f"{registry}/{package}/-/claude-code-{build}-{CLAUDE_CODE_VERSION}.tgz"
+            for registry in NPM_REGISTRIES
+        ]
+        program = "claude.exe" if key.startswith("windows") else "claude"
+        path = _state_path(key, "claude_code", "package", program)
+        is_quoted = not key.startswith("linux")
+        assert params["verify"] == (
+            f'"{path}" --version' if is_quoted else f"{path} --version"
+        )
+    assert resolve_platform_entry(manifest, {**MAC, "version": "12.7"}) == ("", None)
+    assert resolve_platform_entry(manifest, {**WINDOWS, "version": "17134"}) == (
+        "",
+        None,
+    )
+
+
+@pytest.mark.parametrize("name", ["codex", "claude_code"])
+def test_a_command_line_program_names_the_npm_set_as_its_one_source(name):
+    manifest = load_module_manifests()[name]
+
+    assert "{release}" not in json.dumps(manifest)
+    for entry in manifest["platforms"].values():
+        for artifact in entry_artifacts(manifest, entry):
+            assert artifact["source_set"] == "npm" and "sources" not in artifact
+
+
+def test_a_command_line_program_recipe_keeps_its_floor_and_drops_the_set():
+    manifest = load_module_manifests()["claude_code"]
+
+    recipe = module_recipe(manifest["platforms"]["linux-amd64"])
+
+    assert recipe["params"]["user_copy_min_version"] == "2.1.0"
+    assert recipe["params"]["artifacts"] == [
+        {
+            "name": "claude_code",
+            "kind": "tar_gz",
+            "digest": CLAUDE_CODE_BUILDS["linux-amd64"][1],
+            "directory": "package",
+        }
+    ]
+    assert "releases" not in recipe["params"]
+
+
 SIYUAN_VERSION = "3.8.8"
 SIYUAN_BUILDS = {
     "linux-amd64": (
@@ -944,6 +1156,18 @@ SHIPPED_UNINSTALL_LINES = {
         False,
         "Each account's Codeg data stays in {data_dir}.",
         "每个账户的 Codeg 数据留在 {data_dir}。",
+    ),
+    "codex": (
+        False,
+        "Each account's settings in ~/.codex stay, and so does a copy of Codex "
+        "installed outside this module.",
+        "每个账户在 ~/.codex 里的设置都保留，在本模块之外安装的 Codex 也保留。",
+    ),
+    "claude_code": (
+        False,
+        "Each account's settings in ~/.claude stay, and so does a copy of Claude "
+        "Code installed outside this module.",
+        "每个账户在 ~/.claude 里的设置都保留，在本模块之外安装的 Claude Code 也保留。",
     ),
     "siyuan": (
         False,
@@ -1888,6 +2112,109 @@ def test_every_shipped_npm_artifact_names_the_npm_set():
                 if artifact["kind"] == "npm":
                     assert artifact["source_set"] == "npm"
                     assert "sources" not in artifact
+
+
+# --- a tarball from the npm set, and a command line program's floor ---
+
+PROGRAM_INTEGRITY = "sha512-" + "c" * 86 + "=="
+
+
+def program_manifest() -> dict:
+    """A command line program's manifest: one hub entry whose tarball names
+    the npm set, and the floor of a person's own copy."""
+    manifest = valid_manifest()
+    manifest["name"] = "codex"
+    del manifest["platforms"]["linux-debian"]
+    params = hub_params(manifest)
+    params["artifacts"] = [
+        {
+            "name": "codex",
+            "kind": "tar_gz",
+            "directory": "package",
+            "file": "@openai/codex/-/codex-{version}-win32-x64.tgz",
+            "digest": PROGRAM_INTEGRITY,
+            "source_set": "npm",
+        }
+    ]
+    params["user_copy_min_version"] = "0.100.0"
+    return manifest
+
+
+def test_the_loader_takes_a_hub_tarball_named_by_the_npm_set(manifests_dir):
+    write_manifest(manifests_dir, "codex", program_manifest())
+
+    manifest = load_module_manifests()["codex"]
+    (artifact,) = entry_artifacts(manifest, manifest["platforms"]["windows-amd64"])
+
+    assert artifact_sources(artifact, "0.166.0") == [
+        f"{registry}/@openai/codex/-/codex-0.166.0-win32-x64.tgz"
+        for registry in NPM_REGISTRIES
+    ]
+
+
+def _set_tarball_with_sources(manifest):
+    hub_params(manifest)["artifacts"][0]["sources"] = ["https://r.example/{file}"]
+
+
+def _set_tarball_of_another_set(manifest):
+    hub_params(manifest)["artifacts"][0]["source_set"] = "pypi"
+
+
+def _set_tarball_under_a_sha256(manifest):
+    hub_params(manifest)["artifacts"][0]["digest"] = "sha256:" + "a" * 64
+
+
+def _set_zip(manifest):
+    hub_params(manifest)["artifacts"][0]["kind"] = "zip"
+
+
+def _tarball_with_no_source(manifest):
+    del hub_params(manifest)["artifacts"][0]["source_set"]
+
+
+def _program_without_its_floor(manifest):
+    del hub_params(manifest)["user_copy_min_version"]
+
+
+def _program_floor_of_another_form(manifest):
+    hub_params(manifest)["user_copy_min_version"] = "v0.100"
+
+
+@pytest.mark.parametrize(
+    "spoil, said",
+    [
+        (_set_tarball_with_sources, "sources"),
+        (_set_tarball_of_another_set, "npm set"),
+        (_set_tarball_under_a_sha256, "digest"),
+        (_set_zip, "tar_gz"),
+        (_tarball_with_no_source, "sources"),
+        (_program_without_its_floor, "user_copy_min_version"),
+        (_program_floor_of_another_form, "user_copy_min_version"),
+    ],
+)
+def test_the_loader_refuses_a_program_entry_outside_its_shape(
+    spoil, said, manifests_dir
+):
+    manifest = program_manifest()
+    spoil(manifest)
+    write_manifest(manifests_dir, "codex", manifest)
+
+    with pytest.raises(ValueError) as refusal:
+        load_module_manifests()
+
+    assert "codex.json" in str(refusal.value) and said in str(refusal.value)
+
+
+def test_the_loader_refuses_a_floor_on_any_other_entry(manifests_dir):
+    manifest = valid_manifest()
+    hub_params(manifest)["user_copy_min_version"] = "1.0"
+    write_manifest(manifests_dir, "sample", manifest)
+
+    with pytest.raises(ValueError) as refusal:
+        load_module_manifests()
+
+    assert "sample.json" in str(refusal.value)
+    assert "user_copy_min_version" in str(refusal.value)
 
 
 # The guest login each shipped module with a page names; Ayakaleaf's

@@ -276,7 +276,7 @@ def _view(runtime: PanelRuntime, key: str) -> AccountListView:
     """The machine's accounts as the page reads them."""
     store = DeviceAccountStore(runtime.desired_states)
     details = runtime.device_account_details.get(key, {})
-    reported = _reported_tools(runtime, key)
+    reported = reported_tools(runtime, key)
     enabled_by = {
         module: set(runtime.desired_states.enabled_accounts(key, module))
         for module in account_layer_names()
@@ -316,8 +316,17 @@ def _view(runtime: PanelRuntime, key: str) -> AccountListView:
     )
 
 
-def _reported_tools(runtime: PanelRuntime, key: str) -> dict:
-    """Each account's AI tools result from the machine's last report."""
+def reported_tools(runtime: PanelRuntime, key: str) -> dict:
+    """Each account's AI tools result from the machine's last report.
+
+    Args:
+        runtime: The shared runtime.
+        key: The device.
+
+    Returns:
+        Account to ``{state, code, params}``, for each account the report's
+        ``ai_tools`` section names.
+    """
     report = runtime.agent_sessions.reports().get(key) or {}
     section = report.get("ai_tools") if isinstance(report, dict) else None
     results = {}

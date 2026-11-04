@@ -10,8 +10,10 @@ newly enabled account's secrets once and keeps them across a disable,
 checks the section on the agent as the state will carry it, wants the
 module running and pushes; a set on a stopped module keeps it stopped and
 pushes; an account that is not available or named twice is refused; VS Code's set waits for its terms; the terms route
-answers the same view; and an apply on a failed module of any of the eight
-puts a retry mark and pushes.
+answers the same view; an apply on a failed module of any of the ten
+puts a retry mark and pushes; and a command line program's rows name the
+copy each account uses, its path and version, its code, and the account's
+last AI tools result.
 """
 
 import json
@@ -26,7 +28,7 @@ from tests.conftest import unlock_vault
 from tests.web.module_api_box import DEVICE, OFFLINE, module_box
 
 ACCEPTED_AT = "2026-10-05T08:00:00+00:00"
-EIGHT = [
+TEN = [
     "terminal",
     "ssh_server",
     "samba",
@@ -34,6 +36,8 @@ EIGHT = [
     "code_server",
     "cloudcli",
     "codeg",
+    "claude_code",
+    "codex",
     "siyuan",
 ]
 
@@ -65,13 +69,13 @@ def stored(tmp_path, module: str) -> dict:
     return json.loads(path.read_text())
 
 
-def test_the_table_gives_the_eight_account_layer_modules_a_router_and_no_other():
-    assert list(module_instances.ROUTERS) == EIGHT
+def test_the_table_gives_the_ten_account_layer_modules_a_router_and_no_other():
+    assert list(module_instances.ROUTERS) == TEN
     assert "gitea" not in module_instances.ROUTERS
     assert "remote_desktop" not in module_instances.ROUTERS
 
 
-@pytest.mark.parametrize("module", EIGHT)
+@pytest.mark.parametrize("module", TEN)
 def test_each_router_serves_the_read_the_apply_and_the_set_at_its_own_path(module):
     paths = sorted(
         (sorted(route.methods - {"HEAD", "OPTIONS"})[0], route.path)
@@ -86,7 +90,7 @@ def test_each_router_serves_the_read_the_apply_and_the_set_at_its_own_path(modul
 
 
 @pytest.mark.parametrize("state", ["failed", "install_failed"])
-@pytest.mark.parametrize("module", EIGHT)
+@pytest.mark.parametrize("module", TEN)
 def test_an_apply_on_a_failed_module_puts_a_retry_mark_and_pushes(api, module, state):
     client, runtime = api
     runtime.report(DEVICE, module, state=state)
@@ -156,6 +160,8 @@ def test_the_file_shares_rows_carry_the_share_path_and_the_smb_user(api):
         ("cloudcli", {"web_password_sealed", "token_secret_sealed"}),
         ("codeg", {"secret_sealed"}),
         ("terminal", set()),
+        ("claude_code", set()),
+        ("codex", set()),
     ],
 )
 def test_a_set_enables_the_accounts_and_seals_each_ones_fields_once(
@@ -513,3 +519,99 @@ def test_a_stopped_file_shares_rows_run_none_of_its_home_shares(api):
     ]
 
     assert [row["is_running"] for row in rows] == [False, False]
+
+
+@pytest.mark.parametrize("module", ["claude_code", "codex"])
+def test_a_command_line_program_s_rows_name_each_account_s_copy_and_ai_tools(
+    api, module
+):
+    """protocol.md: ``copy``, ``path`` and ``version`` as the module's
+    ``details`` report them, the account's code, and ``ai_tools`` as the
+    account form gives it; an account the report does not name reads empty."""
+    client, runtime = api
+    client.post(
+        f"/api/agent/module/{module}/set",
+        json={"device_id": DEVICE, "accounts": ["alice", "bob"]},
+    )
+    runtime.report(
+        DEVICE,
+        module,
+        state="running",
+        has_module_copy=True,
+        accounts=[
+            {
+                "account": "alice",
+                "copy": "user",
+                "path": "/home/alice/.local/bin/claude",
+                "version": "2.1.318",
+                "code": "",
+                "params": {},
+            },
+        ],
+        version="2.1.311",
+    )
+    runtime.agent_sessions.held_reports[DEVICE] = {
+        "ai_tools": {
+            "accounts": [{"account": "alice", "state": "switched", "params": {}}]
+        }
+    }
+
+    body = client.get(
+        f"/api/agent/module/{module}", params={"device_id": DEVICE}
+    ).json()
+
+    assert body["version"] == "2.1.311"
+    alice, bob = body["accounts"]
+    assert (alice["copy"], alice["path"], alice["version"]) == (
+        "user",
+        "/home/alice/.local/bin/claude",
+        "2.1.318",
+    )
+    assert alice["ai_tools"] == {"state": "switched", "code": "", "params": {}}
+    assert (alice["is_enabled"], alice["port"], alice["is_running"]) == (True, 0, False)
+    assert (bob["copy"], bob["path"], bob["version"]) == ("", "", "")
+    assert bob["ai_tools"] == {"state": "", "code": "", "params": {}}
+
+
+def test_a_command_line_program_s_row_carries_its_account_s_code(api):
+    client, runtime = api
+    client.post(
+        "/api/agent/module/codex/set",
+        json={"device_id": DEVICE, "accounts": ["alice"]},
+    )
+    params = {"account": "alice", "path": "/home/alice/.local/bin/codex"}
+    runtime.report(
+        DEVICE,
+        "codex",
+        state="running",
+        has_module_copy=True,
+        accounts=[
+            {
+                "account": "alice",
+                "copy": "module",
+                "path": "/var/lib/neutrino/agent/codex/bin/codex",
+                "version": "0.166.0",
+                "code": "link_name_taken",
+                "params": params,
+            }
+        ],
+    )
+
+    body = client.get("/api/agent/module/codex", params={"device_id": DEVICE}).json()
+
+    alice = body["accounts"][0]
+    assert (alice["copy"], alice["code"], alice["params"]) == (
+        "module",
+        "link_name_taken",
+        params,
+    )
+
+
+def test_a_row_of_another_module_names_no_copy(api):
+    client, _ = api
+
+    body = client.get("/api/agent/module/codeg", params={"device_id": DEVICE}).json()
+
+    assert all(
+        row["copy"] is None and row["ai_tools"] is None for row in body["accounts"]
+    )

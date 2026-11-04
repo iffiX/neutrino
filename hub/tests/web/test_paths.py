@@ -211,6 +211,8 @@ MODULE_NAMES = (
     "code_server",
     "cloudcli",
     "codeg",
+    "claude_code",
+    "codex",
     "siyuan",
     "hermes_webui",
     "ayakaleaf",

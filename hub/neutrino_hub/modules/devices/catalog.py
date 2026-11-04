@@ -13,7 +13,27 @@ whenever the manifests or the list move.
 import hashlib
 import json
 
-from neutrino_hub.modules.devices.constants import DEVICE_METHODS_WITH_LICENSE
+from neutrino_hub.modules.channel.constants import (
+    CHANNEL_MODULE_PRESENT_STATES,
+    CHANNEL_MODULE_STATE_FAILED,
+)
+from neutrino_hub.modules.devices.constants import (
+    DEVICE_KIND_PROGRAM,
+    DEVICE_KIND_SERVICE,
+    DEVICE_METHOD_AGENT,
+    DEVICE_METHOD_BUILTIN,
+    DEVICE_METHOD_CONTAINER,
+    DEVICE_METHOD_HUB,
+    DEVICE_METHOD_SYSTEM,
+    DEVICE_METHODS_WITH_LICENSE,
+    DEVICE_PROGRAM_MODULE_COPY_KEY,
+    DEVICE_SOURCE_AGENT,
+    DEVICE_SOURCE_CONTAINER,
+    DEVICE_SOURCE_SYSTEM,
+    DEVICE_SOURCE_UPSTREAM,
+    DEVICE_SOURCE_USER,
+)
+from neutrino_hub.modules.devices.module_table import command_line_program_names
 from neutrino_hub.modules.devices.manifests import (
     entry_method,
     entry_version,
@@ -61,6 +81,59 @@ def resolve_module(manifest: dict, platform: dict) -> dict:
         "platform_key": platform_key,
         "recipe": module_recipe(entry),
     }
+
+
+# The source chip's word each install method reads as.
+SOURCE_OF_METHOD = {
+    DEVICE_METHOD_AGENT: DEVICE_SOURCE_AGENT,
+    DEVICE_METHOD_BUILTIN: DEVICE_SOURCE_SYSTEM,
+    DEVICE_METHOD_SYSTEM: DEVICE_SOURCE_SYSTEM,
+    DEVICE_METHOD_HUB: DEVICE_SOURCE_UPSTREAM,
+    DEVICE_METHOD_CONTAINER: DEVICE_SOURCE_CONTAINER,
+}
+# The states in which a command line program's copies are on the machine,
+# whichever copy each account runs.
+PROGRAM_COPY_STATES = CHANNEL_MODULE_PRESENT_STATES + (CHANNEL_MODULE_STATE_FAILED,)
+
+
+def module_source(module: str, method: str, state: str, details: dict) -> str:
+    """The source chip's word of one module on one machine.
+
+    Args:
+        module: The module.
+        method: The install method of its entry for the machine's platform;
+            empty where the platform has no entry.
+        state: The module's state as last reported.
+        details: The ``details`` the machine last reported for it.
+
+    Returns:
+        ``agent``, ``system``, ``upstream`` or ``container`` by the method;
+        ``user`` for a command line program the machine has while its report
+        holds no copy of the module's own; empty for no entry.
+    """
+    source = SOURCE_OF_METHOD.get(method, "")
+    if (
+        module in command_line_program_names()
+        and state in PROGRAM_COPY_STATES
+        and details.get(DEVICE_PROGRAM_MODULE_COPY_KEY) is False
+    ):
+        return DEVICE_SOURCE_USER
+    return source
+
+
+def module_kind(module: str) -> str:
+    """The kind chip's word of one module.
+
+    Args:
+        module: The module.
+
+    Returns:
+        ``program`` for a command line program, which has no Start or Stop;
+        ``service`` for every other module.
+    """
+    if module in command_line_program_names():
+        return DEVICE_KIND_PROGRAM
+    return DEVICE_KIND_SERVICE
 
 
 def resolved_modules(platform: dict) -> dict:

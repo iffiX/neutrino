@@ -1,10 +1,10 @@
 """The description table: one frozen row per module, read by name and by kind.
 
 What these pin: the rows come in the order the machine page lists them and
-every row's kind is one of the five; the account-layer rows are the seven
+every row's kind is one of the six; the account-layer rows are the ten
 the shared router, the accounts form and the state composition are driven
-by, each with the fields it seals; the programs run as an account are four
-of them; a row's file and panel are named after the module unless the table
+by, each with the fields it seals; the programs run as an account are five
+of them and the command line programs two, sealing nothing; a row's file and panel are named after the module unless the table
 says otherwise; the modules that use the AI gateway are the rows that say
 so; and a name the table does not hold is a ``KeyError``.
 """
@@ -17,6 +17,7 @@ from neutrino_hub.modules.devices import module_table
 from neutrino_hub.modules.devices.constants import (
     DEVICE_MODULE_KIND_ACCOUNT_PROGRAM,
     DEVICE_MODULE_KIND_AGENT,
+    DEVICE_MODULE_KIND_COMMAND_LINE_PROGRAM,
     DEVICE_MODULE_KIND_CONTAINER,
     DEVICE_MODULE_KIND_SERVICE_ACCOUNT,
     DEVICE_MODULE_KIND_SYSTEM_PACKAGE,
@@ -32,6 +33,7 @@ from neutrino_hub.modules.devices.module_table import (
     account_layer_rows,
     account_program_names,
     account_program_rows,
+    command_line_program_names,
     module_row,
     rows_of_kind,
 )
@@ -48,6 +50,8 @@ def test_the_rows_come_in_the_order_every_list_of_modules_shows():
         "code_server",
         "cloudcli",
         "codeg",
+        "claude_code",
+        "codex",
         "siyuan",
         "podman",
         "hermes_webui",
@@ -59,7 +63,7 @@ def test_every_shipped_manifest_has_a_row_and_every_row_a_manifest():
     assert {row.name for row in DEVICE_MODULE_ROWS} == set(load_module_manifests())
 
 
-def test_every_row_is_one_of_the_five_kinds():
+def test_every_row_is_one_of_the_six_kinds():
     kinds = {row.name: row.kind for row in DEVICE_MODULE_ROWS}
 
     assert set(kinds.values()) <= set(DEVICE_MODULE_KINDS)
@@ -73,6 +77,8 @@ def test_every_row_is_one_of_the_five_kinds():
         "code_server": DEVICE_MODULE_KIND_ACCOUNT_PROGRAM,
         "cloudcli": DEVICE_MODULE_KIND_ACCOUNT_PROGRAM,
         "codeg": DEVICE_MODULE_KIND_ACCOUNT_PROGRAM,
+        "claude_code": DEVICE_MODULE_KIND_COMMAND_LINE_PROGRAM,
+        "codex": DEVICE_MODULE_KIND_COMMAND_LINE_PROGRAM,
         "siyuan": DEVICE_MODULE_KIND_ACCOUNT_PROGRAM,
         "podman": DEVICE_MODULE_KIND_SYSTEM_PACKAGE,
         "hermes_webui": DEVICE_MODULE_KIND_CONTAINER,
@@ -80,7 +86,7 @@ def test_every_row_is_one_of_the_five_kinds():
     }
 
 
-def test_the_account_layer_is_eight_rows_in_table_order():
+def test_the_account_layer_is_ten_rows_in_table_order():
     assert account_layer_names() == (
         "terminal",
         "ssh_server",
@@ -89,8 +95,11 @@ def test_the_account_layer_is_eight_rows_in_table_order():
         "code_server",
         "cloudcli",
         "codeg",
+        "claude_code",
+        "codex",
         "siyuan",
     )
+    assert command_line_program_names() == ("claude_code", "codex")
     assert [row.name for row in account_layer_rows()] == list(account_layer_names())
     assert account_program_names() == (
         "vscode",
@@ -128,6 +137,8 @@ def test_each_account_layer_row_seals_its_own_fields():
             ("token_secret_sealed", "token_secret"),
         ],
         "codeg": [("secret_sealed", "secret")],
+        "claude_code": [],
+        "codex": [],
         "siyuan": [
             ("secret_sealed", "secret"),
             ("access_code_sealed", "access_code"),
@@ -232,6 +243,8 @@ def test_each_row_names_its_published_entry():
         "code_server": ("code_server_module", "code-server ({account})"),
         "cloudcli": ("cloudcli_module", "CloudCLI ({account})"),
         "codeg": ("codeg_module", "Codeg ({account})"),
+        "claude_code": ("", ""),
+        "codex": ("", ""),
         "siyuan": ("siyuan_module", "SiYuan ({account})"),
         "podman": ("container", ""),
         "hermes_webui": ("hermes_webui_module", "Hermes WebUI"),
@@ -256,3 +269,16 @@ def test_a_row_is_frozen_and_an_unknown_name_is_refused():
         module_row("nothing")
     with pytest.raises(KeyError):
         module_row("terminal").sealed_field("token_sealed")
+
+
+def test_each_command_line_program_runs_as_its_login_with_no_page_or_key():
+    for name in ("claude_code", "codex"):
+        row = module_row(name)
+
+        assert row.kind == DEVICE_MODULE_KIND_COMMAND_LINE_PROGRAM
+        assert (row.is_account_layer, row.is_login_named) == (True, True)
+        assert (row.has_forwarder, row.token_field, row.is_gateway_used) == (
+            False,
+            "",
+            False,
+        )

@@ -16,6 +16,7 @@ name it, and one warning with each source's reason. Through the real fetcher:
 a release listing as large as Gitea's read whole.
 """
 
+import copy
 import hashlib
 import json
 
@@ -431,9 +432,11 @@ class FakeDocuments:
 
     def __init__(self, documents):
         self.documents = dict(documents)
+        self.asked: list = []
 
     def fetch_document(self, *, file, sources, parse, headers=None, limit=0):
         (url,) = sources
+        self.asked.append((url, dict(headers or {}), limit))
         return parse(json.dumps(self.documents[url]).encode()), url
 
 
@@ -518,3 +521,167 @@ def test_each_artifact_of_a_module_with_feeds_follows_the_version_or_stays_pinne
                 ) or module_releases._feed_repository(artifact, feeds)
                 is_pinned = artifact["name"] in PINNED_ARTIFACTS
                 assert bool(follows) != is_pinned, (name, key, artifact["name"])
+
+
+def tarball(package: str, version: str) -> str:
+    name = package.rsplit("/", 1)[-1]
+    return f"https://registry.example/{package}/-/{name}-{version}.tgz"
+
+
+CODEX_FEED = {
+    "kind": "npm",
+    "sources": ["https://registry.example"],
+    "package": "@openai/codex",
+}
+CODEX_ENTRY = {
+    "runner": "codex",
+    "install": {
+        "method": "hub",
+        "params": {
+            "version": "0.166.0",
+            "user_copy_min_version": "0.100.0",
+            "releases": [CODEX_FEED],
+            "artifacts": [
+                {
+                    "name": "codex",
+                    "kind": "tar_gz",
+                    "directory": "package",
+                    "file": "@openai/codex/-/codex-{version}-linux-x64.tgz",
+                    "digest": "sha512-linux-0.166.0",
+                    "source_set": "npm",
+                }
+            ],
+        },
+    },
+}
+CODEX_MANIFEST = {"name": "codex", "platforms": {"linux-amd64": CODEX_ENTRY}}
+
+
+def codex_document() -> dict:
+    """@openai/codex as the registry's short document names it: the wrapper
+    of each version, its platform builds as versions of their own, an alpha,
+    and a version whose linux-x64 build is not published yet."""
+    versions = {}
+    for version, builds in (
+        ("0.165.0", ("linux-x64", "darwin-arm64")),
+        ("0.166.0", ("linux-x64", "darwin-arm64")),
+        ("0.167.0", ("darwin-arm64",)),
+        ("0.168.0-alpha.1", ("linux-x64",)),
+    ):
+        versions[version] = {
+            "dist": {
+                "integrity": f"sha512-wrapper-{version}",
+                "tarball": tarball("@openai/codex", version),
+            }
+        }
+        for build in builds:
+            built = f"{version}-{build}"
+            versions[built] = {
+                "dist": {
+                    "integrity": f"sha512-{build.split('-')[0]}-{version}",
+                    "tarball": tarball("@openai/codex", built),
+                }
+            }
+    return {"name": "@openai/codex", "versions": versions}
+
+
+def codex_reader(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        module_releases, "load_module_manifests", lambda: {"codex": CODEX_MANIFEST}
+    )
+    fetcher = FakeDocuments(
+        {
+            "https://registry.example"
+            + module_releases.NPM_PACKAGE_PATH.format(package="@openai/codex"): (
+                codex_document()
+            )
+        }
+    )
+    store = ModuleReleaseStore(path=tmp_path / "module_releases.json")
+    return ModuleReleaseReader(fetcher=fetcher, store=store), fetcher, store
+
+
+def test_an_npm_feed_asks_for_the_short_document(tmp_path, monkeypatch):
+    read, fetcher, _ = codex_reader(tmp_path, monkeypatch)
+
+    read.read_entry(CODEX_MANIFEST, CODEX_ENTRY)
+
+    ((url, headers, limit),) = fetcher.asked
+    assert url == "https://registry.example/@openai/codex"
+    assert headers == {"Accept": "application/vnd.npm.install-v1+json"}
+    # @openai/codex's short document was 5.4 MB on 2026-11-04.
+    assert limit >= 32 * 1024 * 1024
+
+
+def test_an_npm_tarball_takes_the_integrity_of_the_version_whose_tarball_is_its_file(
+    tmp_path, monkeypatch
+):
+    """Codex at 0.166.0 takes 0.166.0-linux-x64's integrity, never the
+    wrapper's; a version whose build is not published yet is not listed,
+    and an alpha is no version."""
+    read, _, store = codex_reader(tmp_path, monkeypatch)
+
+    listed = read.read_entry(CODEX_MANIFEST, CODEX_ENTRY)
+    read.read()
+    recipe = store.recipe("codex", {"os": "linux", "arch": "amd64"}, "0.165.0")
+
+    assert listed == [
+        {
+            "version": "0.166.0",
+            "artifacts": {"codex": {"digest": "sha512-linux-0.166.0"}},
+        },
+        {
+            "version": "0.165.0",
+            "artifacts": {"codex": {"digest": "sha512-linux-0.165.0"}},
+        },
+    ]
+    assert recipe["params"]["version"] == "0.165.0"
+    assert recipe["params"]["artifacts"][0]["digest"] == "sha512-linux-0.165.0"
+    assert recipe["params"]["user_copy_min_version"] == "0.100.0"
+
+
+def test_a_platform_package_feed_gives_each_version_its_own_tarball(
+    tmp_path, monkeypatch
+):
+    """Claude Code: the feed of each platform's own package lists its
+    versions, and each version's tarball names its integrity."""
+    package = "@anthropic-ai/claude-code-linux-x64"
+    entry = copy.deepcopy(CODEX_ENTRY)
+    params = entry["install"]["params"]
+    params["releases"] = [{**CODEX_FEED, "package": package}]
+    params["artifacts"][0].update(
+        name="claude_code",
+        file=f"{package}/-/claude-code-linux-x64-{{version}}.tgz",
+    )
+    manifest = {"name": "claude_code", "platforms": {"linux-amd64": entry}}
+    document = {
+        "versions": {
+            version: {
+                "dist": {
+                    "integrity": f"sha512-{version}",
+                    "tarball": tarball(package, version),
+                }
+            }
+            for version in ("2.1.311", "2.1.318")
+        }
+    }
+    fetcher = FakeDocuments(
+        {
+            "https://registry.example"
+            + module_releases.NPM_PACKAGE_PATH.format(package=package): document
+        }
+    )
+    read = ModuleReleaseReader(
+        fetcher=fetcher, store=ModuleReleaseStore(path=tmp_path / "releases.json")
+    )
+
+    assert read.read_entry(manifest, entry) == [
+        {
+            "version": "2.1.318",
+            "artifacts": {"claude_code": {"digest": "sha512-2.1.318"}},
+        },
+        {
+            "version": "2.1.311",
+            "artifacts": {"claude_code": {"digest": "sha512-2.1.311"}},
+        },
+    ]

@@ -6,7 +6,9 @@ the asking machine's platform, finds the artifact of that name and digest,
 and serves the file it keeps under that digest, fetching it first when it is
 not held: every source the manifest names, filled in, through the method
 every download uses (:mod:`neutrino_hub.utils.source_fetch`), the digest and
-the head checked, a file larger than 2 GiB refused. Once a new file is in
+the head checked, a file larger than 2 GiB refused. A tarball on the npm
+source set is read under each of the set's registries and checked by npm's
+integrity, its SHA-512. Once a new file is in
 place, the files of no module some machine names, and of no version the
 manifests pin, are deleted; cc-switch's pinned files stay.
 
@@ -51,14 +53,15 @@ from neutrino_hub.utils.source_fetch import (
     REASON_DIGEST_MISMATCH,
     SourceFetcher,
     failure_entry,
-    file_sha256,
+    file_hex,
     hex_of,
 )
 
 LOGGER = logging.getLogger(__name__)
 
-# A file the cache keeps is named by its digest's hex.
-CACHE_NAME_PATTERN = re.compile(r"[0-9a-f]{64}")
+# A file the cache keeps is named by the hex of its digest's bytes: a
+# sha256 digest's, or the SHA-512 an npm integrity names.
+CACHE_NAME_PATTERN = re.compile(r"[0-9a-f]{64}|[0-9a-f]{128}")
 # A file a 0.5 hub kept, ``<module>-<platform>-<16 hex of its digest>``,
 # which no hub serves any more.
 CACHE_OLD_NAME_PATTERN = re.compile(r"[a-z0-9_]+(?:-[a-z0-9_]+)+-[0-9a-f]{16}")
@@ -70,7 +73,7 @@ class AgentModuleArtifact:
 
     Attributes:
         path: Where the file is, named by its digest.
-        digest: Its ``sha256:<hex>``.
+        digest: Its ``sha256:<hex>``, or npm's ``sha512-<base64>`` integrity.
         file: The artifact's file name, as its sources name it.
         title: What progress lines call it, from :func:`artifact_title`.
     """
@@ -265,7 +268,8 @@ class AgentModuleCache:
         Args:
             module: The module, or the tool, the stream names.
             artifact: The artifact's name.
-            digest: The ``sha256:<hex>`` the stream asks for.
+            digest: The ``sha256:<hex>``, or npm's integrity, the stream asks
+                for.
             platform: The tuple the asking agent reported.
             on_progress: Called on this thread with each ``hub:`` line: the
                 fetch's ``hub: fetching`` lines, or that the file is in the
@@ -312,7 +316,7 @@ class AgentModuleCache:
         hexed = hex_of(digest)
         path = self._root / hexed
         with self._lock_for(hexed):
-            if self._is_held(path, hexed):
+            if self._is_held(path, digest):
                 if on_progress is not None:
                     on_progress(f"hub: {title} is in the cache")
             else:
@@ -493,10 +497,10 @@ class AgentModuleCache:
             return lock
 
     @staticmethod
-    def _is_held(path: Path, hexed: str) -> bool:
-        """Whether the file is there and still hashes to its name."""
+    def _is_held(path: Path, digest: str) -> bool:
+        """Whether the file is there and still hashes to its digest."""
         try:
-            return file_sha256(path) == hexed
+            return file_hex(path, digest) == hex_of(digest)
         except OSError:
             return False
 

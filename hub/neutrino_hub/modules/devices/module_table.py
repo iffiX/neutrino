@@ -4,7 +4,7 @@ A row names the module's kind, its configuration file under
 ``config/devices/<id>/``, whether it runs one instance per enabled account
 (the account layer), the fields the vault seals in each account's record,
 the published entry's ``description_code`` and title, and the panel the
-machine page draws it with. The eight account-layer modules share one
+machine page draws it with. The ten account-layer modules share one
 router, one panel and one state composition, each driven by its row; every
 other kind has its own router and panel and reads its row for the rest.
 """
@@ -22,6 +22,7 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_AYAKALEAF_SECRET_KEY,
     DEVICE_AYAKALEAF_SESSION_SECRET_AAD,
     DEVICE_AYAKALEAF_SESSION_SECRET_KEY,
+    DEVICE_CLAUDE_CODE_MODULE,
     DEVICE_CLOUDCLI_MODULE,
     DEVICE_CLOUDCLI_PASSWORD_AAD,
     DEVICE_CLOUDCLI_PASSWORD_KEY,
@@ -36,6 +37,7 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_CODEG_SECRET_AAD,
     DEVICE_CODEG_SECRET_BYTES,
     DEVICE_CODEG_SECRET_KEY,
+    DEVICE_CODEX_MODULE,
     DEVICE_GITEA_MODULE,
     DEVICE_HERMES_WEBUI_MODULE,
     DEVICE_HERMES_WEBUI_PASSWORD_AAD,
@@ -45,6 +47,7 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_HERMES_WEBUI_SECRET_KEY,
     DEVICE_MODULE_KIND_ACCOUNT_PROGRAM,
     DEVICE_MODULE_KIND_AGENT,
+    DEVICE_MODULE_KIND_COMMAND_LINE_PROGRAM,
     DEVICE_MODULE_KIND_CONTAINER,
     DEVICE_MODULE_KIND_SERVICE_ACCOUNT,
     DEVICE_MODULE_KIND_SYSTEM_PACKAGE,
@@ -120,7 +123,7 @@ class DeviceModuleRow:
 
     Attributes:
         name: The manifest name.
-        kind: One of the five kinds, ``DEVICE_MODULE_KIND_*``.
+        kind: One of the six kinds, ``DEVICE_MODULE_KIND_*``.
         config_file: The module's file under ``config/devices/<id>/``.
         is_account_layer: Whether the module runs one instance per enabled
             account and keeps its enabled accounts in its file.
@@ -334,6 +337,20 @@ DEVICE_MODULE_ROWS = (
         is_token_minted=True,
     ),
     _row(
+        DEVICE_CLAUDE_CODE_MODULE,
+        DEVICE_MODULE_KIND_COMMAND_LINE_PROGRAM,
+        is_account_layer=True,
+        panel=DEVICE_MODULE_PANEL_INSTANCES,
+        is_login_named=True,
+    ),
+    _row(
+        DEVICE_CODEX_MODULE,
+        DEVICE_MODULE_KIND_COMMAND_LINE_PROGRAM,
+        is_account_layer=True,
+        panel=DEVICE_MODULE_PANEL_INSTANCES,
+        is_login_named=True,
+    ),
+    _row(
         DEVICE_SIYUAN_MODULE,
         DEVICE_MODULE_KIND_ACCOUNT_PROGRAM,
         is_account_layer=True,
@@ -515,6 +532,17 @@ def gateway_instance_names() -> tuple:
         row.name
         for row in DEVICE_MODULE_ROWS
         if row.is_gateway_used and row.kind == DEVICE_MODULE_KIND_ACCOUNT_PROGRAM
+    )
+
+
+def command_line_program_names() -> tuple:
+    """The names of the command line programs, in the table's order.
+
+    Returns:
+        The names.
+    """
+    return tuple(
+        row.name for row in rows_of_kind(DEVICE_MODULE_KIND_COMMAND_LINE_PROGRAM)
     )
 
 

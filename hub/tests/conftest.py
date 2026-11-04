@@ -1802,17 +1802,24 @@ class FakeSourceFetcher:
     Attributes:
         bodies: Address to the bytes it serves.
         asked: Each call, as ``(kind, file, sources)``.
+        headers: The headers each ``fetch_document`` call asked with.
     """
 
     def __init__(self, bodies: "dict | None" = None):
         self.bodies = dict(bodies or {})
         self.asked: list = []
+        self.headers: list = []
 
     def fetch_file(
         self, *, file, sources, digest, directory, limit, on_line=None
     ) -> "DownloadedFile":
         from neutrino_hub.exceptions import DownloadFailedError
-        from neutrino_hub.utils.source_fetch import DownloadedFile, failure_entry
+        from neutrino_hub.utils.source_fetch import (
+            DownloadedFile,
+            digest_hash,
+            failure_entry,
+            hex_of,
+        )
 
         self.asked.append(("file", file, list(sources)))
         failures = []
@@ -1821,7 +1828,9 @@ class FakeSourceFetcher:
             if body is None:
                 failures.append(failure_entry(source, "http_404"))
                 continue
-            if "sha256:" + hashlib.sha256(body).hexdigest() != digest:
+            hashed = digest_hash(digest)
+            hashed.update(body)
+            if hashed.hexdigest() != hex_of(digest):
                 failures.append(failure_entry(source, "digest_mismatch"))
                 continue
             if on_line is not None:
@@ -1834,17 +1843,18 @@ class FakeSourceFetcher:
             return DownloadedFile(
                 path=Path(name),
                 size=len(body),
-                sha256=hashlib.sha256(body).hexdigest(),
+                digest_hex=hashed.hexdigest(),
                 head=body[:512],
                 source=source,
             )
         raise DownloadFailedError(file, failures)
 
-    def fetch_document(self, *, file, sources, parse, limit=0) -> tuple:
+    def fetch_document(self, *, file, sources, parse, limit=0, headers=None) -> tuple:
         from neutrino_hub.exceptions import DownloadFailedError
         from neutrino_hub.utils.source_fetch import failure_entry
 
         self.asked.append(("document", file, list(sources)))
+        self.headers.append(dict(headers or {}))
         failures = []
         for source in sources:
             body = self.bodies.get(source)

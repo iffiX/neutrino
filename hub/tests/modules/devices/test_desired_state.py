@@ -566,6 +566,41 @@ def test_a_windows_machine_is_sent_each_accounts_login_password(unlocked):
     assert "pw-ann" not in json.dumps(store.read(DEVICE, "accounts"))
 
 
+@pytest.mark.parametrize("module", ["claude_code", "codex"])
+def test_a_command_line_program_is_sent_its_enabled_accounts_and_their_logins(
+    unlocked, module
+):
+    """protocol.md, "The account layer in the state": ``{accounts: [{account,
+    password}]}``, the login's password on Windows alone, and no secret."""
+    store = DesiredStateStore()
+    from neutrino_hub.modules.credentials.vault import SecretVault
+
+    login = SecretVault().add(
+        kind="login", name="ann", secret={"username": "ann", "password": "pw-ann"}
+    )
+    accounts = DeviceAccountStore(store)
+    accounts.add(DEVICE, DeviceAccount(account="ann", login_id=login.id))
+    accounts.add(DEVICE, DeviceAccount(account="bob"))
+    store.set_enabled_accounts(DEVICE, module, ["bob", "ann"])
+    store.set_want(DEVICE, module, "running")
+
+    windows, _ = store.compose(DEVICE, WINDOWS)
+    linux, _ = store.compose(DEVICE, PLATFORM)
+
+    assert windows["modules"][module]["config"] == {
+        "accounts": [
+            {"account": "bob"},
+            {"account": "ann", "password": "pw-ann"},
+        ]
+    }
+    assert linux["modules"][module]["config"] == {
+        "accounts": [{"account": "bob"}, {"account": "ann"}]
+    }
+    assert store.read(DEVICE, module) == {
+        "accounts": [{"account": "bob"}, {"account": "ann"}]
+    }
+
+
 def test_forgetting_an_account_takes_it_out_of_every_module_and_names_them(unlocked):
     store = DesiredStateStore()
     with_accounts(store, "ann", "bob")
