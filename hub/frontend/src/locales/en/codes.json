@@ -94,6 +94,7 @@
   "code.key_not_a_private_key": "That does not look like a private key.",
   "code.key_nothing_pasted": "No key was pasted.",
   "code.key_passphrase_needed": "This key is passphrase-protected; enter its passphrase too.",
+  "code.key_passphrase_not_stored": "This key is passphrase-protected and the hub cannot open it. Add it on the Credentials page with its passphrase.",
   "code.key_passphrase_wrong": "That passphrase does not open this key.",
   "code.key_unreadable": "This key could not be read: {detail}",
   "code.kill_failed": "Process {pid} could not be stopped.",

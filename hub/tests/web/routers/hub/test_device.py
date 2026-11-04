@@ -1093,7 +1093,8 @@ def test_a_hub_with_no_agent_package_refuses_with_a_code(install_api, monkeypatc
 def test_a_key_with_a_passphrase_and_none_stored_is_refused_with_a_code(
     install_api, monkeypatch
 ):
-    """The probe's key import raised ValueError and the request ended with 500."""
+    """The probe's key import raised ValueError and the request ended with 500.
+    Then the refusal asked for a passphrase the install dialog has no field for."""
     client, tmp_path, device_id = install_api
     hub_carries_a_package(tmp_path, monkeypatch)
     capture_install(monkeypatch)
@@ -1111,7 +1112,10 @@ def test_a_key_with_a_passphrase_and_none_stored_is_refused_with_a_code(
     refused = install(client, device_id, key_id=key_id)
 
     assert refused.status_code == 400
-    assert refused.json()["detail"] == {"code": "key_passphrase_needed", "params": {}}
+    assert refused.json()["detail"] == {
+        "code": "key_passphrase_not_stored",
+        "params": {},
+    }
 
 
 def test_the_install_ticket_binds_to_the_device(install_api, monkeypatch):

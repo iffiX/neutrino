@@ -129,7 +129,10 @@ def encrypted_key() -> str:
 
 @pytest.mark.parametrize(
     "passphrase, code",
-    [(None, "key_passphrase_needed"), ("not-the-passphrase", "key_passphrase_wrong")],
+    [
+        (None, "key_passphrase_not_stored"),
+        ("not-the-passphrase", "key_passphrase_wrong"),
+    ],
     ids=["no_passphrase", "wrong_passphrase"],
 )
 def test_a_vault_key_its_passphrase_does_not_open_is_refused_by_code(
@@ -150,7 +153,8 @@ def test_a_vault_key_its_passphrase_does_not_open_is_refused_by_code(
     assert refused.value.code == code
 
 
-def test_a_key_file_with_a_passphrase_and_none_given_is_refused_by_code(tmp_path):
+def test_a_key_file_with_a_passphrase_and_none_stored_is_refused_by_code(tmp_path):
+    """The install dialog asked for the passphrase and has no field for one."""
     path = tmp_path / "id_ed25519"
     path.write_text(encrypted_key())
     credentials = SshCredentials(
@@ -160,7 +164,7 @@ def test_a_key_file_with_a_passphrase_and_none_given_is_refused_by_code(tmp_path
     with pytest.raises(KeyMaterialError) as refused:
         asyncio.run(operator(credentials, tmp_path).run_once("uname -s"))
 
-    assert refused.value.code == "key_passphrase_needed"
+    assert refused.value.code == "key_passphrase_not_stored"
 
 
 def test_a_password_device_offers_no_key(config_dir, tmp_path):

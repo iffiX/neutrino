@@ -749,7 +749,7 @@ async def install_agent(
     Raises:
         HTTPException: 404 when no device has the id, 400 for an install
             naming no single credential or a key that cannot be opened
-            (``key_passphrase_needed`` and the other ``key_*`` codes), 409
+            (``key_passphrase_not_stored`` and the other ``key_*`` codes), 409
             when the install's pre-flight finds a device that is not Linux
             (``{"code": "unsupported_remote_install", "os": ...}``) or the
             hub carries no agent package.

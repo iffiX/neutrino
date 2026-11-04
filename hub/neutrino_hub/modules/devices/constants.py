@@ -551,6 +551,8 @@ DEVICE_KEY_ERROR_NO_BCRYPT = "key_encryption_unsupported"
 DEVICE_KEY_ERROR_PASSPHRASE_WRONG = "key_passphrase_wrong"
 DEVICE_KEY_ERROR_PASSPHRASE_NEEDED = "key_passphrase_needed"
 DEVICE_KEY_ERROR_UNREADABLE = "key_unreadable"
+# The SSH install's refusal of an encrypted key stored with no passphrase.
+DEVICE_KEY_ERROR_PASSPHRASE_NOT_STORED = "key_passphrase_not_stored"
 
 # The module catalog the machine page's Add module dialog draws, shipped in
 # the package: every module by the activity it serves, in the dialog's order.

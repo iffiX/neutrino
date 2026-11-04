@@ -94,6 +94,7 @@
   "code.key_not_a_private_key": "这看起来不是私钥。",
   "code.key_nothing_pasted": "没有粘贴任何密钥。",
   "code.key_passphrase_needed": "这个密钥有口令保护，请一并输入口令。",
+  "code.key_passphrase_not_stored": "这个密钥有口令保护，中枢打不开它。请在凭据页带上口令添加这个密钥。",
   "code.key_passphrase_wrong": "这个口令打不开这个密钥。",
   "code.key_unreadable": "这个密钥读不出来：{detail}",
   "code.kill_failed": "进程 {pid} 停不下来。",

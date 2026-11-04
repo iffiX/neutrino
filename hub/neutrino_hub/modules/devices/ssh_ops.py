@@ -32,6 +32,8 @@ from neutrino_hub.exceptions import (
 from neutrino_hub.modules.credentials.vault import SecretVault
 from neutrino_hub.modules.devices.agent_package import AgentPackageCache
 from neutrino_hub.modules.devices.constants import (
+    DEVICE_KEY_ERROR_PASSPHRASE_NEEDED,
+    DEVICE_KEY_ERROR_PASSPHRASE_NOT_STORED,
     SSH_UNREACHABLE_STATUS,
     SSH_UNSUPPORTED_OS_STATUS,
     SSH_UPLOAD_DIR_PREFIX,
@@ -697,12 +699,17 @@ class DeviceSshOperator:
         """Open a connection, recording the host key the first time.
 
         Raises:
-            KeyMaterialError: When the device's private key cannot be opened.
+            KeyMaterialError: When the device's private key cannot be opened,
+                ``key_passphrase_not_stored`` for an encrypted key stored with
+                no passphrase.
         """
         try:
             connection = await asyncssh.connect(**self._connect_options())
         except (asyncssh.KeyImportError, asyncssh.KeyEncryptionError) as error:
-            raise key_refusal(error) from error
+            refusal = key_refusal(error)
+            if refusal.code == DEVICE_KEY_ERROR_PASSPHRASE_NEEDED:
+                refusal = KeyMaterialError(DEVICE_KEY_ERROR_PASSPHRASE_NOT_STORED)
+            raise refusal from error
         async with connection:
             self._remember_host_key(connection)
             yield connection
