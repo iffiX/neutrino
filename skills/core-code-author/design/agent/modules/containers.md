@@ -96,8 +96,8 @@ unpacks none.
 | --- | --- | --- |
 | Windows features | `dism.exe /English /Online /Enable-Feature /FeatureName:<feature> /All /NoRestart` for `VirtualMachinePlatform` and for `Microsoft-Windows-Subsystem-Linux`; an exit other than 0 and 3010 ends the install `windows_feature_failed {feature, exit_code}` | WSL 2 needs both, on Windows Home too |
 | WSL | the WSL msi through `installers.install_msi`, skipped when Windows Installer's product list holds the WSL package at the pinned version or newer | Podman's msi installs no WSL, and the system's own `wsl.exe` reports WSL as not installed until it is |
-| Podman on Windows | `msiexec /i <msi> /qn /norestart /l*v <log> ALLUSERS=1 MACHINE_PROVIDER=wsl` through `installers.install_msi` | `ALLUSERS=1` puts Podman in `C:\Program Files\Podman` and on the computer's `PATH`, where SYSTEM and every account find it |
-| Podman on macOS | `installer -pkg <file> -target /` through `installers.install_pkg` | the system's installer is the one that installs a pkg |
+| Podman on Windows | `msiexec /i <msi> /qn /norestart /l*v <log> ALLUSERS=1 MACHINE_PROVIDER=wsl` through `installers.install_msi`, skipped on a person's Podman ("A person's Podman and the module's") | `ALLUSERS=1` puts Podman in `C:\Program Files\Podman` and on the computer's `PATH`, where SYSTEM and every account find it |
+| Podman on macOS | `installer -pkg <file> -target /` through `installers.install_pkg`, skipped on a person's Podman | the system's installer is the one that installs a pkg |
 
 A failed msi or pkg ends the install `podman_install_failed {artifact,
 exit_code}`.
@@ -108,6 +108,28 @@ exit_code}`.
 | The agent never restarts the computer. A person does, with the tab's **Restart now** or the device's **Reboot**. | A restart closes every program open on the computer. |
 | While the restart is owed, Containers' task waits in its step `restart`, holding no step lock, checks every 30 seconds and keeps no tried hash until it ends; other modules' tasks go on ([agent.md](../../agent.md), "The steps"). | The install goes on after the restart with no press, and nothing else on the machine waits for the restart. |
 | On macOS the pkg's receipt is `com.redhat.podman`. Its scripts write `/etc/paths.d/podman-pkg` and `/usr/local/etc/man.d/podman.man.conf`, and run `podman-mac-helper install`, which installs nothing when the agent runs the installer. | The helper installs for the account `SUDO_USER` or `USER` names and refuses root, and the agent runs as root with no `SUDO_USER`. |
+
+### A person's Podman and the module's
+
+A Podman that was on the computer before the module installed one is the
+person's. The install writes the mark `package_mark` into the module's
+directory under the state root right before it hands Podman's msi or pkg to
+the system's installer, when Podman's program, `C:\Program Files\Podman\podman.exe`
+or `/opt/podman/bin/podman`, was not on the computer. It deletes the mark
+again when the installer leaves no program there. With no such mark the
+Podman is the person's, so a computer where an earlier build installed Podman
+counts as the person's. A Podman the mark stands for is the module's.
+
+| | A person's Podman | A Podman the module installed |
+| --- | --- | --- |
+| **Install** | runs no installer on Podman and writes no mark; the msi or the pkg is kept in the module's directory all the same | writes the mark, then installs Podman's msi or pkg |
+| Another version | uninstalls and installs nothing, and Podman stays at the person's version | uninstalls the old package and installs the chosen one; the mark stays |
+| **Uninstall** | leaves Podman installed: on Windows its msi, on macOS `/opt/podman/`, the two files the pkg's scripts write and the receipt | uninstalls Podman as "The uninstall" says, and deletes the mark with the module's directory |
+
+| Rule | Reason |
+| --- | --- |
+| After an **Uninstall** on a person's Podman the module reads `absent` through the uninstalled mark `uninstalled/podman`, the one the file share takes on a person's Samba ([module_install.md](../module_install.md), "From the system's packages"), across a restart of the agent. A later **Install** finds Podman there, runs no installer, writes no mark, and its `verify` deletes the uninstalled mark. | Podman stays on the computer, so its presence check alone reads `failed` `uninstall_unconfirmed`, with no press that clears it. |
+| The rest of the uninstall is the same on either Podman: the containers' files in the machine, the keeper with its task or LaunchDaemon, its script and its log, and the kept artifacts go; the machine is stopped and kept with its disk, images and named volumes ("The uninstall"). | The keeper and the files are the module's own, whoever installed Podman, and the machine holds the person's data on either. |
 
 ### The account and its machine
 
@@ -284,7 +306,7 @@ by its keeper first, and the uninstall waits until it answers the read:
 | The declared containers, their units and environment files in the machine, and the mirrors drop-in | stopped and removed, by one root script |
 | The keeper, its script and its log | removed, so nothing starts the machine again |
 | The machine | stopped, and kept with its disk, images and named volumes in the account's profile; on Windows its WSL system stays registered |
-| Podman | uninstalled: on Windows the msi by `installers.uninstall_msi`; on macOS `/opt/podman/` and the two files the pkg's scripts write deleted, and the receipt forgotten with `pkgutil --forget com.redhat.podman` |
+| Podman | uninstalled where the module installed it ("A person's Podman and the module's"): on Windows the msi by `installers.uninstall_msi`; on macOS `/opt/podman/` and the two files the pkg's scripts write deleted, and the receipt forgotten with `pkgutil --forget com.redhat.podman`. A person's Podman stays installed |
 | The kept artifacts and the reboot mark | removed from the state root |
 | The account's `.wslconfig`, WSL and both Windows features | kept |
 
@@ -300,6 +322,7 @@ a feature off owes another restart.
 | Podman | `C:\Program Files\Podman\` | `/opt/podman/` |
 | The kept artifacts | `%ProgramData%\Neutrino\agent\state\podman\<directory>\` | `/Library/Application Support/Neutrino/agent/state/podman/<directory>/` |
 | The reboot mark | `%ProgramData%\Neutrino\agent\state\podman\reboot_mark` | none |
+| The mark that the module installed Podman | `%ProgramData%\Neutrino\agent\state\podman\package_mark` | `/Library/Application Support/Neutrino/agent/state/podman/package_mark` |
 | The keeper's script | `%ProgramData%\Neutrino\agent\state\podman\keeper.cmd` | `/Library/Application Support/Neutrino/agent/state/podman/keeper.sh` |
 | The keeper | the scheduled task `neutrino_podman_<account>` | `/Library/LaunchDaemons/com.neutrino.podman.<account>.plist` |
 | The keeper's log | `%ProgramData%\Neutrino\agent\state\podman\<account>.log` | `/Library/Logs/Neutrino/agent/podman_<account>.log` |

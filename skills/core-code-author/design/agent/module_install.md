@@ -342,6 +342,7 @@ owner:
 | On Windows `cmd.exe` runs `verify`, which is the program's quoted path with `--version`, such as `"%ProgramData%\Neutrino\agent\state\vscode\code.exe" --version`. | It fails when the file is missing. |
 | On Linux, where SELinux is enforcing or permissive, the agent labels each module's unpack `bin_t` with `chcon -R -t bin_t` right after the unpack and at every apply of the module; the unpack of an artifact that names no directory is the module's directory. Where SELinux is disabled or absent, nothing is labelled. | The unpack under `/var/lib/neutrino/agent` is labelled `var_lib_t`, which systemd does not run: on Rocky 9 code-server, Codeg and VS Code exited 203/EXEC. A relabel of the whole system puts `var_lib_t` back, and the next apply undoes it. |
 | The `verify` of a module installed from an `msi` or a `pkg` names the program where that installer puts it. | The system's installer chooses the place. |
+| Containers on Windows and macOS uninstalls Podman only where the module installed it. Its install writes the mark `package_mark` in the module's directory before it hands Podman's msi or pkg to the system's installer, when Podman's program was not on the computer, and runs no installer on a Podman with no such mark. With no such mark the Podman is the person's: its uninstall leaves Podman installed, and the module reads `absent` through the uninstalled mark `uninstalled/podman`, whatever `verify` finds, until the next install's `verify` ([modules/containers.md](modules/containers.md), "A person's Podman and the module's"). | A Podman on the computer before the module is the person's, as a Samba is ("From the system's packages"). |
 
 ## From the system's packages
 
@@ -452,7 +453,7 @@ Installing another version of a `hub` module replaces its files as one step:
 | Each artifact's new files are placed beside the old ones under `<directory>.new`; then the module's services stop, `<directory>` is renamed `<directory>.old` and `<directory>.new` takes its place, `verify` runs and the services start. The `.old` files go once the services run. | The paths in `verify` and in every service definition stay the same. |
 | A failure before the rename leaves the old version as it was and removes the new files. | Nothing of the running version has changed yet. |
 | A failure after the rename puts the old files back, starts the old version, and reports the module `failed` with `version_switch_failed {version, detail}`, `detail` being the failed step's output. The module's record keeps the old version, and the agent tries the switch again only when the module's entry changes, as after any failure. | The machine keeps a working module, and the report says which version failed and why. |
-| An `msi` or a `pkg` is switched by uninstalling the old package and installing the chosen one, keeping the data. | Windows Installer and macOS's installer own their packages' files. |
+| An `msi` or a `pkg` is switched by uninstalling the old package and installing the chosen one, keeping the data. A person's Podman is neither uninstalled nor installed over, and stays at its own version. | Windows Installer and macOS's installer own their packages' files, and the person's Podman is the person's. |
 
 ## Dependencies
 
