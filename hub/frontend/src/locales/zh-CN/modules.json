@@ -179,6 +179,7 @@
   "ui.codex.apply": "应用 Codex",
   "ui.codex.owner_notice": "你在这台机器上安装 Codex，它以 Apache-2.0 许可发布。",
   "ui.program.apply_hint": "查找每个勾选账户自己安装的副本，没有的账户改用本模块安装的副本。",
+  "ui.program.macos_path_hint": "在 macOS 上，请把 ~/.local/bin 加进每个账户的 PATH，它自己的 shell 才能按名字找到本模块安装的副本。微子的终端里已经能找到。",
   "ui.siyuan.apply": "应用思源笔记",
   "ui.siyuan.apply_hint": "在这台机器上为每个勾选的账户启动思源笔记。",
   "ui.containers.account_empty": "这台机器没有上报账户。",

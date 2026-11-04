@@ -179,6 +179,7 @@
   "ui.codex.apply": "Apply Codex",
   "ui.codex.owner_notice": "You install Codex, Apache-2.0-licensed, on this machine.",
   "ui.program.apply_hint": "Looks for each checked account's own copy, and gives an account with none this module's copy.",
+  "ui.program.macos_path_hint": "On macOS, add ~/.local/bin to each account's PATH so its own shells find this module's copy by its name. Neutrino's terminal finds it already.",
   "ui.siyuan.apply": "Apply SiYuan",
   "ui.siyuan.apply_hint": "Starts SiYuan for each checked account on this machine.",
   "ui.containers.account_empty": "This machine reports no account.",

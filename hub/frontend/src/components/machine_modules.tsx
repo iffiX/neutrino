@@ -122,6 +122,7 @@ const ACCOUNT_LAYER_PANELS: Record<string, (target: PanelTarget) => ReactNode> =
             target.want !== WANT_RUNNING
           }
           want={target.want}
+          platformOs={target.platformOs}
         />
       ),
     ]),

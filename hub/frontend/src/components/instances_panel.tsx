@@ -36,7 +36,9 @@ import "./instances_panel.css";
  * module again. An apply writes no want on a module not running. A row shows the module's own field of the account, whether
  * its instance runs, and its code's words. A command line program's row shows
  * the copy the account uses, its path, its version and the account's AI
- * tools state. The SSH server shows the machine's
+ * tools state, and on macOS a line under the rows asks for `~/.local/bin`
+ * on `PATH` while an account uses the module's copy. The SSH server shows
+ * the machine's
  * host key under the rows. The module's words come from its descriptor.
  */
 
@@ -65,6 +67,12 @@ const COPY_KEYS: Record<string, string> = {
   module: "ui.modules.source_upstream",
 };
 
+/** The copy of a command line program's account that runs the module's own. */
+const COPY_MODULE = "module";
+
+/** The system whose shells put `~/.local/bin` on no `PATH`. */
+const OS_DARWIN = "darwin";
+
 /** The AI tools result of an account the machine has not reported: its tools
  * keep their own settings. */
 const AI_TOOLS_UNREPORTED: AccountAiToolsView = {
@@ -91,6 +99,8 @@ interface InstancesPanelProps {
   /** What the hub asks of the module: `running`, `stopped`, `installed`, or
    * empty. */
   want: string;
+  /** The system the machine's agent reports: `linux`, `windows`, `darwin`. */
+  platformOs: string;
 }
 
 export function InstancesPanel({
@@ -100,6 +110,7 @@ export function InstancesPanel({
   isEditable,
   isWaitingForStart,
   want,
+  platformOs,
 }: InstancesPanelProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
@@ -134,6 +145,10 @@ export function InstancesPanel({
   const isReady =
     descriptor.isWithoutProgram === true && saved.state === STATE_RUNNING;
   const version = saved.version ?? "";
+  const isPathHintShown =
+    descriptor.isProgram === true &&
+    platformOs === OS_DARWIN &&
+    saved.accounts.some((row) => row.is_enabled && row.copy === COPY_MODULE);
 
   const toggle = (account: string, isOn: boolean) => {
     setDraft({
@@ -217,6 +232,9 @@ export function InstancesPanel({
               ),
             )}
           </div>
+        )}
+        {isPathHintShown && (
+          <p className="field_hint">{t("ui.program.macos_path_hint")}</p>
         )}
         {descriptor.name === SSH_SERVER_MODULE &&
           (saved.host_key_fingerprint ?? "") !== "" && (

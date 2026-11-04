@@ -11,7 +11,8 @@ only while the module's own copy is on the machine; each enabled account's
 row naming its copy by the source chip's words, then its version and its AI
 tools state in the words of its row under Available accounts, read with the
 account's switch and with no switch of its own, and the copy's path whole on
-a line of its own.
+a line of its own; and on macOS, while an account uses the module's copy, the
+line asking for ~/.local/bin on PATH.
 """
 
 import json
@@ -148,6 +149,10 @@ def test_ui_behavior_draws_the_tab_as_these_check():
         "`state.ai_tools_switched_back` for an account the machine has not " "reported"
     ) in text
     assert "read with the account's switch, `is_ai_tools_enabled`" in text
+    assert (
+        "| The macOS line | on a macOS machine, while an enabled account uses "
+        "the module's copy, `ui.program.macos_path_hint` under the rows |"
+    ) in text
     assert (
         "| The version line | shown while the module's own copy is on the machine;"
     ) in text
@@ -318,6 +323,27 @@ def test_the_ai_tools_state_reads_as_its_row_under_available_accounts():
         'state: "switched_back", code: "", params: {}, };'
     ) in instances
     assert "<input" not in row
+
+
+def test_a_macos_tab_asks_for_local_bin_on_path_while_an_account_uses_the_module_s_copy():
+    instances = panel()
+    body = page()
+
+    assert 'const COPY_MODULE = "module";' in instances
+    assert 'const OS_DARWIN = "darwin";' in instances
+    assert (
+        "const isPathHintShown = descriptor.isProgram === true && "
+        "platformOs === OS_DARWIN && saved.accounts.some((row) => "
+        "row.is_enabled && row.copy === COPY_MODULE);"
+    ) in instances
+    hint = (
+        '{isPathHintShown && ( <p className="field_hint">'
+        '{t("ui.program.macos_path_hint")}</p> )}'
+    )
+    assert hint in instances
+    assert instances.index("<ProgramAccountRow") < instances.index(hint)
+    assert instances.index(hint) < instances.index("<ApplyBar")
+    assert "want={target.want} platformOs={target.platformOs} />" in body
 
 
 @pytest.mark.parametrize("module", PROGRAMS)
