@@ -198,14 +198,16 @@ class SshServerHooks(InstanceHooks):
             environment = {
                 SSH_SERVER_PORT_VARIABLE: str(port),
                 SSH_SERVER_SHELL_VARIABLE: shell,
-                "PATH": with_launcher_folders(SSH_SERVER_LINUX_PATH, var_dir, "linux"),
+                "PATH": with_launcher_folders(
+                    SSH_SERVER_LINUX_PATH, var_dir, "linux", instance.programs
+                ),
             }
         else:
             listen = f"{SSH_SERVER_LISTEN_HOST}:{port}"
             shell_argument = shell
             environment = {
                 "PATH": with_launcher_folders(
-                    SSH_SERVER_WINDOWS_PATH, var_dir, "windows"
+                    SSH_SERVER_WINDOWS_PATH, var_dir, "windows", instance.programs
                 )
             }
         if self._os_name == "darwin":
@@ -215,7 +217,7 @@ class SshServerHooks(InstanceHooks):
                 "LOGNAME": instance.account,
                 "SHELL": shell,
                 "PATH": with_launcher_folders(
-                    SSH_SERVER_DARWIN_PATH, var_dir, "darwin"
+                    SSH_SERVER_DARWIN_PATH, var_dir, "darwin", instance.programs
                 ),
             }
         return AccountService(

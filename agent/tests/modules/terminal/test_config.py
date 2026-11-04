@@ -27,11 +27,16 @@ def refusal(call) -> tuple:
     return refused.value.code, refused.value.params
 
 
-def test_the_accounts_read_in_order_with_their_shells_and_logins():
+def test_the_accounts_read_in_order_with_their_shells_logins_and_programs():
     config = TerminalConfig.from_dict(
         {
             "accounts": [
-                {"account": "ann", "shell_path": "/bin/zsh", "password": ""},
+                {
+                    "account": "ann",
+                    "shell_path": "/bin/zsh",
+                    "password": "",
+                    "programs": ["codex"],
+                },
                 {"account": "bob", "shell_path": None},
             ]
         }
@@ -40,8 +45,13 @@ def test_the_accounts_read_in_order_with_their_shells_and_logins():
     assert config.names() == ["ann", "bob"]
     assert config.to_dict() == {
         "accounts": [
-            {"account": "ann", "shell_path": "/bin/zsh", "password": ""},
-            {"account": "bob", "shell_path": "", "password": ""},
+            {
+                "account": "ann",
+                "shell_path": "/bin/zsh",
+                "password": "",
+                "programs": ["codex"],
+            },
+            {"account": "bob", "shell_path": "", "password": "", "programs": []},
         ]
     }
 
@@ -58,6 +68,10 @@ def test_nothing_named_enables_no_account(raw):
         ({"accounts": ["ann"]}, {"field": "accounts"}),
         ({"accounts": [{"account": ""}]}, {"field": "account"}),
         ({"accounts": [{"account": "ann", "shell_path": 3}]}, {"field": "shell_path"}),
+        (
+            {"accounts": [{"account": "ann", "programs": "codex"}]},
+            {"field": "programs"},
+        ),
         ({"accounts": [{"account": "ann", "password": 3}]}, {"field": "password"}),
     ],
 )

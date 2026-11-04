@@ -1,10 +1,11 @@
 """The Terminal module's configuration and the checks a shell open makes of it.
 
-``{accounts: [{account, shell_path, password}]}``: the module's enabled
-accounts, the first being the one a stream that names none runs as. An
-account's ``shell_path`` is the shell its terminal starts, empty for its
+``{accounts: [{account, shell_path, password, programs}]}``: the module's
+enabled accounts, the first being the one a stream that names none runs as.
+An account's ``shell_path`` is the shell its terminal starts, empty for its
 login shell, and PowerShell on Windows; ``password`` is its login, sent to a
-Windows machine alone.
+Windows machine alone; ``programs`` the command line programs the account is
+enabled in, whose launcher folders start its ``PATH``.
 
 Not pure: the checks read the account database and the file system.
 """
@@ -28,6 +29,7 @@ from neutrino_agent.modules.terminal.constants import (
     TERMINAL_CODE_CREDENTIAL_MISSING,
     TERMINAL_CODE_SHELL_UNUSABLE,
     TERMINAL_PASSWORD_KEY,
+    TERMINAL_PROGRAMS_KEY,
     TERMINAL_SHELL_PATH_KEY,
 )
 
@@ -46,11 +48,14 @@ class TerminalAccount:
         shell_path: The shell its terminal starts; empty for its login
             shell, and PowerShell on Windows.
         password: Its login, on Windows alone; empty elsewhere.
+        programs: The command line programs the account is enabled in, by
+            module name.
     """
 
     account: str
     shell_path: str = ""
     password: str = ""
+    programs: tuple = ()
 
     def to_dict(self) -> dict:
         """The account as the state carries it."""
@@ -58,6 +63,7 @@ class TerminalAccount:
             TERMINAL_ACCOUNT_KEY: self.account,
             TERMINAL_SHELL_PATH_KEY: self.shell_path,
             TERMINAL_PASSWORD_KEY: self.password,
+            TERMINAL_PROGRAMS_KEY: list(self.programs),
         }
 
 
@@ -77,7 +83,7 @@ class TerminalConfig:
         """Read a configuration as the state carries it.
 
         Args:
-            raw: ``{accounts: [{account, shell_path, password}]}``; anything
+            raw: ``{accounts: [{account, shell_path, password, programs}]}``; anything
                 but a dict is no account.
 
         Returns:
@@ -194,10 +200,18 @@ def _account_of(entry) -> TerminalAccount:
         raise ModuleApplyError(
             TERMINAL_CODE_CONFIG_INVALID, {"field": TERMINAL_ACCOUNT_KEY}
         )
+    programs = entry.get(TERMINAL_PROGRAMS_KEY) or []
+    if not isinstance(programs, list) or not all(
+        isinstance(each, str) for each in programs
+    ):
+        raise ModuleApplyError(
+            TERMINAL_CODE_CONFIG_INVALID, {"field": TERMINAL_PROGRAMS_KEY}
+        )
     return TerminalAccount(
         account=name,
         shell_path=values[TERMINAL_SHELL_PATH_KEY].strip(),
         password=values[TERMINAL_PASSWORD_KEY],
+        programs=tuple(programs),
     )
 
 

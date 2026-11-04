@@ -23,6 +23,7 @@ refused before anything starts.
 """
 
 import ctypes
+import functools
 import subprocess
 import threading
 import time
@@ -184,9 +185,10 @@ class FakeLogon:
     made: list = []
     refusal = None
 
-    def __init__(self, account, password, *, kernel32=None):
+    def __init__(self, account, password, *, programs=(), kernel32=None):
         self.account = account
         self.password = password
+        self.programs = programs
         self.kernel32 = kernel32
         self.is_closed = False
         FakeLogon.made.append(self)
@@ -255,9 +257,7 @@ def account_stream(kernel32, channel, *, settings=None, sessions=None, **args):
         platform=FakePlatform(),
         terminal=lambda: settings if settings is not None else enabled("alice"),
         sessions=sessions,
-        logon_class=lambda account, password: FakeLogon(
-            account, password, kernel32=kernel32
-        ),
+        logon_class=functools.partial(FakeLogon, kernel32=kernel32),
     )
 
 
@@ -578,9 +578,7 @@ def test_an_exec_with_is_tty_runs_its_argv_on_the_console_as_the_account():
         platform=FakePlatform(),
         terminal=lambda: enabled(TerminalAccount("alice", "C:\\no\\such.exe", "pw")),
         argv=["sh", "-c", "echo hi"],
-        logon_class=lambda account, password: FakeLogon(
-            account, password, kernel32=kernel32
-        ),
+        logon_class=functools.partial(FakeLogon, kernel32=kernel32),
     )
 
     stream.open()

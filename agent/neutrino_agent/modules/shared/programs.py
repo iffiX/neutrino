@@ -1,19 +1,19 @@
 """The runner every command line program shares.
 
-A command line program runs nothing of its own. Each enabled account runs
-its own copy, or the module's copy, unpacked under the module's directory
-and started by the module's launcher. A task's plan begins with ``find``,
-which looks for each enabled account's own copy as the account and keeps
-what it found in the module's record. The install of the module's copy
-follows while an account needs it, then ``configure``, which writes the
-launcher and lets go of every account no longer enabled, then one
-``account {account}`` per enabled account, which makes or removes the
-account's link, or on Windows its user ``PATH`` entry. A read checks each
-recorded copy and link, and asks for a task of the module's own when one
-went, fell below the module's floor or was replaced. The module's
-:class:`ProgramHooks` names what differs: the program's name, the places a
-person's copy is looked for, where the program sits in the module's copy,
-and what the launcher sets.
+A command line program runs nothing of its own. Its copy is unpacked under
+the module's directory and started by the module's launcher, and each
+enabled account's ``PATH`` names the launcher's folder first. A task
+installs the copy as any ``hub`` module's does, then ``configure`` writes
+the launcher and lets go of every account no longer enabled, then one
+``account {account}`` per enabled account puts the launcher's folder first
+on the account's ``PATH`` at its first enabling and reads which copy the
+account's shell runs: through ``env.sh`` and a marked line in each startup
+file on Linux and macOS, and an entry at the front of the user ``PATH`` on
+Windows. ``find`` reads the copies an account's shell reaches, for the
+panel's dialog and for each ``account`` step, and a read asks for a task
+when a startup file changed. The module's :class:`ProgramHooks` names what
+differs: the program's name, the places a person's copy is looked for,
+where the program sits in the module's copy, and what the launcher sets.
 
 Not pure: runs commands as the accounts and writes files.
 """
@@ -34,19 +34,21 @@ import time
 from dataclasses import dataclass, field
 
 from neutrino_agent.constants import (
-    AGENT_PROGRAM_CODE_LINK_TAKEN,
-    AGENT_PROGRAM_CODE_OLD_COPY,
-    AGENT_PROGRAM_COPY_MODULE,
-    AGENT_PROGRAM_COPY_USER,
+    AGENT_PROGRAM_BASH_SHELL,
+    AGENT_PROGRAM_CODE_RUNS_FIRST,
+    AGENT_PROGRAM_CODE_SYSTEM_PATH,
+    AGENT_PROGRAM_CODE_UNREACHED,
     AGENT_PROGRAM_FALLBACK_SHELL,
+    AGENT_PROGRAM_INTERACTIVE_FLAGS,
     AGENT_PROGRAM_JOURNAL_SCAN_LINES,
     AGENT_PROGRAM_LAUNCHER_DIR_NAME,
-    AGENT_PROGRAM_LINK_DIR_PARTS,
-    AGENT_PROGRAM_MODULES,
+    AGENT_PROGRAM_LOGIN_FLAGS,
     AGENT_PROGRAM_PACKAGE_DIR_NAME,
     AGENT_PROGRAM_PATH_COMMAND,
     AGENT_PROGRAM_RECORD_NAME,
     AGENT_PROGRAM_SHELL_TIMEOUT_S,
+    AGENT_PROGRAM_VERB_FIND,
+    AGENT_PROGRAM_VERB_PREFER,
     AGENT_PROGRAM_VERIFY_HOME_DIR_NAME,
     AGENT_PROGRAM_VERSION_TIMEOUT_S,
     AGENT_PROGRAM_WINDOWS_FIND_PARTS,
@@ -56,23 +58,26 @@ from neutrino_agent.constants import (
     AGENT_SERVICE_NAME,
     AGENT_STEP_ACCOUNT,
     AGENT_STEP_CONFIGURE,
-    AGENT_STEP_FIND,
     AGENT_TASK_LINE_PATTERN,
 )
-from neutrino_agent.exceptions import (
-    ModuleApplyError,
-    PlatformUnsupportedError,
-    StepSuperseded,
-)
+from neutrino_agent.exceptions import ModuleApplyError, PlatformUnsupportedError
 from neutrino_agent.modules.shared import subprocess_run
 from neutrino_agent.modules.shared.account_service import (
     AccountEntry,
     ServiceMachine,
     write_if_changed,
 )
-from neutrino_agent.modules.shared.base import ModuleRunner, ModuleStep
+from neutrino_agent.modules.shared.base import (
+    ModuleRunner,
+    ModuleStep,
+    command_outcome,
+)
 from neutrino_agent.modules.shared.instances import machine_for
-from neutrino_agent.modules.shared.package import joiner, params_of
+from neutrino_agent.modules.shared.package import joiner
+from neutrino_agent.modules.shared.program_path import (
+    ProgramPathApplier,
+    file_stamp,
+)
 from neutrino_agent.modules.shared.unpacked_tree import remove_tree
 from neutrino_agent.modules.shared.windows_acl import leave_to_system
 
@@ -89,39 +94,24 @@ REMOVE_RETRY_S = 1.0
 EXECUTABLES_SHELL = (
     'for p do [ -f "$p" ] && [ -x "$p" ] && printf "%s\\n" "$p"; done; exit 0'
 )
-# What ``sh`` runs as the account to make the link ``$0`` to the launcher
-# ``$1``: its folder made first when missing. It prints ``made``,
-# ``present`` or ``taken``, and 1 when it made the folder.
-LINK_SHELL = (
-    'd=$(dirname "$0"); m=0; '
-    'if [ ! -d "$d" ]; then mkdir -p "$d" || exit 1; m=1; fi; '
-    'if [ -L "$0" ] || [ -e "$0" ]; then '
-    'if [ -L "$0" ] && [ "$(readlink "$0")" = "$1" ]; then echo "present $m"; '
-    'else echo "taken $m"; fi; '
-    'else ln -s "$1" "$0" || exit 1; echo "made $m"; fi'
-)
-# What ``sh`` runs as the account to remove the link ``$0`` while it still
-# points at the launcher ``$1``, then the folder ``$2`` when one is named
-# and empty.
-UNLINK_SHELL = (
-    'if [ -L "$0" ] && [ "$(readlink "$0")" = "$1" ]; then rm -f "$0"; fi; '
-    'if [ -n "$2" ]; then rmdir "$2" 2>/dev/null; fi; echo done'
-)
-# What a link step prints.
-LINK_MADE = "made"
-LINK_PRESENT = "present"
-LINK_TAKEN = "taken"
 # What a Windows PATH entry step prints.
 ENTRY_ADDED = "added"
 ENTRY_PRESENT = "present"
-ENTRY_REMOVED = "removed"
-ENTRY_ABSENT = "absent"
-# A read's reasons to ask for a task.
-ASK_GONE = "gone"
-ASK_BELOW = "below"
-ASK_LINK = "link"
+ENTRY_MOVED = "moved"
+# The verbs of the Windows PATH entry script: the entry moved or put at
+# the front, and taken out.
+ENTRY_VERB_FIRST = "first"
+ENTRY_VERB_REMOVE = "remove"
 # How much of a failed command's words an ``apply_failed`` keeps.
 DETAIL_CHARS = 500
+# What ``find`` answers when the account's shell reaches no copy.
+NOTHING_FOUND = {
+    "path": "",
+    "version": "",
+    "is_on_path": False,
+    "is_system_path": False,
+    "is_module_first": False,
+}
 
 
 @dataclass
@@ -199,51 +189,6 @@ def first_version(text: str) -> str:
     """
     found = VERSION_PATTERN.search(str(text or ""))
     return found.group(0) if found else ""
-
-
-def version_key(version: str) -> tuple:
-    """A dotted number as a tuple of numbers, for ordering. Pure.
-
-    Args:
-        version: The number.
-
-    Returns:
-        Its parts; empty for text that is no dotted number.
-    """
-    number = first_version(version)
-    return tuple(int(part) for part in number.split(".")) if number else ()
-
-
-def is_supported(version: str, floor: str) -> bool:
-    """Whether a person's copy is at the module's floor or newer. Pure.
-
-    Args:
-        version: The copy's version.
-        floor: The manifest's ``user_copy_min_version``; empty admits every
-            version.
-
-    Returns:
-        True when the copy's version is no lower than the floor.
-    """
-    if not version_key(version):
-        return False
-    return not version_key(floor) or version_key(version) >= version_key(floor)
-
-
-def file_stamp(path: str) -> "list | None":
-    """One file's size, time and inode, as a record keeps them.
-
-    Args:
-        path: The file; a link is followed.
-
-    Returns:
-        ``[size, mtime_ns, inode]``; None when it is not there.
-    """
-    try:
-        found = os.stat(path)
-    except OSError:
-        return None
-    return [int(found.st_size), int(found.st_mtime_ns), int(found.st_ino)]
 
 
 def launcher_text(program: str, variables, os_name: str) -> str:
@@ -349,7 +294,7 @@ class ProgramHooks:
 
 
 class ProgramsModuleRunner(ModuleRunner):
-    """Makes a command line program ready for each enabled account."""
+    """Makes a command line program the first copy on each enabled account's ``PATH``."""
 
     def __init__(
         self,
@@ -386,12 +331,16 @@ class ProgramsModuleRunner(ModuleRunner):
         self._machine = (
             machine if machine is not None else machine_for(platform, self.name)
         )
+        self._path = ProgramPathApplier(
+            platform=platform, lookup_account=self._machine.lookup_account, log=log
+        )
         self._recipe: dict = {}
         self._config: dict = {}
         # One read or write of the record at a time.
         self._lock = threading.Lock()
-        # The reasons a read asked for a task since the last ``find``.
-        self._asked: set = set()
+        # The changed stamps a read asked for a task about, by account, until
+        # that account's next ``account`` step.
+        self._asked: dict = {}
         # The module copy's version, by the stamp of the file it was read from.
         self._version_read: tuple = (None, "")
 
@@ -423,7 +372,7 @@ class ProgramsModuleRunner(ModuleRunner):
 
     @property
     def record_path(self) -> str:
-        """The record of each account's copy."""
+        """The record of each enabled account."""
         return self._join(self.module_dir, AGENT_PROGRAM_RECORD_NAME)
 
     def take_recipe(self, recipe: dict) -> None:
@@ -481,52 +430,6 @@ class ProgramsModuleRunner(ModuleRunner):
             True while the program's file is there.
         """
         return os.path.isfile(self.program_path)
-
-    def has_person_copies(self) -> bool:
-        """Whether an enabled account runs its own copy at a supported version, its file unchanged.
-
-        Reads each recorded copy and link first, and asks for a task when
-        one went, fell below the floor or was replaced.
-
-        Returns:
-            True when the record names such an account.
-        """
-        return self._read_accounts(is_named=True)
-
-    def needs_module_copy(self, config: dict) -> bool:
-        """Whether an enabled account needs the module's own copy, by the record.
-
-        Args:
-            config: The module's desired configuration.
-
-        Returns:
-            True while no account is enabled, or an enabled account has no
-            copy of its own the record names at a supported version.
-        """
-        try:
-            accounts = [held.account for held in self._hooks.parse(config).accounts]
-        except ModuleApplyError:
-            return True
-        with self._lock:
-            records = self._read_record()
-        return _needs_module_copy(accounts, records)
-
-    def find_step(self, config: dict) -> ModuleStep:
-        """The ``find`` step of a task planned from the record as it stands.
-
-        Args:
-            config: The configuration the task's entry carries.
-
-        Returns:
-            The step. It plans the task again when what it finds changes
-            whether the module's own copy is needed.
-        """
-        return ModuleStep(
-            name=AGENT_STEP_FIND,
-            run=functools.partial(
-                self._run_find, dict(config), self.needs_module_copy(config)
-            ),
-        )
 
     def configure_steps(self, config: dict, want: str, steps: list) -> list:
         """``configure``, then one ``account {account}`` per enabled account.
@@ -592,12 +495,12 @@ class ProgramsModuleRunner(ModuleRunner):
         return True
 
     def remove_configuration(self) -> None:
-        """Remove every link and ``PATH`` entry that still carries the module's mark."""
+        """Take every account the record names off the module: its ``PATH`` given back."""
         for line in self.remove_ways_in():
             self._log(line)
 
     def uninstall(self, recipe: dict) -> None:
-        """Remove every marked link and ``PATH`` entry, then the module's directory: its copy, its launcher and its record.
+        """Give every account's ``PATH`` back, then remove the module's directory: its copy, its launcher and its record.
 
         Args:
             recipe: The module's recipe.
@@ -607,80 +510,69 @@ class ProgramsModuleRunner(ModuleRunner):
         self._remove_module_dir()
 
     def remove_ways_in(self) -> list:
-        """Remove every link and ``PATH`` entry the record names that still carries the module's mark.
+        """Give back the ``PATH`` of every account the record names.
 
-        A way in that cannot be removed is a line, and the others go on.
+        An account whose ``PATH`` cannot be given back is a line, and the
+        others go on.
 
         Returns:
-            What was removed or left, one line each.
+            What was given back or left, one line each.
         """
         with self._lock:
             records = self._read_record()
         passwords = self._passwords()
         lines = []
         for account, record in records.items():
-            if not record.get("is_link_made"):
+            if not record.get("is_path_set"):
                 continue
             password = passwords.get(account) or str(record.get("password", "") or "")
             try:
-                is_folder_left = self._let_go(account, record, password)
+                self._let_go(account, record, password)
             except (ModuleApplyError, OSError, subprocess.SubprocessError) as error:
-                said = error.code if isinstance(error, ModuleApplyError) else str(error)
-                lines.append(f"{self.name}: the way in of {account} stays: {said}")
+                lines.append(
+                    f"{self.name}: the PATH of {account} stays: {_said(error)}"
+                )
                 continue
-            lines.append(f"{self.name}: removed the way in of {account}")
+            lines.append(f"{self.name}: gave back the PATH of {account}")
             with self._lock:
                 held = self._read_record()
                 if account in held:
-                    held[account] = {
-                        **held[account],
-                        "is_link_made": False,
-                        "is_local_bin_made": is_folder_left,
-                    }
+                    held[account] = {**held[account], "is_path_set": False}
                     self._write_record(held)
         return lines
 
     def details(self, recipe: dict) -> dict:
-        """Whether the module's copy is there, its version, and each enabled account's copy.
+        """Whether the module's copy is there, its version, and each enabled account's code.
 
         Args:
             recipe: The module's recipe, empty for a module the state does
                 not name.
 
         Returns:
-            ``{has_module_copy, version, accounts: [{account, copy, path,
-            version, code, params}]}``, ``version`` the module copy's and
-            empty while it has none.
+            ``{has_module_copy, version, accounts: [{account, code,
+            params}]}``, ``version`` the module copy's and empty while it has
+            none.
         """
         if recipe:
-            self._read_accounts(is_named=True)
+            self._watch_accounts()
         with self._lock:
             records = self._read_record()
         order = self._enabled() if recipe else list(records)
-        module_version = self._module_version()
         rows = []
         for account in order:
             record = records.get(account)
             if not record:
                 continue
-            is_user = record.get("copy") == AGENT_PROGRAM_COPY_USER
             rows.append(
                 {
                     "account": account,
-                    "copy": str(record.get("copy", "") or ""),
-                    "path": str(record.get("path", "") or ""),
-                    "version": (
-                        str(record.get("version", "") or "")
-                        if is_user
-                        else module_version
-                    ),
                     "code": str(record.get("code", "") or ""),
                     "params": dict(record.get("params") or {}),
                 }
             )
         return {
             "has_module_copy": self.has_module_copy(),
-            "version": module_version,
+            "version": self._module_version(),
             "accounts": rows,
         }
 
@@ -705,37 +597,65 @@ class ProgramsModuleRunner(ModuleRunner):
         ]
         return named[-lines:]
 
-    # --- the steps ---
+    def command(self, verb: str, args: dict, on_line=None) -> dict:
+        """Run one of this module's verbs: ``find`` and ``prefer`` beside every module's.
 
-    def _run_find(self, config: dict, basis: bool, context) -> None:
-        """The ``find`` step: each enabled account's own copy looked for as the account, and the record kept.
+        Args:
+            verb: The verb on the wire, without the module's name.
+            args: ``{account, password}`` for ``find`` and ``prefer``.
+            on_line: Called with each output line as it is produced.
 
-        Raises:
-            ModuleApplyError: The configuration's refusal, ``account_unknown
-                {account}``, ``account_no_profile {account}`` and on Windows
-                ``credential_invalid {account}``.
-            StepSuperseded: When what it found changes whether the module's
-                own copy is needed.
+        Returns:
+            ``{"exit_code", "code", "params", "output"}``, with ``result``
+            for ``find``.
         """
-        parsed = self._hooks.parse(config)
-        floor = self._floor()
-        with self._lock:
-            held = self._read_record()
-        found = {}
-        for item in parsed.accounts:
-            entry = self._entry_of(item.account)
-            before = dict(held.get(item.account) or {})
-            copy = self._find_copy(item, entry, before)
-            found[item.account] = self._found_record(item, copy, before, floor)
-            self._log(_found_line(self.name, item.account, found[item.account]))
-        with self._lock:
-            held = self._read_record()
-            kept = {name: record for name, record in held.items() if name not in found}
-            self._write_record({**kept, **found})
-            self._asked = set()
-        accounts = [item.account for item in parsed.accounts]
-        if _needs_module_copy(accounts, found) != basis:
-            raise StepSuperseded(self.name)
+        if verb == AGENT_PROGRAM_VERB_FIND:
+            return self._find_command(args)
+        if verb == AGENT_PROGRAM_VERB_PREFER:
+            return self._prefer_command(args)
+        return super().command(verb, args, on_line)
+
+    # --- the verbs ---
+
+    def _find_command(self, args: dict) -> dict:
+        """The ``find`` verb: the copies one account's shell reaches, read at once."""
+        item = ProgramAccount.from_dict(args)
+        if not ACCOUNT_PATTERN.match(item.account):
+            return command_outcome(1, "account_invalid", {"account": item.account})
+        if self._os_name == "windows" and not item.password:
+            return command_outcome(1, "credential_missing", {"account": item.account})
+        try:
+            found = self._find(item, self._entry_of(item.account))
+        except ModuleApplyError as error:
+            return command_outcome(1, error.code, error.params)
+        except (OSError, subprocess.SubprocessError) as error:
+            return command_outcome(1, "apply_failed", {"detail": _said(error)})
+        outcome = command_outcome(0)
+        outcome["result"] = dict(found)
+        return outcome
+
+    def _prefer_command(self, args: dict) -> dict:
+        """The ``prefer`` verb: the module's copy put first for one enabled account at once."""
+        item = ProgramAccount.from_dict(args)
+        if item.account not in self._enabled():
+            return command_outcome(1, "account_not_enabled", {"account": item.account})
+        password = item.password or self._passwords().get(item.account, "")
+        try:
+            record = self._set_way_in(
+                ProgramAccount(account=item.account, password=password),
+                is_put_first=True,
+            )
+        except ModuleApplyError as error:
+            return command_outcome(1, error.code, error.params)
+        except (OSError, subprocess.SubprocessError) as error:
+            return command_outcome(1, "apply_failed", {"detail": _said(error)})
+        self._log(
+            f"{self.name}: put the module's copy first for {item.account}"
+            + (f", {record['code']}" if record.get("code") else "")
+        )
+        return command_outcome(0)
+
+    # --- the steps ---
 
     def _run_configure(self, config: dict, context) -> None:
         """The ``configure`` step: every account no longer enabled let go, and the launcher written.
@@ -752,16 +672,13 @@ class ProgramsModuleRunner(ModuleRunner):
         for account, record in held.items():
             if account in enabled:
                 continue
-            if record.get("is_link_made"):
+            if record.get("is_path_set"):
                 try:
                     self._let_go(account, record, str(record.get("password", "") or ""))
                 except (ModuleApplyError, OSError, subprocess.SubprocessError) as error:
-                    said = (
-                        error.code
-                        if isinstance(error, ModuleApplyError)
-                        else str(error)
+                    self._log(
+                        f"{self.name}: the PATH of {account} stays: {_said(error)}"
                     )
-                    self._log(f"{self.name}: the way in of {account} stays: {said}")
             notes.append(f"let go of {account}")
         with self._lock:
             held = self._read_record()
@@ -778,97 +695,142 @@ class ProgramsModuleRunner(ModuleRunner):
         self._log(f"{self.name}: " + "; ".join(notes or ["unchanged"]))
 
     def _run_account(self, config: dict, account: str, context) -> None:
-        """The ``account {account}`` step: the account's link or ``PATH`` entry made for the module's copy, or removed for its own.
+        """The ``account {account}`` step: the module's copy put first at the account's first enabling, and the copy its shell runs read.
 
         Raises:
             ModuleApplyError: ``account_unknown {account}``,
                 ``account_no_profile {account}``, ``credential_invalid
-                {account}``, or ``apply_failed {detail}`` when the link or
-                the entry cannot be made.
+                {account}``, or ``apply_failed {detail}`` when the ``PATH``
+                cannot be set.
         """
         parsed = self._hooks.parse(config)
         item = next((each for each in parsed.accounts if each.account == account), None)
         if item is None:
             raise ModuleApplyError("account_unknown", {"account": account})
-        entry = self._entry_of(account)
         with self._lock:
-            record = dict(self._read_record().get(account) or {})
-        if not record:
-            record = self._found_record(item, None, {}, self._floor())
+            is_set = bool((self._read_record().get(account) or {}).get("is_path_set"))
         try:
-            if record.get("copy") == AGENT_PROGRAM_COPY_USER:
-                is_folder_left = False
-                if record.get("is_link_made"):
-                    is_folder_left = self._let_go(account, record, item.password)
-                record["is_link_made"] = False
-                record["is_local_bin_made"] = is_folder_left
-                note = f"{account} runs its own copy"
-            else:
-                note = self._make_way_in(item, entry, record)
+            record = self._set_way_in(item, is_put_first=not is_set)
         except (OSError, subprocess.SubprocessError) as error:
             raise ModuleApplyError(
                 "apply_failed", {"detail": str(error)[:DETAIL_CHARS]}
             ) from None
+        if record.get("code"):
+            self._log(f"{self.name}: {account} {record['code']} {record['params']}")
+        else:
+            self._log(f"{self.name}: {account} runs the module's copy first")
+
+    def _set_way_in(self, item: ProgramAccount, *, is_put_first: bool) -> dict:
+        """Put the launcher's folder first on an account's ``PATH`` where asked, read the copy its shell runs, and keep the record.
+
+        Returns:
+            The account's record as kept.
+
+        Raises:
+            ModuleApplyError: ``account_unknown {account}``,
+                ``account_no_profile {account}``, ``credential_missing
+                {account}`` or ``credential_invalid {account}`` on Windows,
+                and ``apply_failed {detail}`` when the entry cannot be made.
+            OSError: When a file cannot be written as the account.
+            subprocess.SubprocessError: When a command does not finish.
+        """
+        account = item.account
+        entry = self._entry_of(account)
+        with self._lock:
+            record = dict(self._read_record().get(account) or {})
+        record["account"] = account
         if self._os_name == "windows":
+            if not item.password:
+                raise ModuleApplyError("credential_missing", {"account": account})
+            if is_put_first:
+                answer = self._windows_entry(
+                    account, item.password, ENTRY_VERB_FIRST, False
+                )
+                record["is_value_made"] = bool(record.get("is_value_made")) or bool(
+                    answer.get("is_made")
+                )
             record["password"] = item.password
+        else:
+            for note in self._path.set_module(
+                account, entry, self.name, is_put_first=is_put_first
+            ):
+                self._log(f"{self.name}: {account}: {note}")
+        record["is_path_set"] = True
+        found = self._find(item, entry)
+        record["code"], record["params"] = _code_of(account, found)
+        if self._os_name != "windows":
+            record["stamps"] = self._path.stamps(account)
         with self._lock:
             held = self._read_record()
             held[account] = record
             self._write_record(held)
-        self._log(f"{self.name}: {note}")
+            self._asked.pop(account, None)
+        return record
 
     # --- the find ---
 
-    def _find_copy(self, item: ProgramAccount, entry: AccountEntry, before: dict):
-        """An account's own copy, found as the account.
+    def _find(self, item: ProgramAccount, entry: AccountEntry) -> dict:
+        """The copies an account's shell reaches, found as the account.
 
         Returns:
-            ``{path, version, stamp, search_path}``; None when the account
-            has no copy whose version reads.
+            ``{path, version, is_on_path, is_system_path, is_module_first}``:
+            the first copy on ``PATH`` that is not the module's, else the
+            first in the known places, ``path`` empty for none.
+
+        Raises:
+            ModuleApplyError: ``credential_invalid {account}`` or
+                ``apply_failed {detail}`` on Windows.
+            OSError: When the run as the account cannot start on Windows.
         """
         if self._os_name == "windows":
             return self._find_windows(item)
-        return self._find_posix(item.account, entry, before)
+        return self._find_posix(item.account, entry)
 
-    def _find_posix(self, account: str, entry: AccountEntry, before: dict):
-        """The first copy on the login shell's ``PATH``, then in the known places, that is not the module's."""
+    def _find_posix(self, account: str, entry: AccountEntry) -> dict:
+        """The copies on the login shell's ``PATH``, then in the known places; for bash also on the ``PATH`` of a shell that is not a login shell.
+
+        The module comes first only where it comes first on every ``PATH``
+        read, and the answer is that of the first ``PATH`` where it does not.
+        """
         shell = entry.shell or AGENT_PROGRAM_FALLBACK_SHELL
-        search_path = self._login_path(account, shell)
+        kinds = [AGENT_PROGRAM_LOGIN_FLAGS]
+        if os.path.basename(shell) == AGENT_PROGRAM_BASH_SHELL:
+            kinds.append(AGENT_PROGRAM_INTERACTIVE_FLAGS)
+        found = [
+            self._found_on(account, entry, self._shell_path(account, shell, flags))
+            for flags in kinds
+        ]
+        return next((each for each in found if not each["is_module_first"]), found[0])
+
+    def _found_on(self, account: str, entry: AccountEntry, search_path: str) -> dict:
+        """The first copy on one ``PATH``, then in the known places, that is not the module's."""
         program = self._hooks.program
-        candidates = [
+        on_path = [
             os.path.join(folder, program) for folder in search_path.split(":") if folder
         ]
+        candidates = list(on_path)
         for place in self._hooks.known_places.get(self._os_name, ()):
             candidates.append(
                 entry.home + place[1:] if place.startswith("~/") else place
             )
-        unique = list(dict.fromkeys(candidates))
-        for path in self._executables(account, unique):
+        found = dict(NOTHING_FOUND)
+        for path in self._executables(account, list(dict.fromkeys(candidates))):
             if self._is_module_own(path):
+                if path in on_path:
+                    found["is_module_first"] = True
                 continue
-            stamp = file_stamp(path)
-            if stamp is None:
-                continue
-            version = ""
-            if before.get("path") == path and before.get("stamp") == stamp:
-                version = str(before.get("version", "") or "")
-            if not version:
-                version = self._version_posix(account, path, search_path)
-            if version:
-                return {
-                    "path": path,
-                    "version": version,
-                    "stamp": stamp,
-                    "search_path": search_path,
-                }
-        return None
+            found["path"] = path
+            found["is_on_path"] = path in on_path
+            found["version"] = self._version_posix(account, path, search_path)
+            break
+        return found
 
-    def _login_path(self, account: str, shell: str) -> str:
-        """The ``PATH`` the account's login shell prints, empty when the shell fails or runs past its time."""
+    def _shell_path(self, account: str, shell: str, flags: tuple) -> str:
+        """The ``PATH`` the account's shell prints, run with these flags; empty when the shell fails or runs past its time."""
         try:
             result = self._platform.run_as_account(
                 account,
-                [shell, "-l", "-i", "-c", AGENT_PROGRAM_PATH_COMMAND],
+                [shell, *flags, "-c", AGENT_PROGRAM_PATH_COMMAND],
                 stdin="",
                 timeout_s=AGENT_PROGRAM_SHELL_TIMEOUT_S,
             )
@@ -919,24 +881,24 @@ class ProgramsModuleRunner(ModuleRunner):
             return ""
         return first_version(f"{result.stdout}\n{result.stderr}")
 
-    def _find_windows(self, item: ProgramAccount):
-        """The copy the account's ``PATH`` and the known places hold, found by one run as the account."""
+    def _find_windows(self, item: ProgramAccount) -> dict:
+        """The copies the system's and the account's ``PATH`` and the known places hold, found by one run as the account."""
         answer = self._windows_run(
             item.account,
             item.password,
             AGENT_PROGRAM_WINDOWS_FIND_PARTS,
             {
                 "name": self._hooks.program,
-                "skip": self.launcher_dir,
+                "module_folder": self.launcher_dir,
                 "places": list(self._hooks.known_places.get("windows", ())),
             },
         )
-        path = str(answer.get("path", "") or "")
-        version = first_version(str(answer.get("version", "") or ""))
-        stamp = file_stamp(path) if path else None
-        if not path or not version or stamp is None:
-            return None
-        return {"path": path, "version": version, "stamp": stamp, "search_path": ""}
+        found = dict(NOTHING_FOUND)
+        found["path"] = str(answer.get("path", "") or "")
+        found["version"] = first_version(str(answer.get("version", "") or ""))
+        for name in ("is_on_path", "is_system_path", "is_module_first"):
+            found[name] = bool(answer.get(name))
+        return found
 
     def _is_module_own(self, path: str) -> bool:
         """Whether a path reaches the module's launcher or its program."""
@@ -946,262 +908,84 @@ class ProgramsModuleRunner(ModuleRunner):
         }
         return os.path.realpath(path) in own
 
-    def _found_record(
-        self, item: ProgramAccount, copy, before: dict, floor: str
-    ) -> dict:
-        """One account's record from what ``find`` found."""
-        record = {
-            "account": item.account,
-            "is_link_made": bool(before.get("is_link_made")),
-            "is_local_bin_made": bool(before.get("is_local_bin_made")),
-            "password": item.password if self._os_name == "windows" else "",
-        }
-        if copy is not None and is_supported(copy["version"], floor):
-            return {
-                **record,
-                "copy": AGENT_PROGRAM_COPY_USER,
-                "path": copy["path"],
-                "version": copy["version"],
-                "stamp": copy["stamp"],
-                "search_path": copy["search_path"],
-                "code": "",
-                "params": {},
-            }
-        code, params = "", {}
-        if copy is not None:
-            code = AGENT_PROGRAM_CODE_OLD_COPY
-            params = {"account": item.account, "version": copy["version"], "min": floor}
-        return {
-            **record,
-            "copy": AGENT_PROGRAM_COPY_MODULE,
-            "path": self.launcher_path,
-            "version": "",
-            "stamp": None,
-            "search_path": "",
-            "code": code,
-            "params": params,
-        }
-
     # --- the ways in ---
 
-    def _make_way_in(
-        self, item: ProgramAccount, entry: AccountEntry, record: dict
-    ) -> str:
-        """Make the link, or on Windows the ``PATH`` entry, that reaches the module's launcher.
-
-        Returns:
-            What changed, one note.
+    def _let_go(self, account: str, record: dict, password: str) -> None:
+        """Give an account's ``PATH`` back: on Windows its entry taken out, elsewhere the module's folder out of ``env.sh``, and the line with the last program.
 
         Raises:
-            ModuleApplyError: ``apply_failed {detail}`` when it cannot be made.
-        """
-        account = item.account
-        if self._os_name == "windows":
-            answer = self._windows_run(
-                account,
-                item.password,
-                AGENT_PROGRAM_WINDOWS_PATH_PARTS,
-                {"verb": "add", "folder": self.launcher_dir},
-            )
-            result = str(answer.get("result", "") or "")
-            if result not in (ENTRY_ADDED, ENTRY_PRESENT):
-                raise ModuleApplyError(
-                    "apply_failed", {"detail": f"the user PATH of {account}: {result}"}
-                )
-            record["is_link_made"] = True
-            return f"{account} reaches the module's copy through its PATH"
-        link = self._link_path(entry.home)
-        result = self._platform.run_as_account(
-            account,
-            ["/bin/sh", "-c", LINK_SHELL, link, self.launcher_path],
-            stdin="",
-            timeout_s=AGENT_PROGRAM_VERSION_TIMEOUT_S,
-        )
-        words = (result.stdout.strip().splitlines() or [""])[-1].split()
-        if result.returncode != 0 or len(words) != 2:
-            detail = (result.stderr or result.stdout).strip()[:DETAIL_CHARS]
-            raise ModuleApplyError(
-                "apply_failed", {"detail": f"the link {link}: {detail}"}
-            )
-        outcome, made = words
-        if made == "1" or self._is_folder_made_by_sibling(account):
-            record["is_local_bin_made"] = True
-        if outcome == LINK_TAKEN:
-            record["is_link_made"] = False
-            if record.get("code") != AGENT_PROGRAM_CODE_OLD_COPY:
-                record["code"] = AGENT_PROGRAM_CODE_LINK_TAKEN
-                record["params"] = {"account": account, "path": link}
-            return f"{link} of {account} holds something of the person's"
-        record["is_link_made"] = True
-        if record.get("code") == AGENT_PROGRAM_CODE_LINK_TAKEN:
-            record["code"], record["params"] = "", {}
-        return f"{account} reaches the module's copy through {link}"
-
-    def _let_go(self, account: str, record: dict, password: str) -> bool:
-        """Remove an account's link or ``PATH`` entry while it carries the module's mark.
-
-        A ``~/.local/bin`` this module or the other command line program
-        made goes with it once it is empty.
-
-        Returns:
-            Whether such a folder still stands, holding something else.
-
-        Raises:
-            ModuleApplyError: ``credential_invalid {account}`` or
-                ``apply_failed {detail}`` on Windows.
-            OSError: When the command cannot run.
+            ModuleApplyError: ``credential_missing {account}``,
+                ``credential_invalid {account}`` or ``apply_failed
+                {detail}`` on Windows.
+            OSError: When a file cannot be written or the command cannot run.
             subprocess.SubprocessError: When it does not finish.
         """
         if self._os_name == "windows":
             if not password:
                 raise ModuleApplyError("credential_missing", {"account": account})
-            self._windows_run(
+            self._windows_entry(
                 account,
                 password,
-                AGENT_PROGRAM_WINDOWS_PATH_PARTS,
-                {"verb": "remove", "folder": self.launcher_dir},
+                ENTRY_VERB_REMOVE,
+                bool(record.get("is_value_made")),
             )
-            return False
-        try:
-            entry = self._machine.lookup_account(account)
-        except KeyError:
-            return False
-        link = self._link_path(entry.home)
-        folder = self._join(entry.home, *AGENT_PROGRAM_LINK_DIR_PARTS)
-        is_made = bool(
-            record.get("is_local_bin_made")
-        ) or self._is_folder_made_by_sibling(account)
-        self._platform.run_as_account(
+            return
+        for note in self._path.drop_module(account, self.name):
+            self._log(f"{self.name}: {account}: {note}")
+
+    def _windows_entry(
+        self, account: str, password: str, verb: str, is_made: bool
+    ) -> dict:
+        """Change the launcher folder's entry in a Windows account's user ``PATH``.
+
+        Returns:
+            The script's answer, ``{result, is_made}``.
+
+        Raises:
+            ModuleApplyError: ``credential_invalid {account}``, or
+                ``apply_failed {detail}`` when the entry cannot be changed.
+            OSError: When the run as the account cannot start.
+        """
+        answer = self._windows_run(
             account,
-            ["/bin/sh", "-c", UNLINK_SHELL, link, self.launcher_path]
-            + [folder if is_made else ""],
-            stdin="",
-            timeout_s=AGENT_PROGRAM_VERSION_TIMEOUT_S,
+            password,
+            AGENT_PROGRAM_WINDOWS_PATH_PARTS,
+            {"verb": verb, "folder": self.launcher_dir, "is_made": is_made},
         )
-        return is_made and os.path.isdir(folder)
-
-    def _is_folder_made_by_sibling(self, account: str) -> bool:
-        """Whether the other command line program's record says it made the account's ``~/.local/bin``."""
-        for module in AGENT_PROGRAM_MODULES:
-            if module == self.name:
-                continue
-            path = self._join(
-                self._platform.agent_var_dir(), module, AGENT_PROGRAM_RECORD_NAME
+        result = str(answer.get("result", "") or "")
+        if verb != ENTRY_VERB_REMOVE and result not in (
+            ENTRY_ADDED,
+            ENTRY_PRESENT,
+            ENTRY_MOVED,
+        ):
+            raise ModuleApplyError(
+                "apply_failed", {"detail": f"the user PATH of {account}: {result}"}
             )
-            try:
-                with open(path, "r", encoding="utf-8") as stream:
-                    held = json.load(stream)
-            except (OSError, ValueError):
-                continue
-            accounts = held.get("accounts") if isinstance(held, dict) else None
-            record = accounts.get(account) if isinstance(accounts, dict) else None
-            if isinstance(record, dict) and record.get("is_local_bin_made"):
-                return True
-        return False
-
-    def _link_path(self, home: str) -> str:
-        """An account's link, ``~/.local/bin/<name>``."""
-        return self._join(home, *AGENT_PROGRAM_LINK_DIR_PARTS, self._hooks.program)
+        return answer
 
     # --- the read ---
 
-    def _read_accounts(self, *, is_named: bool) -> bool:
-        """Read each enabled account's recorded copy and link, and ask for a task when one went, fell below the floor or was replaced.
-
-        A copy whose file changed has its version read again as the
-        account, and the record keeps it.
-
-        Returns:
-            Whether an enabled account runs its own copy at a supported
-            version.
-        """
-        enabled = self._enabled()
-        floor = self._floor()
+    def _watch_accounts(self) -> None:
+        """Ask for a task once for each enabled account whose startup files or env file changed since its last ``account`` step."""
+        if self._os_name == "windows":
+            return
+        enabled = set(self._enabled())
         with self._lock:
             records = self._read_record()
-        served = False
-        asks = []
-        updates = {}
-        for account in enabled:
-            record = records.get(account)
-            if not record:
+        for account, record in records.items():
+            if account not in enabled or not record.get("is_path_set"):
                 continue
-            if record.get("copy") == AGENT_PROGRAM_COPY_USER:
-                path = str(record.get("path", "") or "")
-                stamp = file_stamp(path)
-                if stamp is None:
-                    asks.append((account, ASK_GONE, path))
-                    continue
-                if stamp == record.get("stamp"):
-                    served = served or is_supported(
-                        str(record.get("version", "") or ""), floor
-                    )
-                    continue
-                version = self._version_of(account, record)
-                if not version:
-                    asks.append((account, ASK_GONE, path))
-                    continue
-                if not is_supported(version, floor):
-                    asks.append((account, ASK_BELOW, version))
-                    continue
-                updates[account] = {"version": version, "stamp": stamp}
-                served = True
-            elif record.get("is_link_made") and self._os_name != "windows":
-                try:
-                    home = self._machine.lookup_account(account).home
-                except KeyError:
-                    continue
-                link = self._link_path(home)
-                try:
-                    target = os.readlink(link)
-                except OSError:
-                    target = ""
-                if target != self.launcher_path:
-                    asks.append((account, ASK_LINK, link))
-        if updates:
+            stamps = self._path.stamps(account)
+            if stamps == record.get("stamps"):
+                continue
             with self._lock:
-                held = self._read_record()
-                for account, changed in updates.items():
-                    if account in held:
-                        held[account] = {**held[account], **changed}
-                self._write_record(held)
-        if is_named:
-            for ask in asks:
-                self._ask(ask)
-        return served
-
-    def _version_of(self, account: str, record: dict) -> str:
-        """A recorded copy's version, read again as the account."""
-        path = str(record.get("path", "") or "")
-        if self._os_name != "windows":
-            return self._version_posix(
-                account, path, str(record.get("search_path", "") or "")
+                if self._asked.get(account) == stamps:
+                    continue
+                self._asked[account] = stamps
+            self._log(
+                f"{self.name}: the startup files of {account} changed, a task follows"
             )
-        password = self._passwords().get(account) or str(
-            record.get("password", "") or ""
-        )
-        try:
-            answer = self._windows_run(
-                account,
-                password,
-                AGENT_PROGRAM_WINDOWS_FIND_PARTS,
-                {"version_of": path},
-            )
-        except (ModuleApplyError, OSError, subprocess.SubprocessError):
-            return ""
-        return first_version(str(answer.get("version", "") or ""))
-
-    def _ask(self, ask: tuple) -> None:
-        """Ask for a task of the module's own, once per reason until the next ``find``."""
-        with self._lock:
-            if ask in self._asked:
-                return
-            self._asked.add(ask)
-        account, reason, what = ask
-        self._log(
-            f"{self.name}: the copy of {account} changed ({reason} {what}), a task follows"
-        )
-        self.ask_configure()
+            self.ask_configure()
 
     # --- the files ---
 
@@ -1301,10 +1085,6 @@ class ProgramsModuleRunner(ModuleRunner):
             if isinstance(entry, dict)
         }
 
-    def _floor(self) -> str:
-        """The lowest version of a person's copy the module uses, the recipe's ``user_copy_min_version``."""
-        return str(params_of(self._recipe).get("user_copy_min_version", "") or "")
-
     def _module_version(self) -> str:
         """The version of the module's own copy, empty while it has none."""
         path = self._join(self.package_dir, "package.json")
@@ -1383,27 +1163,32 @@ class ProgramsModuleRunner(ModuleRunner):
         )
 
 
-def _needs_module_copy(accounts: list, records: dict) -> bool:
-    """Whether the module's own copy is needed: no account enabled, or one with no own copy in the records. Pure."""
-    if not accounts:
-        return True
-    return any(
-        (records.get(account) or {}).get("copy") != AGENT_PROGRAM_COPY_USER
-        for account in accounts
-    )
+def _code_of(account: str, found: dict) -> tuple:
+    """An account's code from what ``find`` found: none while the module's launcher comes first. Pure."""
+    if found.get("is_module_first"):
+        return "", {}
+    path = str(found.get("path", "") or "")
+    version = str(found.get("version", "") or "")
+    if path and found.get("is_system_path"):
+        return AGENT_PROGRAM_CODE_SYSTEM_PATH, {
+            "account": account,
+            "path": path,
+            "version": version,
+        }
+    if path and found.get("is_on_path"):
+        return AGENT_PROGRAM_CODE_RUNS_FIRST, {
+            "account": account,
+            "path": path,
+            "version": version,
+        }
+    return AGENT_PROGRAM_CODE_UNREACHED, {"account": account}
 
 
-def _found_line(module: str, account: str, record: dict) -> str:
-    """The log line of what ``find`` found for one account. Pure."""
-    if record.get("copy") == AGENT_PROGRAM_COPY_USER:
-        return f"{module}: {account} runs its own copy {record['path']} {record['version']}"
-    if record.get("code") == AGENT_PROGRAM_CODE_OLD_COPY:
-        params = record.get("params") or {}
-        return (
-            f"{module}: {account} has its own copy {params.get('version')} below "
-            f"{params.get('min')}, and runs the module's"
-        )
-    return f"{module}: {account} has no copy of its own, and runs the module's"
+def _said(error: BaseException) -> str:
+    """What a failure says, its code for a refusal. Pure."""
+    if isinstance(error, ModuleApplyError):
+        return error.code
+    return str(error)[:DETAIL_CHARS]
 
 
 def _write_bytes_if_changed(path: str, data: bytes) -> bool:

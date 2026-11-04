@@ -450,10 +450,8 @@ def test_uninstall_switches_the_ai_tools_back_once_the_service_stopped(
     assert "removed    /var/lib/neutrino/agent/ai_tools/bin" in printed
 
 
-def test_every_marked_link_of_a_command_line_program_goes_and_nothing_else(
-    monkeypatch, tmp_path
-):
-    """The real removal, on a state root under the test's folder."""
+def test_every_account_s_path_is_given_back_byte_for_byte(monkeypatch, tmp_path):
+    """The real removal, on a state root and a home under the test's folder."""
     monkeypatch.undo()
 
     class Root(FakeControlPlatform):
@@ -462,18 +460,44 @@ def test_every_marked_link_of_a_command_line_program_goes_and_nothing_else(
         def agent_var_dir(self):
             return str(tmp_path / "state")
 
-        def run_as_account(self, account, argv, **kwargs):
-            return subprocess.run(argv, capture_output=True, text=True)
+        def account_process(self, account, argv):
+            return list(argv), {}
 
     home = tmp_path / "home"
-    (home / ".local" / "bin").mkdir(parents=True)
-    launcher = str(tmp_path / "state" / "codex" / "bin" / "codex")
-    (home / ".local" / "bin" / "codex").symlink_to(launcher)
-    (home / ".local" / "bin" / "claude").write_text("the person's own")
-    for module, made in (("codex", True), ("claude_code", True)):
+    tree = home / ".local" / "share" / "neutrino" / "agent"
+    tree.mkdir(parents=True)
+    line = (
+        '[ -f "$HOME/.local/share/neutrino/agent/env.sh" ] && '
+        '. "$HOME/.local/share/neutrino/agent/env.sh" # Neutrino\n'
+    )
+    (home / ".bashrc").write_text("alias ll='ls -l'\n" + line)
+    (home / ".profile").write_text("umask 022" + "\n" + line)
+    (tree / "env.sh").write_text("PATH=x\n")
+    (tree / "notes").write_text("another module's")
+    (tmp_path / "state").mkdir()
+    (tmp_path / "state" / "program_path.json").write_text(
+        json.dumps(
+            {
+                "accounts": {
+                    "ann": {
+                        "modules": ["claude_code", "codex"],
+                        "env": [str(tree / "env.sh")],
+                        "files": {
+                            str(home / ".bashrc"): {"is_made": False},
+                            str(home / ".profile"): {
+                                "is_made": False,
+                                "is_newline_added": True,
+                            },
+                        },
+                    }
+                }
+            }
+        )
+    )
+    for module in ("codex", "claude_code"):
         (tmp_path / "state" / module).mkdir(parents=True)
         (tmp_path / "state" / module / "record.json").write_text(
-            json.dumps({"accounts": {"ann": {"copy": "module", "is_link_made": made}}})
+            json.dumps({"accounts": {"ann": {"is_path_set": True}}})
         )
     monkeypatch.setattr(
         programs_module,
@@ -482,15 +506,19 @@ def test_every_marked_link_of_a_command_line_program_goes_and_nothing_else(
             os_name="linux",
             module_dir=str(tmp_path / "state" / name),
             record_dir=str(tmp_path / "state" / name),
-            lookup_account=lambda account: AccountEntry(1000, 1000, str(home), ""),
+            lookup_account=lambda account: AccountEntry(
+                1000, 1000, str(home), "/bin/bash"
+            ),
         ),
     )
 
     lines = service_cli.remove_program_ways_in(Root())
 
-    assert not os.path.lexists(home / ".local" / "bin" / "codex")
-    assert (home / ".local" / "bin" / "claude").read_text() == "the person's own"
+    assert (home / ".bashrc").read_text() == "alias ll='ls -l'\n"
+    assert (home / ".profile").read_text() == "umask 022"
+    assert not (tree / "env.sh").exists()
+    assert (tree / "notes").read_text() == "another module's"
     assert lines == [
-        "claude_code: removed the way in of ann",
-        "codex: removed the way in of ann",
+        "claude_code: gave back the PATH of ann",
+        "codex: gave back the PATH of ann",
     ]

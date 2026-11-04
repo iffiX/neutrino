@@ -338,9 +338,10 @@ class WindowsHome:
 class FakeLogon:
     opened: list = []
 
-    def __init__(self, account, password):
+    def __init__(self, account, password, *, programs=()):
         self.account = account
         self.password = password
+        self.programs = programs
         self.is_closed = False
 
     def open(self):
@@ -407,15 +408,25 @@ def test_on_windows_an_account_with_no_login_is_refused(monkeypatch):
     assert FakeLogon.opened == []
 
 
-def test_a_command_s_path_ends_with_every_launcher_folder_and_finds_a_program_there(
-    tmp_path,
-):
+def test_a_command_s_path_starts_with_its_account_s_launcher_folders(tmp_path):
     channel = FakeChannel()
 
-    closed = run(channel, ["/bin/sh", "-c", 'echo "$PATH"'], tmp_path)
+    closed = run(
+        channel,
+        ["/bin/sh", "-c", 'echo "$PATH"'],
+        tmp_path,
+        settings=enabled(TerminalAccount(ME, programs=("codex",))),
+    )
 
     assert closed["params"] == {"exit_code": 0}
     assert channel.output().decode().strip() == (
-        "/bin:/usr/bin:/var/lib/neutrino/agent/claude_code/bin:"
-        "/var/lib/neutrino/agent/codex/bin"
+        "/var/lib/neutrino/agent/codex/bin:/bin:/usr/bin"
     )
+
+
+def test_a_command_of_an_account_in_no_program_keeps_its_path(tmp_path):
+    channel = FakeChannel()
+
+    run(channel, ["/bin/sh", "-c", 'echo "$PATH"'], tmp_path)
+
+    assert channel.output().decode().strip() == "/bin:/usr/bin"

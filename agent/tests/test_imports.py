@@ -161,6 +161,7 @@ SURVIVING_MODULES = {
     "neutrino_agent.modules.shared.hub_clock",
     "neutrino_agent.modules.shared.installers",
     "neutrino_agent.modules.shared.instances",
+    "neutrino_agent.modules.shared.program_path",
     "neutrino_agent.modules.shared.programs",
     "neutrino_agent.modules.shared.log_tail",
     "neutrino_agent.modules.shared.loopback_port",

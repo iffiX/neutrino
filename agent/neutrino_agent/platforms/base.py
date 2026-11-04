@@ -66,42 +66,48 @@ def login_shell_of(account: str) -> str:
         return ""
 
 
-def launcher_folders(var_dir: str, os_name: str) -> list:
-    """Every command line program's launcher folder, as Neutrino's sessions end ``PATH`` with them. Pure.
+def launcher_folders(var_dir: str, os_name: str, modules) -> list:
+    """The launcher folders of some command line programs. Pure.
 
     Args:
         var_dir: The state root.
         os_name: The system.
+        modules: The programs, by module name.
 
     Returns:
-        One folder per command line program, in
-        :data:`AGENT_PROGRAM_MODULES`' order, whether it is installed or not.
+        One folder per program named, in :data:`AGENT_PROGRAM_MODULES`'
+        order, whether it is installed or not.
     """
     join = ntpath.join if os_name == "windows" else posixpath.join
+    named = set(modules or ())
     return [
         join(var_dir, module, AGENT_PROGRAM_LAUNCHER_DIR_NAME)
         for module in AGENT_PROGRAM_MODULES
+        if module in named
     ]
 
 
-def with_launcher_folders(path: str, var_dir: str, os_name: str) -> str:
-    """A ``PATH`` with every launcher folder at its end. Pure.
+def with_launcher_folders(path: str, var_dir: str, os_name: str, modules) -> str:
+    """A ``PATH`` that starts with the launcher folders of some command line programs. Pure.
 
     Args:
         path: The ``PATH`` as it stands.
         var_dir: The state root.
         os_name: The system.
+        modules: The programs the account is enabled in, by module name.
 
     Returns:
-        ``path`` followed by each folder it does not hold yet.
+        The folders, each once, then ``path`` without them.
     """
     separator = ";" if os_name == "windows" else ":"
+    folders = launcher_folders(var_dir, os_name, modules)
     held = str(path or "")
-    parts = held.split(separator)
-    added = [
-        folder for folder in launcher_folders(var_dir, os_name) if folder not in parts
-    ]
-    return separator.join(([held] if held else []) + added)
+    if not folders:
+        return held
+    parts = (
+        [part for part in held.split(separator) if part not in folders] if held else []
+    )
+    return separator.join(folders + parts)
 
 
 @dataclass(frozen=True)

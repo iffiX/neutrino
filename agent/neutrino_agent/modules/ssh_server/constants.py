@@ -42,9 +42,10 @@ SSH_SERVER_WINDOWS_POWERSHELL_PARTS = (
 
 # macOS: the environment a LaunchDaemon's instance starts with.
 SSH_SERVER_DARWIN_PATH = "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
-# The PATH an instance starts with before every command line program's
-# launcher folder: systemd's own for a service on Linux, and the account's
-# own on Windows, which the task's script expands.
+# The PATH an instance starts with after the launcher folders of the
+# command line programs its account is enabled in: systemd's own for a
+# service on Linux, and the account's own on Windows, which the task's
+# script expands.
 SSH_SERVER_LINUX_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 SSH_SERVER_WINDOWS_PATH = "%PATH%"
 

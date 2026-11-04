@@ -1,18 +1,26 @@
-# The find of a command line program's copy, run as one account.
+# The find of a command line program's copies, run as one account.
 #
-# Standard input holds one JSON object. {name, skip, places} looks for the
-# account's own copy: each folder of the system's PATH and then the
-# account's user PATH, expanded as Windows joins them for a new process,
-# <name>.exe then <name>.cmd in each, the folder skip passed over; then each
-# of places, its variables expanded. The first copy whose --version prints a
-# dotted number within 10 seconds is the account's. {version_of} reads the
-# version of one copy. The answer is one JSON line, {path, version}, both
-# empty when no copy is found.
+# Standard input holds one JSON object, {name, module_folder, places}. Each
+# folder of the system's PATH and then of the account's user PATH, expanded
+# as Windows joins them for a new process, is read in order for <name>.exe
+# then <name>.cmd. The module's own folder is passed over, and is_module_first
+# says whether it comes before every other copy. The first other copy is the
+# answer, else the first of places, its variables expanded. The answer is
+# one JSON line, {path, version, is_on_path, is_system_path,
+# is_module_first}: version the first dotted number the copy's --version
+# prints within 10 seconds, empty when it prints none; path empty when no
+# copy is found.
 
 $ErrorActionPreference = 'Stop'
 
-function Write-Answer([string]$Path, [string]$Version) {
-    $text = (@{ path = $Path; version = $Version } | ConvertTo-Json -Compress)
+function Write-Answer([string]$Path, [string]$Version, [bool]$IsOnPath, [bool]$IsSystemPath, [bool]$IsModuleFirst) {
+    $text = (@{
+        path = $Path
+        version = $Version
+        is_on_path = $IsOnPath
+        is_system_path = $IsSystemPath
+        is_module_first = $IsModuleFirst
+    } | ConvertTo-Json -Compress)
     $writer = New-Object System.IO.StreamWriter([Console]::OpenStandardOutput(), (New-Object System.Text.UTF8Encoding($false)))
     $writer.WriteLine($text)
     $writer.Flush()
@@ -64,50 +72,46 @@ function Test-File([string]$Path) {
 
 $reader = New-Object System.IO.StreamReader([Console]::OpenStandardInput(), [System.Text.Encoding]::UTF8)
 $request = $reader.ReadToEnd() | ConvertFrom-Json
-
-if ($request.version_of) {
-    $path = [string]$request.version_of
-    if (Test-File $path) {
-        Write-Answer $path (Read-Version $path)
-    } else {
-        Write-Answer $path ''
+$name = [string]$request.name
+$moduleFolder = ([string]$request.module_folder).TrimEnd('\')
+$folders = New-Object System.Collections.Generic.List[object]
+foreach ($scope in @('Machine', 'User')) {
+    $value = [Environment]::GetEnvironmentVariable('Path', $scope)
+    if (-not $value) {
+        continue
     }
-    return
+    foreach ($part in $value.Split(';')) {
+        $folder = [Environment]::ExpandEnvironmentVariables($part.Trim()).TrimEnd('\')
+        if ($folder) {
+            $folders.Add(@{ folder = $folder; is_system = ($scope -eq 'Machine') })
+        }
+    }
 }
 
-$name = [string]$request.name
-$skip = ([string]$request.skip).TrimEnd('\')
-$machine = [Environment]::GetEnvironmentVariable('Path', 'Machine')
-$user = [Environment]::GetEnvironmentVariable('Path', 'User')
-$candidates = New-Object System.Collections.Generic.List[string]
-foreach ($part in ((@($machine, $user) | Where-Object { $_ }) -join ';').Split(';')) {
-    $folder = [Environment]::ExpandEnvironmentVariables($part.Trim()).TrimEnd('\')
-    if (-not $folder -or $folder -ieq $skip) {
+$isModuleFirst = $false
+foreach ($each in $folders) {
+    if ($each.folder -ieq $moduleFolder) {
+        if (Test-File ($each.folder + '\' + $name + '.cmd')) {
+            $isModuleFirst = $true
+        }
         continue
     }
     foreach ($suffix in @('.exe', '.cmd')) {
-        $candidates.Add($folder + '\' + $name + $suffix)
+        $candidate = $each.folder + '\' + $name + $suffix
+        if (Test-File $candidate) {
+            Write-Answer $candidate (Read-Version $candidate) $true ([bool]$each.is_system) $isModuleFirst
+            return
+        }
     }
 }
 foreach ($place in @($request.places)) {
-    if ($place) {
-        $candidates.Add([Environment]::ExpandEnvironmentVariables([string]$place))
-    }
-}
-$seen = @{}
-foreach ($candidate in $candidates) {
-    $key = $candidate.ToLowerInvariant()
-    if ($seen.ContainsKey($key)) {
+    if (-not $place) {
         continue
     }
-    $seen[$key] = $true
-    if (-not (Test-File $candidate)) {
-        continue
-    }
-    $version = Read-Version $candidate
-    if ($version) {
-        Write-Answer $candidate $version
+    $candidate = [Environment]::ExpandEnvironmentVariables([string]$place)
+    if (Test-File $candidate) {
+        Write-Answer $candidate (Read-Version $candidate) $false $false $isModuleFirst
         return
     }
 }
-Write-Answer '' ''
+Write-Answer '' '' $false $false $isModuleFirst

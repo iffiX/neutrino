@@ -5,7 +5,8 @@ as SYSTEM: ``LogonUserW`` makes a primary token from the account's password,
 an interactive logon first and a batch logon where the account may not log
 on interactively; ``LoadUserProfileW`` loads the account's profile, and
 ``CreateEnvironmentBlock`` gives the account's own environment, whose
-``PATH`` then ends with every command line program's launcher folder. A
+``PATH`` then starts with the launcher folders of the command line programs
+the account is enabled in. A
 process is started under the token with ``CreateProcessAsUserW``, on the
 window station of the logon's own session. Every call takes the bound libraries as
 its seam, so nothing here needs Windows to import or to test.
@@ -42,25 +43,35 @@ class WindowsAccountLogon:
     """One account logged on: its token, its loaded profile, its environment."""
 
     def __init__(
-        self, account: str, password: str, *, advapi32=None, kernel32=None, userenv=None
+        self,
+        account: str,
+        password: str,
+        *,
+        programs=(),
+        advapi32=None,
+        kernel32=None,
+        userenv=None,
     ):
         """
         Args:
             account: The account's name on this computer.
             password: Its login.
+            programs: The command line programs the account is enabled in,
+                whose launcher folders start its ``PATH``.
             advapi32: The bound advapi32; None binds the real one.
             kernel32: The bound kernel32; None binds the real one.
             userenv: The bound userenv; None binds the real one.
         """
         self.account = account
         self._password = password
+        self._programs = tuple(programs or ())
         self._advapi32 = advapi32
         self._kernel32 = kernel32
         self._userenv = userenv
         self._token = None
         self._profile = None
         self._environment = None
-        # The account's environment as the process gets it, its PATH ended
+        # The account's environment as the process gets it, its PATH started
         # with the launcher folders.
         self._block = None
 
@@ -97,6 +108,7 @@ class WindowsAccountLogon:
             self._block = ended_environment(
                 environment_entries(environment.value),
                 windows_agent_dir(AGENT_WINDOWS_STATE_DIR_NAME),
+                self._programs,
             )
         except OSError:
             self.close()
@@ -194,12 +206,13 @@ def environment_entries(address: int) -> list:
     return entries
 
 
-def ended_environment(entries: list, var_dir: str):
-    """An environment block whose ``PATH`` ends with every command line program's launcher folder.
+def ended_environment(entries: list, var_dir: str, programs=()):
+    """An environment block whose ``PATH`` starts with the launcher folders of the command line programs the account is enabled in.
 
     Args:
         entries: The ``NAME=value`` entries of the account's environment.
         var_dir: The state root.
+        programs: The programs, by module name.
 
     Returns:
         The block, a unicode buffer of NUL-separated entries ending with an
@@ -211,10 +224,12 @@ def ended_environment(entries: list, var_dir: str):
         name, _sign, value = entry.partition("=")
         if name.lower() == "path" and not is_found:
             is_found = True
-            entry = f"{name}={with_launcher_folders(value, var_dir, 'windows')}"
+            entry = (
+                f"{name}={with_launcher_folders(value, var_dir, 'windows', programs)}"
+            )
         ended.append(entry)
     if not is_found:
-        ended.append("Path=" + with_launcher_folders("", var_dir, "windows"))
+        ended.append("Path=" + with_launcher_folders("", var_dir, "windows", programs))
     return ctypes.create_unicode_buffer("\0".join(ended) + "\0\0")
 
 

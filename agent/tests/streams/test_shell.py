@@ -590,21 +590,23 @@ def test_a_shell_for_an_account_starts_as_the_platform_steps_down(tmp_path):
     assert stream._session.account == ME
 
 
-def test_a_shell_s_path_ends_with_every_command_line_program_s_launcher_folder(
-    tmp_path,
-):
+def test_a_shell_s_path_starts_with_its_account_s_launcher_folders(tmp_path):
     platform = StepDownPlatform(tmp_path, ["/bin/sh", "-c", 'echo "path:$PATH"'])
     channel = FakeChannel()
     stream = terminal_stream(
-        channel, enabled(TerminalAccount(ME, shell_path="/bin/sh")), platform
+        channel,
+        enabled(
+            TerminalAccount(ME, shell_path="/bin/sh", programs=("codex", "claude_code"))
+        ),
+        platform,
     )
 
     stream.open()
     stream.run()
 
     assert (
-        "path:/bin:/usr/bin:/var/lib/neutrino/agent/claude_code/bin:"
-        "/var/lib/neutrino/agent/codex/bin" in channel.output().decode()
+        "path:/var/lib/neutrino/agent/claude_code/bin:"
+        "/var/lib/neutrino/agent/codex/bin:/bin:/usr/bin" in channel.output().decode()
     )
 
 

@@ -486,54 +486,6 @@ class ModuleEngine(ReconcileWorker):
         except Exception:  # noqa: BLE001 - an unreadable module is not installed
             return False
 
-    def program_runner(self, name: str, entry: dict):
-        """The runner of a command line program, which ``find`` plans for.
-
-        Args:
-            name: The module name.
-            entry: The state's entry.
-
-        Returns:
-            The :class:`ProgramsModuleRunner`; None for any other module.
-        """
-        runner = self._runner_for(name, _recipe_of(entry))
-        return runner if isinstance(runner, ProgramsModuleRunner) else None
-
-    def is_module_copy_installed(self, name: str, entry: dict) -> bool:
-        """Whether a command line program's own copy passes its recipe's ``verify``.
-
-        Args:
-            name: The module name.
-            entry: The state's entry whose recipe is checked.
-
-        Returns:
-            True when the module's own copy is there; a person's copy does
-            not count.
-        """
-        recipe = _recipe_of(entry)
-        runner = self._runner_for(name, recipe)
-        if runner is None or self._has_uninstalled_mark(runner.name):
-            return False
-        return self._verify_passes(
-            str(params_of(recipe).get("verify", "") or ""),
-            runner.verify_environment(),
-        )
-
-    def find_steps(self, name: str, entry: dict) -> list:
-        """A command line program's ``find``, planned from its record as it stands.
-
-        Args:
-            name: The module name.
-            entry: The state's entry the task plans from.
-
-        Returns:
-            The one step, with the runner's locks.
-        """
-        runner = self._runner_for(name, _recipe_of(entry))
-        config = entry.get("config")
-        config = dict(config) if isinstance(config, dict) else {}
-        return self._with_runner_locks(runner, [runner.find_step(config)])
-
     def is_configured(self, name: str) -> bool:
         """Whether the hub's configuration was ever applied to one module.
 
@@ -1641,8 +1593,7 @@ class ModuleEngine(ReconcileWorker):
         A module the agent carries is always there; a module whose
         uninstalled mark stands is not; a ``system`` or a ``hub`` recipe is
         there while its ``verify`` exits 0, run once per program file it
-        names, and a command line program also while an enabled account runs
-        its own copy at a supported version; a ``container`` recipe while every image it pins is in
+        names; a ``container`` recipe while every image it pins is in
         Containers' Podman, as its runner reads it. A ``builtin`` recipe, and
         a module the state does not name, which comes with no recipe, are
         judged by the runner's own check.
@@ -1653,13 +1604,9 @@ class ModuleEngine(ReconcileWorker):
         if self._has_uninstalled_mark(runner.name):
             return False
         if method in VERIFIED_METHODS:
-            if self._verify_passes(
+            return self._verify_passes(
                 str(params_of(recipe).get("verify", "") or ""),
                 runner.verify_environment(),
-            ):
-                return True
-            return (
-                isinstance(runner, ProgramsModuleRunner) and runner.has_person_copies()
             )
         return bool(runner.verify(recipe))
 

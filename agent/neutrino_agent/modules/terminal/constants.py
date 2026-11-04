@@ -9,6 +9,7 @@ TERMINAL_ACCOUNTS_KEY = "accounts"
 TERMINAL_ACCOUNT_KEY = "account"
 TERMINAL_SHELL_PATH_KEY = "shell_path"
 TERMINAL_PASSWORD_KEY = "password"
+TERMINAL_PROGRAMS_KEY = "programs"
 
 # Why a shell or a command cannot run.
 TERMINAL_CODE_ACCOUNT_MISSING = "terminal_account_missing"

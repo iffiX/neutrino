@@ -28,12 +28,12 @@ from neutrino_agent.platforms.windows_logon import (
 TOKEN_BASE = 0x700
 PROFILE = 0x800
 # The account's environment as CreateEnvironmentBlock makes it, and as the
-# process gets it: its PATH ended with every launcher folder.
+# process gets it: its PATH started with its account's launcher folders.
 BLOCK = "USERNAME=ann\0Path=C:\\Windows;C:\\Tools\0TEMP=C:\\t\0\0"
 STATE = "C:\\ProgramData\\Neutrino\\agent\\state"
 ENDED = [
     "USERNAME=ann",
-    f"Path=C:\\Windows;C:\\Tools;{STATE}\\claude_code\\bin;{STATE}\\codex\\bin",
+    f"Path={STATE}\\codex\\bin;C:\\Windows;C:\\Tools",
     "TEMP=C:\\t",
 ]
 PROCESS = 0x60
@@ -177,6 +177,7 @@ def logon_of(advapi32=None, userenv=None, kernel32=None):
     return WindowsAccountLogon(
         "ann",
         "pw",
+        programs=("codex",),
         advapi32=advapi32 or FakeAdvapi32(),
         kernel32=kernel32 or FakeKernel32(),
         userenv=userenv or FakeUserenv(),
@@ -310,9 +311,18 @@ def test_a_command_runs_on_three_pipes_handed_to_it_alone_in_a_job(tmp_path):
 
 
 def test_an_environment_with_no_path_gets_one_of_the_launcher_folders_alone():
-    block = ended_environment(["USERNAME=ann"], "D:\\state")
+    block = ended_environment(["USERNAME=ann"], "D:\\state", ("codex", "claude_code"))
 
     assert environment_entries(ctypes.addressof(block)) == [
         "USERNAME=ann",
         "Path=D:\\state\\claude_code\\bin;D:\\state\\codex\\bin",
+    ]
+
+
+def test_an_account_in_no_program_keeps_its_path():
+    block = ended_environment(["USERNAME=ann", "Path=C:\\Windows"], "D:\\state")
+
+    assert environment_entries(ctypes.addressof(block)) == [
+        "USERNAME=ann",
+        "Path=C:\\Windows",
     ]

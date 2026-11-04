@@ -9,8 +9,8 @@ control pipe closes once the loop has ended. Its log goes to ``agent.log``
 under the agent's log root, rotated.
 
 ``uninstall`` takes away what the agent's modules added in order to run and
-to fence, every command line program's link and ``PATH`` entry that still
-carries the module's mark among them, and leaves what the machine serves:
+to fence, every account's ``PATH`` given back by the command line programs
+among them, and leaves what the machine serves:
 shares, accounts and the modules' data stay. The deb's and the rpm's removal and the Windows
 installer's removal run it, and an upgrade never does. On macOS, which has
 no uninstaller, it removes the agent itself as well.
@@ -101,7 +101,7 @@ def main_run() -> int:
 
 
 def main_uninstall(*, is_forced: bool) -> int:
-    """Stop the agent, turn the desktop share off, switch the accounts' AI tools back, and take away what it and its modules added, the command line programs' links and ``PATH`` entries and its relays' firewall rules among them.
+    """Stop the agent, turn the desktop share off, switch the accounts' AI tools back, and take away what it and its modules added, the command line programs' lines, env files and ``PATH`` entries and its relays' firewall rules among them.
 
     The service stops first, so no apply of its own runs beside the switch
     back; the copy of cc-switch goes once the switch back is done. A desktop
@@ -147,7 +147,7 @@ def main_uninstall(*, is_forced: bool) -> int:
 
 
 def remove_program_ways_in(platform) -> list:
-    """Take away every link and ``PATH`` entry of a command line program that still carries the module's mark.
+    """Give back every account's ``PATH`` from the command line programs: the line in each startup file, ``env.sh`` and each Windows entry.
 
     The package's removal takes away the module's copy they reach.
 

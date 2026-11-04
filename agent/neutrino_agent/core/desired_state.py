@@ -548,8 +548,7 @@ class DesiredStateApplier:
         ``want`` plans the install when the software is missing or the last
         install failed, the version switch when a ``hub`` module's kept
         version differs from its recipe's, then the configure steps under
-        ``stopped`` and ``running``, less a second ``wait_module``. A
-        command line program's plan begins with ``find``.
+        ``stopped`` and ``running``, less a second ``wait_module``.
 
         Args:
             task: The task.
@@ -579,8 +578,6 @@ class DesiredStateApplier:
         if want not in AGENT_PRESENT_WANTS:
             self._log(task_line(name, f"want {want!r} is not one this agent knows"))
             return PLAN_CONFIGURE, []
-        if self._engine.program_runner(name, entry) is not None:
-            return self._plan_program(name, entry)
         kind = PLAN_CONFIGURE
         steps = []
         if self._engine.is_install_failed(name) or not self._engine.is_installed(
@@ -598,40 +595,6 @@ class DesiredStateApplier:
                     step for step in configuring if step.name != AGENT_STEP_WAIT_MODULE
                 ]
             steps += configuring
-        return kind, steps
-
-    def _plan_program(self, name: str, entry: dict) -> tuple:
-        """Plan a command line program's task under a present ``want``.
-
-        ``find`` comes first. While the record says an account needs the
-        module's own copy, its install follows when the copy is missing or
-        the last install failed, or its version switch when the kept
-        version differs from the recipe's. Then ``configure`` and the
-        ``account`` steps. ``find`` plans the task again when what it finds
-        changes the need.
-
-        Args:
-            name: The module name.
-            entry: The state's entry it plans from.
-
-        Returns:
-            ``(kind, steps)``.
-        """
-        runner = self._engine.program_runner(name, entry)
-        config = entry.get("config")
-        config = dict(config) if isinstance(config, dict) else {}
-        kind = PLAN_CONFIGURE
-        steps = self._engine.find_steps(name, entry)
-        if runner.needs_module_copy(config):
-            if self._engine.is_install_failed(
-                name
-            ) or not self._engine.is_module_copy_installed(name, entry):
-                kind = PLAN_INSTALL
-                steps += self._engine.install_steps(name, entry)
-            elif self._engine.take_version_switch(name, entry):
-                kind = PLAN_SWITCH
-                steps += self._engine.switch_steps(name, entry)
-        steps += self._engine.configure_steps(name, entry, AGENT_WANT_RUNNING)
         return kind, steps
 
     def install_step_ran(self, task) -> None:

@@ -454,7 +454,7 @@ def account_logon(held, *, logon_class=WindowsAccountLogon, find_sid=None):
     Args:
         held: The account's :class:`~neutrino_agent.modules.terminal.config.TerminalAccount`.
         logon_class: Logs an account on, called with ``(account,
-            password)``.
+            password)`` and the account's ``programs``.
         find_sid: Reads the account's SID, raising :class:`KeyError` for an
             account this computer does not have; None asks Windows.
 
@@ -476,7 +476,7 @@ def account_logon(held, *, logon_class=WindowsAccountLogon, find_sid=None):
         pass
     if not held.password:
         raise StreamRefused(TERMINAL_CODE_CREDENTIAL_MISSING, {"account": held.account})
-    logon = logon_class(held.account, held.password)
+    logon = logon_class(held.account, held.password, programs=held.programs)
     try:
         logon.open()
     except ModuleApplyError as error:

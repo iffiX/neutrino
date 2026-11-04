@@ -221,7 +221,11 @@ def test_a_linux_instance_reads_its_port_and_shell_from_its_environment(tmp_path
     hooks.prepare_module()
     run_dir = hooks.run_dir("lab")
 
-    service = hooks.service(instance(), LAB, {"account": "lab", "port": 22000})
+    service = hooks.service(
+        instance(programs=("codex", "claude_code")),
+        LAB,
+        {"account": "lab", "port": 22000},
+    )
 
     assert service.command == (
         BINARY,
@@ -237,8 +241,9 @@ def test_a_linux_instance_reads_its_port_and_shell_from_its_environment(tmp_path
     assert service.environment == {
         "NEUTRINO_SSH_SERVER_PORT": "22000",
         "NEUTRINO_SSH_SERVER_SHELL": "/bin/bash",
-        "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:"
-        "/var/lib/neutrino/agent/claude_code/bin:/var/lib/neutrino/agent/codex/bin",
+        "PATH": "/var/lib/neutrino/agent/claude_code/bin:"
+        "/var/lib/neutrino/agent/codex/bin:"
+        "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
     }
     assert service.files == (
         (os.path.join(run_dir, "host_key"), private_key_text()),
@@ -270,7 +275,9 @@ def test_the_shell_is_the_row_s_else_the_login_shell(tmp_path, fields, entry, sh
 
 def test_a_mac_instance_carries_the_account_s_environment(tmp_path):
     service = hooks_for(tmp_path, "darwin").service(
-        instance(), AccountEntry(501, 20, "/Users/lab", "/bin/zsh"), {"port": 22001}
+        instance(programs=("claude_code",)),
+        AccountEntry(501, 20, "/Users/lab", "/bin/zsh"),
+        {"port": 22001},
     )
 
     assert service.command[1:3] == ("--listen", "127.0.0.1:22001")
@@ -280,9 +287,8 @@ def test_a_mac_instance_carries_the_account_s_environment(tmp_path):
         "USER": "lab",
         "LOGNAME": "lab",
         "SHELL": "/bin/zsh",
-        "PATH": "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:"
-        "/Library/Application Support/Neutrino/agent/state/claude_code/bin:"
-        "/Library/Application Support/Neutrino/agent/state/codex/bin",
+        "PATH": "/Library/Application Support/Neutrino/agent/state/claude_code/bin:"
+        "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
     }
     assert service.log_name == ""
 
@@ -298,7 +304,7 @@ def test_a_windows_instance_signs_in_with_its_password_and_logs_under_the_log_ro
     )
 
     service = hooks.service(
-        instance(password="pw"),  # scan: allow
+        instance(password="pw", programs=("codex",)),  # scan: allow
         AccountEntry(0, 0, "C:\\Users\\lab", ""),
         {"port": 22002},
     )
@@ -310,8 +316,7 @@ def test_a_windows_instance_signs_in_with_its_password_and_logs_under_the_log_ro
     )
     assert service.password == "pw"  # scan: allow
     assert service.environment == {
-        "PATH": "%PATH%;C:\\ProgramData\\Neutrino\\agent\\state\\claude_code\\bin;"
-        "C:\\ProgramData\\Neutrino\\agent\\state\\codex\\bin"
+        "PATH": "C:\\ProgramData\\Neutrino\\agent\\state\\codex\\bin;%PATH%"
     }
     assert service.working_directory == ""
     assert service.log_name == (

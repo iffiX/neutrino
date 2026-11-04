@@ -35,6 +35,8 @@ class SshServerInstance:
             login shell, PowerShell on Windows.
         password: The account's password; Windows only.
         port: The loopback port it listens on, from its record.
+        programs: The command line programs the account is enabled in,
+            whose launcher folders start a session's ``PATH``.
     """
 
     account: str
@@ -42,6 +44,7 @@ class SshServerInstance:
     shell_path: str = ""
     password: str = ""
     port: int = 0
+    programs: tuple = ()
 
     @classmethod
     def from_dict(cls, data: dict) -> "SshServerInstance":
@@ -55,6 +58,11 @@ class SshServerInstance:
             shell_path=str(data.get("shell_path", "") or "").strip(),
             password=str(data.get("password", "") or ""),
             port=port,
+            programs=tuple(
+                str(each)
+                for each in data.get("programs") or []
+                if isinstance(each, str)
+            ),
         )
 
 

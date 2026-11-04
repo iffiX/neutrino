@@ -377,18 +377,19 @@ def chosen_account(settings: TerminalConfig, account: str) -> TerminalAccount:
         raise refusal(error) from None
 
 
-def stepped_down(account: str, argv: list, platform) -> tuple:
+def stepped_down(account: str, argv: list, platform, programs=()) -> tuple:
     """How a process starts as an account through the platform's step-down.
 
     Args:
         account: The account.
         argv: What runs as it.
         platform: The machine's platform.
+        programs: The command line programs the account is enabled in.
 
     Returns:
         ``(command, process)``, as the platform's ``account_process`` gives
-        them, the environment copied out and its ``PATH`` ending with every
-        command line program's launcher folder.
+        them, the environment copied out and its ``PATH`` starting with the
+        launcher folders of ``programs``.
 
     Raises:
         StreamRefused: ``account_unknown {account}`` for an account the
@@ -411,6 +412,7 @@ def stepped_down(account: str, argv: list, platform) -> tuple:
         process["env"].get("PATH") or os.defpath,
         platform.agent_var_dir(),
         platform.os_name,
+        programs,
     )
     return command, process
 
@@ -441,7 +443,7 @@ def shell_plan(held: TerminalAccount, platform) -> tuple:
         raise refusal(error) from None
     shell = held.shell_path or login_shell(entry.pw_shell)
     command, process = stepped_down(
-        held.account, [shell, *TERMINAL_LOGIN_ARGUMENTS], platform
+        held.account, [shell, *TERMINAL_LOGIN_ARGUMENTS], platform, held.programs
     )
     process["env"]["SHELL"] = shell
     process["owner"] = entry.pw_uid
@@ -500,7 +502,10 @@ def exec_plan(argv, held: TerminalAccount, platform) -> tuple:
     except ModuleApplyError as error:
         raise refusal(error) from None
     command, process = stepped_down(
-        held.account, list(argv) if isinstance(argv, list) else [], platform
+        held.account,
+        list(argv) if isinstance(argv, list) else [],
+        platform,
+        held.programs,
     )
     process["env"]["SHELL"] = login_shell(entry.pw_shell)
     process["owner"] = entry.pw_uid
