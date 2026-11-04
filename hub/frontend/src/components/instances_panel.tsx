@@ -53,7 +53,7 @@ const STATE_UNSUPPORTED = "unsupported";
 /** What a module that runs reports. */
 const STATE_RUNNING = "running";
 
-/** The module whose rows end with the machine's host key. */
+/** The module whose rows end with each account instance's host key. */
 const SSH_SERVER_MODULE = "ssh_server";
 
 /** What an apply on a module the agent carries waits for. */
@@ -295,14 +295,6 @@ export function InstancesPanel({
             )}
           </div>
         )}
-        {descriptor.name === SSH_SERVER_MODULE &&
-          (saved.host_key_fingerprint ?? "") !== "" && (
-            <p className="field_hint mono">
-              {t("ui.ssh_server.host_key", {
-                fingerprint: saved.host_key_fingerprint ?? "",
-              })}
-            </p>
-          )}
         <ApplyBar
           isDirty={isPending}
           hasChanges={isDirty}
@@ -381,6 +373,15 @@ function AccountRow({
             label={t(row.is_running ? "state.running" : "state.stopped")}
           />
         ))}
+      {descriptor.name === SSH_SERVER_MODULE &&
+        row.is_enabled &&
+        (row.host_key_fingerprint ?? "") !== "" && (
+          <span className="field_hint mono">
+            {t("ui.ssh_server.host_key", {
+              fingerprint: row.host_key_fingerprint ?? "",
+            })}
+          </span>
+        )}
       {row.code !== "" && (
         <span className="field_error instances_row_error">
           {describeCode(row)}

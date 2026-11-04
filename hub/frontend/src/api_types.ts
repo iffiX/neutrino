@@ -1448,6 +1448,9 @@ export interface EnabledAccountView {
   params: Record<string, unknown>;
   /** Terminal's field: the account's shell. */
   shell_path?: string;
+  /** The SSH server's: the account instance's host key, `SHA256:<base64>`,
+   * empty before the machine reports it. */
+  host_key_fingerprint?: string;
   /** The file share's fields: the share path and the SMB user. */
   share_path?: string;
   user?: string;
@@ -1486,8 +1489,6 @@ export interface ProgramAccountRequest {
 export interface EnabledAccountsView extends ModuleDeviceState {
   device_id: string;
   accounts: EnabledAccountView[];
-  /** The SSH server's host key, `SHA256:<base64>`. */
-  host_key_fingerprint?: string;
   /** VS Code's: whether the person accepted Microsoft's terms here. */
   is_terms_accepted?: boolean;
   /** VS Code's: the address of the terms. */
@@ -1555,7 +1556,7 @@ export interface PublishedServicePayload {
   /** ssh: the account the instance runs as. file: the account a folder
    * share's entry logs in as, empty on any other share. */
   account?: string;
-  /** ssh: the machine's host key, `SHA256:<base64>`. */
+  /** ssh: the account instance's host key, `SHA256:<base64>`. */
   host_key_fingerprint?: string;
   /** web: whether the page opens with a token the hub hands. */
   is_token_required?: boolean;
