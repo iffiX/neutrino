@@ -12,7 +12,7 @@
     nagent answer --prompt <text> --answer <keys> -- <program> [arguments]
     nagent step-down --uid <uid> --gid <gid> -- <program> [arguments]
 
-The shape is settled in ../../../docs/cli.md.
+The shape is settled in ../../../docs/reference/nagent.md.
 """
 
 import argparse

@@ -6,7 +6,7 @@ address last, and a client that is handed only that address joins through
 its transport, says hello and is told it came through the relay. Everything
 the test made is removed at the end, and the relay is off again.
 
-The server is set up as docs/guide/hub/relay.md says; the lab's VPS VM from
+The server is set up as docs/access/vps.md says; the lab's VPS VM from
 ``packaging/lab/make_vps.sh`` is one. Run on a set-up box:
 
     NEUTRINO_PANEL_PASSWORD=... NEUTRINO_RELAY_HOST=192.168.124.132 \\

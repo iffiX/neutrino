@@ -3,11 +3,9 @@ name: docs
 on:
   pull_request:
     paths:
-      - "docs/guide/**"
-      - "images/guide/**"
+      - "docs/**"
       - "images/icons/**"
       - "images/web/**"
-      - "packaging/screenshots/**"
       - "packaging/build/build_docs.py"
       - "packaging/ci/count_tests.py"
       - ".github/workflows/docs.yml"
@@ -27,14 +25,14 @@ jobs:
     runs-on: ubuntu-24.04
     defaults:
       run:
-        working-directory: docs/guide
+        working-directory: docs
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version-file: docs/guide/.nvmrc
+          node-version-file: docs/.nvmrc
           cache: npm
-          cache-dependency-path: docs/guide/package-lock.json
+          cache-dependency-path: docs/package-lock.json
       # The READMEs' tests badge reads badges/tests.json from the site.
       - uses: actions/setup-python@v7
         with:
@@ -46,9 +44,9 @@ jobs:
         run: pip install -e "hub[dev]" -e agent -e client/desktop
       - name: Count the tests
         working-directory: ${{ github.workspace }}
-        run: python packaging/ci/count_tests.py . docs/guide/public/badges/tests.json
+        run: python packaging/ci/count_tests.py . docs/public/badges/tests.json
       - name: Check and build website
-        run: python3 ../../packaging/build/build_docs.py --install
+        run: python3 ../packaging/build/build_docs.py --install
       # main is the Pages project's production branch.
       - name: Deploy the website to Cloudflare Pages
         if: >-

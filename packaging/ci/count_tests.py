@@ -1,6 +1,6 @@
 """Count the tests of every suite and write the tests badge the READMEs show.
 
-    python3 packaging/ci/count_tests.py . docs/guide/public/badges/tests.json
+    python3 packaging/ci/count_tests.py . docs/public/badges/tests.json
 
 Runs on: any machine whose Python has ``hub[dev]``, ``agent`` and
 ``client/desktop`` installed. The hub, the agent, the desktop client and the

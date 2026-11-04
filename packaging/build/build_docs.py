@@ -1,12 +1,12 @@
-"""Check and build the documentation site under docs/guide.
+"""Check and build the documentation site under docs.
 
     python3 packaging/build/build_docs.py --base /neutrino/
 
 Runs on: any machine with Node 24 or newer and Python 3.11 or newer. Runs
 ``npm ci`` when ``--install`` is given, then ``npm run check`` (formatting,
-lint, types and the screenshot list), then ``npm run build`` once for each
+lint, types and the page check), then ``npm run build`` once for each
 ``--base``, the path the site is served under. The site is written to
-``docs/guide/.vitepress/dist``.
+``docs/.vitepress/dist``.
 
 Not pure: runs npm, writes the site.
 """
@@ -21,7 +21,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "packaging"))
 from shared import edition_build  # noqa: E402
-DOCS_DIR = REPO_ROOT / "docs" / "guide"
+DOCS_DIR = REPO_ROOT / "docs"
 
 # What the site's configuration reads as the path it is served under.
 DOCS_BASE_ENV = "NEUTRINO_DOCS_BASE"

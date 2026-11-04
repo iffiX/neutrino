@@ -17,7 +17,7 @@
 #                    `lab`, with sudo and the lab key, for the tester; and
 #                    `relay`, holding the relay's public key, for the hub.
 #                    sshd takes `GatewayPorts clientspecified`, as
-#                    docs/guide/hub/relay.md has the owner set it.
+#                    docs/access/vps.md has the owner set it.
 #
 # The relay account's key carries no `permitlisten` option here, so one VM
 # serves any public port the tests pick (18443 to 18499).

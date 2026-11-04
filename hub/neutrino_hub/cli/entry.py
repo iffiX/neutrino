@@ -3,7 +3,7 @@
 One entry point with a subcommand each. The work itself stays in the module
 beside this one; this file only decides which of them runs.
 
-The shape is settled in [../../../../docs/cli.md](../../../../docs/cli.md).
+The shape is settled in [../../../docs/reference/nhub.md](../../../docs/reference/nhub.md).
 """
 
 import argparse
