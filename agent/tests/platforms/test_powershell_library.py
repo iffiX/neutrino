@@ -197,7 +197,7 @@ def test_the_file_share_under_stopped_starts_no_server_and_makes_no_share():
 
     assert served < apply.index("Set-Service -Name LanmanServer")
     assert served < apply.index("Start-Service -Name LanmanServer")
-    assert apply.index("New-Item -ItemType Directory") < unserved
+    assert "New-Item -ItemType Directory" not in apply
     assert unserved < apply.index("New-SmbShare")
     assert unserved < apply.index("Grant-SmbShareAccess")
 

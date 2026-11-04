@@ -987,7 +987,7 @@ class WindowsPlatform(AgentPlatform):
         Returns:
             A :class:`SambaWindowsApplier` asking the PowerShell host.
         """
-        return SambaWindowsApplier(powershell=self.powershell_host, run=self._run)
+        return SambaWindowsApplier(powershell=self.powershell_host)
 
     def is_elevated(self) -> bool:
         """Whether this process runs with an administrator's token.

@@ -432,9 +432,6 @@ function Set-NeutrinoShare {
         }
     }
     foreach ($s in @($Request.shares)) {
-        if (-not (Test-Path -LiteralPath $s.path)) {
-            New-Item -ItemType Directory -Path $s.path -Force | Out-Null
-        }
         if (-not $Request.is_served) {
             continue
         }

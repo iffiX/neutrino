@@ -5,16 +5,21 @@ JSON object and answering one, so a password never appears on a command
 line. The module changes only the shares and accounts it made: a share
 whose description starts with the marker and that the module's record
 lists, an account the record lists. Accounts are local, in no group, hidden
-from the sign-in screen and denied the console and RDP. Each share's folder
-is granted to its accounts with ``icacls`` once the host has made it, and
-the account's ``.ssh`` folder under it is taken back from them, so OpenSSH
-goes on reading the account's own files. The host reads each folder's
-access list first, and icacls runs only for an entry that differs. The
-module fences nothing: the block rule an earlier version made goes at the
-first apply that finds it.
+from the sign-in screen and denied the console and RDP. A share's missing
+folder is made before the host shares it, and each share's folder is
+granted to its accounts, and the account's ``.ssh`` folder under it taken
+back from them, so OpenSSH goes on reading the account's own files. SYSTEM
+sets these grants itself, the one change to an account's folder not made
+as the account: each folder is opened by handle with no reparse point
+followed, and its access list is read and set on that handle
+(:class:`WindowsFolderAccess`). A folder that is a junction, or is reached
+through one, is left ungranted with a note. The host reads
+each folder's access list first, and a folder is changed only for an
+entry that differs. The module fences nothing: the block rule an earlier
+version made goes at the first apply that finds it.
 
-Not pure: drives the PowerShell host, runs icacls and calls the local
-security policy.
+Not pure: drives the PowerShell host, sets access lists and calls the
+local security policy.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -22,6 +27,7 @@ security policy.
 from __future__ import annotations
 
 import ctypes
+import errno
 import os
 
 from neutrino_agent.exceptions import ModuleApplyError
@@ -40,8 +46,7 @@ from neutrino_agent.modules.samba.constants import (
     SAMBA_WINDOWS_SHARE_READ,
     SAMBA_WINDOWS_SSH_DIR_NAME,
 )
-from neutrino_agent.modules.shared.subprocess_run import run as run_command
-from neutrino_agent.modules.shared.windows_acl import icacls
+from neutrino_agent.platforms.windows_folder import WindowsFolderAccess
 from neutrino_agent.platforms import win32
 
 
@@ -181,21 +186,21 @@ def _session_detail(entry) -> dict:
 class SambaWindowsApplier:
     """Converges Windows' SMB server with the module's configuration."""
 
-    def __init__(self, *, powershell, deny_logon=None, run=None):
+    def __init__(self, *, powershell, deny_logon=None, folders=None):
         """
         Args:
             powershell: The agent's PowerShell host, asked as
                 :meth:`WindowsPowerShellHost.call` is.
             deny_logon: Called with an account name to deny it the console
                 and RDP. None calls the local security policy.
-            run: Runs one command as :func:`subprocess_run.run` does; None
-                runs it.
+            folders: The share folders' access lists, set on handles, as
+                :class:`WindowsFolderAccess` sets them; None sets them.
         """
         self._powershell = powershell
         self._deny_logon = (
             deny_logon if deny_logon is not None else deny_interactive_logon
         )
-        self._run = run if run is not None else run_command
+        self._folders = folders if folders is not None else WindowsFolderAccess()
 
     def read_status(self, record: dict) -> dict:
         """What the server holds of the module's, read now.
@@ -253,7 +258,11 @@ class SambaWindowsApplier:
         granted to its accounts and taken from the module's others, and
         the ``.ssh`` folder under it is taken from them all. Each folder's
         access list is read before the host converges the server, and
-        icacls changes only an entry that differs from it.
+        a folder is changed only for an entry that differs from it. A
+        share's missing folder is made first; a share whose folder cannot
+        be made through no reparse point is left off the server with a
+        note, and a folder that is a reparse point or is reached through
+        one is left ungranted with a note.
 
         Args:
             config: The validated configuration.
@@ -268,11 +277,17 @@ class SambaWindowsApplier:
         Raises:
             ModuleApplyError: ``share_name_taken`` or ``user_name_taken`` for
                 a name the module did not make.
-            OSError: When the host, icacls or the local policy fails.
+            OSError: When the host, an access list or the local policy
+                fails.
         """
         owned_shares = dict(record.get("shares") or {})
         owned_accounts = list(record.get("accounts") or [])
-        served = config.served_shares()
+        notes: list = []
+        served = [
+            share
+            for share in config.served_shares()
+            if self._has_folder(share.path, notes)
+        ]
         wanted_shares = {share.name for share in served} if is_served else set()
         known_accounts = owned_accounts + [
             name for name in config.users if name not in owned_accounts
@@ -309,13 +324,43 @@ class SambaWindowsApplier:
             },
         )
         for path in left:
-            for name in _holders(access, path, known_accounts):
-                icacls(self._run, [path, "/remove:g", name])
+            self._settle(
+                path,
+                notes,
+                self._folders.revoke,
+                path,
+                _holders(access, path, known_accounts),
+            )
         for path, rights in grants.items():
-            self._grant_folder(path, rights, known_accounts, access)
+            self._settle(
+                path, notes, self._grant_folder, path, rights, known_accounts, access
+            )
         for name in config.users:
             self._deny_logon(name)
-        return [str(note) for note in _listed(answer.get("notes"))]
+        return [str(note) for note in _listed(answer.get("notes"))] + notes
+
+    def _has_folder(self, path: str, notes: list) -> bool:
+        """Make a share's missing folder, checked by handle; whether the share has its folder."""
+        try:
+            self._folders.make(path)
+        except OSError as error:
+            notes.append(f"left share {path} off the server: {error}")
+            return False
+        return True
+
+    @staticmethod
+    def _settle(path: str, notes: list, step, *arguments) -> None:
+        """Run one folder's step; a folder that is a reparse point or is reached through one is noted and left.
+
+        Raises:
+            OSError: When Windows refuses for another reason.
+        """
+        try:
+            step(*arguments)
+        except OSError as error:
+            if error.errno != errno.ELOOP:
+                raise
+            notes.append(f"left {path} ungranted: {error}")
 
     def withdraw(self, record: dict, *, is_removed: bool) -> None:
         """Take the module's shares off the server.
@@ -467,29 +512,36 @@ class SambaWindowsApplier:
 
         The ``.ssh`` folder directly under it, when there is one, stops
         inheriting the folder's entries and loses every module account's.
-        OpenSSH's check of the account's own files then passes. icacls runs
-        only where ``access``, as :meth:`_read_access` reads it, differs.
-        An account's grant replaces every rule of its own on the folder.
+        OpenSSH's check of the account's own files then passes. A folder
+        is changed only where ``access``, as :meth:`_read_access` reads it,
+        differs. An account's grant replaces every rule of its own on the
+        folder.
+
+        Raises:
+            OSError: ``ELOOP`` for a folder that is a reparse point or is
+                reached through one; any other when Windows refuses.
         """
         held = access.get(path, {}).get("rules", {})
-        for name in _holders(access, path, known_accounts):
-            if name not in rights:
-                icacls(self._run, [path, "/remove:g", name])
+        self._folders.revoke(
+            path,
+            [
+                name
+                for name in _holders(access, path, known_accounts)
+                if name not in rights
+            ],
+        )
         for name, right in rights.items():
             if held.get(name) == [SAMBA_WINDOWS_FOLDER_RULES[right]]:
                 continue
-            if icacls(self._run, [path, "/grant:r", f"{name}:{right}"]) != 0:
-                raise OSError(f"icacls refused {name} on {path}")
+            self._folders.grant(path, name, right)
         ssh_dir = os.path.join(path, SAMBA_WINDOWS_SSH_DIR_NAME)
         if not os.path.isdir(ssh_dir):
             return
         holders = _holders(access, ssh_dir, known_accounts)
         if not access.get(ssh_dir, {}).get("is_protected"):
-            if icacls(self._run, [ssh_dir, "/inheritance:d"]) != 0:
-                raise OSError(f"icacls could not keep {ssh_dir} the account's own")
+            self._folders.keep_own(ssh_dir)
             holders = known_accounts
-        for name in holders:
-            icacls(self._run, [ssh_dir, "/remove:g", name])
+        self._folders.revoke(ssh_dir, holders)
 
 
 def folder_grants(shares: list) -> dict:

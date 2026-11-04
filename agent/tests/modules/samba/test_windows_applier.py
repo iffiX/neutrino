@@ -1,12 +1,15 @@
-"""The file share on Windows' own SMB server, with the PowerShell host and icacls faked.
+"""The file share on Windows' own SMB server, with the PowerShell host and the folders' access lists faked.
 
 What these pin: the request an apply sends the host names only what the
 module made, each share's right, the accounts to retire and the block rule
 an earlier version made for the host to delete; the folders' access lists
 are read before the host converges the server; each share's folder is
-then granted to its accounts and taken from the module's others through
-icacls, only where the list differs, a grant replacing the account's own
-rules and a grant icacls refuses failing the apply; the ``.ssh`` folder
+then granted to its accounts and taken from the module's others on a
+handle, only where the list differs, a grant replacing the account's own
+rules and a grant Windows refuses failing the apply; a folder that is a
+junction or is reached through one is left ungranted with a note, and a
+share whose folder cannot be made through none is left off the server;
+the host makes no folder; the ``.ssh`` folder
 under a share stops inheriting and loses every module account, and once it
 inherits nothing loses only the accounts holding a rule there; each
 configured account is denied the console and RDP through the local policy;
@@ -18,6 +21,7 @@ and the status reading is shaped the way the Linux module reports.
 """
 
 import ctypes
+import errno
 import os
 
 import pytest
@@ -54,16 +58,39 @@ CONFIG = SambaConfig.from_dict(
 
 
 class Icacls:
-    """icacls, recording each argument vector and refusing the ones asked."""
+    """The share folders' access lists, recording each change as the icacls argument vector it stands for.
 
-    def __init__(self, refused=()):
+    A change in ``refused`` is refused by Windows; a folder in
+    ``junctions`` is a reparse point, or reached through one.
+    """
+
+    def __init__(self, refused=(), junctions=()):
         self.calls: list = []
+        self.made: list = []
         self._refused = set(refused)
+        self.junctions = set(junctions)
 
-    def __call__(self, argv, **_):
-        self.calls.append(list(argv))
-        code = 5 if tuple(argv[2:]) in self._refused else 0
-        return CommandResult(command=list(argv), exit_code=code, stdout="", stderr="")
+    def _change(self, argv):
+        if argv[0] in self.junctions:
+            raise OSError(errno.ELOOP, f"{argv[0]} is a junction or a link")
+        self.calls.append(["icacls.exe", *argv])
+        if tuple(argv[1:]) in self._refused:
+            raise OSError(5, f"Windows refused {argv}")
+
+    def grant(self, path, account, right):
+        self._change([path, "/grant:r", f"{account}:{right}"])
+
+    def revoke(self, path, accounts):
+        for name in accounts:
+            self._change([path, "/remove:g", name])
+
+    def keep_own(self, path):
+        self._change([path, "/inheritance:d"])
+
+    def make(self, path):
+        if path in self.junctions:
+            raise OSError(errno.ELOOP, f"{path} is a junction or a link")
+        self.made.append(path)
 
 
 def folders_holding(held: dict, protected=()):
@@ -104,7 +131,7 @@ def applier_with(host, *, run=None, denied=None) -> SambaWindowsApplier:
     return SambaWindowsApplier(
         powershell=host,
         deny_logon=denied.append if denied is not None else None,
-        run=run if run is not None else Icacls(),
+        folders=run if run is not None else Icacls(),
     )
 
 
@@ -320,7 +347,7 @@ def test_an_ssh_folder_that_inherits_nothing_loses_only_the_accounts_holding_a_r
     assert icacls.calls == [["icacls.exe", ssh_dir, "/remove:g", "bob"]]
 
 
-def test_an_ssh_folder_icacls_cannot_keep_fails_the_apply(tmp_path):
+def test_an_ssh_folder_windows_cannot_keep_fails_the_apply(tmp_path):
     (tmp_path / ".ssh").mkdir()
     config = SambaConfig.from_dict(
         {
@@ -331,19 +358,56 @@ def test_an_ssh_folder_icacls_cannot_keep_fails_the_apply(tmp_path):
     icacls = Icacls(refused=[("/inheritance:d",)])
     applier = applier_with(RecordingHost(), run=icacls, denied=[])
 
-    with pytest.raises(OSError, match="could not keep"):
+    with pytest.raises(OSError, match="inheritance:d"):
         applier.apply(config, {})
 
 
-def test_a_folder_icacls_refuses_fails_the_apply_and_denies_nobody():
+def test_a_folder_windows_refuses_fails_the_apply_and_denies_nobody():
     denied = []
     icacls = Icacls(refused=[("/grant:r", "bob:(OI)(CI)M")])
     applier = applier_with(RecordingHost(), run=icacls, denied=denied)
 
-    with pytest.raises(OSError, match="icacls refused bob on D:\\\\media"):
+    with pytest.raises(OSError, match="bob:\\(OI\\)\\(CI\\)M"):
         applier.apply(CONFIG, {})
 
     assert denied == []
+
+
+def test_a_folder_that_is_a_junction_is_left_ungranted_and_the_others_granted(
+    tmp_path,
+):
+    ssh = tmp_path / ".ssh"
+    ssh.mkdir()
+    config = SambaConfig.from_dict(
+        {
+            "shares": [
+                {"name": "ann", "path": str(tmp_path), "valid_users": ["ann"]},
+                {"name": "media", "path": "D:\\media", "valid_users": ["bob"]},
+            ],
+            "users": ["ann", "bob"],
+        }
+    )
+    folders = Icacls(junctions=[str(ssh)])
+    denied = []
+
+    notes = applier_with(RecordingHost(), run=folders, denied=denied).apply(config, {})
+
+    assert [call[1] for call in folders.calls if call[1] == str(ssh)] == []
+    assert ["icacls.exe", "D:\\media", "/grant:r", "bob:(OI)(CI)M"] in folders.calls
+    assert any("ungranted" in note and str(ssh) in note for note in notes)
+    assert denied == ["ann", "bob"]
+
+
+def test_a_share_whose_folder_is_reached_through_a_junction_stays_off_the_server():
+    folders = Icacls(junctions=["D:\\media"])
+    host = RecordingHost()
+
+    notes = applier_with(host, run=folders, denied=[]).apply(CONFIG, {})
+
+    (request,) = host.args_of("share_apply")
+    assert "media" not in [share["name"] for share in request["shares"]]
+    assert not [call for call in folders.calls if call[1] == "D:\\media"]
+    assert any("left share D:\\media off the server" in note for note in notes)
 
 
 def test_a_refused_apply_grants_and_denies_nobody_anything():
