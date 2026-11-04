@@ -230,6 +230,9 @@ that page, its count or its sidebar entry as a device changes with it:
 | `ui.device_pick.no_devices_hint` | Add a machine on the Agents page. | 到“被控端”页添加一台机器。 |
 | `ui.clients.filter_no_devices` | No agents yet. | 还没有被控端。 |
 | `ui.nav.services_description` | What the hub publishes to clients | 中枢向客户端发布的内容 |
+| `ui.install_agent.running_label`, the dot over the install output while it runs | installing | 安装中 |
+| `ui.install_agent.done_label`, the dot once the output ends with `[exit N]` | exit {code} | 退出码 {code} |
+| `ui.task.stream_closed`, the dot when the output ends with no such line | The task ended without a result | 任务没有返回结果就中断了 |
 
 The keys of the LAN scan and of unmanaged devices, `ui.devices.scan`,
 `ui.devices.scanning`, `ui.devices.add_by_address`, `ui.devices.search_placeholder`,

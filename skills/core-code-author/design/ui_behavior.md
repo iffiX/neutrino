@@ -172,6 +172,12 @@ scrolls sideways. The Agents and Clients tables keep their actions cell at the
 right edge of that box on a window wider than 720 px. Numeric columns are
 right-aligned (`.num`).
 
+A column header shows whole. In the Agents and Clients tables each column is
+at least as wide as its header's words in either language, and the actions
+cell takes the room the other columns leave and wraps its buttons onto a
+second line. In a 1280 px window each table fits its box, and the actions cell
+covers no header.
+
 A destructive action repeated on every row arms instead of opening a dialog —
 `device_monitor`'s kill button turns red on the first click and acts on the
 second — because one modal per process is a dialog nobody reads by the third
@@ -532,6 +538,11 @@ the machine's row, named by its host until it reports, and starts the install
 on this page: it is a packet on the network and needs no agent
 ([protocol.md](protocol.md), `POST /api/hub/device/wake`). The words are
 [ui_text.md](ui_text.md), "The Agents page's words".
+
+The dot over the install output shows `exit N` when the output ends with the
+line `[exit N]` and the task ended with N, `ok` for 0 and `error` for any other
+N. An output that ends with no such line shows `idle` with
+`ui.task.stream_closed`.
 
 ## The Exposure section on the Network page
 
