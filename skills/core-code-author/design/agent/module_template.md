@@ -313,4 +313,9 @@ path without `<directory>`. Each install class
 | machine image | kept as `<directory>/<name>.tar.zst` or `<directory>/<name>.raw.zst` in the module's directory, which `podman machine init --image` reads; Podman keeps the machine it builds in its own place for the run account |
 | container image | Podman's own store, root's on Linux and the Podman machine's on Windows and macOS; nothing lands in the module's directory |
 | single program | on Linux `/usr/local/bin/<program>`; on macOS `<program>` and on Windows `<program>.exe` in the module's directory; a new version replaces it in one rename |
-| npm package | as the account, under the module's per-account data directory: CloudCLI's `npm` artifact in `app/`, with npm's cache `.npm` and an empty `.npmrc` inside it; the packages Codeg installs with npm itself, its adapters, in `npm/`, with the cache `npm_cache/` beside it |
+| npm package | as the account, under the module's per-account data directory, in one layout for every module: `npm/`, npm's prefix, which holds what npm installs; `npm_cache/` beside it, npm's cache; and, where the agent runs npm itself, `npmrc` beside them, an empty file npm reads as the user configuration. CloudCLI's `npm` artifact is installed into `npm/` with `--prefix`, and Codeg's own npm installs its adapters there through `NPM_CONFIG_PREFIX` |
+
+| Rule | Reason |
+| --- | --- |
+| Every npm install under a module keeps its prefix and its cache side by side, `npm/` and `npm_cache/`, and never one inside the other. | A run that starts from a clean prefix deletes `npm/` and keeps the cache, so the next run downloads nothing it already has, and one rule names every module's npm files. |
+| `npmrc` is written only where the agent runs npm, as for CloudCLI. Where the program runs npm itself, as Codeg does, npm reads the account's own `~/.npmrc`. | The agent's npm takes its registry from the `npm` set and nothing else, and a program's own npm follows the settings the person gave it, a proxy among them. |

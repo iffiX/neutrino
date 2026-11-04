@@ -42,7 +42,7 @@ layer ([module_template.md](../module_template.md), "The run"):
 | `CODEG_DATA_DIR` | the data directory |
 | `CODEG_STATIC_DIR` | `web/` inside the server artifact's directory |
 | `CODEG_BRIDGE_PORTS` | `off` |
-| `NPM_CONFIG_PREFIX`, `npm_config_cache` | two directories under the data directory |
+| `NPM_CONFIG_PREFIX`, `npm_config_cache` | `npm/` and `npm_cache/` under the data directory, the one npm layout of every module ([../module_template.md](../module_template.md), "Disk layout") |
 | `PATH` | the module's Node first, then the account's `~/.local/bin` and `~/bin`, then the system's directories as CloudCLI lists them ([cloudcli.md](cloudcli.md)) |
 
 The service runs under `umask 077`, so every file Codeg and the agents it
