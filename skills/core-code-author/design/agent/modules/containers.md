@@ -142,18 +142,21 @@ directory under the state root right before it hands Podman's msi or pkg to
 the system's installer, when Podman's program, `C:\Program Files\Podman\podman.exe`
 or `/opt/podman/bin/podman`, was not on the computer. It deletes the mark
 again when the installer leaves no program there. With no such mark the
-Podman is the person's, so a computer where an earlier build installed Podman
-counts as the person's. A Podman the mark stands for is the module's.
+Podman is the person's, so a Podman an earlier build installed, 0.5.x among
+them, counts as the person's from this build on: its version is locked, and
+an uninstall keeps it. A Podman the mark stands for is the module's.
 
 | | A person's Podman | A Podman the module installed |
 | --- | --- | --- |
 | **Install** | runs no installer on Podman and writes no mark; the msi or the pkg and the machine image are kept in the module's directory all the same | writes the mark, then installs Podman's msi or pkg |
+| The version | the one `podman --version` prints, locked: the panel's version block reads as a locked version does and offers no other ([../../ui_behavior.md](../../ui_behavior.md), "The machine page") | the one installed, and **Install another version…** offers the listed ones |
 | Another version | uninstalls and installs nothing, and Podman stays at the person's version | uninstalls the old package and installs the chosen one; the mark stays |
 | **Uninstall** | leaves Podman installed: on Windows its msi, on macOS `/opt/podman/`, the two files the pkg's scripts write and the receipt | uninstalls Podman as "The uninstall" says, and deletes the mark with the module's directory |
 
 | Rule | Reason |
 | --- | --- |
 | After an **Uninstall** on a person's Podman the module reads `absent` through the uninstalled mark `uninstalled/podman`, the one the file share takes on a person's Samba ([module_install.md](../module_install.md), "From the system's packages"), across a restart of the agent. A later **Install** finds Podman there, runs no installer, writes no mark, and its `verify` deletes the uninstalled mark. | Podman stays on the computer, so its presence check alone reads `failed` `uninstall_unconfirmed`, with no press that clears it. |
+| The report's `details` carries `has_package_mark`, whether the mark stands. The hub locks the version of a Podman whose `details` say `has_package_mark: false` at the `version` they name, and refuses another with `version_locked {module}` ([../../protocol.md](../../protocol.md), "The modules section, one entry per module"). A report with no such field, an earlier agent's, leaves the version unlocked. | The module installs no other version over a person's Podman, so a version offered there would change nothing. An earlier agent switches every Podman. |
 | The rest of the uninstall is the same on either Podman: the containers' files in the machine, the keeper with its task or LaunchDaemon, its script and its log, and the kept artifacts go; the machine is stopped and kept with its disk, images and named volumes ("The uninstall"). | The keeper and the files are the module's own, whoever installed Podman, and the machine holds the person's data on either. |
 
 ### The account and its machine
