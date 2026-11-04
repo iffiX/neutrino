@@ -231,6 +231,18 @@ answer`, which that account's task runs, is the one `nagent` verb an
 account runs, and it starts only the program it is given, with the
 account's own rights.
 
+## The agent touches an account's files as that account
+
+Every read, write, `chmod`, `chown`, rename and removal the agent makes in a
+place an account can write, its home and every directory it owns, runs as
+that account, never as root or SYSTEM. The machine's AI tools above are one
+case of this rule.
+
+| Rule | Reason |
+| --- | --- |
+| On Linux and macOS a child process takes the account's groups, group and user before it opens the path; on Windows the work runs under the account's own token. | An account can put a link or a junction where the agent reads or writes, and can change it between a check of the path and the write. Run as the account, the work reaches only what the account could reach itself, so no check of the path is needed. |
+| A file the account must not change lives in a directory root or SYSTEM owns, never in the account's. | A file in the account's directory is the account's to replace, whoever wrote it. |
+
 ## The relay's ssh runs as root and opens no session
 
 The relay's `ssh` is a root process: the unit `neutrino_hub_relay.service` on
