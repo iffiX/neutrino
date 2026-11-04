@@ -234,15 +234,14 @@ account's own rights.
 ## The agent touches an account's files as that account
 
 Every read, write, `chmod`, `chown`, rename and removal the agent makes in a
-place an account can write, its home and every directory it owns, runs as
-that account, never as root or SYSTEM. The machine's AI tools above are one
-case of this rule.
-
-| Rule | Reason |
-| --- | --- |
-| On Linux and macOS a child process takes the account's groups, group and user before it opens the path; on Windows the work runs under a logon of the account made with the login the hub keeps for it in its vault. | An account can put a link or a junction where the agent reads or writes, and can change it between a check of the path and the write. Run as the account, the work reaches only what the account could reach itself, so no check of the path is needed. |
-| On Windows the login is the available account's own, its `login_id` on the machine page, which the hub sends in the desired state; a Windows account with no login is enabled in no module, `credential_missing {account}`. | Windows gives a token of an account only to a logon with its password, and the machine page already keeps it for every available account. |
-| A file the account must not change lives in a directory root or SYSTEM owns, never in the account's. | A file in the account's directory is the account's to replace, whoever wrote it. |
+place an account can write, its home and every folder it owns, runs as that
+account, never as root or SYSTEM, and a file the account must not change
+lives in a folder root or SYSTEM owns. An account can put a link or a
+junction where the agent reads or writes, and can change it between a check
+of the path and the write; run as the account, the work reaches only what
+the account could reach itself. How the agent becomes the account on each
+system is in [agent.md](agent.md), "Acting for an account". The machine's AI
+tools above are one case of this rule.
 
 ## The relay's ssh runs as root and opens no session
 
