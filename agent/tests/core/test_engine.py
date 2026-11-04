@@ -32,9 +32,11 @@ module read stopped after its start task read again until it runs; and
 that nothing in it ever retries anything.
 """
 
+import dataclasses
 import functools
 import json
 import os
+import subprocess
 import threading
 import time
 import types
@@ -49,6 +51,7 @@ from neutrino_agent.exceptions import (
     InstallError,
     ModuleApplyError,
     PlatformUnsupportedError,
+    StepSuperseded,
 )
 from neutrino_agent.modules.podman.container_runner import (
     ContainerModuleRunner,
@@ -56,6 +59,7 @@ from neutrino_agent.modules.podman.container_runner import (
 )
 from neutrino_agent.modules.podman.machine_runner import PodmanMachineModuleRunner
 from neutrino_agent.modules.podman.runner import PodmanModuleRunner
+from neutrino_agent.modules.shared.account_service import AccountEntry
 from neutrino_agent.modules.shared.base import ModuleRunner
 from neutrino_agent.modules.shared.step_locks import is_in_order
 from neutrino_agent.modules.shared.system_package import SystemPackageModuleRunner
@@ -1860,6 +1864,8 @@ def test_a_system_that_unpacks_the_hub_s_software_runs_vs_code_from_its_bytes(
         "vscode",
         "cloudcli",
         "codeg",
+        "claude_code",
+        "codex",
         "siyuan",
         "terminal",
         "remote_desktop",
@@ -1933,6 +1939,8 @@ def test_a_platform_with_packages_builds_every_runner_by_its_name(tmp_path):
         "code_server",
         "cloudcli",
         "codeg",
+        "claude_code",
+        "codex",
         "siyuan",
         "terminal",
         "remote_desktop",
@@ -1947,6 +1955,8 @@ def test_a_platform_with_packages_builds_every_runner_by_its_name(tmp_path):
         "code_server",
         "cloudcli",
         "codeg",
+        "claude_code",
+        "codex",
         "siyuan",
         "terminal",
         "remote_desktop",
@@ -3276,3 +3286,76 @@ def test_a_module_with_instances_reads_stopped_under_running_while_they_are_down
     )
 
     assert row["state"] == "stopped"
+
+
+# --- the command line programs ---
+
+
+class ProgramPlatform(FakePlatform):
+    """A Linux machine whose state root is the test's own, running each command as the test's account."""
+
+    capabilities = frozenset({"packages"})
+
+    def __init__(self, root):
+        super().__init__()
+        self._root = root
+
+    def agent_var_dir(self):
+        return self._root
+
+    def run_as_account(self, account, argv, **kwargs):
+        if argv[1:4] == ["-l", "-i", "-c"]:
+            return subprocess.CompletedProcess(argv, 0, "\n", "")
+        return subprocess.run(argv, capture_output=True, text=True)
+
+
+def program_entry(verify: str) -> dict:
+    return {
+        "want": "running",
+        "config": {"accounts": [{"account": "ann"}]},
+        "install": {
+            "runner": "claude_code",
+            "method": "hub",
+            "params": {
+                "version": "2.1.311",
+                "user_copy_min_version": "2.0.0",
+                "verify": verify,
+            },
+        },
+    }
+
+
+def test_a_program_is_present_while_an_account_runs_its_own_supported_copy(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(engine_module, "verify_passes", lambda command: False)
+    engine = ModuleEngine(
+        platform=ProgramPlatform(str(tmp_path / "state")),
+        configured_dir=str(tmp_path / "configured"),
+    )
+    runner = engine.module_runners["claude_code"]
+    home = tmp_path / "home" / "ann"
+    copy = home / ".local" / "bin" / "claude"
+    copy.parent.mkdir(parents=True)
+    copy.write_text('#!/bin/sh\necho "2.1.400 (Claude Code)"\n')
+    copy.chmod(0o755)
+
+    def lookup(account):
+        return AccountEntry(1000, 1000, str(home), "/bin/sh")
+
+    runner._machine = dataclasses.replace(runner._machine, lookup_account=lookup)
+    entry = program_entry(f"{tmp_path}/state/claude_code/package/claude --version")
+    runner.take_recipe(entry["install"])
+    runner.take_config(entry["config"])
+
+    assert engine.program_runner("claude_code", entry) is runner
+    assert engine.is_installed("claude_code", entry) is False
+    try:
+        runner.find_step(entry["config"]).run(None)
+    except StepSuperseded:
+        pass
+
+    assert engine.is_installed("claude_code", entry) is True
+    assert engine.is_module_copy_installed("claude_code", entry) is False
+    copy.unlink()
+    assert engine.is_installed("claude_code", entry) is False

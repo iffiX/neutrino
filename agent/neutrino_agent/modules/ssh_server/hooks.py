@@ -39,6 +39,7 @@ from neutrino_agent.modules.ssh_server.constants import (
     SSH_SERVER_DARWIN_PATH,
     SSH_SERVER_FALLBACK_SHELL,
     SSH_SERVER_HOST_KEY_NAME,
+    SSH_SERVER_LINUX_PATH,
     SSH_SERVER_LISTEN_HOST,
     SSH_SERVER_MAKE_HOST_KEY_TIMEOUT_S,
     SSH_SERVER_NAME,
@@ -49,6 +50,7 @@ from neutrino_agent.modules.ssh_server.constants import (
     SSH_SERVER_SHELL_VARIABLE,
     SSH_SERVER_TITLE,
     SSH_SERVER_WINDOWS_BINARY_NAME,
+    SSH_SERVER_WINDOWS_PATH,
     SSH_SERVER_WINDOWS_POWERSHELL_PARTS,
     SSH_SERVER_WINDOWS_SYSTEM_ROOT_DEFAULT,
 )
@@ -56,6 +58,7 @@ from neutrino_agent.modules.ssh_server.openssh_key import (
     fingerprint,
     public_line_of_private,
 )
+from neutrino_agent.platforms.base import with_launcher_folders
 
 
 def binary_path(platform) -> str:
@@ -188,24 +191,32 @@ class SshServerHooks(InstanceHooks):
         authorized_key = self._join(run_dir, SSH_SERVER_AUTHORIZED_KEY_NAME)
         port = int(record.get("port", 0) or 0)
         shell = self._shell(instance, entry)
+        var_dir = self._platform.agent_var_dir()
         if self._os_name == "linux":
             listen = f"{SSH_SERVER_LISTEN_HOST}:${{{SSH_SERVER_PORT_VARIABLE}}}"
             shell_argument = f"${{{SSH_SERVER_SHELL_VARIABLE}}}"
             environment = {
                 SSH_SERVER_PORT_VARIABLE: str(port),
                 SSH_SERVER_SHELL_VARIABLE: shell,
+                "PATH": with_launcher_folders(SSH_SERVER_LINUX_PATH, var_dir, "linux"),
             }
         else:
             listen = f"{SSH_SERVER_LISTEN_HOST}:{port}"
             shell_argument = shell
-            environment = {}
+            environment = {
+                "PATH": with_launcher_folders(
+                    SSH_SERVER_WINDOWS_PATH, var_dir, "windows"
+                )
+            }
         if self._os_name == "darwin":
             environment = {
                 "HOME": entry.home,
                 "USER": instance.account,
                 "LOGNAME": instance.account,
                 "SHELL": shell,
-                "PATH": SSH_SERVER_DARWIN_PATH,
+                "PATH": with_launcher_folders(
+                    SSH_SERVER_DARWIN_PATH, var_dir, "darwin"
+                ),
             }
         return AccountService(
             name=self.name,

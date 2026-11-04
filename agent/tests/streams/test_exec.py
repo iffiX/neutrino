@@ -60,6 +60,11 @@ class StepDownPlatform:
         self._tmp_path = tmp_path
         self._command = command
 
+    os_name = "linux"
+
+    def agent_var_dir(self):
+        return "/var/lib/neutrino/agent"
+
     def account_process(self, account, argv):
         self.asked.append((account, list(argv)))
         return list(self._command or argv), {
@@ -400,3 +405,17 @@ def test_on_windows_an_account_with_no_login_is_refused(monkeypatch):
         {"account": "alice"},
     )
     assert FakeLogon.opened == []
+
+
+def test_a_command_s_path_ends_with_every_launcher_folder_and_finds_a_program_there(
+    tmp_path,
+):
+    channel = FakeChannel()
+
+    closed = run(channel, ["/bin/sh", "-c", 'echo "$PATH"'], tmp_path)
+
+    assert closed["params"] == {"exit_code": 0}
+    assert channel.output().decode().strip() == (
+        "/bin:/usr/bin:/var/lib/neutrino/agent/claude_code/bin:"
+        "/var/lib/neutrino/agent/codex/bin"
+    )

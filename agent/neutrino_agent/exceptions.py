@@ -98,7 +98,9 @@ class StepSuperseded(RuntimeError):
     The task holds a newer entry, or its next plan runs no step, as a
     configure task of a container module while Containers is not to run.
     The step has done nothing yet, and the task plans again from what the
-    machine shows.
+    machine shows. A command line program's ``find`` raises it too, once it
+    has kept what it found and that changes whether the module's own copy
+    is needed.
     """
 
 

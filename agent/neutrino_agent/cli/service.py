@@ -9,8 +9,9 @@ control pipe closes once the loop has ended. Its log goes to ``agent.log``
 under the agent's log root, rotated.
 
 ``uninstall`` takes away what the agent's modules added in order to run and
-to fence, and leaves what the machine serves: shares, accounts and the
-modules' data stay. The deb's and the rpm's removal and the Windows
+to fence, every command line program's link and ``PATH`` entry that still
+carries the module's mark among them, and leaves what the machine serves:
+shares, accounts and the modules' data stay. The deb's and the rpm's removal and the Windows
 installer's removal run it, and an upgrade never does. On macOS, which has
 no uninstaller, it removes the agent itself as well.
 """
@@ -33,6 +34,7 @@ from neutrino_agent.constants import (
 )
 from neutrino_agent.control.server import ControlServer
 from neutrino_agent.core.desired_state import DesiredStateStore
+from neutrino_agent.core.engine import ClaudeCodeModuleRunner, CodexModuleRunner
 from neutrino_agent.core.loop import Agent
 from neutrino_agent.core.store import MachineStateStore
 from neutrino_agent.exceptions import ModuleApplyError, PlatformUnsupportedError
@@ -99,7 +101,7 @@ def main_run() -> int:
 
 
 def main_uninstall(*, is_forced: bool) -> int:
-    """Stop the agent, turn the desktop share off, switch the accounts' AI tools back, and take away what it and its modules added, its relays' firewall rules among them.
+    """Stop the agent, turn the desktop share off, switch the accounts' AI tools back, and take away what it and its modules added, the command line programs' links and ``PATH`` entries and its relays' firewall rules among them.
 
     The service stops first, so no apply of its own runs beside the switch
     back; the copy of cc-switch goes once the switch back is done. A desktop
@@ -126,6 +128,8 @@ def main_uninstall(*, is_forced: bool) -> int:
         ai_tools = AiToolsApplier(platform=platform, log=print)
         for line in ai_tools_lines(ai_tools.switch_back_all()):
             print(line)
+        for line in remove_program_ways_in(platform):
+            print(line)
         for line in remove_relay_rules(platform):
             print(line)
         removed = ai_tools.remove_copy() + platform.remove_added()
@@ -140,6 +144,24 @@ def main_uninstall(*, is_forced: bool) -> int:
     for name in removed:
         print(f"removed    {name}")
     return 0
+
+
+def remove_program_ways_in(platform) -> list:
+    """Take away every link and ``PATH`` entry of a command line program that still carries the module's mark.
+
+    The package's removal takes away the module's copy they reach.
+
+    Args:
+        platform: The machine's platform.
+
+    Returns:
+        What was removed or left, one line each.
+    """
+    lines = []
+    for runner_class in (ClaudeCodeModuleRunner, CodexModuleRunner):
+        runner = runner_class(platform=platform, log=print)
+        lines += runner.remove_ways_in()
+    return lines
 
 
 def remove_relay_rules(platform) -> list:

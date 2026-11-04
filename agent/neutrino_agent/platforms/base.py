@@ -21,7 +21,9 @@ Invoking one it does not have raises :class:`PlatformUnsupportedError`, whose
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
+import ntpath
 import os
+import posixpath
 import re
 import subprocess
 from dataclasses import dataclass
@@ -29,6 +31,8 @@ from dataclasses import dataclass
 from neutrino_agent.constants import (
     AGENT_ADDED_FOREIGN_WORDS,
     AGENT_BIN_DIR_LINUX,
+    AGENT_PROGRAM_LAUNCHER_DIR_NAME,
+    AGENT_PROGRAM_MODULES,
     AGENT_DATA_DIR_POSIX,
     AGENT_STEP_DOWN_TIMEOUT_S,
     AGENT_VAR_DIR,
@@ -60,6 +64,44 @@ def login_shell_of(account: str) -> str:
         return str(pwd.getpwnam(account).pw_shell or "")
     except KeyError:
         return ""
+
+
+def launcher_folders(var_dir: str, os_name: str) -> list:
+    """Every command line program's launcher folder, as Neutrino's sessions end ``PATH`` with them. Pure.
+
+    Args:
+        var_dir: The state root.
+        os_name: The system.
+
+    Returns:
+        One folder per command line program, in
+        :data:`AGENT_PROGRAM_MODULES`' order, whether it is installed or not.
+    """
+    join = ntpath.join if os_name == "windows" else posixpath.join
+    return [
+        join(var_dir, module, AGENT_PROGRAM_LAUNCHER_DIR_NAME)
+        for module in AGENT_PROGRAM_MODULES
+    ]
+
+
+def with_launcher_folders(path: str, var_dir: str, os_name: str) -> str:
+    """A ``PATH`` with every launcher folder at its end. Pure.
+
+    Args:
+        path: The ``PATH`` as it stands.
+        var_dir: The state root.
+        os_name: The system.
+
+    Returns:
+        ``path`` followed by each folder it does not hold yet.
+    """
+    separator = ";" if os_name == "windows" else ":"
+    held = str(path or "")
+    parts = held.split(separator)
+    added = [
+        folder for folder in launcher_folders(var_dir, os_name) if folder not in parts
+    ]
+    return separator.join(([held] if held else []) + added)
 
 
 @dataclass(frozen=True)

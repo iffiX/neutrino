@@ -536,6 +536,11 @@ class StepDownPlatform:
         self._tmp_path = tmp_path
         self._command = command
 
+    os_name = "linux"
+
+    def agent_var_dir(self):
+        return "/var/lib/neutrino/agent"
+
     def account_process(self, account, argv):
         self.asked.append((account, list(argv)))
         return list(self._command), {
@@ -583,6 +588,24 @@ def test_a_shell_for_an_account_starts_as_the_platform_steps_down(tmp_path):
     assert f"uid:{pwd.getpwnam(ME).pw_uid}" in output
     assert closed == {"code": "", "params": {"exit_code": 0}}
     assert stream._session.account == ME
+
+
+def test_a_shell_s_path_ends_with_every_command_line_program_s_launcher_folder(
+    tmp_path,
+):
+    platform = StepDownPlatform(tmp_path, ["/bin/sh", "-c", 'echo "path:$PATH"'])
+    channel = FakeChannel()
+    stream = terminal_stream(
+        channel, enabled(TerminalAccount(ME, shell_path="/bin/sh")), platform
+    )
+
+    stream.open()
+    stream.run()
+
+    assert (
+        "path:/bin:/usr/bin:/var/lib/neutrino/agent/claude_code/bin:"
+        "/var/lib/neutrino/agent/codex/bin" in channel.output().decode()
+    )
 
 
 def test_an_account_with_no_program_named_gets_its_own_login_shell(tmp_path):

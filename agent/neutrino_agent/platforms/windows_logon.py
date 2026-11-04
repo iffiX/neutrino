@@ -4,9 +4,10 @@ The Terminal module's shell and command run as the account itself, never
 as SYSTEM: ``LogonUserW`` makes a primary token from the account's password,
 an interactive logon first and a batch logon where the account may not log
 on interactively; ``LoadUserProfileW`` loads the account's profile, and
-``CreateEnvironmentBlock`` gives the account's own environment. A process
-is started under the token with ``CreateProcessAsUserW``, on the window
-station of the logon's own session. Every call takes the bound libraries as
+``CreateEnvironmentBlock`` gives the account's own environment, whose
+``PATH`` then ends with every command line program's launcher folder. A
+process is started under the token with ``CreateProcessAsUserW``, on the
+window station of the logon's own session. Every call takes the bound libraries as
 its seam, so nothing here needs Windows to import or to test.
 
 Not pure: logs accounts on and starts processes.
@@ -21,7 +22,10 @@ import ctypes
 import os
 import subprocess
 
+from neutrino_agent.constants import AGENT_WINDOWS_STATE_DIR_NAME
 from neutrino_agent.platforms import win32
+from neutrino_agent.platforms.base import with_launcher_folders
+from neutrino_agent.platforms.windows import windows_agent_dir
 from neutrino_agent.platforms.windows_accounts import logon_token
 
 # The logons tried in turn for an account's terminal.
@@ -56,6 +60,9 @@ class WindowsAccountLogon:
         self._token = None
         self._profile = None
         self._environment = None
+        # The account's environment as the process gets it, its PATH ended
+        # with the launcher folders.
+        self._block = None
 
     def open(self) -> None:
         """Log the account on and load its profile and environment.
@@ -87,6 +94,10 @@ class WindowsAccountLogon:
             ):
                 raise win32.last_error()
             self._environment = environment
+            self._block = ended_environment(
+                environment_entries(environment.value),
+                windows_agent_dir(AGENT_WINDOWS_STATE_DIR_NAME),
+            )
         except OSError:
             self.close()
             raise
@@ -128,7 +139,7 @@ class WindowsAccountLogon:
             None,
             is_inheriting,
             flags | win32.CREATE_UNICODE_ENVIRONMENT,
-            self._environment,
+            self._block if self._block is not None else self._environment,
             start_dir or None,
             ctypes.byref(startup),
             ctypes.byref(process),
@@ -138,6 +149,7 @@ class WindowsAccountLogon:
 
     def close(self) -> None:
         """Release the environment, the profile and the token."""
+        self._block = None
         environment, self._environment = self._environment, None
         if environment is not None:
             with contextlib.suppress(OSError):
@@ -158,6 +170,52 @@ class WindowsAccountLogon:
             self._advapi32 = self._advapi32 or libraries.advapi32
             self._kernel32 = self._kernel32 or libraries.kernel32
             self._userenv = self._userenv or libraries.userenv
+
+
+def environment_entries(address: int) -> list:
+    """The ``NAME=value`` entries of an environment block.
+
+    Args:
+        address: The block, NUL-separated UTF-16 strings ending with an
+            empty one.
+
+    Returns:
+        The entries, in order.
+    """
+    unit = ctypes.sizeof(ctypes.c_wchar)
+    entries = []
+    while address:
+        entry = ctypes.wstring_at(address)
+        if not entry:
+            break
+        entries.append(entry)
+        units = len(entry.encode("utf-16-le")) // 2 if unit == 2 else len(entry)
+        address += (units + 1) * unit
+    return entries
+
+
+def ended_environment(entries: list, var_dir: str):
+    """An environment block whose ``PATH`` ends with every command line program's launcher folder.
+
+    Args:
+        entries: The ``NAME=value`` entries of the account's environment.
+        var_dir: The state root.
+
+    Returns:
+        The block, a unicode buffer of NUL-separated entries ending with an
+        empty one.
+    """
+    ended = []
+    is_found = False
+    for entry in entries:
+        name, _sign, value = entry.partition("=")
+        if name.lower() == "path" and not is_found:
+            is_found = True
+            entry = f"{name}={with_launcher_folders(value, var_dir, 'windows')}"
+        ended.append(entry)
+    if not is_found:
+        ended.append("Path=" + with_launcher_folders("", var_dir, "windows"))
+    return ctypes.create_unicode_buffer("\0".join(ended) + "\0\0")
 
 
 def _inheritable_pipe(kernel32, *, is_child_reading: bool) -> tuple:

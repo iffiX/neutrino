@@ -21,11 +21,21 @@ from neutrino_agent.platforms import win32
 from neutrino_agent.platforms.windows_logon import (
     WindowsAccountLogon,
     WindowsAccountPipeProcess,
+    ended_environment,
+    environment_entries,
 )
 
 TOKEN_BASE = 0x700
 PROFILE = 0x800
-ENVIRONMENT = 0x900
+# The account's environment as CreateEnvironmentBlock makes it, and as the
+# process gets it: its PATH ended with every launcher folder.
+BLOCK = "USERNAME=ann\0Path=C:\\Windows;C:\\Tools\0TEMP=C:\\t\0\0"
+STATE = "C:\\ProgramData\\Neutrino\\agent\\state"
+ENDED = [
+    "USERNAME=ann",
+    f"Path=C:\\Windows;C:\\Tools;{STATE}\\claude_code\\bin;{STATE}\\codex\\bin",
+    "TEMP=C:\\t",
+]
 PROCESS = 0x60
 THREAD = 0x61
 JOB = 0x70
@@ -53,6 +63,7 @@ class FakeAdvapi32:
 
     def CreateProcessAsUserW(self, token, application, command_line, *rest):
         _, _, inherit, flags, environment, start_dir, startup, process = rest
+        entries = environment_entries(ctypes.addressof(environment))
         record = startup._obj
         record = record.StartupInfo if hasattr(record, "StartupInfo") else record
         self.calls.append(
@@ -62,7 +73,7 @@ class FakeAdvapi32:
                 command_line,
                 bool(inherit),
                 flags,
-                environment.value,
+                entries,
                 start_dir,
                 record.lpDesktop,
             )
@@ -85,7 +96,8 @@ class FakeUserenv:
 
     def CreateEnvironmentBlock(self, environment, token, is_inheriting):
         self.calls.append(("environment", token.value, bool(is_inheriting)))
-        environment._obj.value = ENVIRONMENT
+        self.block = ctypes.create_unicode_buffer(BLOCK)
+        environment._obj.value = ctypes.addressof(self.block)
         return 1
 
     def DestroyEnvironmentBlock(self, environment):
@@ -234,7 +246,7 @@ def test_a_process_starts_as_the_account_on_its_own_window_station():
         "powershell.exe -NoLogo",
         False,
         win32.CREATE_SUSPENDED | win32.CREATE_UNICODE_ENVIRONMENT,
-        ENVIRONMENT,
+        ENDED,
         "C:\\Users\\ann",
         "",
     )
@@ -249,7 +261,8 @@ def test_closing_releases_the_environment_the_profile_and_the_token():
     logon.close()
 
     token = TOKEN_BASE + win32.LOGON32_LOGON_INTERACTIVE
-    assert userenv.calls[2:] == [("destroy", ENVIRONMENT), ("unload", token, PROFILE)]
+    block = ctypes.addressof(userenv.block)
+    assert userenv.calls[2:] == [("destroy", block), ("unload", token, PROFILE)]
     assert kernel32.closed == [token]
 
 
@@ -294,3 +307,12 @@ def test_a_command_runs_on_three_pipes_handed_to_it_alone_in_a_job(tmp_path):
     assert JOB in kernel32.closed and PROCESS in kernel32.closed
     for stream in (process.stdin, process.stdout, process.stderr):
         stream.close()
+
+
+def test_an_environment_with_no_path_gets_one_of_the_launcher_folders_alone():
+    block = ended_environment(["USERNAME=ann"], "D:\\state")
+
+    assert environment_entries(ctypes.addressof(block)) == [
+        "USERNAME=ann",
+        "Path=D:\\state\\claude_code\\bin;D:\\state\\codex\\bin",
+    ]

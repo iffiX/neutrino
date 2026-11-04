@@ -361,6 +361,44 @@ AGENT_STEP_RENDER = "render"
 AGENT_STEP_TOOLS = "tools"
 AGENT_STEP_ACCOUNT = "account"
 AGENT_STEP_NPM = "npm"
+AGENT_STEP_FIND = "find"
+
+# The command line programs, in the order every Neutrino session's PATH ends
+# with their launcher folders.
+AGENT_PROGRAM_MODULES = ("claude_code", "codex")
+# Under a command line program's directory in the state root: the module's
+# own copy, the launcher's folder, and the record of each account's copy.
+AGENT_PROGRAM_PACKAGE_DIR_NAME = "package"
+AGENT_PROGRAM_LAUNCHER_DIR_NAME = "bin"
+AGENT_PROGRAM_RECORD_NAME = "record.json"
+# The copy an account uses: its own, or the module's.
+AGENT_PROGRAM_COPY_USER = "user"
+AGENT_PROGRAM_COPY_MODULE = "module"
+# An account's link to the module's launcher, under its home on Linux and macOS.
+AGENT_PROGRAM_LINK_DIR_PARTS = (".local", "bin")
+# How long ``find`` waits for an account's login shell, and for a copy's
+# ``--version``.
+AGENT_PROGRAM_SHELL_TIMEOUT_S = 5
+AGENT_PROGRAM_VERSION_TIMEOUT_S = 10
+# How long one run of the find or the PATH entry as a Windows account takes at most.
+AGENT_PROGRAM_WINDOWS_RUN_TIMEOUT_S = 90
+# What ``find`` runs as the account's login shell. The last line it prints
+# is the account's PATH.
+AGENT_PROGRAM_PATH_COMMAND = 'printf "%s\\n" "$PATH"'
+# The shell that stands in for an account whose passwd entry names none.
+AGENT_PROGRAM_FALLBACK_SHELL = "/bin/sh"
+# Windows: the scripts each account's find and PATH entry run as that
+# account, under the package's own directory.
+AGENT_PROGRAM_WINDOWS_FIND_PARTS = ("data", "windows", "program_find.ps1")
+AGENT_PROGRAM_WINDOWS_PATH_PARTS = ("data", "windows", "program_path.ps1")
+AGENT_PROGRAM_WINDOWS_POWERSHELL = "powershell.exe"
+# How many lines of the agent's journal a command line program's journal
+# reads on Linux, before it keeps those that name the module.
+AGENT_PROGRAM_JOURNAL_SCAN_LINES = 5000
+# An account's code for an own copy older than the module's floor, and for a
+# link whose place holds something of the person's.
+AGENT_PROGRAM_CODE_OLD_COPY = "copy_version_unsupported"
+AGENT_PROGRAM_CODE_LINK_TAKEN = "link_name_taken"
 
 # The codes a task's wait names.
 AGENT_WAIT_LOCK = "waiting_for_lock"

@@ -57,6 +57,15 @@ BIN_DIRS = {
 }
 
 
+# The state root of each system, which holds every command line program's
+# launcher folder.
+VAR_DIRS = {
+    "linux": "/var/lib/neutrino/agent",
+    "darwin": "/Library/Application Support/Neutrino/agent/state",
+    "windows": "C:\\ProgramData\\Neutrino\\agent\\state",
+}
+
+
 class Platform(AgentPlatform):
     def __init__(self, os_name="linux", log_path=""):
         self.os_name = os_name
@@ -64,6 +73,9 @@ class Platform(AgentPlatform):
 
     def agent_bin_dir(self):
         return BIN_DIRS[self.os_name]
+
+    def agent_var_dir(self):
+        return VAR_DIRS[self.os_name]
 
     def agent_log_path(self):
         return self._log_path
@@ -225,6 +237,8 @@ def test_a_linux_instance_reads_its_port_and_shell_from_its_environment(tmp_path
     assert service.environment == {
         "NEUTRINO_SSH_SERVER_PORT": "22000",
         "NEUTRINO_SSH_SERVER_SHELL": "/bin/bash",
+        "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:"
+        "/var/lib/neutrino/agent/claude_code/bin:/var/lib/neutrino/agent/codex/bin",
     }
     assert service.files == (
         (os.path.join(run_dir, "host_key"), private_key_text()),
@@ -266,7 +280,9 @@ def test_a_mac_instance_carries_the_account_s_environment(tmp_path):
         "USER": "lab",
         "LOGNAME": "lab",
         "SHELL": "/bin/zsh",
-        "PATH": "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+        "PATH": "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:"
+        "/Library/Application Support/Neutrino/agent/state/claude_code/bin:"
+        "/Library/Application Support/Neutrino/agent/state/codex/bin",
     }
     assert service.log_name == ""
 
@@ -293,7 +309,10 @@ def test_a_windows_instance_signs_in_with_its_password_and_logs_under_the_log_ro
         "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
     )
     assert service.password == "pw"  # scan: allow
-    assert service.environment == {}
+    assert service.environment == {
+        "PATH": "%PATH%;C:\\ProgramData\\Neutrino\\agent\\state\\claude_code\\bin;"
+        "C:\\ProgramData\\Neutrino\\agent\\state\\codex\\bin"
+    }
     assert service.working_directory == ""
     assert service.log_name == (
         "C:\\ProgramData\\Neutrino\\agent\\log\\ssh_server_lab.log"

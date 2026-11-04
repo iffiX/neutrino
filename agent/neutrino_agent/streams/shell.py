@@ -67,6 +67,7 @@ from neutrino_agent.exceptions import (
 from neutrino_agent.modules.podman.applier import PodmanStatusReader
 from neutrino_agent.modules.podman.constants import PODMAN_BINARY
 from neutrino_agent.modules.shared.subprocess_run import run
+from neutrino_agent.platforms.base import with_launcher_folders
 from neutrino_agent.modules.terminal.config import (
     TerminalAccount,
     TerminalConfig,
@@ -386,7 +387,8 @@ def stepped_down(account: str, argv: list, platform) -> tuple:
 
     Returns:
         ``(command, process)``, as the platform's ``account_process`` gives
-        them, the environment copied out.
+        them, the environment copied out and its ``PATH`` ending with every
+        command line program's launcher folder.
 
     Raises:
         StreamRefused: ``account_unknown {account}`` for an account the
@@ -405,6 +407,11 @@ def stepped_down(account: str, argv: list, platform) -> tuple:
         raise StreamRefused("unsupported_platform") from None
     process = dict(process)
     process["env"] = dict(process.get("env") or os.environ)
+    process["env"]["PATH"] = with_launcher_folders(
+        process["env"].get("PATH") or os.defpath,
+        platform.agent_var_dir(),
+        platform.os_name,
+    )
     return command, process
 
 

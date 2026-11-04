@@ -10,10 +10,19 @@ relays' firewall rules away after the service stopped, and a firewall that
 does not answer is said while the removal goes on.
 """
 
+import json
+import os
+import subprocess
+
 import pytest
 
 import neutrino_agent.cli.service as service_cli
+import neutrino_agent.modules.shared.programs as programs_module
 from neutrino_agent.exceptions import ModuleApplyError
+from neutrino_agent.modules.shared.account_service import (
+    AccountEntry,
+    ServiceMachine,
+)
 from tests.conftest import FakeControlPlatform
 
 
@@ -227,6 +236,13 @@ def desktop_off(monkeypatch):
 
     monkeypatch.setattr(service_cli, "forget_tried", forget)
 
+    def ways_in(platform):
+        if hasattr(platform, "calls"):
+            platform.calls.append("program_ways_in")
+        return ["codex: removed the way in of ann"]
+
+    monkeypatch.setattr(service_cli, "remove_program_ways_in", ways_in)
+
 
 def test_the_removal_deletes_the_mark_of_the_state_last_tried(monkeypatch, tmp_path):
     class Roots:
@@ -318,11 +334,13 @@ def test_uninstall_stops_the_agent_before_taking_what_its_modules_added(
         "disable",
         "forget_tried",
         "desktop_off",
+        "program_ways_in",
         ("relay_rules", frozenset()),
         "remove_added",
     ]
     printed = capsys.readouterr().out
     assert "removed    neutrino_vscode@ann.service" in printed
+    assert "codex: removed the way in of ann" in printed
     assert (
         "removed ufw rule: allow in on podman1 to 10.89.0.1 port 8317 proto tcp"
         in printed
@@ -353,6 +371,7 @@ def test_uninstall_on_a_mac_removes_the_agent_itself_as_well(monkeypatch, capsys
         "disable",
         "forget_tried",
         "desktop_off",
+        "program_ways_in",
         ("relay_rules", frozenset()),
         "remove_added",
         "remove_agent_program",
@@ -421,6 +440,7 @@ def test_uninstall_switches_the_ai_tools_back_once_the_service_stopped(
         "forget_tried",
         "desktop_off",
         "switch_back",
+        "program_ways_in",
         ("relay_rules", frozenset()),
         "remove_copy",
         "remove_added",
@@ -428,3 +448,49 @@ def test_uninstall_switches_the_ai_tools_back_once_the_service_stopped(
     printed = capsys.readouterr().out
     assert "ai tools   ann: switched_back" in printed
     assert "removed    /var/lib/neutrino/agent/ai_tools/bin" in printed
+
+
+def test_every_marked_link_of_a_command_line_program_goes_and_nothing_else(
+    monkeypatch, tmp_path
+):
+    """The real removal, on a state root under the test's folder."""
+    monkeypatch.undo()
+
+    class Root(FakeControlPlatform):
+        os_name = "linux"
+
+        def agent_var_dir(self):
+            return str(tmp_path / "state")
+
+        def run_as_account(self, account, argv, **kwargs):
+            return subprocess.run(argv, capture_output=True, text=True)
+
+    home = tmp_path / "home"
+    (home / ".local" / "bin").mkdir(parents=True)
+    launcher = str(tmp_path / "state" / "codex" / "bin" / "codex")
+    (home / ".local" / "bin" / "codex").symlink_to(launcher)
+    (home / ".local" / "bin" / "claude").write_text("the person's own")
+    for module, made in (("codex", True), ("claude_code", True)):
+        (tmp_path / "state" / module).mkdir(parents=True)
+        (tmp_path / "state" / module / "record.json").write_text(
+            json.dumps({"accounts": {"ann": {"copy": "module", "is_link_made": made}}})
+        )
+    monkeypatch.setattr(
+        programs_module,
+        "machine_for",
+        lambda platform, name: ServiceMachine(
+            os_name="linux",
+            module_dir=str(tmp_path / "state" / name),
+            record_dir=str(tmp_path / "state" / name),
+            lookup_account=lambda account: AccountEntry(1000, 1000, str(home), ""),
+        ),
+    )
+
+    lines = service_cli.remove_program_ways_in(Root())
+
+    assert not os.path.lexists(home / ".local" / "bin" / "codex")
+    assert (home / ".local" / "bin" / "claude").read_text() == "the person's own"
+    assert lines == [
+        "claude_code: removed the way in of ann",
+        "codex: removed the way in of ann",
+    ]

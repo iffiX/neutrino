@@ -50,6 +50,7 @@ from neutrino_agent.exceptions import (
     ModuleApplyError,
     ModuleInstallPending,
     ModuleSetupError,
+    StepSuperseded,
 )
 from neutrino_agent.modules.shared.base import ModuleStep
 from neutrino_agent.modules.shared.step_locks import StepLocks
@@ -138,6 +139,16 @@ class FakeEngine:
     def take_state(self, modules, source_sets=None):
         self.states.append(modules)
         self.source_sets = source_sets
+
+    def program_runner(self, name, entry):
+        runner = self.runners.get(name)
+        return runner if isinstance(runner, FakeProgramRunner) else None
+
+    def is_module_copy_installed(self, name, entry):
+        return name in self.installed
+
+    def find_steps(self, name, entry):
+        return [self.runners[name].find_step(dict(entry.get("config") or {}))]
 
     def container_runners(self):
         return {}
@@ -355,6 +366,31 @@ class FakeRunner:
 
     def install_wait(self):
         return dict(self.wait)
+
+
+class FakeProgramRunner(FakeRunner):
+    """A command line program whose ``find`` finds what ``found_need`` says."""
+
+    def __init__(self, *, need=True):
+        super().__init__()
+        self.need = need
+        self.found_need = need
+        self.finds = 0
+
+    def needs_module_copy(self, config):
+        return self.need
+
+    def find_step(self, config):
+        return ModuleStep(
+            name="find",
+            run=functools.partial(self._find, self.needs_module_copy(config)),
+        )
+
+    def _find(self, basis, context):
+        self.finds += 1
+        self.need = self.found_need
+        if self.need != basis:
+            raise StepSuperseded("program")
 
 
 class FakeSocket:
@@ -2339,3 +2375,76 @@ def test_a_containers_row_nothing_read_yet_is_read_before_it_is_judged(tmp_path)
     assert "podman" in engine.refreshed
     assert engine.results["demo"] == ("", {})
     assert runners["demo"].applied == [{"n": "demo"}]
+
+
+# --- the command line programs ---
+
+
+def plans_of(engine, name) -> list:
+    """Each plan a module's row carried, by its step names, each once."""
+    plans = []
+    for task, _state, _wait in engine.published.get(name, []):
+        names = [step["name"] for step in task["steps"]]
+        if names and names not in plans:
+            plans.append(names)
+    return plans
+
+
+def test_a_program_s_plan_begins_with_find_and_installs_its_copy_while_one_is_needed(
+    tmp_path,
+):
+    runners = {"claude_code": FakeProgramRunner(need=True)}
+    engine = FakeEngine(runners, absent=("claude_code",))
+    held, _ = applier(runners, engine=engine, tmp_path=tmp_path)
+
+    run(held, state(claude_code="running"))
+
+    assert plans_of(engine, "claude_code") == [
+        ["find", "packages", "configure", "start"]
+    ]
+    assert [name for name, _ in engine.installs] == ["claude_code"]
+    assert engine.configured == {"claude_code"}
+
+
+def test_a_program_whose_accounts_run_their_own_copies_installs_nothing(tmp_path):
+    runners = {"codex": FakeProgramRunner(need=False)}
+    engine = FakeEngine(runners, absent=("codex",))
+    held, _ = applier(runners, engine=engine, tmp_path=tmp_path)
+
+    run(held, state(codex="running"))
+
+    assert plans_of(engine, "codex") == [["find", "configure", "start"]]
+    assert engine.installs == []
+
+
+def test_a_find_that_changes_the_need_plans_the_task_again(tmp_path):
+    runner = FakeProgramRunner(need=True)
+    runner.found_need = False
+    runners = {"codex": runner}
+    engine = FakeEngine(runners, absent=("codex",))
+    held, _ = applier(runners, engine=engine, tmp_path=tmp_path)
+
+    run(held, state(codex="running"))
+
+    assert plans_of(engine, "codex") == [
+        ["find", "packages", "configure", "start"],
+        ["find", "configure", "start"],
+    ]
+    assert runner.finds == 2
+    assert engine.installs == []
+    assert engine.results["codex"] == ("", {})
+
+
+def test_a_program_s_copy_of_another_version_is_switched_only_while_needed(tmp_path):
+    runners = {"codex": FakeProgramRunner(need=True)}
+    held, engine = applier(runners, tmp_path=tmp_path)
+    engine.switching.add("codex")
+
+    run(held, state(codex="running"))
+    assert engine.switches == ["codex"]
+
+    runners = {"codex": FakeProgramRunner(need=False)}
+    held, engine = applier(runners, tmp_path=tmp_path / "other")
+    engine.switching.add("codex")
+    run(held, state(codex="running"))
+    assert engine.switches == []
