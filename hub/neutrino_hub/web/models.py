@@ -2584,8 +2584,9 @@ class EnabledAccountRowView(BaseModel):
     user: str | None = None
     # A command line program's: the copy the account uses, ``user`` or
     # ``module``, its path and its version as reported, empty before; and
-    # the account's last AI tools result.
-    copy: str | None = None
+    # the account's last AI tools result. The copy is ``copy`` on the wire,
+    # the field's alias: a field of that name would shadow BaseModel.copy.
+    copy_used: str | None = Field(default=None, alias="copy")
     path: str | None = None
     version: str | None = None
     ai_tools: AccountToolsView | None = None

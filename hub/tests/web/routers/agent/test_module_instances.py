@@ -23,6 +23,7 @@ import pytest
 from neutrino_hub.modules.devices.accounts import DeviceAccount, DeviceAccountStore
 from neutrino_hub.modules.devices.desired_state import DesiredStateStore
 from neutrino_hub.modules.devices.retry_marks import DeviceRetryMarks
+from neutrino_hub.web.models import EnabledAccountRowView
 from neutrino_hub.web.routers.agent import module_instances, module_vscode_terms
 from tests.conftest import unlock_vault
 from tests.web.module_api_box import DEVICE, OFFLINE, module_box
@@ -605,6 +606,17 @@ def test_a_command_line_program_s_row_carries_its_account_s_code(api):
         "link_name_taken",
         params,
     )
+
+
+def test_a_program_row_keeps_copy_as_its_wire_name_and_shadows_no_model_method():
+    """A field named ``copy`` shadows BaseModel.copy, which Pydantic warns
+    of, so the field holds another name and ``copy`` is its alias."""
+    fields = EnabledAccountRowView.model_fields
+
+    assert "copy" not in fields
+    assert [name for name, info in fields.items() if info.alias == "copy"]
+    row = EnabledAccountRowView(account="alice", copy="user")
+    assert row.model_dump(by_alias=True)["copy"] == "user"
 
 
 def test_a_row_of_another_module_names_no_copy(api):
