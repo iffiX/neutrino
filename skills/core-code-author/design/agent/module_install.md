@@ -329,7 +329,7 @@ owner:
    and the hub streams the cached file with that digest down
    ([transport.md](../transport.md), "The stream layer"), writing `hub:
    sending <title>, <sent> / <total> MB to <device>` into the module's output
-   as it goes.
+   as it goes, `<device>` the machine's name in the panel.
 1. The agent installs each artifact as its kind says, each in one step
    `artifact {name}`, and the system packages the entry names before them in
    one step `packages` ([../agent.md](../agent.md), "The steps").
