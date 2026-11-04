@@ -303,3 +303,15 @@ def test_the_ai_tools_state_reads_as_its_row_under_available_accounts():
     ) in instances
     assert "<input" not in row
     assert "is_ai_tools_enabled" not in row
+
+
+@pytest.mark.parametrize("module", PROGRAMS)
+def test_each_program_has_a_line_glyph_of_its_own(module):
+    """module_template.md, "Icons": a 24 by 24 line drawing in currentColor,
+    read by the panel by module name, in place of the generic glyph."""
+    glyphs = HUB_DIR.parent / "images/icons/modules"
+    glyph = (glyphs / f"{module}.svg").read_text(encoding="utf-8")
+
+    assert 'viewBox="0 0 24 24"' in glyph
+    assert 'fill="none"' in glyph and 'stroke="currentColor"' in glyph
+    assert glyph != (glyphs / "generic.svg").read_text(encoding="utf-8")
