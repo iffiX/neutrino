@@ -451,7 +451,7 @@ that can pass 30 seconds by the lab's times:
 | Ayakaleaf | `wait_module podman`, `pull app`, `pull mongo`, `pull redis`, `verify`, `render`, `start`, `replica_set`, `wait_app`, `admin`, `tex`, `guests` | `pull app` 84 to 135 seconds, `tex` 4 to 5 minutes |
 | VS Code, code-server, Codeg, SiYuan | `artifact <name>` per archive, `verify`, `configure`, then `account {account}` per enabled account | an archive, up to 42 seconds for Codeg's |
 | CloudCLI | the same, with `npm {account}` before each `account {account}` | `npm`, 2 to 3.5 minutes on Linux |
-| Codex, Claude Code | `find`, then `artifact <name>` and `verify` while an account needs the module's own copy and it is missing, `configure`, then `account {account}` per enabled account | the archive, 127 MiB for Claude Code and 191 MiB for Codex on Linux amd64; `find`, up to 5 seconds per account for its login shell |
+| Codex, Claude Code | `find`, then `artifact <name>` and `verify` while an account needs the module's own copy and it is missing, `configure`, then `account {account}` per enabled account | the tarball, 127 MiB for Claude Code and 164 MiB for Codex on Linux amd64; `find`, up to 5 seconds per account for its login shell |
 
 Gitea's `account` is a step apart from its `configure`, so `system_accounts`
 is held for the one command that makes the account and not for Gitea's

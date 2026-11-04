@@ -1475,8 +1475,8 @@ The `codex` and `claude_code` modules are command line programs
 [agent/modules/claude_code.md](agent/modules/claude_code.md)). Each one's
 configuration is `{accounts: [{account, password}]}` ("The account layer in
 the state"), and its `want` is `absent` or `running`. Its recipe's method is
-`hub`, with one artifact of kind `tar_gz`, Codex's package archive or Claude
-Code's npm tarball, which the agent opens `package {module, artifact,
+`hub`, with one artifact of kind `tar_gz`, the tool's npm tarball for the
+platform, which the agent opens `package {module, artifact,
 digest}` for while an enabled account needs the module's copy, and
 `params.user_copy_min_version`. `details` is `{has_module_copy, accounts:
 [{account, copy, path, version, code, params}]}`, an account's `code` being
