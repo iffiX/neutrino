@@ -12,6 +12,8 @@ to the gateway or the panel on loopback. An agent's ``connect`` names the
 AI tools setting is on.
 """
 
+import types
+
 import pytest
 
 from neutrino_hub.modules.clients import services
@@ -903,3 +905,28 @@ def test_a_connect_names_its_row_for_the_transport(config_dir):
     ]
 
     assert rows == ["vscode_dev", "rdp_dev"]
+
+
+def test_an_ssh_entrys_host_key_is_its_own_accounts_instances():
+    reports = {
+        "d1": {
+            "modules": {
+                "ssh_server": {
+                    "details": {
+                        "instances": [
+                            {"account": "ann", "host_key": "ssh-ed25519 AAAAann"},
+                            {"account": "bob", "host_key": "ssh-ed25519 AAAAbob"},
+                        ]
+                    }
+                }
+            }
+        }
+    }
+    runtime = types.SimpleNamespace(
+        agent_sessions=types.SimpleNamespace(reports=lambda: reports)
+    )
+
+    assert services.host_key_of(runtime, "d1", "bob") == "ssh-ed25519 AAAAbob"
+    assert services.host_key_of(runtime, "d1", "ann") == "ssh-ed25519 AAAAann"
+    assert services.host_key_of(runtime, "d1", "eve") == ""
+    assert services.host_key_of(runtime, "d2", "ann") == ""

@@ -2579,6 +2579,9 @@ class EnabledAccountRowView(BaseModel):
     params: dict = Field(default_factory=dict)
     # The Terminal module's and the SSH server's: the account row's shell.
     shell_path: str | None = None
+    # The SSH server's: the account instance's host key as
+    # ``SHA256:<base64>``, empty before the machine reports it.
+    host_key_fingerprint: str | None = None
     # The file share's: the account row's share path and its SMB user.
     share_path: str | None = None
     user: str | None = None
@@ -2595,8 +2598,6 @@ class EnabledAccountsView(ModuleDeviceFields):
     is_active: bool = False
     # The release the machine reports, where the module has one.
     version: str = ""
-    # The SSH server's: the machine's host key as ``SHA256:<base64>``.
-    host_key_fingerprint: str | None = None
     # VS Code's: whether the person accepted the terms, and their address.
     is_terms_accepted: bool | None = None
     terms_url: str | None = None

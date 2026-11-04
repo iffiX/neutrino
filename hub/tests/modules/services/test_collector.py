@@ -180,12 +180,12 @@ def test_the_ssh_server_is_one_app_with_an_ssh_entry_per_instance_in_order():
                 "device_id": DEVICE,
                 "host": HOST,
                 "ssh_server": {
-                    "host_key_fingerprint": "SHA256:abc",
                     "instances": [
                         {
                             "account": "bob",
                             "port": 22001,
                             "is_healthy": True,
+                            "host_key_fingerprint": "SHA256:abc",
                             "account_key_fingerprint": "SHA256:bob",
                         },
                         {"account": "ann", "port": 22002, "is_healthy": False},
@@ -208,6 +208,7 @@ def test_the_ssh_server_is_one_app_with_an_ssh_entry_per_instance_in_order():
         "account_key_fingerprint": "SHA256:bob",
     }
     assert entries[1]["payload"]["account_key_fingerprint"] == ""
+    assert entries[1]["payload"]["host_key_fingerprint"] == ""
     assert entries[0]["title"] == "SSH (bob)"
     assert entries[1]["is_healthy"] is False
     assert entries[0]["description_code"] == "ssh_server_module"

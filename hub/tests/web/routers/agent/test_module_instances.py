@@ -121,8 +121,14 @@ def test_the_view_lists_every_available_account_with_the_modules_own_field(api):
         DEVICE,
         "ssh_server",
         state="running",
-        host_key_fingerprint="SHA256:abc",
-        instances=[{"account": "alice", "port": 22001, "is_running": True}],
+        instances=[
+            {
+                "account": "alice",
+                "port": 22001,
+                "is_running": True,
+                "host_key_fingerprint": "SHA256:abc",
+            }
+        ],
     )
     client.post(
         "/api/agent/module/ssh_server/set",
@@ -133,7 +139,9 @@ def test_the_view_lists_every_available_account_with_the_modules_own_field(api):
 
     assert view.status_code == 200
     body = view.json()
-    assert body["host_key_fingerprint"] == "SHA256:abc"
+    assert "host_key_fingerprint" not in body
+    alice = next(row for row in body["accounts"] if row["account"] == "alice")
+    assert alice["host_key_fingerprint"] == "SHA256:abc"
     assert [
         (
             row["account"],

@@ -461,7 +461,7 @@ def _ssh_material(runtime, raw: dict, entry: dict) -> tuple:
     return "", {
         "account": account,
         "private_key": private_key,
-        "host_key": host_key_of(runtime, device_id),
+        "host_key": host_key_of(runtime, device_id, account),
     }
 
 
@@ -491,12 +491,13 @@ def _share_material(runtime, raw: dict, entry: dict) -> tuple:
     return "", {"user": str(users[0]) if users else account, "password": password}
 
 
-def host_key_of(runtime, device_id: str) -> str:
-    """The public host key a machine's SSH server last reported.
+def host_key_of(runtime, device_id: str, account: str) -> str:
+    """The public host key one account's instance of a machine's SSH server last reported.
 
     Args:
         runtime: The shared runtime, for the agents' reports.
         device_id: The machine.
+        account: The account whose instance it is.
 
     Returns:
         The key in OpenSSH form, empty while the machine has not reported it.
@@ -511,7 +512,10 @@ def host_key_of(runtime, device_id: str) -> str:
     details = status.get("details") if isinstance(status, dict) else None
     if not isinstance(details, dict):
         return ""
-    return str(details.get("host_key", "") or "")
+    for instance in details.get("instances") or []:
+        if isinstance(instance, dict) and instance.get("account") == account:
+            return str(instance.get("host_key", "") or "")
+    return ""
 
 
 def _instance_row(description_code: str):

@@ -25,8 +25,14 @@ def test_each_instance_carries_its_account_keys_fingerprint(states):
     )
     status = {
         "details": {
-            "host_key_fingerprint": "SHA256:host",
-            "instances": [{"account": "lab", "port": 22001, "is_running": True}],
+            "instances": [
+                {
+                    "account": "lab",
+                    "port": 22001,
+                    "is_running": True,
+                    "host_key_fingerprint": "SHA256:host",
+                }
+            ],
         }
     }
 
@@ -38,3 +44,5 @@ def test_each_instance_carries_its_account_keys_fingerprint(states):
 
     assert fingerprint.startswith("SHA256:") and len(fingerprint) == 50
     assert second["instances"][0]["account_key_fingerprint"] != fingerprint
+    assert first["instances"][0]["host_key_fingerprint"] == "SHA256:host"
+    assert "host_key_fingerprint" not in first

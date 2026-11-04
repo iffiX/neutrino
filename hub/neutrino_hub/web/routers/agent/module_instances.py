@@ -141,6 +141,10 @@ def device_view(
         }
         if row.name in (DEVICE_TERMINAL_MODULE, DEVICE_SSH_SERVER_MODULE):
             fields["shell_path"] = account.shell_path
+        if row.name == DEVICE_SSH_SERVER_MODULE:
+            fields["host_key_fingerprint"] = str(
+                seen.get("host_key_fingerprint", "") or ""
+            )
         if is_program:
             fields["ai_tools"] = AccountToolsView(**tools.get(account.account, {}))
             fields["is_ai_tools_enabled"] = account.is_ai_tools_enabled
@@ -154,10 +158,6 @@ def device_view(
                 fields["params"] = {"account": account.account}
         rows.append(EnabledAccountRowView(**fields))
     extra = {"version": str(context.details.get("version", "") or "")}
-    if row.name == DEVICE_SSH_SERVER_MODULE:
-        extra["host_key_fingerprint"] = str(
-            context.details.get("host_key_fingerprint", "") or ""
-        )
     if row.name == DEVICE_VSCODE_MODULE:
         extra["is_terms_accepted"] = bool(context.config.get(DEVICE_VSCODE_TERMS_KEY))
         extra["terms_url"] = DEVICE_VSCODE_TERMS_URL

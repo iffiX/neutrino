@@ -169,8 +169,8 @@ class ServiceListCollector:
                 "shares": [{"name", "user"}]}``, ``gitea: {"is_healthy",
                 "url", "ssh_listen_port"}``, each program run as an account
                 under its name as ``{"instances": [{"account", "port",
-                "is_healthy"}]}``, ``ssh_server: {"host_key_fingerprint",
-                "instances": [{"account", "port", "is_healthy",
+                "is_healthy"}]}``, ``ssh_server: {"instances": [{"account",
+                "port", "is_healthy", "host_key_fingerprint",
                 "account_key_fingerprint"}]}``,
                 ``hermes_webui`` and ``ayakaleaf`` each as ``{"port",
                 "is_healthy"}``, and ``podman:
@@ -325,7 +325,6 @@ class ServiceListCollector:
         ssh_server = device.get("ssh_server")
         if ssh_server:
             app_id = f"{SERVICES_SSH_SERVER_ID}_{device_id}"
-            fingerprint = str(ssh_server.get("host_key_fingerprint", "") or "")
             for instance in ssh_server.get("instances") or []:
                 account = str(instance["account"])
                 apps.setdefault(
@@ -347,7 +346,9 @@ class ServiceListCollector:
                             "host": host,
                             "port": int(instance["port"]),
                             "account": account,
-                            "host_key_fingerprint": fingerprint,
+                            "host_key_fingerprint": str(
+                                instance.get("host_key_fingerprint", "") or ""
+                            ),
                             "account_key_fingerprint": str(
                                 instance.get("account_key_fingerprint", "") or ""
                             ),
