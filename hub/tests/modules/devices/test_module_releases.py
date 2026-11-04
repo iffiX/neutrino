@@ -13,7 +13,9 @@ digest and address going to the entry's artifact, and every module's manifest
 naming a digest of the chosen version for each artifact that changes with it.
 Against a fake that refuses: a feed read once in one read however many entries
 name it, and one warning with each source's reason. Through the real fetcher:
-a release listing as large as Gitea's read whole.
+a release listing as large as Gitea's read whole. A person's software, its
+details saying ``has_package_mark`` false, having the one version the
+machine reports, and a report with no such field naming none.
 """
 
 import copy
@@ -32,7 +34,9 @@ from neutrino_hub.modules.devices.module_releases import (
     ModuleReleaseReader,
     ModuleReleaseStore,
     bearer_token_address,
+    is_persons_package,
     oci_index_digest,
+    persons_versions,
 )
 from neutrino_hub.utils.source_fetch import SourceFetcher
 
@@ -683,3 +687,23 @@ def test_a_platform_package_feed_gives_each_version_its_own_tarball(
             "artifacts": {"claude_code": {"digest": "sha512-2.1.311"}},
         },
     ]
+
+
+def test_a_person_s_package_is_one_whose_details_say_no_mark():
+    assert is_persons_package({"has_package_mark": False}) is True
+    assert is_persons_package({"has_package_mark": True}) is False
+    assert is_persons_package({"version": "6.1.3"}) is False
+    assert is_persons_package({}) is False
+
+
+def test_a_person_s_package_has_the_one_version_the_machine_reports():
+    assert persons_versions("6.1.3", "6.1.4") == [
+        {"version": "6.1.3", "is_tested": False, "is_untested": False}
+    ]
+    assert persons_versions("6.2.0", "6.1.4") == [
+        {"version": "6.2.0", "is_tested": False, "is_untested": True}
+    ]
+    assert persons_versions("6.1.4", "6.1.4") == [
+        {"version": "6.1.4", "is_tested": True, "is_untested": False}
+    ]
+    assert persons_versions("", "6.1.4") == []

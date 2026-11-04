@@ -65,7 +65,11 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_MODULE_REPORT_WAIT_S,
     DEVICE_MODULE_VALIDATE_TIMEOUT_S,
 )
-from neutrino_hub.modules.devices.module_releases import is_locked
+from neutrino_hub.modules.devices.module_releases import (
+    is_locked,
+    is_persons_package,
+    persons_versions,
+)
 from neutrino_hub.modules.clients.ai_keys import (
     apply_keys,
     mint_module_key,
@@ -421,7 +425,8 @@ def set_module_version(
         HTTPException: 404 ``device_unknown``, ``module_unknown``; 400
             ``version_unknown {version}`` for a version the feeds did not
             list for the machine's platform; 409 ``version_locked {module}``
-            for a module whose version is locked, ``agent_offline``; 500
+            for a module whose version is locked, a person's Podman among
+            them, ``agent_offline``; 500
             ``config_unwritable``.
     """
     key = _require_device(request.device_id).id
@@ -431,7 +436,8 @@ def set_module_version(
         raise _refusal(status.HTTP_404_NOT_FOUND, CODE_MODULE_UNKNOWN, name=module)
     platform = runtime.device_platform.get(key, {})
     _, entry = resolve_platform_entry(manifest, platform)
-    if is_locked(manifest, entry):
+    details = module_status(runtime, key, module, manifest=manifest)["details"]
+    if is_locked(manifest, entry) or is_persons_package(details):
         raise _refusal(status.HTTP_409_CONFLICT, CODE_VERSION_LOCKED, module=module)
     listed = {
         row["version"] for row in runtime.module_releases.versions(module, platform)
@@ -478,14 +484,18 @@ def _version_view(
 ) -> ModuleVersionView:
     platform = runtime.device_platform.get(key, {})
     _, entry = resolve_platform_entry(manifest, platform)
+    reported = module_status(runtime, key, module, manifest=manifest)
     versions = runtime.module_releases.versions(module, platform)
     tested = next((row["version"] for row in versions if row["is_tested"]), "")
+    is_persons = is_persons_package(reported["details"])
+    if is_persons:
+        versions = persons_versions(reported["version"], tested)
     return ModuleVersionView(
-        installed=module_status(runtime, key, module, manifest=manifest)["version"],
+        installed=reported["version"],
         chosen=runtime.desired_states.version_of(key, module),
         tested=tested,
         newest=versions[0]["version"] if versions else tested,
-        is_locked=is_locked(manifest, entry),
+        is_locked=is_locked(manifest, entry) or is_persons,
         versions=[ModuleVersionEntryView(**row) for row in versions],
         is_data_forward_only=manifest.get("is_data_forward_only") is True,
         read_at=runtime.module_releases.read_at(),

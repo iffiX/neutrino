@@ -15,7 +15,9 @@ in ``module_releases.json`` under the state root, ``{read_at, modules:
 sources}}}]}}}``, and a version is listed for a platform only when every
 artifact of its entry whose file names ``{version}`` was found in it. A
 module whose entry names no ``releases``, and every ``agent``, ``builtin``
-and ``system`` entry, has one version, its tested one, locked.
+and ``system`` entry, has one version, its tested one, locked. A person's
+software, which the machine reports with ``has_package_mark`` false in its
+details, has one version too, the one the machine reports, locked.
 
 The parsers are pure functions of a feed's answer; the store reads and
 writes the file; the reader drives the fetcher over every manifest.
@@ -332,6 +334,33 @@ def is_locked(manifest: dict, entry: "dict | None") -> bool:
     if not method or method in LOCKED_METHODS:
         return True
     return not entry_params(entry).get("releases")
+
+
+def is_persons_package(details: dict) -> bool:
+    """Whether a machine reports a module's software as the person's.
+
+    Args:
+        details: The module's details as the machine last reported them.
+
+    Returns:
+        True when they say ``has_package_mark`` is false, as Containers'
+        on a person's Podman; False with no such field, an earlier agent's.
+    """
+    return details.get("has_package_mark") is False
+
+
+def persons_versions(installed: str, tested: str) -> list:
+    """The one version of a person's software: the one the machine reports.
+
+    Args:
+        installed: The version the machine reports.
+        tested: The tested version.
+
+    Returns:
+        ``[{version, is_tested, is_untested}]``; empty while the machine
+        reports none.
+    """
+    return [_version_row(installed, tested)] if installed else []
 
 
 class ModuleReleaseStore:

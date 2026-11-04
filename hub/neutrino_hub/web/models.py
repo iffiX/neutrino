@@ -2432,8 +2432,8 @@ class ModuleVersionView(BaseModel):
     chosen: str = ""
     tested: str = ""
     newest: str = ""
-    # True for an agent, builtin or system module, and for a container
-    # module whose manifest names no releases.
+    # True for an agent, builtin or system module, for a container module
+    # whose manifest names no releases, and for a person's Podman.
     is_locked: bool = False
     versions: list[ModuleVersionEntryView] = Field(default_factory=list)
     # Whether the module's data moves forward only, so an older version

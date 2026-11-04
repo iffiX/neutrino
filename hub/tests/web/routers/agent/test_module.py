@@ -9,7 +9,10 @@ module the agent carries takes none; a press on a module whose last report is
 module puts none; a failed install reads its code beside the want it keeps;
 each row carries its module's task as the agent reported it, and the hub
 task with that task's lines is named on the row; on Windows and macOS the list advises the Podman
-machine's memory while the container modules need more. The door: the per-device read carrying the module's own
+machine's memory while the container modules need more; a person's Podman,
+its details saying ``has_package_mark`` false, reads locked at the version
+it reports and refuses a version press ``version_locked``, while a mark or a
+report with no such field lists every version. The door: the per-device read carrying the module's own
 fields beside the shared ones, an import that writes what the machine
 reports only where the hub holds no configuration yet, a configuration
 checked on the agent as the module's ``validate`` verb before it is stored
@@ -268,6 +271,79 @@ def test_a_row_s_version_is_the_one_its_reported_details_name(api):
     row = client.get(MODULE_PATH, params={"device_id": DEVICE}).json()["modules"][0]
 
     assert row["version"] == "6.3.1"
+
+
+def persons_podman(runtime, tmp_path, has_package_mark) -> None:
+    """A machine reporting fakedesk running at 6.1.3, with the package mark
+    standing or not, or with no such field, beside two listed versions."""
+    runtime.module_releases = ModuleReleaseStore(path=tmp_path / "releases.json")
+    runtime.module_releases.versions = lambda module, platform: [
+        {"version": "6.2.0", "is_tested": False, "is_untested": True},
+        {"version": "6.1.4", "is_tested": True, "is_untested": False},
+    ]
+    details = {"version": "6.1.3"}
+    if has_package_mark is not None:
+        details["has_package_mark"] = has_package_mark
+    runtime.device_modules[DEVICE] = {
+        "fakedesk": {"state": "running", "details": details}
+    }
+    runtime.desired_states.set_want(DEVICE, "fakedesk", "running")
+
+
+def test_a_persons_podman_reads_locked_at_the_version_it_prints(
+    api, tmp_path, monkeypatch
+):
+    client, runtime = api
+    monkeypatch.setattr(device_modules, "is_locked", lambda manifest, entry: False)
+    persons_podman(runtime, tmp_path, has_package_mark=False)
+
+    view = client.get(
+        f"{MODULE_PATH}/version", params={"device_id": DEVICE, "module": "fakedesk"}
+    ).json()
+
+    assert view["is_locked"] is True
+    assert view["installed"] == "6.1.3"
+    assert view["newest"] == "6.1.3"
+    assert view["tested"] == "6.1.4"
+    assert view["versions"] == [
+        {"version": "6.1.3", "is_tested": False, "is_untested": False}
+    ]
+
+
+@pytest.mark.parametrize("has_package_mark", [True, None])
+def test_a_podman_the_module_installed_or_an_earlier_agent_s_lists_every_version(
+    api, tmp_path, monkeypatch, has_package_mark
+):
+    client, runtime = api
+    monkeypatch.setattr(device_modules, "is_locked", lambda manifest, entry: False)
+    persons_podman(runtime, tmp_path, has_package_mark=has_package_mark)
+
+    view = client.get(
+        f"{MODULE_PATH}/version", params={"device_id": DEVICE, "module": "fakedesk"}
+    ).json()
+
+    assert view["is_locked"] is False
+    assert view["newest"] == "6.2.0"
+    assert [row["version"] for row in view["versions"]] == ["6.2.0", "6.1.4"]
+
+
+def test_a_version_press_on_a_persons_podman_is_refused_version_locked(
+    api, tmp_path, monkeypatch
+):
+    client, runtime = api
+    monkeypatch.setattr(device_modules, "is_locked", lambda manifest, entry: False)
+    runtime.agent_sessions.online.add(DEVICE)
+    persons_podman(runtime, tmp_path, has_package_mark=False)
+
+    answer = client.post(
+        f"{MODULE_PATH}/version/set",
+        json={"device_id": DEVICE, "module": "fakedesk", "version": "6.1.4"},
+    )
+
+    assert answer.status_code == 409
+    assert answer.json()["detail"]["code"] == "version_locked"
+    assert modules_file(tmp_path)["fakedesk"]["version"] == ""
+    assert runtime.agent_sessions.pushes == []
 
 
 def test_an_uninstall_the_machine_confirmed_reads_absent_on_both_halves(api):
