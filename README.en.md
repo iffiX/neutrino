@@ -35,7 +35,7 @@
 Neutrino Hub is a panel for deploying apps plus secure routing for reaching them from outside, built for programmers and students.
 
 - **Panel**: installs on the Windows, macOS or Linux computer you already own. One click installs an app, and one panel holds everything.
-- **Outside access routing**: scan a code once and your phone opens those apps from anywhere. Six ways connect the two, all end-to-end encrypted.
+- **Outside access routing**: scan a code once and your phone opens those apps from anywhere. Six ways connect the two, encrypted all the way between the device and the hub.
 
 **Deploy it on your own computer. You need no domain and no extra server.**
 
@@ -75,12 +75,12 @@ Select **Share** on any web app to get a link. A friend opens it in a browser wi
 
 <img src="images/web/readme_share.webp" width="100%" alt="The share dialog on the left, two mascots at a table in the middle, and Ayakaleaf in a friend's browser on the right" />
 
-**The share address, share.neutrinohub.net, serves only a static client of under 30 KB. It opens no extra connection to any Neutrino server, and everything is end-to-end encrypted. You can also host your own copy of the page.**
+**The share address, share.neutrinohub.net, serves only a static client of under 40 KB. It opens no extra connection to any Neutrino server. The connection between the visitor's browser and the hub is encrypted all the way, and third-party lines cannot read it. You can also host your own copy of the page.**
 
 ## Why Neutrino Hub
 
 - **Complete**: apps, the desktop, terminals, files and SSH. One click installs them, and the client has them ready.
-- **Secure**: end-to-end encrypted. Neutrino's service port strictly guards every app, and only people you approve get in.
+- **Secure**: encrypted all the way between a device and the hub, and third-party lines cannot read it. Neutrino's service port strictly guards every app, and only people you approve get in.
 - **Yours**: no server, domain or special hardware to buy. Neutrino runs no public server, and a share connects only to your hub.
 - **Free**: manage several computers, wake them over the LAN and connect worldwide, with no limit on users or traffic. All free.
 
@@ -91,9 +91,9 @@ Select **Share** on any web app to get a link. A friend opens it in a browser wi
 | Remote desktop | ✅ Ready | ❌ No | ❌ DIY | ❌ DIY | ❌ DIY | ✅ Yes | ❌ DIY |
 | Mounted drive | ✅ Ready | ❌ Web only | ❌ Paid plan | ❌ LAN only | ❌ Transfer only | ❌ Transfer only | ✅ Yes |
 | App sharing | ✅ One link | ❌ No | ❌ Needs a domain | ❌ Files only | ✅ Yes | ❌ Needs an install | ❌ Files only |
-| End-to-end encryption | ✅ Yes | ❌ DIY | ❌ Needs a domain | ✅ Yes | ✅ Yes | ✅ Yes | ❌ Not stated |
+| Encrypted transport | ✅ Yes | ❌ DIY | ❌ Needs a domain | ✅ Yes | ✅ Yes | ✅ Yes | ❌ Not stated |
 | Fingerprint on a scan | ✅ None | ❌ Yes | ❌ Yes | ❌ Yes | ✅ None | ✅ None | ❌ Yes |
-| Ways back to your computer | ✅ 6 | ❌ Open a port | ❌ Open a port | ❌ 3 | ❌ 1 | ❌ 1 | ❌ 2 |
+| Ways to connect | ✅ 6 | ❌ Open a port | ❌ Open a port | ❌ 3 | ❌ 1 | ❌ 1 | ❌ 2 |
 | Global access | ✅ Free | ❌ Open a port | ❌ Open a port | ❌ $19.8/month | ✅ Free | ❌ ¥66/month | ❌ Paid extra |
 | Paid tier | ✅ None | ❌ Yes | ❌ Yes | ❌ Yes | ❌ Yes | ❌ Yes | ❌ Yes |
 
@@ -123,7 +123,7 @@ Install the hub on a computer and the app on your phone, then scan once:
 
 1. On the panel's **Clients** page, select **New client link**. A phone scans it under **Join a hub**, and a computer pastes it on the **Hubs** page.
 
-In mainland China, use the [mainland edition](https://cnb.cool/iffi-X/neutrino/-/releases). It leaves out some network features.
+In mainland China, use the [mainland edition](https://cnb.cool/iffi-X/neutrino/-/releases). It has no proxy and no side gateway.
 
 <details>
 <summary><b>Install with one command</b></summary>
@@ -183,35 +183,35 @@ nhub setup
 
 </details>
 
-To add another computer, see [Add a machine](https://neutrinohub.net/en/hub/add_machine). For upgrades and removal, see [Upgrade](https://neutrinohub.net/en/hub/upgrade) and [Uninstall](https://neutrinohub.net/en/hub/uninstall).
+To add another computer, see [Agents](https://neutrinohub.net/en/hub/agents). For upgrades and removal, see [Upgrade from 0.5](https://neutrinohub.net/en/hub/upgrade) and [Uninstall](https://neutrinohub.net/en/hub/uninstall).
 
 ## FAQ
 
 <details>
 <summary><b>How is it different from 1Panel or aaPanel</b></summary>
 
-They manage websites and databases on Linux servers. Neutrino Hub manages the work tools on your own Windows, macOS or Linux computers, and has six ways back to them.
+They manage websites and databases on Linux servers. Neutrino Hub manages the work tools on your own Windows, macOS or Linux computers, and has six ways to reach them from outside.
 
 </details>
 
 <details>
 <summary><b>How is it different from UU, Sunlogin or ToDesk</b></summary>
 
-They are remote desktops. Here the remote desktop is one item next to editors, AI coding, terminals and files, and a phone opens those as web pages and terminals.
+They are remote desktops. Here the remote desktop is one item next to editors, AI coding, terminals and files, and a phone reaches apps, files, terminals and desktops.
 
 </details>
 
 <details>
 <summary><b>How is it different from Claude's built-in remote and agent aggregators</b></summary>
 
-Neutrino Hub deploys them: Codeg, CloudCLI and Hermes WebUI are apps on its list. It installs them and gives you a secure way to reach them.
+Agent aggregators such as Codeg, CloudCLI and Hermes WebUI are apps Neutrino Hub deploys. It installs them and lets you connect to them from other devices. Claude's built-in remote is a feature Anthropic provides, and it is not on the app list.
 
 </details>
 
 <details>
 <summary><b>Is it secure, and do I have to register</b></summary>
 
-Registration is closed. You generate the client keys yourself, and only people you approve get in. Every connection goes through one protected port on the hub, end-to-end encrypted. See [Security](https://neutrinohub.net/en/share/security).
+You do not need to register. You generate join links on the panel, and only people you approve get in. Every connection goes through one protected port on the hub, encrypted all the way between the device and the hub. See [Security model](https://neutrinohub.net/en/share/security).
 
 </details>
 
@@ -229,16 +229,16 @@ Anything else works too. You can declare your own service, with several ports an
 
 | App | What it is | How to deploy |
 | --- | --- | --- |
-| [VS Code](https://github.com/microsoft/vscode) | Microsoft's code editor, opened in a browser | [Deploy VS Code](https://neutrinohub.net/en/deploy/vscode) |
+| [VS Code](https://github.com/microsoft/vscode) | Microsoft's code editor, running in a browser | [Deploy VS Code](https://neutrinohub.net/en/deploy/vscode) |
 | [code-server](https://github.com/coder/code-server) | VS Code as an open source web app | [Deploy code-server](https://neutrinohub.net/en/deploy/code_server) |
 | [CloudCLI](https://github.com/siteboon/claudecodeui) | A web page for Claude Code and other AI coding tools | [Deploy CloudCLI](https://neutrinohub.net/en/deploy/cloudcli) |
 | [Codeg](https://github.com/spacering-net/codeg) | An AI coding workspace with Claude Code, Codex and Gemini on one page | [Deploy Codeg](https://neutrinohub.net/en/deploy/codeg) |
 | [Hermes WebUI](https://github.com/nesquena/hermes-webui) | A web page for the Hermes Agent assistant | [Deploy Hermes WebUI](https://neutrinohub.net/en/deploy/hermes_webui) |
 | [Ayakaleaf](https://github.com/ayaka-notes/ayakaleaf-pro) | A web editor for writing LaTeX papers with classmates | [Deploy Ayakaleaf](https://neutrinohub.net/en/deploy/ayakaleaf) |
 | [SiYuan](https://github.com/siyuan-note/siyuan) | Notes and a knowledge base, kept on your computer | [Deploy SiYuan](https://neutrinohub.net/en/deploy/siyuan) |
-| [Gitea](https://github.com/go-gitea/gitea) | Your own GitHub | [Deploy Gitea](https://neutrinohub.net/en/deploy/gitea) |
+| [Gitea](https://github.com/go-gitea/gitea) | A self-hosted code hosting service, similar to GitHub | [Deploy Gitea](https://neutrinohub.net/en/deploy/gitea) |
 | [Podman](https://github.com/podman-container-tools/podman) | A container engine for software the list leaves out | [Deploy containers](https://neutrinohub.net/en/deploy/containers) |
-| [Samba](https://www.samba.org/) | Turns a folder on your computer into a drive on other devices | [Deploy file sharing](https://neutrinohub.net/en/deploy/file_share) |
+| [Samba](https://www.samba.org/) | Mounts a folder on your system at a path or drive letter on the client for direct reading and writing | [Deploy file sharing](https://neutrinohub.net/en/deploy/file_share) |
 
 ## Acknowledgements
 
@@ -258,7 +258,7 @@ Neutrino Hub ships with:
 
 ## License
 
-[MIT](LICENSE). The Android and iOS apps are AGPL-3.0.
+Neutrino is distributed under the [MIT](LICENSE) and [AGPL-3.0](client/android/LICENSE) licenses. The Android and iOS apps use AGPL-3.0. Author: Muhan Li / iffiX.
 
 <div align="center">
 

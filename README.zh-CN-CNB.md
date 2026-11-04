@@ -1,29 +1,29 @@
 # 微子·中枢
 
-微子·中枢是放在你家里的一台远程访问中心。家里各台机器上的文件、网页、端口、远程桌面、终端和 AI 网关，都由它集中起来。你在手机或电脑上装好客户端，在任何地方都能用这些服务。
+微子·中枢是开源、自托管的应用部署面板和外部访问路由。你把它安装在自己的电脑上，不需要域名，也不需要额外的服务器。你在手机或电脑上安装客户端后，可以从任何地方使用系统上的应用、文件、终端和远程桌面。
 
-开源，MIT 许可证。
+微子使用 MIT 与 AGPL-3.0 许可证分发。
 
 ## 能做什么
 
-- 在外面打开家里机器上的共享文件夹：电脑上挂成一个文件夹或盘符，手机上出现在系统的“文件”应用里。
-- 打开家里机器上的网页服务，例如你自己装的 Gitea、VS Code、code-server。
-- 把家里机器的一个端口转到本机，交给本机的程序使用。
-- 打开家里机器的远程桌面和终端。
-- 让本机的 Claude Code、Codex 和 Gemini CLI 用中枢上的 AI 网关。
-- 从面板唤醒家里的机器：中枢在它自己的局域网里发唤醒包，机器要事先开启网络唤醒。
+- 打开系统上的共享文件夹：电脑上挂载成文件夹或盘符，手机上出现在系统的“文件”应用里。
+- 打开系统上的网页应用，例如 Gitea、VS Code、code-server。
+- 把系统的一个端口转发到本机，供本机的程序使用。
+- 打开系统的远程桌面和终端。
+- 让本机的 Claude Code、Codex 和 Gemini CLI 使用中枢上的 AI 网关。
+- 从面板唤醒系统：中枢在它所在的局域网里发送唤醒信号，这台电脑要事先打开网络唤醒。
 
-客户端只连中枢一个端口，由中枢再连到每台机器上的服务。
+客户端只连接中枢的一个端口，中枢再连接每个系统上的应用。
 
-## 各部分装在哪里
+## 各部分安装在哪里
 
-| 部分   | 装在哪里                                 | 支持的系统                                                                                                                                  |
+| 部分   | 安装在哪里                               | 支持的系统                                                                                                                                  |
 | ------ | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| 中枢   | 家里一台常开的机器                       | Debian 系、Fedora 和 RHEL 系 Linux（amd64、arm64）、Arch Linux（amd64）；Windows（x64）和 macOS（Apple 芯片、Intel 芯片）上以服务器形态运行 |
-| 被控端 | 每台要用的家里机器，在那台机器上提供服务 | Debian 系、Fedora 和 RHEL 系 Linux（amd64、arm64）、Windows（x64）、macOS（Apple 芯片、Intel 芯片）                                         |
-| 客户端 | 你随身的电脑或手机                       | Debian 系、Fedora 和 RHEL 系 Linux（amd64、arm64）、Windows（x64）、macOS（Apple 芯片、Intel 芯片）、Android                                |
+| 中枢   | 一台能一直开机的电脑                     | Debian 系、Fedora 和 RHEL 系 Linux（amd64、arm64）、Arch Linux（amd64）；Windows（x64）和 macOS（Apple 芯片、Intel 芯片）上以服务器模式运行 |
+| 被控端 | 每个要运行应用的系统                     | Debian 系、Fedora 和 RHEL 系 Linux（amd64、arm64）、Windows（x64）、macOS（Apple 芯片、Intel 芯片）                                         |
+| 客户端 | 你的电脑或手机                           | Debian 系、Fedora 和 RHEL 系 Linux（amd64、arm64）、Windows（x64）、macOS（Apple 芯片、Intel 芯片）、Android                                |
 
-服务器形态的中枢只为别的机器提供服务，不改动所在网络的设置。中枢所在的机器上，设置向导会顺带装好被控端，所以这台机器自己的文件和服务也能用。
+服务器模式的中枢不修改所在网络的设置。设置向导会在中枢所在的电脑上一起安装被控端，所以这台电脑上的文件和应用也能使用。
 
 ## 安装
 
@@ -55,31 +55,31 @@ irm https://cnb.cool/iffi-X/neutrino/-/git/raw/main/packaging/install/install.ps
 | macOS（Intel 芯片）     | `neutrino-hub-<version>-macos-amd64-cn.pkg`      | `neutrino-agent-<version>-macos-amd64-cn.pkg`   | `neutrino-client-<version>-macos-amd64-cn.pkg`   |
 | Android                 |                                                  |                                                 | `neutrino-client-<version>-android-cn.apk`       |
 
-## 装好之后
+## 安装之后
 
 1. 用浏览器打开安装脚本最后打印的设置向导地址（Linux 上也可以运行 `sudo nhub setup`），按向导设好中枢，然后登录面板。
-1. 在要管理的机器上装好被控端。在面板的 **设备** 页选 **用链接添加**，在那台机器上用这条链接运行 `nagent join '<enroll-link>'`：Linux 和 macOS 上加 `sudo`，Windows 上以管理员身份运行。
-1. 在电脑或手机上装好客户端。在面板的 **客户端** 页选 **新建客户端链接**；电脑把链接粘进客户端窗口，手机在应用的 **加入中枢** 里扫页面上的二维码。
+1. 在要管理的电脑上安装被控端。在面板的 **被控端** 页选 **用链接添加**，在那台电脑上用这条链接运行 `nagent join '<enroll-link>'`：Linux 和 macOS 上加 `sudo`，Windows 上以管理员身份运行。
+1. 在电脑或手机上安装客户端。在面板的 **客户端** 页选 **新建客户端链接**；电脑把链接粘进客户端窗口，手机在应用的 **加入中枢** 里扫页面上的二维码。
 
-详细的步骤见[快速上手](docs/guide/zh-CN/quick-start.md)。
+详细的步骤见[快速上手](docs/quick-start.md)。
 
-## 从外面连回来
+## 外部访问
 
-在面板的 **外部访问** 页上选一种办法：
+在面板的 **外部访问** 页选择一种方式：
 
-- EasyTier：家里的中枢和外面的设备加入同一个 EasyTier 网络。客户端自带 EasyTier，在中枢那一行上选 **连接** 就能加入，见[外部访问](docs/guide/zh-CN/hub/overlay.md)。
-- 中继：用你自己的一台有公网地址的服务器，中枢经 SSH 把一个端口映射上去，见[中继](docs/guide/zh-CN/hub/relay.md)。
+- EasyTier：中枢和设备加入同一个 EasyTier 网络。客户端自带 EasyTier，你在中枢这一行按 **连接** 后就会加入，见 [EasyTier](docs/access/easytier.md)。
+- SSH 中继：使用你自己的一台有公网地址的服务器，中枢通过 SSH 把一个端口转发到这台服务器，见 [SSH 中继](docs/access/vps.md)。
 
 在外面管理中枢时，先在面板的 **客户端** 页给你自己的客户端打开 **免密码进入中枢面板** 权限（默认关闭），再用客户端上的 **面板** 按钮打开面板。
 
 ## 文档
 
-- 中文文档在 [docs/guide/zh-CN](docs/guide/zh-CN/overview.md)，从[概览](docs/guide/zh-CN/overview.md)读起。
-- 客户端的用法：[桌面客户端](docs/guide/zh-CN/client/desktop.md)、[Android 应用](docs/guide/zh-CN/client/android.md)。
+- 中文文档在 [docs](docs/overview.md)，从[概览](docs/overview.md)读起。
+- 客户端的用法：[桌面客户端](docs/access/desktop.md)、[Android 应用](docs/access/android.md)。
 
-## 完整版和开发
+## 国际版和开发
 
-这里发布的是国内版，包含完整版功能的一部分。完整版和全部开发都在 GitHub：<https://github.com/iffiX/neutrino>。
+这里发布的是国内版，国内版不具备代理和旁路网关。国际版和全部开发都在 GitHub：<https://github.com/iffiX/neutrino>。
 
 ## 许可证
 
