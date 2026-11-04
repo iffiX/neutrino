@@ -886,7 +886,7 @@ def test_codex_pins_openais_npm_build_per_platform_from_the_npm_set():
     """One tarball per platform, the {version}-<platform> build of
     @openai/codex under npm's integrity, fetched from the npm set alone and
     unpacked into codex/package; the versions from the npm feed of the
-    package, and the person's own copy used from the tested version up."""
+    package."""
     manifest = load_module_manifests()["codex"]
 
     assert manifest["title"] == "Codex"
@@ -896,7 +896,6 @@ def test_codex_pins_openais_npm_build_per_platform_from_the_npm_set():
         assert "min_version" not in entry and "requires" not in entry
         params = entry_params(entry)
         assert params["version"] == CODEX_VERSION
-        assert params["user_copy_min_version"] == CODEX_VERSION
         assert params["releases"] == [
             {
                 "kind": "npm",
@@ -942,7 +941,6 @@ def test_claude_code_pins_anthropics_npm_package_per_platform_from_the_npm_set()
         assert entry.get("min_version") == floor, key
         params = entry_params(entry)
         assert params["version"] == CLAUDE_CODE_VERSION
-        assert params["user_copy_min_version"] == CLAUDE_CODE_VERSION
         assert params["releases"] == [
             {
                 "kind": "npm",
@@ -986,12 +984,11 @@ def test_a_command_line_program_names_the_npm_set_as_its_one_source(name):
             assert artifact["source_set"] == "npm" and "sources" not in artifact
 
 
-def test_a_command_line_program_recipe_keeps_its_floor_and_drops_the_set():
+def test_a_command_line_program_recipe_drops_the_set():
     manifest = load_module_manifests()["claude_code"]
 
     recipe = module_recipe(manifest["platforms"]["linux-amd64"])
 
-    assert recipe["params"]["user_copy_min_version"] == CLAUDE_CODE_VERSION
     assert recipe["params"]["artifacts"] == [
         {
             "name": "claude_code",
@@ -2088,14 +2085,14 @@ def test_every_shipped_npm_artifact_names_the_npm_set():
                     assert "sources" not in artifact
 
 
-# --- a tarball from the npm set, and a command line program's floor ---
+# --- a tarball from the npm set ---
 
 PROGRAM_INTEGRITY = "sha512-" + "c" * 86 + "=="
 
 
 def program_manifest() -> dict:
     """A command line program's manifest: one hub entry whose tarball names
-    the npm set, and the floor of a person's own copy."""
+    the npm set."""
     manifest = valid_manifest()
     manifest["name"] = "codex"
     del manifest["platforms"]["linux-debian"]
@@ -2110,7 +2107,6 @@ def program_manifest() -> dict:
             "source_set": "npm",
         }
     ]
-    params["user_copy_min_version"] = "0.100.0"
     return manifest
 
 
@@ -2146,14 +2142,6 @@ def _tarball_with_no_source(manifest):
     del hub_params(manifest)["artifacts"][0]["source_set"]
 
 
-def _program_without_its_floor(manifest):
-    del hub_params(manifest)["user_copy_min_version"]
-
-
-def _program_floor_of_another_form(manifest):
-    hub_params(manifest)["user_copy_min_version"] = "v0.100"
-
-
 @pytest.mark.parametrize(
     "spoil, said",
     [
@@ -2162,8 +2150,6 @@ def _program_floor_of_another_form(manifest):
         (_set_tarball_under_a_sha256, "digest"),
         (_set_zip, "tar_gz"),
         (_tarball_with_no_source, "sources"),
-        (_program_without_its_floor, "user_copy_min_version"),
-        (_program_floor_of_another_form, "user_copy_min_version"),
     ],
 )
 def test_the_loader_refuses_a_program_entry_outside_its_shape(
@@ -2177,18 +2163,6 @@ def test_the_loader_refuses_a_program_entry_outside_its_shape(
         load_module_manifests()
 
     assert "codex.json" in str(refusal.value) and said in str(refusal.value)
-
-
-def test_the_loader_refuses_a_floor_on_any_other_entry(manifests_dir):
-    manifest = valid_manifest()
-    hub_params(manifest)["user_copy_min_version"] = "1.0"
-    write_manifest(manifests_dir, "sample", manifest)
-
-    with pytest.raises(ValueError) as refusal:
-        load_module_manifests()
-
-    assert "sample.json" in str(refusal.value)
-    assert "user_copy_min_version" in str(refusal.value)
 
 
 # The guest login each shipped module with a page names; Ayakaleaf's

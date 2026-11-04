@@ -539,7 +539,6 @@ CODEX_ENTRY = {
         "method": "hub",
         "params": {
             "version": "0.166.0",
-            "user_copy_min_version": "0.100.0",
             "releases": [CODEX_FEED],
             "artifacts": [
                 {
@@ -637,7 +636,6 @@ def test_an_npm_tarball_takes_the_integrity_of_the_version_whose_tarball_is_its_
     ]
     assert recipe["params"]["version"] == "0.165.0"
     assert recipe["params"]["artifacts"][0]["digest"] == "sha512-linux-0.165.0"
-    assert recipe["params"]["user_copy_min_version"] == "0.100.0"
 
 
 def test_a_platform_package_feed_gives_each_version_its_own_tarball(

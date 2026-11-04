@@ -25,10 +25,7 @@ import json
 import re
 
 from neutrino_hub import HUB_VERSION
-from neutrino_hub.modules.devices.module_table import (
-    DEVICE_MODULE_ROWS,
-    command_line_program_names,
-)
+from neutrino_hub.modules.devices.module_table import DEVICE_MODULE_ROWS
 from neutrino_hub.modules.devices.source_sets import load_source_sets
 from neutrino_hub.modules.devices.constants import (
     DEVICE_ACCOUNT_DATA_DIR_DEFAULT_OS,
@@ -100,12 +97,9 @@ PARAMS_REQUIRED = {
 }
 PARAMS_OPTIONAL = {
     DEVICE_METHOD_SYSTEM: {"pre_install"},
-    DEVICE_METHOD_HUB: {"packages", "user_copy_min_version"},
+    DEVICE_METHOD_HUB: {"packages"},
     DEVICE_METHOD_CONTAINER: {"releases", "source_sets"},
 }
-# The lowest version of a person's own copy a command line program uses,
-# which its hub entries name and no other entry does.
-PROGRAM_FLOOR_KEY = "user_copy_min_version"
 UNINSTALL_KEYS = {
     DEVICE_METHOD_SYSTEM: {"packages", "post_uninstall"},
     DEVICE_METHOD_HUB: {"post_uninstall", "is_data_kept"},
@@ -663,39 +657,8 @@ def _check_module(file_name: str, manifest: dict) -> None:
                 file_name, f"{where} method", f"is no install method, not {method!r}"
             )
         _check_params(file_name, where, method, install["params"])
-        _check_program_floor(file_name, where, manifest["name"], method, install)
         if "requires" in entry:
             _check_requires(file_name, where, manifest["name"], entry["requires"])
-
-
-def _check_program_floor(
-    file_name: str, where: str, module: str, method: str, install: dict
-) -> None:
-    """Refuse a command line program's ``hub`` entry without the floor of a
-    person's own copy, and the floor on any other entry.
-
-    Raises:
-        ValueError: Naming the place and what is wrong.
-    """
-    params = install.get("params") if isinstance(install, dict) else None
-    params = params if isinstance(params, dict) else {}
-    is_program = module in command_line_program_names() and method == DEVICE_METHOD_HUB
-    if not is_program:
-        if PROGRAM_FLOOR_KEY in params:
-            _refuse(
-                file_name,
-                f"{where} {PROGRAM_FLOOR_KEY}",
-                "is named by a command line program's hub entry alone",
-            )
-        return
-    if PROGRAM_FLOOR_KEY not in params:
-        _refuse(file_name, f"{where} params", f"must name {PROGRAM_FLOOR_KEY}")
-    _check_text(
-        file_name,
-        f"{where} {PROGRAM_FLOOR_KEY}",
-        params[PROGRAM_FLOOR_KEY],
-        pattern=MANIFEST_VERSION_PATTERN,
-    )
 
 
 def _check_requires(file_name: str, where: str, module: str, requires) -> None:

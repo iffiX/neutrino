@@ -1,5 +1,5 @@
 {
-  "_comment": "Codex, OpenAI's coding agent for the terminal, as a command line program per account. One artifact per platform, the tarball of @openai/codex@{version}-<platform>, OpenAI's npm build of the program for that platform; its source set is npm and its digest the integrity registry.npmjs.org names for that build. The agent unpacks it without package/ into codex/package, so the program is package/vendor/<target>/bin/codex, beside codex-path/rg and codex-resources/. The versions are the dotted ones of @openai/codex, which leaves the alpha versions and the platform builds out, and each platform's digest is the build whose dist.tarball path is the artifact's file. user_copy_min_version is the lowest version of a person's own copy the module uses, the tested version.",
+  "_comment": "Codex, OpenAI's coding agent for the terminal, as a command line program per account. One artifact per platform, the tarball of @openai/codex@{version}-<platform>, OpenAI's npm build of the program for that platform; its source set is npm and its digest the integrity registry.npmjs.org names for that build. The agent unpacks it without package/ into codex/package, so the program is package/vendor/<target>/bin/codex, beside codex-path/rg and codex-resources/. The versions are the dotted ones of @openai/codex, which leaves the alpha versions and the platform builds out, and each platform's digest is the build whose dist.tarball path is the artifact's file.",
   "name": "codex",
   "title": "Codex",
   "description": "OpenAI's coding agent on the command line, for each account",
@@ -18,7 +18,6 @@
         "method": "hub",
         "params": {
           "version": "0.166.0",
-          "user_copy_min_version": "0.166.0",
           "releases": [{"kind": "npm", "sources": ["https://registry.npmjs.org"], "package": "@openai/codex"}],
           "artifacts": [
             {
@@ -41,7 +40,6 @@
         "method": "hub",
         "params": {
           "version": "0.166.0",
-          "user_copy_min_version": "0.166.0",
           "releases": [{"kind": "npm", "sources": ["https://registry.npmjs.org"], "package": "@openai/codex"}],
           "artifacts": [
             {
@@ -64,7 +62,6 @@
         "method": "hub",
         "params": {
           "version": "0.166.0",
-          "user_copy_min_version": "0.166.0",
           "releases": [{"kind": "npm", "sources": ["https://registry.npmjs.org"], "package": "@openai/codex"}],
           "artifacts": [
             {
@@ -87,7 +84,6 @@
         "method": "hub",
         "params": {
           "version": "0.166.0",
-          "user_copy_min_version": "0.166.0",
           "releases": [{"kind": "npm", "sources": ["https://registry.npmjs.org"], "package": "@openai/codex"}],
           "artifacts": [
             {
@@ -110,7 +106,6 @@
         "method": "hub",
         "params": {
           "version": "0.166.0",
-          "user_copy_min_version": "0.166.0",
           "releases": [{"kind": "npm", "sources": ["https://registry.npmjs.org"], "package": "@openai/codex"}],
           "artifacts": [
             {
@@ -133,7 +128,6 @@
         "method": "hub",
         "params": {
           "version": "0.166.0",
-          "user_copy_min_version": "0.166.0",
           "releases": [{"kind": "npm", "sources": ["https://registry.npmjs.org"], "package": "@openai/codex"}],
           "artifacts": [
             {
