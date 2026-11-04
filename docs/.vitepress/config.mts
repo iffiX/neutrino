@@ -63,9 +63,6 @@ export default defineConfig({
       md.use(shotsPlugin);
     },
   },
-  vite: {
-    server: { fs: { allow: ["..", "../.."] } },
-  },
   transformPageData(pageData) {
     pageData.title = forSearch(pageData.title);
     pageData.description = forSearch(pageData.description);

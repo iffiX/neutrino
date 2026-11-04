@@ -1,5 +1,6 @@
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import sizeOf from "image-size";
+import { imageSize } from "image-size";
 import type MarkdownIt from "markdown-it";
 
 type Token = ReturnType<MarkdownIt["parse"]>[number];
@@ -19,7 +20,7 @@ interface Shot {
 function readShot(md: MarkdownIt, token: Token): Shot {
   const src = token.attrGet("src") ?? "";
   const size = src.startsWith("/")
-    ? sizeOf(resolve(PUBLIC_DIR, `.${src}`))
+    ? imageSize(readFileSync(resolve(PUBLIC_DIR, `.${src}`)))
     : null;
   return {
     src,
