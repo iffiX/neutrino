@@ -433,6 +433,10 @@ version list can be read.
 A feed's `sources` are the publisher's API addresses, such as
 `https://api.github.com`.
 
+| Rule | Reason |
+| --- | --- |
+| An `npm` feed asks for the package's short document, with `Accept: application/vnd.npm.install-v1+json`, which still holds each version's `dist`. | On 2026-11-04 the whole document of `@openai/codex` was 18.5 MB and its short document 5.4 MB, each naming 5,702 versions. |
+
 Installing another version of a `hub` module replaces its files as one step:
 
 | Rule | Reason |
