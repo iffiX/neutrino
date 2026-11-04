@@ -21,6 +21,23 @@ from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.gitea.darwin_applier import GiteaDarwinApplier
 from neutrino_agent.modules.shared.subprocess_run import CommandResult
 
+from tests.conftest import chowned_path, fd_owners
+
+
+class AccountPlatform:
+    """A Mac whose account's commands are recorded, and run as the test's own user or not at all."""
+
+    os_name = "darwin"
+
+    def __init__(self):
+        self.is_run = True
+        self.as_accounts: list = []
+
+    def account_process(self, account, argv):
+        self.as_accounts.append((account, list(argv)))
+        return (list(argv) if self.is_run else ["/bin/true"]), {}
+
+
 ACCOUNT_RECORD = (
     "NFSHomeDirectory: /x/gitea_data\nPrimaryGroupID: 20\n"
     "UniqueID: 502\nUserShell: /usr/bin/false\n"
@@ -87,11 +104,14 @@ def applier(tools, tmp_path):
             entry, command, environment, cwd
         ),
         lookup_account=lambda account: (502, 20),
-        chown=lambda path, uid, gid: tools.calls.append(["chown", path, uid, gid]),
+        chown=lambda path, uid, gid: tools.calls.append(
+            ["chown", chowned_path(path), uid, gid]
+        ),
         is_executable=lambda path: path in tools.gits,
         launchd_dir=str(tmp_path / "LaunchDaemons"),
         output_path=str(tmp_path / "Logs" / "gitea.log"),
         sleep=lambda seconds: None,
+        platform=AccountPlatform(),
     )
     (tmp_path / "LaunchDaemons").mkdir()
     tools.gits = {"/opt/homebrew/bin/git"}
@@ -171,20 +191,21 @@ def test_the_account_step_makes_the_hidden_account_and_its_data(
 
 
 def test_the_account_step_gives_data_another_uid_owns_to_the_account(
-    applier, tools, tmp_path
+    applier, tools, tmp_path, monkeypatch
 ):
     tools.has_account = True
     data = tmp_path / "state" / "gitea_data"
     (data / "data").mkdir(parents=True)
     (data / "data" / "gitea.db").write_text("")
+    given = fd_owners(monkeypatch, {})
 
     assert applier.ensure_account() is True
 
-    assert ["chown", str(data / "data" / "gitea.db"), 502, 20] in tools.calls
+    assert (str(data / "data" / "gitea.db"), 502, 20) in given
 
 
 def test_the_handover_gives_gitea_s_own_parts_and_leaves_the_home_s_library(
-    applier, tools, tmp_path
+    applier, tools, tmp_path, monkeypatch
 ):
     tools.has_account = True
     data = tmp_path / "state" / "gitea_data"
@@ -193,10 +214,11 @@ def test_the_handover_gives_gitea_s_own_parts_and_leaves_the_home_s_library(
     (data / "custom" / "conf" / "app.ini").write_text("")
     (data / "log" / "gitea.log").write_text("")
     (data / "Library" / "Containers" / "x" / "meta.plist").write_text("")
+    owners = fd_owners(monkeypatch, {})
 
     assert applier.ensure_account() is True
 
-    given = [call[1] for call in tools.ran("chown")]
+    given = [path for path, _uid, _gid in owners]
     assert str(data / "custom" / "conf" / "app.ini") in given
     assert str(data / "log" / "gitea.log") in given
     assert not [path for path in given if "Library" in path]
@@ -234,7 +256,8 @@ def test_an_apply_writes_app_ini_and_the_job_and_starts_it(applier, tools, tmp_p
     conf = tmp_path / "state" / "gitea_data" / "custom" / "conf" / "app.ini"
     assert conf.read_text() == "[server]\nHTTP_PORT = 3000\n"
     assert conf.stat().st_mode & 0o777 == 0o600
-    assert ["chown", str(conf), 502, 20] in tools.calls
+    assert not [call for call in tools.ran("chown") if call[1] == str(conf)]
+    assert str(conf) in [argv[-2] for _name, argv in applier._platform.as_accounts]
     plist_path = tmp_path / "LaunchDaemons" / "com.neutrino.gitea.plist"
     job = plistlib.loads(plist_path.read_bytes())
     assert job["UserName"] == "neutrino_gitea"
@@ -363,3 +386,23 @@ def test_the_port_and_the_root_url_are_read_from_the_installed_app_ini(applier):
 
     assert applier.read_listen_port() == 3300
     assert applier.read_root_url() == "http://box:3300/"
+
+
+@pytest.mark.parametrize("planted", ["custom", "custom/conf", "custom/conf/app.ini"])
+def test_a_link_in_the_data_directory_is_never_followed_by_root(
+    applier, tools, tmp_path, planted
+):
+    tools.has_account = True
+    applier._platform.is_run = False
+    data = tmp_path / "state" / "gitea_data"
+    (data / planted).parent.mkdir(parents=True, exist_ok=True)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    os.chmod(elsewhere, 0o755)
+    (data / planted).symlink_to(elsewhere)
+
+    applier.apply("[server]\n", git_path="/opt/homebrew/bin/git", is_started=False)
+
+    assert os.listdir(elsewhere) == []
+    assert os.stat(elsewhere).st_mode & 0o777 == 0o755
+    assert not [call for call in tools.ran("chown") if str(elsewhere) in call[1]]

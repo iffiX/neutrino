@@ -47,6 +47,9 @@ class FakeInstaller:
     accounts: list = []
     uninstalls = 0
 
+    def __init__(self, *, platform=None):
+        self.platform = platform
+
     def install(self, binary_path):
         FakeInstaller.installed.append(binary_path)
 
@@ -60,6 +63,9 @@ class FakeInstaller:
 class FakeApplier:
     applied: list = []
     error = None
+
+    def __init__(self, *, platform=None):
+        self.platform = platform
 
     def apply(self, rendered, *, is_started=True):
         if FakeApplier.error is not None:

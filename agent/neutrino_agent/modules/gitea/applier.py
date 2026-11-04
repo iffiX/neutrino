@@ -4,7 +4,13 @@ Installing the binary the hub handed down with its user, directories and
 unit; installing a rendered ``app.ini``; administering accounts through
 the gitea CLI. Everything the CLI does runs as the git user through
 ``runuser``, because a root-owned file inside Gitea's tree is a file the
-server can no longer touch.
+server can no longer touch. Every folder and file the agent makes or
+writes in the work root and in ``/etc/gitea``, the git account's, is made
+as that account through the step-down; the work root and ``/etc/gitea``
+themselves sit in root's place and are made and given by open descriptor,
+and a handover of a tree another uid owns is made by open descriptor too,
+following no link. ``app.ini`` is read through no link and waiting on no
+pipe.
 
 Not pure: writes under ``/etc``, ``/usr/local/bin`` and ``/var/lib``, and
 drives the unit.
@@ -15,8 +21,7 @@ drives the unit.
 from __future__ import annotations
 
 import os
-import shutil
-import tempfile
+import stat
 from dataclasses import dataclass
 
 from neutrino_agent.modules.gitea.constants import (
@@ -30,6 +35,14 @@ from neutrino_agent.modules.gitea.constants import (
     GITEA_UNIT_SOURCE_NAME,
     GITEA_USER,
     GITEA_VERSION_PREFIX,
+)
+from neutrino_agent.modules.shared.account_files import AccountFiles
+from neutrino_agent.modules.shared.account_service import read_regular
+from neutrino_agent.modules.shared.handle_walk import (
+    WALK_FILE_FLAGS,
+    give_tree,
+    make_dirs,
+    open_dir,
 )
 from neutrino_agent.modules.shared.package import place_binary
 from neutrino_agent.modules.shared.subprocess_run import run, unit_state
@@ -64,8 +77,79 @@ class GiteaState:
         return len(self.admin_usernames) > 0
 
 
+def own_dir(path: str, uid: int, gid: int, mode: int = 0) -> None:
+    """Make one folder in root's place and give it to an account, by open descriptor.
+
+    Args:
+        path: The folder; each level above it is root's.
+        uid: The account's uid.
+        gid: Its group.
+        mode: The mode it is given; 0 keeps the one it has.
+
+    Raises:
+        OSError: When a level is a link or the folder cannot be made or
+            given.
+    """
+    make_dirs(path, mode or 0o755)
+    descriptor = open_dir(path)
+    try:
+        held = os.fstat(descriptor)
+        if (held.st_uid, held.st_gid) != (uid, gid):
+            os.fchown(descriptor, uid, gid)
+        if mode and stat.S_IMODE(held.st_mode) != mode:
+            os.fchmod(descriptor, mode)
+    finally:
+        os.close(descriptor)
+
+
+def give_group(path: str, gid: int) -> None:
+    """Give one file in a folder to a group, on its open descriptor, following no link.
+
+    A file that has a second name elsewhere, or is no regular file, is
+    left as it is.
+
+    Args:
+        path: The file.
+        gid: The group.
+
+    Raises:
+        OSError: When the folder above it is a link, or the file cannot be
+            given.
+    """
+    try:
+        folder = open_dir(os.path.dirname(path))
+    except FileNotFoundError:
+        return
+    try:
+        try:
+            descriptor = os.open(os.path.basename(path), WALK_FILE_FLAGS, dir_fd=folder)
+        except OSError:
+            return
+        try:
+            held = os.fstat(descriptor)
+            if stat.S_ISREG(held.st_mode) and held.st_nlink == 1:
+                os.fchown(descriptor, -1, gid)
+        finally:
+            os.close(descriptor)
+    finally:
+        os.close(folder)
+
+
+def git_files(platform) -> AccountFiles:
+    """The git account's places, reached as that account through the step-down."""
+    return AccountFiles(platform=platform, account=GITEA_USER)
+
+
 class GiteaInstaller:
     """Puts the binary, its user, its directories and its unit in place."""
+
+    def __init__(self, *, platform=None):
+        """
+        Args:
+            platform: The machine's platform, which steps down to the git
+                account.
+        """
+        self._platform = platform
 
     def install(self, binary_path: str) -> None:
         """Install the binary the hub handed down and its unit.
@@ -100,8 +184,7 @@ class GiteaInstaller:
         is_given = is_handover_owed(GITEA_DIR, account.pw_uid)
         if is_given:
             give_tree(GITEA_DIR, account.pw_uid, account.pw_gid)
-            if os.path.isfile(GITEA_CONF_PATH):
-                shutil.chown(GITEA_CONF_PATH, group=GITEA_USER)
+            give_group(GITEA_CONF_PATH, account.pw_gid)
         self.create_directories()
         return is_given
 
@@ -115,7 +198,10 @@ class GiteaInstaller:
         _unlink(os.path.join(GITEA_SYSTEMD_DIR, GITEA_UNIT))
         run(["systemctl", "daemon-reload"], is_checked=False)
         _unlink(GITEA_BINARY_PATH)
-        _unlink(GITEA_CONF_PATH)
+        try:
+            git_files(self._platform).remove(GITEA_CONF_PATH)
+        except OSError:
+            return
 
     def create_user(self) -> None:
         """Make the git account, if it is missing."""
@@ -137,19 +223,18 @@ class GiteaInstaller:
         )
 
     def create_directories(self) -> None:
-        """Make the work root and its parts, owned by the git account."""
-        for directory in (
-            GITEA_DIR,
-            os.path.join(GITEA_DIR, "custom"),
-            os.path.join(GITEA_DIR, "data"),
-            os.path.join(GITEA_DIR, "log"),
-            os.path.join(GITEA_DIR, ".ssh"),
-            GITEA_ETC_DIR,
-        ):
-            os.makedirs(directory, exist_ok=True)
-            shutil.chown(directory, user=GITEA_USER, group=GITEA_USER)
-        os.chmod(os.path.join(GITEA_DIR, ".ssh"), 0o700)
-        os.chmod(GITEA_ETC_DIR, 0o770)
+        """Make the work root and ``/etc/gitea`` the git account's, and its parts as that account.
+
+        Raises:
+            OSError: When a folder cannot be made or given.
+        """
+        account = pwd.getpwnam(GITEA_USER)
+        own_dir(GITEA_DIR, account.pw_uid, account.pw_gid)
+        files = git_files(self._platform)
+        for name in ("custom", "data", "log"):
+            files.make_dir(os.path.join(GITEA_DIR, name), umask=0o022)
+        make_ssh_dir(files)
+        own_dir(GITEA_ETC_DIR, account.pw_uid, account.pw_gid, 0o770)
 
     def install_unit(self) -> bool:
         """Install the packaged unit when it differs from what is live.
@@ -171,8 +256,29 @@ class GiteaInstaller:
         return True
 
 
+def make_ssh_dir(files: AccountFiles) -> None:
+    """Make the work root's ``.ssh`` as the git account, mode 0700.
+
+    Raises:
+        OSError: When it cannot be made or its mode set.
+    """
+    path = os.path.join(GITEA_DIR, ".ssh")
+    files.make_dir(path)
+    result = files.run(["chmod", "700", path])
+    if result.returncode != 0:
+        raise OSError(f"could not set the mode of {path}")
+
+
 class GiteaConfigApplier:
     """Installs a rendered ``app.ini`` and puts it into effect."""
+
+    def __init__(self, *, platform=None):
+        """
+        Args:
+            platform: The machine's platform, which steps down to the git
+                account.
+        """
+        self._platform = platform
 
     def apply(self, rendered: str, *, is_started: bool = True) -> str:
         """Install the rendered configuration and run the server on it.
@@ -208,33 +314,24 @@ class GiteaConfigApplier:
 
     @staticmethod
     def _installed_text() -> "str | None":
-        """The ``app.ini`` on disk; None for a missing file or a symlink."""
-        if os.path.islink(GITEA_CONF_PATH) or not os.path.isfile(GITEA_CONF_PATH):
+        """The ``app.ini`` on disk; None for a missing file, a link or no file."""
+        held = read_regular(GITEA_CONF_PATH)
+        if held is None:
             return None
-        try:
-            with open(GITEA_CONF_PATH, "r", encoding="utf-8") as stream:
-                return stream.read()
-        except OSError:
-            return None
+        return held.decode("utf-8", "replace")
 
-    @staticmethod
-    def _write(rendered: str) -> None:
-        os.makedirs(GITEA_ETC_DIR, exist_ok=True)
-        handle, temporary = tempfile.mkstemp(dir=GITEA_ETC_DIR, prefix=".app_")
-        try:
-            with os.fdopen(handle, "w", encoding="utf-8") as stream:
-                stream.write(rendered)
-            # Group-readable by the git user only: the file carries the
-            # session and internal-auth secrets.
-            os.chmod(temporary, 0o640)
-            shutil.chown(temporary, group=GITEA_USER)
-            if os.path.islink(GITEA_CONF_PATH):
-                os.unlink(GITEA_CONF_PATH)
-            os.replace(temporary, GITEA_CONF_PATH)
-        except BaseException:
-            if os.path.exists(temporary):
-                os.unlink(temporary)
-            raise
+    def _write(self, rendered: str) -> None:
+        """Write ``app.ini`` as the git account, mode 0640: it carries the session and internal-auth secrets.
+
+        Raises:
+            OSError: When ``/etc/gitea`` cannot be made or the file cannot
+                be written.
+        """
+        account = pwd.getpwnam(GITEA_USER)
+        own_dir(GITEA_ETC_DIR, account.pw_uid, account.pw_gid, 0o770)
+        git_files(self._platform).write(
+            GITEA_CONF_PATH, rendered.encode("utf-8"), 0o640
+        )
 
     def stop(self) -> None:
         """Take the server down and disable it until the next apply starts it."""
@@ -248,14 +345,11 @@ class GiteaConfigApplier:
         not exist.
         """
         try:
-            pwd.getpwnam(GITEA_USER)
+            account = pwd.getpwnam(GITEA_USER)
         except KeyError:
             return
-        os.makedirs(GITEA_DIR, exist_ok=True)
-        ssh_dir = os.path.join(GITEA_DIR, ".ssh")
-        os.makedirs(ssh_dir, mode=0o700, exist_ok=True)
-        for path in (GITEA_DIR, ssh_dir):
-            shutil.chown(path, user=GITEA_USER, group=GITEA_USER)
+        own_dir(GITEA_DIR, account.pw_uid, account.pw_gid)
+        make_ssh_dir(git_files(self._platform))
 
 
 class GiteaAdminManager:
@@ -381,34 +475,6 @@ def is_handover_owed(root: str, uid: int) -> bool:
     return False
 
 
-def give_tree(root: str, uid: int, gid: int, chown=None) -> None:
-    """Give a directory and everything under it to an account, each directory after what it holds.
-
-    A handover cut short leaves every directory it did not finish with its
-    old owner, so the next handover runs again. A symbolic link is left as
-    it is.
-
-    Args:
-        root: The directory; nothing happens when it is not there.
-        uid: The account's uid.
-        gid: The account's group.
-        chown: Changes one path's owner, as :func:`os.chown` does; None
-            is :func:`os.chown`.
-
-    Raises:
-        OSError: When a path cannot be given.
-    """
-    if os.path.islink(root) or not os.path.isdir(root):
-        return
-    chown = chown if chown is not None else os.chown
-    for directory, directories, files in os.walk(root, topdown=False):
-        for name in [*files, *directories]:
-            path = os.path.join(directory, name)
-            if not os.path.islink(path):
-                chown(path, uid, gid)
-    chown(root, uid, gid)
-
-
 def read_listen_port(path: str = "") -> int:
     """The port the installed ``app.ini`` has the server answer on.
 
@@ -418,12 +484,20 @@ def read_listen_port(path: str = "") -> int:
     Returns:
         ``HTTP_PORT`` from the file, or 0 when no readable one names it.
     """
-    try:
-        with open(path or GITEA_CONF_PATH, "r", encoding="utf-8") as stream:
-            lines = stream.read().splitlines()
-    except OSError:
-        return 0
-    for line in lines:
+    held = read_regular(path or GITEA_CONF_PATH)
+    return listen_port_in((held or b"").decode("utf-8", "replace"))
+
+
+def listen_port_in(text: str) -> int:
+    """The port an ``app.ini``'s text has the server answer on. Pure.
+
+    Args:
+        text: The file's text.
+
+    Returns:
+        ``HTTP_PORT``, or 0 when the text names none.
+    """
+    for line in text.splitlines():
         key, _, value = line.partition("=")
         if key.strip() == "HTTP_PORT":
             try:
@@ -443,12 +517,20 @@ def read_root_url(path: str = "") -> str:
         ``ROOT_URL`` from the file, or an empty string when no readable one
         names it.
     """
-    try:
-        with open(path or GITEA_CONF_PATH, "r", encoding="utf-8") as stream:
-            lines = stream.read().splitlines()
-    except OSError:
-        return ""
-    for line in lines:
+    held = read_regular(path or GITEA_CONF_PATH)
+    return root_url_in((held or b"").decode("utf-8", "replace"))
+
+
+def root_url_in(text: str) -> str:
+    """The root URL an ``app.ini``'s text names. Pure.
+
+    Args:
+        text: The file's text.
+
+    Returns:
+        ``ROOT_URL``, or an empty string when the text names none.
+    """
+    for line in text.splitlines():
         key, _, value = line.partition("=")
         if key.strip() == "ROOT_URL":
             return value.strip()

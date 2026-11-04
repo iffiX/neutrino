@@ -2,7 +2,10 @@
 
 The binary goes into the module's own directory under the state root, the
 server's data and its ``app.ini`` into ``gitea_data`` beside it, the
-account's own, mode 0700. The account is ``neutrino_gitea``, made with
+account's own, mode 0700. ``gitea_data`` is given to the account on its
+open descriptor; every folder and file in it is made, read and written as
+the account, and a handover of a part another uid owns is made by open
+descriptor, following no link. The account is ``neutrino_gitea``, made with
 ``sysadminctl`` the way the file share makes its accounts and read back
 before it counts, since ``sysadminctl`` can refuse and still exit 0. The
 LaunchDaemon ``com.neutrino.gitea`` runs the server as that account. The
@@ -30,10 +33,9 @@ import time
 from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.gitea.applier import (
     GiteaState,
-    give_tree,
     is_handover_owed,
-    read_listen_port,
-    read_root_url,
+    listen_port_in,
+    root_url_in,
 )
 from neutrino_agent.modules.gitea.constants import (
     GITEA_BINARY_DIR_NAME,
@@ -57,6 +59,8 @@ from neutrino_agent.modules.gitea.constants import (
 )
 from neutrino_agent.modules.gitea.renderer import GiteaLayout
 from neutrino_agent.modules.samba.darwin_applier import tool_line
+from neutrino_agent.modules.shared.account_files import AccountFiles
+from neutrino_agent.modules.shared.handle_walk import give_tree, make_dirs, open_dir
 from neutrino_agent.modules.shared.package import place_binary
 from neutrino_agent.modules.shared.subprocess_run import CommandResult
 from neutrino_agent.modules.shared.subprocess_run import run as run_command
@@ -156,6 +160,7 @@ class GiteaDarwinApplier:
         launchd_dir: str = GITEA_DARWIN_LAUNCHD_DIR,
         output_path: str = GITEA_DARWIN_OUTPUT_PATH,
         sleep=time.sleep,
+        platform=None,
     ):
         """
         Args:
@@ -173,6 +178,8 @@ class GiteaDarwinApplier:
             launchd_dir: Where the LaunchDaemon's plist goes.
             output_path: Where launchd writes the server's output.
             sleep: Waits a number of seconds.
+            platform: The machine's platform, which steps down to the
+                account for every file in the data directory.
         """
         self.module_dir = os.path.join(state_dir, GITEA_BINARY_DIR_NAME)
         self.data_dir = os.path.join(state_dir, GITEA_DATA_DIR_NAME)
@@ -190,6 +197,7 @@ class GiteaDarwinApplier:
         self._plist_path = os.path.join(launchd_dir, GITEA_DARWIN_LABEL + PLIST_SUFFIX)
         self._output_path = output_path
         self._sleep = sleep
+        self._platform = platform
 
     def find_git(self) -> str:
         """The git the server runs, by the tools' own paths.
@@ -255,7 +263,7 @@ class GiteaDarwinApplier:
         is_given = is_handover_owed(self.data_dir, uid)
         if is_given:
             for part in GITEA_OWN_PARTS:
-                give_tree(os.path.join(self.data_dir, part), uid, gid, self._chown)
+                give_tree(os.path.join(self.data_dir, part), uid, gid)
         self._prepare_data(uid, gid)
         return is_given
 
@@ -265,9 +273,10 @@ class GiteaDarwinApplier:
         The data directory and the account stay.
         """
         self._unload()
-        for path in (self._plist_path, self.conf_path):
-            with contextlib.suppress(OSError):
-                os.unlink(path)
+        with contextlib.suppress(OSError):
+            os.unlink(self._plist_path)
+        with contextlib.suppress(OSError, ModuleApplyError):
+            self._files().remove(self.conf_path)
         shutil.rmtree(self.module_dir, ignore_errors=True)
 
     def apply(self, rendered: str, *, git_path: str, is_started: bool = True) -> str:
@@ -290,8 +299,11 @@ class GiteaDarwinApplier:
         """
         uid, gid = self._ensure_account()
         self._prepare_data(uid, gid)
-        is_conf_changed = write_if_changed(self.conf_path, rendered, 0o600)
-        self._chown(self.conf_path, uid, gid)
+        files = self._files()
+        data = rendered.encode("utf-8")
+        is_conf_changed = files.read(self.conf_path) != data
+        if is_conf_changed:
+            files.write(self.conf_path, data, 0o600)
         plist = render_plist(
             binary=self.binary_path,
             conf=self.conf_path,
@@ -397,12 +409,24 @@ class GiteaDarwinApplier:
         )
 
     def read_listen_port(self) -> int:
-        """The port the installed ``app.ini`` names, 0 for none."""
-        return read_listen_port(self.conf_path)
+        """The port the installed ``app.ini`` names, read as the account; 0 for none."""
+        return listen_port_in(self._conf_text())
 
     def read_root_url(self) -> str:
-        """The root URL the installed ``app.ini`` names, empty for none."""
-        return read_root_url(self.conf_path)
+        """The root URL the installed ``app.ini`` names, read as the account; empty for none."""
+        return root_url_in(self._conf_text())
+
+    def _conf_text(self) -> str:
+        """``app.ini`` read as the account; empty when it cannot be read."""
+        try:
+            held = self._files().read(self.conf_path)
+        except (OSError, ModuleApplyError):
+            return ""
+        return (held or b"").decode("utf-8", "replace")
+
+    def _files(self) -> AccountFiles:
+        """The account's data directory, reached as the account."""
+        return AccountFiles(platform=self._platform, account=GITEA_DARWIN_ACCOUNT)
 
     def journal_units(self) -> list:
         """No journal: launchd keeps none."""
@@ -474,16 +498,22 @@ class GiteaDarwinApplier:
         )
 
     def _prepare_data(self, uid: int, gid: int) -> None:
-        """Make the data directory and its parts the account's own."""
-        os.makedirs(self.data_dir, exist_ok=True)
-        os.chmod(self.data_dir, 0o700)
-        self._chown(self.data_dir, uid, gid)
+        """Make the data directory the account's own by open descriptor, and its parts as the account.
+
+        Raises:
+            OSError: When a level is a link, or a folder cannot be made or
+                given.
+        """
+        make_dirs(self.data_dir, 0o700)
+        descriptor = open_dir(self.data_dir)
+        try:
+            os.fchmod(descriptor, 0o700)
+            self._chown(descriptor, uid, gid)
+        finally:
+            os.close(descriptor)
+        files = self._files()
         for parts in GITEA_DATA_PARTS:
-            path = self.data_dir
-            for part in parts:
-                path = os.path.join(path, part)
-                os.makedirs(path, exist_ok=True)
-                self._chown(path, uid, gid)
+            files.make_dir(os.path.join(self.data_dir, *parts), umask=0o022)
 
     def _prepare_output(self, uid: int, gid: int) -> None:
         """Make the file launchd writes the output to the account's own."""

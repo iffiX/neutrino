@@ -91,6 +91,14 @@ class GiteaLinuxApplier:
     is_git_required = False
     account = GITEA_USER
 
+    def __init__(self, *, platform=None):
+        """
+        Args:
+            platform: The machine's platform, which steps down to the git
+                account.
+        """
+        self._platform = platform
+
     @property
     def binary_path(self) -> str:
         """Where the binary is installed."""
@@ -106,7 +114,7 @@ class GiteaLinuxApplier:
 
     def install(self, binary_path: str) -> None:
         """Install the binary and its unit."""
-        GiteaInstaller().install(binary_path)
+        GiteaInstaller(platform=self._platform).install(binary_path)
 
     def ensure_account(self) -> bool:
         """Make the ``git`` account when it is missing, and its directories.
@@ -114,19 +122,21 @@ class GiteaLinuxApplier:
         Returns:
             Whether the work root changed hands.
         """
-        return GiteaInstaller().ensure_account()
+        return GiteaInstaller(platform=self._platform).ensure_account()
 
     def uninstall(self) -> None:
         """Take the unit, the binary and ``app.ini`` off; keep the data."""
-        GiteaInstaller().uninstall()
+        GiteaInstaller(platform=self._platform).uninstall()
 
     def apply(self, rendered: str, *, git_path: str, is_started: bool = True) -> str:
         """Install ``app.ini`` and run the unit on it; with ``is_started`` false, write it alone."""
-        return GiteaConfigApplier().apply(rendered, is_started=is_started)
+        return GiteaConfigApplier(platform=self._platform).apply(
+            rendered, is_started=is_started
+        )
 
     def stop(self) -> None:
         """Stop the unit and disable it."""
-        GiteaConfigApplier().stop()
+        GiteaConfigApplier(platform=self._platform).stop()
 
     def is_active(self) -> bool:
         """Whether the unit is active."""
@@ -190,9 +200,9 @@ def gitea_applier_for(platform):
         PlatformUnsupportedError: On a system with none.
     """
     if platform.os_name == "linux":
-        return GiteaLinuxApplier()
+        return GiteaLinuxApplier(platform=platform)
     if platform.os_name == "darwin":
-        return GiteaDarwinApplier(state_dir=platform.agent_var_dir())
+        return GiteaDarwinApplier(state_dir=platform.agent_var_dir(), platform=platform)
     if platform.os_name == "windows":
         return GiteaWindowsApplier(state_dir=platform.agent_var_dir())
     raise PlatformUnsupportedError("no git server here")

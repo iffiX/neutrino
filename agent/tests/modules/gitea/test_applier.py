@@ -2,9 +2,12 @@
 
 The rule with teeth is work-root ownership: gitea runs as the git account
 and creates ``.ssh`` under its work root on start, so a root-owned root is
-a crashloop. The applier owns the root on every apply. A handover is owed
-while another uid owns one of Gitea's own parts, and gives each directory
-after what it holds.
+a crashloop. The applier owns the root on every apply, on its open
+descriptor, and makes every folder and file inside it and ``app.ini`` as
+the git account. A handover is owed while another uid owns one of Gitea's
+own parts, gives each directory after what it holds, by open descriptor,
+and follows no link. A link at a part, at ``.ssh``, at ``app.ini`` or at
+the work root is never followed by a write, a mode or an owner of root's.
 """
 
 import os
@@ -19,7 +22,24 @@ from neutrino_agent.modules.gitea.applier import (
     GiteaConfigApplier,
     GiteaInstaller,
 )
+from neutrino_agent.modules.shared.account_files import AccountFiles
 from neutrino_agent.modules.shared.subprocess_run import CommandResult
+
+from tests.conftest import chowned_path
+
+
+class GitPlatform:
+    """A Linux machine whose git account's commands are recorded, and run as the test's own user or not at all."""
+
+    os_name = "linux"
+
+    def __init__(self):
+        self.is_run = True
+        self.as_accounts: list = []
+
+    def account_process(self, account, argv):
+        self.as_accounts.append((account, list(argv)))
+        return (list(argv) if self.is_run else ["/bin/true"]), {}
 
 
 class FakeCommands:
@@ -37,6 +57,12 @@ class FakeCommands:
 def box(monkeypatch, tmp_path):
     commands = FakeCommands()
     chowns: list = []
+    platform = GitPlatform()
+    monkeypatch.setattr(
+        applier_module,
+        "git_files",
+        lambda given: AccountFiles(platform=platform, account="git"),
+    )
     monkeypatch.setattr(applier_module, "run", commands)
     monkeypatch.setattr(applier_module, "GITEA_DIR", str(tmp_path / "gitea"))
     monkeypatch.setattr(applier_module, "GITEA_ETC_DIR", str(tmp_path / "etc"))
@@ -50,12 +76,15 @@ def box(monkeypatch, tmp_path):
     (tmp_path / "bin").mkdir()
     (tmp_path / "systemd").mkdir()
     monkeypatch.setattr(
-        applier_module.shutil,
-        "chown",
-        lambda path, user=None, group=None: chowns.append((str(path), user, group)),
+        os,
+        "fchown",
+        lambda descriptor, uid, gid: chowns.append(
+            (chowned_path(descriptor), uid, gid)
+        ),
     )
     monkeypatch.setattr(applier_module, "unit_state", lambda unit: "inactive")
-    monkeypatch.setattr(applier_module.pwd, "getpwnam", account_of(os.getuid()))
+    monkeypatch.setattr(applier_module.pwd, "getpwnam", account_of(os.getuid() + 3))
+    commands.platform = platform
     return commands, chowns, tmp_path
 
 
@@ -77,9 +106,15 @@ def test_apply_writes_app_ini_group_readable_owns_the_root_and_starts(box):
     app_ini = tmp_path / "etc/app.ini"
     assert app_ini.read_text() == "[server]\n"
     assert stat.S_IMODE(os.stat(app_ini).st_mode) == 0o640
-    assert (tmp_path / "gitea/.ssh").is_dir()
-    assert (str(tmp_path / "gitea"), "git", "git") in chowns
-    assert (str(tmp_path / "gitea/.ssh"), "git", "git") in chowns
+    assert stat.S_IMODE(os.stat(tmp_path / "gitea/.ssh").st_mode) == 0o700
+    uid = os.getuid() + 3
+    assert (str(tmp_path / "gitea"), uid, uid + 1) in chowns
+    assert (str(tmp_path / "etc"), uid, uid + 1) in chowns
+    assert not [path for path, _uid, _gid in chowns if path.endswith((".ssh", "ini"))]
+    made_as_git = [argv[-2] for name, argv in commands.platform.as_accounts]
+    assert str(app_ini) in made_as_git
+    assert str(tmp_path / "gitea/.ssh") in made_as_git
+    assert {name for name, _argv in commands.platform.as_accounts} == {"git"}
     assert ["systemctl", "enable", "--now", "neutrino_gitea.service"] in commands.calls
 
 
@@ -154,9 +189,11 @@ def test_apply_without_the_git_account_leaves_the_work_root_alone(box, monkeypat
 
     monkeypatch.setattr(applier_module.pwd, "getpwnam", missing)
 
-    GiteaConfigApplier().apply("[server]\n")
+    with pytest.raises(KeyError):
+        GiteaConfigApplier().apply("[server]\n")
 
     assert not (tmp_path / "gitea").exists()
+    assert not (tmp_path / "etc").exists()
 
 
 def test_install_copies_the_binary_and_installs_the_unit_and_makes_no_user(box):
@@ -197,19 +234,15 @@ def test_the_account_step_gives_a_work_root_another_uid_owns_to_the_account(
     (data / "link").symlink_to(data / "gitea.db")
     (tmp_path / "etc").mkdir()
     (tmp_path / "etc/app.ini").write_text("[server]\n")
-    given: list = []
-    monkeypatch.setattr(
-        applier_module.os, "chown", lambda path, uid, gid: given.append((path, uid))
-    )
     monkeypatch.setattr(applier_module.pwd, "getpwnam", account_of(os.getuid() + 7))
 
     assert GiteaInstaller().ensure_account() is True
 
-    paths = {path for path, uid in given if uid == os.getuid() + 7}
+    paths = {path for path, uid, _gid in chowns if uid == os.getuid() + 7}
     assert str(data / "gitea.db") in paths
     assert str(data / "gitea-repositories" / "ann") in paths
     assert str(data / "link") not in paths
-    assert (str(tmp_path / "etc/app.ini"), None, "git") in chowns
+    assert (str(tmp_path / "etc/app.ini"), -1, os.getuid() + 8) in chowns
 
 
 def test_a_handover_cut_short_runs_again_by_gitea_s_own_parts(box, monkeypatch):
@@ -228,15 +261,12 @@ def test_a_handover_cut_short_runs_again_by_gitea_s_own_parts(box, monkeypatch):
         fields[4] = os.getuid() + 9
         return os.stat_result(fields)
 
-    given: list = []
     monkeypatch.setattr(applier_module.os, "lstat", lstat)
-    monkeypatch.setattr(
-        applier_module.os, "chown", lambda path, uid, gid: given.append(path)
-    )
 
     assert GiteaInstaller().ensure_account() is True
+    given = [path for path, uid, _gid in chowns if uid == os.getuid() + 3]
 
-    assert given[-1] == str(root)
+    assert given.index(str(root)) > given.index(str(root / "log"))
     assert given.index(str(root / "log" / "gitea.log")) < given.index(str(root / "log"))
     assert given.index(str(root / "custom" / "conf")) < given.index(
         str(root / "custom")
@@ -247,13 +277,11 @@ def test_the_account_step_leaves_a_work_root_the_account_owns(box, monkeypatch):
     _, chowns, tmp_path = box
     (tmp_path / "gitea" / "data").mkdir(parents=True)
     (tmp_path / "gitea" / "data" / "gitea.db").write_text("")
-    given: list = []
-    monkeypatch.setattr(
-        applier_module.os, "chown", lambda path, uid, gid: given.append(path)
-    )
+    monkeypatch.setattr(applier_module.pwd, "getpwnam", account_of(os.getuid()))
 
     assert GiteaInstaller().ensure_account() is False
-    assert given == []
+    data = str(tmp_path / "gitea" / "data")
+    assert not [path for path, _uid, _gid in chowns if path.startswith(data)]
 
 
 def test_the_unit_is_rewritten_only_when_it_differs(box):
@@ -369,3 +397,61 @@ def test_the_root_url_is_read_from_the_installed_file(tmp_path):
 
     assert applier_module.read_root_url(str(path)) == "http://box:3000/"
     assert applier_module.read_root_url(str(tmp_path / "missing.ini")) == ""
+
+
+# --- a link the git account puts in its own places ---
+
+
+@pytest.mark.parametrize("planted", ["custom", "data", "log", ".ssh"])
+def test_a_link_at_a_part_of_the_work_root_is_never_followed_by_root(box, planted):
+    commands, chowns, tmp_path = box
+    commands.platform.is_run = False
+    (tmp_path / "gitea").mkdir()
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    os.chmod(elsewhere, 0o755)
+    (tmp_path / "gitea" / planted).symlink_to(elsewhere)
+
+    GiteaInstaller().create_directories()
+
+    assert os.listdir(elsewhere) == []
+    assert stat.S_IMODE(os.stat(elsewhere).st_mode) == 0o755
+    assert str(elsewhere) not in [path for path, _uid, _gid in chowns]
+
+
+@pytest.mark.parametrize("planted", ["app.ini", "app.ini.new"])
+def test_a_link_at_app_ini_is_never_written_by_root(box, planted):
+    commands, chowns, tmp_path = box
+    commands.platform.is_run = False
+    (tmp_path / "etc").mkdir()
+    held = tmp_path / "held"
+    held.write_text("kept\n")
+    os.chmod(held, 0o600)
+    (tmp_path / "etc" / planted).symlink_to(held)
+
+    GiteaConfigApplier().apply("[server]\n", is_started=False)
+
+    assert held.read_text() == "kept\n"
+    assert stat.S_IMODE(os.stat(held).st_mode) == 0o600
+    assert str(held) not in [path for path, _uid, _gid in chowns]
+
+
+def test_a_handover_follows_no_link_and_leaves_a_file_with_a_second_name(
+    box, monkeypatch
+):
+    _, chowns, tmp_path = box
+    data = tmp_path / "gitea" / "data"
+    data.mkdir(parents=True)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secret").write_text("root's\n")
+    (data / "link").symlink_to(outside)
+    os.link(outside / "secret", data / "second_name")
+    monkeypatch.setattr(applier_module.pwd, "getpwnam", account_of(os.getuid() + 7))
+
+    assert GiteaInstaller().ensure_account() is True
+
+    given = [path for path, _uid, _gid in chowns]
+    assert str(outside) not in given
+    assert str(outside / "secret") not in given
+    assert str(data / "second_name") not in given
