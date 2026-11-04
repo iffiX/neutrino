@@ -263,6 +263,18 @@ is surviving a restart, beyond that record and the tried hash, is removed on
 sight ([../kill_on_sight.md](../kill_on_sight.md), "Unasked survival
 machinery").
 
+**A layout change cuts over at once.** A layout change cuts over at the
+agent's first apply, and no code reads the old layout. An agent of another
+build applies every module the state names ("A retry is the same press
+again"), and that apply moves the module to the new layout and removes what
+the old one left, as CloudCLI's `npm {account}` step removes an account's
+`app/` ([agent/modules/cloudcli.md](agent/modules/cloudcli.md), "`npm/` is
+the one prefix").
+
+| Rule | Reason |
+| --- | --- |
+| Code reads one layout, the version's own. What an earlier version left is only removed, never read, run or moved. | Code that keeps two layouts keeps them for as long as one machine holds the old one. |
+
 The file share's own rules, what it changes on each system and what a
 removal of the agent leaves, are
 [modules/file_share.md](agent/modules/file_share.md).
