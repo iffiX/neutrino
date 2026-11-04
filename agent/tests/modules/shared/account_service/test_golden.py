@@ -5,7 +5,10 @@ account service layer existed, and the hooks of each module through the
 layer render the same texts now, with two changes: CloudCLI's Node.js is
 its ``node`` artifact, so every path that named
 ``node-v<version>-<os>-<arch>`` names ``node``, and its npm runs with the
-registry the agent chose as ``--registry`` on its command line. Codeg's and
+registry the agent chose as ``--registry`` on its command line. CloudCLI's
+were rendered again for the one npm layout: its prefix is ``npm``, with
+``npm_cache`` and ``npmrc`` beside it, and its service names the Agent SDK's
+Claude Code as ``CLAUDE_CLI_PATH``. Codeg's and
 SiYuan's were rendered by their hooks through the layer when each module
 arrived. What these pin: the unit templates, the environment
 files, the LaunchDaemon plists, the Windows task arguments and scripts, and
@@ -17,6 +20,9 @@ import ntpath
 import os
 from pathlib import Path
 
+import pytest
+
+from neutrino_agent.modules.cloudcli import hooks as cloudcli_hooks_module
 from neutrino_agent.modules.cloudcli.config import CloudcliConfig, jwt_secret
 from neutrino_agent.modules.cloudcli.hooks import CloudcliHooks
 from neutrino_agent.modules.code_server.config import CodeServerConfig
@@ -131,6 +137,27 @@ def cloudcli_hooks(os_name, machine, **kwargs):
 class Platform(AgentPlatform):
     def __init__(self, os_name):
         self.os_name = os_name
+
+
+@pytest.fixture(autouse=True)
+def sdk_in_prefix(monkeypatch):
+    """The Agent SDK's Claude Code for the platform sits in every account's prefix."""
+
+    def program(prefix, os_name, arch):
+        join = ntpath.join if os_name == "windows" else os.path.join
+        platform = {"linux": "linux-x64", "darwin": "darwin-arm64"}.get(
+            os_name, "win32-x64"
+        )
+        name = "claude.exe" if os_name == "windows" else "claude"
+        return join(
+            prefix,
+            "node_modules",
+            "@anthropic-ai",
+            f"claude-agent-sdk-{platform}",
+            name,
+        )
+
+    monkeypatch.setattr(cloudcli_hooks_module, "sdk_program", program)
 
 
 def golden_text(name: str) -> str:

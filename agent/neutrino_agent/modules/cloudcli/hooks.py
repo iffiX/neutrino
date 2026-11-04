@@ -4,8 +4,9 @@ Node.js comes from the hub's package stream as the archive nodejs.org
 publishes, the module's ``node`` artifact, which the shared unpack puts
 under ``node`` in the module's own directory, never on a ``PATH``.
 Before an instance first runs, its account's ``npm {account}`` step
-installs the recipe's npm artifact into its own app directory with that
-Node.js: as a transient service on Linux, so a kill for want of memory ends
+installs the recipe's npm artifact into the account's own prefix ``npm``
+with that Node.js, npm's cache ``npm_cache`` beside it, then removes the
+``app`` prefix of an earlier version: as a transient service on Linux, so a kill for want of memory ends
 it and not the agent, its output in a log systemd opens, since SELinux on
 Rocky 9 rejects the agent's pipes that ``--pipe`` passes; as the account's
 own process on macOS; as a task of its own on Windows, left running and
@@ -39,7 +40,11 @@ import time
 import urllib.parse
 
 from neutrino_agent.constants import AGENT_FORWARD_UPSTREAM_TIMEOUT_S, AGENT_STEP_NPM
-from neutrino_agent.exceptions import ModuleApplyError, ModuleInstallPending
+from neutrino_agent.exceptions import (
+    ModuleApplyError,
+    ModuleInstallPending,
+    PlatformUnsupportedError,
+)
 from neutrino_agent.modules.cloudcli.config import (
     CloudcliConfig,
     CloudcliInstance,
@@ -50,8 +55,8 @@ from neutrino_agent.modules.cloudcli.constants import (
     CLOUDCLI_BASE_PORT,
     CLOUDCLI_ACCOUNT_PARTS,
     CLOUDCLI_ACCOUNT_PATH_PARTS,
-    CLOUDCLI_APP_DIR_NAME,
     CLOUDCLI_BLOCKED_PATHS,
+    CLOUDCLI_CLAUDE_VARIABLE,
     CLOUDCLI_KEEP_LOGIN_PATH,
     CLOUDCLI_COOKIE_PREFIX,
     CLOUDCLI_DATABASE_NAME,
@@ -80,10 +85,11 @@ from neutrino_agent.modules.cloudcli.constants import (
     CLOUDCLI_NODE_PARTS,
     CLOUDCLI_NODE_PREFIX,
     CLOUDCLI_NPM_CACHE_NAME,
+    CLOUDCLI_NPM_DIR_NAME,
     CLOUDCLI_NPM_LOCK_NAME,
     CLOUDCLI_NPM_PARTS,
     CLOUDCLI_NPM_USERCONFIG_NAME,
-    CLOUDCLI_NPM_WRITTEN_NAMES,
+    CLOUDCLI_OLD_APP_DIR_NAME,
     CLOUDCLI_OOM_RESULT,
     CLOUDCLI_SYSTEM_STOPPING,
     CLOUDCLI_UNIT_LOADED_TEXT,
@@ -92,6 +98,9 @@ from neutrino_agent.modules.cloudcli.constants import (
     CLOUDCLI_RECORD_FIELDS,
     CLOUDCLI_REGISTER_FAILED,
     CLOUDCLI_REGISTER_PATH,
+    CLOUDCLI_SDK_PACKAGE,
+    CLOUDCLI_SDK_PLATFORMS,
+    CLOUDCLI_SDK_PROGRAM,
     CLOUDCLI_SERVER_PARTS,
     CLOUDCLI_SERVER_VARIABLE,
     CLOUDCLI_STATUS_PATH,
@@ -135,6 +144,7 @@ from neutrino_agent.modules.shared import source_fetch
 from neutrino_agent.modules.shared.package import npm_artifact, params_of
 from neutrino_agent.modules.shared.unpacked_tree import remove_tree
 from neutrino_agent.modules.shared.windows_acl import grant_account_alone
+from neutrino_agent.platforms.detect import platform_tuple
 
 # The line prebuild-install writes when it could not fetch a binary, lower case.
 PREBUILD_FETCH_FAILED = "prebuild-install warn install "
@@ -166,19 +176,33 @@ NATIVE_CHECK_SCRIPT = (
     "process.exit(%d) } }"
     % (",".join("'%s'" % name for name in CLOUDCLI_NATIVE_MODULES), NATIVE_CHECK_EXIT)
 )
-# What an account's install runs under ``sh``: the app directory and the
-# empty npm configuration made as the account, what an earlier npm wrote
-# removed, then npm.
-INSTALL_SHELL = 'mkdir -p "$0" && rm -rf %s && : > "$0/.npmrc" && exec "$@"' % " ".join(
-    f'"$0/{name}"' for name in CLOUDCLI_NPM_WRITTEN_NAMES
+# What an account's install runs under ``sh`` in the account's CloudCLI
+# directory: the prefix's lockfile deleted, then the rest of the prefix, the
+# cache kept, the empty npm configuration made, then npm.
+INSTALL_SHELL = (
+    'mkdir -p "$0" && cd "$0" && rm -f "{prefix}/{lock}" && rm -rf "{prefix}" '
+    '&& mkdir -p "{prefix}" "{cache}" && : > "{userconfig}" && exec "$@"'
+).format(
+    prefix=CLOUDCLI_NPM_DIR_NAME,
+    lock=CLOUDCLI_NPM_LOCK_NAME,
+    cache=CLOUDCLI_NPM_CACHE_NAME,
+    userconfig=CLOUDCLI_NPM_USERCONFIG_NAME,
 )
 CHECK_SHELL = 'cd "$0" && exec "$@"'
-# What each attempt on Windows runs first in the app directory, under Node.js.
-# Node.js removes paths past 260 characters and tries again on a file in use.
+# What each attempt on Windows runs first in the account's CloudCLI
+# directory, under Node.js: the prefix's lockfile deleted, then the rest of
+# the prefix. Node.js removes paths past 260 characters and tries again on a
+# file in use.
 CLEAN_SCRIPT = (
-    "for (const name of [%s]) require('fs').rmSync(name, "
+    "const fs = require('fs'); fs.rmSync('%s/%s', {force: true}); "
+    "fs.rmSync('%s', {recursive: true, force: true, maxRetries: 5, retryDelay: 1000})"
+    % (CLOUDCLI_NPM_DIR_NAME, CLOUDCLI_NPM_LOCK_NAME, CLOUDCLI_NPM_DIR_NAME)
+)
+# What Node.js runs as the account on Windows to remove the prefix of an
+# earlier version, named by its one argument.
+REMOVE_SCRIPT = (
+    "require('fs').rmSync(process.argv[1], "
     "{recursive: true, force: true, maxRetries: 5, retryDelay: 1000})"
-    % ",".join("'%s'" % name for name in CLOUDCLI_NPM_WRITTEN_NAMES)
 )
 # What a Windows install script exits with when npm failed; a native
 # module's failure exits with the native check's own status. The variable
@@ -235,14 +259,19 @@ def account_dir(home: str, os_name: str, join=os.path.join) -> str:
         join: How the system joins a path.
 
     Returns:
-        The directory the app directory and the database live in.
+        The directory npm's prefix, its cache and the database live in.
     """
     return join(home, *CLOUDCLI_ACCOUNT_PARTS[os_name])
 
 
-def app_dir(home: str, os_name: str, join=os.path.join) -> str:
-    """One account's app directory, which npm installs CloudCLI into."""
-    return join(account_dir(home, os_name, join), CLOUDCLI_APP_DIR_NAME)
+def npm_dir(home: str, os_name: str, join=os.path.join) -> str:
+    """One account's npm prefix, which npm installs CloudCLI into."""
+    return join(account_dir(home, os_name, join), CLOUDCLI_NPM_DIR_NAME)
+
+
+def old_app_dir(home: str, os_name: str, join=os.path.join) -> str:
+    """The prefix an earlier version installed one account's CloudCLI into."""
+    return join(account_dir(home, os_name, join), CLOUDCLI_OLD_APP_DIR_NAME)
 
 
 def database_path(
@@ -252,21 +281,21 @@ def database_path(
     return join(account_dir(home, os_name, join), name)
 
 
-def server_path(app: str, join=os.path.join) -> str:
-    """The server script an app directory runs."""
-    return join(app, *CLOUDCLI_PACKAGE_PARTS, *CLOUDCLI_SERVER_PARTS)
+def server_path(prefix: str, join=os.path.join) -> str:
+    """The server script an npm prefix runs."""
+    return join(prefix, *CLOUDCLI_PACKAGE_PARTS, *CLOUDCLI_SERVER_PARTS)
 
 
-def installed_version(app: str) -> str:
-    """The CloudCLI version an app directory holds.
+def installed_version(prefix: str) -> str:
+    """The CloudCLI version an npm prefix holds.
 
     Args:
-        app: The app directory.
+        prefix: The npm prefix.
 
     Returns:
         The version its ``package.json`` names, empty when there is none.
     """
-    path = os.path.join(app, *CLOUDCLI_PACKAGE_PARTS, "package.json")
+    path = os.path.join(prefix, *CLOUDCLI_PACKAGE_PARTS, "package.json")
     try:
         with open(path, "r", encoding="utf-8") as stream:
             return str(json.load(stream).get("version", "") or "")
@@ -274,52 +303,110 @@ def installed_version(app: str) -> str:
         return ""
 
 
-def is_app_ready(app: str, version: str) -> bool:
-    """Whether an app directory holds CloudCLI at a version and its native modules.
+def resolved_package(start: str, package: str, top: str) -> str:
+    """Where Node.js finds a package from one directory: its ``node_modules``, then each one above, up to the prefix.
 
     Args:
-        app: The app directory.
-        version: The version the recipe names.
+        start: The directory the lookup starts in.
+        package: The package's name, its scope included.
+        top: The prefix; the lookup goes no higher.
 
     Returns:
-        True when npm's lockfile is there, the package names the version
-        and every native module has its ``package.json`` beside it or
-        inside it.
+        The package's directory; empty when none holds it.
     """
-    if not version or installed_version(app) != version:
+    directory = start
+    while True:
+        if os.path.basename(directory) != "node_modules":
+            found = os.path.join(directory, "node_modules", *package.split("/"))
+            if os.path.isdir(found):
+                return found
+        parent = os.path.dirname(directory)
+        if directory == top or parent == directory or not directory.startswith(top):
+            return ""
+        directory = parent
+
+
+def sdk_program(prefix: str, os_name: str, arch: str) -> str:
+    """The Claude Code the Agent SDK in an npm prefix holds for this platform.
+
+    The SDK is found from CloudCLI's own directory, and its package for the
+    platform from the SDK's, as Node.js resolves them, the glibc build first
+    on Linux.
+
+    Args:
+        prefix: The npm prefix.
+        os_name: The system.
+        arch: The architecture, ``amd64`` or ``arm64``.
+
+    Returns:
+        The program's absolute path; empty when the prefix holds none.
+    """
+    sdk = resolved_package(
+        os.path.join(prefix, *CLOUDCLI_PACKAGE_PARTS), CLOUDCLI_SDK_PACKAGE, prefix
+    )
+    if not sdk:
+        return ""
+    for platform in CLOUDCLI_SDK_PLATFORMS.get((os_name, arch), ()):
+        found = resolved_package(sdk, f"{CLOUDCLI_SDK_PACKAGE}-{platform}", prefix)
+        program = os.path.join(found, CLOUDCLI_SDK_PROGRAM[os_name]) if found else ""
+        if program and os.path.isfile(program):
+            return program
+    return ""
+
+
+def is_install_whole(prefix: str, version: str, os_name: str, arch: str) -> bool:
+    """Whether an npm prefix holds a whole install of CloudCLI at a version.
+
+    Args:
+        prefix: The npm prefix.
+        version: The version the recipe names.
+        os_name: The system.
+        arch: The architecture, ``amd64`` or ``arm64``.
+
+    Returns:
+        True when npm's lockfile is there, the package names the version,
+        every native module has its ``package.json`` beside it or inside it,
+        and the Agent SDK holds its Claude Code for the platform.
+    """
+    if not version or installed_version(prefix) != version:
         return False
-    if not os.path.isfile(os.path.join(app, CLOUDCLI_NPM_LOCK_NAME)):
+    if not os.path.isfile(os.path.join(prefix, CLOUDCLI_NPM_LOCK_NAME)):
         return False
-    package = os.path.join(app, *CLOUDCLI_PACKAGE_PARTS)
-    places = (os.path.join(app, "node_modules"), os.path.join(package, "node_modules"))
-    return all(
+    package = os.path.join(prefix, *CLOUDCLI_PACKAGE_PARTS)
+    places = (
+        os.path.join(prefix, "node_modules"),
+        os.path.join(package, "node_modules"),
+    )
+    if not all(
         any(
             os.path.isfile(os.path.join(place, name, "package.json"))
             for place in places
         )
         for name in CLOUDCLI_NATIVE_MODULES
-    )
+    ):
+        return False
+    return bool(sdk_program(prefix, os_name, arch))
 
 
 def npm_environment(
-    app: str, join=os.path.join, *, extra: "dict | None" = None
+    directory: str, join=os.path.join, *, extra: "dict | None" = None
 ) -> dict:
     """What npm runs with besides ``PATH`` and the account's own names.
 
     Args:
-        app: The app directory.
+        directory: The account's CloudCLI directory, which holds the prefix.
         join: How the system joins a path.
         extra: The ``npm_config_*`` settings the recipe's hosts name, each
             set to the host this install tries.
 
     Returns:
-        npm's cache inside the app directory, an empty file as the
+        npm's cache beside the prefix, an empty file beside them as the
         account's configuration, no audit, funding or update notes, and
         the settings.
     """
     environment = {
-        "npm_config_cache": join(app, CLOUDCLI_NPM_CACHE_NAME),
-        "npm_config_userconfig": join(app, CLOUDCLI_NPM_USERCONFIG_NAME),
+        "npm_config_cache": join(directory, CLOUDCLI_NPM_CACHE_NAME),
+        "npm_config_userconfig": join(directory, CLOUDCLI_NPM_USERCONFIG_NAME),
         "npm_config_audit": "false",
         "npm_config_fund": "false",
         "npm_config_update_notifier": "false",
@@ -329,23 +416,23 @@ def npm_environment(
     return environment
 
 
-def npm_arguments(app: str, *, package: str, version: str, registry: str) -> list:
-    """npm's own arguments for one app directory.
+def npm_arguments(prefix: str, *, package: str, version: str, registry: str) -> list:
+    """npm's own arguments for one npm prefix.
 
     Args:
-        app: The app directory.
+        prefix: The npm prefix.
         package: The npm package.
         version: The version the recipe names.
         registry: The registry this install runs against.
 
     Returns:
-        ``install <package>@<version> --prefix <app> --registry <registry>``.
+        ``install <package>@<version> --prefix <prefix> --registry <registry>``.
     """
     return [
         "install",
         f"{package}@{version}",
         "--prefix",
-        app,
+        prefix,
         "--registry",
         registry,
     ]
@@ -518,6 +605,7 @@ def service_environment(
     node_dir: str = "",
     join=os.path.join,
     database_name: str = CLOUDCLI_DATABASE_NAME,
+    claude_program: str = "",
 ) -> dict:
     """The environment one instance's CloudCLI runs with, written from scratch.
 
@@ -529,11 +617,14 @@ def service_environment(
         node_dir: The directory Node.js is in; it leads ``PATH``.
         join: How the system joins a path.
         database_name: The database file the instance runs on.
+        claude_program: The Claude Code the Agent SDK in the account's
+            prefix holds; empty names none.
 
     Returns:
-        ``HOST``, ``SERVER_PORT``, ``JWT_SECRET``, ``DATABASE_PATH``, and
-        ``PATH``; on Linux and macOS also ``HOME``. On Windows ``PATH`` is
-        set only with a Node directory. Nothing names the gateway.
+        ``HOST``, ``SERVER_PORT``, ``JWT_SECRET``, ``DATABASE_PATH``,
+        ``CLAUDE_CLI_PATH`` with a Claude Code program, and ``PATH``; on
+        Linux and macOS also ``HOME``. On Windows ``PATH`` is set only with
+        a Node directory. Nothing names the gateway.
     """
     environment = {
         "HOST": CLOUDCLI_UPSTREAM_HOST,
@@ -541,6 +632,8 @@ def service_environment(
         "JWT_SECRET": jwt_secret(instance.token_secret),
         "DATABASE_PATH": database_path(home, os_name, join, database_name),
     }
+    if claude_program:
+        environment[CLOUDCLI_CLAUDE_VARIABLE] = claude_program
     if os_name == "windows":
         if node_dir:
             environment["PATH"] = ";".join([node_dir, *CLOUDCLI_WINDOWS_SERVICE_PATH])
@@ -555,12 +648,12 @@ def service_environment(
 
 
 def render_install_script(
-    *, app: str, node: str, npm: str, package: str, version: str, attempts: list
+    *, directory: str, node: str, npm: str, package: str, version: str, attempts: list
 ) -> str:
     """The script an account's Windows install task runs.
 
     Args:
-        app: The account's app directory.
+        directory: The account's CloudCLI directory, which holds the prefix.
         node: The Node.js interpreter.
         npm: npm's script.
         package: The npm package.
@@ -569,20 +662,22 @@ def render_install_script(
             install takes.
 
     Returns:
-        The ``.cmd`` text, CRLF line ends: the app directory and the empty
-        npm configuration made, Node's directory leading ``PATH``, then per
-        attempt its settings, what an earlier npm wrote removed, npm and
-        the native check, ending 0 at the first that takes and with the
-        last one's failure otherwise: npm's, or the check's.
+        The ``.cmd`` text, CRLF line ends: the account's directory and the
+        empty npm configuration made, Node's directory leading ``PATH``,
+        then per attempt its settings, the prefix removed lockfile first,
+        npm and the native check in the prefix, ending 0 at the first that
+        takes and with the last one's failure otherwise: npm's, or the
+        check's.
     """
+    prefix = ntpath.join(directory, CLOUDCLI_NPM_DIR_NAME)
     environment = {
         "PATH": ";".join([ntpath.dirname(node), *CLOUDCLI_WINDOWS_NPM_PATH]),
-        **npm_environment(app, join=ntpath.join),
+        **npm_environment(directory, join=ntpath.join),
     }
     lines = [
         "@echo off",
-        f'if not exist "{app}" mkdir "{app}"',
-        f'cd /d "{app}" || exit /b {NPM_FAILED_EXIT}',
+        f'if not exist "{directory}" mkdir "{directory}"',
+        f'cd /d "{directory}" || exit /b {NPM_FAILED_EXIT}',
     ]
     lines.append(f'type nul > "{environment["npm_config_userconfig"]}"')
     lines += [f'set "{name}={value}"' for name, value in environment.items()]
@@ -592,6 +687,7 @@ def render_install_script(
         lines.append(f"echo {INSTALL_ATTEMPT_MARK} {index + 1}/{len(attempts)}")
         lines += [f'set "{name}={value}"' for name, value in settings.items()]
         lines.append(f'set "{INSTALL_RESULT_VARIABLE}={NPM_FAILED_EXIT}"')
+        lines.append(f'cd /d "{directory}" || goto {following}')
         lines.append(f'"{node}" -e "{CLEAN_SCRIPT}" || goto {following}')
         lines.append(
             subprocess.list2cmdline(
@@ -599,12 +695,13 @@ def render_install_script(
                     node,
                     npm,
                     *npm_arguments(
-                        app, package=package, version=version, registry=registry
+                        prefix, package=package, version=version, registry=registry
                     ),
                 ]
             )
             + f" || goto {following}"
         )
+        lines.append(f'cd /d "{prefix}" || goto {following}')
         lines.append(f'"{node}" -e "{NATIVE_CHECK_SCRIPT}" && exit /b 0')
         lines.append(f'set "{INSTALL_RESULT_VARIABLE}={NATIVE_CHECK_EXIT}"')
     lines.append(f":{INSTALL_ATTEMPT_LABEL}{len(attempts)}")
@@ -825,7 +922,10 @@ class CloudcliHooks(InstanceHooks):
     def prepare(
         self, parsed: CloudcliConfig, instance: CloudcliInstance, entry: AccountEntry
     ) -> list:
-        """Install CloudCLI into the account's app directory unless it is there.
+        """Install CloudCLI into the account's ``npm`` prefix unless a whole install is there, then remove its ``app`` prefix of an earlier version.
+
+        An ``app`` whose files are still open, as on Windows while the
+        instance runs from it, stays until a later apply.
 
         Args:
             parsed: The configuration.
@@ -862,22 +962,25 @@ class CloudcliHooks(InstanceHooks):
                 self.installing = frozenset(self.installing | {account})
                 return []
             self.installing = frozenset(self.installing - {account})
+            self._remove_old_app(instance, entry)
             return (
                 [f"installed CloudCLI for {account}"]
                 if step == INSTALL_FINISHED
                 else []
             )
-        app = app_dir(entry.home, self._os_name)
+        directory = account_dir(entry.home, self._os_name)
         if self._os_name == "linux":
             self._wait_for_install_left(account)
-        if is_app_ready(app, self._version):
+        if self._is_whole(npm_dir(entry.home, self._os_name)):
+            self._remove_old_app(instance, entry)
             return []
         attempts = self._attempts()
         self.installing = frozenset({account})
         try:
-            self._install_attempts(account, entry, app, attempts)
+            self._install_attempts(account, entry, directory, attempts)
         finally:
             self.installing = frozenset()
+        self._remove_old_app(instance, entry)
         return [f"installed CloudCLI for {account}"]
 
     def record(
@@ -921,6 +1024,7 @@ class CloudcliHooks(InstanceHooks):
         """
         node = self.node
         join = self._join
+        prefix = npm_dir(entry.home, self._os_name, join)
         environment = service_environment(
             instance,
             upstream_port=int(record.get("upstream_port") or 0),
@@ -929,8 +1033,11 @@ class CloudcliHooks(InstanceHooks):
             node_dir=self._dirname(node),
             join=join,
             database_name=str(record.get("database") or CLOUDCLI_DATABASE_NAME),
+            claude_program=(
+                sdk_program(prefix, self._os_name, self._arch()) if entry.home else ""
+            ),
         )
-        server = server_path(app_dir(entry.home, self._os_name, join), join)
+        server = server_path(prefix, join)
         if self._os_name == "linux":
             environment[CLOUDCLI_SERVER_VARIABLE] = server
             command = (node, f"${{{CLOUDCLI_SERVER_VARIABLE}}}")
@@ -1155,7 +1262,7 @@ class CloudcliHooks(InstanceHooks):
         ]
 
     def _install_attempts(
-        self, account: str, entry: AccountEntry, app: str, attempts: list
+        self, account: str, entry: AccountEntry, directory: str, attempts: list
     ) -> None:
         """Run the install with each attempt in turn until one takes.
 
@@ -1167,9 +1274,11 @@ class CloudcliHooks(InstanceHooks):
         for registry, settings in attempts:
             try:
                 if self._os_name == "linux":
-                    self._install_linux(account, entry.home, app, registry, settings)
+                    self._install_linux(
+                        account, entry.home, directory, registry, settings
+                    )
                 else:
-                    self._install_darwin(account, entry, app, registry, settings)
+                    self._install_darwin(account, entry, directory, registry, settings)
                 return
             except ModuleApplyError as error:
                 if error.code == "cloudcli_install_out_of_memory":
@@ -1183,7 +1292,7 @@ class CloudcliHooks(InstanceHooks):
             raise failure
 
     def _install_linux(
-        self, account: str, home: str, app: str, registry: str, settings: dict
+        self, account: str, home: str, directory: str, registry: str, settings: dict
     ) -> None:
         """Run npm as the account in a transient service, then check the native modules.
 
@@ -1200,8 +1309,9 @@ class CloudcliHooks(InstanceHooks):
             "LOGNAME": account,
             "PATH": ":".join([node_bin, *CLOUDCLI_INSTALL_PATH["linux"]]),
             "RES_OPTIONS": CLOUDCLI_INSTALL_RESOLVER_OPTIONS,
-            **npm_environment(app, extra=settings),
+            **npm_environment(directory, extra=settings),
         }
+        prefix_dir = os.path.join(directory, CLOUDCLI_NPM_DIR_NAME)
         prefix = ["runuser", "-u", account, "--", "env", "-i"] + [
             f"{name}={value}" for name, value in environment.items()
         ]
@@ -1229,8 +1339,8 @@ class CloudcliHooks(InstanceHooks):
                 "--",
             ]
             + prefix
-            + ["sh", "-c", INSTALL_SHELL, app, node, npm]
-            + self._npm_arguments(app, registry),
+            + ["sh", "-c", INSTALL_SHELL, directory, node, npm]
+            + self._npm_arguments(prefix_dir, registry),
             is_checked=False,
             timeout_s=CLOUDCLI_INSTALL_TIMEOUT_S,
         )
@@ -1248,7 +1358,8 @@ class CloudcliHooks(InstanceHooks):
                 )
             raise npm_failure(output, account)
         check = run(
-            prefix + ["sh", "-c", CHECK_SHELL, app, node, "-e", NATIVE_CHECK_SCRIPT],
+            prefix
+            + ["sh", "-c", CHECK_SHELL, prefix_dir, node, "-e", NATIVE_CHECK_SCRIPT],
             is_checked=False,
             timeout_s=CLOUDCLI_LOOKUP_TIMEOUT_S,
         )
@@ -1279,7 +1390,12 @@ class CloudcliHooks(InstanceHooks):
             self.installing = frozenset()
 
     def _install_darwin(
-        self, account: str, entry: AccountEntry, app: str, registry: str, settings: dict
+        self,
+        account: str,
+        entry: AccountEntry,
+        directory: str,
+        registry: str,
+        settings: dict,
     ) -> None:
         """Run npm as the account, then check the native modules."""
         node = self.node
@@ -1289,14 +1405,15 @@ class CloudcliHooks(InstanceHooks):
             "USER": account,
             "LOGNAME": account,
             "PATH": ":".join([node_bin, *CLOUDCLI_INSTALL_PATH["darwin"]]),
-            **npm_environment(app, extra=settings),
+            **npm_environment(directory, extra=settings),
         }
+        prefix_dir = os.path.join(directory, CLOUDCLI_NPM_DIR_NAME)
         npm = npm_path(os.path.dirname(node_bin), "darwin")
         self._log_install(account, registry)
         result = self._run_as(
             entry,
-            ["/bin/sh", "-c", INSTALL_SHELL, app, node, npm]
-            + self._npm_arguments(app, registry),
+            ["/bin/sh", "-c", INSTALL_SHELL, directory, node, npm]
+            + self._npm_arguments(prefix_dir, registry),
             environment=environment,
             timeout_s=CLOUDCLI_INSTALL_TIMEOUT_S,
         )
@@ -1306,7 +1423,7 @@ class CloudcliHooks(InstanceHooks):
             raise npm_failure(output, account)
         check = self._run_as(
             entry,
-            ["/bin/sh", "-c", CHECK_SHELL, app, node, "-e", NATIVE_CHECK_SCRIPT],
+            ["/bin/sh", "-c", CHECK_SHELL, prefix_dir, node, "-e", NATIVE_CHECK_SCRIPT],
             environment=environment,
             timeout_s=CLOUDCLI_LOOKUP_TIMEOUT_S,
         )
@@ -1337,7 +1454,8 @@ class CloudcliHooks(InstanceHooks):
             ModuleApplyError: The step an ended install failed at.
         """
         account = instance.account
-        app = app_dir(home, "windows", join=ntpath.join)
+        directory = account_dir(home, "windows", join=ntpath.join)
+        prefix = npm_dir(home, "windows", join=ntpath.join)
         name = CLOUDCLI_INSTALL_TASK_PREFIX + account
         script = self._install_script_path(account)
         log_file = self._install_log_path(account)
@@ -1345,10 +1463,10 @@ class CloudcliHooks(InstanceHooks):
         if task is not None:
             if str(task.get("state", "")) in INSTALL_RUNNING_STATES:
                 return INSTALL_RUNNING
-            if not self._judge_install(task, app, name, script, log_file, account):
+            if not self._judge_install(task, prefix, name, script, log_file, account):
                 return INSTALL_FINISHED
             self._log(f"{self.name}: the install for {account} was cut; it runs again")
-        if is_app_ready(app, self._version):
+        if self._is_whole(prefix):
             return INSTALL_READY
         attempts = self._attempts()
         node = self.node
@@ -1356,7 +1474,7 @@ class CloudcliHooks(InstanceHooks):
         write_text(
             script,
             render_install_script(
-                app=app,
+                directory=directory,
                 node=node,
                 npm=npm,
                 package=str(self._npm.get("package", "") or ""),
@@ -1390,7 +1508,13 @@ class CloudcliHooks(InstanceHooks):
         return INSTALL_RUNNING
 
     def _judge_install(
-        self, task: dict, app: str, name: str, script: str, log_file: str, account: str
+        self,
+        task: dict,
+        prefix: str,
+        name: str,
+        script: str,
+        log_file: str,
+        account: str,
     ) -> bool:
         """Unregister an ended install task and raise the step it failed at.
 
@@ -1414,7 +1538,7 @@ class CloudcliHooks(InstanceHooks):
         if result == NATIVE_CHECK_EXIT:
             lines = output.strip().splitlines()
             raise native_check_failure(lines[-1] if lines else "", account)
-        if result != 0 or not is_app_ready(app, self._version):
+        if result != 0 or not self._is_whole(prefix):
             raise npm_failure(output, account)
         return False
 
@@ -1441,6 +1565,57 @@ class CloudcliHooks(InstanceHooks):
         run = self.machine.run
         run(["systemctl", "stop", pattern], is_checked=False)
         run(["systemctl", "reset-failed", pattern], is_checked=False)
+
+    def _is_whole(self, prefix: str) -> bool:
+        """Whether an account's prefix holds a whole install at the recipe's version."""
+        return is_install_whole(prefix, self._version, self._os_name, self._arch())
+
+    def _arch(self) -> str:
+        """This machine's architecture, ``amd64`` or ``arm64``."""
+        return str(platform_tuple().get("arch", "") or "")
+
+    def _remove_old_app(self, instance: CloudcliInstance, entry: AccountEntry) -> None:
+        """Remove the account's ``app`` prefix of an earlier version as the account; one still open stays for a later apply."""
+        account = instance.account
+        old = old_app_dir(entry.home, self._os_name, self._join)
+        if not os.path.isdir(old):
+            return
+        try:
+            if self._os_name == "windows":
+                result = self._platform.run_as_account(
+                    account,
+                    [self.node, "-e", REMOVE_SCRIPT, old],
+                    timeout_s=CLOUDCLI_LOOKUP_TIMEOUT_S,
+                    password=instance.password,
+                )
+                is_removed = result.returncode == 0
+            elif self._os_name == "linux":
+                is_removed = self.machine.run(
+                    ["runuser", "-u", account, "--", "rm", "-rf", old],
+                    is_checked=False,
+                    timeout_s=CLOUDCLI_LOOKUP_TIMEOUT_S,
+                ).is_success
+            else:
+                is_removed = self._run_as(
+                    entry,
+                    ["/bin/rm", "-rf", old],
+                    environment={"HOME": entry.home, "PATH": "/usr/bin:/bin"},
+                    timeout_s=CLOUDCLI_LOOKUP_TIMEOUT_S,
+                ).is_success
+        except (
+            OSError,
+            subprocess.SubprocessError,
+            ModuleApplyError,
+            PlatformUnsupportedError,
+        ) as error:
+            self._log(f"{self.name}: the old app of {account} stays: {error}")
+            return
+        if is_removed and not os.path.isdir(old):
+            self._log(f"{self.name}: removed the old app of {account}")
+        else:
+            self._log(
+                f"{self.name}: the old app of {account} stays until a later apply"
+            )
 
     def _install_script_path(self, account: str) -> str:
         return ntpath.join(
@@ -1475,9 +1650,9 @@ class CloudcliHooks(InstanceHooks):
         run(["systemctl", "reset-failed", unit], is_checked=False)
         return shown.stdout.strip() == CLOUDCLI_OOM_RESULT
 
-    def _npm_arguments(self, app: str, registry: str) -> list:
+    def _npm_arguments(self, prefix: str, registry: str) -> list:
         return npm_arguments(
-            app,
+            prefix,
             package=str(self._npm.get("package", "") or ""),
             version=self._version,
             registry=registry,

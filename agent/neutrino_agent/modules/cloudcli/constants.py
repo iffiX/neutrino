@@ -29,29 +29,43 @@ CLOUDCLI_NPM_PARTS = {
     "windows": ("node_modules", "npm", "bin", "npm-cli.js"),
 }
 
-# Each account's own directory, under its home, by system: the app
-# directory npm installs into is ``app`` inside it, and CloudCLI keeps its
-# database beside it.
+# Each account's own directory, under its home, by system. npm installs
+# CloudCLI into its prefix ``npm`` there, with npm's cache ``npm_cache`` and
+# the empty file ``npmrc``, which npm reads as the account's configuration in
+# place of ``~/.npmrc``, beside it. CloudCLI keeps its database there too.
 CLOUDCLI_ACCOUNT_PARTS = {
     "linux": (".local", "share", "neutrino", "agent", "cloudcli"),
     "darwin": ("Library", "Application Support", "Neutrino", "agent", "cloudcli"),
     "windows": ("AppData", "Local", "Neutrino", "agent", "cloudcli"),
 }
-CLOUDCLI_APP_DIR_NAME = "app"
+CLOUDCLI_NPM_DIR_NAME = "npm"
+CLOUDCLI_NPM_CACHE_NAME = "npm_cache"
+CLOUDCLI_NPM_USERCONFIG_NAME = "npmrc"
+# The prefix an earlier version installed into, which an apply removes.
+CLOUDCLI_OLD_APP_DIR_NAME = "app"
 CLOUDCLI_DATABASE_NAME = "auth.db"
 # The database file an instance starts afresh on when its CloudCLI was set
 # up for another hub, the old one left beside it; the time is UTC.
 CLOUDCLI_FRESH_DATABASE_PATTERN = "auth-{stamp}.db"
 CLOUDCLI_FRESH_STAMP_FORMAT = "%Y%m%dT%H%M%SZ"
-# Inside the app directory: npm's cache, and the empty file npm reads as the
-# account's configuration instead of ``~/.npmrc``.
-CLOUDCLI_NPM_CACHE_NAME = ".npm"
-CLOUDCLI_NPM_USERCONFIG_NAME = ".npmrc"
-# What npm writes into an app directory besides its cache. The lockfile goes
-# first and npm writes it last, so a directory with a lockfile has a whole
-# install.
+# npm's lockfile in the prefix. npm writes it last, and each run deletes it
+# first, so a prefix with a lockfile holds a whole install.
 CLOUDCLI_NPM_LOCK_NAME = "package-lock.json"
-CLOUDCLI_NPM_WRITTEN_NAMES = (CLOUDCLI_NPM_LOCK_NAME, "package.json", "node_modules")
+# The Agent SDK CloudCLI depends on, its package for each system and
+# architecture, the glibc build before the musl one on Linux, and the Claude
+# Code program in it.
+CLOUDCLI_SDK_PACKAGE = "@anthropic-ai/claude-agent-sdk"
+CLOUDCLI_SDK_PLATFORMS = {
+    ("linux", "amd64"): ("linux-x64", "linux-x64-musl"),
+    ("linux", "arm64"): ("linux-arm64", "linux-arm64-musl"),
+    ("darwin", "amd64"): ("darwin-x64",),
+    ("darwin", "arm64"): ("darwin-arm64",),
+    ("windows", "amd64"): ("win32-x64",),
+    ("windows", "arm64"): ("win32-arm64",),
+}
+CLOUDCLI_SDK_PROGRAM = {"linux": "claude", "darwin": "claude", "windows": "claude.exe"}
+# The variable CloudCLI reads the Claude Code program its sessions run from.
+CLOUDCLI_CLAUDE_VARIABLE = "CLAUDE_CLI_PATH"
 # How long one account's install may take where the apply waits on it,
 # and how long the task that runs it on Windows, where nothing waits, may run.
 CLOUDCLI_INSTALL_TIMEOUT_S = 1800

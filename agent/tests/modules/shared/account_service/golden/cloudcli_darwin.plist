@@ -4,6 +4,8 @@
 <dict>
 	<key>EnvironmentVariables</key>
 	<dict>
+		<key>CLAUDE_CLI_PATH</key>
+		<string>/Users/ann/Library/Application Support/Neutrino/agent/cloudcli/npm/node_modules/@anthropic-ai/claude-agent-sdk-darwin-arm64/claude</string>
 		<key>DATABASE_PATH</key>
 		<string>/Users/ann/Library/Application Support/Neutrino/agent/cloudcli/auth.db</string>
 		<key>HOME</key>
@@ -24,7 +26,7 @@
 	<key>ProgramArguments</key>
 	<array>
 		<string>/Library/Application Support/Neutrino/agent/state/cloudcli/node/bin/node</string>
-		<string>/Users/ann/Library/Application Support/Neutrino/agent/cloudcli/app/node_modules/@cloudcli-ai/cloudcli/dist-server/server/index.js</string>
+		<string>/Users/ann/Library/Application Support/Neutrino/agent/cloudcli/npm/node_modules/@cloudcli-ai/cloudcli/dist-server/server/index.js</string>
 	</array>
 	<key>RunAtLoad</key>
 	<true/>

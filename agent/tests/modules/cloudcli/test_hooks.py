@@ -38,6 +38,8 @@ import io
 import json
 import ntpath
 import os
+import shutil
+import subprocess
 import socket
 import socketserver
 import stat
@@ -57,7 +59,7 @@ from neutrino_agent.modules.cloudcli.hooks import (
     CloudcliHooks,
     cookie_name,
     install_output,
-    is_app_ready,
+    is_install_whole,
     is_login_valid,
     node_dir,
     node_path,
@@ -65,6 +67,7 @@ from neutrino_agent.modules.cloudcli.hooks import (
     npm_environment,
     npm_failure,
     render_install_script,
+    sdk_program,
     service_environment,
 )
 from neutrino_agent.modules.shared.account_service import (
@@ -187,24 +190,49 @@ def tarball(path, top=NODE, extra=()):
     return str(path)
 
 
-def land_package(app: str, *, is_finished: bool = True) -> None:
-    """Write the app directory as npm leaves it; unfinished holds no lockfile."""
-    package = os.path.join(app, "node_modules", "@cloudcli-ai", "cloudcli")
+SDK = ("node_modules", "@anthropic-ai")
+
+
+def land_sdk(prefix: str, platform: str = "linux-x64", program: str = "claude") -> str:
+    """Write the Agent SDK and its package for one platform into a prefix; returns its program."""
+    sdk = os.path.join(prefix, *SDK, "claude-agent-sdk")
+    os.makedirs(sdk, exist_ok=True)
+    found = os.path.join(prefix, *SDK, f"claude-agent-sdk-{platform}")
+    os.makedirs(found, exist_ok=True)
+    path = os.path.join(found, program)
+    with open(path, "w", encoding="utf-8") as stream:
+        stream.write("")
+    return path
+
+
+def land_package(prefix: str, *, is_finished: bool = True, is_sdk: bool = True) -> None:
+    """Write the npm prefix as npm leaves it; unfinished holds no lockfile."""
+    package = os.path.join(prefix, "node_modules", "@cloudcli-ai", "cloudcli")
     os.makedirs(package, exist_ok=True)
     with open(os.path.join(package, "package.json"), "w", encoding="utf-8") as stream:
         stream.write('{"version": "1.37.3"}')
     for name in ("better-sqlite3", "node-pty", "bcrypt"):
-        native = os.path.join(app, "node_modules", name)
+        native = os.path.join(prefix, "node_modules", name)
         os.makedirs(native, exist_ok=True)
         with open(
             os.path.join(native, "package.json"), "w", encoding="utf-8"
         ) as stream:
             stream.write("{}")
+    if is_sdk:
+        land_sdk(prefix)
     if is_finished:
         with open(
-            os.path.join(app, "package-lock.json"), "w", encoding="utf-8"
+            os.path.join(prefix, "package-lock.json"), "w", encoding="utf-8"
         ) as stream:
             stream.write("{}")
+
+
+@pytest.fixture(autouse=True)
+def amd64(monkeypatch):
+    """The machine is amd64."""
+    monkeypatch.setattr(
+        hooks_module, "platform_tuple", lambda: {"os": "linux", "arch": "amd64"}
+    )
 
 
 def hooks_for(os_name, module_dir, *, held=None, **kwargs) -> CloudcliHooks:
@@ -317,28 +345,30 @@ def test_a_zip_lands_the_same(tmp_path):
 # --- npm ---
 
 
-def test_npm_keeps_to_the_app_directory_and_runs_against_the_registry_named():
-    app = "/home/ann/.local/share/neutrino/agent/cloudcli/app"
+def test_npm_keeps_its_prefix_cache_and_npmrc_side_by_side_and_runs_against_the_registry_named():
+    directory = "/home/ann/.local/share/neutrino/agent/cloudcli"
+    prefix = directory + "/npm"
 
-    named = npm_environment(app)
+    named = npm_environment(directory)
 
     assert "npm_config_registry" not in named
-    assert named["npm_config_cache"] == app + "/.npm"
-    assert named["npm_config_userconfig"] == app + "/.npmrc"
+    assert named["npm_config_cache"] == directory + "/npm_cache"
+    assert named["npm_config_userconfig"] == directory + "/npmrc"
     assert npm_arguments(
-        app, package="@cloudcli-ai/cloudcli", version="1.37.3", registry=REGISTRY
+        prefix, package="@cloudcli-ai/cloudcli", version="1.37.3", registry=REGISTRY
     ) == [
         "install",
         "@cloudcli-ai/cloudcli@1.37.3",
         "--prefix",
-        app,
+        prefix,
         "--registry",
         REGISTRY,
     ]
     held = npm_environment(
-        app, extra={"npm_config_x": "y", "npm_config_cache": "/elsewhere"}
+        directory, extra={"npm_config_x": "y", "npm_config_cache": "/elsewhere"}
     )
-    assert held["npm_config_x"] == "y" and held["npm_config_cache"] == app + "/.npm"
+    assert held["npm_config_x"] == "y"
+    assert held["npm_config_cache"] == directory + "/npm_cache"
 
 
 # What a Node.js that cannot resolve npm's own script prints, as on Windows
@@ -602,6 +632,8 @@ class Machine:
             return CommandResult(list(command), self.npm_exit, "", self.run_error)
         if "-e" in command:
             return CommandResult(list(command), self.check_exit, self.check_output, "")
+        if command[:2] == ["runuser", "-u"] and command[4:6] == ["rm", "-rf"]:
+            shutil.rmtree(command[6], ignore_errors=True)
         return CommandResult(list(command), 0, "", "")
 
     def install_call(self):
@@ -644,12 +676,13 @@ def test_an_install_runs_npm_as_the_account_in_a_transient_service(linux, tmp_pa
     ]
     assert not os.path.exists(log)
     install = started[started.index("--") + 1 :]
-    app = os.path.join(
-        entry.home, ".local", "share", "neutrino", "agent", "cloudcli", "app"
+    directory = os.path.join(
+        entry.home, ".local", "share", "neutrino", "agent", "cloudcli"
     )
+    prefix = os.path.join(directory, "npm")
     assert install[:6] == ["runuser", "-u", "ann", "--", "env", "-i"]
-    assert f"npm_config_cache={app}/.npm" in install
-    assert f"npm_config_userconfig={app}/.npmrc" in install
+    assert f"npm_config_cache={directory}/npm_cache" in install
+    assert f"npm_config_userconfig={directory}/npmrc" in install
     assert not any(part.startswith("npm_config_registry=") for part in install)
     assert "npm_config_better_sqlite3_binary_host=https://m/bs3" in install
     assert f"HOME={entry.home}" in install
@@ -658,14 +691,15 @@ def test_an_install_runs_npm_as_the_account_in_a_transient_service(linux, tmp_pa
         "install",
         "@cloudcli-ai/cloudcli@1.37.3",
         "--prefix",
-        app,
+        prefix,
         "--registry",
         REGISTRY,
     ]
-    assert (
-        'rm -rf "$0/package-lock.json" "$0/package.json" "$0/node_modules"'
-        in install[install.index("sh") + 2]
-    )
+    shell = install[install.index("sh") + 2]
+    assert install[install.index("sh") + 3] == directory
+    assert shell.index('rm -f "npm/package-lock.json"') < shell.index('rm -rf "npm"')
+    assert "npm_cache" not in shell.split("&&")[3]
+    assert ': > "npmrc"' in shell
     assert machine.installing_seen == [frozenset({"ann"})]
     assert hooks.installing == frozenset()
     assert notes == ["installed CloudCLI for ann"]
@@ -764,11 +798,11 @@ def test_an_install_the_kernel_killed_for_memory_is_its_own_refusal(linux):
 
 def test_an_install_left_running_is_waited_for_and_its_work_taken(linux):
     hooks, machine, entry = linux
-    app = os.path.join(
-        entry.home, ".local", "share", "neutrino", "agent", "cloudcli", "app"
+    prefix = os.path.join(
+        entry.home, ".local", "share", "neutrino", "agent", "cloudcli", "npm"
     )
     machine.active_states = ["active", "active", "deactivating"]
-    machine.on_ended = functools.partial(land_package, app)
+    machine.on_ended = functools.partial(land_package, prefix)
 
     notes = hooks.prepare(CONFIG, CONFIG.instances[0], entry)
 
@@ -781,10 +815,10 @@ def test_an_install_left_running_is_waited_for_and_its_work_taken(linux):
 
 def test_a_tree_npm_did_not_finish_runs_npm_again(linux):
     hooks, machine, entry = linux
-    app = os.path.join(
-        entry.home, ".local", "share", "neutrino", "agent", "cloudcli", "app"
+    prefix = os.path.join(
+        entry.home, ".local", "share", "neutrino", "agent", "cloudcli", "npm"
     )
-    land_package(app, is_finished=False)
+    land_package(prefix, is_finished=False)
 
     notes = hooks.prepare(CONFIG, CONFIG.instances[0], entry)
 
@@ -792,14 +826,118 @@ def test_a_tree_npm_did_not_finish_runs_npm_again(linux):
     assert any(call[0] == "systemd-run" for call in machine.calls)
 
 
-def test_an_app_holds_a_whole_install_once_npm_wrote_its_lockfile(tmp_path):
-    app = str(tmp_path / "app")
-    land_package(app, is_finished=False)
-    assert is_app_ready(app, "1.37.3") is False
+def old_app_of(entry) -> str:
+    """The prefix an earlier version installed the account's CloudCLI into, made."""
+    app = os.path.join(
+        entry.home, ".local", "share", "neutrino", "agent", "cloudcli", "app"
+    )
+    os.makedirs(os.path.join(app, "node_modules"))
+    return app
 
-    land_package(app)
-    assert is_app_ready(app, "1.37.3") is True
-    assert is_app_ready(app, "1.37.4") is False
+
+def test_an_old_app_goes_once_npm_installed_into_the_npm_prefix(linux):
+    hooks, machine, entry = linux
+    app = old_app_of(entry)
+
+    notes = hooks.prepare(CONFIG, CONFIG.instances[0], entry)
+
+    assert notes == ["installed CloudCLI for ann"]
+    commands = [call[:6] for call in machine.calls]
+    removal = ["runuser", "-u", "ann", "--", "rm", "-rf"]
+    assert commands.index(removal) > commands.index(machine.install_call()[:6])
+    assert machine.calls[commands.index(removal)][6] == app
+    assert not os.path.exists(app)
+
+
+def test_an_old_app_goes_beside_a_whole_install_and_stays_when_npm_fails(linux):
+    hooks, machine, entry = linux
+    app = old_app_of(entry)
+    machine.npm_exit = 1
+
+    with pytest.raises(ModuleApplyError):
+        hooks.prepare(CONFIG, CONFIG.instances[0], entry)
+    assert os.path.isdir(app)
+
+    land_package(
+        os.path.join(
+            entry.home, ".local", "share", "neutrino", "agent", "cloudcli", "npm"
+        )
+    )
+    assert hooks.prepare(CONFIG, CONFIG.instances[0], entry) == []
+    assert not os.path.exists(app)
+
+
+def test_a_mac_removes_the_old_app_as_the_account(tmp_path):
+    calls = []
+
+    def run_as(entry, command, *, environment, timeout_s):
+        calls.append(list(command))
+        if command[:2] == ["/bin/rm", "-rf"]:
+            shutil.rmtree(command[2])
+        return CommandResult(list(command), 0, "", "")
+
+    hooks = hooks_for("darwin", with_node(tmp_path, "darwin"), run_as=run_as)
+    entry = AccountEntry(501, 20, str(tmp_path / "Users" / "ann"), "/bin/zsh")
+    prefix = os.path.join(
+        entry.home, "Library", "Application Support", "Neutrino", "agent", "cloudcli"
+    )
+    app = os.path.join(prefix, "app")
+    os.makedirs(app)
+    land_package(os.path.join(prefix, "npm"), is_sdk=False)
+    land_sdk(os.path.join(prefix, "npm"), "darwin-x64")
+
+    assert hooks.prepare(CONFIG, CONFIG.instances[0], entry) == []
+    assert calls == [["/bin/rm", "-rf", app]]
+    assert not os.path.exists(app)
+
+
+def test_a_prefix_holds_a_whole_install_once_npm_wrote_its_lockfile(tmp_path):
+    prefix = str(tmp_path / "npm")
+    land_package(prefix, is_finished=False)
+    assert is_install_whole(prefix, "1.37.3", "linux", "amd64") is False
+
+    land_package(prefix)
+    assert is_install_whole(prefix, "1.37.3", "linux", "amd64") is True
+    assert is_install_whole(prefix, "1.37.4", "linux", "amd64") is False
+
+
+def test_a_prefix_without_the_sdk_s_claude_for_the_platform_is_no_whole_install(
+    tmp_path,
+):
+    prefix = str(tmp_path / "npm")
+    land_package(prefix, is_sdk=False)
+    assert is_install_whole(prefix, "1.37.3", "linux", "amd64") is False
+
+    land_sdk(prefix, "darwin-arm64")
+    assert is_install_whole(prefix, "1.37.3", "linux", "amd64") is False
+    assert is_install_whole(prefix, "1.37.3", "darwin", "arm64") is True
+
+
+def test_the_sdk_s_claude_is_resolved_from_the_sdk_s_own_directory_glibc_first(
+    tmp_path,
+):
+    prefix = str(tmp_path / "npm")
+    assert sdk_program(prefix, "linux", "amd64") == ""
+    musl = land_sdk(prefix, "linux-x64-musl")
+    assert sdk_program(prefix, "linux", "amd64") == musl
+
+    glibc = land_sdk(prefix, "linux-x64")
+    assert sdk_program(prefix, "linux", "amd64") == glibc
+
+    nested = os.path.join(
+        prefix,
+        "node_modules",
+        "@anthropic-ai",
+        "claude-agent-sdk",
+        "node_modules",
+        "@anthropic-ai",
+        "claude-agent-sdk-linux-x64",
+    )
+    os.makedirs(nested)
+    with open(os.path.join(nested, "claude"), "w", encoding="utf-8") as stream:
+        stream.write("")
+    assert sdk_program(prefix, "linux", "amd64") == os.path.join(nested, "claude")
+    assert sdk_program(prefix, "linux", "arm64") == ""
 
 
 def test_an_install_left_running_that_ends_without_the_app_runs_npm_after(linux):
@@ -1050,7 +1188,8 @@ def test_a_mac_install_runs_npm_as_the_account(tmp_path):
     assert install[1][-6:-3] == ["install", "@cloudcli-ai/cloudcli@1.37.3", "--prefix"]
     assert install[1][-2:] == ["--registry", REGISTRY]
     assert install[2]["PATH"].endswith("node/bin:/usr/bin:/bin:/usr/sbin:/sbin")
-    assert install[2]["npm_config_userconfig"].endswith("cloudcli/app/.npmrc")
+    assert install[2]["npm_config_userconfig"].endswith("cloudcli/npmrc")
+    assert install[1][-3].endswith("cloudcli/npm")
     assert install[3] == 1800
     assert "createRequire" in check[1][-1]
     assert notes == ["installed CloudCLI for ann"]
@@ -1078,11 +1217,13 @@ def install_task(state, last_result=0):
 
 @pytest.fixture
 def ready(monkeypatch):
-    """Whether the app directory holds CloudCLI and its native modules."""
+    """Whether the npm prefix holds a whole install."""
     held = {"is_ready": False}
-    monkeypatch.setattr(
-        hooks_module, "is_app_ready", lambda app, version: held["is_ready"]
-    )
+
+    def is_whole(prefix, version, os_name, arch):
+        return held["is_ready"]
+
+    monkeypatch.setattr(hooks_module, "is_install_whole", is_whole)
     return held
 
 
@@ -1186,7 +1327,7 @@ def test_a_failed_task_read_with_no_install_known_is_an_error_and_starts_nothing
 def test_each_windows_attempt_removes_what_an_earlier_npm_wrote_before_its_npm():
     node = "C:\\node\\node.exe"
     text = render_install_script(
-        app="C:\\app",
+        directory="C:\\cloudcli",
         node=node,
         npm="C:\\node\\npm-cli.js",
         package="@cloudcli-ai/cloudcli",
@@ -1201,9 +1342,16 @@ def test_each_windows_attempt_removes_what_an_earlier_npm_wrote_before_its_npm()
     assert [clean + 1 for clean in cleans] == npms
     assert lines[cleans[0]].endswith("|| goto :attempt_1")
     assert lines[cleans[1]].endswith("|| goto :attempt_2")
-    assert lines[cleans[0]].startswith(f'"{node}" -e "for (const name of [')
-    assert "'package-lock.json','package.json','node_modules'" in lines[cleans[0]]
-    assert lines.index('cd /d "C:\\app" || exit /b 1') < cleans[0]
+    clean = lines[cleans[0]]
+    assert clean.startswith(f'"{node}" -e "const fs = require(')
+    assert clean.index("'npm/package-lock.json'") < clean.index("fs.rmSync('npm',")
+    assert "npm_cache" not in clean
+    assert lines.index('cd /d "C:\\cloudcli" || exit /b 1') < cleans[0]
+    assert lines[cleans[0] - 1] == 'cd /d "C:\\cloudcli" || goto :attempt_1'
+    assert lines[npms[0]].split("--prefix ")[1].startswith("C:\\cloudcli\\npm ")
+    assert lines[npms[0] + 1] == 'cd /d "C:\\cloudcli\\npm" || goto :attempt_1'
+    assert 'set "npm_config_cache=C:\\cloudcli\\npm_cache"' in lines
+    assert 'type nul > "C:\\cloudcli\\npmrc"' in lines
 
 
 def test_an_ended_install_is_unregistered_and_judged(windows, ready):
@@ -1258,6 +1406,44 @@ def test_an_app_already_there_starts_no_install(windows, ready):
 
     assert hooks.prepare(CONFIG, CONFIG.instances[0], entry) == []
     assert host.ops() == ["task_states"]
+
+
+class RunAsPlatform(AgentPlatform):
+    """Windows, each run as an account recorded and answered with the exit code set."""
+
+    def __init__(self, exit_code):
+        self.os_name = "windows"
+        self.exit_code = exit_code
+        self.runs: list = []
+
+    def run_as_account(self, account, argv, *, password="", **kwargs):
+        self.runs.append((account, list(argv), password))
+        if self.exit_code == 0:
+            shutil.rmtree(argv[-1])
+        return subprocess.CompletedProcess(list(argv), self.exit_code, "", "")
+
+
+def test_an_old_app_still_open_on_windows_stays_for_a_later_apply(
+    windows, ready, tmp_path
+):
+    hooks, host, entry = windows
+    ready["is_ready"] = True
+    home = str(tmp_path / "Users" / "ann")
+    entry = AccountEntry(0, 0, home, "")
+    app = ntpath.join(home, "AppData", "Local", "Neutrino", "agent", "cloudcli", "app")
+    os.makedirs(app)
+    platform = RunAsPlatform(exit_code=1)
+    hooks._platform = platform
+
+    assert hooks.prepare(CONFIG, CONFIG.instances[0], entry) == []
+    assert platform.runs == [
+        ("ann", [hooks.node, "-e", hooks_module.REMOVE_SCRIPT, app], "login-pw")
+    ]
+    assert os.path.isdir(app)
+
+    platform.exit_code = 0
+    assert hooks.prepare(CONFIG, CONFIG.instances[0], entry) == []
+    assert not os.path.exists(app)
 
 
 @pytest.mark.parametrize(
@@ -1430,16 +1616,22 @@ def test_the_service_runs_node_with_the_server_script_from_a_root_only_environme
 ):
     hooks = hooks_for("linux", with_node(tmp_path))
     record = {"upstream_port": 41234, "database": "auth-20261006T120000Z.db"}
+    home = str(tmp_path / "home" / "ann")
+    entry = AccountEntry(1000, 1000, home, "/bin/bash")
+    claude = land_sdk(
+        os.path.join(home, ".local", "share", "neutrino", "agent", "cloudcli", "npm")
+    )
 
-    service = hooks.service(CONFIG.instances[0], ANN, record)
+    service = hooks.service(CONFIG.instances[0], entry, record)
 
     assert service.command == (hooks.node, "${CLOUDCLI_SERVER}")
+    assert service.environment["CLAUDE_CLI_PATH"] == claude
     assert service.environment["SERVER_PORT"] == "41234"
     assert service.environment["DATABASE_PATH"].endswith(
         "/cloudcli/auth-20261006T120000Z.db"
     )
     assert service.environment["CLOUDCLI_SERVER"].endswith(
-        "/cloudcli/app/node_modules/@cloudcli-ai/cloudcli/dist-server/server/index.js"
+        "/cloudcli/npm/node_modules/@cloudcli-ai/cloudcli/dist-server/server/index.js"
     )
     assert service.is_environment_secret is True
     assert service.working_directory == "~"
