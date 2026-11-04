@@ -195,7 +195,6 @@ def test_no_container_is_composed_while_the_password_does_not_open(store):
 def test_every_entry_names_the_tested_pair_by_digest_and_the_pypi_set():
     manifest = load_module_manifests()["hermes_webui"]
 
-    assert manifest["license"] == "MIT"
     assert manifest["memory_mib"] == 1024
     assert set(manifest["platforms"]) == {
         "linux",

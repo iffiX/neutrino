@@ -385,7 +385,7 @@ def test_the_runner_and_the_method_of_the_platforms_entry_reach_the_row(
         "system",
         "OpenSSH",
     )
-    assert (row["license"], row["corresponding_source"]) == ("", "")
+    assert "license" not in row and "corresponding_source" not in row
 
 
 def test_a_builtin_entry_reads_builtin_where_the_system_holds_the_software(
@@ -651,7 +651,7 @@ def test_each_shipped_module_is_supported_off_linux_as_its_manifest_says(
     [
         (
             {"os": "linux", "family": "debian", "arch": "amd64", "version": "2.36"},
-            ("podman", "system", "podman-container-tools/podman", "", ""),
+            ("podman", "system", "podman-container-tools/podman"),
         ),
         (
             WINDOWS,
@@ -659,8 +659,6 @@ def test_each_shipped_module_is_supported_off_linux_as_its_manifest_says(
                 "podman_machine",
                 "hub",
                 "podman-container-tools/podman",
-                "Apache-2.0",
-                "https://github.com/podman-container-tools/podman/tree/v6.1.4",
             ),
         ),
         (
@@ -669,8 +667,6 @@ def test_each_shipped_module_is_supported_off_linux_as_its_manifest_says(
                 "podman_machine",
                 "hub",
                 "podman-container-tools/podman",
-                "Apache-2.0",
-                "https://github.com/podman-container-tools/podman/tree/v5.8.9",
             ),
         ),
     ],
@@ -685,13 +681,8 @@ def test_the_containers_row_carries_the_runner_and_method_of_the_platforms_entry
     rows = client.get(MODULE_PATH, params={"device_id": DEVICE}).json()
 
     row = {entry["name"]: entry for entry in rows["modules"]}["podman"]
-    assert (
-        row["runner"],
-        row["method"],
-        row["publisher"],
-        row["license"],
-        row["corresponding_source"],
-    ) == identity
+    assert (row["runner"], row["method"], row["publisher"]) == identity
+    assert "license" not in row and "corresponding_source" not in row
     assert row["is_supported"] is True
 
 

@@ -97,8 +97,8 @@ def test_the_catalog_has_two_halves_under_one_hash(box):
 
 def test_each_platform_gets_the_entry_its_platform_resolves_to(box):
     """A system entry on Linux and a hub entry on Windows: the row's runner,
-    method, version and recipe follow the entry, and only the hub entry
-    shows the licence and the source address, its version filled in."""
+    method, version and recipe follow the entry, and neither names a licence
+    or a source address."""
     manifests, published = box
     write_manifest(
         manifests,
@@ -146,12 +146,10 @@ def test_each_platform_gets_the_entry_its_platform_resolves_to(box):
                 },
             },
         },
-        license="Apache-2.0",
-        corresponding_source="https://github.com/vendor/engine/tree/v{version}",
     )
     cache = DeviceCatalogCache(services=published)
     scope = link_scope("192.168.100.7")
-    fields = ("runner", "method", "version", "license", "corresponding_source")
+    fields = ("runner", "method", "version")
 
     linux, _ = cache.catalog(
         scope=scope, platform={"os": "linux", "family": "debian", "arch": "amd64"}
@@ -164,16 +162,15 @@ def test_each_platform_gets_the_entry_its_platform_resolves_to(box):
         "engine",
         "system",
         "system",
-        "",
-        "",
     )
     assert tuple(windows["modules"]["engine"][field] for field in fields) == (
         "engine_machine",
         "hub",
         "6.1.4",
-        "Apache-2.0",
-        "https://github.com/vendor/engine/tree/v6.1.4",
     )
+    for resolved in (linux, windows):
+        engine = resolved["modules"]["engine"]
+        assert "license" not in engine and "corresponding_source" not in engine
     assert windows["modules"]["engine"]["recipe"]["params"]["artifacts"] == [
         {
             "name": "engine",

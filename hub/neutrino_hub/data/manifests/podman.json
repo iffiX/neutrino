@@ -4,8 +4,6 @@
   "title": "Containers",
   "description": "Runs declared containers as systemd units",
   "publisher": "podman-container-tools/podman",
-  "license": "Apache-2.0",
-  "corresponding_source": "https://github.com/podman-container-tools/podman/tree/v{version}", "_source_scan": "scan: allow",
   "uninstall_data": {
     "is_deleted": false,
     "text": {

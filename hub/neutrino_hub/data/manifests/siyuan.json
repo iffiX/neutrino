@@ -4,8 +4,6 @@
   "title": "SiYuan",
   "description": "Notes in the browser from SiYuan, one workspace per account, opened from a client with a token",
   "publisher": "siyuan-note/siyuan",
-  "license": "AGPL-3.0",
-  "corresponding_source": "https://github.com/siyuan-note/siyuan/tree/v{version}",
   "uninstall_data": {
     "is_deleted": false,
     "text": {

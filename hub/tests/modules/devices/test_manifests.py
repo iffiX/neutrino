@@ -319,8 +319,6 @@ def sample_manifest() -> dict:
         "title": "Sample",
         "description": "A sample module",
         "publisher": "vendor/sample",
-        "license": "MIT",
-        "corresponding_source": "https://vendor.example/tree/v{version}",
         "uninstall_data": {
             "is_deleted": False,
             "text": {"en": "Data stays.", "zh-CN": "数据留下。"},
@@ -563,10 +561,6 @@ def test_terminal_and_remote_desktop_are_the_agent_s_on_every_system():
 def test_gitea_pins_the_release_binary_and_its_published_digest_per_machine():
     manifest = load_module_manifests()["gitea"]
 
-    assert manifest["license"] == "MIT"
-    assert manifest["corresponding_source"] == (
-        "https://github.com/go-gitea/gitea/tree/v{version}"
-    )
     assert manifest["is_data_forward_only"] is True
     assert set(manifest["platforms"]) == set(GITEA_DIGESTS)
     for key, (asset, digest) in GITEA_DIGESTS.items():
@@ -654,9 +648,6 @@ def test_vscode_pins_microsofts_cli_per_platform_at_one_build():
     the module's own directory, so its artifact names no directory."""
     manifest = load_module_manifests()["vscode"]
 
-    assert manifest["corresponding_source"] == (
-        "https://github.com/microsoft/vscode/tree/{version}/cli"
-    )
     assert set(manifest["platforms"]) == set(VSCODE_BUILDS)
     for key, (platform_name, kind, file, digest) in VSCODE_BUILDS.items():
         entry = manifest["platforms"][key]
@@ -701,7 +692,6 @@ def test_vscode_verifies_the_cli_where_the_agent_unpacks_it(key, path):
 def test_code_server_pins_coders_release_per_platform_with_its_mirror():
     manifest = load_module_manifests()["code_server"]
 
-    assert manifest["license"] == "MIT"
     assert set(manifest["platforms"]) == set(CODE_SERVER_BUILDS)
     for key, (build, digest) in CODE_SERVER_BUILDS.items():
         entry = manifest["platforms"][key]
@@ -734,10 +724,6 @@ def test_cloudcli_pins_node_and_its_npm_package_on_six_platforms():
     better-sqlite3's binary comes from, its digest npm's integrity."""
     manifest = load_module_manifests()["cloudcli"]
 
-    assert manifest["license"] == "AGPL-3.0"
-    assert manifest["corresponding_source"] == (
-        "https://github.com/siteboon/claudecodeui/tree/v{version}"
-    )
     assert set(manifest["platforms"]) == set(NODE_BUILDS)
     for key, (build, digest) in NODE_BUILDS.items():
         entry = manifest["platforms"][key]
@@ -790,10 +776,6 @@ def test_codeg_pins_the_server_bundle_and_cloudclis_node_per_platform():
     manifest = load_module_manifests()["codeg"]
     cloudcli = load_module_manifests()["cloudcli"]
 
-    assert manifest["license"] == "Apache-2.0"
-    assert manifest["corresponding_source"] == (
-        "https://github.com/spacering-net/codeg/tree/v{version}"
-    )
     assert set(manifest["platforms"]) == set(CODEG_SERVER_BUILDS)
     for key, (build, digest) in CODEG_SERVER_BUILDS.items():
         entry = manifest["platforms"][key]
@@ -907,10 +889,7 @@ def test_codex_pins_openais_npm_build_per_platform_from_the_npm_set():
     package, and the person's own copy used from the tested version up."""
     manifest = load_module_manifests()["codex"]
 
-    assert (manifest["title"], manifest["license"]) == ("Codex", "Apache-2.0")
-    assert manifest["corresponding_source"] == (
-        "https://github.com/openai/codex/tree/rust-v{version}"
-    )
+    assert manifest["title"] == "Codex"
     assert set(manifest["platforms"]) == set(CODEX_BUILDS)
     for key, (build, target, integrity) in CODEX_BUILDS.items():
         entry = manifest["platforms"][key]
@@ -954,8 +933,7 @@ def test_claude_code_pins_anthropics_npm_package_per_platform_from_the_npm_set()
     feed; macOS 13 and Windows 10 1809 the floors."""
     manifest = load_module_manifests()["claude_code"]
 
-    assert (manifest["title"], manifest["license"]) == ("Claude Code", "Proprietary")
-    assert "corresponding_source" not in manifest
+    assert manifest["title"] == "Claude Code"
     assert set(manifest["platforms"]) == set(CLAUDE_CODE_BUILDS)
     for key, (build, integrity) in CLAUDE_CODE_BUILDS.items():
         entry = manifest["platforms"][key]
@@ -1061,10 +1039,6 @@ def test_siyuan_pins_the_publishers_desktop_build_per_platform_from_two_sources(
     copied out; no floor; the notes kept at an uninstall."""
     manifest = load_module_manifests()["siyuan"]
 
-    assert manifest["license"] == "AGPL-3.0"
-    assert manifest["corresponding_source"] == (
-        "https://github.com/siyuan-note/siyuan/tree/v{version}"
-    )
     assert manifest["uninstall_data"] == {
         "is_deleted": False,
         "text": {
@@ -1223,7 +1197,6 @@ def test_containers_pins_podmans_release_per_platform_off_linux():
         if not key.startswith("linux")
     }
 
-    assert manifest["license"] == "Apache-2.0"
     assert set(off_linux) == set(PODMAN_PINS)
     for key, (version, floor, verify, artifacts) in PODMAN_PINS.items():
         entry = off_linux[key]
@@ -1250,12 +1223,6 @@ def test_containers_pins_podmans_release_per_platform_off_linux():
             artifact["directory"] == artifact["name"]
             for artifact in entry_artifacts(manifest, entry)
         ), key
-        resolved = resolve_module(
-            manifest, {"os": key.split("-")[0], "arch": key.split("-")[1]}
-        )
-        assert resolved["corresponding_source"] == (
-            f"https://github.com/podman-container-tools/podman/tree/v{version}"
-        )
 
 
 @pytest.mark.parametrize(
@@ -1334,22 +1301,37 @@ def test_every_shipped_source_names_no_edition_or_country_key():
 # --- the catalog's row: only a hub or container entry shows a licence ---
 
 
-def test_only_a_hub_entry_shows_a_licence_and_its_source_with_the_version():
+def test_a_resolved_module_names_its_entrys_method_and_version_and_no_licence():
     manifest = load_module_manifests()["podman"]
 
     linux = resolve_module(manifest, DEBIAN)
     windows = resolve_module(manifest, WINDOWS)
 
-    assert (linux["method"], linux["license"], linux["corresponding_source"]) == (
-        "system",
-        "",
-        "",
-    )
-    assert (windows["method"], windows["license"]) == ("hub", "Apache-2.0")
-    assert windows["corresponding_source"] == (
-        "https://github.com/podman-container-tools/podman/tree/v6.1.4"
-    )
-    assert windows["version"] == "6.1.4" and linux["version"] == "system"
+    assert (linux["method"], linux["version"]) == ("system", "system")
+    assert (windows["method"], windows["version"]) == ("hub", "6.1.4")
+    assert not {"license", "corresponding_source"} & (set(linux) | set(windows))
+
+
+def test_no_shipped_manifest_names_a_licence_or_a_source_address():
+    for name, manifest in {**load_module_manifests(), **load_tool_manifests()}.items():
+        assert "license" not in manifest, name
+        assert "corresponding_source" not in manifest, name
+
+
+@pytest.mark.parametrize("key", ["license", "corresponding_source"])
+def test_the_loader_refuses_a_licence_or_a_source_address(manifests_dir, key):
+    write_manifest(manifests_dir, "sample", {**valid_manifest(), key: "MIT"})
+
+    with pytest.raises(ValueError, match=key):
+        load_module_manifests()
+
+
+@pytest.mark.parametrize("key", ["license", "corresponding_source"])
+def test_the_loader_refuses_a_licence_or_a_source_address_in_a_tool(manifests_dir, key):
+    write_manifest(manifests_dir, "tool", {**tool_manifest(), key: "MIT"})
+
+    with pytest.raises(ValueError, match=key):
+        load_tool_manifests()
 
 
 def test_a_platform_with_no_entry_resolves_to_no_runner_and_no_recipe():
@@ -1529,7 +1511,6 @@ def test_the_loader_takes_a_manifest_of_the_shapes(manifests_dir):
 
 def test_the_loader_takes_an_agent_and_a_builtin_entry_with_empty_params(manifests_dir):
     manifest = valid_manifest()
-    del manifest["license"], manifest["corresponding_source"]
     manifest["platforms"] = {
         "linux": {"runner": "sample", "install": {"method": "agent", "params": {}}},
         "windows": {"runner": "sample", "install": {"method": "builtin", "params": {}}},
@@ -1681,10 +1662,6 @@ def _feed_without_its_key(manifest):
     del hub_params(manifest)["releases"][0]["tag"]
 
 
-def _hub_without_license(manifest):
-    del manifest["license"]
-
-
 def _bad_floor(manifest):
     manifest["platforms"]["windows-amd64"]["min_version"] = "v19041"
 
@@ -1766,7 +1743,6 @@ def _uninstall_data_on_an_agent_module(manifest):
         (_msi_without_directory, "directory"),
         (_unknown_feed, "gitlab"),
         (_feed_without_its_key, "tag"),
-        (_hub_without_license, "license"),
         (_bad_floor, "min_version"),
         (_unknown_system, "solaris-amd64"),
         (_stray_params_key, "url"),
@@ -1817,8 +1793,6 @@ def tool_manifest(**entry_overrides) -> dict:
             "description": "A program the agent runs",
             "is_module": False,
             "publisher": "vendor/tool",
-            "license": "MIT",
-            "corresponding_source": "https://vendor.example/tree/v{version}",
             "version": "1.0",
             "platforms": {"linux-amd64": {"artifacts": [artifact]}},
         }

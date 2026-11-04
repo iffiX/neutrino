@@ -4,8 +4,6 @@
   "title": "CloudCLI",
   "description": "AI coding sessions in the browser, one per account, opened from a client with a token",
   "publisher": "siteboon/claudecodeui",
-  "license": "AGPL-3.0",
-  "corresponding_source": "https://github.com/siteboon/claudecodeui/tree/v{version}", "_source_scan": "scan: allow",
   "uninstall_data": {
     "is_deleted": false,
     "text": {

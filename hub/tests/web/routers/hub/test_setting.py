@@ -809,6 +809,25 @@ def test_the_hub_credits_every_component_it_carries(monkeypatch):
     )
 
 
+@pytest.mark.parametrize("system", ["linux", "windows", "darwin"])
+def test_the_about_card_credits_no_module_s_software(monkeypatch, system):
+    """A module only installs its publisher's software, so neither a module
+    nor cc-switch, which the client's package carries, is credited here."""
+    from neutrino_hub.modules.devices.manifests import (
+        load_module_manifests,
+        load_tool_manifests,
+    )
+
+    monkeypatch.setattr(settings_router, "hub_os", lambda: system)
+    credited = {credit.name.lower() for credit in settings_router._acknowledgements()}
+    installed = {
+        str(manifest["title"]).lower()
+        for manifest in {**load_module_manifests(), **load_tool_manifests()}.values()
+    }
+
+    assert credited and not credited & installed
+
+
 @pytest.mark.feature("proxy")
 @pytest.mark.parametrize(
     "system, added",

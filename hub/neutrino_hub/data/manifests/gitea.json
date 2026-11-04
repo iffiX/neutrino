@@ -4,8 +4,6 @@
   "title": "Gitea",
   "description": "A private git server with its own web UI",
   "publisher": "go-gitea/gitea",
-  "license": "MIT",
-  "corresponding_source": "https://github.com/go-gitea/gitea/tree/v{version}",
   "web_share": {
     "guest_login": "app"
   },

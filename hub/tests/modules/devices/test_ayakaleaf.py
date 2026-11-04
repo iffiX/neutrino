@@ -252,10 +252,7 @@ def test_the_chosen_model_reads_the_tab_then_the_first_served():
 def test_every_entry_names_the_three_images_the_oci_feed_and_the_ctan_set():
     manifest = load_module_manifests()["ayakaleaf"]
 
-    assert (manifest["license"], manifest["is_data_forward_only"]) == (
-        "AGPL-3.0",
-        True,
-    )
+    assert manifest["is_data_forward_only"] is True
     assert manifest["uninstall_data"]["is_deleted"] is True
     assert manifest["memory_mib"] == 2600
     assert set(manifest["platforms"]) == {

@@ -51,8 +51,6 @@ DEVICE_METHOD_BUILTIN = "builtin"
 DEVICE_METHOD_SYSTEM = "system"
 DEVICE_METHOD_HUB = "hub"
 DEVICE_METHOD_CONTAINER = "container"
-# The methods whose entry the catalog shows a licence and a source address for.
-DEVICE_METHODS_WITH_LICENSE = (DEVICE_METHOD_HUB, DEVICE_METHOD_CONTAINER)
 # The version a system entry names: the system's own.
 DEVICE_SYSTEM_VERSION = "system"
 # The systems a platform key starts with.

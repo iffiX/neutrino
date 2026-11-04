@@ -1913,8 +1913,6 @@ DEMO_MANIFEST = {
     "title": "Demo",
     "description": "A container module the tests compose",
     "publisher": "acme/demo",
-    "license": "MIT",
-    "corresponding_source": "https://acme.invalid/demo/{version}",
     "uninstall_data": {
         "is_deleted": True,
         "text": {"en": "The demo's data goes.", "zh-CN": "演示的数据会删除。"},

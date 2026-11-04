@@ -4,8 +4,6 @@
   "title": "Ayakaleaf",
   "description": "LaTeX papers written and compiled in Ayakaleaf, Overleaf with its Server Pro features, opened from a client with a token",
   "publisher": "ayaka-notes/ayakaleaf-pro",
-  "license": "AGPL-3.0",
-  "corresponding_source": "https://github.com/ayaka-notes/ayakaleaf-pro/tree/pro-v{version}", "_corresponding_scan": "scan: allow",
   "uninstall_data": {"is_deleted": true, "text": {"en": "The papers and projects are deleted and cannot be recovered.", "zh-CN": "论文和项目都会删除，无法恢复。"}},
   "web_share": {
     "guest_login": "guest_account"

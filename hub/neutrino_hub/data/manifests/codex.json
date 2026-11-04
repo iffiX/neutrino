@@ -4,8 +4,6 @@
   "title": "Codex",
   "description": "OpenAI's coding agent on the command line, for each account",
   "publisher": "OpenAI",
-  "license": "Apache-2.0",
-  "corresponding_source": "https://github.com/openai/codex/tree/rust-v{version}", "_source_scan": "scan: allow",
   "uninstall_data": {
     "is_deleted": false,
     "text": {

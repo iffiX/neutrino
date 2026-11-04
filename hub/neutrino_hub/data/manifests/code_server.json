@@ -4,8 +4,6 @@
   "title": "code-server",
   "description": "VS Code in the browser from code-server, one per account, opened from a client with a token",
   "publisher": "coder/code-server",
-  "license": "MIT",
-  "corresponding_source": "https://github.com/coder/code-server/tree/v{version}",
   "uninstall_data": {
     "is_deleted": false,
     "text": {

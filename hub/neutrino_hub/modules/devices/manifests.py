@@ -46,7 +46,6 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_METHOD_CONTAINER,
     DEVICE_METHOD_HUB,
     DEVICE_METHOD_SYSTEM,
-    DEVICE_METHODS_WITH_LICENSE,
     DEVICE_PLATFORM_OS,
     DEVICE_SYSTEM_VERSION,
 )
@@ -73,8 +72,6 @@ MODULE_KEYS = {
     "title",
     "description",
     "publisher",
-    "license",
-    "corresponding_source",
     "is_data_forward_only",
     "uninstall_data",
     "web_share",
@@ -595,7 +592,7 @@ def _check_texts(file_name: str, where: str, value, *, is_empty_allowed=True) ->
         _check_text(file_name, where, item)
 
 
-def _check_identity(file_name: str, manifest: dict, *, is_licensed: bool) -> None:
+def _check_identity(file_name: str, manifest: dict) -> None:
     """Refuse a manifest whose identity is missing or not shaped.
 
     Raises:
@@ -605,12 +602,6 @@ def _check_identity(file_name: str, manifest: dict, *, is_licensed: bool) -> Non
         _check_text(file_name, field, manifest.get(field))
     if manifest["name"] != file_name.removesuffix(".json"):
         _refuse(file_name, "name", "must be the file's own name")
-    if is_licensed or "license" in manifest:
-        _check_text(file_name, "license", manifest.get("license"))
-    if "corresponding_source" in manifest:
-        _check_text(
-            file_name, "corresponding_source", manifest.get("corresponding_source")
-        )
     if "is_data_forward_only" in manifest and not isinstance(
         manifest["is_data_forward_only"], bool
     ):
@@ -633,13 +624,7 @@ def _check_module(file_name: str, manifest: dict) -> None:
         ValueError: Naming the file, the place and what is wrong.
     """
     _check_keys(file_name, "", manifest, MODULE_KEYS, {"platforms"})
-    platforms = manifest.get("platforms")
-    is_licensed = isinstance(platforms, dict) and any(
-        entry_method(entry) in DEVICE_METHODS_WITH_LICENSE
-        for entry in platforms.values()
-        if isinstance(entry, dict)
-    )
-    _check_identity(file_name, manifest, is_licensed=is_licensed)
+    _check_identity(file_name, manifest)
     is_carried = manifest_methods(manifest) == [DEVICE_METHOD_AGENT]
     if is_carried and "uninstall_data" in manifest:
         _refuse(
@@ -653,7 +638,7 @@ def _check_module(file_name: str, manifest: dict) -> None:
         _check_web_share(file_name, manifest["web_share"])
     if "memory_mib" in manifest:
         _check_memory(file_name, manifest)
-    for key, entry in platforms.items():
+    for key, entry in manifest["platforms"].items():
         where = f"platform {key}"
         _check_keys(file_name, where, entry, ENTRY_KEYS, {"runner", "install"})
         _check_text(file_name, f"{where} runner", entry["runner"])
@@ -1020,9 +1005,9 @@ def _check_tool(file_name: str, manifest: dict) -> None:
         "",
         manifest,
         TOOL_KEYS,
-        {"platforms", "version", "is_module", "license", "corresponding_source"},
+        {"platforms", "version", "is_module"},
     )
-    _check_identity(file_name, manifest, is_licensed=True)
+    _check_identity(file_name, manifest)
     _check_text(file_name, "version", manifest["version"])
     for key, entry in manifest["platforms"].items():
         where = f"platform {key}"

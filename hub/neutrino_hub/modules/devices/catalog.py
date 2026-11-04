@@ -25,7 +25,6 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_METHOD_CONTAINER,
     DEVICE_METHOD_HUB,
     DEVICE_METHOD_SYSTEM,
-    DEVICE_METHODS_WITH_LICENSE,
     DEVICE_PROGRAM_MODULE_COPY_KEY,
     DEVICE_SOURCE_AGENT,
     DEVICE_SOURCE_CONTAINER,
@@ -44,7 +43,6 @@ from neutrino_hub.modules.devices.manifests import (
 )
 from neutrino_hub.modules.services.collector import catalog_entries
 from neutrino_hub.modules.services.host_scope import HostScope
-from neutrino_hub.utils.constants import UTILS_SOURCE_VERSION
 
 
 def resolve_module(manifest: dict, platform: dict) -> dict:
@@ -55,18 +53,14 @@ def resolve_module(manifest: dict, platform: dict) -> dict:
         platform: The tuple the agent reported.
 
     Returns:
-        ``{title, description, publisher, runner, method, version, license,
-        corresponding_source, platform_key, recipe}`` for the entry the
-        platform resolves to; the licence and the source address, its
-        version filled in, only for a ``hub`` or ``container`` entry; empty
-        runner, method and recipe where the manifest names no entry for the
-        platform.
+        ``{title, description, publisher, runner, method, version,
+        platform_key, recipe}`` for the entry the platform resolves to;
+        empty runner, method and recipe where the manifest names no entry
+        for the platform.
     """
     platform_key, entry = resolve_platform_entry(manifest, platform)
     method = entry_method(entry)
     version = entry_version(manifest, entry)
-    is_licensed = method in DEVICE_METHODS_WITH_LICENSE
-    source = str(manifest.get("corresponding_source", "") or "")
     return {
         "title": str(manifest.get("title", "") or manifest.get("name", "")),
         "description": str(manifest.get("description", "") or ""),
@@ -74,10 +68,6 @@ def resolve_module(manifest: dict, platform: dict) -> dict:
         "runner": str((entry or {}).get("runner", "") or ""),
         "method": method,
         "version": version,
-        "license": str(manifest.get("license", "") or "") if is_licensed else "",
-        "corresponding_source": (
-            source.replace(UTILS_SOURCE_VERSION, version) if is_licensed else ""
-        ),
         "platform_key": platform_key,
         "recipe": module_recipe(entry),
     }

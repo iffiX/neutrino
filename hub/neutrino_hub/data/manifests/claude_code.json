@@ -4,7 +4,6 @@
   "title": "Claude Code",
   "description": "Anthropic's coding agent on the command line, for each account",
   "publisher": "Anthropic",
-  "license": "Proprietary",
   "uninstall_data": {
     "is_deleted": false,
     "text": {

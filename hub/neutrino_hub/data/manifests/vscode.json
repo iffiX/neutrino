@@ -4,8 +4,6 @@
   "title": "VS Code",
   "description": "VS Code in the browser, opened from a client through localhost",
   "publisher": "Microsoft",
-  "license": "Microsoft Software License Terms",
-  "corresponding_source": "https://github.com/microsoft/vscode/tree/{version}/cli",
   "uninstall_data": {
     "is_deleted": false,
     "text": {

@@ -253,8 +253,6 @@ def list_modules(
                 uninstall_data=uninstall_line(manifest, platform),
                 requires=entry_requires(entry),
                 publisher=resolved["publisher"],
-                license=resolved["license"],
-                corresponding_source=resolved["corresponding_source"],
                 want=(
                     runtime.desired_states.agent_module_want(key, name)
                     if is_carried

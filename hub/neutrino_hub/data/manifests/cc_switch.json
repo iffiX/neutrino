@@ -5,8 +5,6 @@
   "description": "Points a machine's AI tools at the hub's AI gateway",
   "is_module": false,
   "publisher": "SaladDay/cc-switch-cli",
-  "license": "MIT",
-  "corresponding_source": "https://github.com/SaladDay/cc-switch-cli/tree/v{version}", "_source_scan": "scan: allow",
   "version": "5.10.4",
   "platforms": {
     "linux-amd64": {

@@ -2301,10 +2301,6 @@ class DeviceModuleView(BaseModel):
     requires: list[str] = Field(default_factory=list)
     # Who publishes the software.
     publisher: str = ""
-    # The licence and the address of the source it asks for, for a hub or a
-    # container entry alone.
-    license: str = ""
-    corresponding_source: str = ""
     # What the hub asks of the module here: ``absent``, ``installed``,
     # ``stopped`` or ``running``; empty when it asks nothing.
     want: str = ""
