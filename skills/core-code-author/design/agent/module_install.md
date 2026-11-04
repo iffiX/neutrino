@@ -65,20 +65,23 @@ it from the hub's cache for the machine's AI tools ([ai_tools.md](ai_tools.md)).
 | `agent` | `{}` | the agent's own package | the agent's install | Terminal, Remote desktop, the SSH server |
 | `builtin` | `{}` | the system itself | nothing; the runner checks that the software is there | the file share on Windows and macOS |
 | `system` | `{version: "system", packages, pre_install, verify, uninstall: {packages, post_uninstall}}` | the system's package repositories | the system's package manager, run by the agent | the file share and Containers on Linux |
-| `hub` | `{version, releases, artifacts, packages, verify, uninstall: {post_uninstall, is_data_kept}}` | the publisher's release, fetched into the hub's cache | the agent, from the `package` stream | Gitea, VS Code, code-server, CloudCLI, Codeg, SiYuan, Containers on Windows and macOS |
+| `hub` | `{version, releases, artifacts, packages, verify, uninstall: {post_uninstall, is_data_kept}}` | the publisher's release, fetched into the hub's cache | the agent, from the `package` stream | Gitea, VS Code, code-server, CloudCLI, Codeg, SiYuan, Codex, Claude Code, Containers on Windows and macOS |
 | `container` | `{version, releases, artifacts, source_sets}`, `releases` and `source_sets` optional | the registries each image's `sources` name | the Containers module's Podman | Hermes WebUI ([modules/hermes_webui.md](modules/hermes_webui.md)), Ayakaleaf ([modules/ayakaleaf.md](modules/ayakaleaf.md)) |
 
 `pre_install` is optional, for a system that needs a step before its package
 manager installs, such as a repository to add. A `hub` entry's `packages` is
 optional too: the system packages the program needs beside its artifacts,
 such as Gitea's `git` on Linux. The system's package manager installs them
-before the artifacts, and an uninstall keeps them.
+before the artifacts, and an uninstall keeps them. A command line program's
+`hub` entry also names `user_copy_min_version`, the lowest version of a
+person's own copy the module uses ([../agent.md](../agent.md), "Parallel,
+never take over"), and the loader refuses that key on any other entry.
 
 | | `agent` | `builtin` | `system` | `hub` | `container` |
 | --- | --- | --- | --- | --- | --- |
 | Present when | always | the runner's own check passes and the module's uninstalled mark does not stand | `verify` exits 0 | `verify` exits 0 | every image's digest is in the Containers module's Podman, as the agent reads it there |
-| `running` means | the module's own rule ([modules/terminal.md](modules/terminal.md), [modules/remote_desktop.md](modules/remote_desktop.md)) | the system's server runs the module's configuration | the module's unit is active | the module's service or instances run | every container of the module runs |
-| An uninstall removes | nothing: the four presses are refused `module_not_optional` | what the module's own page names, and writes the uninstalled mark; the system keeps its server | the named packages and the configuration the hub wrote, keeping the data | the module's files, its service definitions and the forwarder's records, keeping the data | the module's containers, their units, its network and its named volumes, and the images no other container uses |
+| `running` means | the module's own rule ([modules/terminal.md](modules/terminal.md), [modules/remote_desktop.md](modules/remote_desktop.md)) | the system's server runs the module's configuration | the module's unit is active | the module's service or instances run; for a command line program, every enabled account has a copy the module uses | every container of the module runs |
+| An uninstall removes | nothing: the four presses are refused `module_not_optional` | what the module's own page names, and writes the uninstalled mark; the system keeps its server | the named packages and the configuration the hub wrote, keeping the data | the module's files, its service definitions and the forwarder's records, keeping the data; for a command line program, its copy, its launcher, every link and `PATH` entry that carries its mark, and its record | the module's containers, their units, its network and its named volumes, and the images no other container uses |
 | A failed install reports | `reinstall_failed`, from the agent's own install | nothing, since nothing is installed | `install_failed {detail}` with the package manager's output | `download_failed {file, sources}` or `module_fetch_too_large` from the cache, then `install_failed {detail}` or the module's own code | `download_failed {file, sources}` when no source serves an image |
 | The version | the agent's | the system's | the system's, locked | the tested one or the machine's choice | the tested tag or the machine's choice; the tested one, locked, where the entry names no `releases` |
 
@@ -96,9 +99,9 @@ in [../ui_text.md](../ui_text.md), "The machine page's words".
 | Rule | Reason |
 | --- | --- |
 | The source chip names who installs, updates and removes the module's software on the machine: Built-in (自带), the agent, which carries it; System (系统), the system, through its package manager or as part of itself; Upstream (外部源), the module's installer, from the publisher's release at the version the hub sets; Container (容器), the Containers module's Podman, which pulls the images; User-installed (用户安装), the person, who installed it outside the system's package manager, as a vendor's script or npm puts a command-line tool in their home, while the module only finds it and uses it and never updates or removes it. | Who manages the software decides what an update and an uninstall do to it, and who first pressed **Install** changes neither. |
-| `agent` reads Built-in, `builtin` and `system` read System, `hub` reads Upstream, and `container` reads Container; no method reads User-installed yet, and the command-line tools to come are the first that will. | The method of the machine's entry is what the hub knows of who places the software, and the module row carries it as `method`. |
+| `agent` reads Built-in, `builtin` and `system` read System, `hub` reads Upstream, and `container` reads Container. A command line program reads Upstream while its own copy is on the machine and User-installed while it is not, every enabled account then running a copy of the person's ([../agent.md](../agent.md), "The kinds of module"). The hub derives the word and the module row carries it as `source`. | The method of the machine's entry is what the hub knows of who places the software, and a command line program's report says whether the module placed any. |
 | A Samba or a Podman that was on a Linux machine before its module reads System, as the one the module installed does. | The system's package manager updates and removes a package whoever installed it. |
-| The kind chip reads Service (服务) for a module with **Start** and **Stop**, and Program (普通程序) for one with neither. Every module of today is a service; the carried ones too, though their tab holds no **Start**, since the agent runs them. | A person reads from the kind whether the software runs by itself until stopped, or only when a person runs it, as a command-line tool does. |
+| The kind chip reads Service (服务) for a module with **Start** and **Stop**, and Program (普通程序) for one with neither. Codex and Claude Code read Program; every other module reads Service, the carried ones too, though their tab holds no **Start**, since the agent runs them. The module row carries the kind as `kind`. | A person reads from the kind whether the software runs by itself until stopped, or only when a person runs it, as a command line program does. |
 
 ## Artifacts
 
@@ -115,7 +118,7 @@ software it holds. Where each class lands on each system is
 
 | Class | Kinds | What the agent does with it | Used today by |
 | --- | --- | --- | --- |
-| archive (压缩包) | `tar_gz`, `zip` | unpacks it into the module's directory and seals it | VS Code, code-server, Codeg's server, SiYuan on Linux, and the Node.js of CloudCLI and Codeg |
+| archive (压缩包) | `tar_gz`, `zip` | unpacks it into the module's directory and seals it | VS Code, code-server, Codeg's server, SiYuan on Linux, Codex, Claude Code, and the Node.js of CloudCLI and Codeg |
 | installer (安装包) | `msi`, `pkg` | keeps it in the module's directory and has the system's installer install it | Containers: Podman and WSL on Windows, Podman on macOS |
 | disk image (磁盘映像) | `dmg`, `nsis` | copies the program out of it into the module's directory and seals it; nothing in it runs | SiYuan on macOS and Windows |
 | machine image (虚拟机映像) | `tar_zst`, `raw_zst` | keeps it in the module's directory, and Podman builds its machine from it | Containers on Windows and macOS |
@@ -147,13 +150,16 @@ software it holds. Where each class lands on each system is
 | The digest is the publisher's: the sha256 file it publishes, the `digest` GitHub's API gives a release asset, Microsoft's `sha256hash`, an OCI manifest digest, or npm's `integrity`. A mirror serves bytes and names no digest. | A mirror that names its own digest can serve anything. |
 | The cache checks the head of each file before it keeps it: `msi` and `pkg` by the magic bytes it checks for the agent's own packages, `binary` by the ELF, Mach-O or PE header, the two zstd kinds by `28 b5 2f fd`, `nsis` by the PE header, and `dmg` by `koly` at the start of its last 512 bytes. | A source that answers with an error page passes no head check. |
 | An archive whose members all sit under one top directory is unpacked without it, so its files sit directly under `<directory>`. | A path in `verify` and in a service definition stays the same for every version. |
-| The unpack is owned by the agent's own account, root or SYSTEM, readable and executable by every account, writable by none, and on no `PATH`. | Every account runs the program, and none can change it. |
+| The unpack is owned by the agent's own account, root or SYSTEM, readable and executable by every account, writable by none, and on no `PATH`. A command line program's launcher folder, `bin/` beside its unpack, is the one folder named on a `PATH`: at the end of Neutrino's own sessions' and, on Windows, of an enabled account's user `PATH` ([module_template.md](module_template.md), "The launcher and the link"). | Every account runs the program, and none can change it. A person runs a command line program by its name, and a folder at the end of `PATH` hides no copy of theirs. |
 | Each member of a `zip` keeps the permission bits its entry names, less the setuid, setgid and sticky bits, as a tarball's members do; the seal then takes every write bit away. | VS Code's CLI for macOS comes as a zip whose `code` is 0755. Unpacked without its bits it read `-r--r--r--`, and VS Code did not start. |
 | The recipe the state holds for a `hub` entry drops each artifact's `sources`, since the bytes come down the `package` stream. A `container` or an `npm` artifact keeps its `sources` or its `source_set`, since the machine fetches it, and the state's `source_sets` section holds each set a recipe names. | The agent fetches only what the hub cannot send. |
 
 A runtime a module needs, Node.js among them, is one of its artifacts,
 pinned in its own manifest. Two modules that need the same runtime each hold
-it.
+it. A program a person also runs from a shell by its name, such as Codex or
+Claude Code, is a module of its own, a command line program, and a module
+whose own packages carry a copy of it, as the Agent SDK in CloudCLI's and
+Codeg's npm packages carries Claude Code, runs that copy.
 
 ## Sources
 
@@ -389,6 +395,7 @@ The tools inside its containers fetch from the source sets its entry lists
 | A `verify` that names its program by an absolute path, as every `hub` entry's does, runs again only once that file changes its size, its time or its inode. A pass stands until then, and a failure runs again at the next read. | The agent reads every module at each report, every 5 seconds: on the lab Mac `gitea --version` and `code --version` each ran 12 times a minute as root. |
 | `is_active` and `details` are read whenever the presence check passes, and a runner adds no check of its own in front of them. | A runner check stricter than `verify` read Containers as `stopped` with an empty list on a machine whose Docker CE kept `podman-docker` off. |
 | A runner's own check answers only for a `builtin` entry and for a module the hub does not name in the machine's state, which the agent still observes and reports, such as a Samba a person installed by hand. | Neither comes with a `verify` to run. |
+| A command line program is present while its own copy passes `verify`, or while its record names an enabled account running a copy of the person's at a version the module supports, that copy's file unchanged in size, time and inode since its version was read ([../agent.md](../agent.md), "The kinds of module"). | The module installs nothing for an account served by its own copy, and that copy is the software the module stands for there. |
 | A `builtin` module reads absent while its uninstalled mark stands, whatever the runner's own check finds. | The system keeps its own software, so the runner's check stays true after an uninstall, and the row read `failed` `uninstall_unconfirmed` with no press that cleared it. |
 
 ## Module versions

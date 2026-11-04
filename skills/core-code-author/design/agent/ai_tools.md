@@ -14,7 +14,12 @@ its own. Codeg's Claude Code and
 Codex entries are the ACP adapters `claude-agent-acp` and `codex-acp`, which
 read the account's `~/.claude/settings.json` and `~/.codex/config.toml`, the
 files cc-switch writes, so the setting covers Codeg's sessions as well
-([modules/codeg.md](modules/codeg.md)).
+([modules/codeg.md](modules/codeg.md)). The Codex and Claude Code modules
+write no settings file of their own: the module's copy and a person's own
+copy read the same `~/.codex/config.toml` and `~/.claude/settings.json`, so
+the setting points either copy at the gateway, and installing either module
+changes no account's switch ([modules/codex.md](modules/codex.md),
+[modules/claude_code.md](modules/claude_code.md)).
 
 For each account the state names, the agent runs the client's steps as that
 account with the account's own `tool_configs`, with the copy of cc-switch the agent fetched

@@ -42,7 +42,7 @@ never to the agent.
 hub's pages, in the agent, and in the client:
 
 - **Modules** are software the hub administers on a machine: Samba, Gitea,
-  Podman, VS Code, code-server, CloudCLI, Codeg, and the two the
+  Podman, VS Code, code-server, CloudCLI, Codeg, Codex, Claude Code, and the two the
   agent's own package carries, Terminal, Remote desktop and the SSH server, of the kinds
   in "The kinds of module". The hub says what is wanted and sends
   the bytes; the agent observes, installs and configures. A device's Modules
@@ -125,6 +125,12 @@ module's actual state equal its `want`:
 | `stopped` | the package is present, the configuration is applied, the unit is stopped |
 | `running` | the package is present, the configuration is applied, the unit is active |
 
+A command line program, Codex or Claude Code, has no unit ("The kinds of
+module"). Its `want` is `absent` or `running`, and `running` means that every
+enabled account has a copy the module uses, the person's own or the
+module's, with the link or the `PATH` entry that reaches the module's copy.
+Its **Install** writes `running`, since nothing starts it.
+
 A module the state does not mention is left alone, observed and reported all
 the same. The applied hash moves only once every mentioned module applied. A
 failed module is tried again only when its own entry in the state changes
@@ -141,8 +147,8 @@ before it runs and lets them go when it ends ("Step locks"). A newer entry
 for a module whose task runs replaces the plan at the next step boundary.
 `APPLY_ORDER` is the order tasks are made in and rows and the state error
 are read in: the file share, Terminal, the SSH server, Gitea, Containers,
-Hermes WebUI, Ayakaleaf, VS Code, code-server, CloudCLI, Codeg, SiYuan,
-Remote desktop. A module whose task has not run its first step, since that
+Hermes WebUI, Ayakaleaf, VS Code, code-server, CloudCLI, Codeg, Claude Code,
+Codex, SiYuan, Remote desktop. A module whose task has not run its first step, since that
 step waits for a step lock, reads `queued` with the lock's code. A module
 whose task installs it or switches its version reads `installing` until the
 task ends, one whose task uninstalls it reads `uninstalling`, and a read of
@@ -160,7 +166,11 @@ pulled, so Containers read `stopped`.
 A module installed is a service: **Start** starts it and **Stop** stops it,
 whatever instances it has. An account, a share, a setting and **Configure**
 never start one. Terminal, Remote desktop and the SSH server have no **Start**
-or **Stop**: their panel's apply runs them. **Install** on a module that
+or **Stop**: their panel's apply runs them. Codex and Claude Code are
+command line programs, which a person runs from a shell: their tab has no
+**Start** or **Stop**, the routes refuse both `module_not_service {module}`,
+and **Install** and their panel's apply make them ready for each enabled
+account. **Install** on a module that
 requires another starts that one too, since its install needs it running.
 
 **A stopped module stays stopped.** A module's **Stop** keeps what it
@@ -263,7 +273,10 @@ type `disabled`), as the package's own removal leaves it, so no apply of its
 own runs beside what follows and nothing starts it at the next boot; then it
 switches every account's AI tools
 back ([ai_tools.md](agent/ai_tools.md)) and removes the copy of cc-switch it
-ran, before it removes anything else.
+ran, before it removes anything else. It also removes every link and `PATH`
+entry of a command line program that still carries the module's mark
+("Parallel, never take over"), since the package's removal takes away the
+copy they reach.
 
 **Status is typed.** A module reports `state`, `is_active` and
 `{code, params}`, never an English sentence, and every surface does its own
@@ -280,6 +293,7 @@ a module whose last install failed, whatever that install left on the
 machine ("An install that fails ends install_failed"); `stopped` and
 `running` are configured by the hub and told apart by the unit, and a module
 of the account layer with no instance reads `running` under `want` `running`;
+a command line program reads `running` once configured and never `stopped`;
 `installing`
 also covers a module's own install that runs inside its apply or as a task
 the apply left running, and the module's task checks such a task every 30
@@ -347,6 +361,7 @@ account carries it as a parameter.
 | --- | --- |
 | A module has at most one task at a time. The `ai_tools` section is one task of its own, under the same rules, and reports through its own section. | Two tasks on one module would fight over the same files and units. |
 | A task's plan comes from the `want` and what the machine shows, by the table of "One session, everything on it": `absent` plans the uninstall when the software is there or the last install failed; a present `want` plans the install when the software is missing or the last install failed, the version switch when a `hub` module's kept version differs from its recipe's, then the configure steps under `stopped` and `running`, then `start` or `stop`. | The decision is the same for every module, and only the work is cut into steps. |
+| A command line program's plan under `running` begins with `find`, which looks for each enabled account's own copy and keeps what it found in the module's record. The steps after it are planned from that record: the install or the version switch of the module's own copy while an account needs it ("The kinds of module"), then `configure` and the `account` steps. | Whether the module's copy is needed depends on what each account has, and only a step that runs as each account can see that. |
 | Each task runs on a thread of its own from its first step, and any number of tasks run at once. | The steps of two modules then wait only for what they share ("Step locks"), and the long steps wait on the network or inside a container. |
 | A task is not kept on disk. After a restart the next state plans each module again from what the machine shows. | Every step is safe to run again (below), so a record of the task would only be survival machinery ([../kill_on_sight.md](../kill_on_sight.md)). |
 | A module's task opens one `log {module}` stream for its whole run, writes `step <i>/<n>: <name> <params>` once the step has taken its step locks, and then the step's output line by line. A step that runs again after its check writes its line once. | The hub's task record keeps the steps in order, configure and start among them. |
@@ -405,7 +420,8 @@ the first failure in `APPLY_ORDER`.
 | `verify` | the method's presence check; a `hub` module's version is kept | `install_failed` |
 | `switch {version}` | the whole version switch: stage, stop, swap, `verify`, start ([module_install.md](agent/module_install.md), "Module versions") | `failed` |
 | `configure` | the runner's apply of the configuration | `failed` |
-| `account {account}` | one enabled account of a program run as an account, its preparation, its service written and started; Gitea's system account | `failed` |
+| `account {account}` | one enabled account of a program run as an account, its preparation, its service written and started; Gitea's system account; one enabled account of a command line program, the copy it uses recorded and its link or `PATH` entry made or removed | `failed` |
+| `find` | a command line program: each enabled account's own copy looked for and its version read, as that account | `failed` |
 | `npm {account}` | CloudCLI's npm for one account | `failed` |
 | `start`, `stop` | the runner's start or stop | `failed` |
 | `uninstall` | the module stopped, the hub's configuration removed, an install still running stopped ([modules/cloudcli.md](agent/modules/cloudcli.md), "An uninstall stops what still installs"), the software, `post_uninstall`, and the data where the recipe says | `failed` |
@@ -435,6 +451,7 @@ that can pass 30 seconds by the lab's times:
 | Ayakaleaf | `wait_module podman`, `pull app`, `pull mongo`, `pull redis`, `verify`, `render`, `start`, `replica_set`, `wait_app`, `admin`, `tex`, `guests` | `pull app` 84 to 135 seconds, `tex` 4 to 5 minutes |
 | VS Code, code-server, Codeg, SiYuan | `artifact <name>` per archive, `verify`, `configure`, then `account {account}` per enabled account | an archive, up to 42 seconds for Codeg's |
 | CloudCLI | the same, with `npm {account}` before each `account {account}` | `npm`, 2 to 3.5 minutes on Linux |
+| Codex, Claude Code | `find`, then `artifact <name>` and `verify` while an account needs the module's own copy and it is missing, `configure`, then `account {account}` per enabled account | the archive, 127 MiB for Claude Code and 191 MiB for Codex on Linux amd64; `find`, up to 5 seconds per account for its login shell |
 
 Gitea's `account` is a step apart from its `configure`, so `system_accounts`
 is held for the one command that makes the account and not for Gitea's
@@ -615,6 +632,27 @@ state root, and only a thing that carries the mark is ever changed or removed.
 | A module adds its own things through a seam the program offers for exactly that, an `include` line, a share of the system's SMB server, a unit of its own, and takes them away through the same seam at uninstall, leaving the person's things as they were. | The person's configuration is theirs before, during and after. |
 | No module fences the machine: no `hosts allow` of the whole server, no firewall rule, no pf anchor. A module's own share answers the loopback alone, since every client reaches it through the agent's relay. | A fence around the person's shares would block what the person opened on purpose. |
 
+A person's own copy of the software a module installs is treated by one
+question: can two copies live on one machine side by side? A command line
+program can, one per account and one per place on `PATH`. A server with a
+fixed port, unit, system account or GPU cannot.
+
+| What the module finds | Software two copies of run side by side: a command line program, Codex or Claude Code | Software of which one copy runs on a machine: a server, such as Samba or a Podman machine |
+| --- | --- | --- |
+| no copy | installs its own | installs its own |
+| the person's copy, at a version the module supports | uses it, records it as the person's, and installs nothing for that account | adopts it, as the file share adopts a person's Samba |
+| the person's copy, older than the module supports | installs its own beside it, and the account's row shows `copy_version_unsupported {account, version, min}`; the person's shell keeps running the person's copy | refuses with a code that names it, and never runs a second server |
+| the person's copy at a supported version, appearing after the module installed its own | uses the person's copy at the next `find` ("The kinds of module"), and takes away its own link or `PATH` entry for that account where it still stands; its own copy stays until **Uninstall** | reports a code that names it, and the person decides |
+
+| Rule | Reason |
+| --- | --- |
+| A program's own copy is looked for as the account, never as root: in every directory of the `PATH` the account's login shell prints, in order, then in the places its publisher's installers and the usual package managers put it. The first copy found that is not the module's link or launcher is the account's, and its version is read by running it with `--version` as the account. | The copy the person's shell runs is the one the person uses. A version manager, nvm or mise among them, adds its directory in the person's shell profile, which only the person's own shell reads. Reading the whole `PATH` finds a copy behind the module's own link, where `command -v` prints the link. |
+| The module never updates, moves, relinks or removes the person's copy, and writes none of the person's files: its settings and the gateway's are the machine's AI tools setting's ([agent/ai_tools.md](agent/ai_tools.md)). | The person's copy and its own updates are the person's, before, during and after the module. |
+| The module's own copy is reached from a person's shell through a link the module makes as the account, `~/.local/bin/<name>` on Linux and macOS, made only while the account uses the module's copy and nothing stands at that path; on Windows through one entry at the end of the account's user `PATH`. | `~/.local/bin` is where the publishers' own installers put the program, and a name that is taken stays the person's, as pipx leaves it. A link needs a right a Windows account usually lacks, and an entry at the end hides no copy of the person's. |
+| A link carries the module's mark in its target, the module's own launcher; a `PATH` entry carries it by being the launcher's folder exactly. The module changes or removes only a link or an entry that still carries the mark. | When the person runs the publisher's installer, it replaces the link with its own, and the name is the person's from then on. |
+| No shell profile is edited, the person's or the system's. Neutrino's own sessions, a Terminal shell, an `exec` command and an SSH server session, start with every command line program's launcher folder at the end of `PATH`. | A line in a profile outlives the module and reaches shells Neutrino never opened. At the end of `PATH`, every copy of the person's is found first. A login profile that keeps the inherited `PATH`, as macOS's and Arch's do, then reaches the module's copy where `~/.local/bin` is on no `PATH`; where the profile sets `PATH` anew, as Debian's and Ubuntu's do, `~/.profile` puts `~/.local/bin` on it. |
+| An **Uninstall** removes the module's own copy, every link and entry that still carries its mark, and the module's record, also while an account still uses the module's copy. The person's copy, `~/.claude`, `~/.codex` and every other file of theirs stay. | The module removes what it made and nothing else, and an account that used the module's copy runs none afterwards, as after any uninstall. |
+
 ## The kinds of module
 
 Every module is of one kind by how it runs, and each platform entry of its
@@ -632,6 +670,21 @@ linked from the table.
 | a service with a system account of its own | [Gitea](agent/modules/gitea.md) | `hub` | the account and the service the module makes, in the publisher's layout on every system |
 | a program run as a person's account | [VS Code](agent/modules/vscode.md), [code-server](agent/modules/code_server.md), [CloudCLI](agent/modules/cloudcli.md), [Codeg](agent/modules/codeg.md), [SiYuan](agent/modules/siyuan.md) | `hub`, each archive unpacked and sealed under `agent/<module>/<directory>/` | one account service per enabled account, the forwarder in front of it, one app per running instance |
 | container images | [Hermes WebUI](agent/modules/hermes_webui.md), [Ayakaleaf](agent/modules/ayakaleaf.md) | `container`, pulled by the Containers module's Podman | hub containers on the Containers module, which the module needs |
+| a command line program per account | [Codex](agent/modules/codex.md), [Claude Code](agent/modules/claude_code.md) | `hub`, the module's own copy unpacked and sealed under `agent/<module>/<directory>/` while an enabled account needs it | nothing runs until a person runs the program: each enabled account runs its own copy or the module's, which its link or its `PATH` entry reaches |
+
+A command line program is a module with no service, no port and no page.
+It has no **Start** and no **Stop**, as the modules the agent carries have
+none, and its kind chip reads Program
+([agent/module_install.md](agent/module_install.md), "The source chip and
+the kind chip").
+
+| Rule | Reason |
+| --- | --- |
+| The module's own copy, at the version the hub sets, is on the machine while no account is enabled, or while an enabled account has no copy of its own at the version the module supports. An apply that finds every enabled account served by its own copy leaves the module's copy where it is, and only **Uninstall** removes it. The source chip reads Upstream while the module's copy is on the machine, and User-installed while it is not. | **Install** with no account installs what the press names, and a copy of the person's can go away again at any time. The chip names who manages the copies the accounts run. |
+| The module's copy never updates itself. Its version moves in the hub, as every `hub` module's does ([agent/module_install.md](agent/module_install.md), "Module versions"), and the launcher sets what the program reads to leave its updater off. | The unpack is root's and read-only, and a program whose updater writes beside it in the account's home ends with a copy the hub never chose. |
+| The module keeps, for each enabled account, the copy it uses, `user` or `module`, its path, its version, and its file's size, time and inode, in its record under the state root. A read compares the recorded file's size, time and inode, and runs `--version` again, as the account, only when they changed. | The agent reads every module at each report, and a login shell costs up to 5 seconds per account. |
+| A read that finds an account's recorded copy gone, its version now below the module's floor, or the link the module made for it no longer carrying the mark, makes the module ask for a task of its own, as a forwarder asks for a configure task ("From a state to tasks"). That task's `find` chooses the account's copy again: a copy the person installed in the link's place becomes the account's, and an account whose copy went moves to the module's copy, installed first when it is missing. Any other copy of the person's appearing is found at the module's next task: a press, the panel's apply, a new state, or an agent of another build. | The person's copy can go or change without any press on the panel, and the account keeps a working copy. Reading a link's target costs nothing, and a publisher's installer replaces the link. |
+| Installing a command line program changes no account's AI tools switch. Its tab shows each account's switch as the account's form set it. | The switch is the person's choice per account, and one mechanism, the machine's AI tools setting, writes the gateway into the tools' files ([agent/ai_tools.md](agent/ai_tools.md)). |
 
 Terminal, Remote desktop and the SSH server install nothing: their platform
 entries name the method `agent`, they are locked checked in the machine page's catalog,
@@ -655,7 +708,10 @@ hooks, the account service layer
 `modules/shared/account_service/`, one file per system, writes the service
 definition and starts, stops, removes and queries it, and
 `modules/shared/http_forward.py` is in front of each instance on
-`127.0.0.1`. `modules/shared/` is the one package of what every module
+`127.0.0.1`. A command line program keeps the same three files, and
+`modules/shared/programs.py` runs every one through its hooks: the `find`,
+the module's copy, the launcher, the record, the links and the `PATH`
+entries. `modules/shared/` is the one package of what every module
 runner shares, each file one concept.
 
 ## The two layers and the accounts
@@ -665,7 +721,7 @@ runs as root, SYSTEM on Windows: installs, system services, Containers, the
 SMB server and the remote desktop service. The account layer runs as one of
 the machine's own accounts, each process being that account and nothing
 more: the terminal, the SSH server, VS Code, code-server, CloudCLI, Codeg,
-SiYuan, the AI tools and the account's file share.
+SiYuan, Codex, Claude Code, the AI tools and the account's file share.
 
 An available account is one of the machine's accounts the person added on
 the machine page, with what every feature of the account layer needs to know
@@ -904,7 +960,8 @@ machine's AI tools, pointed at the gateway by cc-switch run as each account
 ([ai_tools.md](agent/ai_tools.md)). The fourth is a terminal or a command for
 an enabled account of the Terminal module: on Linux and macOS the shell, or
 the command an `exec` stream names, runs through the platform's step-down
-with that account's home and environment, the shell as a login shell on a
+with that account's home and environment, every command line program's
+launcher folder at the end of its `PATH`, the shell as a login shell on a
 pseudo-terminal the agent makes; on Windows the agent logs the account on
 with its password (`LogonUserW`) and starts the shell or the command under
 that token, on a pseudo console of its own. The fifth is Containers on Windows and
@@ -915,6 +972,12 @@ script that writes into the machine, run as that account through
 keeper that starts the machine at boot is an account service; and the
 agent reads the machine itself, as SYSTEM or root, with that account's
 machine key ([modules/containers.md](agent/modules/containers.md)).
+The sixth is a command line program: its `find`, which runs the account's
+login shell to print its `PATH` and runs a found copy with `--version`, and
+the link it makes and removes in the account's home, on Linux and macOS
+through the step-down; on Windows one `run_as_account` per account reads
+the account's user `PATH`, runs a found copy, and writes or removes the
+module's entry ("Parallel, never take over").
 Everything else the agent does is root's own work.
 
 ## The platform layer
@@ -945,7 +1008,8 @@ system carries, with nothing to install or uninstall; there, any other
 module the state names reads `unsupported`, never `failed`, beside the
 Terminal, Remote desktop and SSH server rows every platform has. A platform with
 `hub_packages` gets Gitea and the programs run as an account, VS Code,
-CloudCLI, Codeg and SiYuan, and macOS code-server beside them, and Containers as
+CloudCLI, Codeg and SiYuan, and macOS code-server beside them, the command
+line programs, Codex and Claude Code, and Containers as
 `PodmanMachineModuleRunner`, runner `podman_machine`, which runs Podman inside
 a Podman machine of one account; on Linux all of them are among the runners
 `packages` builds, Containers as `PodmanModuleRunner`, runner `podman`, by
@@ -960,7 +1024,7 @@ only POSIX has is guarded, so one package imports on all three systems.
 | --- | --- | --- | --- |
 | Program | `/opt/neutrino/agent` | `C:\Program Files\Neutrino\agent` | `/Library/Application Support/Neutrino/agent/app` |
 | Configuration root: the binding, the credentials, the desired state | `/etc/neutrino/agent` | `%ProgramData%\Neutrino\agent\config`, under `%ProgramData%\Neutrino\agent`, whose ACL, SYSTEM and the administrators alone, the `.msi` sets | `/Library/Application Support/Neutrino/agent/config`, mode 700 |
-| State root: configured marks, the modules' kept failures, packages, the last reinstall, `vscode/`, `code_server/`, `cloudcli/`, `codeg/`, `siyuan/`, `ai_tools/`, `podman/`, on Windows and macOS `gitea/` and `gitea_data/`, and on Windows `batch_logon.json`, the accounts the agent granted the batch logon right ([module_template.md](agent/module_template.md), "The run") | `/var/lib/neutrino/agent` | `%ProgramData%\Neutrino\agent\state` | `/Library/Application Support/Neutrino/agent/state`, mode 755 |
+| State root: configured marks, the modules' kept failures, packages, the last reinstall, `vscode/`, `code_server/`, `cloudcli/`, `codeg/`, `siyuan/`, `codex/`, `claude_code/`, `ai_tools/`, `podman/`, on Windows and macOS `gitea/` and `gitea_data/`, and on Windows `batch_logon.json`, the accounts the agent granted the batch logon right ([module_template.md](agent/module_template.md), "The run") | `/var/lib/neutrino/agent` | `%ProgramData%\Neutrino\agent\state` | `/Library/Application Support/Neutrino/agent/state`, mode 755 |
 | Log | the journal | `%ProgramData%\Neutrino\agent\log\agent.log` | `/Library/Logs/Neutrino/agent/agent.log` |
 | Service | systemd `neutrino_agent.service` runs `nagent run` | the `neutrino_agent` service, LocalSystem, runs `nagent service run` | the `com.neutrino.agent` LaunchDaemon runs `nagent run` |
 | Control transport | Unix socket `/run/neutrino/agent/agent.sock` | named pipe `\\.\pipe\neutrino_agent`, its descriptor SYSTEM and the administrators | Unix socket `/var/run/neutrino/agent/agent.sock` |
@@ -1046,6 +1110,8 @@ module a system cannot run is left out on that system.
 | [code-server](agent/modules/code_server.md) | amd64 and arm64 | no | arm64 and amd64 |
 | [CloudCLI](agent/modules/cloudcli.md) | amd64 and arm64 | amd64 and arm64 | arm64 and amd64 |
 | [Codeg](agent/modules/codeg.md) | glibc 2.34, the agent's own floor, amd64 and arm64 | amd64 | arm64 and amd64 |
+| [Codex](agent/modules/codex.md) | amd64 and arm64 | amd64 and arm64 | arm64 and amd64 |
+| [Claude Code](agent/modules/claude_code.md) | amd64 and arm64 | amd64 and arm64, Windows 10 1809 or later | arm64 and amd64, macOS 13 or later |
 | [SiYuan](agent/modules/siyuan.md) | amd64 and arm64 | amd64 | arm64 and amd64 |
 | [Hermes WebUI](agent/modules/hermes_webui.md) | wherever Containers runs, amd64 and arm64 | amd64, on Containers | arm64 and amd64, on Containers |
 | [Ayakaleaf](agent/modules/ayakaleaf.md) | wherever Containers runs, amd64 and arm64 | amd64, on Containers | arm64 and amd64, on Containers |
@@ -1054,7 +1120,9 @@ module a system cannot run is left out on that system.
 | [Remote desktop](agent/modules/remote_desktop.md) (the agent's RustDesk; the detection of a person's own AnyDesk or TeamViewer runs on every system) | yes | amd64 | yes |
 
 A module's log, the answer to its `journal` verb, is the journal of its
-systemd units on Linux. Windows and macOS run no module under a unit, so
+systemd units on Linux. A command line program has no unit on any system,
+and its journal is the agent's own lines that name it, the agent's journal
+on Linux. Windows and macOS run no module under a unit, so
 each module there reads its own sources first and then the agent's own log
 lines that name the module, from `agent.log` under the log root (the rotated
 `agent.log.1` read before it) on Windows and

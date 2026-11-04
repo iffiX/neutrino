@@ -44,7 +44,7 @@ every apply.
 
 | Request | The instance |
 | --- | --- |
-| a shell with a pseudo-terminal | starts the account's shell, `shell_path` of its row or its login shell, as a login shell on a pseudo-terminal on Linux and macOS, and on a pseudo console (ConPTY) on Windows, PowerShell when the row names none |
+| a shell with a pseudo-terminal | starts the account's shell, `shell_path` of its row or its login shell, as a login shell on a pseudo-terminal on Linux and macOS, and on a pseudo console (ConPTY) on Windows, PowerShell when the row names none; the shell's and an `exec`'s `PATH` end with every command line program's launcher folder, as a Terminal shell's do ([terminal.md](terminal.md)) |
 | `exec` | runs the command through the account's shell, `-c` on Linux and macOS and `-Command` for PowerShell, with its stdin, stdout, stderr and exit status |
 | the `sftp` subsystem | serves the account's files with `pkg/sftp`, as the account |
 | local port forwarding, `direct-tcpip` | dials the requested port when the destination is `127.0.0.1`, `::1` or `localhost`, and refuses every other destination |

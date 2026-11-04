@@ -19,6 +19,7 @@ a module the agent has no runner for reads `unsupported`.
 | A service with a system account of its own | Gitea, `gitea` | makes the account and the service, and the publisher's layout holds on every system | its configuration, one applier per system, the rendered `app.ini` ([modules/gitea.md](modules/gitea.md)) |
 | A program run as a person's account | VS Code, `vscode`; code-server, `code_server`; CloudCLI, `cloudcli`; Codeg, `codeg`; SiYuan, `siyuan` | the whole flow of this page: one account service per instance, the forwarder, the `web` entry, the shared router and the shared panel | `config.py`, `constants.py` and `hooks.py` ([modules/vscode.md](modules/vscode.md), [modules/code_server.md](modules/code_server.md), [modules/cloudcli.md](modules/cloudcli.md), [modules/codeg.md](modules/codeg.md), [modules/siyuan.md](modules/siyuan.md)) |
 | Container images | Hermes WebUI and Ayakaleaf, `container` | runs the images as hub containers on the Containers module, one network per module, and the forwarder where the module has a page | its images in the manifest, the containers it composes on the hub, and its `hooks.py` where it has a page or a step after its first start ([module_install.md](module_install.md), "From container images", [modules/hermes_webui.md](modules/hermes_webui.md), [modules/ayakaleaf.md](modules/ayakaleaf.md)) |
+| A command line program per account | Codex, `codex`; Claude Code, `claude_code` | `modules/shared/programs.py`: the `find` of each enabled account's own copy, the module's copy while an account needs it, the launcher, the record, and each account's link or `PATH` entry ([agent.md](../agent.md), "Parallel, never take over"); no service, no port, no forwarder and no published entry | `config.py`, `constants.py` and `hooks.py`: the program's name, the places a person's copy is looked for, how its version reads, and what its launcher sets ([modules/codex.md](modules/codex.md), [modules/claude_code.md](modules/claude_code.md)) |
 
 `runner` names the agent runner, and an agent that has no runner of that
 name reports the module `unsupported`. Where a module's software comes
@@ -28,6 +29,10 @@ independent: Containers runs one way on every system and installs by two
 methods.
 
 ## The run
+
+A command line program runs nothing of its own, and this section and "The
+publish" do not reach it; "The launcher and the link" holds what it puts on
+the machine.
 
 One instance runs per enabled account of the module, an available account of
 the machine ([agent.md](../agent.md), "The two layers and the accounts"). The
@@ -141,6 +146,39 @@ and `description_code` `<module>_module` ([../protocol.md](../protocol.md),
 a client opens it at its own forward's address with the token the `service`
 frame hands.
 
+## A command line program
+
+### The find
+
+A command line program's task begins with `find`, which looks for each
+enabled account's own copy ([../agent.md](../agent.md), "Parallel, never
+take over"). The places a module looks in besides `PATH` are its own page's.
+
+| Rule | Reason |
+| --- | --- |
+| On Linux and macOS `find` runs the account's login shell, the one its passwd entry names, through the step-down as a login and interactive shell, `<shell> -l -i -c 'printf "%s\n" "$PATH"'`, with empty input and at most 5 seconds, and reads the last line it prints. | Ubuntu's `~/.bashrc` returns early in a shell that is not interactive, and nvm adds its directory at the end of that file. A profile that prints a banner prints it before the last line. |
+| On Windows `find` is one `run_as_account` per account: it reads the system's `PATH` and then the account's user `PATH`, expanded, as Windows joins them for a new process, and looks for `<name>.exe`, then `<name>.cmd`, in each folder in order, passing over the module's own launcher folder. | A shell starts a program from the first folder that holds it, and npm puts a `.cmd` for each command it installs. |
+| A shell that fails or runs past its time leaves the account with the module's known places alone, and one line in the agent's log names the account and the shell. | A broken profile is the person's, and the module still finds a copy in the usual places. |
+| A copy's version is the first dotted number its `--version` prints, run as the account with at most 10 seconds. A copy whose version cannot be read counts as not found. | `claude --version` prints `2.1.311 (Claude Code)` and `codex --version` prints `codex-cli 0.166.0`. |
+
+### The launcher and the link
+
+A command line program's own copy is unpacked under its module's directory
+like any archive, and the module writes one launcher for it, `bin/<name>`
+in the module's directory, `bin\<name>.cmd` on Windows. The launcher is a
+script that sets what the module's page names and starts the copy with the
+arguments it was given. The account's link and the account's `PATH` entry
+both reach the copy through it ([agent.md](../agent.md), "Parallel, never
+take over").
+
+| Rule | Reason |
+| --- | --- |
+| The launcher is the one file in `bin/`, root's and read-only to every account as the unpack is, and on Linux with SELinux `bin/` is labelled `bin_t` with the unpack ([module_install.md](module_install.md), "From the hub's cache"). | The folder a Windows `PATH` entry and Neutrino's own sessions name holds the program's name and none of its helpers. |
+| The launcher sets only what the module's copy needs, such as `DISABLE_UPDATES` for Claude Code. The gateway's address and key stay in the files the machine's AI tools setting writes ([ai_tools.md](ai_tools.md)). | One mechanism writes the gateway, and the person's copy reads the same files. |
+| On Linux and macOS the account's link, `~/.local/bin/<name>`, points at the launcher. The module makes `~/.local/bin` as the account when it is missing, records that it made it, and at **Uninstall** removes it only when it made it and it is empty. | A directory the person had stays theirs. Debian's and Ubuntu's `~/.profile` put `~/.local/bin` on `PATH` only when it exists at login, so a shell opened before the module made it reaches the link from the next login. |
+| On Windows the account's user `PATH` gains the launcher's folder at its end, its full path spelled out. The value is read unexpanded with its own type, `REG_EXPAND_SZ` or `REG_SZ`, written back with that type and every other entry as it was, and Windows is told the environment changed, which shells opened afterwards read. | A write that expands or retypes the value breaks the person's entries that name `%USERPROFILE%` or another variable. |
+| A program whose module the state does not name makes no link and no entry, and reads `installed` only while its module's copy is in the module's directory. | A link appears only for an account the person enabled, and a person's own copy alone does not make a machine show the module. |
+
 ## The hub side
 
 The hub describes every module once, in the description table
@@ -149,14 +187,15 @@ The hub describes every module once, in the description table
 entry's `description_code`, and the panel kind the machine page draws. The
 table's rows are in the one order every list of modules shows, and the
 manifest loader returns the modules in it ([ui_behavior.md](../ui_behavior.md),
-"The machine page"). The five programs run as an account share one router,
+"The machine page"). The five programs run as an account and the two
+command line programs share one router,
 `routers/agent/module_instances.py`, which serves `GET
 /api/agent/module/<module>` and `POST /api/agent/module/<module>/set` for
 each from that table; VS Code's terms acceptance stays in
 `module_vscode_terms.py`. Their secrets, each enabled account's token secret,
 CloudCLI's password and SiYuan's access code, are generated the first time the account is enabled
 and kept sealed under the vault's data key in
-`config/devices/<id>/<module>.json`, and the state carries them opened. SiYuan's gateway key per enabled account is generated with them, and voided when the account is disabled ([modules/siyuan.md](modules/siyuan.md), "The gateway"). The panel draws the five with one `instances_panel.tsx`
+`config/devices/<id>/<module>.json`, and the state carries them opened. SiYuan's gateway key per enabled account is generated with them, and voided when the account is disabled ([modules/siyuan.md](modules/siyuan.md), "The gateway"). A command line program generates no secret. The panel draws the seven with one `instances_panel.tsx`
 ([ui_behavior.md](../ui_behavior.md), "The machine page").
 
 ## Guest accounts of an App share
@@ -204,7 +243,7 @@ with an empty code, then each failure with its code and params.
 
 ## What a module owns
 
-| Where | A program run as an account owns | The other kinds own |
+| Where | A program run as an account, and a command line program, owns | The other kinds own |
 | --- | --- | --- |
 | agent, `modules/<module>/` | `config.py`, `constants.py`, `hooks.py` | its config, constants, runner, renderer where it renders, and one applier per system |
 | hub | one line in the description table and `data/manifests/<module>.json` | the same, and its own router under `routers/agent/` |
@@ -237,6 +276,7 @@ under `modules/<module>/`, which the `container` runner calls.
 | `windows_acl.py` | running `icacls.exe` for a module on Windows, the exit code read and the output dropped |
 | `account_service/` | one file per system: write the service definition for an account, start, stop, disable, enable, remove and query it; its `__init__.py` also holds `write_if_changed`, which writes a file only when its text differs, so an apply that changes nothing rewrites no file |
 | `instances.py` | the generic runner of the account-program kind, which drives the hooks of each module |
+| `programs.py` | the generic runner of the command line program kind, which drives the hooks of each module: the `find`, the choice of copy per account, the record, the launcher, the links and the Windows `PATH` entries ("The launcher and the link") |
 
 An applier on Windows runs its cmdlets through the agent's one PowerShell
 host in `platforms/` ([agent.md](../agent.md), "The PowerShell host on
@@ -257,6 +297,9 @@ drawn with `generic.svg` in the same directory.
 | The per-account data | `~/.local/share/neutrino/agent/<module>/` | `~/Library/Application Support/Neutrino/agent/<module>/` | `%LOCALAPPDATA%\Neutrino\agent\<module>\` |
 | The service definition | the unit `neutrino_<module>@<account>.service` | `/Library/LaunchDaemons/com.neutrino.<module>.<account>.plist` | the scheduled task `neutrino_<module>_<account>` |
 | The log | the unit's journal | `/Library/Logs/Neutrino/agent/<module>_<account>.log`, or the file the module names | `<account>.log` beside the program, or the file the module names |
+| A command line program's launcher | `/var/lib/neutrino/agent/<module>/bin/<name>` | `/Library/Application Support/Neutrino/agent/state/<module>/bin/<name>` | `%ProgramData%\Neutrino\agent\state\<module>\bin\<name>.cmd` |
+| A command line program's way in from a shell | the link `~/.local/bin/<name>` | the link `~/.local/bin/<name>` | the launcher's folder at the end of the account's user `PATH` |
+| A command line program's record | `/var/lib/neutrino/agent/<module>/record.json` | `/Library/Application Support/Neutrino/agent/state/<module>/record.json` | `%ProgramData%\Neutrino\agent\state\<module>\record.json` |
 
 The module's directory is `<module>/` under the state root, the first row's
 path without `<directory>`. Each install class
