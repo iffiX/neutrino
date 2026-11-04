@@ -240,7 +240,8 @@ case of this rule.
 
 | Rule | Reason |
 | --- | --- |
-| On Linux and macOS a child process takes the account's groups, group and user before it opens the path; on Windows the work runs under the account's own token. | An account can put a link or a junction where the agent reads or writes, and can change it between a check of the path and the write. Run as the account, the work reaches only what the account could reach itself, so no check of the path is needed. |
+| On Linux and macOS a child process takes the account's groups, group and user before it opens the path; on Windows the work runs under a logon of the account made with the login the hub keeps for it in its vault. | An account can put a link or a junction where the agent reads or writes, and can change it between a check of the path and the write. Run as the account, the work reaches only what the account could reach itself, so no check of the path is needed. |
+| On Windows every module that touches an account's place asks for the account's login when the account is enabled, as the programs run as an account already do, and the hub sends it in the desired state. | Windows gives a token of an account only to a logon with its password; the hub already keeps that login, so the agent never lacks it. |
 | A file the account must not change lives in a directory root or SYSTEM owns, never in the account's. | A file in the account's directory is the account's to replace, whoever wrote it. |
 
 ## The relay's ssh runs as root and opens no session
