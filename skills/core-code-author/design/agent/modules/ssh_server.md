@@ -21,10 +21,12 @@ are, and no client's Apps page and not the panel's Services page shows it.
 | An instance listens on `127.0.0.1` alone, at a port the agent takes from 22000 up at the instance's first start and keeps in the instance's record. The module opens no port in any firewall. | The hub reaches it through the agent's `connect` stream, and nothing on the LAN reaches it at all. |
 
 The agent starts each instance as `neutrino_ssh_server --listen
-127.0.0.1:<port> --host-key <file> --authorized-key <file> --shell <shell>`,
-the two files in `ssh_server/run/<account>/` under the state root, owned by
-the account, the directory mode 700 and each file 600, written again at
-every apply.
+127.0.0.1:<port> --host-key <file> --authorized-key <file> --shell <shell>
+--path-folders <file>`, the three files in `ssh_server/run/<account>/` under
+the state root, the directory the account's own and mode 700. The host key
+and the authorized key are the account's, mode 600, written again at every
+apply. `path_folders`, root's and mode 644, holds the launcher folders a
+session's `PATH` starts with, one per line ("The `PATH` of a session").
 
 ## Keys
 
@@ -44,7 +46,7 @@ every apply.
 
 | Request | The instance |
 | --- | --- |
-| a shell with a pseudo-terminal | starts the account's shell, `shell_path` of its row or its login shell, as a login shell on a pseudo-terminal on Linux and macOS, and on a pseudo console (ConPTY) on Windows, PowerShell when the row names none; the shell's and an `exec`'s `PATH` start with the launcher folders of the command line programs the account is enabled in, the instance's `programs`, as a Terminal shell's do ([terminal.md](terminal.md)); a change of them writes the instance's service again, and the instance starts again |
+| a shell with a pseudo-terminal | starts the account's shell, `shell_path` of its row or its login shell, as a login shell on a pseudo-terminal on Linux and macOS, and on a pseudo console (ConPTY) on Windows, PowerShell when the row names none; the shell's and an `exec`'s `PATH` start with the launcher folders of the command line programs the account is enabled in, as a Terminal shell's do ([terminal.md](terminal.md)), read from `path_folders` as the shell or the command starts ("The `PATH` of a session") |
 | `exec` | runs the command through the account's shell, `-c` on Linux and macOS and `-Command` for PowerShell, with its stdin, stdout, stderr and exit status |
 | the `sftp` subsystem | serves the account's files with `pkg/sftp`, as the account |
 | local port forwarding, `direct-tcpip` | dials the requested port when the destination is `127.0.0.1`, `::1` or `localhost`, and refuses every other destination |
@@ -54,12 +56,24 @@ every apply.
 reach the server they start on the machine's loopback, and limiting it to
 loopback keeps the server from being a way onto the machine's LAN.
 
+## The `PATH` of a session
+
+| Rule | Reason |
+| --- | --- |
+| The agent writes `path_folders` from the instance's `programs` in the state, the launcher folder of each program in the order of the command line programs, at the account's `account` step, and writes it only when its text changes. The new text is written whole beside the file, in a file the agent makes new and that follows no link, and renamed into its place; the file is not handed to the account. | A session reads the old list or the new one, never part of one. A link the account puts in its own run directory cannot turn the agent's write or a change of owner onto another file. |
+| The instance's service, its arguments and its environment do not change with the account's programs, and checking or unchecking a program starts no instance again. | Every open session of the account stays connected while the person checks or unchecks a program. |
+| The server reads the file each time a shell or an `exec` starts and puts its folders at the front of that process's `PATH`, each once. A session already open keeps the `PATH` it started with, and a session started afterwards has the new folders, or none after the last program lets the account go. The `sftp` subsystem reads nothing. | A process's environment is fixed at its start, so the next session is the first that can carry a change. |
+| A missing or unreadable file gives the session no folders, and the session starts. | A file the account removed from its own run directory costs the account its folders, never its sessions. |
+| On Windows a shell or an `exec` starts from the account's environment as the registry holds it at that moment, built from the instance's own token as the Terminal's logon builds it, with the folders of `path_folders` at the front. The environment the instance's task started with is not passed on. | The account's user `PATH` names a program's launcher folder while the account is enabled in it, and the task's environment keeps that folder after the program lets the account go. |
+| On Windows the server opens the file with delete sharing. | Windows fails a rename over a file that another process holds open without it, which would fail the agent's write. |
+
 ## The hub side
 
 The state carries the module as `{instances: [{account, authorized_key,
-shell_path, password}]}`, `authorized_key` the account key's public half in
-OpenSSH form, `shell_path` the account row's, and `password` the account's
-login, sent to a Windows machine alone ([../../protocol.md](../../protocol.md),
+shell_path, password, programs}]}`, `authorized_key` the account key's public
+half in OpenSSH form, `shell_path` the account row's, `password` the
+account's login, sent to a Windows machine alone, and `programs` the command
+line programs the account is enabled in ([../../protocol.md](../../protocol.md),
 "The account layer in the state"). `details` is `{host_key,
 host_key_fingerprint, instances: [{account, port, is_running, code}]}`,
 `host_key` the public host key in OpenSSH form and `host_key_fingerprint`
