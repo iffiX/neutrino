@@ -70,7 +70,13 @@ platform's artifact takes the integrity of the build `{version}-<platform>`
 version is listed for a platform once that build is published:
 0.166.0-win32-arm64 came 19 minutes after 0.166.0. `verify` is
 `package/vendor/<target>/bin/codex` with `--version`, which prints
-`codex-cli 0.166.0`.
+`codex-cli 0.166.0`. The agent runs it with `CODEX_HOME` set to
+`codex/verify_home/` under the state root, which it makes beside the
+module's copy.
+
+| Rule | Reason |
+| --- | --- |
+| `verify` runs with `CODEX_HOME` pointing into the module's directory. | Every start of Codex, `--version` too, makes a folder under `tmp/` in its home folder, `tmp/arg0-linux/` on Linux: run as root without the variable, it wrote `/root/.codex/` in the lab. With the variable it writes under `verify_home/` alone and keeps one such folder whatever the number of runs, and an uninstall removes it with the module's directory. |
 
 **The launcher starts the copy and sets nothing.** `codex/bin/codex`,
 `codex.cmd` on Windows, starts `package/vendor/<target>/bin/codex` with its
