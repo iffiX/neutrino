@@ -60,6 +60,7 @@ from neutrino_hub.web import channel_state
 from neutrino_hub.web.channel_addresses import enrollment_link_parts
 from neutrino_hub.web.channel_serve import module_task_label
 from neutrino_hub.web.constants import (
+    WEB_REINSTALL_NOT_REPORTED_STATUS,
     WEB_REINSTALL_POLL_S,
     WEB_REINSTALL_REPORT_TIMEOUT_S,
     WEB_REINSTALL_RETURN_TIMEOUT_S,
@@ -1301,12 +1302,14 @@ async def _reinstall_stream(runtime: PanelRuntime, key: str) -> AsyncIterator[st
         key: The device.
 
     Yields:
-        The command's lines, the agent's return, then its exit status or
-        the failure's code, or a typed word when nothing was reported.
+        The command's lines, the agent's return, the failure's code or a
+        typed word when nothing was reported, then the line ``[exit N]``.
 
     Raises:
-        TaskExitStatusError: When the command or the installer failed, or no
-            report came in time; the task ends with the agent's status.
+        TaskExitStatusError: After an ``[exit N]`` line whose N is not 0,
+            with that N: the installer's status, 1 for a device with no live
+            agent, and WEB_REINSTALL_NOT_REPORTED_STATUS when no result came
+            in time.
     """
     before = runtime.agent_sessions.get(key)
     before_failure = _reinstall_failure(before)
@@ -1316,6 +1319,7 @@ async def _reinstall_stream(runtime: PanelRuntime, key: str) -> AsyncIterator[st
         )
     except AgentOfflineError as error:
         yield _coded_line(error.code, dict(error.params))
+        yield "[exit 1]\n"
         raise TaskExitStatusError(1) from error
     async for line in _command_lines(stream):
         yield line
@@ -1323,8 +1327,14 @@ async def _reinstall_stream(runtime: PanelRuntime, key: str) -> AsyncIterator[st
     if info.get("code") == AgentOfflineError.code:
         yield "agent restarting\n"
     else:
-        for line in _close_lines(info):
-            yield line
+        try:
+            for line in _close_lines(info):
+                yield line
+        except TaskExitStatusError as error:
+            # _close_lines ends a close with a code on the code's line.
+            if info.get("code"):
+                yield f"[exit {error.exit_status}]\n"
+            raise
     loop = asyncio.get_running_loop()
     deadline = loop.time() + WEB_REINSTALL_RETURN_TIMEOUT_S
     reconnected_at = None
@@ -1339,6 +1349,7 @@ async def _reinstall_stream(runtime: PanelRuntime, key: str) -> AsyncIterator[st
             if output:
                 yield output if output.endswith("\n") else output + "\n"
             yield _coded_line(CODE_REINSTALL_FAILED, failure)
+            yield f"[exit {_failed_status(failure)}]\n"
             raise TaskExitStatusError(_failed_status(failure))
         if reconnected_at is not None and session is not None and session.reported_at:
             yield "[exit 0]\n"
@@ -1348,10 +1359,12 @@ async def _reinstall_stream(runtime: PanelRuntime, key: str) -> AsyncIterator[st
             and loop.time() - reconnected_at > WEB_REINSTALL_REPORT_TIMEOUT_S
         ):
             yield "reinstalled, no report from this agent\n"
-            return
+            yield f"[exit {WEB_REINSTALL_NOT_REPORTED_STATUS}]\n"
+            raise TaskExitStatusError(WEB_REINSTALL_NOT_REPORTED_STATUS)
         await asyncio.sleep(WEB_REINSTALL_POLL_S)
     yield _coded_line("reinstall_not_reported", {})
-    raise TaskExitStatusError(1)
+    yield f"[exit {WEB_REINSTALL_NOT_REPORTED_STATUS}]\n"
+    raise TaskExitStatusError(WEB_REINSTALL_NOT_REPORTED_STATUS)
 
 
 def _coded_line(code: str, params: dict) -> str:

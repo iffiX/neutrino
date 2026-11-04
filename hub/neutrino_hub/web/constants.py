@@ -308,6 +308,9 @@ WEB_REINSTALL_POLL_S = 0.5
 # How long the returned agent has to send its first report, which is where
 # the install's own output and exit status ride up.
 WEB_REINSTALL_REPORT_TIMEOUT_S = 10.0
+# What a reinstall task ends with when no result of the install came in time.
+# The status `timeout` exits with, and distinct from the installer's own.
+WEB_REINSTALL_NOT_REPORTED_STATUS = 124
 
 # The kind of package the hub was installed from, read off the end of the
 # release file name the build stamped (HUB_PACKAGE_ASSET).

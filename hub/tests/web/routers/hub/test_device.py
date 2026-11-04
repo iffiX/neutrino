@@ -18,7 +18,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from neutrino_hub.modules.channel.tickets import ChannelTicketRegistry
-from neutrino_hub.exceptions import TaskExitStatusError
+from neutrino_hub.exceptions import AgentOfflineError
 from neutrino_hub.modules.credentials.vault import SecretVault
 from neutrino_hub.modules.devices import desired_state as desired_state_module
 from neutrino_hub.modules.devices.agent_package import AgentPackageCache
@@ -1266,9 +1266,13 @@ class _ClosedStream:
 
 
 FAILURE = {"exit_code": 1, "finished_at": "2026-09-10T00:00:04Z"}
+# The status of a reinstall whose result never came, the status `timeout` gives.
+NOT_REPORTED = 124
 
 
 def drain_reinstall(monkeypatch, presence, **overrides):
+    """The reinstall run as the panel starts it, a task: its lines, then the
+    task's status when that is not 0."""
     import asyncio
 
     monkeypatch.setattr(devices_router, "WEB_REINSTALL_POLL_S", 0.0)
@@ -1276,16 +1280,20 @@ def drain_reinstall(monkeypatch, presence, **overrides):
     for name, value in overrides.items():
         monkeypatch.setattr(devices_router, name, value)
     runtime = SimpleNamespace(agent_sessions=presence)
-    lines: list = []
 
-    async def drain():
-        async for line in devices_router._reinstall_stream(runtime, "dev"):
-            lines.append(line)
+    async def run():
+        stream = TaskStreamRegistry().start(
+            label="reinstall dev",
+            source=devices_router._reinstall_stream(runtime, "dev"),
+        )
+        while not stream.is_finished:
+            await asyncio.sleep(0)
+        return stream
 
-    try:
-        asyncio.run(drain())
-    except TaskExitStatusError as error:
-        lines.append(error.exit_status)
+    stream = asyncio.run(run())
+    lines: list = list(stream.buffer)
+    if stream.exit_code:
+        lines.append(stream.exit_code)
     return lines
 
 
@@ -1307,8 +1315,9 @@ def test_a_failed_install_is_reported_on_the_socket_that_stayed(monkeypatch):
     )
 
     assert "agent 9.9.9 reconnected\n" not in lines
-    assert lines[-2:] == [
+    assert lines[-3:] == [
         "reinstall_failed: exit_code=1, finished_at=2026-09-10T00:00:04Z\n",
+        "[exit 1]\n",
         1,
     ]
 
@@ -1323,6 +1332,7 @@ def test_a_failure_from_before_the_launch_is_not_the_answer(monkeypatch):
 
 
 def test_an_agent_that_returns_and_never_reports_is_named(monkeypatch):
+    """The task ended "reinstalled, no report" with no exit line and status 0."""
     old, new = Session(), Session(reported_at="")
     lines = drain_reinstall(
         monkeypatch,
@@ -1331,7 +1341,11 @@ def test_an_agent_that_returns_and_never_reports_is_named(monkeypatch):
     )
 
     assert "agent 9.9.9 reconnected\n" in lines
-    assert lines[-1] == "reinstalled, no report from this agent\n"
+    assert lines[-3:] == [
+        "reinstalled, no report from this agent\n",
+        f"[exit {NOT_REPORTED}]\n",
+        NOT_REPORTED,
+    ]
 
 
 def dropped(presence):
@@ -1358,9 +1372,10 @@ def test_a_failure_the_returned_agent_reports_ends_the_task(monkeypatch):
         monkeypatch, dropped(Presence([(old, None), (None, None), (new, failure)]))
     )
 
-    assert lines[-3:] == [
+    assert lines[-4:] == [
         "dpkg: error\n",
         "reinstall_failed: exit_code=3, finished_at=2026-09-10T00:00:04Z\n",
+        "[exit 3]\n",
         3,
     ]
 
@@ -1373,7 +1388,11 @@ def test_a_dropped_agent_that_never_returns_is_typed(monkeypatch):
         WEB_REINSTALL_RETURN_TIMEOUT_S=0.05,
     )
 
-    assert lines[-2:] == ["reinstall_not_reported\n", 1]
+    assert lines[-3:] == [
+        "reinstall_not_reported\n",
+        f"[exit {NOT_REPORTED}]\n",
+        NOT_REPORTED,
+    ]
 
 
 def test_nothing_reported_in_time_is_typed(monkeypatch):
@@ -1382,7 +1401,26 @@ def test_nothing_reported_in_time_is_typed(monkeypatch):
         monkeypatch, Presence([(old, None)]), WEB_REINSTALL_RETURN_TIMEOUT_S=0.0
     )
 
-    assert lines[-2:] == ["reinstall_not_reported\n", 1]
+    assert lines[-3:] == [
+        "reinstall_not_reported\n",
+        f"[exit {NOT_REPORTED}]\n",
+        NOT_REPORTED,
+    ]
+
+
+def test_a_device_that_drops_before_the_command_ends_with_its_exit_line(
+    monkeypatch,
+):
+    presence = Presence([(Session(), None)])
+
+    async def open_stream(key, kind, args):
+        raise AgentOfflineError(key)
+
+    presence.open_stream = open_stream
+
+    lines = drain_reinstall(monkeypatch, presence)
+
+    assert lines == ["agent_offline: device=dev\n", "[exit 1]\n", 1]
 
 
 def test_a_refused_reinstall_is_worded_and_ends_with_the_agents_status(monkeypatch):
@@ -1404,6 +1442,7 @@ def test_a_refused_reinstall_is_worded_and_ends_with_the_agents_status(monkeypat
     assert lines == [
         "reinstall_failed: exit status 3\n",
         "reinstall_failed: exit_code=3\n",
+        "[exit 3]\n",
         3,
     ]
 
