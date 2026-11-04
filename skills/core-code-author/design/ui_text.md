@@ -381,7 +381,7 @@ where they fit.
 | `ui.machine.not_found` | This machine is not on record. | 没有这台机器的记录。 |
 | `ui.ai_tools.gateway_default` | Gateway default | 网关默认 |
 | `ui.modules.tabs_title` | Module configuration | 模块配置 |
-| `ui.modules.source_agent`, `ui.modules.source_system`, `ui.modules.source_upstream`, `ui.modules.source_container`, `ui.modules.source_user`, the source chip of a module's tab | Built-in, System, Upstream, Container, User-installed | 自带、系统、外部源、容器、用户安装 |
+| `ui.modules.source_agent`, `ui.modules.source_system`, `ui.modules.source_upstream`, `ui.modules.source_container`, the source chip of a module's tab | Built-in, System, Upstream, Container | 自带、系统、外部源、容器 |
 | `ui.modules.kind_service`, `ui.modules.kind_program`, the kind chip of a module's tab | Service, Program | 服务、普通程序 |
 | `ui.modules.log_title` | Log · last 200 lines | 日志 · 最后 200 行 |
 | `ui.modules.config_title` | Configuration | 配置 |
@@ -451,13 +451,10 @@ kind chip":
 | source | System | 系统 |
 | source | Upstream | 外部源 |
 | source | Container | 容器 |
-| source | User-installed | 用户安装 |
 | kind | Service | 服务 |
 | kind | Program | 普通程序 |
 
-Codex and Claude Code read Program, and User-installed while every enabled
-account runs a copy of the person's. An account's row on their tab names
-the copy it uses with the same two source words.
+Codex and Claude Code read Program and Upstream.
 
 The keys of the Modules page's machine picker and **Global configuration**,
 `ui.modules.no_pick`, `ui.modules.no_pick_hint`, `ui.modules.global_title`,
@@ -508,7 +505,6 @@ sentences.
 | `ui.modules.step.tex` | Install TeX packages | 安装 TeX 宏包 |
 | `ui.modules.step.guests` | Create the App share guests | 建好应用分享的访客账户 |
 | `ui.modules.step.tools` | Set the AI tools of {account} | 设置 {account} 的 AI 工具 |
-| `ui.modules.step.find` | Look for each account's own copy | 查找各账户自己安装的副本 |
 | `ui.modules.failed_step`, the first line of a failed row's notice, `{step}` being one of the step words above | Failed at step {index} of {count}: {step} | 第 {index}/{count} 步失败：{step} |
 
 An `artifact` step reads its artifact's own words,
@@ -638,10 +634,18 @@ whose line named Gemini; each tool is one entry of the `code` category.
 | `ui.claude_code.owner_notice` | You install Claude Code on this machine under Anthropic's legal agreements. | 你在这台机器上按 Anthropic 的法律协议安装 Claude Code。 |
 | `ui.codex.apply` | Apply Codex | 应用 Codex |
 | `ui.claude_code.apply` | Apply Claude Code | 应用 Claude Code |
-| `ui.program.apply_hint` | Looks for each checked account's own copy, and gives an account with none this module's copy. | 查找每个勾选账户自己安装的副本，没有的账户改用本模块安装的副本。 |
-| `ui.program.macos_path_hint` | On macOS, add ~/.local/bin to each account's PATH so its own shells find this module's copy by its name. Neutrino's terminal finds it already. | 在 macOS 上，请把 ~/.local/bin 加进每个账户的 PATH，它自己的 shell 才能按名字找到本模块安装的副本。微子的终端里已经能找到。 |
-| `code.copy_version_unsupported` | {account}'s own copy is version {version}, older than {min}; {account} uses this module's copy. | {account} 自己安装的副本是 {version}，低于 {min}，改用本模块安装的副本。 |
-| `code.link_name_taken` | {path} already exists, so {account}'s shells do not find this module's copy by its name; Neutrino's terminal does. | {path} 已经存在，{account} 的 shell 按名字找不到本模块安装的副本，微子的终端里可以。 |
+| `ui.program.apply_hint` | Puts this module's copy first on each checked account's PATH. | 让每个勾选账户的 PATH 先找到本模块安装的副本。 |
+| `ui.program.replace_title` | Replace the copy {account} runs | 替换 {account} 运行的副本 |
+| `ui.program.replace_body` | {account}'s shell runs {path}, version {version}. This module's copy, version {module_version}, will run in its place. | {account} 的 shell 现在运行 {path}，版本 {version}。之后改为运行本模块安装的副本，版本 {module_version}。 |
+| `ui.program.replace_body_unversioned` | {account}'s shell runs {path}. This module's copy, version {module_version}, will run in its place. | {account} 的 shell 现在运行 {path}。之后改为运行本模块安装的副本，版本 {module_version}。 |
+| `ui.program.replace_detail` | {path} stays on the machine as it is. | {path} 原样留在机器上。 |
+| `ui.program.replace_confirm` | Replace | 替换 |
+| `ui.program.system_copy_title` | {account} cannot use this module's copy | {account} 无法使用本模块安装的副本 |
+| `ui.program.system_copy_close` | Close | 关闭 |
+| `ui.program.prefer` | Put this module's copy first | 让本模块安装的副本优先 |
+| `code.copy_runs_first` | {account}'s shell runs {path} {version} before this module's copy. | {account} 的 shell 先于本模块安装的副本运行 {path} {version}。 |
+| `code.copy_unreached` | {account}'s shell does not find this module's copy. | {account} 的 shell 找不到本模块安装的副本。 |
+| `code.copy_in_system_path` | {path} {version} is on the system PATH, so {account}'s shell runs it before this module's copy. | {path} {version} 在系统 PATH 里，{account} 的 shell 会先于本模块安装的副本运行它。 |
 | `code.module_not_service` | {module} is a program and has no Start or Stop. | “{module}”是普通程序，没有启动和停止。 |
 
 ## The Hermes WebUI tab's words
