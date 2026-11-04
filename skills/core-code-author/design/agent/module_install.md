@@ -405,6 +405,15 @@ The tools inside its containers fetch from the source sets its entry lists
 | A command line program is present while its own copy passes `verify`, or while its record names an enabled account running a copy of the person's at a version the module supports, that copy's file unchanged in size, time and inode since its version was read ([../agent.md](../agent.md), "The kinds of module"). | The module installs nothing for an account served by its own copy, and that copy is the software the module stands for there. |
 | A `builtin` module reads absent while its uninstalled mark stands, whatever the runner's own check finds. | The system keeps its own software, so the runner's check stays true after an uninstall, and the row read `failed` `uninstall_unconfirmed` with no press that cleared it. |
 
+## What an uninstall removes
+
+An uninstall removes what its method's column of "Install methods" names,
+and no folder but one of Neutrino's own.
+
+| Rule | Reason |
+| --- | --- |
+| An uninstall removes only directories whose name shows they are Neutrino's: the module's directory under the state root, `agent/<module>/`, and the module's folder in an account's own Neutrino tree, `~/.local/share/neutrino/agent/<module>/` on Linux and `Neutrino` in place of `neutrino` on Windows and macOS ([module_template.md](module_template.md), "Disk layout"). A shared directory, `~/.local/bin`, `~/.local`, `~/.config`, an account's home or `/usr/local/bin`, is never removed, whoever made it, and only the module's own files in it go, such as a unit file, a launcher or a line. | A shared directory may hold the person's files, and one the module made may have been taken into use since. |
+
 ## Module versions
 
 A module's version follows its publisher's releases, apart from Neutrino's
