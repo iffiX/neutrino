@@ -75,7 +75,9 @@ such as Gitea's `git` on Linux. The system's package manager installs them
 before the artifacts, and an uninstall keeps them. A command line program's
 `hub` entry also names `user_copy_min_version`, the lowest version of a
 person's own copy the module uses ([../agent.md](../agent.md), "Parallel,
-never take over"), and the loader refuses that key on any other entry.
+never take over"), and the loader refuses that key on any other entry. It
+equals the entry's tested `version`, so the module uses no copy of a
+person's older than the version Neutrino tested.
 
 | | `agent` | `builtin` | `system` | `hub` | `container` |
 | --- | --- | --- | --- | --- | --- |

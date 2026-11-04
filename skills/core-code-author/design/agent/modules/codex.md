@@ -21,9 +21,10 @@ then these places, as the account ([../../agent.md](../../agent.md),
 | Windows | `%LOCALAPPDATA%\Programs\OpenAI\Codex\bin\codex.exe`, the publisher's `install.ps1`; `%APPDATA%\npm\codex.cmd`, npm's |
 
 A copy at the manifest's `user_copy_min_version` or newer is the account's,
-and the module installs nothing for it. An older one keeps running in the
-account's own shell, and the account uses the module's copy, its row
-reading `copy_version_unsupported {account, version, min}`.
+and the module installs nothing for it. `user_copy_min_version` is 0.166.0,
+the tested version. An older one keeps running in the account's own shell,
+and the account uses the module's copy, its row reading
+`copy_version_unsupported {account, version, min}`.
 
 **The module's copy is OpenAI's npm build for the platform.**
 `data/manifests/codex.json` names one artifact per platform, of kind
@@ -58,9 +59,12 @@ number of accounts, and a version switch holds a second copy beside it
 until the new one passes `verify` ([../module_install.md](../module_install.md),
 "Module versions").
 
-**The version moves in the hub.** The versions come from the `npm` feed of
-`@openai/codex`, read from registry.npmjs.org: its versions that are dotted
-numbers, which leaves the alpha versions and the platform builds out. Each
+**The version moves in the hub.** The tested version, 0.166.0, was the
+newest release of `openai/codex` on GitHub that is not a pre-release on
+2026-11-04, when 0.168.0-alpha.1 was the newest pre-release. The versions
+come from the `npm` feed of `@openai/codex`, read from registry.npmjs.org:
+its versions that are dotted numbers, which leaves the alpha versions and
+the platform builds out. Each
 platform's artifact takes the integrity of the build `{version}-<platform>`
 ([../module_install.md](../module_install.md), "Module versions"), so a
 version is listed for a platform once that build is published:

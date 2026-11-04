@@ -23,7 +23,8 @@ being the account's login, sent to a Windows machine alone
 | Windows | `%USERPROFILE%\.local\bin\claude.exe`, the native installer's; `%LOCALAPPDATA%\Microsoft\WinGet\Links\claude.exe`, WinGet's; `%APPDATA%\npm\claude.cmd`, npm's |
 
 A copy at the manifest's `user_copy_min_version` or newer is the account's,
-and the module installs nothing for it. An older one keeps running in the
+and the module installs nothing for it. `user_copy_min_version` is 2.1.311,
+the tested version. An older one keeps running in the
 account's own shell, and the account uses the module's copy, its row
 reading `copy_version_unsupported {account, version, min}`. The person's
 copy keeps its own updater: the native installer and npm update it in the
@@ -48,7 +49,8 @@ the state root, where the program keeps the publisher's mode 755.
 | No release of Neutrino's carries Claude Code, and its manifest names no `{release}` source. | Claude Code is Anthropic's proprietary software, and the module's installer fetches the package Anthropic publishes, from the registries that serve it. |
 
 **The version moves in the hub.** The tested version, 2.1.311, is a
-version of Anthropic's `stable` channel. The versions and their digests come
+version of Anthropic's `stable` channel: npm's `stable` dist-tag named it on
+2026-11-04, when `latest` named 2.1.318. The versions and their digests come
 from the `npm` feed of each platform's own package,
 `@anthropic-ai/claude-code-<platform>`, read from registry.npmjs.org
 ([../module_install.md](../module_install.md), "Module versions").
