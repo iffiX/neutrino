@@ -56,8 +56,7 @@ skills/              core-code-author/, this standard: design/ the design
 images/              Source artwork: icons/ the one icon source, the wolf's faces
                      in neutrino_hub/ and neutrino_client/ and the device
                      modules' glyphs in modules/, original/ the raw artwork,
-                     web/ and screenshots/ the README's images, guide/ the
-                     site's.
+                     web/ and screenshots/ the README's images.
 licenses/            The upstream licences of the software the packages carry.
 .github/workflows/   Continuous integration, the release build, and the
                      documentation site.
@@ -270,7 +269,6 @@ packaging/
                      windows/ the Windows client walk.
   integration/       The suite that runs on the box: pytest files,
                      run_on_box.sh and run_mode_matrix.sh.
-  screenshots/       The guide's screenshot tool and its shot list.
   integration_aws/   The same idea as the lab for the platforms it cannot
                      carry.
 ```
