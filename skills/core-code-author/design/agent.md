@@ -1024,8 +1024,11 @@ reads the system's and the account's `PATH`, runs a found copy, and writes,
 moves or removes the module's entry ("Parallel, never take over").
 The seventh is every read, write, `chmod`, `chown`, rename and removal in a
 place an account can write, its home and every folder it owns, whichever
-module makes it: the account's run folder of the SSH server, its RustDesk
-settings, the access list of its Home share's folder among them. On Linux
+module makes it: the account's run folder of the SSH server and its RustDesk
+settings among them. The one exception is the file share on Windows, whose
+grants on a share's folder SYSTEM sets itself
+([modules/file_share.md](agent/modules/file_share.md), "Windows and
+macOS"). On Linux
 and macOS it runs through the step-down; on Windows under a logon of the
 account with the login its row names (`LogonUserW`), as the terminal's. A
 file the account must not change lives under the state root, root's

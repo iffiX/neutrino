@@ -240,7 +240,8 @@ lives in a folder root or SYSTEM owns. An account can put a link or a
 junction where the agent reads or writes, and can change it between a check
 of the path and the write; run as the account, the work reaches only what
 the account could reach itself. How the agent becomes the account on each
-system is in [agent.md](agent.md), "Acting for an account". The machine's AI
+system, and the file share's grants on Windows as the one exception, are in
+[agent.md](agent.md), "Acting for an account". The machine's AI
 tools above are one case of this rule.
 
 ## The relay's ssh runs as root and opens no session
