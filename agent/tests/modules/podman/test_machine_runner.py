@@ -2,7 +2,10 @@
 machine and a recorded launchd.
 
 What these pin: the artifacts kept as the publisher's files with an msi or
-a pkg handed to the system's installer; a restart owed holding the apply as
+a pkg handed to the system's installer; Podman's msi or pkg installed and
+uninstalled only with the package mark, a Podman found before the install
+being the person's and left as it is on macOS and Windows, by an install,
+another version and an uninstall; a restart owed holding the apply as
 ``reboot_required``; each refusal before anything runs, a Windows disk of 0
 among them; a new machine made from the kept image and sized where the
 provider takes no size at init, its image opened to the account first,
@@ -30,6 +33,7 @@ on from the record.
 
 import functools
 import json
+import ntpath
 import os
 import subprocess
 import threading
@@ -42,6 +46,7 @@ from neutrino_agent.modules.podman import machine_runner as machine_runner_modul
 from neutrino_agent.modules.podman.config import PodmanConfig
 from neutrino_agent.modules.podman.constants import PODMAN_MACHINE_INFO_TTL_S
 from neutrino_agent.modules.podman.container_runner import ContainerModuleRunner
+from neutrino_agent.modules.podman.darwin_applier import PodmanDarwinApplier
 from neutrino_agent.modules.podman.machine import PodmanMachineState
 from neutrino_agent.modules.podman.machine_runner import (
     PODMAN_GIB,
@@ -57,6 +62,7 @@ from neutrino_agent.modules.podman.renderer import (
     machine_journal_script,
     machine_stop_script,
 )
+from neutrino_agent.modules.podman.windows_applier import PodmanWindowsApplier
 from neutrino_agent.modules.shared.account_service import (
     AccountEntry,
     ServiceMachine,
@@ -128,6 +134,11 @@ INSPECT_OUTPUT = json.dumps(
     ]
 )
 INFO = {"host": {"cpus": 2, "memTotal": 4 * PODMAN_GIB - 100 * 1024**2}}
+PODMAN_PKG = {"name": "podman", "kind": "pkg", "directory": "podman"}
+PODMAN_MSI = {"name": "podman", "kind": "msi", "directory": "podman"}
+WSL_MSI = {"name": "wsl", "kind": "msi", "directory": "wsl"}
+WSL_CODE = "{2D92E6AF-35B2-4109-893F-59E4A4F2D550}"
+PODMAN_CODE = "{E8D285D4-F069-44B9-BF8A-C41ED47B02B8}"
 WEB_REFERENCE = "ghcr.io/acme/webui@sha256:" + "a" * 64
 AGENT_REFERENCE = "docker.io/acme/agent@sha256:" + "b" * 64
 IMAGE_RECIPE = {
@@ -263,7 +274,8 @@ def machine_class_for(world: World):
 
 
 class FakeSystem(PodmanSystemApplier):
-    """The system's part, recorded; its program a file in the test's directory."""
+    """The system's part, recorded; its program a file in the test's directory,
+    which an install of Podman's package writes."""
 
     provider = "applehv"
 
@@ -277,9 +289,16 @@ class FakeSystem(PodmanSystemApplier):
         self.file_system = 0
         self.disk_error = None
         self.facts = (8, 16)
+        self.install_error = None
+        self.is_program_installed = True
 
     def install_artifact(self, artifact, path):
         self.calls.append(("install", artifact["name"], os.path.basename(path)))
+        if self.install_error is not None:
+            raise self.install_error
+        if artifact["name"] != "wsl" and self.is_program_installed:
+            with open(self.binary, "w", encoding="utf-8"):
+                pass
 
     def open_image(self, path, account):
         self.opened.append((path, account))
@@ -433,6 +452,15 @@ class Rig:
         (directory / name).write_text("zstd")
         return str(directory / name)
 
+    def install_podman(self):
+        """Podman's pkg installed by the module on a computer with no Podman."""
+        os.unlink(self.system.binary)
+        self.runner.install_artifact({}, dict(PODMAN_PKG), download(self.tmp_path))
+        self.system.calls.clear()
+
+    def package_mark(self):
+        return self.tmp_path / "state" / "podman" / "package_mark"
+
     def record(self):
         path = self.tmp_path / "config" / "podman"
         found = sorted(path.glob("*.json")) if path.is_dir() else []
@@ -474,10 +502,18 @@ def refusal(step) -> ModuleApplyError:
     return refused.value
 
 
+def download(tmp_path, name="podman") -> str:
+    """One artifact as the stream lands it, before the runner keeps it."""
+    path = tmp_path / f"{name}.download"
+    path.write_text(f"{name} bytes")
+    return str(path)
+
+
 # --- the install ---
 
 
 def test_an_msi_or_a_pkg_is_kept_and_handed_to_the_systems_installer(rig, tmp_path):
+    os.unlink(rig.system.binary)
     package = tmp_path / "download"
     package.write_text("pkg bytes")
     artifact = {"name": "podman", "kind": "pkg", "directory": "podman"}
@@ -489,6 +525,71 @@ def test_an_msi_or_a_pkg_is_kept_and_handed_to_the_systems_installer(rig, tmp_pa
     assert not package.exists()
     assert rig.system.calls == [("install", "podman", "podman.pkg")]
     assert rig.platform.opened == [str(tmp_path / "state" / "podman")]
+
+
+def test_a_computer_with_no_podman_gets_the_installer_and_the_package_mark(
+    rig, tmp_path
+):
+    os.unlink(rig.system.binary)
+
+    rig.runner.install_artifact({}, dict(PODMAN_PKG), download(tmp_path))
+
+    assert rig.system.calls == [("install", "podman", "podman.pkg")]
+    assert rig.package_mark().is_file()
+    assert oct(rig.package_mark().stat().st_mode & 0o777) == oct(0o600)
+    assert not rig.runner.is_software_kept()
+
+
+def test_a_podman_found_before_the_first_install_gets_no_installer_and_no_mark(
+    rig, tmp_path
+):
+    rig.runner.install_artifact({}, dict(PODMAN_PKG), download(tmp_path))
+
+    assert rig.system.calls == []
+    assert (tmp_path / "state" / "podman" / "podman" / "podman.pkg").is_file()
+    assert not rig.package_mark().exists()
+    assert "podman: found the computer's own Podman, installed nothing" in rig.lines
+    assert rig.runner.is_software_kept()
+
+
+def test_the_module_s_podman_goes_to_the_installer_again_with_its_mark(rig, tmp_path):
+    rig.install_podman()
+
+    rig.runner.install_artifact({}, dict(PODMAN_PKG), download(tmp_path))
+
+    assert rig.system.calls == [("install", "podman", "podman.pkg")]
+    assert rig.package_mark().is_file()
+
+
+@pytest.mark.parametrize("is_failed", [True, False])
+def test_an_installer_that_leaves_no_podman_leaves_no_mark(rig, tmp_path, is_failed):
+    os.unlink(rig.system.binary)
+    rig.system.is_program_installed = False
+    if is_failed:
+        rig.system.install_error = ModuleApplyError(
+            "podman_install_failed", {"artifact": "podman", "exit_code": 1}
+        )
+
+    try:
+        rig.runner.install_artifact({}, dict(PODMAN_PKG), download(tmp_path))
+    except ModuleApplyError as error:
+        assert is_failed and error.code == "podman_install_failed"
+
+    assert rig.system.calls == [("install", "podman", "podman.pkg")]
+    assert not rig.package_mark().exists()
+    assert not rig.runner.is_software_kept()
+
+
+def test_wsl_goes_to_the_installer_beside_a_persons_podman_and_writes_no_mark(
+    tmp_path,
+):
+    rig = Rig(tmp_path, os_name="windows", provider="wsl")
+
+    rig.runner.install_artifact({}, dict(WSL_MSI), download(tmp_path, "wsl"))
+    rig.runner.install_artifact({}, dict(PODMAN_MSI), download(tmp_path))
+
+    assert [call[:2] for call in rig.system.calls] == [("install", "wsl")]
+    assert rig.runner.is_software_kept()
 
 
 def test_the_image_is_kept_as_one_file_and_replaces_the_last(rig, tmp_path):
@@ -1520,6 +1621,7 @@ def test_the_journal_with_no_record_and_no_account_reads_the_agent_s_lines(
 
 
 def test_uninstall_with_no_record_removes_the_keeper_its_plist_and_its_log(rig):
+    rig.install_podman()
     unanswered_machine(rig)
 
     rig.runner.uninstall({})
@@ -1536,6 +1638,7 @@ def test_uninstall_with_no_record_removes_the_keeper_its_plist_and_its_log(rig):
 def test_an_uninstall_before_the_machine_exists_stops_nothing_and_says_nothing_of_it(
     rig,
 ):
+    rig.install_podman()
     rig.runner.take_config(CONFIG)
 
     rig.runner.uninstall({})
@@ -1565,6 +1668,7 @@ def test_a_machine_that_stops_is_logged_as_stopped_alone(rig):
 
 
 def test_stop_and_uninstall_with_no_record_and_no_account_touch_no_keeper(rig):
+    rig.install_podman()
     rig.runner.take_config({"containers": [], "machine": {"account": ""}})
 
     rig.runner.stop()
@@ -1914,6 +2018,7 @@ def test_a_machine_that_cannot_take_the_script_still_loses_its_keeper(rig):
 
 
 def test_uninstall_removes_podman_and_the_kept_files_and_keeps_the_machine(rig):
+    rig.install_podman()
     rig.keep_image()
     rig.runner.apply(CONFIG)
 
@@ -1926,7 +2031,26 @@ def test_uninstall_removes_podman_and_the_kept_files_and_keeps_the_machine(rig):
     assert "me" in rig.world.present
 
 
+def test_an_uninstall_of_a_persons_podman_removes_the_module_s_own_and_keeps_podman(
+    rig,
+):
+    rig.keep_image()
+    rig.runner.apply(CONFIG)
+
+    rig.runner.uninstall({})
+
+    assert ("uninstall",) not in rig.system.calls
+    assert "podman: removed no package" in rig.lines
+    assert rig.runner.verify({})
+    assert not (rig.tmp_path / "state" / "podman").exists()
+    assert not rig.plist().exists()
+    assert rig.record() == []
+    assert "me" in rig.world.present
+    assert ("me", "stop", "") in rig.world.calls
+
+
 def test_another_version_uninstalls_the_podman_package_first_and_keeps_wsl(rig):
+    rig.install_podman()
     rig.keep_image()
     rig.runner.apply(CONFIG)
     rig.system.calls.clear()
@@ -1937,6 +2061,192 @@ def test_another_version_uninstalls_the_podman_package_first_and_keeps_wsl(rig):
     assert rig.system.calls == [("uninstall",)]
     assert "me" in rig.world.present
     assert rig.plist().exists()
+
+
+def test_another_version_leaves_a_persons_podman_as_it_is(rig, tmp_path):
+    rig.runner.uninstall_package({}, dict(PODMAN_PKG))
+    rig.runner.install_artifact({}, dict(PODMAN_PKG), download(tmp_path))
+
+    assert rig.system.calls == []
+    assert "podman: the computer's own Podman stays for another version" in rig.lines
+    assert not rig.package_mark().exists()
+
+
+class PkgComputer:
+    """A Mac in the test's folder: what Podman's pkg and its scripts put on
+    it, its receipt, and the installer that puts them there."""
+
+    def __init__(self, tmp_path):
+        opt = tmp_path / "opt" / "podman"
+        self.program = opt / "bin" / "podman"
+        self.paths = (
+            opt,
+            tmp_path / "etc" / "paths.d" / "podman-pkg",
+            tmp_path / "usr" / "local" / "etc" / "man.d" / "podman.man.conf",
+        )
+        self.receipts: set = set()
+        self.installed: list = []
+        self.rig = Rig(tmp_path)
+        system = PodmanDarwinApplier(
+            platform=self.rig.platform,
+            run=self.pkgutil,
+            install_pkg=self.install_pkg,
+            installed_paths=tuple(str(path) for path in self.paths),
+        )
+        system.binary = str(self.program)
+        self.rig.system = system
+        self.rig.runner = self.rig.make_runner()
+
+    def lay_down(self):
+        """Podman as the pkg leaves it: the program, the two files and the receipt."""
+        self.program.parent.mkdir(parents=True, exist_ok=True)
+        self.program.write_text("podman")
+        for path in self.paths[1:]:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("/opt/podman/bin\n")
+        self.receipts.add("com.redhat.podman")
+
+    def install_pkg(self, path):
+        self.installed.append(os.path.basename(path))
+        self.lay_down()
+
+    def pkgutil(self, command, *, is_checked=True, timeout_s=0, **_):
+        if command[:2] == ["pkgutil", "--forget"]:
+            self.receipts.discard(command[2])
+        return CommandResult(list(command), 0, "", "")
+
+    def state(self):
+        """Which of the pkg's paths are there, and the receipts."""
+        return [os.path.lexists(path) for path in self.paths], sorted(self.receipts)
+
+
+def test_a_mac_s_own_podman_gets_no_installer_and_no_mark(tmp_path):
+    mac = PkgComputer(tmp_path)
+    mac.lay_down()
+    before = mac.state()
+
+    mac.rig.runner.install_artifact({}, dict(PODMAN_PKG), download(tmp_path))
+
+    assert mac.installed == []
+    assert not mac.rig.package_mark().exists()
+    assert mac.state() == before
+    assert mac.rig.runner.is_software_kept()
+
+
+def test_an_uninstall_with_no_mark_leaves_every_pkg_path_and_the_receipt(tmp_path):
+    mac = PkgComputer(tmp_path)
+    mac.lay_down()
+    mac.rig.runner.install_artifact({}, dict(PODMAN_PKG), download(tmp_path))
+
+    mac.rig.runner.uninstall({})
+
+    assert mac.state() == ([True, True, True], ["com.redhat.podman"])
+    assert mac.rig.runner.verify({})
+    assert not (tmp_path / "state" / "podman").exists()
+
+
+def test_an_uninstall_with_the_mark_removes_every_pkg_path_and_the_receipt(tmp_path):
+    mac = PkgComputer(tmp_path)
+    mac.rig.runner.install_artifact({}, dict(PODMAN_PKG), download(tmp_path))
+    assert mac.installed == ["podman.pkg"]
+    assert mac.rig.package_mark().is_file()
+    assert not mac.rig.runner.is_software_kept()
+
+    mac.rig.runner.uninstall({})
+
+    assert mac.state() == ([False, False, False], [])
+    assert not (tmp_path / "state" / "podman").exists()
+    assert not mac.rig.runner.verify({})
+
+
+class WindowsStateRoot(Platform):
+    """The rig's Windows computer, its state root a folder of the test."""
+
+    def agent_var_dir(self):
+        return os.path.join(self._root, "state")
+
+
+class MsiComputer:
+    """A Windows computer in the test's folder: Podman's program, the
+    products Windows Installer lists, and msiexec."""
+
+    def __init__(self, tmp_path):
+        self.program = tmp_path / "Program Files" / "Podman" / "podman.exe"
+        self.products: list = []
+        self.installed: list = []
+        self.uninstalled: list = []
+        self.rig = Rig(tmp_path, os_name="windows", provider="wsl")
+        system = PodmanWindowsApplier(
+            platform=WindowsStateRoot(str(tmp_path), "windows"),
+            log=self.rig.lines.append,
+            install_msi=self.install_msi,
+            uninstall_msi=self.uninstall_msi,
+            read_products=self.read_products,
+            has_restart_key=self.has_restart_key,
+            join=os.path.join,
+        )
+        system.binary = str(self.program)
+        self.rig.system = system
+        self.rig.runner = self.rig.make_runner()
+
+    def put_podman_on(self):
+        """Podman as its msi leaves it: the program and the product."""
+        self.program.parent.mkdir(parents=True, exist_ok=True)
+        self.program.write_text("podman")
+        self.products.append(
+            {"code": PODMAN_CODE, "name": "Podman CLI", "version": "6.1.4"}
+        )
+
+    def read_products(self):
+        return [dict(product) for product in self.products]
+
+    def has_restart_key(self):
+        return False
+
+    def install_msi(self, path, *, log_path, properties=()):
+        name = ntpath.basename(path)
+        self.installed.append(name)
+        if name == "wsl.msi":
+            self.products.append(
+                {
+                    "code": WSL_CODE,
+                    "name": "Windows Subsystem for Linux",
+                    "version": "3.0.3",
+                }
+            )
+        else:
+            self.put_podman_on()
+        return False
+
+    def uninstall_msi(self, product_code, *, log_path):
+        self.uninstalled.append(product_code)
+        return False
+
+
+def test_on_windows_a_persons_podman_gets_no_msi_and_stays_at_the_uninstall(tmp_path):
+    win = MsiComputer(tmp_path)
+    win.put_podman_on()
+
+    win.rig.runner.install_artifact({}, dict(WSL_MSI), download(tmp_path, "wsl"))
+    win.rig.runner.install_artifact({}, dict(PODMAN_MSI), download(tmp_path))
+    assert win.rig.runner.is_software_kept()
+    win.rig.runner.uninstall({})
+
+    assert win.installed == ["wsl.msi"]
+    assert win.uninstalled == []
+    assert win.program.is_file()
+
+
+def test_on_windows_the_modules_podman_msi_is_uninstalled_and_wsl_stays(tmp_path):
+    win = MsiComputer(tmp_path)
+
+    win.rig.runner.install_artifact({}, dict(WSL_MSI), download(tmp_path, "wsl"))
+    win.rig.runner.install_artifact({}, dict(PODMAN_MSI), download(tmp_path))
+    assert not win.rig.runner.is_software_kept()
+    win.rig.runner.uninstall({})
+
+    assert win.installed == ["wsl.msi", "podman.msi"]
+    assert win.uninstalled == [PODMAN_CODE]
 
 
 # --- a restarted agent ---

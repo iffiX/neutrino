@@ -3,10 +3,12 @@
 The install keeps each artifact the hub sent as the publisher's file under
 ``podman/<directory>/`` in the state root, and hands an msi or a pkg to the
 system's installer; the machine image stays a file for ``podman machine
-init``. An apply makes the account's default machine exist, rootful, on
-WSL's NAT network on Windows and the size the Run settings name, writes and
-starts the keeper that brings it up at boot, waits until the machine answers
-the read, and writes the declared containers, and the hub containers of each
+init``. A Podman on the computer before the install is the person's: its
+msi or pkg goes to no installer and no uninstall, and only a Podman the
+package mark stands for is the module's. An apply makes the account's
+default machine exist, rootful, on WSL's NAT network on Windows and the
+size the Run settings name, writes and starts the keeper that brings it up
+at boot, waits until the machine answers the read, and writes the declared containers, and the hub containers of each
 module whose images are in the machine's store, into it with one root
 script. Under ``running`` the module's task runs the apply as two steps,
 ``machine`` and ``configure``; under ``stopped`` its ``configure`` checks
@@ -81,6 +83,7 @@ from neutrino_agent.modules.podman.constants import (
     PODMAN_MACHINE_RUNNER,
     PODMAN_MACHINE_RECORD_FIELDS,
     PODMAN_MODULE_NAME,
+    PODMAN_PACKAGE_MARK,
     PODMAN_SOURCE_MANUAL,
     PODMAN_STEP_MACHINE,
     PODMAN_STEP_RESTART,
@@ -532,6 +535,12 @@ class PodmanMachineModuleRunner(ModuleRunner):
     def install_artifact(self, recipe: dict, artifact: dict, path: str) -> None:
         """Keep one artifact as the publisher's file, and have the system install an msi or a pkg.
 
+        Podman's msi or pkg goes to the installer only on a computer with no
+        Podman or with the package mark. The mark is written before the
+        installer runs, and deleted when the installer leaves no Podman. A
+        Podman with no mark is the person's, and nothing is installed over
+        it. WSL's msi goes to the installer either way.
+
         Args:
             recipe: The module's recipe.
             artifact: ``{name, kind, digest, directory}``.
@@ -541,7 +550,8 @@ class PodmanMachineModuleRunner(ModuleRunner):
             ModuleApplyError: ``install_failed`` for an artifact whose name,
                 directory or kind the module does not keep; the system
                 applier's codes for an msi or a pkg it cannot install.
-            OSError: When the file cannot be kept or opened to every account.
+            OSError: When the file cannot be kept or opened to every account,
+                or the mark cannot be written.
         """
         kept = keep_artifact(
             artifact,
@@ -551,13 +561,31 @@ class PodmanMachineModuleRunner(ModuleRunner):
         )
         self._platform.open_to_accounts(self._service_machine.module_dir)
         self._log(f"podman: kept {artifact.get('name', '')}")
-        if artifact.get("kind") in (AGENT_ARTIFACT_KIND_MSI, AGENT_ARTIFACT_KIND_PKG):
+        if artifact.get("kind") not in (
+            AGENT_ARTIFACT_KIND_MSI,
+            AGENT_ARTIFACT_KIND_PKG,
+        ):
+            return
+        if artifact.get("name") == PODMAN_WINDOWS_WSL_ARTIFACT:
             self._system.install_artifact(dict(artifact), kept)
+            return
+        if not self._is_package_ours():
+            if self.verify(recipe):
+                self._log("podman: found the computer's own Podman, installed nothing")
+                return
+            self._keep_package_mark()
+        try:
+            self._system.install_artifact(dict(artifact), kept)
+        finally:
+            if not self.verify(recipe):
+                self._forget_package_mark()
 
     def uninstall_package(self, recipe: dict, artifact: dict) -> None:
         """Uninstall the Podman package before another version's is installed.
 
-        WSL's msi is the system's and stays; the machine stays as well.
+        Only a Podman with the package mark is uninstalled: a person's stays
+        at its version. WSL's msi is the system's and stays; the machine
+        stays as well.
 
         Args:
             recipe: The module's recipe.
@@ -570,15 +598,19 @@ class PodmanMachineModuleRunner(ModuleRunner):
         """
         if artifact.get("name") == PODMAN_WINDOWS_WSL_ARTIFACT:
             return
+        if not self._is_package_ours():
+            self._log("podman: the computer's own Podman stays for another version")
+            return
         self._system.uninstall()
         self._log(f"podman: uninstalled {artifact.get('name', '')} for another version")
 
     def uninstall(self, recipe: dict) -> None:
-        """Uninstall Podman and delete the kept artifacts; the machine stays.
+        """Uninstall a Podman with the package mark and delete the kept artifacts; the machine stays.
 
         A keeper an apply left behind goes first, with the containers'
         files in the machine. With no record the keeper of the account the
-        configuration names goes, with its definition and its log.
+        configuration names goes, with its definition and its log. A
+        Podman with no mark is the person's and stays installed.
 
         Args:
             recipe: The module's recipe.
@@ -592,8 +624,19 @@ class PodmanMachineModuleRunner(ModuleRunner):
             held = self._configured_record()
             if held:
                 self._retire(held)
-        self._system.uninstall()
+        if self._is_package_ours():
+            self._system.uninstall()
+        else:
+            self._log("podman: removed no package")
         remove_tree(self._service_machine.module_dir)
+
+    def is_software_kept(self) -> bool:
+        """Whether an uninstall leaves a Podman on the computer: a person's, one with no package mark.
+
+        Returns:
+            True while such a Podman is on the computer.
+        """
+        return not self._is_package_ours() and self.verify({})
 
     def validate(self, config: dict) -> None:
         """Parse and check a configuration against this computer.
@@ -1311,6 +1354,31 @@ class PodmanMachineModuleRunner(ModuleRunner):
         """The last apply's record, empty when none is held."""
         records = self._records.read_all()
         return records[0] if records else {}
+
+    def _package_mark_path(self) -> str:
+        """The mark that the module installed the computer's Podman."""
+        return self._join(self._service_machine.module_dir, PODMAN_PACKAGE_MARK)
+
+    def _is_package_ours(self) -> bool:
+        """Whether the package mark stands."""
+        return os.path.isfile(self._package_mark_path())
+
+    def _keep_package_mark(self) -> None:
+        """Write the package mark, root-only.
+
+        Raises:
+            OSError: When the mark cannot be written.
+        """
+        os.makedirs(self._service_machine.module_dir, exist_ok=True)
+        path = self._package_mark_path()
+        with open(path, "a", encoding="utf-8"):
+            pass
+        os.chmod(path, 0o600)
+
+    def _forget_package_mark(self) -> None:
+        """Delete the package mark, when there is one."""
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(self._package_mark_path())
 
     def _default_memory_gib(self) -> int:
         """The memory a 0 in the Run settings gives, the computer's memory read once."""

@@ -97,6 +97,10 @@ PODMAN_MACHINE_KEY_PATH = (
 PODMAN_MACHINE_READ_HOST = "127.0.0.1"
 PODMAN_MACHINE_SOCKET_PATH = "/run/podman/podman.sock"
 
+# The mark in the module's directory that the module installed Podman's msi
+# or pkg on a computer with no Podman. A Podman with no mark is the person's.
+PODMAN_PACKAGE_MARK = "package_mark"
+
 # Podman on macOS: its program, its pkg's receipt, and what the pkg and its
 # scripts put on the computer.
 PODMAN_DARWIN_BINARY = "/opt/podman/bin/podman"
