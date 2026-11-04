@@ -360,6 +360,7 @@ def test_the_ssh_server_sends_each_accounts_public_key_and_shell(unlocked):
                 "account": "ann",
                 "authorized_key": public_key_of(private, comment="neutrino"),
                 "shell_path": "/bin/fish",
+                "programs": [],
             }
         ]
     }

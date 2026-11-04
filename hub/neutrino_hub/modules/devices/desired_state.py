@@ -126,6 +126,7 @@ from neutrino_hub.modules.devices.module_table import (
     SEALED_KIND_SSH_KEY,
     DeviceModuleRow,
     account_layer_rows,
+    command_line_program_names,
     gateway_container_names,
     gateway_instance_names,
     gateway_module_names,
@@ -270,6 +271,7 @@ def account_layer_agent_config(
     app_slug_of: "dict | None" = None,
     gateway_url: str = "",
     models: "list | tuple" = (),
+    programs_of: "dict | None" = None,
 ) -> dict:
     """What the agent is sent for one account-layer module.
 
@@ -290,10 +292,13 @@ def account_layer_agent_config(
         gateway_url: Where a module that holds a gateway key per account
             reaches the gateway on the machine.
         models: The names the gateway serves, for such a module.
+        programs_of: Account to the command line programs it is enabled in,
+            which the Terminal's accounts and the SSH server's instances
+            carry; None names none.
 
     Returns:
         The Terminal module's ``{accounts: [{account, shell_path,
-        password}]}``; a command line program's ``{accounts: [{account,
+        password, programs}]}``; a command line program's ``{accounts: [{account,
         password}]}``; the file share's ``{shares, users, passwords}``; the
         others' ``{...config_head, instances: [{account, <opened fields>,
         password, local_name, cookie_name}]}``, the last two on a module
@@ -303,6 +308,7 @@ def account_layer_agent_config(
     """
     is_windows = platform.get("os") == DEVICE_PASSWORD_OS
     by_name = {account.account: account for account in available}
+    programs = programs_of or {}
     details = account_details or {}
     enabled = [
         record
@@ -316,6 +322,7 @@ def account_layer_agent_config(
                     {
                         "account": record["account"],
                         "shell_path": by_name[record["account"]].shell_path,
+                        "programs": list(programs.get(record["account"]) or []),
                     },
                     by_name[record["account"]],
                     is_windows,
@@ -348,6 +355,7 @@ def account_layer_agent_config(
             sent[sealed.opened_key] = opened
         if row.name == DEVICE_SSH_SERVER_MODULE:
             sent["shell_path"] = by_name[account].shell_path
+            sent["programs"] = list(programs.get(account) or [])
         if row.is_login_named:
             _with_password(sent, by_name[account], is_windows)
         if row.name in gateway_instance_names():
@@ -439,6 +447,25 @@ def _samba_config(
             }
         )
     return {"shares": shares, "users": users, "passwords": passwords}
+
+
+def account_login(account: DeviceAccount, platform: dict) -> str:
+    """An available account's login password on a Windows machine.
+
+    Args:
+        account: The available account.
+        platform: The tuple the machine's agent reported.
+
+    Returns:
+        The password; empty on another system and for an account with no
+        login.
+
+    Raises:
+        VaultLockedError: When the login cannot be opened.
+    """
+    if platform.get("os") != DEVICE_PASSWORD_OS or not account.login_id:
+        return ""
+    return _login_password(account.login_id)
 
 
 def _with_password(sent: dict, account: DeviceAccount, is_windows: bool) -> dict:
@@ -924,6 +951,27 @@ class DesiredStateStore:
             if isinstance(row, dict) and row.get("account")
         ]
 
+    def programs_of(self, key: str, wanted: "dict | None" = None) -> dict:
+        """The command line programs each account of one device is enabled in.
+
+        Args:
+            key: The device key.
+            wanted: The modules ``modules.json`` names; None reads the file.
+
+        Returns:
+            Account to the programs whose ``want`` is neither empty nor
+            ``absent`` and which enable it, in the description table's order.
+        """
+        held = wanted if wanted is not None else self.modules(key)
+        programs: dict = {}
+        for name in command_line_program_names():
+            want = str((held.get(name) or {}).get("want", "") or "")
+            if want in ("", CHANNEL_MODULE_STATE_ABSENT):
+                continue
+            for account in self.enabled_accounts(key, name):
+                programs.setdefault(account, []).append(name)
+        return programs
+
     def enabled_accounts(self, key: str, module: str) -> list:
         """The accounts one account-layer module enables on one device.
 
@@ -1389,6 +1437,7 @@ class DesiredStateStore:
                     else ""
                 ),
                 models=ai_models,
+                programs_of=self.programs_of(key, wanted),
             )
         elif name == DEVICE_GITEA_MODULE:
             config["address"] = address

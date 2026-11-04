@@ -1996,18 +1996,18 @@ def test_each_row_reads_its_source_from_its_method_and_its_kind_from_the_table(
 
 
 @pytest.mark.parametrize(
-    "state, has_module_copy, source",
+    "state, has_module_copy",
     [
-        ("running", False, "user"),
-        ("installed", False, "user"),
-        ("failed", False, "user"),
-        ("running", True, "upstream"),
-        ("absent", False, "upstream"),
-        ("installing", False, "upstream"),
+        ("running", False),
+        ("installed", False),
+        ("failed", False),
+        ("running", True),
+        ("absent", False),
+        ("installing", False),
     ],
 )
-def test_a_command_line_program_reads_user_installed_while_no_copy_of_its_own_is_there(
-    shipped, state, has_module_copy, source
+def test_a_command_line_program_reads_upstream_in_every_state(
+    shipped, state, has_module_copy
 ):
     client, runtime = shipped
     runtime.device_modules[DEVICE] = {
@@ -2017,4 +2017,4 @@ def test_a_command_line_program_reads_user_installed_while_no_copy_of_its_own_is
         }
     }
 
-    assert rows_by_name(client)["codex"]["source"] == source
+    assert rows_by_name(client)["codex"]["source"] == "upstream"

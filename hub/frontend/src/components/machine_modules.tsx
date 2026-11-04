@@ -122,7 +122,6 @@ const ACCOUNT_LAYER_PANELS: Record<string, (target: PanelTarget) => ReactNode> =
             target.want !== WANT_RUNNING
           }
           want={target.want}
-          platformOs={target.platformOs}
         />
       ),
     ]),
@@ -185,7 +184,6 @@ const SOURCE_KEYS: Record<string, string> = {
   system: "ui.modules.source_system",
   upstream: "ui.modules.source_upstream",
   container: "ui.modules.source_container",
-  user: "ui.modules.source_user",
 };
 
 /** The kind chip of each kind: a service, which Start and Stop run, or a

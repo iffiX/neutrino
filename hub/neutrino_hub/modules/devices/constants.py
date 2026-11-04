@@ -174,12 +174,8 @@ DEVICE_SOURCE_AGENT = "agent"
 DEVICE_SOURCE_SYSTEM = "system"
 DEVICE_SOURCE_UPSTREAM = "upstream"
 DEVICE_SOURCE_CONTAINER = "container"
-DEVICE_SOURCE_USER = "user"
 DEVICE_KIND_SERVICE = "service"
 DEVICE_KIND_PROGRAM = "program"
-# The ``details`` field of a command line program's report that says
-# whether the module's own copy is on the machine.
-DEVICE_PROGRAM_MODULE_COPY_KEY = "has_module_copy"
 # The panel the Modules page draws every program run as an account with;
 # every other module is drawn by a panel named after it.
 DEVICE_MODULE_PANEL_INSTANCES = "instances"

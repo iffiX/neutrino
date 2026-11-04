@@ -30,6 +30,9 @@ interface ConfirmModalProps {
   confirmLabel: string;
   /** The button that cancels; `ui.confirm.cancel` when absent. */
   cancelLabel?: string;
+  /** Whether the dialog has a button that cancels; a dialog that only
+   * tells has one button, `confirmLabel`. */
+  hasCancel?: boolean;
   /** A line under the body about the person's data. */
   detail?: string;
   /** Whether the act destroys data. The detail then takes the error tone,
@@ -46,6 +49,7 @@ export function ConfirmModal({
   question = "",
   confirmLabel,
   cancelLabel,
+  hasCancel = true,
   detail = "",
   isDanger = false,
   onConfirm,
@@ -86,9 +90,11 @@ export function ConfirmModal({
           </div>
         )}
         <div className="confirm_foot">
-          <button type="button" className="button" onClick={onCancel}>
-            {cancelLabel ?? t("ui.confirm.cancel")}
-          </button>
+          {hasCancel && (
+            <button type="button" className="button" onClick={onCancel}>
+              {cancelLabel ?? t("ui.confirm.cancel")}
+            </button>
+          )}
           <button
             type="button"
             className={

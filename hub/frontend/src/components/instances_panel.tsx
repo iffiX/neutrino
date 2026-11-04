@@ -2,12 +2,14 @@ import { useState } from "react";
 
 import { ApplyBar } from "./apply_bar";
 import { ErrorPanel } from "./error_panel";
+import { Spinner } from "./spinner";
 import { StatusDot } from "./status_dot";
 import { AI_TOOLS_TONES, aiToolsWords } from "../ai_tools_words";
-import { apiPath, apiPost, describeError } from "../api_client";
+import { apiGet, apiPath, apiPost, describeError } from "../api_client";
 import { codeParams } from "../code_params";
 import { hasWord, t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
+import { useConfirm } from "../use_confirm";
 import { useDraft } from "../use_draft";
 import {
   FAILED_STATES,
@@ -22,6 +24,8 @@ import type {
   EnabledAccountsUpdate,
   EnabledAccountsView,
   EnabledAccountView,
+  ProgramAccountRequest,
+  ProgramCopyView,
 } from "../api_types";
 
 import "./instances_panel.css";
@@ -33,13 +37,14 @@ import "./instances_panel.css";
  * One check row per available account; an account checked goes to the end
  * of the order, and the apply bar writes the whole list. While the module
  * reads failed the bar is lit, and its apply with nothing changed tries the
- * module again. An apply writes no want on a module not running. A row shows the module's own field of the account, whether
- * its instance runs, and its code's words. A command line program's row shows
- * the copy the account uses, its path, its version and the account's AI
- * tools state, and on macOS a line under the rows asks for `~/.local/bin`
- * on `PATH` while an account uses the module's copy. The SSH server shows
- * the machine's
- * host key under the rows. The module's words come from its descriptor.
+ * module again. An apply writes no want on a module not running. A row shows
+ * the module's own field of the account, whether its instance runs, and its
+ * code's words. A command line program's check first reads the copy the
+ * account's shell finds, and a copy found asks before the row is checked;
+ * its row shows the module copy's version, the account's AI tools state and
+ * a code's words, with **Put this module's copy first** after a copy that
+ * runs first. The SSH server shows the machine's host key under the rows.
+ * The module's words come from its descriptor.
  */
 
 /** What an agent older than the module reports for it. */
@@ -60,18 +65,9 @@ const FIELD_DEFAULT_KEYS: Record<string, string> = {
   share_path: "ui.modules.home_folder",
 };
 
-/** The copy a command line program's account uses, in the source chip's
- * words. */
-const COPY_KEYS: Record<string, string> = {
-  user: "ui.modules.source_user",
-  module: "ui.modules.source_upstream",
-};
-
-/** The copy of a command line program's account that runs the module's own. */
-const COPY_MODULE = "module";
-
-/** The system whose shells put `~/.local/bin` on no `PATH`. */
-const OS_DARWIN = "darwin";
+/** The codes of a command line program's account that **Put this module's
+ * copy first** answers. */
+const PREFER_CODES = ["copy_runs_first", "copy_unreached"];
 
 /** The AI tools result of an account the machine has not reported: its tools
  * keep their own settings. */
@@ -99,8 +95,6 @@ interface InstancesPanelProps {
   /** What the hub asks of the module: `running`, `stopped`, `installed`, or
    * empty. */
   want: string;
-  /** The system the machine's agent reports: `linux`, `windows`, `darwin`. */
-  platformOs: string;
 }
 
 export function InstancesPanel({
@@ -110,7 +104,6 @@ export function InstancesPanel({
   isEditable,
   isWaitingForStart,
   want,
-  platformOs,
 }: InstancesPanelProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
@@ -127,6 +120,10 @@ export function InstancesPanel({
   const { draft, setDraft, isDirty, reset } = useDraft(saved, draftOf);
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The account whose copies are being read, or whose module copy is being
+  // put first; null while none is.
+  const [readingAccount, setReadingAccount] = useState<string | null>(null);
+  const confirm = useConfirm();
   const settle = useSettledApply(
     reportOf(saved, descriptor),
     isWaitingForStart || descriptor.isProgram === true ? want : WANT_RUNNING,
@@ -145,17 +142,75 @@ export function InstancesPanel({
   const isReady =
     descriptor.isWithoutProgram === true && saved.state === STATE_RUNNING;
   const version = saved.version ?? "";
-  const isPathHintShown =
-    descriptor.isProgram === true &&
-    platformOs === OS_DARWIN &&
-    saved.accounts.some((row) => row.is_enabled && row.copy === COPY_MODULE);
 
   const toggle = (account: string, isOn: boolean) => {
-    setDraft({
+    setDraft((held) => ({
       accounts: isOn
-        ? [...draft.accounts.filter((name) => name !== account), account]
-        : draft.accounts.filter((name) => name !== account),
-    });
+        ? [...held.accounts.filter((name) => name !== account), account]
+        : held.accounts.filter((name) => name !== account),
+    }));
+  };
+
+  const checkProgram = async (account: string) => {
+    setReadingAccount(account);
+    setError(null);
+    try {
+      const copy = await apiGet<ProgramCopyView>(`${basePath}/copy`, {
+        device_id: deviceId,
+        account,
+      });
+      if (copy.code !== "") {
+        confirm.ask({
+          title: t("ui.program.system_copy_title", { account }),
+          body: codeWords(copy.code, account, copy.params),
+          confirmLabel: t("ui.program.system_copy_close"),
+          hasCancel: false,
+          onConfirm: keepUnchecked,
+        });
+      } else if (copy.path === "") {
+        toggle(account, true);
+      } else {
+        const words = {
+          account,
+          path: copy.path,
+          version: copy.version,
+          module_version: copy.module_version,
+        };
+        confirm.ask({
+          title: t("ui.program.replace_title", { account }),
+          body: t(
+            copy.version === ""
+              ? "ui.program.replace_body_unversioned"
+              : "ui.program.replace_body",
+            words,
+          ),
+          detail: t("ui.program.replace_detail", { path: copy.path }),
+          confirmLabel: t("ui.program.replace_confirm"),
+          onConfirm: () => {
+            toggle(account, true);
+          },
+        });
+      }
+    } catch (cause: unknown) {
+      setError(describeError(cause));
+    } finally {
+      setReadingAccount(null);
+    }
+  };
+
+  const prefer = async (account: string) => {
+    setReadingAccount(account);
+    setError(null);
+    const request: ProgramAccountRequest = { device_id: deviceId, account };
+    try {
+      resource.setData(
+        await apiPost<EnabledAccountsView>(`${basePath}/prefer`, request),
+      );
+    } catch (cause: unknown) {
+      setError(describeError(cause));
+    } finally {
+      setReadingAccount(null);
+    }
   };
 
   const apply = async () => {
@@ -211,11 +266,18 @@ export function InstancesPanel({
                 <ProgramAccountRow
                   key={row.account}
                   row={row}
+                  version={version}
                   isChecked={draft.accounts.includes(row.account)}
-                  isDisabled={isLocked}
+                  isDisabled={isLocked || readingAccount !== null}
+                  isBusy={readingAccount === row.account}
                   onToggle={(isOn) => {
-                    toggle(row.account, isOn);
+                    if (isOn) {
+                      void checkProgram(row.account);
+                    } else {
+                      toggle(row.account, false);
+                    }
                   }}
+                  onPrefer={() => void prefer(row.account)}
                 />
               ) : (
                 <AccountRow
@@ -232,9 +294,6 @@ export function InstancesPanel({
               ),
             )}
           </div>
-        )}
-        {isPathHintShown && (
-          <p className="field_hint">{t("ui.program.macos_path_hint")}</p>
         )}
         {descriptor.name === SSH_SERVER_MODULE &&
           (saved.host_key_fingerprint ?? "") !== "" && (
@@ -270,6 +329,7 @@ export function InstancesPanel({
           onApply={() => void apply()}
         />
       </section>
+      {confirm.modal}
     </>
   );
 }
@@ -332,21 +392,30 @@ function AccountRow({
 
 interface ProgramAccountRowProps {
   row: EnabledAccountView;
+  /** The version of the module's copy, empty while it has none. */
+  version: string;
   isChecked: boolean;
   isDisabled: boolean;
+  /** Whether the account's copies are being read or its module copy put
+   * first. */
+  isBusy: boolean;
   onToggle: (isOn: boolean) => void;
+  onPrefer: () => void;
 }
 
 /** One available account of a command line program: its check, and once it
- * is enabled the copy it uses, that copy's version, its AI tools state, shown
- * and never set here, and the copy's path on a line of its own. */
+ * is enabled the module copy's version and its AI tools state, shown and
+ * never set here; a code's words under it, with the button that puts the
+ * module's copy first after a copy that runs first. */
 function ProgramAccountRow({
   row,
+  version,
   isChecked,
   isDisabled,
+  isBusy,
   onToggle,
+  onPrefer,
 }: ProgramAccountRowProps) {
-  const copyKey = COPY_KEYS[row.copy ?? ""];
   const reported = row.ai_tools ?? AI_TOOLS_UNREPORTED;
   const tools = reported.state === "" ? AI_TOOLS_UNREPORTED : reported;
   return (
@@ -357,11 +426,9 @@ function ProgramAccountRow({
         isDisabled={isDisabled}
         onToggle={onToggle}
       />
-      {row.is_enabled && copyKey !== undefined && (
-        <>
-          <span className="badge">{t(copyKey)}</span>
-          <span className="instances_row_version mono">{row.version}</span>
-        </>
+      {isBusy && <Spinner size={12} />}
+      {row.is_enabled && version !== "" && (
+        <span className="instances_row_version mono">{version}</span>
       )}
       {row.is_enabled && (
         <span className="instances_row_tools">
@@ -375,12 +442,19 @@ function ProgramAccountRow({
           />
         </span>
       )}
-      {row.is_enabled && copyKey !== undefined && (
-        <span className="instances_row_path mono">{row.path}</span>
-      )}
       {row.code !== "" && (
         <span className="field_error instances_row_error">
           {describeCode(row)}
+          {row.is_enabled && PREFER_CODES.includes(row.code) && (
+            <button
+              type="button"
+              className="button"
+              disabled={isDisabled}
+              onClick={onPrefer}
+            >
+              {t("ui.program.prefer")}
+            </button>
+          )}
         </span>
       )}
     </div>
@@ -453,8 +527,22 @@ function reportOf(
 /** Why an account's instance does not run, from the code the machine
  * reported. */
 function describeCode(row: EnabledAccountView): string {
-  const key = `code.${row.code}`;
+  return codeWords(row.code, row.account, row.params);
+}
+
+/** The words of an account's code. */
+function codeWords(
+  code: string,
+  account: string,
+  params: Record<string, unknown>,
+): string {
+  const key = `code.${code}`;
   return hasWord(key)
-    ? t(key, { account: row.account, ...codeParams(row.params) })
-    : t("ui.modules.failed_code", { code: row.code });
+    ? t(key, { account, ...codeParams(params) })
+    : t("ui.modules.failed_code", { code });
+}
+
+/** Leaves the row unchecked: the one button of a dialog that only tells. */
+function keepUnchecked(): void {
+  return undefined;
 }

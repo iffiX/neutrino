@@ -1,18 +1,19 @@
 """The tab of a command line program, Codex or Claude Code, held against the standard.
 
-What these pin: the `find` step's words in both languages, the programs'
-section of ui_text.md being test_program_wording.py's; each tool a module of
-the account layer whose apply bar
-shows `ui.program.apply_hint` and waits for the module's state alone; the
-owner notice over the state line; no Start and no Stop on a program, whose
-state line reads `state.ready` with a dot that does not pulse; Install live on
-a program with no want and on a failed one wanting `running`; the version line
-only while the module's own copy is on the machine; each enabled account's
-row naming its copy by the source chip's words, then its version and its AI
-tools state in the words of its row under Available accounts, read with the
-account's switch and with no switch of its own, and the copy's path whole on
-a line of its own; and on macOS, while an account uses the module's copy, the
-line asking for ~/.local/bin on PATH.
+What these pin: no `find` step's words, the programs' section of ui_text.md
+being test_program_wording.py's; each tool a module of the account layer
+whose apply bar shows `ui.program.apply_hint` and waits for the module's
+state alone; the owner notice over the state line; no Start and no Stop on a
+program, whose state line reads `state.ready` with a dot that does not
+pulse; Install live on a program with no want and on a failed one wanting
+`running`; the version line only while the module's own copy is on the
+machine; a check that first reads the account's copies, a copy found asking
+through the replace dialog and a copy in Windows' system PATH through a
+dialog of one button; each enabled account's row showing the module copy's
+version and its AI tools state in the words of its row under Available
+accounts, read with the account's switch and with no switch of its own, and
+a code's words with **Put this module's copy first** after a copy that runs
+first; and no path line and no ~/.local/bin line on the tab.
 """
 
 import json
@@ -88,13 +89,10 @@ def function_body(text: str, name: str) -> str:
     return text[start:] if end == -1 else text[start:end]
 
 
-@pytest.mark.parametrize("index,language", list(enumerate(LANGUAGES)))
-def test_the_find_step_says_what_ui_text_writes(index, language):
-    rows = section_rows("A module task's words")
-
-    assert words(language)["ui.modules.step.find"] == (
-        rows["ui.modules.step.find"][index]
-    )
+@pytest.mark.parametrize("language", LANGUAGES)
+def test_a_program_s_task_has_no_find_step(language):
+    assert "ui.modules.step.find" not in words(language)
+    assert "ui.modules.step.find" not in section_rows("A module task's words")
 
 
 def test_each_tool_is_a_program_of_the_account_layer():
@@ -138,21 +136,21 @@ def test_ui_behavior_draws_the_tab_as_these_check():
         "program that reads `failed` while its `want` is `running`."
     ) in text
     assert (
-        "`ui.modules.source_user` for the person's own copy and "
-        "`ui.modules.source_upstream` for the module's; its version; the "
-        "account's AI tools state in the words of its row under **Available "
-        "accounts**, shown and never set here; then the copy's path whole, in "
-        "mono, on a line of its own; an account's code shows its words under "
-        "the row in the error colour"
+        "| An enabled account's row | as last reported: the module copy's "
+        "version; the account's AI tools state in the words of its row under "
+        "**Available accounts**, shown and never set here; an account's code "
+        "shows its words under the row in the error colour, and after the "
+        "words of `copy_runs_first` and `copy_unreached` a bordered `button`, "
+        "`ui.program.prefer`"
+    ) in text
+    assert (
+        "| Checking an account | first reads `GET "
+        "/api/agent/module/<name>/copy` for the account"
     ) in text
     assert (
         "`state.ai_tools_switched_back` for an account the machine has not " "reported"
     ) in text
     assert "read with the account's switch, `is_ai_tools_enabled`" in text
-    assert (
-        "| The macOS line | on a macOS machine, while an enabled account uses "
-        "the module's copy, `ui.program.macos_path_hint` under the rows |"
-    ) in text
     assert (
         "| The version line | shown while the module's own copy is on the machine;"
     ) in text
@@ -272,33 +270,82 @@ def test_a_program_s_rows_are_its_own():
     ) in instances
 
 
-def test_an_enabled_account_s_row_names_its_copy_by_the_source_chip_s_words():
+def test_an_enabled_account_s_row_shows_the_module_copy_s_version_and_its_code():
     instances = panel()
-    start = instances.index("const COPY_KEYS: Record<string, string> = {")
-    table = instances[start : instances.index("};", start)]
     row = function_body(instances, "ProgramAccountRow")
 
-    assert dict(re.findall(r'(\w+): "(ui\.modules\.source_\w+)"', table)) == {
-        "user": "ui.modules.source_user",
-        "module": "ui.modules.source_upstream",
-    }
     assert (
-        "{row.is_enabled && copyKey !== undefined && ( <> "
-        '<span className="badge">{t(copyKey)}</span> '
-        '<span className="instances_row_version mono">{row.version}</span> </> )}'
+        '{row.is_enabled && version !== "" && ( '
+        '<span className="instances_row_version mono">{version}</span> )}'
     ) in row
-    assert (
-        "{row.is_enabled && copyKey !== undefined && ( "
-        '<span className="instances_row_path mono">{row.path}</span> )}'
-    ) in row
-    assert row.index("{t(copyKey)}") < row.index("aiToolsWords(")
-    assert row.index("aiToolsWords(") < row.index("{row.path}")
+    assert row.index("{version}") < row.index("aiToolsWords(")
     assert (
         '{row.code !== "" && ( <span className="field_error instances_row_error"> '
-        "{describeCode(row)} </span> )}"
+        "{describeCode(row)} {row.is_enabled && PREFER_CODES.includes(row.code) && ( "
+        '<button type="button" className="button" disabled={isDisabled} '
+        'onClick={onPrefer} > {t("ui.program.prefer")} </button> )} </span> )}'
     ) in row
+    assert 'const PREFER_CODES = ["copy_runs_first", "copy_unreached"];' in instances
+    assert "copy" not in row.replace("ProgramAccountRow", "")
+    assert "row.path" not in instances
     assert "state.running" not in row
     assert "is_running" not in row
+
+
+def test_prefer_answers_at_once_with_the_module_s_view():
+    instances = panel()
+
+    assert (
+        "await apiPost<EnabledAccountsView>(`${basePath}/prefer`, request),"
+    ) in instances
+    assert (
+        "const request: ProgramAccountRequest = { device_id: deviceId, account };"
+        in (instances)
+    )
+
+
+def test_a_check_reads_the_account_s_copies_before_the_row_is_checked():
+    instances = panel()
+
+    assert (
+        "onToggle={(isOn) => { if (isOn) { void checkProgram(row.account); } "
+        "else { toggle(row.account, false); } }}"
+    ) in instances
+    assert (
+        "const copy = await apiGet<ProgramCopyView>(`${basePath}/copy`, "
+        "{ device_id: deviceId, account, });"
+    ) in instances
+    assert 'else if (copy.path === "") { toggle(account, true); }' in instances
+    assert "isDisabled={isLocked || readingAccount !== null}" in instances
+
+
+def test_a_copy_found_asks_through_the_replace_dialog():
+    instances = panel()
+    dialog = instances[instances.index('title: t("ui.program.replace_title"') :]
+    dialog = dialog[: dialog.index("});")]
+
+    assert '"ui.program.replace_body_unversioned"' in dialog
+    assert '"ui.program.replace_body"' in dialog
+    assert 'detail: t("ui.program.replace_detail", { path: copy.path }),' in dialog
+    assert 'confirmLabel: t("ui.program.replace_confirm"),' in dialog
+    assert "onConfirm: () => { toggle(account, true); }," in dialog
+    assert "{confirm.modal}" in instances
+
+
+def test_a_copy_in_the_system_path_tells_through_a_dialog_of_one_button():
+    instances = panel()
+    dialog = instances[instances.index('title: t("ui.program.system_copy_title"') :]
+    dialog = dialog[: dialog.index("});")]
+    modal = source(COMPONENTS_DIR / "confirm_modal.tsx")
+
+    assert "body: codeWords(copy.code, account, copy.params)," in dialog
+    assert 'confirmLabel: t("ui.program.system_copy_close"),' in dialog
+    assert "hasCancel: false," in dialog
+    assert "onConfirm: keepUnchecked," in dialog
+    assert (
+        '{hasCancel && ( <button type="button" className="button" onClick={onCancel}>'
+        in (modal)
+    )
 
 
 def test_the_ai_tools_state_reads_as_its_row_under_available_accounts():
@@ -325,25 +372,14 @@ def test_the_ai_tools_state_reads_as_its_row_under_available_accounts():
     assert "<input" not in row
 
 
-def test_a_macos_tab_asks_for_local_bin_on_path_while_an_account_uses_the_module_s_copy():
+def test_no_tab_asks_for_local_bin_on_path():
     instances = panel()
     body = page()
 
-    assert 'const COPY_MODULE = "module";' in instances
-    assert 'const OS_DARWIN = "darwin";' in instances
-    assert (
-        "const isPathHintShown = descriptor.isProgram === true && "
-        "platformOs === OS_DARWIN && saved.accounts.some((row) => "
-        "row.is_enabled && row.copy === COPY_MODULE);"
-    ) in instances
-    hint = (
-        '{isPathHintShown && ( <p className="field_hint">'
-        '{t("ui.program.macos_path_hint")}</p> )}'
-    )
-    assert hint in instances
-    assert instances.index("<ProgramAccountRow") < instances.index(hint)
-    assert instances.index(hint) < instances.index("<ApplyBar")
-    assert "want={target.want} platformOs={target.platformOs} />" in body
+    assert "local/bin" not in instances
+    assert "OS_DARWIN" not in instances
+    assert "platformOs" not in instances
+    assert "want={target.want} />" in body
 
 
 @pytest.mark.parametrize("module", PROGRAMS)

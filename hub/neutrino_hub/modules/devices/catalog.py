@@ -13,10 +13,6 @@ whenever the manifests or the list move.
 import hashlib
 import json
 
-from neutrino_hub.modules.channel.constants import (
-    CHANNEL_MODULE_PRESENT_STATES,
-    CHANNEL_MODULE_STATE_FAILED,
-)
 from neutrino_hub.modules.devices.constants import (
     DEVICE_KIND_PROGRAM,
     DEVICE_KIND_SERVICE,
@@ -25,12 +21,10 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_METHOD_CONTAINER,
     DEVICE_METHOD_HUB,
     DEVICE_METHOD_SYSTEM,
-    DEVICE_PROGRAM_MODULE_COPY_KEY,
     DEVICE_SOURCE_AGENT,
     DEVICE_SOURCE_CONTAINER,
     DEVICE_SOURCE_SYSTEM,
     DEVICE_SOURCE_UPSTREAM,
-    DEVICE_SOURCE_USER,
 )
 from neutrino_hub.modules.devices.module_table import command_line_program_names
 from neutrino_hub.modules.devices.manifests import (
@@ -81,34 +75,20 @@ SOURCE_OF_METHOD = {
     DEVICE_METHOD_HUB: DEVICE_SOURCE_UPSTREAM,
     DEVICE_METHOD_CONTAINER: DEVICE_SOURCE_CONTAINER,
 }
-# The states in which a command line program's copies are on the machine,
-# whichever copy each account runs.
-PROGRAM_COPY_STATES = CHANNEL_MODULE_PRESENT_STATES + (CHANNEL_MODULE_STATE_FAILED,)
 
 
-def module_source(module: str, method: str, state: str, details: dict) -> str:
+def module_source(method: str) -> str:
     """The source chip's word of one module on one machine.
 
     Args:
-        module: The module.
         method: The install method of its entry for the machine's platform;
             empty where the platform has no entry.
-        state: The module's state as last reported.
-        details: The ``details`` the machine last reported for it.
 
     Returns:
         ``agent``, ``system``, ``upstream`` or ``container`` by the method;
-        ``user`` for a command line program the machine has while its report
-        holds no copy of the module's own; empty for no entry.
+        empty for no entry.
     """
-    source = SOURCE_OF_METHOD.get(method, "")
-    if (
-        module in command_line_program_names()
-        and state in PROGRAM_COPY_STATES
-        and details.get(DEVICE_PROGRAM_MODULE_COPY_KEY) is False
-    ):
-        return DEVICE_SOURCE_USER
-    return source
+    return SOURCE_OF_METHOD.get(method, "")
 
 
 def module_kind(module: str) -> str:

@@ -2582,14 +2582,8 @@ class EnabledAccountRowView(BaseModel):
     # The file share's: the account row's share path and its SMB user.
     share_path: str | None = None
     user: str | None = None
-    # A command line program's: the copy the account uses, ``user`` or
-    # ``module``, its path and its version as reported, empty before; the
-    # account's last AI tools result, and its AI tools switch. The copy is
-    # ``copy`` on the wire, the field's alias: a field of that name would
-    # shadow BaseModel.copy.
-    copy_used: str | None = Field(default=None, alias="copy")
-    path: str | None = None
-    version: str | None = None
+    # A command line program's: the account's last AI tools result, and its
+    # AI tools switch.
     ai_tools: AccountToolsView | None = None
     is_ai_tools_enabled: bool | None = None
 
@@ -2606,6 +2600,27 @@ class EnabledAccountsView(ModuleDeviceFields):
     # VS Code's: whether the person accepted the terms, and their address.
     is_terms_accepted: bool | None = None
     terms_url: str | None = None
+
+
+class ProgramCopyView(BaseModel):
+    """The copy of a command line program an account's shell finds that is not the module's."""
+
+    account: str
+    # The copy's path, empty for none, and its version, empty when it
+    # prints none.
+    path: str = ""
+    version: str = ""
+    # The version of the module's copy for the machine.
+    module_version: str = ""
+    code: str = ""
+    params: dict = Field(default_factory=dict)
+
+
+class ProgramAccountRequest(BaseModel):
+    """A request naming one account of a command line program on one device."""
+
+    device_id: str
+    account: str
 
 
 class EnabledAccountsUpdate(BaseModel):

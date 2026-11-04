@@ -5,8 +5,8 @@ table's order, the one ui_behavior.md names, and the page keeps it; the page
 reads the source chip from the row's ``source`` and the kind chip from its
 ``kind``, the words the hub sends, each word its own key and a word outside
 the table no chip; so every shipped module on Linux, Windows and macOS shows
-the chips ui_behavior.md gives it, Codex and Claude Code reading Program, and
-User-installed while the machine reports no copy of their own; the two chips
+the chips ui_behavior.md gives it, Codex and Claude Code reading Program and
+Upstream whatever the machine reports of their copy; the two chips
 sit between the title and the state; and the words say in both languages what
 ui_text.md writes.
 """
@@ -52,7 +52,6 @@ WORDS = {
         "ui.modules.source_system": "System",
         "ui.modules.source_upstream": "Upstream",
         "ui.modules.source_container": "Container",
-        "ui.modules.source_user": "User-installed",
         "ui.modules.kind_service": "Service",
         "ui.modules.kind_program": "Program",
     },
@@ -61,12 +60,11 @@ WORDS = {
         "ui.modules.source_system": "系统",
         "ui.modules.source_upstream": "外部源",
         "ui.modules.source_container": "容器",
-        "ui.modules.source_user": "用户安装",
         "ui.modules.kind_service": "服务",
         "ui.modules.kind_program": "普通程序",
     },
 }
-SOURCE_WORDS = ("agent", "system", "upstream", "container", "user")
+SOURCE_WORDS = ("agent", "system", "upstream", "container")
 KIND_WORDS = ("service", "program")
 # Each module's source chip on Linux, Windows and macOS before the machine
 # reports it; None where the system has no entry for it.
@@ -170,12 +168,8 @@ def test_each_module_shows_the_chips_of_the_hub_s_words(api, index, platform):
 
 
 @pytest.mark.parametrize("module", PROGRAMS)
-@pytest.mark.parametrize(
-    "has_module_copy, chip", [(True, "source_upstream"), (False, "source_user")]
-)
-def test_a_program_reads_user_installed_while_no_copy_of_its_own_is_there(
-    api, module, has_module_copy, chip
-):
+@pytest.mark.parametrize("has_module_copy", [True, False])
+def test_a_program_reads_upstream_whatever_its_copy(api, module, has_module_copy):
     client, runtime = api
     runtime.device_modules[DEVICE] = {
         module: {
@@ -184,7 +178,7 @@ def test_a_program_reads_user_installed_while_no_copy_of_its_own_is_there(
         }
     }
 
-    assert chips_of(client)[module] == (chip, "kind_program")
+    assert chips_of(client)[module] == ("source_upstream", "kind_program")
 
 
 def test_every_source_word_has_a_chip():

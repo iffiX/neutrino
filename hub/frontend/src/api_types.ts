@@ -1451,17 +1451,33 @@ export interface EnabledAccountView {
   /** The file share's fields: the share path and the SMB user. */
   share_path?: string;
   user?: string;
-  /** A command line program's fields, as last reported: the copy the
-   * account uses, `user` or `module`, its path and its version. */
-  copy?: string;
-  path?: string;
-  version?: string;
   /** A command line program's: the account's last AI tools result; null on
    * every other module. */
   ai_tools?: AccountAiToolsView | null;
   /** A command line program's: the account's AI tools switch; null on every
    * other module. */
   is_ai_tools_enabled?: boolean | null;
+}
+
+/** The copy of a command line program an account's shell finds that is not
+ * the module's, read at once through the agent. */
+export interface ProgramCopyView {
+  account: string;
+  /** The copy's path; empty for none. */
+  path: string;
+  /** The copy's version; empty when it prints none. */
+  version: string;
+  /** The version of the module's copy for the machine. */
+  module_version: string;
+  /** `copy_in_system_path` on Windows for a copy in the system PATH. */
+  code: string;
+  params: Record<string, unknown>;
+}
+
+/** A request naming one account of a command line program on one machine. */
+export interface ProgramAccountRequest {
+  device_id: string;
+  account: string;
 }
 
 /** An account-layer module on one machine: Terminal, the file share, the SSH

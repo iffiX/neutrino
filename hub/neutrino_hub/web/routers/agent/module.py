@@ -239,9 +239,7 @@ def list_modules(
                 description=resolved["description"],
                 runner=resolved["runner"],
                 method=resolved["method"],
-                source=module_source(
-                    name, resolved["method"], reported["state"], reported["details"]
-                ),
+                source=module_source(resolved["method"]),
                 kind=module_kind(name),
                 # With no platform reported yet, nothing is ruled out: the
                 # agent will say what it cannot do once it beats.

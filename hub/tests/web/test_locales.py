@@ -133,7 +133,6 @@ MODULE_STEP_PARAMS = {
     "tex": set(),
     "guests": set(),
     "tools": {"account"},
-    "find": set(),
 }
 MODULE_STEP_LOCKS = ("containers", "package_manager", "system_accounts")
 

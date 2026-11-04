@@ -11,9 +11,11 @@ checks the section on the agent as the state will carry it, wants the
 module running and pushes; a set on a stopped module keeps it stopped and
 pushes; an account that is not available or named twice is refused; VS Code's set waits for its terms; the terms route
 answers the same view; an apply on a failed module of any of the ten
-puts a retry mark and pushes; and a command line program's rows name the
-copy each account uses, its path and version, its code, and the account's
-last AI tools result.
+puts a retry mark and pushes; a command line program's rows carry each
+account's code and its last AI tools result; its ``copy`` read answers the
+agent's ``find`` with the module copy's version and ``copy_in_system_path``
+on Windows; and its ``prefer`` asks the agent for an enabled account alone,
+with the account's login on Windows.
 """
 
 import json
@@ -23,7 +25,7 @@ import pytest
 from neutrino_hub.modules.devices.accounts import DeviceAccount, DeviceAccountStore
 from neutrino_hub.modules.devices.desired_state import DesiredStateStore
 from neutrino_hub.modules.devices.retry_marks import DeviceRetryMarks
-from neutrino_hub.web.models import EnabledAccountRowView
+from neutrino_hub.modules.credentials.vault import SecretVault
 from neutrino_hub.web.routers.agent import module_instances, module_vscode_terms
 from tests.conftest import unlock_vault
 from tests.web.module_api_box import DEVICE, OFFLINE, module_box
@@ -83,11 +85,18 @@ def test_each_router_serves_the_read_the_apply_and_the_set_at_its_own_path(modul
         for route in module_instances.ROUTERS[module].routes
     )
 
-    assert paths == [
-        ("GET", f"/api/agent/module/{module}"),
-        ("POST", f"/api/agent/module/{module}/apply"),
-        ("POST", f"/api/agent/module/{module}/set"),
+    programs = [
+        ("GET", f"/api/agent/module/{module}/copy"),
+        ("POST", f"/api/agent/module/{module}/prefer"),
     ]
+    assert paths == sorted(
+        [
+            ("GET", f"/api/agent/module/{module}"),
+            ("POST", f"/api/agent/module/{module}/apply"),
+            ("POST", f"/api/agent/module/{module}/set"),
+            *(programs if module in ("claude_code", "codex") else []),
+        ]
+    )
 
 
 @pytest.mark.parametrize("state", ["failed", "install_failed"])
@@ -351,9 +360,38 @@ def test_the_agent_checks_the_section_the_state_will_carry(api):
         (
             DEVICE,
             "terminal",
-            {"accounts": [{"account": "alice", "shell_path": "/bin/zsh"}]},
+            {
+                "accounts": [
+                    {"account": "alice", "shell_path": "/bin/zsh", "programs": []}
+                ]
+            },
         )
     ]
+
+
+def test_the_terminal_and_the_ssh_server_carry_each_account_s_programs(api):
+    """protocol.md: ``programs``, the command line programs whose ``want``
+    is not ``absent`` and which enable the account, in the table's order."""
+    client, runtime = api
+    for module in ("codex", "claude_code", "terminal", "ssh_server"):
+        client.post(
+            f"/api/agent/module/{module}/set",
+            json={"device_id": DEVICE, "accounts": ["alice"]},
+        )
+    store = runtime.desired_states
+    store.set_want(DEVICE, "codex", "running")
+    store.set_want(DEVICE, "claude_code", "absent")
+
+    def section(name):
+        return store.agent_config(
+            DEVICE, name, store.read(DEVICE, name), {"os": "linux"}
+        )
+
+    assert section("terminal")["accounts"][0]["programs"] == ["codex"]
+    assert section("ssh_server")["instances"][0]["programs"] == ["codex"]
+    store.set_want(DEVICE, "claude_code", "running")
+    assert section("terminal")["accounts"][0]["programs"] == ["claude_code", "codex"]
+    assert store.programs_of(DEVICE) == {"alice": ["claude_code", "codex"]}
 
 
 def test_an_account_that_is_not_available_or_named_twice_is_refused(api, tmp_path):
@@ -523,32 +561,28 @@ def test_a_stopped_file_shares_rows_run_none_of_its_home_shares(api):
 
 
 @pytest.mark.parametrize("module", ["claude_code", "codex"])
-def test_a_command_line_program_s_rows_name_each_account_s_copy_and_ai_tools(
+def test_a_command_line_program_s_rows_carry_each_account_s_code_and_ai_tools(
     api, module
 ):
-    """protocol.md: ``copy``, ``path`` and ``version`` as the module's
-    ``details`` report them, the account's code, and ``ai_tools`` as the
-    account form gives it; an account the report does not name reads empty."""
+    """protocol.md: the row's ``code`` and ``params`` as the module's
+    ``details`` report them, and ``ai_tools`` as the account form gives it;
+    an account the report does not name reads empty."""
     client, runtime = api
     client.post(
         f"/api/agent/module/{module}/set",
         json={"device_id": DEVICE, "accounts": ["alice", "bob"]},
     )
+    params = {
+        "account": "alice",
+        "path": "/home/alice/.local/bin/x",
+        "version": "1.2.3",
+    }
     runtime.report(
         DEVICE,
         module,
         state="running",
         has_module_copy=True,
-        accounts=[
-            {
-                "account": "alice",
-                "copy": "user",
-                "path": "/home/alice/.local/bin/claude",
-                "version": "2.1.318",
-                "code": "",
-                "params": {},
-            },
-        ],
+        accounts=[{"account": "alice", "code": "copy_runs_first", "params": params}],
         version="2.1.311",
     )
     runtime.agent_sessions.held_reports[DEVICE] = {
@@ -563,49 +597,144 @@ def test_a_command_line_program_s_rows_name_each_account_s_copy_and_ai_tools(
 
     assert body["version"] == "2.1.311"
     alice, bob = body["accounts"]
-    assert (alice["copy"], alice["path"], alice["version"]) == (
-        "user",
-        "/home/alice/.local/bin/claude",
-        "2.1.318",
-    )
+    assert (alice["code"], alice["params"]) == ("copy_runs_first", params)
     assert alice["ai_tools"] == {"state": "switched", "code": "", "params": {}}
     assert (alice["is_enabled"], alice["port"], alice["is_running"]) == (True, 0, False)
-    assert (bob["copy"], bob["path"], bob["version"]) == ("", "", "")
+    assert (bob["code"], bob["params"]) == ("", {})
     assert bob["ai_tools"] == {"state": "", "code": "", "params": {}}
+    assert not {"copy", "path", "version"} & set(alice)
 
 
-def test_a_command_line_program_s_row_carries_its_account_s_code(api):
+def found(**fields) -> dict:
+    """What the agent's ``find`` closes with."""
+    held = {
+        "path": "",
+        "version": "",
+        "is_on_path": False,
+        "is_system_path": False,
+        "is_module_first": False,
+        **fields,
+    }
+    return {"exit_code": 0, "code": "", "params": {}, "output": "", "result": held}
+
+
+@pytest.mark.parametrize(
+    "module, tested", [("claude_code", "2.1.311"), ("codex", "0.166.0")]
+)
+def test_the_copy_read_answers_the_agent_s_find_at_once(api, module, tested):
+    client, runtime = api
+    runtime.agent_sessions.outcomes["find"] = found(
+        path="/home/alice/.local/bin/x", version="1.2.3", is_on_path=True
+    )
+
+    body = client.get(
+        f"/api/agent/module/{module}/copy",
+        params={"device_id": DEVICE, "account": "alice"},
+    ).json()
+
+    assert runtime.agent_sessions.commands[-1] == (
+        DEVICE,
+        module,
+        "find",
+        {"account": "alice", "password": ""},
+    )
+    assert runtime.agent_sessions.waited == []
+    assert body == {
+        "account": "alice",
+        "path": "/home/alice/.local/bin/x",
+        "version": "1.2.3",
+        "module_version": tested,
+        "code": "",
+        "params": {},
+    }
+
+
+def test_a_copy_in_the_windows_system_path_reads_its_code_with_the_login(api):
+    client, runtime = api
+    runtime.device_platform[DEVICE] = {"os": "windows", "family": "", "arch": "amd64"}
+    runtime.agent_sessions.outcomes["find"] = found(
+        path="C:\\Tools\\codex.exe",
+        version="0.170.0",
+        is_on_path=True,
+        is_system_path=True,
+    )
+    refused = client.get(
+        "/api/agent/module/codex/copy", params={"device_id": DEVICE, "account": "alice"}
+    )
+    login = SecretVault().add(
+        kind="login", name="dave", secret={"username": "dave", "password": "pw-dave"}
+    )
+    DeviceAccountStore(runtime.desired_states).add(
+        DEVICE, DeviceAccount(account="dave", login_id=login.id)
+    )
+
+    body = client.get(
+        "/api/agent/module/codex/copy", params={"device_id": DEVICE, "account": "dave"}
+    ).json()
+
+    assert refused.status_code == 400
+    assert refused.json()["detail"] == {
+        "code": "credential_missing",
+        "params": {"account": "alice"},
+    }
+    assert runtime.agent_sessions.commands[-1][3] == {
+        "account": "dave",
+        "password": "pw-dave",
+    }
+    assert (body["code"], body["params"]) == (
+        "copy_in_system_path",
+        {"account": "dave", "path": "C:\\Tools\\codex.exe", "version": "0.170.0"},
+    )
+
+
+def test_a_copy_read_refuses_an_account_that_is_not_available(api):
+    client, runtime = api
+
+    refused = client.get(
+        "/api/agent/module/codex/copy", params={"device_id": DEVICE, "account": "ghost"}
+    )
+
+    assert refused.status_code == 400
+    assert refused.json()["detail"]["code"] == "account_unknown"
+    assert runtime.agent_sessions.commands == []
+
+
+def test_prefer_asks_the_agent_for_an_enabled_account_alone(api):
     client, runtime = api
     client.post(
         "/api/agent/module/codex/set",
         json={"device_id": DEVICE, "accounts": ["alice"]},
     )
-    params = {"account": "alice", "path": "/home/alice/.local/bin/codex"}
-    runtime.report(
+
+    refused = client.post(
+        "/api/agent/module/codex/prefer", json={"device_id": DEVICE, "account": "bob"}
+    )
+    answered = client.post(
+        "/api/agent/module/codex/prefer", json={"device_id": DEVICE, "account": "alice"}
+    )
+
+    assert refused.status_code == 400
+    assert refused.json()["detail"] == {
+        "code": "account_not_enabled",
+        "params": {"account": "bob"},
+    }
+    assert answered.status_code == 200
+    assert [row["account"] for row in answered.json()["accounts"]] == ["alice", "bob"]
+    assert runtime.agent_sessions.commands[-1] == (
         DEVICE,
         "codex",
-        state="running",
-        has_module_copy=True,
-        accounts=[
-            {
-                "account": "alice",
-                "copy": "module",
-                "path": "/var/lib/neutrino/agent/codex/bin/codex",
-                "version": "0.166.0",
-                "code": "link_name_taken",
-                "params": params,
-            }
-        ],
+        "prefer",
+        {"account": "alice", "password": ""},
     )
+    assert runtime.agent_sessions.waited
 
-    body = client.get("/api/agent/module/codex", params={"device_id": DEVICE}).json()
 
-    alice = body["accounts"][0]
-    assert (alice["copy"], alice["code"], alice["params"]) == (
-        "module",
-        "link_name_taken",
-        params,
-    )
+def test_only_the_command_line_programs_serve_copy_and_prefer():
+    for name, router in module_instances.ROUTERS.items():
+        paths = {route.path for route in router.routes}
+        is_program = name in ("claude_code", "codex")
+        assert (f"/api/agent/module/{name}/copy" in paths) is is_program
+        assert (f"/api/agent/module/{name}/prefer" in paths) is is_program
 
 
 @pytest.mark.parametrize("module", ["claude_code", "codex"])
@@ -631,25 +760,12 @@ def test_a_command_line_program_s_rows_carry_each_account_s_ai_tools_switch(
     assert switches == {"alice": False, "bob": False, "carol": True}
 
 
-def test_a_program_row_keeps_copy_as_its_wire_name_and_shadows_no_model_method():
-    """A field named ``copy`` shadows BaseModel.copy, which Pydantic warns
-    of, so the field holds another name and ``copy`` is its alias."""
-    fields = EnabledAccountRowView.model_fields
-
-    assert "copy" not in fields
-    assert [name for name, info in fields.items() if info.alias == "copy"]
-    row = EnabledAccountRowView(account="alice", copy="user")
-    assert row.model_dump(by_alias=True)["copy"] == "user"
-
-
-def test_a_row_of_another_module_names_no_copy(api):
+def test_a_row_of_another_module_names_no_ai_tools(api):
     client, _ = api
 
     body = client.get("/api/agent/module/codeg", params={"device_id": DEVICE}).json()
 
     assert all(
-        row["copy"] is None
-        and row["ai_tools"] is None
-        and row["is_ai_tools_enabled"] is None
+        row["ai_tools"] is None and row["is_ai_tools_enabled"] is None
         for row in body["accounts"]
     )
