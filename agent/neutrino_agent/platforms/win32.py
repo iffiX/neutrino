@@ -37,6 +37,36 @@ ERROR_NO_DATA = 232
 # Security descriptors, at the one revision the SDDL converter takes.
 SDDL_REVISION_1 = 1
 
+# A folder opened by handle to read and set its access list: the access it
+# is opened with, every sharing, a folder opened itself and a reparse point
+# opened itself, never followed.
+READ_CONTROL = 0x00020000
+WRITE_DAC = 0x00040000
+FILE_READ_ATTRIBUTES = 0x00000080
+FILE_SHARE_ALL = 0x00000007
+FILE_FLAG_BACKUP_SEMANTICS = 0x02000000
+FILE_FLAG_OPEN_REPARSE_POINT = 0x00200000
+FILE_ATTRIBUTE_DIRECTORY = 0x00000010
+FILE_ATTRIBUTE_REPARSE_POINT = 0x00000400
+# A folder's access list, as the security calls name its parts: a file's
+# object type, the DACL alone, and whether it inherits from above.
+SE_FILE_OBJECT = 1
+DACL_SECURITY_INFORMATION = 0x00000004
+PROTECTED_DACL_SECURITY_INFORMATION = 0x80000000
+# One entry SetEntriesInAclW folds into a list: how it acts, how it is
+# inherited, and how its trustee is named.
+SET_ACCESS = 2
+REVOKE_ACCESS = 4
+SUB_CONTAINERS_AND_OBJECTS_INHERIT = 3
+TRUSTEE_IS_SID = 0
+TRUSTEE_IS_NAME = 1
+TRUSTEE_IS_UNKNOWN = 0
+NO_MULTIPLE_TRUSTEE = 0
+# An access list's revision and an entry's flags.
+ACL_REVISION = 2
+INHERITED_ACE = 0x10
+ACL_SIZE_INFORMATION_CLASS = 2
+
 # Services: the one kind this agent is, the states it reports, the controls
 # it accepts and answers.
 SERVICE_WIN32_OWN_PROCESS = 0x00000010
@@ -326,6 +356,56 @@ class SecurityAttributes(ctypes.Structure):
         ("nLength", DWORD),
         ("lpSecurityDescriptor", ctypes.c_void_p),
         ("bInheritHandle", ctypes.c_int),
+    ]
+
+
+class ByHandleFileInformation(ctypes.Structure):
+    """BY_HANDLE_FILE_INFORMATION: an open file's attributes and identity."""
+
+    _fields_ = [
+        ("dwFileAttributes", DWORD),
+        ("ftCreationTime", FileTime),
+        ("ftLastAccessTime", FileTime),
+        ("ftLastWriteTime", FileTime),
+        ("dwVolumeSerialNumber", DWORD),
+        ("nFileSizeHigh", DWORD),
+        ("nFileSizeLow", DWORD),
+        ("nNumberOfLinks", DWORD),
+        ("nFileIndexHigh", DWORD),
+        ("nFileIndexLow", DWORD),
+    ]
+
+
+class TrusteeW(ctypes.Structure):
+    """TRUSTEE_W: who an entry names, here by account name."""
+
+    _fields_ = [
+        ("pMultipleTrustee", ctypes.c_void_p),
+        ("MultipleTrusteeOperation", ctypes.c_int),
+        ("TrusteeForm", ctypes.c_int),
+        ("TrusteeType", ctypes.c_int),
+        ("ptstrName", ctypes.c_void_p),
+    ]
+
+
+class ExplicitAccessW(ctypes.Structure):
+    """EXPLICIT_ACCESS_W: one entry to fold into an access list."""
+
+    _fields_ = [
+        ("grfAccessPermissions", DWORD),
+        ("grfAccessMode", ctypes.c_int),
+        ("grfInheritance", DWORD),
+        ("Trustee", TrusteeW),
+    ]
+
+
+class AclSizeInformation(ctypes.Structure):
+    """ACL_SIZE_INFORMATION: how many entries an access list holds and its bytes."""
+
+    _fields_ = [
+        ("AceCount", DWORD),
+        ("AclBytesInUse", DWORD),
+        ("AclBytesFree", DWORD),
     ]
 
 
@@ -962,6 +1042,72 @@ class Win32Libraries:
         ]
         self.advapi32.LsaClose.restype = DWORD
         self.advapi32.LsaClose.argtypes = [ctypes.c_void_p]
+        self._describe_folder_security()
+
+    def _describe_folder_security(self) -> None:
+        """Prototype the calls that read and set a folder's access list on its handle."""
+        self.kernel32.GetFileInformationByHandle.argtypes = [
+            ctypes.c_void_p,
+            ctypes.POINTER(ByHandleFileInformation),
+        ]
+        self.kernel32.GetFinalPathNameByHandleW.restype = DWORD
+        self.kernel32.GetFinalPathNameByHandleW.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_wchar_p,
+            DWORD,
+            DWORD,
+        ]
+        self.advapi32.GetSecurityInfo.restype = DWORD
+        self.advapi32.GetSecurityInfo.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_int,
+            DWORD,
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.POINTER(ctypes.c_void_p),
+            ctypes.c_void_p,
+            ctypes.POINTER(ctypes.c_void_p),
+        ]
+        self.advapi32.SetSecurityInfo.restype = DWORD
+        self.advapi32.SetSecurityInfo.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_int,
+            DWORD,
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+        ]
+        self.advapi32.SetEntriesInAclW.restype = DWORD
+        self.advapi32.SetEntriesInAclW.argtypes = [
+            DWORD,
+            ctypes.POINTER(ExplicitAccessW),
+            ctypes.c_void_p,
+            ctypes.POINTER(ctypes.c_void_p),
+        ]
+        self.advapi32.GetAclInformation.argtypes = [
+            ctypes.c_void_p,
+            ctypes.POINTER(AclSizeInformation),
+            DWORD,
+            ctypes.c_int,
+        ]
+        self.advapi32.GetAce.argtypes = [
+            ctypes.c_void_p,
+            DWORD,
+            ctypes.POINTER(ctypes.c_void_p),
+        ]
+        self.advapi32.InitializeAcl.argtypes = [ctypes.c_void_p, DWORD, DWORD]
+        self.advapi32.ConvertStringSidToSidW.argtypes = [
+            ctypes.c_wchar_p,
+            ctypes.POINTER(ctypes.c_void_p),
+        ]
+        self.advapi32.AddAce.argtypes = [
+            ctypes.c_void_p,
+            DWORD,
+            DWORD,
+            ctypes.c_void_p,
+            DWORD,
+        ]
         self.advapi32.LsaNtStatusToWinError.restype = DWORD
         self.advapi32.LsaNtStatusToWinError.argtypes = [DWORD]
 

@@ -517,6 +517,56 @@ def discard(message: str) -> None:
     """Swallow the log lines."""
 
 
+class _OwnedStatus:
+    """A status that names another owner, its mode the real one's."""
+
+    def __init__(self, found, uid, gid):
+        self.st_uid = uid
+        self.st_gid = gid
+        self.st_mode = found.st_mode
+        self.st_nlink = found.st_nlink
+        self.st_ino = found.st_ino
+        self.st_dev = found.st_dev
+
+
+def fd_owners(monkeypatch, owners: dict) -> list:
+    """Make ``os.fstat`` read the owner ``owners`` names for the path an open descriptor names, and ``os.fchown`` record into it.
+
+    Args:
+        monkeypatch: The test's monkeypatch.
+        owners: Path to ``(uid, gid)``; a change of owner updates it.
+
+    Returns:
+        Each change of owner made on a descriptor, ``(path, uid, gid)``.
+    """
+    real_fstat = os.fstat
+    given = []
+
+    def fstat(descriptor):
+        found = real_fstat(descriptor)
+        path = chowned_path(descriptor) if isinstance(descriptor, int) else ""
+        if path in owners:
+            return _OwnedStatus(found, *owners[path])
+        return found
+
+    def fchown(descriptor, uid, gid):
+        path = chowned_path(descriptor)
+        given.append((path, uid, gid))
+        owners[path] = (uid, gid)
+
+    monkeypatch.setattr(os, "fstat", fstat)
+    monkeypatch.setattr(os, "fchown", fchown)
+    return given
+
+
+def chowned_path(target) -> str:
+    """The path one change of owner names: an open descriptor's file, its staged ``.new`` name taken off, else the path."""
+    if isinstance(target, int):
+        path = os.readlink(f"/proc/self/fd/{target}")
+        return path[: -len(".new")] if path.endswith(".new") else path
+    return str(target)
+
+
 BINDING_ID = "dev-1"
 BINDING_TOKEN = "tok"
 MACHINE_ID = "machine-1"

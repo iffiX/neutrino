@@ -429,7 +429,7 @@ AGENT_PROGRAM_OTHER_STARTUP_FILES = (".profile",)
 AGENT_PROGRAM_FISH_SHELL = "fish"
 AGENT_PROGRAM_BASH_SHELL = "bash"
 # How long one read or write of an account's file as the account takes at most.
-AGENT_PROGRAM_FILE_TIMEOUT_S = 10
+AGENT_ACCOUNT_FILE_TIMEOUT_S = 10
 
 # The codes a task's wait names.
 AGENT_WAIT_LOCK = "waiting_for_lock"

@@ -11,7 +11,8 @@ last one let go removes them. ``program_path.json`` under the state root
 keeps, per account, the programs the env files name, the env files, and
 each startup file the line is in, with whether the module made the file and
 whether it added a newline before the line. Every read and write of the
-account's files runs as the account, a startup file in place.
+account's files runs as the account through :class:`AccountFiles`, a
+startup file in place.
 
 Not pure: runs commands as the accounts and writes files.
 """
@@ -24,7 +25,6 @@ import contextlib
 import json
 import os
 import posixpath
-import subprocess
 import tempfile
 import threading
 
@@ -33,7 +33,6 @@ from neutrino_agent.constants import (
     AGENT_PROGRAM_BASH_SHELL,
     AGENT_PROGRAM_ENV_FISH_NAME,
     AGENT_PROGRAM_ENV_NAME,
-    AGENT_PROGRAM_FILE_TIMEOUT_S,
     AGENT_PROGRAM_FISH_SHELL,
     AGENT_PROGRAM_LINE_MARK,
     AGENT_PROGRAM_MODULES,
@@ -43,27 +42,12 @@ from neutrino_agent.constants import (
     AGENT_PROGRAM_TREE_OWN_PARTS,
     AGENT_PROGRAM_TREE_PARTS,
 )
+from neutrino_agent.modules.shared.account_files import AccountFiles
 from neutrino_agent.platforms.base import launcher_folders
 
 # One edit of the record and of an account's files at a time, across every
 # command line program of this process.
 PATH_LOCK = threading.Lock()
-# What ``sh`` runs as the account to print the file ``$0``; it exits 3 when
-# the file is not there.
-READ_SHELL = 'if [ -e "$0" ]; then exec cat -- "$0"; fi; exit 3'
-# What ``sh`` runs as the account to write its input into the file ``$0`` in
-# place, its folder made first.
-WRITE_SHELL = 'mkdir -p -- "$(dirname -- "$0")" && cat > "$0"'
-# What ``sh`` runs as the account to print each of its arguments that is
-# there.
-EXISTING_SHELL = 'for p do [ -e "$p" ] && printf "%s\\n" "$p"; done; exit 0'
-# What ``sh`` runs as the account to delete the file ``$0``.
-REMOVE_SHELL = 'rm -f -- "$0"'
-# What ``sh`` runs as the account to delete each of its arguments while it is
-# an empty folder, deepest first, stopping at the first that is not.
-REMOVE_EMPTY_SHELL = 'for p do rmdir -- "$p" 2>/dev/null || exit 0; done; exit 0'
-# How much of a failed command's words an error keeps.
-DETAIL_CHARS = 300
 
 
 def tree_folder(home: str, os_name: str) -> str:
@@ -284,7 +268,6 @@ class ProgramPathApplier:
 
         Raises:
             OSError: When a file cannot be read or written as the account.
-            subprocess.SubprocessError: When a command does not finish.
         """
         with PATH_LOCK:
             record = self._read_record()
@@ -312,7 +295,6 @@ class ProgramPathApplier:
 
         Raises:
             OSError: When a file cannot be read or written as the account.
-            subprocess.SubprocessError: When a command does not finish.
         """
         with PATH_LOCK:
             record = self._read_record()
@@ -419,7 +401,7 @@ class ProgramPathApplier:
         folders = [tree]
         for _turn in range(AGENT_PROGRAM_TREE_OWN_PARTS - 1):
             folders.append(posixpath.dirname(folders[-1]))
-        self._as_account(account, ["/bin/sh", "-c", REMOVE_EMPTY_SHELL, "sh", *folders])
+        self._files(account).remove_empty_dirs(folders)
         return notes
 
     def _lines(self) -> tuple:
@@ -431,11 +413,7 @@ class ProgramPathApplier:
 
     def _existing(self, account: str, paths: list) -> list:
         """The paths that are there, as the account sees them."""
-        result = self._as_account(
-            account, ["/bin/sh", "-c", EXISTING_SHELL, "sh", *paths]
-        )
-        found = {line for line in result.stdout.decode("utf-8", "replace").splitlines()}
-        return [path for path in paths if path in found]
+        return self._files(account).existing(paths)
 
     def _read(self, account: str, path: str) -> "bytes | None":
         """A file's bytes, read as the account; None when it is not there.
@@ -443,12 +421,7 @@ class ProgramPathApplier:
         Raises:
             OSError: When it cannot be read.
         """
-        result = self._as_account(account, ["/bin/sh", "-c", READ_SHELL, path])
-        if result.returncode == 3:
-            return None
-        if result.returncode != 0:
-            raise OSError(f"could not read {path}: {_detail(result)}")
-        return result.stdout
+        return self._files(account).read(path)
 
     def _write(self, account: str, path: str, data: bytes) -> None:
         """Write a file's bytes in place as the account, its folder made.
@@ -456,9 +429,7 @@ class ProgramPathApplier:
         Raises:
             OSError: When it cannot be written.
         """
-        result = self._as_account(account, ["/bin/sh", "-c", WRITE_SHELL, path], data)
-        if result.returncode != 0:
-            raise OSError(f"could not write {path}: {_detail(result)}")
+        self._files(account).write_in_place(path, data)
 
     def _remove(self, account: str, path: str) -> None:
         """Delete a file as the account.
@@ -466,29 +437,11 @@ class ProgramPathApplier:
         Raises:
             OSError: When it cannot be deleted.
         """
-        result = self._as_account(account, ["/bin/sh", "-c", REMOVE_SHELL, path])
-        if result.returncode != 0:
-            raise OSError(f"could not remove {path}: {_detail(result)}")
+        self._files(account).remove(path)
 
-    def _as_account(self, account: str, argv: list, data: bytes = b""):
-        """Run one command as the account, its bytes in and out as they are.
-
-        Raises:
-            OSError: When the account is not there or the command cannot
-                start.
-            subprocess.SubprocessError: When it does not finish in time.
-        """
-        try:
-            command, process = self._platform.account_process(account, list(argv))
-        except KeyError as error:
-            raise OSError(f"no account {account}") from error
-        return subprocess.run(
-            command,
-            input=data,
-            capture_output=True,
-            timeout=AGENT_PROGRAM_FILE_TIMEOUT_S,
-            **process,
-        )
+    def _files(self, account: str) -> AccountFiles:
+        """The account's places, reached as the account."""
+        return AccountFiles(platform=self._platform, account=account)
 
     # --- the record ---
 
@@ -546,9 +499,3 @@ def _held_of(facts) -> dict:
 def _is_fish(shell: str) -> bool:
     """Whether a login shell is fish. Pure."""
     return posixpath.basename(str(shell or "")) == AGENT_PROGRAM_FISH_SHELL
-
-
-def _detail(result) -> str:
-    """The words a failed command left, cut short. Pure."""
-    words = (result.stderr or result.stdout or b"").decode("utf-8", "replace")
-    return words.strip()[:DETAIL_CHARS]
