@@ -24,7 +24,10 @@ Not pure: runs the verify command and writes files.
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
+import base64
 import contextlib
+import functools
+import hashlib
 import ntpath
 import os
 import shutil
@@ -39,6 +42,7 @@ from neutrino_agent.constants import (
     AGENT_ARTIFACT_KIND_BINARY,
     AGENT_ARTIFACT_KIND_NPM,
     AGENT_DIGEST_SHA256_PREFIX,
+    AGENT_DIGEST_SHA512_PREFIX,
 )
 from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.shared.unpacked_tree import (
@@ -215,8 +219,32 @@ def digest_hex(digest: str) -> str:
     return text[len(AGENT_DIGEST_SHA256_PREFIX) :].lower()
 
 
+def integrity_of(path: str) -> str:
+    """A file's npm integrity: ``sha512-`` and the SHA-512 of its bytes in base64.
+
+    Args:
+        path: The file.
+
+    Returns:
+        The integrity; empty when the file cannot be read.
+    """
+    digest = hashlib.sha512()
+    try:
+        with open(path, "rb") as stream:
+            for chunk in iter(functools.partial(stream.read, 1 << 20), b""):
+                digest.update(chunk)
+    except OSError:
+        return ""
+    return AGENT_DIGEST_SHA512_PREFIX + base64.b64encode(digest.digest()).decode(
+        "ascii"
+    )
+
+
 def check_received(artifact: dict, received: dict) -> "dict | None":
     """Whether the bytes a package stream brought are the recipe's.
+
+    A ``sha256:`` digest is checked against the stream's SHA-256, and npm's
+    ``sha512-`` integrity against the received file's.
 
     Args:
         artifact: The recipe's artifact.
@@ -226,7 +254,12 @@ def check_received(artifact: dict, received: dict) -> "dict | None":
         None when the digest matches; ``package_digest_mismatch
         {artifact}`` otherwise.
     """
-    expected = digest_hex(str(artifact.get("digest", "") or ""))
+    digest = str(artifact.get("digest", "") or "")
+    if digest.startswith(AGENT_DIGEST_SHA512_PREFIX):
+        path = str(received.get("path", "") or "")
+        if path and integrity_of(path) == digest:
+            return None
+    expected = digest_hex(digest)
     if expected and str(received.get("sha256", "") or "").lower() == expected:
         return None
     return {

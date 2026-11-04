@@ -525,6 +525,9 @@ AGENT_ARTIFACT_KEPT_SUFFIXES = {
 }
 # A hub artifact's digest is this prefix and the SHA-256 of its bytes in hex.
 AGENT_DIGEST_SHA256_PREFIX = "sha256:"
+# An npm tarball's digest is npm's integrity: this prefix and the SHA-512 of
+# its bytes in base64.
+AGENT_DIGEST_SHA512_PREFIX = "sha512-"
 # The probe of a source: how long it waits for an answer, how much of a
 # file and of a document it reads, and the share of a speed within which two
 # sources go to the earlier first byte.

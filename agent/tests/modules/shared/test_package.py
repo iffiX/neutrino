@@ -13,6 +13,8 @@ swapped in with each replaced file kept as ``.old``, the ``.old`` files
 dropped or put back, and a failed ``verify`` named by its own output.
 """
 
+import base64
+import hashlib
 import io
 import os
 import stat
@@ -28,6 +30,7 @@ from neutrino_agent.modules.shared.base import ModuleRunner
 from neutrino_agent.modules.shared.package import (
     artifacts_of,
     check_received,
+    integrity_of,
     digest_hex,
     keep_artifact,
     npm_artifact,
@@ -165,6 +168,27 @@ def test_a_received_file_is_checked_against_the_artifacts_digest():
         "params": {"artifact": "node"},
     }
     assert check_received({"name": "x", "digest": ""}, {"sha256": ""})["code"] == (
+        "package_digest_mismatch"
+    )
+
+
+def test_an_npm_tarball_is_checked_against_npm_s_integrity(tmp_path):
+    tarball_path = tmp_path / "claude-code-linux-x64-2.1.311.tgz"
+    tarball_path.write_bytes(b"the publisher's bytes")
+    integrity = "sha512-" + base64.b64encode(
+        hashlib.sha512(b"the publisher's bytes").digest()
+    ).decode("ascii")
+    artifact = {"name": "claude_code", "kind": "tar_gz", "digest": integrity}
+    received = {"path": str(tarball_path), "sha256": "the stream's own"}
+
+    assert integrity_of(str(tarball_path)) == integrity
+    assert check_received(artifact, received) is None
+    tarball_path.write_bytes(b"other bytes")
+    assert check_received(artifact, received) == {
+        "code": "package_digest_mismatch",
+        "params": {"artifact": "claude_code"},
+    }
+    assert check_received(artifact, {"sha256": "x"})["code"] == (
         "package_digest_mismatch"
     )
 
