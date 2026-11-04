@@ -6,7 +6,8 @@ a pkg handed to the system's installer; Podman's msi or pkg installed and
 uninstalled only with the package mark, a Podman found before the install
 being the person's and left as it is on macOS and Windows, by an install,
 another version and an uninstall; an install owed while no machine image is
-kept, on either Podman; a restart owed holding the apply as
+kept, on either Podman, and the details saying whether the package mark
+stands; a restart owed holding the apply as
 ``reboot_required``; each refusal before anything runs, a Windows disk of 0
 among them; a new machine made from the kept image and sized where the
 provider takes no size at init, its image opened to the account first,
@@ -623,6 +624,14 @@ def test_a_recipe_that_names_no_image_owes_no_install(rig):
         is False
     )
     assert rig.runner.is_install_owed({}) is False
+
+
+def test_the_details_say_whether_the_package_mark_stands(rig):
+    assert rig.runner.details({})["has_package_mark"] is False
+
+    rig.install_podman()
+
+    assert rig.runner.details({})["has_package_mark"] is True
 
 
 def test_the_image_is_kept_as_one_file_and_replaces_the_last(rig, tmp_path):

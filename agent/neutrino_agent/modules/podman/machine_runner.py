@@ -877,12 +877,13 @@ class PodmanMachineModuleRunner(ModuleRunner):
             recipe: The module's recipe.
 
         Returns:
-            ``{"containers", "mirrors", "version", "is_active", "machine"}``,
-            each container as on Linux with its addresses empty and its
-            folders written as the computer names them, and ``machine``
-            ``{"account", "is_running", "cpus", "memory_gib", "disk_gib",
-            "default_memory_gib"}``, the last the memory a 0 in the Run
-            settings gives on this computer.
+            ``{"containers", "mirrors", "version", "is_active", "machine",
+            "has_package_mark"}``, each container as on Linux with its
+            addresses empty and its folders written as the computer names
+            them, ``machine`` ``{"account", "is_running", "cpus",
+            "memory_gib", "disk_gib", "default_memory_gib"}``, the last the
+            memory a 0 in the Run settings gives on this computer, and
+            ``has_package_mark`` false on a person's Podman.
         """
         record = self._record()
         config = self._config or PodmanConfig()
@@ -893,6 +894,7 @@ class PodmanMachineModuleRunner(ModuleRunner):
             "mirrors": list(config.mirrors),
             "version": podman_version(podman=(binary,)) if binary else "",
             "is_active": False,
+            "has_package_mark": self._package_mark.is_kept(),
             "machine": {
                 "account": str(record.get("account", "") or ""),
                 "is_running": False,
