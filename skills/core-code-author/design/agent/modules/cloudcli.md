@@ -56,12 +56,21 @@ is read, `~/.npm` is untouched and nothing is installed globally. The prefix
 is `npm/` in the account's CloudCLI directory,
 `~/.local/share/neutrino/agent/cloudcli/npm` on Linux,
 `~/Library/Application Support/Neutrino/agent/cloudcli/npm` on macOS and
-`%LOCALAPPDATA%\Neutrino\agent\cloudcli\npm` on Windows. An install
-removes the `app/` an earlier build left there, with the cache inside it.
-npm fetches the
+`%LOCALAPPDATA%\Neutrino\agent\cloudcli\npm` on Windows. npm fetches the
 package's dependencies from the same registry, each under its own
 integrity. An install that fails on one registry runs again on the next, and
 the last failure is the one reported.
+
+**`npm/` is the one prefix.** An earlier version installed CloudCLI into
+`app/` in the same directory, with npm's cache inside it, and that install
+is not carried. An agent that finds an account's `app/` removes it and
+installs CloudCLI again in `npm/` at the module's next apply, which an
+agent of another build runs for every module the state names
+([agent.md](../../agent.md), "A retry is the same press again"): the
+account's `npm {account}` step removes `app/` and installs into `npm/`, and
+its `account {account}` step writes the service that runs from `npm/`. An
+`app/` whose files are still open, as on Windows while the instance still
+runs from it, goes at a later apply, as an old Node.js directory does.
 
 **Every npm run starts from a clean prefix.** Each attempt, on every
 system, first deletes `npm/package-lock.json`, then the rest of `npm/`, and
