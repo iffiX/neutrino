@@ -15,6 +15,7 @@ sudo password somebody just typed. See
 """
 
 import asyncio
+import secrets
 import shlex
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -29,6 +30,7 @@ from neutrino_hub.modules.devices.agent_package import AgentPackageCache
 from neutrino_hub.modules.devices.constants import (
     SSH_UNREACHABLE_STATUS,
     SSH_UNSUPPORTED_OS_STATUS,
+    SSH_UPLOAD_DIR_PREFIX,
 )
 from neutrino_hub.modules.devices.host_keys import DeviceHostKeyStore
 from neutrino_hub.modules.devices.key_registry import KeyRegistry
@@ -239,6 +241,9 @@ class DeviceSshOperator:
         # Whether sudo on the device prompts, learned once from sudo itself
         # (``sudo -n true``); None until asked.
         self._is_sudo_passwordless: "bool | None" = None
+        # The directory the install made on the device for its package; None
+        # until made and after it is removed.
+        self._upload_dir: "str | None" = None
 
     async def check_connection(self) -> tuple[bool, str]:
         """Try to connect and report the result.
@@ -438,12 +443,33 @@ class DeviceSshOperator:
             ``[exit N]``. A device that is not Linux, or whose package manager
             or machine the hub carries no package for, ends the task before
             anything lands on it; EPEL that cannot be enabled ends it before
-            the package.
+            the package. The package goes to a directory made for this
+            install, removed from the device when the install ends.
 
         Raises:
             TaskExitStatusError: After an ``[exit N]`` line whose N is not 0,
                 with that N.
         """
+        try:
+            async for chunk in self._install_steps(
+                packages=packages,
+                enrollment_link=enrollment_link,
+                sudo_password=sudo_password,
+            ):
+                yield chunk
+        finally:
+            if self._upload_dir is not None:
+                await self.run_once(f"rm -rf -- {shlex.quote(self._upload_dir)}")
+                self._upload_dir = None
+
+    async def _install_steps(
+        self,
+        *,
+        packages: AgentPackageCache,
+        enrollment_link: str,
+        sudo_password: str | None,
+    ) -> AsyncIterator[str]:
+        """The install's steps, as :meth:`install_client` yields and raises them."""
         family = None
         package_path = None
         epel = ""
@@ -491,10 +517,13 @@ class DeviceSshOperator:
                     raise TaskExitStatusError(SSH_UNSUPPORTED_OS_STATUS)
                 if family == "rpm":
                     epel = epel_command(os_release, machine)
-                remote_package = f"/tmp/{package_path.name}"
+                upload_dir = f"{SSH_UPLOAD_DIR_PREFIX}{secrets.token_hex(8)}"
+                remote_package = f"{upload_dir}/{package_path.name}"
                 yield f"[uploading {package_path.name}]\n"
                 try:
                     async with connection.start_sftp_client() as sftp:
+                        await sftp.mkdir(upload_dir)
+                        self._upload_dir = upload_dir
                         await sftp.put(str(package_path), remote_package)
                 except (OSError, asyncssh.Error) as error:
                     yield f"\n[upload failed: {error}]\n"

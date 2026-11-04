@@ -38,6 +38,10 @@ SSH_UNREACHABLE_STATUS = 255
 # and from SSH_UNREACHABLE_STATUS.
 SSH_UNSUPPORTED_OS_STATUS = 95
 
+# The directory an install over SSH uploads the agent's package into: this
+# prefix and a random suffix, made for one install and removed when it ends.
+SSH_UPLOAD_DIR_PREFIX = "/tmp/neutrino_agent."
+
 # How a module is installed on a machine, by the method its platform entry
 # names (design/agent/module_install.md, "Install methods"): the agent's own
 # package, software the system holds, the system's package manager, the hub's

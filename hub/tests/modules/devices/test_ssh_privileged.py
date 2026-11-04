@@ -12,6 +12,7 @@ the rpm on the RHEL family, and a failure stopping before the join.
 
 import asyncio
 from contextlib import asynccontextmanager
+from pathlib import Path
 from types import SimpleNamespace
 
 import asyncssh
@@ -38,16 +39,20 @@ TOKEN = "a-secret-line"  # scan: allow
 
 
 class FakeSftp:
-    """Records uploads instead of transferring them."""
+    """Records directories made and uploads instead of transferring them."""
 
-    def __init__(self, uploads: list):
+    def __init__(self, uploads: list, dirs: list | None = None):
         self._uploads = uploads
+        self._dirs = [] if dirs is None else dirs
 
     async def __aenter__(self):
         return self
 
     async def __aexit__(self, *_exc):
         return False
+
+    async def mkdir(self, path):
+        self._dirs.append(path)
 
     async def put(self, local_path, remote_path):
         self._uploads.append((local_path, remote_path))
@@ -77,6 +82,7 @@ class FakeConnection:
         self.os_release = os_release
         self.commands: list[str] = []
         self.uploads: list = []
+        self.dirs: list[str] = []
 
     async def run(self, command, check=False, timeout=None, input=None):
         self.commands.append(command)
@@ -94,7 +100,7 @@ class FakeConnection:
         return SimpleNamespace(stdout=stdout, stderr="", exit_status=exit_status)
 
     def start_sftp_client(self):
-        return FakeSftp(self.uploads)
+        return FakeSftp(self.uploads, self.dirs)
 
 
 def operator(*, username: str = "iffi") -> DeviceSshOperator:
@@ -402,17 +408,39 @@ class UploadRefusingConnection(FakeConnection):
     """A device whose sftp-server refuses the package."""
 
     def start_sftp_client(self):
-        return RefusingSftp(self.uploads)
+        return RefusingSftp(self.uploads, self.dirs)
+
+
+class StaleTmpSftp(FakeSftp):
+    """Refuses a write to ``/tmp/<package name>``, the way sftp-server refuses
+    a file of that name another account owns."""
+
+    async def put(self, local_path, remote_path):
+        if remote_path == f"/tmp/{Path(local_path).name}":
+            raise asyncssh.SFTPPermissionDenied("Permission denied")
+        await super().put(local_path, remote_path)
+
+
+class StaleTmpConnection(FakeConnection):
+    """A device whose ``/tmp`` holds another account's file of the package's
+    name."""
+
+    def start_sftp_client(self):
+        return StaleTmpSftp(self.uploads, self.dirs)
 
 
 def not_linux(op, packages):
-    op._connect = fake_connect(FakeConnection(kernel="Darwin"))
+    connection = FakeConnection(kernel="Darwin")
+    op._connect = fake_connect(connection)
     capture_privileged_once(op)
+    return connection
 
 
 def no_package_manager(op, packages):
-    op._connect = fake_connect(FakeConnection(tools=()))
+    connection = FakeConnection(tools=())
+    op._connect = fake_connect(connection)
     capture_privileged_once(op)
+    return connection
 
 
 def unproduced_package(op, packages):
@@ -420,8 +448,10 @@ def unproduced_package(op, packages):
         raise AgentArtifactFetchError("artifact_unreachable", platform="linux/amd64")
 
     packages.package = package
-    op._connect = fake_connect(FakeConnection(tools=("dpkg",)))
+    connection = FakeConnection(tools=("dpkg",))
+    op._connect = fake_connect(connection)
     capture_privileged_once(op)
+    return connection
 
 
 def refused_login(op, packages):
@@ -437,28 +467,49 @@ def refused_login(op, packages):
 
 
 def refused_upload(op, packages):
-    op._connect = fake_connect(UploadRefusingConnection(tools=("dpkg",)))
+    connection = UploadRefusingConnection(tools=("dpkg",))
+    op._connect = fake_connect(connection)
     capture_privileged_once(op)
+    return connection
 
 
 def refused_epel(op, packages):
-    op._connect = fake_connect(FakeConnection(tools=("rpm",), os_release=ROCKY))
+    connection = FakeConnection(tools=("rpm",), os_release=ROCKY)
+    op._connect = fake_connect(connection)
     capture_privileged_once(op, codes=(1,))
+    return connection
 
 
 def failed_install(op, packages):
-    op._connect = fake_connect(FakeConnection(tools=("dpkg",)))
+    connection = FakeConnection(tools=("dpkg",))
+    op._connect = fake_connect(connection)
     capture_privileged_once(op, codes=(0, 100))
+    return connection
 
 
 def failed_join(op, packages):
-    op._connect = fake_connect(FakeConnection(tools=("dpkg",)))
+    connection = FakeConnection(tools=("dpkg",))
+    op._connect = fake_connect(connection)
     capture_privileged_once(op, codes=(0, 0, 3))
+    return connection
+
+
+def crashed_step(op, packages):
+    connection = FakeConnection(tools=("dpkg",))
+    op._connect = fake_connect(connection)
+
+    async def run_privileged_once(command, **_options):
+        raise RuntimeError("the step crashed")
+
+    op.run_privileged_once = run_privileged_once
+    return connection
 
 
 def joined(op, packages):
-    op._connect = fake_connect(FakeConnection(tools=("dpkg",)))
+    connection = FakeConnection(tools=("dpkg",))
+    op._connect = fake_connect(connection)
     capture_privileged_once(op)
+    return connection
 
 
 @pytest.mark.parametrize(
@@ -498,6 +549,75 @@ def test_every_end_of_the_install_is_its_exit_line_and_its_task_status(
     assert any(words in line for line in stream.buffer)
     assert stream.buffer[-1] == f"\n[exit {status}]\n"
     assert stream.exit_code == status
+
+
+def test_each_install_uploads_into_a_directory_made_for_it(packages):
+    """The package went to ``/tmp/<package name>`` on every install."""
+    connections = []
+    for _ in range(2):
+        op = operator()
+        connections.append(FakeConnection(tools=("dpkg",)))
+        op._connect = fake_connect(connections[-1])
+        calls = capture_privileged_once(op)
+        asyncio.run(install_task(op, packages))
+
+        (made,) = connections[-1].dirs
+        ((local_path, remote_path),) = connections[-1].uploads
+        assert made.startswith("/tmp/neutrino_agent.")
+        assert remote_path == f"{made}/{Path(local_path).name}"
+        assert remote_path in calls[1]["command"]
+    assert connections[0].dirs != connections[1].dirs
+
+
+def test_a_file_another_account_left_in_tmp_does_not_stop_the_install(packages):
+    """A file of the package's name in /tmp ended the install with sftp's
+    "Permission denied"."""
+    op = operator()
+    op._connect = fake_connect(StaleTmpConnection(tools=("dpkg",)))
+    capture_privileged_once(op)
+
+    stream = asyncio.run(install_task(op, packages))
+
+    assert stream.buffer[-1] == "\n[exit 0]\n"
+    assert stream.exit_code == 0
+
+
+@pytest.mark.parametrize(
+    "prepare",
+    [refused_upload, refused_epel, failed_install, failed_join, crashed_step, joined],
+    ids=[
+        "refused_upload",
+        "refused_epel",
+        "failed_install",
+        "failed_join",
+        "crashed_step",
+        "joined",
+    ],
+)
+def test_the_upload_directory_is_removed_whatever_the_end(packages, prepare):
+    """The package stayed on the device after every install."""
+    op = operator()
+    connection = prepare(op, packages)
+
+    asyncio.run(install_task(op, packages))
+
+    (made,) = connection.dirs
+    assert connection.commands[-1] == f"LANG=C.UTF-8 LC_ALL=C.UTF-8 rm -rf -- {made}"
+
+
+@pytest.mark.parametrize(
+    "prepare",
+    [not_linux, no_package_manager, unproduced_package],
+    ids=["not_linux", "no_package_manager", "unproduced_package"],
+)
+def test_an_install_that_made_no_directory_removes_none(packages, prepare):
+    op = operator()
+    connection = prepare(op, packages)
+
+    asyncio.run(install_task(op, packages))
+
+    assert connection.dirs == []
+    assert not any("rm -rf" in command for command in connection.commands)
 
 
 def test_the_deb_install_refreshes_the_package_lists_before_it_installs(packages):
@@ -615,7 +735,7 @@ def test_the_arch_install_refreshes_the_lists_and_installs_the_file(
     lines = asyncio.run(install_lines(op, packages, SUDO_PASSWORD))
 
     assert calls[0]["command"] == "pacman -Sy --noconfirm"
-    assert calls[1]["command"].startswith("pacman -U --noconfirm /tmp/neutrino-agent")
+    assert calls[1]["command"].startswith("pacman -U --noconfirm /tmp/neutrino_agent.")
     assert calls[1]["command"].endswith(".pkg.tar.zst")
     assert calls[2]["command"] == f"nagent join --yes {LINK}"
     assert lines[-1] == "\n[exit 0]\n"
