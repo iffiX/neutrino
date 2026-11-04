@@ -146,13 +146,13 @@ software it holds. Where each class lands on each system is
 
 | Rule | Reason |
 | --- | --- |
-| A digest is `sha256:<hex>`, and an `npm` artifact's digest is npm's `integrity` as the registry gives it, `sha512-<base64>`. | The digest pins the bytes on every source; npm checks its own integrity format. |
+| A digest is `sha256:<hex>`, and the digest of an artifact from the `npm` set, an `npm` artifact or an npm package's tarball of kind `tar_gz`, is npm's `integrity` as the registry gives it, `sha512-<base64>`. The hub's cache checks a tarball's integrity itself, and names the file by the hex of the digest's bytes. | The digest pins the bytes on every source; npm publishes no sha256 of a tarball, and every npm registry serves a published tarball under the integrity the publisher's upload fixed. |
 | The digest is the publisher's: the sha256 file it publishes, the `digest` GitHub's API gives a release asset, Microsoft's `sha256hash`, an OCI manifest digest, or npm's `integrity`. A mirror serves bytes and names no digest. | A mirror that names its own digest can serve anything. |
 | The cache checks the head of each file before it keeps it: `msi` and `pkg` by the magic bytes it checks for the agent's own packages, `binary` by the ELF, Mach-O or PE header, the two zstd kinds by `28 b5 2f fd`, `nsis` by the PE header, and `dmg` by `koly` at the start of its last 512 bytes. | A source that answers with an error page passes no head check. |
 | An archive whose members all sit under one top directory is unpacked without it, so its files sit directly under `<directory>`. | A path in `verify` and in a service definition stays the same for every version. |
 | The unpack is owned by the agent's own account, root or SYSTEM, readable and executable by every account, writable by none, and on no `PATH`. A command line program's launcher folder, `bin/` beside its unpack, is the one folder named on a `PATH`: at the end of Neutrino's own sessions' and, on Windows, of an enabled account's user `PATH` ([module_template.md](module_template.md), "The launcher and the link"). | Every account runs the program, and none can change it. A person runs a command line program by its name, and a folder at the end of `PATH` hides no copy of theirs. |
 | Each member of a `zip` keeps the permission bits its entry names, less the setuid, setgid and sticky bits, as a tarball's members do; the seal then takes every write bit away. | VS Code's CLI for macOS comes as a zip whose `code` is 0755. Unpacked without its bits it read `-r--r--r--`, and VS Code did not start. |
-| The recipe the state holds for a `hub` entry drops each artifact's `sources`, since the bytes come down the `package` stream. A `container` or an `npm` artifact keeps its `sources` or its `source_set`, since the machine fetches it, and the state's `source_sets` section holds each set a recipe names. | The agent fetches only what the hub cannot send. |
+| The recipe the state holds for a `hub` entry drops each artifact's `sources`, and the `source_set` of an archive the hub's cache fetches, since the bytes come down the `package` stream. A `container` or an `npm` artifact keeps its `sources` or its `source_set`, since the machine fetches it, and the state's `source_sets` section holds each set a recipe names. | The agent fetches only what the hub cannot send. |
 
 A runtime a module needs, Node.js among them, is one of its artifacts,
 pinned in its own manifest. Two modules that need the same runtime each hold
@@ -168,12 +168,16 @@ Codeg's npm packages carries Claude Code, runs that copy.
 | Every address that serves the same bytes is in the one `sources` list of its download, or in the one source set of its ecosystem, which the download names ("Source sets"). No key names a country's or an edition's address. | The digest makes every source equal, so the fastest one serves. |
 | A source names a file as `{file}`, the artifact's `file` with `{version}` filled in. | One template lists the same file on the publisher and on every mirror. |
 | `{release}` names each release site the hub's build stamped, at the release the hub came from ([../../agent_work_rule/release.md](../../agent_work_rule/release.md), "Release sites"). A checkout has no stamp, so `{release}` names no source there. | The project's own release has one address per site, and the hub learns them only from its build. |
+| A `hub` artifact names `source_set` in place of `sources` when its file is a package of an ecosystem with a set: the hub's cache reads the artifact's `file` under each of the set's sources, the first source first. Claude Code's tarball names the `npm` set ([modules/claude_code.md](modules/claude_code.md)). | Every npm registry serves a published tarball at the same path, so the set's one list of registries, mirrors in mainland China among them, serves the module too. |
+| No Claude Code artifact names `{release}`, and no release of Neutrino's carries Claude Code's files. | Claude Code is Anthropic's proprietary software, and its module's installer fetches it only from the npm registries, which serve the package Anthropic publishes. |
 | The Containers module's docker.io mirrors stay the person's ordered list, which Podman applies under any `docker.io` source. | They are the person's configuration, and Podman already tries them in order. |
 
 | Download | Fetched by | Its sources |
 | --- | --- | --- |
 | a `hub` artifact | the hub's cache | the publisher's address first, then each mirror that serves the same file, such as the USTC mirror of code-server and npmmirror's copy of Node.js; `{release}` last, where the project's release holds the file |
 | Codeg's archives | the hub's cache | Codeg's GitHub release, the one address that serves them |
+| Codex's archives | the hub's cache | Codex's GitHub release, then `releases.openai.com`, which the publisher's own installer reads first and which serves the same files ([modules/codex.md](modules/codex.md)) |
+| Claude Code's tarball | the hub's cache | the `npm` set: registry.npmjs.org, npmmirror and Tencent's mirror ([modules/claude_code.md](modules/claude_code.md)) |
 | SiYuan's desktop builds | the hub's cache | SiYuan's GitHub release, then the publisher's own `https://release.liuyun.io/siyuan/{file}` ([modules/siyuan.md](modules/siyuan.md)) |
 | VS Code's CLI | the hub's cache | Microsoft's address alone, a list of one |
 | Podman, its machine image and WSL | the hub's cache | each publisher's GitHub release |
@@ -233,7 +237,7 @@ ecosystem's packages, such as PyPI's, for the whole system.
 | Rule | Reason |
 | --- | --- |
 | Each ecosystem has one set, and every download from it names the set: an artifact by `source_set`, a `container` entry by `source_sets`. | Two lists for one ecosystem drift apart, and a mirror added to one reaches half the modules. |
-| An artifact that names a set probes as its kind says: CloudCLI's npm artifact names `npm` and probes its own package's document. | The package being installed is the document that has to be there. |
+| An artifact that names a set probes as its kind says: CloudCLI's npm artifact names `npm` and probes its own package's document, and Claude Code's tarball, of kind `tar_gz`, probes the tarball itself as any `hub` artifact does. | The package being installed is the document or the file that has to be there. |
 | A `container` entry lists the sets its containers use in `source_sets`, and the hub copies the list into each hub container of the module. | The tools inside a container fetch from the network at their start, and the container's environment is where they read the address. |
 | Before the agent writes a hub container's environment file, it probes each set the container lists and writes every variable of the set, with the fastest source, into the container's environment. | Which source is fastest depends on the machine's own network. |
 | An environment value `{<set>}`, such as `{pypi}`, is the fastest source of that set, for a variable the set does not list. The set is one the module lists. | A tool that reads a variable of its own gets the same choice. |
@@ -304,6 +308,7 @@ Each list names its probe file once, in the data file that holds the list.
 | an image's registries | its largest layer, by its digest | the layer's | The digest names the bytes, and the layer goes only with the image. |
 | CloudCLI's registries | the package's document | 220 to 296 KB | The install needs this document, and the probe checks its integrity. |
 | a `hub` artifact | the artifact | the artifact's | The download takes this file. |
+| Claude Code's tarball on the `npm` set | the tarball, `@anthropic-ai/claude-code-<platform>/-/claude-code-<platform>-{version}.tgz` | 127 MiB for linux-x64 | A published version's tarball does not change, and the download takes this file. |
 
 | Rule | Reason |
 | --- | --- |
