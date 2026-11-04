@@ -5,7 +5,8 @@ What these pin: the artifacts kept as the publisher's files with an msi or
 a pkg handed to the system's installer; Podman's msi or pkg installed and
 uninstalled only with the package mark, a Podman found before the install
 being the person's and left as it is on macOS and Windows, by an install,
-another version and an uninstall; a restart owed holding the apply as
+another version and an uninstall; an install owed while no machine image is
+kept, on either Podman; a restart owed holding the apply as
 ``reboot_required``; each refusal before anything runs, a Windows disk of 0
 among them; a new machine made from the kept image and sized where the
 provider takes no size at init, its image opened to the account first,
@@ -137,6 +138,7 @@ INFO = {"host": {"cpus": 2, "memTotal": 4 * PODMAN_GIB - 100 * 1024**2}}
 PODMAN_PKG = {"name": "podman", "kind": "pkg", "directory": "podman"}
 PODMAN_MSI = {"name": "podman", "kind": "msi", "directory": "podman"}
 WSL_MSI = {"name": "wsl", "kind": "msi", "directory": "wsl"}
+IMAGE_RAW = {"name": "image", "kind": "raw_zst", "directory": "image"}
 WSL_CODE = "{2D92E6AF-35B2-4109-893F-59E4A4F2D550}"
 PODMAN_CODE = "{E8D285D4-F069-44B9-BF8A-C41ED47B02B8}"
 WEB_REFERENCE = "ghcr.io/acme/webui@sha256:" + "a" * 64
@@ -590,6 +592,37 @@ def test_wsl_goes_to_the_installer_beside_a_persons_podman_and_writes_no_mark(
 
     assert [call[:2] for call in rig.system.calls] == [("install", "wsl")]
     assert rig.runner.is_software_kept()
+
+
+def test_an_install_is_owed_while_no_image_is_kept_on_a_persons_podman(rig, tmp_path):
+    recipe = {"params": {"artifacts": [dict(PODMAN_PKG), dict(IMAGE_RAW)]}}
+    assert rig.runner.is_software_kept()
+    assert rig.runner.is_install_owed(recipe) is True
+
+    rig.runner.install_artifact(recipe, dict(PODMAN_PKG), download(tmp_path))
+    rig.runner.install_artifact(recipe, dict(IMAGE_RAW), download(tmp_path, "image"))
+
+    assert rig.system.calls == []
+    assert rig.runner.is_install_owed(recipe) is False
+    assert (tmp_path / "state" / "podman" / "image" / "image.raw.zst").is_file()
+    assert not rig.package_mark().exists()
+
+
+def test_an_install_is_owed_on_the_module_s_podman_with_no_image_kept(rig):
+    recipe = {"params": {"artifacts": [dict(PODMAN_PKG), dict(IMAGE_RAW)]}}
+    rig.install_podman()
+
+    assert rig.runner.is_install_owed(recipe) is True
+    rig.keep_image()
+    assert rig.runner.is_install_owed(recipe) is False
+
+
+def test_a_recipe_that_names_no_image_owes_no_install(rig):
+    assert (
+        rig.runner.is_install_owed({"params": {"artifacts": [dict(PODMAN_PKG)]}})
+        is False
+    )
+    assert rig.runner.is_install_owed({}) is False
 
 
 def test_the_image_is_kept_as_one_file_and_replaces_the_last(rig, tmp_path):

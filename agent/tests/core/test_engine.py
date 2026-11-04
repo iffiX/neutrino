@@ -1012,6 +1012,28 @@ def test_is_installed_answers_from_the_runner_for_a_builtin_recipe():
     assert engine.is_installed("nothing") is False
 
 
+def test_is_install_owed_is_the_runner_s_word_and_false_by_default():
+    class OwingRunner(ConfigurableRunner):
+        is_owed = True
+
+        def is_install_owed(self, recipe):
+            if self.is_owed is None:
+                raise OSError("unreadable")
+            return self.is_owed
+
+    owing = OwingRunner()
+    engine = module_engine(owing)
+    wanted = module_wanted("running")["samba"]
+
+    assert engine.is_install_owed("samba", wanted) is True
+    owing.is_owed = False
+    assert engine.is_install_owed("samba", wanted) is False
+    owing.is_owed = None
+    assert engine.is_install_owed("samba", wanted) is False
+    assert module_engine(ConfigurableRunner()).is_install_owed("samba", wanted) is False
+    assert engine.is_install_owed("nothing", {}) is False
+
+
 class SystemServerRunner(ConfigurableRunner):
     """A ``builtin`` module: its uninstall leaves the system's software there."""
 

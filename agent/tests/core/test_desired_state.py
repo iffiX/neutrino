@@ -116,6 +116,8 @@ class FakeEngine:
         self.uninstalls: list = []
         self.switching: set = set()
         self.switches: list = []
+        # The installed modules whose runner lacks a file its install keeps.
+        self.owing: set = set()
         self.switch_refusal = None
         self.install_refusal = install_refusal
         # Module name to what its install step waits on before it ends.
@@ -150,6 +152,9 @@ class FakeEngine:
 
     def is_install_failed(self, name):
         return (self.failures.get(name) or {}).get("state") == "install_failed"
+
+    def is_install_owed(self, name, entry):
+        return name in self.owing
 
     def keep_install_mark(self, name):
         self.install_marks.add(name)
@@ -286,6 +291,7 @@ class FakeEngine:
                 self.install_refusal["code"], self.install_refusal["params"]
             )
         self.installed.add(name)
+        self.owing.discard(name)
 
     def _switch(self, name, context):
         self.switches.append(name)
@@ -575,6 +581,33 @@ def test_an_installed_module_of_another_version_is_switched_then_applied(tmp_pat
     assert engine.switches == ["gitea"]
     assert runners["gitea"].applied == [{"n": "gitea"}]
     assert "installing" in engine.states_of("gitea")
+
+
+def test_an_installed_module_whose_runner_owes_a_file_is_installed_then_applied(
+    tmp_path,
+):
+    runners = {"samba": FakeRunner()}
+    held, engine = applier(runners, tmp_path=tmp_path)
+    engine.owing.add("samba")
+    engine.switching.add("samba")
+
+    run(held, state(samba="running"))
+
+    assert [name for name, _ in engine.installs] == ["samba"]
+    assert engine.switches == []
+    assert runners["samba"].applied == [{"n": "samba"}]
+    assert "installing" in engine.states_of("samba")
+    assert engine.owing == set()
+
+
+def test_an_installed_module_that_owes_nothing_plans_no_install(tmp_path):
+    runners = {"samba": FakeRunner()}
+    held, engine = applier(runners, tmp_path=tmp_path)
+
+    run(held, state(samba="running"))
+
+    assert engine.installs == []
+    assert runners["samba"].applied == [{"n": "samba"}]
 
 
 def test_a_switch_that_did_not_take_fails_the_module_and_applies_nothing(tmp_path):

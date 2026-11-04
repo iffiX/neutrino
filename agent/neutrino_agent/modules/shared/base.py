@@ -400,6 +400,17 @@ class ModuleRunner:
         Run on uninstall, only for a module the hub configured.
         """
 
+    def is_install_owed(self, recipe: dict) -> bool:
+        """Whether the install's steps are to run although the presence check passes.
+
+        Args:
+            recipe: The module's recipe.
+
+        Returns:
+            False by default: the presence check alone decides.
+        """
+        return False
+
     def is_software_kept(self) -> bool:
         """Whether an uninstall leaves the software on the machine on purpose.
 

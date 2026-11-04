@@ -486,6 +486,28 @@ class ModuleEngine(ReconcileWorker):
         except Exception:  # noqa: BLE001 - an unreadable module is not installed
             return False
 
+    def is_install_owed(self, name: str, entry: dict) -> bool:
+        """Whether one module's runner lacks a file its install keeps, checked now.
+
+        Args:
+            name: The module name.
+            entry: The state's entry the task plans from.
+
+        Returns:
+            True when the runner says its install is owed although the
+            presence check passes, as Containers' does with no machine image
+            kept on Windows and macOS; False for a module this agent has no
+            runner for or cannot read.
+        """
+        recipe = _recipe_of(entry)
+        runner = self._runner_for(name, recipe)
+        if runner is None:
+            return False
+        try:
+            return bool(runner.is_install_owed(recipe))
+        except Exception:  # noqa: BLE001 - an unreadable module owes nothing
+            return False
+
     def is_configured(self, name: str) -> bool:
         """Whether the hub's configuration was ever applied to one module.
 

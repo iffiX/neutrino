@@ -545,8 +545,10 @@ class DesiredStateApplier:
         ``absent`` plans the uninstall when the software is there, the last
         install failed, or this task or one the agent's stop cut already ran
         an install step; a present
-        ``want`` plans the install when the software is missing or the last
-        install failed, the version switch when a ``hub`` module's kept
+        ``want`` plans the install when the software is missing, the last
+        install failed, or the runner lacks a file its install keeps, as
+        Containers' machine image on Windows and macOS, the version switch
+        when a ``hub`` module's kept
         version differs from its recipe's, then the configure steps under
         ``stopped`` and ``running``, less a second ``wait_module``.
 
@@ -580,8 +582,10 @@ class DesiredStateApplier:
             return PLAN_CONFIGURE, []
         kind = PLAN_CONFIGURE
         steps = []
-        if self._engine.is_install_failed(name) or not self._engine.is_installed(
-            name, entry
+        if (
+            self._engine.is_install_failed(name)
+            or not self._engine.is_installed(name, entry)
+            or self._engine.is_install_owed(name, entry)
         ):
             kind = PLAN_INSTALL
             steps += self._engine.install_steps(name, entry)

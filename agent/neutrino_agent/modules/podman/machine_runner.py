@@ -5,7 +5,8 @@ The install keeps each artifact the hub sent as the publisher's file under
 system's installer; the machine image stays a file for ``podman machine
 init``. A Podman on the computer before the install is the person's: its
 msi or pkg goes to no installer and no uninstall, and only a Podman the
-package mark stands for is the module's. An apply makes the account's
+package mark stands for is the module's. The install is owed while no
+machine image is kept, whoever installed Podman. An apply makes the account's
 default machine exist, rootful, on WSL's NAT network on Windows and the
 size the Run settings name, writes and starts the keeper that brings it up
 at boot, waits until the machine answers the read, and writes the declared containers, and the hub containers of each
@@ -112,7 +113,11 @@ from neutrino_agent.modules.shared.base import (
 )
 from neutrino_agent.modules.shared.instances import machine_for
 from neutrino_agent.modules.shared.log_tail import file_tail
-from neutrino_agent.modules.shared.package import keep_artifact, kept_artifact_path
+from neutrino_agent.modules.shared.package import (
+    keep_artifact,
+    kept_artifact_path,
+    received_artifacts,
+)
 from neutrino_agent.modules.shared.record_store import InstanceRecordStore
 from neutrino_agent.modules.shared.step_locks import (
     CONTAINERS_ALONE_LOCKS,
@@ -640,6 +645,19 @@ class PodmanMachineModuleRunner(ModuleRunner):
             True while such a Podman is on the computer.
         """
         return not self._package_mark.is_kept() and self.verify({})
+
+    def is_install_owed(self, recipe: dict) -> bool:
+        """Whether the recipe names a machine image and none is kept, whoever installed Podman.
+
+        Args:
+            recipe: The module's recipe.
+
+        Returns:
+            True while the module's directory keeps no image the recipe
+            names.
+        """
+        names = [artifact.get("name") for artifact in received_artifacts(recipe)]
+        return PODMAN_MACHINE_IMAGE_ARTIFACT in names and not self._kept_image_path()
 
     def validate(self, config: dict) -> None:
         """Parse and check a configuration against this computer.
@@ -1839,6 +1857,13 @@ class PodmanMachineModuleRunner(ModuleRunner):
         Raises:
             ModuleApplyError: ``machine_image_missing`` when none is kept.
         """
+        path = self._kept_image_path()
+        if not path:
+            raise ModuleApplyError("machine_image_missing", {})
+        return path
+
+    def _kept_image_path(self) -> str:
+        """The kept machine image; empty when none is kept."""
         for kind in PODMAN_MACHINE_IMAGE_KINDS:
             path = kept_artifact_path(
                 self._service_machine.module_dir,
@@ -1848,7 +1873,7 @@ class PodmanMachineModuleRunner(ModuleRunner):
             )
             if os.path.isfile(path):
                 return path
-        raise ModuleApplyError("machine_image_missing", {})
+        return ""
 
     def _write_record(
         self,
