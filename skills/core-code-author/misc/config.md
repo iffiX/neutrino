@@ -122,7 +122,7 @@ nothing sealed is re-encrypted.
 
 ## First-run flow
 
-1. `sudo nhub setup` (see [../../cli.md](../../../docs/cli.md)), or `nhub setup` in
+1. `sudo nhub setup` (see [docs/reference/nhub.md](../../../docs/reference/nhub.md)), or `nhub setup` in
    an administrator PowerShell on Windows. It prompts for the
    panel password, copies each missing `<name>.json` from its `.example.json`,
    renders everything and starts the panel.

@@ -104,8 +104,8 @@ is tested by `src/test/kotlin/<package path>/<Type>Test.kt`, and a Swift file
 test bundle ([kotlin.md](../coding_style/kotlin.md),
 [swift.md](../coding_style/swift.md)).
 
-Both apps speak the channel of `docs/guide/protocol/channel.md` and share no
-code with the desktop client. Their channel tests read
+Both apps speak the channel ([protocol.md](protocol.md), "The channel") and
+share no code with the desktop client. Their channel tests read
 `hub/tests/web/channel_schema.json`, the hub's golden, by its path in the
 repository and never from a copy, so a change to a channel model fails the
 phones' tests in the same commit that fails the hub's. A golden that more

@@ -210,7 +210,7 @@ with an empty code, then each failure with its code and params.
 | hub | one line in the description table and `data/manifests/<module>.json` | the same, and its own router under `routers/agent/` |
 | panel | nothing of its own: `instances_panel.tsx` draws it from the description table | its own panel component |
 | tests | the mirror of each file it owns, under `agent/tests/modules/<module>/` and the hub's mirrored directories ([tests.md](../tests.md)) | the same |
-| docs | one page per language under `docs/guide/` | the same |
+| docs | one page per language under `docs/` | the same |
 
 A container module keeps its manifest, its line in the description table and
 the hub's composition of its containers. Where it has a page or a step after

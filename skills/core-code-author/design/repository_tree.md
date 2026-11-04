@@ -41,8 +41,8 @@ share_page/          The page an App share link opens: plain HTML and
                      JavaScript, no build step, hosted as static files.
 packaging/           Building every package, and driving a built one on a
                      live box or a rented one.
-docs/                guide/, the VitePress documentation site. Generated site
-                     output is ignored.
+docs/                The VitePress documentation site. Generated site output
+                     is ignored.
 tmp-docs/            The working copy's own notes, memory.md among them, and
                      drafts; gitignored.
 skills/              core-code-author/, this standard: design/ the design
@@ -202,8 +202,8 @@ client/desktop/
 
 Each app is one person's session on a phone: it joins a hub by the client
 link and shows the services the hub publishes, and the Android app runs one
-overlay network at a time. Neither shares code with the desktop client. Both speak the channel of
-[docs/guide/protocol/channel.md](../../../docs/guide/protocol/channel.md), and
+overlay network at a time. Neither shares code with the desktop client. Both speak the channel
+([protocol.md](protocol.md), "The channel"), and
 their tests read `hub/tests/web/channel_schema.json`, the golden the hub's
 tests pin, so one commit changes the channel for all three clients.
 

@@ -304,7 +304,7 @@ running.
 - Each tool is a `neutrino_hub/cli/<name>.py` that wires the libraries together
   with plain-variable config sections, and one `nhub` subcommand.
   `cli/entry.py` holds the subcommand table and dispatches; what each command
-  does is [../../cli.md](../../../docs/cli.md).
+  does is [docs/reference/nhub.md](../../../docs/reference/nhub.md).
 
 The mechanical placement rules are in
 [../coding_style/layout.md](../coding_style/layout.md).
