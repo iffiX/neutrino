@@ -1090,6 +1090,30 @@ def test_a_hub_with_no_agent_package_refuses_with_a_code(install_api, monkeypatc
     assert refused.json()["detail"] == {"code": "agent_package_missing", "params": {}}
 
 
+def test_a_key_with_a_passphrase_and_none_stored_is_refused_with_a_code(
+    install_api, monkeypatch
+):
+    """The probe's key import raised ValueError and the request ended with 500."""
+    client, tmp_path, device_id = install_api
+    hub_carries_a_package(tmp_path, monkeypatch)
+    capture_install(monkeypatch)
+    key = asyncssh.generate_private_key("ssh-ed25519")
+    key_id = (
+        SecretVault()
+        .add(
+            kind="ssh_key",
+            name="a key",
+            secret={"private_key": key.export_private_key(passphrase="pw").decode()},
+        )
+        .id
+    )
+
+    refused = install(client, device_id, key_id=key_id)
+
+    assert refused.status_code == 400
+    assert refused.json()["detail"] == {"code": "key_passphrase_needed", "params": {}}
+
+
 def test_the_install_ticket_binds_to_the_device(install_api, monkeypatch):
     """The SSH install walks the same enrollment path a pasted link does."""
     client, tmp_path, device_id = install_api

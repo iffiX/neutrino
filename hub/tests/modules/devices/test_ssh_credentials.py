@@ -5,9 +5,12 @@ these pin is that each id is opened from the vault when the credentials are
 built, and that a stale id yields no material rather than an error.
 """
 
+import asyncio
+
 import asyncssh
 import pytest
 
+from neutrino_hub.exceptions import KeyMaterialError
 from neutrino_hub.modules.credentials.vault import SecretVault
 from neutrino_hub.modules.devices.host_keys import DeviceHostKeyStore
 from neutrino_hub.modules.devices.key_registry import KeyRegistry
@@ -117,6 +120,47 @@ def test_a_key_file_named_by_the_config_is_still_used(config_dir, tmp_path):
 
     assert options["client_keys"] == [str(path)]
     assert options["passphrase"] == PASSPHRASE
+
+
+def encrypted_key() -> str:
+    key = asyncssh.generate_private_key("ssh-ed25519")
+    return key.export_private_key(passphrase=PASSPHRASE).decode()
+
+
+@pytest.mark.parametrize(
+    "passphrase, code",
+    [(None, "key_passphrase_needed"), ("not-the-passphrase", "key_passphrase_wrong")],
+    ids=["no_passphrase", "wrong_passphrase"],
+)
+def test_a_vault_key_its_passphrase_does_not_open_is_refused_by_code(
+    tmp_path, passphrase, code
+):
+    """asyncssh's ValueError left the probe and the request ended with 500."""
+    credentials = SshCredentials(
+        host="192.168.100.2",
+        port=22,
+        username="iffi",
+        private_key=encrypted_key(),
+        private_key_passphrase=passphrase,
+    )
+
+    with pytest.raises(KeyMaterialError) as refused:
+        asyncio.run(operator(credentials, tmp_path).run_once("uname -s"))
+
+    assert refused.value.code == code
+
+
+def test_a_key_file_with_a_passphrase_and_none_given_is_refused_by_code(tmp_path):
+    path = tmp_path / "id_ed25519"
+    path.write_text(encrypted_key())
+    credentials = SshCredentials(
+        host="127.0.0.1", port=1, username="iffi", private_key_path=str(path)
+    )
+
+    with pytest.raises(KeyMaterialError) as refused:
+        asyncio.run(operator(credentials, tmp_path).run_once("uname -s"))
+
+    assert refused.value.code == "key_passphrase_needed"
 
 
 def test_a_password_device_offers_no_key(config_dir, tmp_path):

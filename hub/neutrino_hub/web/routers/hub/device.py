@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from neutrino_hub.exceptions import (
     AgentOfflineError,
+    KeyMaterialError,
     StreamRefusedError,
     TaskExitStatusError,
 )
@@ -747,8 +748,9 @@ async def install_agent(
 
     Raises:
         HTTPException: 404 when no device has the id, 400 for an install
-            naming no single credential, 409 when the install's pre-flight
-            finds a device that is not Linux
+            naming no single credential or a key that cannot be opened
+            (``key_passphrase_needed`` and the other ``key_*`` codes), 409
+            when the install's pre-flight finds a device that is not Linux
             (``{"code": "unsupported_remote_install", "os": ...}``) or the
             hub carries no agent package.
     """
@@ -776,8 +778,9 @@ async def add_device(
         A task id the browser streams output from.
 
     Raises:
-        HTTPException: 400 for an install naming no single credential, 409
-            when the install's pre-flight finds a device that is not Linux
+        HTTPException: 400 for an install naming no single credential or a
+            key that cannot be opened, 409 when the install's pre-flight
+            finds a device that is not Linux
             (``{"code": "unsupported_remote_install", "os": ...}``) or the
             hub carries no agent package.
     """
@@ -804,9 +807,10 @@ async def _start_agent_install(
         on this device, when an install is under way.
 
     Raises:
-        HTTPException: 400 for an install naming no single credential, 409
-            when the install's pre-flight finds a device that is not Linux
-            or the hub carries no agent package.
+        HTTPException: 400 for an install naming no single credential or a
+            key that cannot be opened, 409 when the install's pre-flight
+            finds a device that is not Linux or the hub carries no agent
+            package.
     """
     label = WEB_TASK_LABEL_AGENT_INSTALL.format(device_id=device.id)
     running = runtime.tasks.running(label)
@@ -817,7 +821,13 @@ async def _start_agent_install(
     # Pre-flight, refused before a task starts. A probe that failed — device
     # off, wrong credentials — is not a refusal: the task runs and its log
     # reports the failure, the same surface as every mid-install one.
-    code, kernel = await operator.run_once("uname -s")
+    try:
+        code, kernel = await operator.run_once("uname -s")
+    except KeyMaterialError as error:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": error.code, "params": dict(error.params)},
+        ) from error
     if code == 0 and kernel and kernel != "Linux":
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

@@ -37,6 +37,28 @@ PUBLIC_KEY_PREFIXES = (
 )
 
 
+def key_refusal(error: ValueError) -> KeyMaterialError:
+    """The refusal for a private key asyncssh could not open.
+
+    Args:
+        error: The ``asyncssh.KeyImportError`` or
+            ``asyncssh.KeyEncryptionError`` the import raised.
+
+    Returns:
+        ``key_encryption_unsupported`` where bcrypt is missing,
+        ``key_passphrase_wrong`` for a passphrase that does not open the key,
+        ``key_passphrase_needed`` for an encrypted key given no passphrase,
+        and ``key_unreadable`` with the detail otherwise.
+    """
+    if isinstance(error, asyncssh.KeyEncryptionError):
+        if "bcrypt" in str(error).lower():
+            return KeyMaterialError(DEVICE_KEY_ERROR_NO_BCRYPT)
+        return KeyMaterialError(DEVICE_KEY_ERROR_PASSPHRASE_WRONG)
+    if "passphrase" in str(error).lower():
+        return KeyMaterialError(DEVICE_KEY_ERROR_PASSPHRASE_NEEDED)
+    return KeyMaterialError(DEVICE_KEY_ERROR_UNREADABLE, {"detail": str(error)})
+
+
 @dataclass
 class KeyRecord:
     """One stored SSH key, without its private material.
@@ -176,16 +198,8 @@ class KeyRegistry:
             raise KeyMaterialError(DEVICE_KEY_ERROR_NOT_A_PRIVATE_KEY)
         try:
             return asyncssh.import_private_key(text, passphrase=passphrase)
-        except asyncssh.KeyEncryptionError as error:
-            if "bcrypt" in str(error).lower():
-                raise KeyMaterialError(DEVICE_KEY_ERROR_NO_BCRYPT) from error
-            raise KeyMaterialError(DEVICE_KEY_ERROR_PASSPHRASE_WRONG) from error
-        except asyncssh.KeyImportError as error:
-            if "passphrase" in str(error).lower():
-                raise KeyMaterialError(DEVICE_KEY_ERROR_PASSPHRASE_NEEDED) from error
-            raise KeyMaterialError(
-                DEVICE_KEY_ERROR_UNREADABLE, {"detail": str(error)}
-            ) from error
+        except (asyncssh.KeyEncryptionError, asyncssh.KeyImportError) as error:
+            raise key_refusal(error) from error
 
     def _algorithm_of(self, loaded) -> str:
         algorithm = loaded.algorithm

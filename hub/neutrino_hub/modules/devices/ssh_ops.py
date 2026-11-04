@@ -24,7 +24,11 @@ from pathlib import Path
 
 import asyncssh
 
-from neutrino_hub.exceptions import AgentArtifactFetchError, TaskExitStatusError
+from neutrino_hub.exceptions import (
+    AgentArtifactFetchError,
+    KeyMaterialError,
+    TaskExitStatusError,
+)
 from neutrino_hub.modules.credentials.vault import SecretVault
 from neutrino_hub.modules.devices.agent_package import AgentPackageCache
 from neutrino_hub.modules.devices.constants import (
@@ -33,7 +37,7 @@ from neutrino_hub.modules.devices.constants import (
     SSH_UPLOAD_DIR_PREFIX,
 )
 from neutrino_hub.modules.devices.host_keys import DeviceHostKeyStore
-from neutrino_hub.modules.devices.key_registry import KeyRegistry
+from neutrino_hub.modules.devices.key_registry import KeyRegistry, key_refusal
 
 LOGIN_KIND = "login"
 
@@ -251,6 +255,9 @@ class DeviceSshOperator:
         Returns:
             A pair of success flag and a message: the remote uname on success,
             the failure reason otherwise.
+
+        Raises:
+            KeyMaterialError: When the device's private key cannot be opened.
         """
         try:
             async with self._connect() as connection:
@@ -278,6 +285,9 @@ class DeviceSshOperator:
             The exit code and the combined output. A connection failure is
             reported as exit 255 with the reason as output, rather than raising,
             so a caller probing several things is not derailed by one failure.
+
+        Raises:
+            KeyMaterialError: When the device's private key cannot be opened.
         """
         try:
             async with self._connect() as connection:
@@ -316,6 +326,9 @@ class DeviceSshOperator:
 
         Returns:
             The exit code and combined output.
+
+        Raises:
+            KeyMaterialError: When the device's private key cannot be opened.
         """
         plan, refusal = await self._sudo_plan(command, input_text, sudo_password)
         if plan is None:
@@ -335,6 +348,9 @@ class DeviceSshOperator:
             ``armhf`` / ``x86_64``), matching the keys in a product's
             ``arch.json``. Unknown values come back empty so the caller treats
             the device as unsupported rather than guessing.
+
+        Raises:
+            KeyMaterialError: When the device's private key cannot be opened.
         """
         _, os_release = await self.run_once(
             '. /etc/os-release 2>/dev/null; echo "$ID $ID_LIKE"'
@@ -356,6 +372,7 @@ class DeviceSshOperator:
         Raises:
             OSError: If the connection or transfer fails.
             asyncssh.Error: If SFTP fails.
+            KeyMaterialError: When the device's private key cannot be opened.
         """
         async with self._connect() as connection:
             async with connection.start_sftp_client() as sftp:
@@ -372,6 +389,9 @@ class DeviceSshOperator:
 
         Yields:
             Chunks of combined stdout and stderr, then a final status line.
+
+        Raises:
+            KeyMaterialError: When the device's private key cannot be opened.
         """
         try:
             async with self._connect() as connection:
@@ -403,6 +423,9 @@ class DeviceSshOperator:
 
         Yields:
             Chunks of combined output, then a final status line.
+
+        Raises:
+            KeyMaterialError: When the device's private key cannot be opened.
         """
         plan, refusal = await self._sudo_plan(command, input_text, sudo_password)
         if plan is None:
@@ -535,7 +558,7 @@ class DeviceSshOperator:
             yield f"{error.code}]\n"
             yield f"\n[exit {SSH_UNSUPPORTED_OS_STATUS}]\n"
             raise TaskExitStatusError(SSH_UNSUPPORTED_OS_STATUS) from error
-        except (OSError, asyncssh.Error) as error:
+        except (OSError, asyncssh.Error, KeyMaterialError) as error:
             yield f"\n[connection failed: {error}]\n"
             yield f"\n[exit {SSH_UNREACHABLE_STATUS}]\n"
             raise TaskExitStatusError(SSH_UNREACHABLE_STATUS) from error
@@ -663,8 +686,16 @@ class DeviceSshOperator:
 
     @asynccontextmanager
     async def _connect(self):
-        """Open a connection, recording the host key the first time."""
-        async with asyncssh.connect(**self._connect_options()) as connection:
+        """Open a connection, recording the host key the first time.
+
+        Raises:
+            KeyMaterialError: When the device's private key cannot be opened.
+        """
+        try:
+            connection = await asyncssh.connect(**self._connect_options())
+        except (asyncssh.KeyImportError, asyncssh.KeyEncryptionError) as error:
+            raise key_refusal(error) from error
+        async with connection:
             self._remember_host_key(connection)
             yield connection
 
