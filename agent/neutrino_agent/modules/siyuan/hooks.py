@@ -404,6 +404,7 @@ class SiyuanHooks(InstanceHooks):
             "gateway_key": instance.gateway_key,
             "gateway_url": parsed.gateway_url,
             "models": list(parsed.models),
+            "model": parsed.model,
             "settings_written": str(held.get("settings_written") or ""),
         }
 
@@ -600,6 +601,7 @@ class SiyuanHooks(InstanceHooks):
             gateway_key=str(record.get("gateway_key", "") or ""),
             gateway_url=str(record.get("gateway_url", "") or ""),
             models=[str(name) for name in record.get("models") or []],
+            model=str(record.get("model", "") or ""),
         )
         text = json.dumps(settings, indent=2, ensure_ascii=False) + "\n"
         try:

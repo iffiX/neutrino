@@ -8,8 +8,9 @@ the root-only environment and on no command line, under ``umask 077``; the
 workspace is made as the account when it is not there; the record keeps the
 kernel's port and what was last written; the settings are written as the
 account, with the kernel stopped and started again after, once the kernel
-answers and has made them, again when the key, the address or the models
-change, and left alone otherwise; the forwarder trades a token for the
+answers and has made them, pointing at the hub's default model, again when
+the key, the address or the models change, and left alone otherwise, a new
+default model alone included; the forwarder trades a token for the
 kernel's own login, asked with the browser's ``Host`` and no ``Origin``, and
 sets the kernel's cookie under the entry's name, passes a request holding
 that cookie, and answers 401 to the login path, to a token that does not
@@ -35,6 +36,7 @@ from neutrino_agent.modules.shared.http_forward import RELAY
 from neutrino_agent.modules.shared.subprocess_run import CommandResult
 from neutrino_agent.modules.siyuan.config import (
     SiyuanConfig,
+    model_id,
     provider_id,
     settings_digest,
 )
@@ -108,7 +110,7 @@ def hooks_for(tmp_path, os_name="linux", **kwargs):
     return hooks, entry, recorder, platform, reapplied
 
 
-def config(**changes) -> SiyuanConfig:
+def config(model: str = "", **changes) -> SiyuanConfig:
     instance = {
         "account": "ann",
         "secret": SECRET,
@@ -119,7 +121,12 @@ def config(**changes) -> SiyuanConfig:
     }
     instance.update(changes)
     return SiyuanConfig.from_dict(
-        {"instances": [instance], "gateway_url": URL, "models": ["m1", "m2"]}
+        {
+            "instances": [instance],
+            "gateway_url": URL,
+            "models": ["m1", "m2"],
+            "model": model,
+        }
     )
 
 
@@ -323,15 +330,48 @@ def test_the_record_keeps_the_kernels_port_and_what_was_written(tmp_path):
     assert kept["settings_written"] == "abc"
 
 
+def test_the_record_keeps_the_default_model_and_its_forwarder_serves_none(tmp_path):
+    hooks, *_ = hooks_for(tmp_path)
+    parsed = config(model="m2")
+
+    record = hooks.record(parsed, parsed.instances[0], {"port": 6810})
+
+    assert record["model"] == "m2"
+    assert "model" in hooks.record_fields
+    assert "model" not in hooks.forwarder_fields
+    assert "settings_written" not in hooks.forwarder_fields
+
+
+def test_the_settings_point_at_the_default_model_and_a_new_one_alone_writes_nothing(
+    tmp_path,
+):
+    hooks, entry, recorder, *_ = hooks_for(tmp_path)
+    listener, record = started_kernel(tmp_path, hooks, entry, model="m2")
+    path = write_conf(entry, {"ai": {"providers": []}})
+    with listener:
+        with pytest.raises(OSError, match="starts again"):
+            hooks.on_first_start(record)
+        with open(path, encoding="utf-8") as stream:
+            written = json.load(stream)
+        record["settings_written"] = settings_digest(KEY, URL, ["m1", "m2"])
+        record["model"] = "m1"
+        calls = len(recorder.calls)
+        assert hooks.on_first_start(record) == ""
+
+    assert written["ai"]["agent"]["modelId"] == model_id("m2")
+    assert written["ai"]["editing"]["modelId"] == model_id("m2")
+    assert len(recorder.calls) == calls
+
+
 # --- the settings ---
 
 
-def started_kernel(tmp_path, hooks, entry):
+def started_kernel(tmp_path, hooks, entry, model: str = ""):
     """A listening socket standing in for the kernel, and the record that names it."""
     listener = socket.socket()
     listener.bind(("127.0.0.1", 0))
     listener.listen(8)
-    parsed = config()
+    parsed = config(model=model)
     record = hooks.record(parsed, parsed.instances[0], {"port": 6810})
     record["kernel_port"] = listener.getsockname()[1]
     return listener, record

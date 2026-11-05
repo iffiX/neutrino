@@ -89,7 +89,8 @@ SIYUAN_ACCOUNT_STEP_TIMEOUT_S = 30
 
 # The fields one instance's record holds, and those its forwarder serves: a
 # change in one of these replaces the forwarder, which writes the settings
-# again before it listens.
+# again before it listens. The default model and what was written are not
+# served.
 SIYUAN_RECORD_FIELDS = (
     "account",
     "port",
@@ -101,6 +102,7 @@ SIYUAN_RECORD_FIELDS = (
     "gateway_key",
     "gateway_url",
     "models",
+    "model",
     "settings_written",
 )
-SIYUAN_FORWARDER_FIELDS = SIYUAN_RECORD_FIELDS[:-1]
+SIYUAN_FORWARDER_FIELDS = SIYUAN_RECORD_FIELDS[:-2]

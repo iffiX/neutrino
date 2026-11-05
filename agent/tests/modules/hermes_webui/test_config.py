@@ -1,4 +1,4 @@
-"""Hermes WebUI's configuration: its two secrets, the login cookie's name, the app's local name and the gateway's first model."""
+"""Hermes WebUI's configuration: its two secrets, the login cookie's name, the app's local name and the hub's default model."""
 
 from neutrino_agent.modules.hermes_webui.config import HermesWebuiConfig
 

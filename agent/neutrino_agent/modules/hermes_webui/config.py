@@ -1,10 +1,10 @@
-"""The Hermes WebUI module's configuration: two secrets, the login cookie's name, the app's local name and the gateway's first model.
+"""The Hermes WebUI module's configuration: two secrets, the login cookie's name, the app's local name and the hub's default model.
 
 The hub sends ``{secret, password, cookie_name, local_name, model}``: the
 secret the page's tokens are signed with, the webui's own password, which the
 forwarder signs in with, the name the webui's login cookie has on this
 device, the app's local name, a ``Host`` the forwarder accepts, and the
-first model the gateway serves, empty while it serves none. The forwarder's
+hub's default model, empty while the gateway serves none. The forwarder's
 port is the agent's own, kept in the module's record.
 
 Pure: parsing.
@@ -28,7 +28,7 @@ class HermesWebuiConfig:
         password: The webui's own password.
         cookie_name: The name of the webui's login cookie.
         local_name: The app's local name, a ``Host`` the forwarder accepts.
-        model: The first model the gateway serves, empty while it serves
+        model: The hub's default model, empty while the gateway serves
             none.
     """
 

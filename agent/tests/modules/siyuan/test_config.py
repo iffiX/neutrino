@@ -4,8 +4,9 @@ What these pin: an instance parses from what the hub sends and checks its
 account, its secrets and, on Windows, its password; the provider and model
 ids have SiYuan's own form from the SHA-256 of their seeds; the provider is
 written after the person's own and replaced whole by its id, taken out with
-no key; the agent's and the editor's model point at the first model only
-while they name no model the settings hold; the background installer
+no key; the agent's and the editor's model point at the hub's default
+model, or the first model while it is not among the models, only while they
+name no model the settings hold; the background installer
 download is off; and the digest of what was written follows the key, the
 address and the models.
 """
@@ -44,6 +45,8 @@ def test_an_instance_parses_and_checks_its_account_and_secrets():
     assert config.instances[0].port == 0
     assert config.gateway_url == URL
     assert config.models == ["m1", "m2"]
+    assert config.model == ""
+    assert SiyuanConfig.from_dict({"model": "m2"}).model == "m2"
     config.validate()
 
 
@@ -156,3 +159,19 @@ def test_the_digest_follows_the_key_the_address_and_the_models():
     assert first != settings_digest("other", URL, ["m1"])
     assert first != settings_digest(KEY, "http://127.0.0.1:9000", ["m1"])
     assert first != settings_digest(KEY, URL, ["m1", "m2"])
+
+
+def test_the_models_point_at_the_default_model_while_the_models_hold_it():
+    def chosen(model: str) -> tuple:
+        settings = with_module_settings(
+            {"ai": {}},
+            gateway_key=KEY,
+            gateway_url=URL,
+            models=["m1", "m2"],
+            model=model,
+        )
+        return settings["ai"]["agent"]["modelId"], settings["ai"]["editing"]["modelId"]
+
+    assert chosen("m2") == (model_id("m2"), model_id("m2"))
+    assert chosen("m9") == (model_id("m1"), model_id("m1"))
+    assert chosen("") == (model_id("m1"), model_id("m1"))

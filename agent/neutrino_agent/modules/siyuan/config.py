@@ -6,7 +6,8 @@ each instance's token secret, which signs the one-time tokens a client opens
 the instance with; its access code, the kernel's own login; its key to the
 AI gateway; the app's local name the forwarder accepts as a ``Host``; and
 the forwarder's cookie name. Beside the instances it sends the gateway's
-address on the machine and the models the gateway serves. On Windows an
+address on the machine, the models the gateway serves and the hub's default
+model. On Windows an
 instance also carries the account's password, from the login the hub holds
 for it.
 
@@ -87,15 +88,21 @@ def settings_digest(gateway_key: str, gateway_url: str, models: list) -> str:
 
 
 def with_module_settings(
-    conf: dict, *, gateway_key: str, gateway_url: str, models: list
+    conf: dict,
+    *,
+    gateway_key: str,
+    gateway_url: str,
+    models: list,
+    model: str = "",
 ) -> dict:
     """The kernel's settings with the module's provider and its own settings written in.
 
     The module's provider, found by its fixed id, is replaced whole or
     added after the person's own; with no key or no address it is taken
-    out. The agent's and the editor's model point at the provider's first
-    model only while they name no model the settings hold. The kernel's
-    background download of new installers is turned off.
+    out. The agent's and the editor's model point at ``model``, or at the
+    provider's first model while ``model`` is not among ``models``, only
+    while they name no model the settings hold. The kernel's background
+    download of new installers is turned off.
 
     Args:
         conf: The kernel's ``conf.json``, parsed.
@@ -103,6 +110,7 @@ def with_module_settings(
         gateway_url: The gateway's address on the machine; ``/v1`` follows
             it in the provider's address.
         models: The names the gateway serves, one model each.
+        model: The hub's default model; empty takes the first of ``models``.
 
     Returns:
         A new settings document; ``conf`` is left as it was.
@@ -142,14 +150,14 @@ def with_module_settings(
         if isinstance(model, dict)
     }
     if gateway_key and gateway_url and models:
-        first = model_id(models[0])
+        chosen = model_id(model if model in models else models[0])
         for use in ("agent", "editing"):
             held_use = ai.get(use)
             if not isinstance(held_use, dict):
                 held_use = {}
                 ai[use] = held_use
             if str(held_use.get("modelId", "") or "") not in known:
-                held_use["modelId"] = first
+                held_use["modelId"] = chosen
     system = settings.get("system")
     if not isinstance(system, dict):
         system = {}
@@ -209,11 +217,13 @@ class SiyuanConfig:
         instances: One kernel per account.
         gateway_url: Where the gateway is reached on this machine.
         models: The names the gateway serves.
+        model: The hub's default model; empty from a hub that sends none.
     """
 
     instances: list = field(default_factory=list)
     gateway_url: str = ""
     models: list = field(default_factory=list)
+    model: str = ""
 
     @classmethod
     def from_dict(cls, data: dict) -> "SiyuanConfig":
@@ -231,6 +241,7 @@ class SiyuanConfig:
                 for name in (models if isinstance(models, list) else [])
                 if isinstance(name, str) and name
             ],
+            model=str(data.get("model", "") or ""),
         )
 
     def validate(self, *, os_name: str = "linux") -> None:
