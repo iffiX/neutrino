@@ -208,8 +208,6 @@
   "code.share_path_missing": "这台机器上没有共享 {name} 的文件夹 {path}。",
   "code.share_path_link": "共享 {name} 的文件夹 {path} 是一个链接，或者要经过链接才能到达；请改选它指向的那个文件夹。",
   "code.share_not_served": "这台机器的 SMB 服务拒绝了共享 {name}：{detail}",
-  "code.share_folder_removed": "文件夹共享 {name} 的文件夹 {path} 已经不存在，中枢删掉了这个共享。",
-  "code.share_home_removed": "{account} 的主目录共享的文件夹 {path} 已经不存在，中枢把 {account} 从主目录共享中去掉了。",
   "code.shell_failed": "打不开 shell：{detail}",
   "code.split_needs_wired_port": "只有有线网口能拆分成 VLAN。",
   "code.state_not_settled": "“{module}”还在应用配置。",
