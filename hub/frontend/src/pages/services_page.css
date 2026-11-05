@@ -89,9 +89,11 @@
 }
 
 /* An app: its title, its machine and where it comes from on the first line,
-   its entries as chips under it. */
+   its entries as chips under it. On one line each part is as wide as the
+   row, which bounds the chips' max-width. */
 .app_row {
   flex-direction: column;
+  flex-wrap: nowrap;
   align-items: stretch;
 }
 
@@ -102,12 +104,16 @@
   align-items: center;
 }
 
-/* A host breaks anywhere inside the row. */
+/* A host longer than 56 characters, or than the row, ends in an ellipsis;
+   the title holds it whole. */
 .app_row_machine {
+  max-width: 56ch;
   min-width: 0;
+  overflow: hidden;
   color: var(--color-text-faint);
   font-size: 12px;
-  overflow-wrap: anywhere;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Share, Test, Delete and the source badge wrap onto a second line. */
@@ -126,19 +132,20 @@
   gap: var(--space-2);
 }
 
-/* A long address breaks anywhere inside its chip. The kind and the state
-   word stay whole on the first line. On one line the corners are the
-   pill's. */
+/* An address longer than 56 characters, or than the room its row leaves,
+   ends in an ellipsis; the chip's title holds it whole. The kind and the
+   state word stay whole beside it. */
 .app_entry {
   display: inline-flex;
   gap: 6px;
-  align-items: baseline;
+  align-items: center;
   max-width: 100%;
-  border-radius: var(--radius-md);
 }
 
 .app_entry_address {
+  max-width: 56ch;
   min-width: 0;
-  overflow-wrap: anywhere;
-  white-space: normal;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

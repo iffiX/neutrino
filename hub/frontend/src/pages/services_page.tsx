@@ -313,6 +313,7 @@ function AppRow({ app, onChanged, onShare }: AppRowProps) {
   const isDeclared =
     app.source === "declared" && !app.id.startsWith(CONTAINER_APP_PREFIX);
   const webEntry = app.entries.find((entry) => entry.type === "web");
+  const machine = app.device_name || hostOf(app);
   const details = app.entries
     .map((entry) =>
       entry.detail_code === null
@@ -352,8 +353,8 @@ function AppRow({ app, onChanged, onShare }: AppRowProps) {
     <div className="published_row app_row">
       <div className="app_row_head">
         <span className="published_row_title">{app.title}</span>
-        <span className="app_row_machine mono">
-          {app.device_name || hostOf(app)}
+        <span className="app_row_machine mono" title={machine}>
+          {machine}
         </span>
         <span className="app_row_end">
           {webEntry !== undefined && (

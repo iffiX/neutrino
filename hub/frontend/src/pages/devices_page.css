@@ -1,14 +1,12 @@
-/* The box the table lays itself out by. The card gives the table its whole
-   width, and the outer cells keep the margin. */
+/* The box the table lays itself out by, inside the panel's padding as the
+   Clients table's is. */
 .devices_table_box {
-  padding: var(--space-2) 0;
   container: devices_table / inline-size;
 }
 
 /* Fixed column widths, one set for the header and every row, each holding its
    header's words in either language. The actions take whatever the other
-   columns leave: at the 968 px the cards below start under, room for their
-   buttons on two lines. */
+   columns leave, their buttons on one line. */
 .devices_table {
   --devices-rings-height: 54px;
 
@@ -20,7 +18,7 @@
 }
 
 .devices_col--name {
-  width: 160px;
+  width: 148px;
 }
 
 .devices_col--address {
@@ -28,7 +26,7 @@
 }
 
 .devices_col--mac {
-  width: 134px;
+  width: 146px;
 }
 
 .devices_col--status {
@@ -44,7 +42,7 @@
 }
 
 .devices_table th {
-  padding: 6px 8px;
+  padding: 6px 10px;
   border-bottom: 1px solid var(--color-border);
   color: var(--color-text-faint);
   font-size: 11px;
@@ -56,21 +54,11 @@
 
 .devices_table td {
   overflow: hidden;
-  padding: 0 8px;
+  padding: 0 10px;
   border-bottom: 1px solid var(--color-border);
   text-overflow: ellipsis;
   white-space: nowrap;
   vertical-align: middle;
-}
-
-.devices_table th:first-child,
-.devices_table td:first-child {
-  padding-left: var(--space-3);
-}
-
-.devices_table th:last-child,
-.devices_table td:last-child {
-  padding-right: var(--space-3);
 }
 
 /* Every row the same height, whatever its status cell holds. */
@@ -176,124 +164,124 @@
   margin: var(--space-2);
 }
 
-/* A box narrower than every column: each row a card, the name line, the
-   other fields on one grid every card shares, then the actions at the right
-   edge. Each track is at least its table column's width and stretches to
-   the card's width. */
-@container devices_table (max-width: 967px) {
-  .devices_table,
-  .devices_table tbody,
-  .devices_table td {
-    display: block;
-  }
+/* A box narrower than every column with the actions on one line
+   (use_table_cards.ts): each row a card, the name line, the other fields on
+   one grid every card shares, then the actions at the right edge. Each track
+   holds its field's longest value and stretches to the card's width. */
+.devices_table_box--cards .devices_table,
+.devices_table_box--cards .devices_table tbody,
+.devices_table_box--cards .devices_table td {
+  display: block;
+}
 
-  .devices_table colgroup,
-  .devices_table thead {
-    display: none;
-  }
+.devices_table_box--cards .devices_table colgroup,
+.devices_table_box--cards .devices_table thead {
+  display: none;
+}
 
-  .devices_row {
-    display: grid;
-    grid-template-areas:
-      "name name name name name"
-      "address mac status version seen"
-      "actions actions actions actions actions";
-    grid-template-columns:
-      minmax(112px, 1fr) minmax(134px, 1fr) minmax(192px, 1fr)
-      minmax(72px, 1fr) minmax(88px, 1fr);
-    gap: var(--space-3) var(--space-5);
-    height: auto;
-    padding: var(--space-3);
-    border-bottom: 1px solid var(--color-border);
-  }
+.devices_table_box--cards .devices_row {
+  display: grid;
+  grid-template-areas:
+    "name name name name name"
+    "address mac status version seen"
+    "actions actions actions actions actions";
+  grid-template-columns:
+    minmax(112px, 1fr) minmax(134px, 1fr) minmax(192px, 1fr)
+    minmax(72px, 1fr) minmax(88px, 1fr);
+  gap: var(--space-3) var(--space-5);
+  height: auto;
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+}
 
-  .devices_table tbody tr:last-child {
-    border-bottom: none;
-  }
+.devices_table_box--cards .devices_table tbody tr:last-child {
+  border-bottom: none;
+}
 
-  .devices_table td,
-  .devices_table td:first-child,
-  .devices_table td:last-child {
-    min-width: 0;
-    overflow: visible;
-    padding: 0;
-    border-bottom: none;
-    overflow-wrap: anywhere;
-    white-space: normal;
-  }
+.devices_table_box--cards .devices_table td,
+.devices_table_box--cards .devices_table td:first-child,
+.devices_table_box--cards .devices_table td:last-child {
+  min-width: 0;
+  overflow: visible;
+  padding: 0;
+  border-bottom: none;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
 
-  /* Under its label each value is centred in the rings' height, in a card
-     with rings or without. */
-  .devices_table td[data-label] {
-    display: grid;
-    grid-template-rows: auto minmax(var(--devices-rings-height), auto);
-    align-items: center;
-  }
+/* Under its label each value is centred in the rings' height, in a card
+   with rings or without. */
+.devices_table_box--cards .devices_table td[data-label] {
+  display: grid;
+  grid-template-rows: auto minmax(var(--devices-rings-height), auto);
+  align-items: center;
+}
 
-  .devices_cell--name {
-    grid-area: name;
-  }
+.devices_table_box--cards .devices_cell--name {
+  grid-area: name;
+}
 
-  .devices_cell--address {
-    grid-area: address;
-  }
+.devices_table_box--cards .devices_cell--address {
+  grid-area: address;
+}
 
-  .devices_cell--mac {
-    grid-area: mac;
-  }
+.devices_table_box--cards .devices_cell--mac {
+  grid-area: mac;
+}
 
-  .devices_cell--status {
-    grid-area: status;
-  }
+.devices_table_box--cards .devices_cell--status {
+  grid-area: status;
+}
 
-  .devices_cell--version {
-    grid-area: version;
-  }
+.devices_table_box--cards .devices_cell--version {
+  grid-area: version;
+}
 
-  .devices_cell--seen {
-    grid-area: seen;
-  }
+.devices_table_box--cards .devices_cell--seen {
+  grid-area: seen;
+}
 
-  .devices_cell--actions {
-    grid-area: actions;
-  }
+.devices_table_box--cards .devices_cell--actions {
+  grid-area: actions;
+}
 
-  /* A field's label is its column's header. */
-  .devices_table td[data-label]::before {
-    display: block;
-    margin-bottom: 4px;
-    color: var(--color-text-faint);
-    font-family: var(--font-sans);
-    font-size: 11px;
-    font-weight: 500;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    white-space: nowrap;
-    content: attr(data-label);
-  }
+/* A field's label is its column's header. */
+.devices_table_box--cards .devices_table td[data-label]::before {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--color-text-faint);
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  content: attr(data-label);
+}
 
-  .devices_row--editing {
-    background-image: linear-gradient(
-      var(--color-accent-wash),
-      var(--color-accent-wash)
-    );
-  }
+.devices_table_box--cards .devices_row--editing {
+  background-image: linear-gradient(
+    var(--color-accent-wash),
+    var(--color-accent-wash)
+  );
+}
 
-  .devices_row--editing td {
-    background-image: none;
-  }
+.devices_table_box--cards .devices_row--editing td {
+  background-image: none;
+}
 
-  .devices_outcome_row {
-    display: block;
-    padding: var(--space-2) var(--space-3);
-    background: var(--color-bg);
-  }
+.devices_table_box--cards .devices_outcome_row {
+  display: block;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-bg);
 }
 
 /* A card too narrow for every field on one line: the same grid in three
-   columns, and under 510 px in two. */
+   columns; under 510 px the rings on a track of their own, with the version
+   and the last seen side by side in the room right of them; and under 408 px,
+   where those two labels no longer fit there in either language, in two. */
 @container devices_table (max-width: 717px) {
-  .devices_row {
+  .devices_table_box--cards .devices_row {
     grid-template-areas:
       "name name name"
       "address mac status"
@@ -305,8 +293,20 @@
   }
 }
 
+/* The rings' track is five 30 px rings and their gaps. */
 @container devices_table (max-width: 509px) {
-  .devices_row {
+  .devices_table_box--cards .devices_row {
+    grid-template-areas:
+      "name name name"
+      "address mac mac"
+      "status version seen"
+      "actions actions actions";
+    grid-template-columns: 174px repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container devices_table (max-width: 407px) {
+  .devices_table_box--cards .devices_row {
     grid-template-areas:
       "name name"
       "address mac"

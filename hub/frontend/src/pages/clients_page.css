@@ -32,8 +32,7 @@
 /* Fixed column widths, one set for the header and every row, so a badge in
    the name cell wraps inside that cell and never moves the columns after it.
    Each column holds its header's words in either language. The actions take
-   whatever the other columns leave: at the 860 px the cards below start
-   under, room for their buttons on two lines. */
+   whatever the other columns leave, their buttons on one line. */
 .clients_table {
   width: 100%;
   border-collapse: separate;
@@ -43,11 +42,11 @@
 }
 
 .clients_col--name {
-  width: 160px;
+  width: 256px;
 }
 
 .clients_col--hostname {
-  width: 136px;
+  width: 110px;
 }
 
 .clients_col--platform {
@@ -59,11 +58,11 @@
 }
 
 .clients_col--status {
-  width: 108px;
+  width: 96px;
 }
 
 .clients_col--seen {
-  width: 100px;
+  width: 92px;
 }
 
 .clients_table th {
@@ -119,6 +118,13 @@
   overflow-wrap: anywhere;
 }
 
+/* A client's badges stay together on one line, after the name or under it. */
+.clients_badges {
+  display: inline-flex;
+  gap: var(--space-2);
+  white-space: nowrap;
+}
+
 .clients_actions {
   display: flex;
   flex-wrap: wrap;
@@ -127,117 +133,109 @@
   white-space: nowrap;
 }
 
-/* A box narrower than every column: each row a card, the name line, the
-   other fields on one grid every card shares, then the actions at the right
-   edge. Each track is at least its table column's width and stretches to
-   the card's width. */
-@container clients_table (max-width: 859px) {
-  .clients_table,
-  .clients_table tbody,
-  .clients_table td {
-    display: block;
-  }
+/* A box narrower than every column with the actions on one line
+   (use_table_cards.ts): each row a card, the name line, the other fields on
+   one grid every card shares, then the actions at the right edge. Each track
+   holds its field's longest value and stretches to the card's width. */
+.clients_table_box--cards .clients_table,
+.clients_table_box--cards .clients_table tbody,
+.clients_table_box--cards .clients_table td {
+  display: block;
+}
 
-  .clients_table colgroup,
-  .clients_table thead {
-    display: none;
-  }
+.clients_table_box--cards .clients_table colgroup,
+.clients_table_box--cards .clients_table thead {
+  display: none;
+}
 
-  .clients_row {
-    display: grid;
-    grid-template-areas:
-      "name name name name name"
-      "hostname platform version status seen"
-      "actions actions actions actions actions";
-    grid-template-columns:
-      minmax(136px, 1fr) minmax(88px, 1fr) minmax(76px, 1fr)
-      minmax(108px, 1fr) minmax(100px, 1fr);
-    gap: var(--space-3) var(--space-5);
-    padding: var(--space-3) 10px;
-    border-bottom: 1px solid var(--color-border);
-  }
+.clients_table_box--cards .clients_row {
+  display: grid;
+  grid-template-areas:
+    "name name name name name"
+    "hostname platform version status seen"
+    "actions actions actions actions actions";
+  grid-template-columns:
+    minmax(136px, 1fr) minmax(88px, 1fr) minmax(76px, 1fr)
+    minmax(108px, 1fr) minmax(100px, 1fr);
+  gap: var(--space-3) var(--space-5);
+  padding: var(--space-3) 10px;
+  border-bottom: 1px solid var(--color-border);
+}
 
-  .clients_permission_row {
-    display: block;
-    border-bottom: 1px solid var(--color-border);
-  }
+.clients_table_box--cards .clients_permission_row {
+  display: block;
+  border-bottom: 1px solid var(--color-border);
+}
 
-  .clients_table tr:last-child {
-    border-bottom: none;
-  }
+.clients_table_box--cards .clients_table tr:last-child {
+  border-bottom: none;
+}
 
-  .clients_row td {
-    min-width: 0;
-    overflow: visible;
-    padding: 0;
-    border-bottom: none;
-    overflow-wrap: anywhere;
-  }
+.clients_table_box--cards .clients_row td {
+  min-width: 0;
+  overflow: visible;
+  padding: 0;
+  border-bottom: none;
+  overflow-wrap: anywhere;
+}
 
-  .clients_cell--name {
-    grid-area: name;
-  }
+.clients_table_box--cards .clients_cell--name {
+  grid-area: name;
+}
 
-  /* The words of a client waiting to join stand where its hostname,
-     platform and version go. */
-  .clients_cell--waiting {
-    grid-area: hostname-start / hostname-start / hostname-end / version-end;
-  }
+.clients_table_box--cards .clients_cell--hostname {
+  grid-area: hostname;
+}
 
-  .clients_cell--hostname {
-    grid-area: hostname;
-  }
+.clients_table_box--cards .clients_cell--platform {
+  grid-area: platform;
+}
 
-  .clients_cell--platform {
-    grid-area: platform;
-  }
+.clients_table_box--cards .clients_cell--version {
+  grid-area: version;
+}
 
-  .clients_cell--version {
-    grid-area: version;
-  }
+.clients_table_box--cards .clients_cell--status {
+  grid-area: status;
+}
 
-  .clients_cell--status {
-    grid-area: status;
-  }
+.clients_table_box--cards .clients_cell--seen {
+  grid-area: seen;
+}
 
-  .clients_cell--seen {
-    grid-area: seen;
-  }
+.clients_table_box--cards .clients_cell--actions {
+  grid-area: actions;
+}
 
-  .clients_cell--actions {
-    grid-area: actions;
-  }
+/* A field's label is its column's header. */
+.clients_table_box--cards .clients_table td[data-label]::before {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--color-text-faint);
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  content: attr(data-label);
+}
 
-  /* A field's label is its column's header. */
-  .clients_table td[data-label]::before {
-    display: block;
-    margin-bottom: 4px;
-    color: var(--color-text-faint);
-    font-family: var(--font-sans);
-    font-size: 11px;
-    font-weight: 500;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    white-space: nowrap;
-    content: attr(data-label);
-  }
+.clients_table_box--cards .clients_row--editing {
+  background-image: linear-gradient(
+    var(--color-accent-wash),
+    var(--color-accent-wash)
+  );
+}
 
-  .clients_row--editing {
-    background-image: linear-gradient(
-      var(--color-accent-wash),
-      var(--color-accent-wash)
-    );
-  }
-
-  .clients_row--editing td {
-    background-image: none;
-  }
+.clients_table_box--cards .clients_row--editing td {
+  background-image: none;
 }
 
 /* A card too narrow for every field on one line: the same grid in three
    columns, and under 380 px in two. */
 @container clients_table (max-width: 623px) {
-  .clients_row {
+  .clients_table_box--cards .clients_row {
     grid-template-areas:
       "name name name"
       "hostname platform version"
@@ -250,7 +248,7 @@
 }
 
 @container clients_table (max-width: 379px) {
-  .clients_row {
+  .clients_table_box--cards .clients_row {
     grid-template-areas:
       "name name"
       "hostname platform"
@@ -258,9 +256,5 @@
       "seen ."
       "actions actions";
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .clients_cell--waiting {
-    grid-column: 1 / -1;
   }
 }

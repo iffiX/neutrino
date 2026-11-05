@@ -105,12 +105,7 @@ export function StringListEditor({
         ))}
       </div>
 
-      <form
-        className={`string_list_editor_add ${
-          isBrowsable ? "string_list_editor_add--browse" : ""
-        }`}
-        onSubmit={handleAdd}
-      >
+      <form className="string_list_editor_add" onSubmit={handleAdd}>
         <input
           className="input"
           value={draft}

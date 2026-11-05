@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 
 import { ClientLinkModal } from "../components/client_link_modal";
 import { WebShareModal } from "../components/web_share_modal";
@@ -24,6 +24,7 @@ import { t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
 import { useConfirm } from "../use_confirm";
 import { HUB_EVENT_CLIENTS } from "../use_hub_events";
+import { useTableCards } from "../use_table_cards";
 import type {
   ClientDefaultPermissionRequest,
   ClientListView,
@@ -77,10 +78,6 @@ const RENAME_COLUMN_SPAN = 4;
 /** Every column of the table, which a client's permission row spans. */
 const COLUMN_COUNT = 7;
 
-/** The columns a waiting row's line spans: the hostname, platform and
- * version. */
-const WAITING_COLUMN_SPAN = 3;
-
 /** How often a waiting row's minutes are counted down between reads. */
 const WAITING_TICK_MS = 15_000;
 
@@ -106,6 +103,8 @@ export function ClientsPage() {
   // When the list was last read, and the clock the waiting rows count by.
   const [readAt, setReadAt] = useState(() => Date.now());
   const [now, setNow] = useState(() => Date.now());
+  const tableBoxRef = useRef<HTMLDivElement>(null);
+  const isCards = useTableCards(tableBoxRef, ".clients_actions");
 
   const clients = resource.data?.clients ?? [];
   const hasWaiting = clients.some(
@@ -323,7 +322,10 @@ export function ClientsPage() {
             </div>
           )
         ) : (
-          <div className="clients_table_box">
+          <div
+            ref={tableBoxRef}
+            className={`clients_table_box ${isCards ? "clients_table_box--cards" : ""}`}
+          >
             <table className="clients_table">
               <colgroup>
                 <col className="clients_col--name" />
@@ -546,26 +548,31 @@ function ClientRow({
         ) : (
           <div className="clients_name">
             {client.name}
-            {client.is_disabled && (
-              <span className="badge badge--warn">
-                {t("ui.clients.disabled")}
+            {(client.is_disabled ||
+              client.permission !== null ||
+              waitingMinutes !== null) && (
+              <span className="clients_badges">
+                {waitingMinutes !== null && (
+                  <span className="badge">
+                    {t("ui.clients.waiting", { minutes: waitingMinutes })}
+                  </span>
+                )}
+                {client.is_disabled && (
+                  <span className="badge badge--warn">
+                    {t("ui.clients.disabled")}
+                  </span>
+                )}
+                {client.permission !== null && (
+                  <span className="badge">
+                    {t("ui.clients.permission_custom")}
+                  </span>
+                )}
               </span>
-            )}
-            {client.permission !== null && (
-              <span className="badge">{t("ui.clients.permission_custom")}</span>
             )}
           </div>
         )}
       </td>
-      {!isRenaming && waitingMinutes !== null && (
-        <td
-          colSpan={WAITING_COLUMN_SPAN}
-          className="faint clients_cell--waiting"
-        >
-          {t("ui.clients.waiting", { minutes: waitingMinutes })}
-        </td>
-      )}
-      {!isRenaming && waitingMinutes === null && (
+      {!isRenaming && (
         <>
           <td
             className="mono clients_cell--hostname"

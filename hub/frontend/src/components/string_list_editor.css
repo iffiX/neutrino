@@ -77,9 +77,14 @@
   font-size: 12px;
 }
 
+/* The add row is the query's container, not the editor: an editor is a
+   subgrid of its row, and a container's layout containment would cut it
+   off from the rows it shares. */
 .string_list_editor_add {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-2);
+  container: string_list / inline-size;
 }
 
 .string_list_editor_add .input {
@@ -92,12 +97,11 @@
   gap: var(--space-2);
 }
 
-/* With Browse… the input keeps room for a folder, and the two buttons move
-   under it together on a row too narrow for the three. */
-.string_list_editor_add--browse {
-  flex-wrap: wrap;
-}
-
-.string_list_editor_add--browse .input {
-  flex-basis: 16rem;
+/* An editor narrower than a 16rem input, Add and Browse… on one line, in
+   either language, puts its buttons under the input. Editors side by side
+   are equally wide, so their buttons move under together. */
+@container string_list (max-width: 439px) {
+  .string_list_editor_add .input {
+    flex-basis: 100%;
+  }
 }

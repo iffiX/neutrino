@@ -24,6 +24,7 @@ import {
   useHubEvents,
 } from "../use_hub_events";
 import type { HubEvent } from "../use_hub_events";
+import { useTableCards } from "../use_table_cards";
 import { useTaskStream } from "../use_task_stream";
 import type {
   DeviceAnnotation,
@@ -116,6 +117,11 @@ export function DevicesPage() {
   const [outcome, setOutcome] = useState<RowOutcome | null>(null);
   const [isLinkOpen, setIsLinkOpen] = useState(false);
   const [isSshOpen, setIsSshOpen] = useState(false);
+  const tableBoxRef = useRef<HTMLDivElement>(null);
+  const isCards = useTableCards(
+    tableBoxRef,
+    ".devices_row:not(.devices_row--editing) .devices_actions",
+  );
 
   useEffect(() => {
     if (resource.data !== null) {
@@ -324,72 +330,82 @@ export function DevicesPage() {
         </div>
       </div>
 
-      {resource.data === null ? (
-        <div className="card devices_table_box">
-          {Array.from({ length: SKELETON_ROWS }, (_, index) => (
-            <div key={index} className="skeleton devices_skeleton_row" />
-          ))}
+      <section className="settings_group">
+        <div className="settings_group_title">
+          <h2>{t("ui.devices.title")}</h2>
         </div>
-      ) : devices.length === 0 ? (
-        <div className="placeholder">
-          <span>{t("ui.devices.empty")}</span>
-          <span className="faint">{t("ui.devices.empty_hint")}</span>
-        </div>
-      ) : (
-        <div className="card devices_table_box">
-          <table className="devices_table">
-            <colgroup>
-              <col className="devices_col--name" />
-              <col className="devices_col--address" />
-              <col className="devices_col--mac" />
-              <col className="devices_col--status" />
-              <col className="devices_col--version" />
-              <col className="devices_col--seen" />
-              <col />
-            </colgroup>
-            <thead>
-              <tr>
-                <th>{t("ui.devices.header_name")}</th>
-                <th>{t("ui.devices.header_address")}</th>
-                <th>{t("ui.devices.header_mac")}</th>
-                <th>{t("ui.devices.header_status")}</th>
-                <th>{t("ui.devices.header_version")}</th>
-                <th>{t("ui.devices.header_last_seen")}</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {devices.map((device) => (
-                <DeviceRow
-                  key={device.id}
-                  device={device}
-                  isBusy={busyId === device.id}
-                  isRenaming={renamingId === device.id}
-                  newName={newName}
-                  outcome={outcome?.deviceId === device.id ? outcome : null}
-                  onNewName={setNewName}
-                  onRename={() => {
-                    startRename(device);
-                  }}
-                  onRenameSave={() => void saveRename(device)}
-                  onRenameCancel={() => {
-                    setRenamingId(null);
-                  }}
-                  onIcon={(icon) => void write({ device_id: device.id, icon })}
-                  onWake={() => void wake(device)}
-                  onPower={(action) => {
-                    askPower(device, action);
-                  }}
-                  onForget={() => {
-                    askForget(device);
-                  }}
-                  onOutcomeEnded={resource.reload}
-                />
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+        {resource.data === null ? (
+          <div className="devices_table_box">
+            {Array.from({ length: SKELETON_ROWS }, (_, index) => (
+              <div key={index} className="skeleton devices_skeleton_row" />
+            ))}
+          </div>
+        ) : devices.length === 0 ? (
+          <div className="placeholder">
+            <span>{t("ui.devices.empty")}</span>
+            <span className="faint">{t("ui.devices.empty_hint")}</span>
+          </div>
+        ) : (
+          <div
+            ref={tableBoxRef}
+            className={`devices_table_box ${isCards ? "devices_table_box--cards" : ""}`}
+          >
+            <table className="devices_table">
+              <colgroup>
+                <col className="devices_col--name" />
+                <col className="devices_col--address" />
+                <col className="devices_col--mac" />
+                <col className="devices_col--status" />
+                <col className="devices_col--version" />
+                <col className="devices_col--seen" />
+                <col />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th>{t("ui.devices.header_name")}</th>
+                  <th>{t("ui.devices.header_address")}</th>
+                  <th>{t("ui.devices.header_mac")}</th>
+                  <th>{t("ui.devices.header_status")}</th>
+                  <th>{t("ui.devices.header_version")}</th>
+                  <th>{t("ui.devices.header_last_seen")}</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {devices.map((device) => (
+                  <DeviceRow
+                    key={device.id}
+                    device={device}
+                    isBusy={busyId === device.id}
+                    isRenaming={renamingId === device.id}
+                    newName={newName}
+                    outcome={outcome?.deviceId === device.id ? outcome : null}
+                    onNewName={setNewName}
+                    onRename={() => {
+                      startRename(device);
+                    }}
+                    onRenameSave={() => void saveRename(device)}
+                    onRenameCancel={() => {
+                      setRenamingId(null);
+                    }}
+                    onIcon={(icon) =>
+                      void write({ device_id: device.id, icon })
+                    }
+                    onWake={() => void wake(device)}
+                    onPower={(action) => {
+                      askPower(device, action);
+                    }}
+                    onForget={() => {
+                      askForget(device);
+                    }}
+                    onOutcomeEnded={resource.reload}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
 
       {isLinkOpen && (
         <AgentLinkModal
