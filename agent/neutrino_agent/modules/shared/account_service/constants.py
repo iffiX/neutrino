@@ -37,10 +37,18 @@ ACCOUNT_SERVICE_WINDOWS_TASK_RUNNING = "Running"
 ACCOUNT_SERVICE_LOG_SUFFIX = ".log"
 
 # A folder root owns that an instance's account reads, and the files the
-# agent writes in it: on Linux root's with the account's group reading, on
-# macOS root's alone with an access entry for the account.
-ACCOUNT_SERVICE_READ_DIR_MODE = {"linux": 0o750, "darwin": 0o700}
-ACCOUNT_SERVICE_READ_FILE_MODE = {"linux": 0o640, "darwin": 0o600}
+# agent writes in it: root's alone with an access entry for the account.
+ACCOUNT_SERVICE_READ_DIR_MODE = {"linux": 0o700, "darwin": 0o700}
+ACCOUNT_SERVICE_READ_FILE_MODE = {"linux": 0o600, "darwin": 0o600}
+# The whole access list ``setfacl --set`` gives such a folder and such a
+# file on Linux: root's own rights, read for the one account, nothing for
+# the group and the others.
+ACCOUNT_SERVICE_READ_DIR_ACL = (
+    "user::rwx,user:{uid}:r-x,group::---,mask::r-x,other::---"
+)
+ACCOUNT_SERVICE_READ_FILE_ACL = (
+    "user::rw-,user:{uid}:r--,group::---,mask::r--,other::---"
+)
 ACCOUNT_SERVICE_DARWIN_READ_DIR_RIGHTS = "list,search,readattr,readextattr,readsecurity"
 ACCOUNT_SERVICE_DARWIN_READ_FILE_RIGHTS = "read,readattr,readextattr,readsecurity"
 # What a file is written as beside its place before it is renamed in.

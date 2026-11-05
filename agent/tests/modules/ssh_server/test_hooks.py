@@ -96,14 +96,22 @@ class BinPlatform(Platform):
 
 
 class Machine:
-    """The commands the hooks and the layer run: the program makes a key, systemctl answers."""
+    """The commands the hooks and the layer run: the program makes a key, systemctl answers, and each list ``setfacl --set`` writes is read back by ``getfacl``."""
 
     def __init__(self, *, is_failing=False):
         self.calls: list = []
         self.is_failing = is_failing
+        self.lists: dict = {}
 
     def __call__(self, command, *, is_checked=True, input_text=None, timeout_s=0):
         self.calls.append(list(command))
+        if command[0] == "setfacl":
+            self.lists[command[-1]] = command[2]
+            return CommandResult(list(command), 0, "", "")
+        if command[0] == "getfacl":
+            path = command[-1]
+            held = self.lists.get(path) or self.lists.get(path + ".new", "")
+            return CommandResult(list(command), 0, held.replace(",", "\n"), "")
         if command[1:2] == ["--make-host-key"]:
             if self.is_failing:
                 raise OSError("no such program")
@@ -116,6 +124,20 @@ class Machine:
 
     def made_keys(self):
         return [call for call in self.calls if call[1:2] == ["--make-host-key"]]
+
+    def entries(self, account_uid: int) -> list:
+        """Each path ``setfacl`` gave the uid's read entry, staged names folded in."""
+        return sorted(
+            {
+                path[: -len(".new")] if path.endswith(".new") else path
+                for path, entries in self.lists.items()
+                if f"user:{account_uid}:" in entries
+            }
+        )
+
+    def changes(self, first: int = 0) -> list:
+        """The commands from ``first`` on, every ``getfacl`` left out."""
+        return [call for call in self.calls[first:] if call[0] != "getfacl"]
 
 
 def lookup(account):
@@ -217,8 +239,9 @@ def test_each_instance_s_host_key_is_made_once_in_its_run_directory(tmp_path):
     assert run.made_keys() == [[BINARY, "--make-host-key", path + ".made"]]
     with open(path, encoding="ascii") as stream:
         assert stream.read() == private_key_text()
-    assert stat.S_IMODE(os.stat(path).st_mode) == 0o640
-    assert (path, 0, 1001) in owners.given
+    assert stat.S_IMODE(os.stat(path).st_mode) == 0o600
+    assert (path, 0, 0) in owners.given
+    assert path in run.entries(1001)
     assert not os.path.exists(path + ".made")
     assert not os.path.exists(path + ".new")
     for directory in (hooks.machine.module_dir, os.path.dirname(hooks.run_dir("x"))):
@@ -267,19 +290,33 @@ def test_each_instance_s_details_carry_its_host_key_and_its_fingerprint(tmp_path
 # --- the run directory ---
 
 
-def test_the_run_directory_is_root_s_and_the_account_s_group_reads_it(tmp_path):
+def test_the_run_directory_is_root_s_alone_and_the_account_reads_it_by_its_entry(
+    tmp_path,
+):
     owners = Owners()
-    hooks = hooks_for(tmp_path, chown=owners)
+    run = Machine()
+    hooks = hooks_for(tmp_path, chown=owners, run=run)
     run_dir = hooks.run_dir("lab")
 
     hooks.prepare(None, instance(), LAB)
 
-    assert stat.S_IMODE(os.stat(run_dir).st_mode) == 0o750
-    assert (run_dir, 0, 1001) in owners.given
+    assert stat.S_IMODE(os.stat(run_dir).st_mode) == 0o700
+    assert (run_dir, 0, 0) in owners.given
+    assert run.lists[run_dir] == (
+        "user::rwx,user:1001:r-x,group::---,mask::r-x,other::---"
+    )
     for name in ("instance_host_key", "path_folders"):
         path = os.path.join(run_dir, name)
-        assert stat.S_IMODE(os.stat(path).st_mode) == 0o640
-        assert (path, 0, 1001) in owners.given
+        assert stat.S_IMODE(os.stat(path).st_mode) == 0o600
+        assert (path, 0, 0) in owners.given
+    assert run.entries(1001) == sorted(
+        [run_dir]
+        + [
+            os.path.join(run_dir, name)
+            for name in ("instance_host_key", "path_folders")
+        ]
+    )
+    assert [given for given in owners.given if given[2] != 0] == []
 
 
 def test_a_run_directory_an_earlier_version_gave_the_account_is_taken_back(
@@ -300,8 +337,8 @@ def test_a_run_directory_an_earlier_version_gave_the_account_is_taken_back(
 
     hooks.prepare(None, instance(), LAB)
 
-    assert stat.S_IMODE(os.stat(run_dir).st_mode) == 0o750
-    assert owners.given[0] == (run_dir, 0, 1001)
+    assert stat.S_IMODE(os.stat(run_dir).st_mode) == 0o700
+    assert owners.given[0] == (run_dir, 0, 0)
     assert not os.path.exists(copy)
     assert not os.path.lexists(planted)
     assert len(run.made_keys()) == 1
@@ -512,7 +549,7 @@ def test_the_path_folders_file_names_each_launcher_folder_and_changes_only_with_
             "/var/lib/neutrino/agent/claude_code/bin\n"
             "/var/lib/neutrino/agent/codex/bin\n"
         )
-    assert stat.S_IMODE(os.stat(path).st_mode) == 0o640
+    assert stat.S_IMODE(os.stat(path).st_mode) == 0o600
     written = os.stat(path)
 
     assert hooks.prepare(None, instance(programs=("claude_code", "codex")), LAB) == []
@@ -595,11 +632,18 @@ def test_two_accounts_run_each_on_its_own_port(runner, tmp_path):
     )
     environment = tmp_path / "config" / "ssh_server" / "lab.env"
     assert "NEUTRINO_SSH_SERVER_PORT=22000" in environment.read_text()
-    for account in ("lab", "dev"):
+    for account, uid, other in (("lab", 1001, 1002), ("dev", 1002, 1001)):
         run_dir = tmp_path / "state" / "ssh_server" / "run" / account
-        assert stat.S_IMODE(run_dir.stat().st_mode) == 0o750
+        assert stat.S_IMODE(run_dir.stat().st_mode) == 0o700
+        named = [str(run_dir)]
         for name in ("instance_host_key", "authorized_key", "path_folders"):
-            assert stat.S_IMODE((run_dir / name).stat().st_mode) == 0o640
+            assert stat.S_IMODE((run_dir / name).stat().st_mode) == 0o600
+            named.append(str(run_dir / name))
+        entries = runner.machine.run.entries
+        assert [path for path in entries(uid) if path.startswith(str(run_dir))] == (
+            sorted(named)
+        )
+        assert [path for path in entries(other) if path.startswith(str(run_dir))] == []
     assert len(runner.machine.run.made_keys()) == 2
     details = runner.details({})
     assert "host_key" not in details
@@ -657,10 +701,9 @@ def test_a_change_of_programs_rewrites_the_file_alone_and_restarts_no_instance(
 
     assert path.read_text() == ""
     assert (unit.read_text(), environment.read_text()) == held
-    assert (
-        calls[first:]
-        == [["systemctl", "enable", "--now", "neutrino_ssh_server@lab.service"]] * 2
-    )
+    assert [
+        call for call in runner.machine.run.changes(first) if call[0] != "setfacl"
+    ] == [["systemctl", "enable", "--now", "neutrino_ssh_server@lab.service"]] * 2
 
 
 def test_no_account_enabled_reads_stopped(runner):

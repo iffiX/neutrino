@@ -5,10 +5,9 @@ systemd's name for the instance's account, from a per-account environment
 file when the service has one. An instance whose files changed is started
 again; an unchanged one is only kept up.
 
-A file the program reads that its account must not change is root's,
-mode 0640, in a folder of root's, mode 0750, both of the account's group,
-which the account alone is in where the system gives each account a group
-of its own.
+A file the program reads that its account must not change is root's
+alone, mode 0600, in a folder of root's alone, mode 0700, each with one
+access entry that lets the one account read it, set whole by ``setfacl``.
 
 Not pure: writes under ``/etc`` and the state root, and drives systemd.
 """
@@ -23,6 +22,7 @@ import stat
 import subprocess
 
 from neutrino_agent.modules.shared.account_service import (
+    ROOT_FILE_READ_FLAGS,
     clear_files,
     remove_account_files,
     remove_read_files,
@@ -34,7 +34,9 @@ from neutrino_agent.modules.shared.account_service import (
 )
 from neutrino_agent.modules.shared.account_service.constants import (
     ACCOUNT_SERVICE_ENVIRONMENT_SUFFIX,
+    ACCOUNT_SERVICE_READ_DIR_ACL,
     ACCOUNT_SERVICE_READ_DIR_MODE,
+    ACCOUNT_SERVICE_READ_FILE_ACL,
     ACCOUNT_SERVICE_READ_FILE_MODE,
     ACCOUNT_SERVICE_TEMPLATE_ACCOUNT,
     ACCOUNT_SERVICE_UNIT_PREFIX,
@@ -130,44 +132,108 @@ def define(template, machine) -> bool:
 
 
 def make_read_dir(directory: str, account: str, machine) -> None:
-    """Make root's folder, mode 0750, of the account's group, by open descriptor.
+    """Make root's folder, mode 0700, root's alone, by open descriptor, with an access entry that lets the account read it.
 
     Raises:
         KeyError: When the machine does not have the account.
-        OSError: When a level is a link, or the folder cannot be made or
-            given.
+        OSError: When a level is a link, the folder cannot be made or
+            given, or ``setfacl`` cannot run.
+        subprocess.CalledProcessError: When ``setfacl`` refuses the entry.
     """
     entry = machine.lookup_account(account)
-    mode = ACCOUNT_SERVICE_READ_DIR_MODE["linux"]
-    make_dirs(directory, mode)
+    make_dirs(directory, ACCOUNT_SERVICE_READ_DIR_MODE["linux"])
     descriptor = open_dir(directory)
     try:
         held = os.fstat(descriptor)
-        if (held.st_uid, held.st_gid) != (0, entry.gid):
-            machine.chown(descriptor, 0, entry.gid)
-        if stat.S_IMODE(held.st_mode) != mode:
-            os.fchmod(descriptor, mode)
+        if (held.st_uid, held.st_gid) != (0, 0):
+            machine.chown(descriptor, 0, 0)
         if held.st_uid != 0:
             clear_files(descriptor)
     finally:
         os.close(descriptor)
+    _settle_entry(directory, entry.uid, ACCOUNT_SERVICE_READ_DIR_ACL, machine)
+    for name in os.listdir(directory):
+        _settle_file(os.path.join(directory, name), entry.uid, machine)
 
 
 def write_read_file(path: str, text: str, account: str, machine) -> bool:
-    """Write one file root's, mode 0640, of the account's group, unless it holds this text.
+    """Write one file root's alone, mode 0600, that the account reads by an access entry, unless it holds this text.
 
     Raises:
         KeyError: When the machine does not have the account.
-        OSError: When the file cannot be written.
+        OSError: When the file cannot be written, or ``setfacl`` cannot
+            run.
+        subprocess.CalledProcessError: When ``setfacl`` refuses the entry.
     """
     entry = machine.lookup_account(account)
     return write_root_file(
         path,
         text.encode("utf-8"),
         ACCOUNT_SERVICE_READ_FILE_MODE["linux"],
-        owner=(0, entry.gid),
+        owner=(0, 0),
         chown=machine.chown,
+        staged=lambda new: _settle_entry(
+            new, entry.uid, ACCOUNT_SERVICE_READ_FILE_ACL, machine
+        ),
     )
+
+
+def access_list(uid: int, template: str) -> str:
+    """The whole access list ``setfacl --set`` writes for one account. Pure.
+
+    Args:
+        uid: The account's uid.
+        template: :data:`ACCOUNT_SERVICE_READ_DIR_ACL` or
+            :data:`ACCOUNT_SERVICE_READ_FILE_ACL`.
+
+    Returns:
+        The entries, comma separated, the account named by its uid.
+    """
+    return template.format(uid=uid)
+
+
+def _settle_entry(path: str, uid: int, template: str, machine) -> None:
+    """Set a root's file's or folder's access list whole, unless ``getfacl`` reads it as it is.
+
+    Raises:
+        OSError: When ``getfacl`` or ``setfacl`` cannot run.
+        subprocess.CalledProcessError: When ``setfacl`` refuses the list.
+    """
+    wanted = access_list(uid, template)
+    read = machine.run(
+        ["getfacl", "--omit-header", "--numeric", "--absolute-names", path],
+        is_checked=False,
+    )
+    held = ",".join(
+        line.strip()
+        for line in (getattr(read, "stdout", "") or "").splitlines()
+        if line.strip() and not line.startswith("#")
+    )
+    if sorted(held.split(",")) == sorted(wanted.split(",")):
+        return
+    machine.run(["setfacl", "--set", wanted, path])
+
+
+def _settle_file(path: str, uid: int, machine) -> None:
+    """Give one regular file in root's folder to root alone with the account's read entry, an earlier version's among them.
+
+    Raises:
+        OSError: When the file cannot be given, or ``setfacl`` cannot run.
+        subprocess.CalledProcessError: When ``setfacl`` refuses the entry.
+    """
+    try:
+        descriptor = os.open(path, ROOT_FILE_READ_FLAGS)
+    except OSError:
+        return
+    try:
+        held = os.fstat(descriptor)
+        if not stat.S_ISREG(held.st_mode):
+            return
+        if (held.st_uid, held.st_gid) != (0, 0):
+            machine.chown(descriptor, 0, 0)
+    finally:
+        os.close(descriptor)
+    _settle_entry(path, uid, ACCOUNT_SERVICE_READ_FILE_ACL, machine)
 
 
 def write(service, machine) -> bool:

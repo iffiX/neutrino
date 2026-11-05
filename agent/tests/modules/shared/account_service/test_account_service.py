@@ -145,12 +145,38 @@ def test_only_linux_has_units(tmp_path):
 # --- a folder of root's the account reads ---
 
 
-def test_on_linux_a_read_file_is_roots_in_roots_folder_and_the_accounts_group_reads(
+class AclCommands:
+    """``getfacl`` and ``setfacl`` faked: each list ``setfacl --set`` writes is kept by path and read back."""
+
+    def __init__(self):
+        self.ran: list = []
+        self.lists: dict = {}
+
+    def __call__(self, command, *, is_checked=True, **_):
+        self.ran.append(list(command))
+        if command[0] == "setfacl":
+            self.lists[command[-1]] = command[2]
+            return CommandResult(list(command), 0, "", "")
+        held = self.lists.get(command[-1], "")
+        return CommandResult(list(command), 0, held.replace(",", "\n"), "")
+
+    def set_lists(self) -> list:
+        return [
+            (command[-1], command[2]) for command in self.ran if command[0] == "setfacl"
+        ]
+
+
+def test_on_linux_a_read_file_is_roots_alone_with_an_entry_for_the_account(
     tmp_path, monkeypatch
 ):
+    """A primary group several accounts share reads nothing of another's."""
     owners = fd_owners(monkeypatch, {})
+    acl = AclCommands()
     machine = machine_for(
-        "linux", tmp_path, chown=lambda target, uid, gid: os.fchown(target, uid, gid)
+        "linux",
+        tmp_path,
+        run=acl,
+        chown=lambda target, uid, gid: os.fchown(target, uid, gid),
     )
     run_dir = str(tmp_path / "run" / "ann")
     key = run_dir + "/host_key"
@@ -166,12 +192,53 @@ def test_on_linux_a_read_file_is_roots_in_roots_folder_and_the_accounts_group_re
     assert account_service.write_read_files(service, machine) is False
 
     assert open(key).read() == "secret\n"
-    assert stat.S_IMODE(os.stat(key).st_mode) == 0o640
-    assert stat.S_IMODE(os.stat(run_dir).st_mode) == 0o750
-    assert (run_dir, 0, 1000) in owners
-    assert (key, 0, 1000) in owners
+    assert stat.S_IMODE(os.stat(key).st_mode) == 0o600
+    assert stat.S_IMODE(os.stat(run_dir).st_mode) == 0o700
+    assert (run_dir, 0, 0) in owners
+    assert (key, 0, 0) in owners
+    assert [owner for owner in owners if owner[2] != 0] == []
+    assert acl.set_lists() == [
+        (run_dir, "user::rwx,user:1000:r-x,group::---,mask::r-x,other::---"),
+        (key + ".new", "user::rw-,user:1000:r--,group::---,mask::r--,other::---"),
+        (key, "user::rw-,user:1000:r--,group::---,mask::r--,other::---"),
+    ]
     account_service.remove_read_files(service)
     assert not os.path.exists(run_dir)
+
+
+def test_on_linux_an_earlier_versions_group_readable_file_is_given_to_root_alone(
+    tmp_path, monkeypatch
+):
+    """The run folder of R144 was of the account's group; its files keep
+    their text, so a write of the same text writes nothing."""
+    acl = AclCommands()
+    machine = machine_for(
+        "linux",
+        tmp_path,
+        run=acl,
+        chown=lambda target, uid, gid: os.fchown(target, uid, gid),
+    )
+    run_dir = tmp_path / "run" / "ann"
+    run_dir.mkdir(parents=True)
+    os.chmod(run_dir, 0o750)
+    key = run_dir / "instance_host_key"
+    key.write_text("the instance's key\n")
+    owners = fd_owners(monkeypatch, {str(run_dir): (0, 1000), str(key): (0, 1000)})
+
+    account_service.make_read_dir(str(run_dir), "ann", machine)
+
+    assert key.read_text() == "the instance's key\n"
+    assert (str(run_dir), 0, 0) in owners
+    assert (str(key), 0, 0) in owners
+    assert (str(key), "user::rw-,user:1000:r--,group::---,mask::r--,other::---") in (
+        acl.set_lists()
+    )
+    assert (
+        account_service.write_read_file(
+            str(key), "the instance's key\n", "ann", machine
+        )
+        is False
+    )
 
 
 @pytest.mark.parametrize("planted", ["host_key", "host_key.new"])
@@ -242,7 +309,10 @@ def test_an_earlier_versions_folder_is_taken_back_and_its_files_cleared(
 ):
     owners = fd_owners(monkeypatch, {})
     machine = machine_for(
-        "linux", tmp_path, chown=lambda target, uid, gid: os.fchown(target, uid, gid)
+        "linux",
+        tmp_path,
+        run=AclCommands(),
+        chown=lambda target, uid, gid: os.fchown(target, uid, gid),
     )
     run_dir = tmp_path / "run" / "ann"
     run_dir.mkdir(parents=True)
@@ -255,4 +325,4 @@ def test_an_earlier_versions_folder_is_taken_back_and_its_files_cleared(
     account_service.make_read_dir(str(run_dir), "ann", machine)
 
     assert sorted(os.listdir(run_dir)) == ["authorized_key", "kept"]
-    assert owners[0] == (str(run_dir), 0, 1000)
+    assert owners[0] == (str(run_dir), 0, 0)
