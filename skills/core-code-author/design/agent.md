@@ -1032,10 +1032,9 @@ folder's handle with no reparse point followed
 ([modules/file_share.md](agent/modules/file_share.md), "A share's folder").
 On Linux and macOS it runs through the step-down; on Windows under a logon
 of the account with the login its row names (`LogonUserW`), as the
-terminal's. A change of owner that gives an account what another uid owns,
-Gitea's handover and a RustDesk settings folder root left in a home, cannot
-run as the account: root makes it on each entry's open descriptor, every
-level opened with no link followed. A file the account must not change
+terminal's. Gitea's handover, a change of owner that gives the account what another
+uid owns, cannot run as the account: root makes it on each entry's open
+descriptor, every level opened with no link followed. A file the account must not change
 lives in a folder root owns, as the SSH server's run folder and the script
 of a one-shot task on Windows do ([privilege.md](privilege.md), "The agent
 touches an account's files as that account").
