@@ -130,11 +130,25 @@ setting needs it ([agent/ai_tools.md](agent/ai_tools.md)). The hub's
 a hub test keeps the two the same. The agent draws no window, so it holds no
 bindings and depends on nothing named `python`.
 
+The `.deb` and the `.rpm` depend on `acl` as well, the package of `setfacl`
+and `getfacl`, which give an SSH server instance's account its read entry
+on the run folder ([agent/modules/ssh_server.md](agent/modules/ssh_server.md),
+"What runs"). The Ubuntu 22.04 cloud image holds no `acl`, and nothing else
+the agent depends on brings it; there the SSH server's apply failed
+`apply_failed` with `No such file or directory: 'getfacl'`. Every way the
+agent's package is installed runs `apt-get install`, `dnf install` or
+`reinstall`, or `pacman -U`, which install a missing dependency from the
+machine's repositories: `install.sh`, the hub's install over SSH, the hub's
+upgrade of its own machine's agent from its cache, and the agent's
+self-update. `rpm -Uvh`, the last fallback of an install over SSH and of a
+downgrade of the hub's machine, installs none.
+
 The Arch package's `depends=` is the list the `.deb` and the `.rpm` name for
 the RustDesk host, under the Arch names upstream's Arch package uses:
 `gtk3`, `libxcb`, `xdotool`, `libxfixes`, `alsa-lib`, `systemd-libs`, `curl`,
 `libva`, `gst-plugins-base`, `pam` and `gst-plugin-pipewire`, with `systemd`
-(`agent/packaging/build_pkg.py`). It adds `libpulse`: `librustdesk.so` links
+(`agent/packaging/build_pkg.py`), and names no `acl`: Arch's `systemd`
+depends on `acl`, which holds `setfacl` and `getfacl`. It adds `libpulse`: `librustdesk.so` links
 `libpulse.so.0` and `libpulse-simple.so.0`, which upstream's list leaves out
 and nothing else on that list brings on an Arch cloud image.
 
@@ -226,6 +240,7 @@ releases a supported family provides.
 | systemd | 236 | `systemd-run --collect` for the transient unit a self-update runs in | `agent/neutrino_agent/core/self_update.py:216` |
 | systemd | 243 | `OOMPolicy=` on the transient service a CloudCLI install runs as; systemd 249 refuses it on a scope | `agent/neutrino_agent/modules/cloudcli/linux_applier.py` |
 | util-linux | any | `runuser` for stepping down to an account | `agent/neutrino_agent/platforms/linux.py:211` |
+| acl | any | `setfacl` and `getfacl` for the read entry of each SSH server instance's run folder; a dependency of the `.deb` and the `.rpm`, and of Arch's `systemd` | `agent/neutrino_agent/modules/shared/account_service/linux.py` |
 | Windows PowerShell | 5.1, with the SmbShare, NetSecurity, ScheduledTasks and LocalAccounts modules, all in Windows 10 1607 | the PowerShell host's function library on Windows: the file share, the scheduled tasks, the thermal zones | `agent/neutrino_agent/data/windows/powershell_host.ps1` |
 | `sharing`, `sysadminctl`, `pwpolicy`, `dscl`, `pfctl` | macOS 12 | the file share on macOS | `agent/neutrino_agent/modules/samba/darwin_applier.py` |
 | git | 2.0, Gitea's own floor | Gitea on every system; the machine's own on macOS and Windows, never installed by the module there | `agent/neutrino_agent/modules/gitea/` |
