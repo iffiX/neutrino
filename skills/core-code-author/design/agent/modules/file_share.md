@@ -47,6 +47,7 @@ module's.
 | **Stop** | deletes the module's file and its users' files, takes the include line out, and stops and disables `smbd` and `nmbd`, except on a row that does not read running with no `found_units` kept, below | stops and disables `smbd` and `nmbd`; the module's files stay |
 | **Start** | writes the module's files and the include line, and enables and starts `smbd` and `nmbd`, share or no share | the same |
 | A `configure` under `stopped` | takes the module's files off, writes none, and starts nothing | writes the module's files and starts nothing |
+| A task under `is_taken_over` | checks the configuration in its one `configure` step, whatever the `want`, and writes, sweeps, starts and stops nothing: no file, no include line, no user and no record | the same |
 | **Uninstall** | removes what the module added and no package, so `smb.conf` is never renamed, and puts `smbd` and `nmbd` back as the first **Start** found them | removes what the module added and the packages |
 | A reboot | `smbd` and `nmbd` start or stay off as the module's last **Start** or **Stop** left them | the same |
 
@@ -121,7 +122,10 @@ anew from the configuration; later applies manage them as usual. On Windows
 the same apply deletes every share whose description carries the module's
 marker and every account whose name carries the prefix, and on macOS every
 share point under the `neutrino_` prefix and every account whose name carries
-the prefix.
+the prefix. A module the hub took over is adopted at the person's first
+press on it: its task under `is_taken_over` checks the configuration and
+writes no configured mark, so the first apply is that press's `configure`,
+on every system ([../../agent.md](../../agent.md), "The steps").
 
 An uninstall on Linux deletes every `neutrino-*` SMB user the sweep would,
 before the packages go.
@@ -202,6 +206,7 @@ On Windows and macOS the module drives the system's own SMB server.
 | On Windows **Stop** stops every service that depends on `LanmanServer` with it, and **Start** starts again each one that ran, kept as `server_dependents` in the record. Beside them the person's own shares and the administrative shares `C$`, `ADMIN$` and `IPC$` stop answering, and the agent, the hub and the client use none of them. | Windows stops no server while a service that depends on it runs. The agent's local channel is a local named pipe, which needs no server, and a client mounts with the SMB client, `LanmanWorkstation`. |
 | The module's first **Start** keeps what the server was, as `found_server` in the record: on Windows its start type and whether it ran, on macOS whether it was enabled and whether launchd held it. A **Stop** of a server the row reads as running, on a machine with no such record, keeps it first. On such a machine a **Stop** on a row that does not read running leaves the server as it is and keeps nothing. An uninstall puts the server back from it and deletes it. On a machine with no such record an uninstall leaves the server as it is. | The server is the system's, and an uninstall gives it back as the module found it. |
 | The row reads `running` after a **Start** while the server runs, and `stopped` after a **Stop**, a server the person starts by hand afterwards among it, from `is_served` in the record and the server. Before the first `configure` there is no mark, and the module reads the server, so adoption takes `running` or `stopped` from what the machine runs. An uninstall deletes the mark. | A join changes nothing on the machine. |
+| A task under `is_taken_over` checks the configuration in its one `configure` step, whatever the `want`, and changes nothing: no share, no account, no grant, no record, and the server neither starts nor stops ([../../agent.md](../../agent.md), "The steps"). | A join changes nothing on the machine. |
 | On Windows the agent asks the server for its shares and sessions only while `LanmanServer` runs, except in an apply that serves, and reads its own architecture from the environment. | `Get-SmbShare`, `Get-SmbSession` and a WMI read of `Win32_OperatingSystem` each start a stopped server of Manual start type. Windows' own programs start it too, so such a server does not stay stopped. |
 | On Windows **Stop** disables `LanmanServer` before it stops it, and keeps `server_dependents` before the stop. A stop that fails leaves the server running and `Disabled`, the row `failed`, and `found_server` as it was. | The server has start triggers on its RPC interface and its `srvsvc` pipe, so a read during a stop starts it again and the stop fails. A disabled service does not start on a trigger. |
 | After a **Stop** on Windows the server serves nothing, and port 445 stays open until the next reboot. | The `srv2` and `srvnet` drivers stay running under the System process, and stopping them by hand does not close the port. |

@@ -117,6 +117,16 @@ otherwise fails `apply_failed {detail}`, the detail naming the port and
 the last error Gitea logged, else the last line of its output. A Gitea that
 launchd or systemd keeps starting again then reads `failed`.
 
+**A Gitea taken over stays as it is until a press.** The hub takes Gitea
+over only while it holds the secrets of the instance it installed
+([../../protocol.md](../../protocol.md), "The modules section, one entry
+per module"). While its entry carries `is_taken_over`, its task's one step
+is `configure`, which checks the configuration and writes nothing: no
+`account` step runs, `app.ini`, the unit, the LaunchDaemon or the service
+and the record's SSH port stay as they are, and the server neither starts
+nor stops. The person's first press writes them
+([../../agent.md](../../agent.md), "The steps").
+
 **Uninstall takes what the module added and keeps the data**: the unit,
 the LaunchDaemon or the service, the binary and `app.ini` go; the data
 directory and the account stay, so an install afterwards serves the same
