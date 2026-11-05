@@ -347,6 +347,7 @@ export function AiPage() {
         usageKeys={usage.data?.keys ?? []}
         servedModels={servedModels}
         defaultModel={view.default_model ?? ""}
+        hasAyakaleafOnDefault={view.has_ayakaleaf_on_default ?? false}
         onChanged={status.setData}
       />
 

@@ -6,8 +6,10 @@ served names by name, with a saved pick the gateway no longer serves as its
 first row marked as such, and is disabled while the gateway serves none; the
 picker shows the saved pick, or the first name served while none is saved;
 the bar and the frame light only while the picked row differs from that row;
-the bar writes the pick alone with ``gateway/set``; and a key's generate and
-revoke write where they are pressed and touch no draft.
+the bar has no hint, and its warning only while the view says an installed
+Ayakaleaf follows the default model; the bar writes the pick alone with
+``gateway/set``; and a key's generate and revoke write where they are pressed
+and touch no draft.
 """
 
 import json
@@ -19,10 +21,6 @@ WORDS = {
     "ui.ai.default_model": ("Default model", "默认模型"),
     "ui.ai.default_model_not_served": ("no longer served", "已不再提供"),
     "ui.ai.access_apply": ("Apply access settings", "应用接入配置"),
-    "ui.ai.access_apply_hint": (
-        "Tools and apps on the gateway default switch to this model.",
-        "用网关默认的工具和应用都改用这个模型。",
-    ),
     "ui.ai.access_apply_warning": (
         "An Ayakaleaf on the gateway default restarts.",
         "用网关默认的 Ayakaleaf 会重启。",
@@ -54,6 +52,8 @@ def test_the_words_are_ui_text_s_in_both_languages():
     for key, (en, zh) in WORDS.items():
         assert english[key] == en
         assert chinese[key] == zh
+    assert "ui.ai.access_apply_hint" not in english
+    assert "ui.ai.access_apply_hint" not in chinese
     assert codes["en"]["code.model_not_served"] == "The gateway does not serve {model}."
     assert codes["zh-CN"]["code.model_not_served"] == "网关不提供 {model}。"
 
@@ -86,8 +86,22 @@ def test_the_bar_lights_only_while_the_picked_row_differs_from_the_saved_one():
     assert 'isModelDirty ? "settings_group--dirty" : ""' in panel
     assert "<ApplyBar isDirty={isModelDirty}" in panel
     assert 'label={t("ui.ai.access_apply")}' in panel
-    assert 'hint={t("ui.ai.access_apply_hint")}' in panel
-    assert 'warning={t("ui.ai.access_apply_warning")}' in panel
+    bar = panel[panel.index("<ApplyBar ") :]
+    bar = bar[: bar.index("/>")]
+    assert "hint=" not in bar
+    assert (
+        'warning={ hasAyakaleafOnDefault ? t("ui.ai.access_apply_warning") : undefined }'
+        in bar
+    )
+
+
+def test_the_bar_s_hint_may_be_left_out():
+    bar = flat("components/apply_bar.tsx")
+
+    assert "hint?: string;" in bar
+    assert (
+        '{blockedHint ?? (isDirty || isBusy ? hint : t("ui.apply_bar.clean"))}' in bar
+    )
 
 
 def test_the_bar_writes_the_pick_alone_and_the_keys_touch_no_draft():
@@ -113,3 +127,4 @@ def test_the_page_hands_the_panel_the_served_names_and_the_saved_pick():
 
     assert "servedModels={servedModels}" in page
     assert 'defaultModel={view.default_model ?? ""}' in page
+    assert "hasAyakaleafOnDefault={view.has_ayakaleaf_on_default ?? false}" in page

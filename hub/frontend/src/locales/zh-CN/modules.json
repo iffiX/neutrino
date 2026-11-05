@@ -48,7 +48,6 @@
   "ui.accounts.system_account_placeholder": "选一个账户",
   "ui.accounts.title": "可用账户",
   "ui.ai.access_apply": "应用接入配置",
-  "ui.ai.access_apply_hint": "用网关默认的工具和应用都改用这个模型。",
   "ui.ai.access_apply_warning": "用网关默认的 Ayakaleaf 会重启。",
   "ui.ai.access_hint": "给中枢所在系统上的工具用，或经 SSH 隧道连到它的工具用。",
   "ui.ai.access_title": "接入",

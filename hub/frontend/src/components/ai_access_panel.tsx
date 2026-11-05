@@ -47,6 +47,9 @@ interface AiAccessPanelProps {
   servedModels: string[];
   /** The saved default model; empty while none is saved. */
   defaultModel: string;
+  /** Whether an installed Ayakaleaf follows the default model, which a new
+   * one restarts. */
+  hasAyakaleafOnDefault: boolean;
   /** The status view a generate, a revoke or an apply answered with. */
   onChanged: (view: CliproxyApiStatusView) => void;
 }
@@ -57,6 +60,7 @@ export function AiAccessPanel({
   usageKeys,
   servedModels,
   defaultModel,
+  hasAyakaleafOnDefault,
   onChanged,
 }: AiAccessPanelProps) {
   // Redrawn when the panel's language changes.
@@ -289,8 +293,9 @@ export function AiAccessPanel({
         isDirty={isModelDirty}
         isBusy={isModelBusy}
         label={t("ui.ai.access_apply")}
-        hint={t("ui.ai.access_apply_hint")}
-        warning={t("ui.ai.access_apply_warning")}
+        warning={
+          hasAyakaleafOnDefault ? t("ui.ai.access_apply_warning") : undefined
+        }
         error={modelError}
         notice={modelNotice}
         onReset={() => {

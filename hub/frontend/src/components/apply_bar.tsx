@@ -33,8 +33,8 @@ interface ApplyBarProps {
   isBusy: boolean;
   /** Names the scope, e.g. "Apply to enp1s0". */
   label: string;
-  /** What pressing it will do. */
-  hint: string;
+  /** What pressing it will do; a bar left without one says nothing while dirty. */
+  hint?: string;
   /** Said before the fact when applying is disruptive. */
   warning?: string;
   /**

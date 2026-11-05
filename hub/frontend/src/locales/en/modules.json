@@ -48,7 +48,6 @@
   "ui.accounts.system_account_placeholder": "Choose an account",
   "ui.accounts.title": "Available accounts",
   "ui.ai.access_apply": "Apply access settings",
-  "ui.ai.access_apply_hint": "Tools and apps on the gateway default switch to this model.",
   "ui.ai.access_apply_warning": "An Ayakaleaf on the gateway default restarts.",
   "ui.ai.access_hint": "For a tool on the hub's machine, or one using an SSH tunnel to it.",
   "ui.ai.access_title": "Access",
