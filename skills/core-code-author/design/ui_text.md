@@ -981,6 +981,7 @@ page and SSH setting ([client.md](client.md)). A code is in the hub's
 | `code.samba_interfaces_no_loopback` | Samba binds to interfaces without lo on this machine, so the module's shares cannot answer; add lo there. | 这台机器的 Samba 只绑定了不含 lo 的网卡，本模块的共享无法应答；请在那里加上 lo。 |
 | `code.samba_domain_member` | Samba on this machine is a domain member, which the module's local users cannot sign in to. | 这台机器的 Samba 是域成员，本模块的本地用户无法登录。 |
 | `code.share_users_unknown` | The folder shares {shares} have no account and are not served; check an account for them, or remove them. | 文件夹共享 {shares} 没有勾选任何账户，所以没有提供；请给它们勾选账户，或删掉它们。 |
+| `code.share_path_missing` | The folder {path} of the share {name} does not exist, so the share is not served; make the folder, then apply again. | 共享 {name} 的文件夹 {path} 不存在，所以没有提供；请先建好这个文件夹，再重新应用。 |
 | `code.share_hub_login_rejected`, a machine's share refusing the login the hub gave | The share refused the login the hub gave. Check this machine's file share in the panel. | 中枢给的登录被拒了，请在面板检查这台机器的文件共享。 |
 | `code.terminal_account_missing` | No account is enabled for this machine's terminal; enable one on its machine page. | 这台机器的终端没有启用的账户，到它的机器页上启用一个。 |
 | `code.account_not_enabled` | {account} is not enabled for this machine's terminal. | 这台机器的终端没有启用 {account}。 |

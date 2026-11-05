@@ -1024,8 +1024,8 @@ reads the system's and the account's `PATH`, runs a found copy, and writes,
 moves or removes the module's entry ("Parallel, never take over").
 The seventh is every read, write, `chmod`, `chown`, rename and removal in a
 place an account can write, its home and every folder it owns, whichever
-module makes it: its RustDesk settings, Codeg's data directory, a share's
-missing folder and Gitea's folders among them, each made through
+module makes it: its RustDesk settings, Codeg's data directory, the access
+entries of a share's folder on macOS and Gitea's folders among them, each made through
 `modules/shared/account_files.py`. The one exception is the file share on
 Windows, whose grants on a share's folder SYSTEM sets itself, on the
 folder's handle with no reparse point followed
