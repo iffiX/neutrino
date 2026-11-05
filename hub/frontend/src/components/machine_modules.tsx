@@ -297,9 +297,9 @@ const PRESSED_STATES: Record<ModuleAction, string> = {
 };
 
 /** The states whose code the tab words as a notice at its top: what holds
- * up an install or a queued task, and what is missing of software that is
- * partly there. */
-const NOTICED_STATES = ["installing", "queued", "absent"];
+ * up an install or a queued task, what is missing of software that is
+ * partly there, and what a running module leaves out. */
+const NOTICED_STATES = ["installing", "queued", "absent", "running"];
 
 /** The route that restarts a managed machine, as the Agents page's Reboot. */
 const REBOOT_PATH = "/hub/device/reboot";

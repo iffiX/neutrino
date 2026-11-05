@@ -4,13 +4,15 @@ What these pin: ``ui.modules.failed_step`` says in both languages what
 ui_text.md writes; the notice heads the failure's words with the step the row
 names, in the step list's own words; the failure's words keep their line
 breaks in the notice as they do under a step; a module stopped against its
-want words its code in the notice at the top of its tab; ``module_needed``
+want, and a running module, word their code in the notice at the top of the
+tab; ``module_needed``
 names Start on a ``failed`` row and Install on every other, and such a ``failed``
 row keeps **Start** live whatever its want; and **Stop** is live on a ``failed``
 Containers row whatever its want.
 """
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -43,6 +45,15 @@ def test_a_module_stopped_against_its_want_words_its_code_in_the_notice():
         "row.want !== WANT_STOPPED)"
     ) in page
     assert '{isCodeNoticed(activeRow) && activeRow.code !== "" &&' in page
+
+
+def test_a_running_module_words_its_code_in_the_notice():
+    page = source("machine_modules.tsx")
+    noticed = re.search(r"const NOTICED_STATES = \[([^\]]*)\];", page)
+
+    assert noticed is not None
+    assert '"running"' in noticed.group(1)
+    assert "NOTICED_STATES.includes(row.state) ||" in page
 
 
 def test_the_notice_heads_the_failure_with_the_step_the_row_names():
