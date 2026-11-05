@@ -74,6 +74,14 @@ def test_a_link_at_the_last_level_reads_as_a_link(tmp_path, platform):
     assert read_posix_folder(str(tmp_path / "share"), platform=platform) == "link"
 
 
+def test_a_link_named_with_a_trailing_slash_still_reads_as_a_link(tmp_path, platform):
+    (tmp_path / "real").mkdir()
+    (tmp_path / "share").symlink_to(tmp_path / "real")
+
+    assert read_posix_folder(f"{tmp_path}/share/", platform=platform) == "link"
+    assert platform.asked[0][1][-1] == str(tmp_path / "share")
+
+
 def test_a_link_above_the_last_level_in_the_accounts_place_is_followed_as_the_account(
     tmp_path, platform
 ):

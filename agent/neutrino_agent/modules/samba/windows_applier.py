@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import ctypes
 import errno
+import ntpath
 import os
 
 from neutrino_agent.exceptions import ModuleApplyError
@@ -371,7 +372,7 @@ class SambaWindowsApplier:
             level, or ``unreachable``.
         """
         try:
-            self._folders.check(path)
+            self._folders.check(ntpath.normpath(path))
         except (FileNotFoundError, NotADirectoryError):
             return SAMBA_FOLDER_MISSING
         except OSError as error:

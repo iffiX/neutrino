@@ -53,6 +53,7 @@ def read_posix_folder(path: str, *, platform) -> str:
     Returns:
         ``folder``, ``missing``, ``link`` or ``unreachable``.
     """
+    path = os.path.normpath(path)
     try:
         owner = place_owner(path)
     except ValueError:
@@ -81,9 +82,8 @@ def read_posix_folder(path: str, *, platform) -> str:
 def _read_in_roots_place(path: str) -> str:
     """A folder whose every level is root's, opened level by level with no link followed.
 
-    Linux refuses a link opened as a folder with ``ENOTDIR``, and macOS with
-    ``ELOOP``; only root can change a level here, so the last level's own
-    entry tells the two apart.
+    A link at the last level is refused with ``ENOTDIR`` on Linux and with
+    ``ELOOP`` on macOS, and the last level's own entry names it.
     """
     try:
         descriptor = open_dir(path)
