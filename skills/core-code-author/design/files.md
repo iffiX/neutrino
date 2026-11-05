@@ -358,10 +358,9 @@ ends ([privilege.md](privilege.md), "The agent touches an account's files
 as that account").
 
 `agent/ssh_server/run/<account>/` is root's, SYSTEM's on Windows, and the
-account reads it and changes nothing: on Linux mode 750 and of the
-account's group, on macOS mode 700 with an access entry for the account,
-on Windows Read for the account on its access list
-([agent/modules/ssh_server.md](agent/modules/ssh_server.md)).
+account reads it and changes nothing: on Linux and macOS mode 700 with an
+access entry for the account, on Windows Read for the account on its
+access list ([agent/modules/ssh_server.md](agent/modules/ssh_server.md)).
 
 `agent/vscode/`, `agent/code_server/`, `agent/cloudcli/`, `agent/codeg/` and
 `agent/siyuan/` hold programs the accounts of the machine run, so those directories alone

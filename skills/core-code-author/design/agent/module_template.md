@@ -323,7 +323,7 @@ drawn with `generic.svg` in the same directory.
 | A command line program's way in from a shell | the launcher's folder in `~/.local/share/neutrino/agent/env.sh`, which a line at the end of each startup file loads | the launcher's folder in `~/Library/Application Support/Neutrino/agent/env.sh`, which a line at the end of each startup file loads | the launcher's folder at the front of the account's user `PATH` |
 | A command line program's record | `/var/lib/neutrino/agent/<module>/record.json` | `/Library/Application Support/Neutrino/agent/state/<module>/record.json` | `%ProgramData%\Neutrino\agent\state\<module>\record.json` |
 | The record of the accounts' startup files | `/var/lib/neutrino/agent/program_path.json` | `/Library/Application Support/Neutrino/agent/state/program_path.json` | none |
-| A folder root owns that one account reads, the SSH server's run folder | `/var/lib/neutrino/agent/ssh_server/run/<account>/`, root's, mode 750, of the account's group | `/Library/Application Support/Neutrino/agent/state/ssh_server/run/<account>/`, root's, mode 700, with an access entry for the account | `%ProgramData%\Neutrino\agent\state\ssh_server\run\<account>\`, SYSTEM's, the account granted Read |
+| A folder root owns that one account reads, the SSH server's run folder | `/var/lib/neutrino/agent/ssh_server/run/<account>/`, root's, mode 700, with an access entry for the account | `/Library/Application Support/Neutrino/agent/state/ssh_server/run/<account>/`, root's, mode 700, with an access entry for the account | `%ProgramData%\Neutrino\agent\state\ssh_server\run\<account>\`, SYSTEM's, the account granted Read |
 
 The module's directory is `<module>/` under the state root, the first row's
 path without `<directory>`. Each install class
