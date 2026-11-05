@@ -4,7 +4,7 @@
     "forward_failed": "端口没能转发：{detail}",
     "rdp_closed": "连接已结束：{reason}",
     "rdp_core_missing": "这个版本没有远程桌面。",
-    "rdp_login_failed": "对方机器拒绝了访问密码。",
+    "rdp_login_failed": "对方系统拒绝了访问密码。",
     "share_interrupted": "应用转入后台时中断了。",
     "share_name_taken": "这个文件夹里已经有这个名字。",
     "share_photo_unavailable": "“照片”没有交出所选的其中一项。",
