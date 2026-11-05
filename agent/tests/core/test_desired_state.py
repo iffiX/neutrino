@@ -600,6 +600,31 @@ def test_an_installed_module_whose_runner_owes_a_file_is_installed_then_applied(
     assert engine.owing == set()
 
 
+@pytest.mark.parametrize("want", ["installed", "running"])
+def test_the_press_of_install_or_start_plans_the_install_a_runner_owes(tmp_path, want):
+    runners = {"podman": FakeRunner()}
+    held, engine = applier(runners, tmp_path=tmp_path)
+    engine.owing.add("podman")
+
+    run(held, state(podman=want))
+
+    assert [name for name, _ in engine.installs] == ["podman"]
+
+
+def test_a_join_that_adopts_a_module_stopped_plans_no_install_it_owes(tmp_path):
+    """A join changes nothing on the machine: the owed install waits for a
+    press of Install or Start."""
+    runners = {"podman": FakeRunner()}
+    held, engine = applier(runners, tmp_path=tmp_path)
+    engine.owing.add("podman")
+
+    run(held, state(podman="stopped"))
+
+    assert engine.installs == []
+    assert runners["podman"].applied == [{"n": "podman"}]
+    assert engine.owing == {"podman"}
+
+
 def test_an_installed_module_that_owes_nothing_plans_no_install(tmp_path):
     runners = {"samba": FakeRunner()}
     held, engine = applier(runners, tmp_path=tmp_path)

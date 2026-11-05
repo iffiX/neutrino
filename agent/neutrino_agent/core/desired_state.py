@@ -64,6 +64,7 @@ from neutrino_agent.constants import (
     AGENT_STEP_WAIT_MODULE,
     AGENT_WAIT_CHECK,
     AGENT_WANT_ABSENT,
+    AGENT_WANT_INSTALLED,
     AGENT_WANT_RUNNING,
     AGENT_WANT_STOPPED,
 )
@@ -111,6 +112,9 @@ APPLY_ORDER = (
 
 # The wants that apply the hub's configuration.
 CONFIGURING_WANTS = (AGENT_WANT_RUNNING, AGENT_WANT_STOPPED)
+# The wants Install and Start write, under which an install a runner owes
+# is planned. A join adopts a module stopped.
+OWED_INSTALL_WANTS = (AGENT_WANT_INSTALLED, AGENT_WANT_RUNNING)
 
 # The one failure the next state frame tries again: the socket went away
 # under the operation, and nothing about the machine made it fail.
@@ -546,8 +550,9 @@ class DesiredStateApplier:
         install failed, or this task or one the agent's stop cut already ran
         an install step; a present
         ``want`` plans the install when the software is missing, the last
-        install failed, or the runner lacks a file its install keeps, as
-        Containers' machine image on Windows and macOS, the version switch
+        install failed, or, under ``installed`` or ``running``, the runner
+        lacks a file its install keeps, as Containers' machine image on
+        Windows and macOS, the version switch
         when a ``hub`` module's kept
         version differs from its recipe's, then the configure steps under
         ``stopped`` and ``running``, less a second ``wait_module``.
@@ -585,7 +590,9 @@ class DesiredStateApplier:
         if (
             self._engine.is_install_failed(name)
             or not self._engine.is_installed(name, entry)
-            or self._engine.is_install_owed(name, entry)
+            or (
+                want in OWED_INSTALL_WANTS and self._engine.is_install_owed(name, entry)
+            )
         ):
             kind = PLAN_INSTALL
             steps += self._engine.install_steps(name, entry)
