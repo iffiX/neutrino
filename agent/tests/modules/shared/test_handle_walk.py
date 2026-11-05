@@ -167,8 +167,13 @@ def test_a_link_at_the_top_of_a_tree_gives_nothing(tmp_path, monkeypatch):
 
 class _Status:
     def __init__(self, found, uid, mode=None):
+        self._found = found
         self.st_uid = uid
         self.st_mode = found.st_mode if mode is None else mode
+
+    def __getattr__(self, name):
+        # pytest's own capture reads st_size through the patched os.fstat.
+        return getattr(self._found, name)
 
 
 def owners_seen(monkeypatch, owners: dict, modes: dict = None):
