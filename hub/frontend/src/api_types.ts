@@ -1517,6 +1517,10 @@ export interface FolderShareListView {
   shares: FolderShareView[];
   /** The file share's enabled accounts as applied, in their order. */
   accounts: string[];
+  /** What the hub deleted for a folder the machine reported gone, until the
+   * person's next change of the file share: `share_folder_removed {name,
+   * path}` and `share_home_removed {account, path}`. */
+  removals: ApplyChange[];
 }
 
 /** A folder share being added, or replaced under its name. */

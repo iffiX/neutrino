@@ -78,6 +78,7 @@ def test_an_add_stores_the_share_with_its_accounts_in_the_file_shares_order(
     assert answer.json() == {
         "shares": [{"name": "lab", "path": "/srv/lab", "accounts": ["bob", "alice"]}],
         "accounts": ["bob", "alice"],
+        "removals": [],
     }
     assert ("device-one", "samba", "folder", {"path": "/srv/lab"}) in (
         runtime.agent_sessions.commands
@@ -498,3 +499,21 @@ def test_the_home_shares_read_the_reported_home_for_an_empty_share_path(api):
     assert [command[3] for command in runtime.agent_sessions.commands] == [
         {"path": "/home/dave"}
     ]
+
+
+def test_the_hubs_removals_show_until_the_persons_next_change(api):
+    client, runtime = api
+    removal = {
+        "code": "share_folder_removed",
+        "params": {"name": "old", "path": "/srv/old"},
+    }
+    runtime.device_share_removals[DEVICE] = [removal]
+
+    shown = client.get(PATH, params={"device_id": DEVICE}).json()
+    again = client.get(PATH, params={"device_id": DEVICE}).json()
+    added = add(client).json()
+
+    assert shown["removals"] == [removal]
+    assert again["removals"] == [removal]
+    assert added["removals"] == []
+    assert DEVICE not in runtime.device_share_removals

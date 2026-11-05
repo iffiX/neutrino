@@ -27,6 +27,7 @@ from neutrino_hub.modules.devices.folder_shares import (
 from neutrino_hub.modules.services.file_ids import folder_share_id
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.models import (
+    ApplyChange,
     FolderShareListView,
     FolderShareRemove,
     FolderShareUpdate,
@@ -210,6 +211,7 @@ def remove_folder_share(
     require_online(context)
     written = without_folder_share(context.config, request.name)
     write_module_config(runtime, context.key, MODULE, written)
+    runtime.device_share_removals.pop(context.key, None)
     context.config = written
     try:
         ClientRegistry().forget_permission_rows(
@@ -274,6 +276,7 @@ def _save(
     )
     validate_config(runtime, context, written)
     write_module_config(runtime, context.key, MODULE, written)
+    runtime.device_share_removals.pop(context.key, None)
     context.config = written
     record_running(runtime, context)
     push_state(runtime, context.key)
@@ -282,10 +285,14 @@ def _save(
 
 
 def _view(runtime: PanelRuntime, context: DeviceModuleContext) -> FolderShareListView:
-    """The machine's folder shares as the File share tab reads them."""
+    """The machine's folder shares as the File share tab reads them, with what the hub removed for a folder gone."""
     return FolderShareListView(
         shares=[FolderShareView(**share) for share in folder_shares(context.config)],
         accounts=runtime.desired_states.enabled_accounts(context.key, MODULE),
+        removals=[
+            ApplyChange(**removal)
+            for removal in runtime.device_share_removals.get(context.key, [])
+        ],
     )
 
 

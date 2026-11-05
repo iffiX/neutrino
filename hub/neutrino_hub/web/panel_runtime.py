@@ -293,6 +293,10 @@ class PanelRuntime:
         # The most recent error each agent reported, keyed by device id:
         # ``{"code", "params"}``.
         self.device_last_error: dict[str, dict] = {}
+        # What the hub deleted of each device's file share for a folder the
+        # machine reported gone, ``{"code", "params"}`` each, until the
+        # person's next change of that file share.
+        self.device_share_removals: dict[str, list] = {}
         # The open enrolment tickets, read back from the state root.
         self.enrollments = ChannelTicketRegistry()
         # The failed admissions on the agent port, which pause join.
@@ -1037,6 +1041,7 @@ class PanelRuntime:
         self.device_address.pop(key, None)
         self.device_scope.pop(key, None)
         self.device_last_error.pop(key, None)
+        self.device_share_removals.pop(key, None)
         self.device_shares.withdraw(key)
         self.agent_sessions.refuse_from_thread(key, CHANNEL_CODE_BINDING_UNKNOWN)
         self.published_services.schedule_refresh()
