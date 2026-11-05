@@ -2729,9 +2729,14 @@ def test_the_managed_reason_is_one_text_with_its_code_in_both_languages():
     )
 
 
-def test_no_chinese_word_calls_a_computer_joined_to_the_hub_a_machine():
-    """Chinese writes 系统 and never 机器 (ui_text.md, "Names that are fixed")."""
-    held = [key for key, words in CATALOGS["zh-CN"].items() if "机器" in words]
+def test_chinese_words_name_a_computer_joined_to_the_hub_only_as_a_system():
+    """Chinese writes 系统 and never 机器, 设备 or 电脑 (ui_text.md, "Names that are
+    fixed")."""
+    held = [
+        key
+        for key, words in CATALOGS["zh-CN"].items()
+        if "机器" in words or "设备" in words or "电脑" in words
+    ]
 
     assert held == []
 
