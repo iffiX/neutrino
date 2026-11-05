@@ -14,7 +14,7 @@ import type { PickerOption } from "./picker";
 /**
  * The Ayakaleaf module on one machine: the AI model the editor's assistant
  * uses, from the models the gateway serves, its first row the gateway's
- * first model.
+ * default model.
  *
  * While the module runs, a new model rewrites the app's environment and
  * restarts the app. The bar then stays busy after its press until the machine
@@ -35,7 +35,7 @@ interface AyakaleafPanelsProps {
 /** The form's own field; the machine it is written to is the page's. */
 type AyakaleafDraft = Omit<AyakaleafModelUpdate, "device_id">;
 
-/** The picker's row for no model: the gateway's first. */
+/** The picker's row for no model: the gateway's default model. */
 const GATEWAY_DEFAULT = "";
 
 /** How long the bar waits for the app to run again after a press. */

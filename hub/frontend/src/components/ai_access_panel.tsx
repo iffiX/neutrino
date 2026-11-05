@@ -1,6 +1,9 @@
 import { useState } from "react";
 
+import { ApplyBar } from "./apply_bar";
 import { Icon } from "./icon";
+import { Picker } from "./picker";
+import type { PickerOption } from "./picker";
 import { apiPost, describeError } from "../api_client";
 import { copyText } from "../copy_text";
 import { formatTimeAgo } from "../format_duration";
@@ -25,10 +28,12 @@ import "./ai_access_panel.css";
  * is when somebody is holding the machine that needs it.
  *
  * Generating and revoking write where they are pressed: a revocation never
- * waits behind an apply bar.
+ * waits behind an apply bar. The default model is the panel's draft, which
+ * its apply bar writes.
  */
 
 const KEY_ADD_PATH = "/hub/ai/gateway/key/add";
+const GATEWAY_SET_PATH = "/hub/ai/gateway/set";
 const MASKED_KEY = "•".repeat(24);
 const COPIED_CLEAR_MS = 1600;
 
@@ -38,7 +43,11 @@ interface AiAccessPanelProps {
   keys: CliproxyApiKeyView[];
   /** The usage feed's per-key rows, for last-used and the owning client. */
   usageKeys: AiUsageKey[];
-  /** The status view a generate or a revoke answered with. */
+  /** The names the gateway serves now, by name. */
+  servedModels: string[];
+  /** The saved default model; empty while none is saved. */
+  defaultModel: string;
+  /** The status view a generate, a revoke or an apply answered with. */
   onChanged: (view: CliproxyApiStatusView) => void;
 }
 
@@ -46,6 +55,8 @@ export function AiAccessPanel({
   endpoint,
   keys,
   usageKeys,
+  servedModels,
+  defaultModel,
   onChanged,
 }: AiAccessPanelProps) {
   // Redrawn when the panel's language changes.
@@ -56,6 +67,29 @@ export function AiAccessPanel({
   const [freshKeyId, setFreshKeyId] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The picked default model; null until a row is picked.
+  const [pickedModel, setPickedModel] = useState<string | null>(null);
+  const [isModelBusy, setIsModelBusy] = useState(false);
+  const [modelError, setModelError] = useState<string | null>(null);
+  const [modelNotice, setModelNotice] = useState<string | null>(null);
+
+  const isSavedServed =
+    defaultModel === "" || servedModels.includes(defaultModel);
+  const savedRow = defaultModel || (servedModels[0] ?? "");
+  const shownRow = pickedModel ?? savedRow;
+  const isModelDirty = pickedModel !== null && pickedModel !== savedRow;
+  const modelOptions: PickerOption[] = [
+    ...(isSavedServed
+      ? []
+      : [
+          {
+            id: defaultModel,
+            name: defaultModel,
+            detail: t("ui.ai.default_model_not_served"),
+          },
+        ]),
+    ...servedModels.map((model) => ({ id: model, name: model })),
+  ];
 
   const usageByKeyId = new Map(usageKeys.map((entry) => [entry.key_id, entry]));
   const ordered =
@@ -105,6 +139,25 @@ export function AiAccessPanel({
     }
   };
 
+  const handleApplyModel = async () => {
+    setIsModelBusy(true);
+    setModelError(null);
+    setModelNotice(null);
+    try {
+      onChanged(
+        await apiPost<CliproxyApiStatusView>(GATEWAY_SET_PATH, {
+          default_model: pickedModel,
+        }),
+      );
+      setPickedModel(null);
+      setModelNotice(t("ui.api.applied"));
+    } catch (cause: unknown) {
+      setModelError(describeError(cause));
+    } finally {
+      setIsModelBusy(false);
+    }
+  };
+
   const askRevoke = (value: CliproxyApiKeyView, clientName: string | null) => {
     confirm.ask({
       title: t("ui.ai.revoke_title", { name: value.name }),
@@ -118,7 +171,9 @@ export function AiAccessPanel({
   };
 
   return (
-    <section className="settings_group">
+    <section
+      className={`settings_group ${isModelDirty ? "settings_group--dirty" : ""}`}
+    >
       <div className="settings_group_title">
         <h2>{t("ui.ai.access_title")}</h2>
         {!isNaming && (
@@ -138,6 +193,17 @@ export function AiAccessPanel({
       <p className="field_hint">{t("ui.ai.access_hint")}</p>
 
       <CopyRow label={t("ui.ai.endpoint")} value={endpoint} />
+
+      <Picker
+        options={modelOptions}
+        value={shownRow === "" ? null : shownRow}
+        onChange={(model) => {
+          setPickedModel(model);
+          setModelNotice(null);
+        }}
+        label={t("ui.ai.default_model")}
+        isDisabled={servedModels.length === 0 || isModelBusy}
+      />
 
       {error !== null && (
         <div className="notice notice--error">
@@ -219,6 +285,21 @@ export function AiAccessPanel({
           )}
         </div>
       )}
+      <ApplyBar
+        isDirty={isModelDirty}
+        isBusy={isModelBusy}
+        label={t("ui.ai.access_apply")}
+        hint={t("ui.ai.access_apply_hint")}
+        warning={t("ui.ai.access_apply_warning")}
+        error={modelError}
+        notice={modelNotice}
+        onReset={() => {
+          setPickedModel(null);
+          setModelError(null);
+          setModelNotice(null);
+        }}
+        onApply={() => void handleApplyModel()}
+      />
       {confirm.modal}
     </section>
   );

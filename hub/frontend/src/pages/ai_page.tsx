@@ -345,6 +345,8 @@ export function AiPage() {
         endpoint={endpoint}
         keys={view.client_keys}
         usageKeys={usage.data?.keys ?? []}
+        servedModels={servedModels}
+        defaultModel={view.default_model ?? ""}
         onChanged={status.setData}
       />
 

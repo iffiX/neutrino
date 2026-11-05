@@ -677,6 +677,9 @@ export interface CliproxyApiStatusView {
   /** Served over the current UTC day; absent until usage is collected. */
   requests_today?: number;
   tokens_today?: number;
+  /** The saved default model, kept while the gateway no longer serves it;
+   * empty while none is saved. */
+  default_model?: string;
 }
 
 /**
@@ -1910,7 +1913,7 @@ export interface AyakaleafDeviceView extends ModuleDeviceState {
   host: string;
   /** The forwarder's port as the machine reports it. */
   port: number;
-  /** The tab's AI model; empty for the gateway's first. */
+  /** The tab's AI model; empty for the gateway's default model. */
   model: string;
   /** The names the gateway serves, for the picker. */
   models: string[];
