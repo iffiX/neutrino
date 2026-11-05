@@ -80,6 +80,39 @@ SAMBA_NATIVE_RECORD_NAME = "samba_native.json"
 # How long one reading of the server's state is believed.
 SAMBA_NATIVE_STATUS_TTL_S = 30.0
 
+# The verb that reads whether a path is a real folder, and what a read of a
+# share's folder finds: a folder, nothing there, a link or a junction on its
+# way, or a path the reading account cannot reach.
+SAMBA_COMMAND_FOLDER = "folder"
+SAMBA_FOLDER_REAL = "folder"
+SAMBA_FOLDER_MISSING = "missing"
+SAMBA_FOLDER_LINK = "link"
+SAMBA_FOLDER_UNREACHABLE = "unreachable"
+# The row's code for each read that leaves a share off the server, and for a
+# share the SMB server refuses.
+SAMBA_FOLDER_CODES = {
+    SAMBA_FOLDER_MISSING: "share_path_missing",
+    SAMBA_FOLDER_UNREACHABLE: "share_path_missing",
+    SAMBA_FOLDER_LINK: "share_path_link",
+}
+SAMBA_SHARE_REFUSED_CODE = "share_not_served"
+# How long one read of a share's folder is believed at the report.
+SAMBA_FOLDER_READ_TTL_S = 30.0
+# What ``sh`` runs as the account to read the folder ``$0``: 0 for a folder,
+# 4 for a link at its last level, 5 for a path the account cannot reach, and
+# 3 for anything else.
+SAMBA_FOLDER_SHELL = (
+    'if [ -h "$0" ]; then exit 4; fi; if [ -d "$0" ]; then exit 0; fi; '
+    'case $(LC_ALL=C ls -d -- "$0" 2>&1) in *"ermission denied"*) exit 5;; esac; '
+    "exit 3"
+)
+SAMBA_FOLDER_SHELL_EXITS = {
+    0: SAMBA_FOLDER_REAL,
+    3: SAMBA_FOLDER_MISSING,
+    4: SAMBA_FOLDER_LINK,
+    5: SAMBA_FOLDER_UNREACHABLE,
+}
+
 # Windows: the start of the description of every share the module made,
 # which is also the description of every account it made.
 SAMBA_WINDOWS_MARKER = "neutrino:"

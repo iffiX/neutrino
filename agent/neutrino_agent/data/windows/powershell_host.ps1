@@ -431,53 +431,59 @@ function Set-NeutrinoShare {
             $notes += "removed share $name"
         }
     }
+    # A share the server refuses is left off, and every other one is served.
+    $refused = @()
     foreach ($s in @($Request.shares)) {
         if (-not $Request.is_served) {
             continue
         }
-        $wanted = @()
-        foreach ($u in @($s.accounts)) {
-            $wanted += "$computer\$u"
-        }
-        $held = Get-SmbShare -Name $s.name -ErrorAction SilentlyContinue
-        if ($held -and $held.Path -ne $s.path) {
-            Remove-SmbShare -Name $s.name -Force | Out-Null
-            $held = $null
-        }
-        if (-not $held) {
-            $made = @{Name = $s.name; Path = $s.path; Description = $s.description}
+        try {
+            $wanted = @()
+            foreach ($u in @($s.accounts)) {
+                $wanted += "$computer\$u"
+            }
+            $held = Get-SmbShare -Name $s.name -ErrorAction SilentlyContinue
+            if ($held -and $held.Path -ne $s.path) {
+                Remove-SmbShare -Name $s.name -Force | Out-Null
+                $held = $null
+            }
+            if (-not $held) {
+                $made = @{Name = $s.name; Path = $s.path; Description = $s.description}
+                if ($wanted.Count -eq 0) {
+                    $made.FullAccess = $Request.share_owner
+                } elseif ($s.share_right -eq 'Change') {
+                    $made.ChangeAccess = $wanted
+                } else {
+                    $made.ReadAccess = $wanted
+                }
+                New-SmbShare @made | Out-Null
+                $notes += "created share $($s.name)"
+                continue
+            }
+            Set-SmbShare -Name $s.name -Description $s.description -Force | Out-Null
+            foreach ($entry in @(Get-SmbShareAccess -Name $s.name)) {
+                $account = "$($entry.AccountName)"
+                $is_kept = ($wanted -contains $account) -and ("$($entry.AccessRight)" -eq $s.share_right)
+                if ($wanted.Count -eq 0) {
+                    $is_kept = $account -eq $Request.share_owner
+                }
+                if (-not $is_kept) {
+                    Revoke-SmbShareAccess -Name $s.name -AccountName $account -Force | Out-Null
+                }
+            }
+            foreach ($account in $wanted) {
+                Grant-SmbShareAccess -Name $s.name -AccountName $account `
+                    -AccessRight $s.share_right -Force | Out-Null
+            }
             if ($wanted.Count -eq 0) {
-                $made.FullAccess = $Request.share_owner
-            } elseif ($s.share_right -eq 'Change') {
-                $made.ChangeAccess = $wanted
-            } else {
-                $made.ReadAccess = $wanted
+                Grant-SmbShareAccess -Name $s.name -AccountName $Request.share_owner `
+                    -AccessRight Full -Force | Out-Null
             }
-            New-SmbShare @made | Out-Null
-            $notes += "created share $($s.name)"
-            continue
-        }
-        Set-SmbShare -Name $s.name -Description $s.description -Force | Out-Null
-        foreach ($entry in @(Get-SmbShareAccess -Name $s.name)) {
-            $account = "$($entry.AccountName)"
-            $is_kept = ($wanted -contains $account) -and ("$($entry.AccessRight)" -eq $s.share_right)
-            if ($wanted.Count -eq 0) {
-                $is_kept = $account -eq $Request.share_owner
-            }
-            if (-not $is_kept) {
-                Revoke-SmbShareAccess -Name $s.name -AccountName $account -Force | Out-Null
-            }
-        }
-        foreach ($account in $wanted) {
-            Grant-SmbShareAccess -Name $s.name -AccountName $account `
-                -AccessRight $s.share_right -Force | Out-Null
-        }
-        if ($wanted.Count -eq 0) {
-            Grant-SmbShareAccess -Name $s.name -AccountName $Request.share_owner `
-                -AccessRight Full -Force | Out-Null
+        } catch {
+            $refused += @{name = $s.name; detail = "$($_.Exception.Message)"}
         }
     }
-    return @{notes = $notes}
+    return @{notes = $notes; refused = $refused}
 }
 
 # Takes down the marked shares the record lists; with is_removed also

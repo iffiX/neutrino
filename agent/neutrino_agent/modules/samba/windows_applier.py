@@ -33,6 +33,11 @@ import os
 from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.samba.config import SambaConfig
 from neutrino_agent.modules.samba.constants import (
+    SAMBA_FOLDER_LINK,
+    SAMBA_FOLDER_MISSING,
+    SAMBA_FOLDER_REAL,
+    SAMBA_FOLDER_UNREACHABLE,
+    SAMBA_SHARE_REFUSED_CODE,
     SAMBA_WINDOWS_DENIED_RIGHTS,
     SAMBA_LINUX_USER_PREFIX,
     SAMBA_WINDOWS_FENCE_RULE,
@@ -247,6 +252,7 @@ class SambaWindowsApplier:
         *,
         is_sweep: bool = False,
         is_served: bool = True,
+        refused: "list | None" = None,
     ) -> list:
         """Make the server serve the configuration, and nothing else of ours.
 
@@ -270,6 +276,9 @@ class SambaWindowsApplier:
             is_served: Whether the server is started and the shares made.
                 False takes every share of the module's off the server and
                 makes the accounts and grants the folders alone.
+            refused: Takes ``share_not_served {name, detail}`` for each share
+                the host could not make or change, left off while the others
+                are served; None keeps them nowhere.
 
         Returns:
             What changed, one note each.
@@ -337,19 +346,41 @@ class SambaWindowsApplier:
             )
         for name in config.users:
             self._deny_logon(name)
+        for entry in _listed(answer.get("refused")):
+            entry = entry if isinstance(entry, dict) else {}
+            name = str(entry.get("name", ""))
+            detail = str(entry.get("detail", ""))[:500]
+            notes.append(f"left share {name} off the server: {detail}")
+            if refused is not None:
+                refused.append(
+                    {
+                        "code": SAMBA_SHARE_REFUSED_CODE,
+                        "params": {"name": name, "detail": detail},
+                    }
+                )
         return [str(note) for note in _listed(answer.get("notes"))] + notes
 
-    @staticmethod
-    def is_folder(path: str) -> bool:
-        """Whether a share's folder is on the computer. Nothing is made.
+    def read_folder(self, path: str) -> str:
+        """What a share's folder is, opened by handle with no reparse point followed. Nothing is made.
 
         Args:
             path: The share's folder.
 
         Returns:
-            True when the path names a folder.
+            ``folder``, ``missing``, ``link`` for a junction or a link at any
+            level, or ``unreachable``.
         """
-        return os.path.isdir(path)
+        try:
+            self._folders.check(path)
+        except (FileNotFoundError, NotADirectoryError):
+            return SAMBA_FOLDER_MISSING
+        except OSError as error:
+            if error.errno == errno.ELOOP:
+                return SAMBA_FOLDER_LINK
+            if error.errno in (errno.ENOENT, errno.ENOTDIR):
+                return SAMBA_FOLDER_MISSING
+            return SAMBA_FOLDER_UNREACHABLE
+        return SAMBA_FOLDER_REAL
 
     def _has_folder(self, path: str, notes: list) -> bool:
         """Whether a share's folder opens by handle with no reparse point on its way; a note for one that does not."""

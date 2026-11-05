@@ -226,6 +226,7 @@ def test_the_journal_reads_while_a_state_is_still_applying():
         ("agent", "account_password_test", False),
         ("agent", "journal", False),
         ("podman", "machine_read", True),
+        ("samba", "folder", True),
     ],
 )
 def test_only_the_reads_are_reading_commands(module, verb, is_reading):

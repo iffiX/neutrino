@@ -40,7 +40,7 @@ WINDOWS_PATH_PATTERN = re.compile(r"^[A-Za-z]:\\")
 WINDOWS_USER_NAME_MAX = 20
 
 
-def _is_absolute(path: str, os_name: str) -> bool:
+def is_absolute_path(path: str, os_name: str) -> bool:
     """Whether a share path is absolute on the system that serves it."""
     if os_name == "windows":
         return bool(WINDOWS_PATH_PATTERN.match(path))
@@ -170,7 +170,7 @@ class SambaConfig:
             if lowered in seen_shares:
                 raise ModuleApplyError("share_name_duplicate", {"name": share.name})
             seen_shares.add(lowered)
-            if not _is_absolute(share.path, os_name):
+            if not is_absolute_path(share.path, os_name):
                 raise ModuleApplyError(
                     "share_path_relative", {"name": share.name, "path": share.path}
                 )

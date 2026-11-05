@@ -1266,17 +1266,3 @@ def test_a_machine_with_no_getenforce_runs_nothing(monkeypatch, turn):
     assert getattr(SambaSelinuxApplier(), turn)() is False
 
     assert commands.calls == []
-
-
-# --- a share's folder ---
-
-
-def test_a_share_folder_is_read_and_never_made(box):
-    """The folder's place, owner and mode are the person's."""
-    _, tmp_path = box
-    path = tmp_path / "home" / "ann" / "share"
-    applier = SambaConfigApplier(unit="smbd.service")
-
-    assert applier.is_folder(str(path)) is False
-    assert applier.is_folder(str(tmp_path / "srv" / "s")) is True
-    assert not path.exists()

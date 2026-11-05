@@ -1037,3 +1037,28 @@ def test_a_folder_behind_a_link_in_roots_place_is_left_ungranted(
     assert tools.ran("chmod", "+a") == []
     assert tools.ran("mkdir") == []
     assert any("left /Volumes/data/ann ungranted" in note for note in notes)
+
+
+def test_a_share_point_sharing_refuses_is_left_off_and_the_rest_made(applier, tools):
+    """R146 F1: ``sharing -a`` refused a share and its error ended the apply."""
+    tools.failing = {("sharing", "-a", "/Volumes/data/media")}
+    refused: list = []
+
+    notes = applier.apply(CONFIG, {}, refused=refused)
+
+    assert [call[2] for call in tools.ran("sharing", "-a")] == [
+        "/Volumes/data/media",
+        "/Volumes/data/docs",
+    ]
+    assert refused == [
+        {
+            "code": "share_not_served",
+            "params": {"name": "media", "detail": "refused"},
+        }
+    ]
+    assert "left share media off the server: refused" in notes
+    assert "created share docs" in notes
+
+
+def test_a_share_folder_with_no_platform_to_read_it_reads_as_unreachable(applier):
+    assert applier.read_folder("/Users/ann/share") == "unreachable"

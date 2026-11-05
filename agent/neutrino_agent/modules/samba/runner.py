@@ -9,8 +9,9 @@ never imported. A root-only record under the agent's work root keeps the
 digest of each password the module set, so a password is set again only
 when the hub's differs. The record also stores whether the module turned the
 SELinux boolean on, and an uninstall turns off only what the module turned on.
-A share whose folder is not on the machine is left off the server, and no
-folder is made.
+A share whose folder is no real folder is left off the server with its code,
+and no folder is made. The report lists each share the state names whose
+folder is no longer there, for the hub to delete.
 
 A Samba that was on the machine before the module installed it is the person's.
 The record marks a Samba the install step found missing and installed. On either
@@ -48,7 +49,7 @@ from neutrino_agent.constants import (
     AGENT_WANT_STOPPED,
 )
 from neutrino_agent.exceptions import ModuleApplyError
-from neutrino_agent.modules.shared.base import ModuleRunner
+from neutrino_agent.modules.shared.base import ModuleRunner, command_outcome
 from neutrino_agent.modules.samba.applier import (
     SambaConfigApplier,
     SambaConfigReader,
@@ -62,10 +63,11 @@ from neutrino_agent.modules.samba.applier import (
     remove_conf,
     testparm,
 )
-from neutrino_agent.modules.samba.config import SambaConfig
+from neutrino_agent.modules.samba.config import SambaConfig, is_absolute_path
 from neutrino_agent.modules.samba.constants import (
     SAMBA_ACCOUNT_REFUSALS,
     SAMBA_BINARY_NAME,
+    SAMBA_COMMAND_FOLDER,
     SAMBA_LINUX_USER_PREFIX,
     SAMBA_NATIVE_RECORD_NAME,
     SAMBA_NATIVE_STATUS_TTL_S,
@@ -73,6 +75,12 @@ from neutrino_agent.modules.samba.constants import (
     SAMBA_SELINUX_BOOLEAN,
     samba_name_unit,
     samba_unit,
+)
+from neutrino_agent.modules.samba.folder_reader import (
+    SambaFolderReader,
+    folder_refusal,
+    read_posix_folder,
+    refused_notes,
 )
 from neutrino_agent.modules.samba.renderer import SambaConfigRenderer
 from neutrino_agent.modules.shared.step_locks import SYSTEM_ACCOUNTS_LOCKS
@@ -123,39 +131,13 @@ def stopped_configure_steps(want: str, steps: list, run_stopped) -> list:
     ]
 
 
-def without_missing_folders(config: SambaConfig, is_folder) -> tuple:
-    """The configuration less each served share whose folder is not on the machine.
-
-    Args:
-        config: The parsed configuration.
-        is_folder: Whether a path names a folder on the machine.
-
-    Returns:
-        ``(config, missing)``: the configuration with those shares taken
-        out, and each such share in its order.
-    """
-    missing = [share for share in config.served_shares() if not is_folder(share.path)]
-    if not missing:
-        return config, []
-    names = {share.name for share in missing}
-    kept = [share for share in config.shares if share.name not in names]
-    return dataclasses.replace(config, shares=kept), missing
-
-
-def missing_notes(missing: list) -> list:
-    """One note for each share left off the server for its missing folder. Pure."""
-    return [
-        f"left share {share.name} off the server: {share.path} does not exist"
-        for share in missing
-    ]
-
-
-def share_notice(left_out: list, missing: list) -> dict:
-    """The row's notice: ``share_users_unknown {shares}``, else ``share_path_missing {name, path}`` of the first share whose folder is missing.
+def share_notice(left_out: list, unserved: list) -> dict:
+    """The row's notice: ``share_users_unknown {shares}``, else the code of the first share left off the server.
 
     Args:
         left_out: The names of the shares left out for want of an account.
-        missing: The shares left out for want of their folder.
+        unserved: ``{"code", "params"}`` of each share left off for its
+            folder or refused by the server, in the configuration's order.
 
     Returns:
         ``{"code", "params"}``, empty while neither holds.
@@ -165,12 +147,35 @@ def share_notice(left_out: list, missing: list) -> dict:
             "code": "share_users_unknown",
             "params": {"shares": ", ".join(left_out)},
         }
-    if missing:
+    if unserved:
         return {
-            "code": "share_path_missing",
-            "params": {"name": missing[0].name, "path": missing[0].path},
+            "code": str(unserved[0]["code"]),
+            "params": dict(unserved[0]["params"]),
         }
     return {}
+
+
+def folder_command(args: dict, read, os_name: str) -> dict:
+    """The ``folder`` verb: whether a path is a real folder, read at once.
+
+    Args:
+        args: ``{"path"}``.
+        read: Called with the path; returns what the folder is.
+        os_name: The system, which says what an absolute path is.
+
+    Returns:
+        ``{"exit_code", "code", "params", "output"}``: no code for a real
+        folder, ``share_path_missing {path}`` or ``share_path_link
+        {path}`` else, and ``path_invalid {path}`` for a path that is not
+        absolute.
+    """
+    path = str(args.get("path", "") or "")
+    if not is_absolute_path(path, os_name):
+        return command_outcome(1, "path_invalid", {"path": path})
+    refusal = folder_refusal(read(path), path)
+    if refusal:
+        return command_outcome(1, refusal["code"], refusal["params"])
+    return command_outcome(0)
 
 
 class SambaModuleRunner(SystemPackageModuleRunner):
@@ -197,7 +202,8 @@ class SambaModuleRunner(SystemPackageModuleRunner):
         self._record_path = os.path.join(self._var_dir, SAMBA_RECORD_NAME)
         self._config: "SambaConfig | None" = None
         self._left_out: list = []
-        self._missing: list = []
+        self._unserved: list = []
+        self._folders = SambaFolderReader(read=self._read_folder)
 
     @property
     def unit(self) -> str:
@@ -214,6 +220,33 @@ class SambaModuleRunner(SystemPackageModuleRunner):
             The step locks the module adds to the step.
         """
         return account_step_locks(step)
+
+    def take_config(self, config: dict) -> None:
+        """Take the shares the state names, whose folders the report reads.
+
+        Args:
+            config: The module's configuration in the state.
+        """
+        self._folders.take_config(config)
+
+    def command(self, verb: str, args: dict, on_line=None) -> dict:
+        """Run one of this module's verbs: ``folder`` beside every module's.
+
+        Args:
+            verb: The verb on the wire, without the module's name.
+            args: ``{"path"}`` for ``folder``.
+            on_line: Called with each output line as it is produced.
+
+        Returns:
+            ``{"exit_code", "code", "params", "output"}``.
+        """
+        if verb == SAMBA_COMMAND_FOLDER:
+            return folder_command(args, self._folders.read, self._platform.os_name)
+        return super().command(verb, args, on_line)
+
+    def _read_folder(self, path: str) -> str:
+        """What a share's folder is, read by whoever owns its place."""
+        return read_posix_folder(path, platform=self._platform)
 
     def validate(self, config: dict) -> None:
         """Parse, check and render a configuration, then have Samba check it.
@@ -288,7 +321,7 @@ class SambaModuleRunner(SystemPackageModuleRunner):
         parsed = SambaConfig.from_dict(config)
         parsed.validate()
         applier = SambaConfigApplier(unit=self._unit)
-        parsed, missing = without_missing_folders(parsed, applier.is_folder)
+        parsed, unserved = self._folders.served(parsed)
         users = SambaUserManager()
         users.check_accounts(parsed.forced_users())
         record = _read_record(self._record_path)
@@ -340,10 +373,10 @@ class SambaModuleRunner(SystemPackageModuleRunner):
             write_record(self._record_path, written)
         self._config = parsed
         self._left_out = renderer.left_out()
-        self._missing = missing
+        self._unserved = unserved
         if self._left_out:
             changes.append("left out " + ", ".join(self._left_out))
-        changes += missing_notes(missing)
+        changes += refused_notes(unserved)
         self._log("samba: " + "; ".join([note] + changes))
 
     def _keep_found_units(self, record: dict) -> None:
@@ -386,8 +419,8 @@ class SambaModuleRunner(SystemPackageModuleRunner):
             os.unlink(self._record_path)
 
     def notice(self) -> dict:
-        """``share_users_unknown {shares}`` or ``share_path_missing {name, path}`` while the last apply left shares out."""
-        return share_notice(self._left_out, self._missing)
+        """``share_users_unknown {shares}``, else the code of the first share the last apply left off the server."""
+        return share_notice(self._left_out, self._unserved)
 
     def stop(self) -> None:
         """Take the server and the name server down and disable them, on any Samba.
@@ -533,7 +566,8 @@ class SambaModuleRunner(SystemPackageModuleRunner):
         """
         self._config = None
         self._left_out = []
-        self._missing = []
+        self._unserved = []
+        self._folders.forget()
         SambaConfigApplier(unit=self._unit).withdraw()
         if is_selinux_boolean_ours(self._record_path):
             self._turn_selinux_boolean(SambaSelinuxApplier().turn_off, "off")
@@ -620,8 +654,9 @@ class SambaModuleRunner(SystemPackageModuleRunner):
 
         Returns:
             ``{"is_active", "global", "shares", "users", "sessions",
-            "disk_usage"}``, each user ``{"name", "is_present",
-            "has_password"}`` and each share ``{"name", "path", "params"}``.
+            "disk_usage", "missing_shares"}``, each user ``{"name",
+            "is_present", "has_password"}``, each share ``{"name", "path",
+            "params"}`` and each missing share ``{"name", "path"}``.
         """
         config = self._config or SambaConfig()
         reader = SambaStatusReader()
@@ -644,6 +679,7 @@ class SambaModuleRunner(SystemPackageModuleRunner):
             "users": [vars(state) for state in users],
             "sessions": reader.sessions(),
             "disk_usage": reader.disk_usage(config),
+            "missing_shares": self._folders.missing_shares(self.ask_configure),
         }
 
 
@@ -762,7 +798,8 @@ class SambaNativeServerRunner(ModuleRunner):
         self._clock = clock
         self._config: "SambaConfig | None" = None
         self._left_out: list = []
-        self._missing: list = []
+        self._unserved: list = []
+        self._folders = SambaFolderReader(read=self._read_folder, clock=clock)
         self._lock = threading.Lock()
         # One open of the record at a time.
         self._record_lock = threading.Lock()
@@ -832,6 +869,33 @@ class SambaNativeServerRunner(ModuleRunner):
         """
         SambaConfig.from_dict(config).validate(os_name=self._platform.os_name)
 
+    def take_config(self, config: dict) -> None:
+        """Take the shares the state names, whose folders the report reads.
+
+        Args:
+            config: The module's configuration in the state.
+        """
+        self._folders.take_config(config)
+
+    def command(self, verb: str, args: dict, on_line=None) -> dict:
+        """Run one of this module's verbs: ``folder`` beside every module's.
+
+        Args:
+            verb: The verb on the wire, without the module's name.
+            args: ``{"path"}`` for ``folder``.
+            on_line: Called with each output line as it is produced.
+
+        Returns:
+            ``{"exit_code", "code", "params", "output"}``.
+        """
+        if verb == SAMBA_COMMAND_FOLDER:
+            return folder_command(args, self._folders.read, self._platform.os_name)
+        return super().command(verb, args, on_line)
+
+    def _read_folder(self, path: str) -> str:
+        """What a share's folder is, as the system's applier reads it."""
+        return self._applier.read_folder(path)
+
     def configure_steps(self, config: dict, want: str, steps: list) -> list:
         """The core's steps, the ``configure`` under ``stopped`` serving no share and starting no server.
 
@@ -887,7 +951,7 @@ class SambaNativeServerRunner(ModuleRunner):
         """Converge the server with the configuration. With ``is_served`` false no share is served."""
         parsed = SambaConfig.from_dict(config)
         parsed.validate(os_name=self._platform.os_name)
-        parsed, missing = without_missing_folders(parsed, self._applier.is_folder)
+        parsed, unserved = self._folders.served(parsed)
         record = self._read_record()
         is_sweep = not os.path.exists(
             os.path.join(
@@ -902,6 +966,7 @@ class SambaNativeServerRunner(ModuleRunner):
         self._write_record(dict(record, shares=shares))
         record = dict(record, shares=shares)
         refusal = None
+        server_refused: list = []
         try:
             if is_served or self.is_active():
                 record = self._keep_found_server(record)
@@ -910,6 +975,7 @@ class SambaNativeServerRunner(ModuleRunner):
                 record,
                 is_sweep=is_sweep,
                 is_served=is_served,
+                refused=server_refused,
             )
         except ModuleApplyError as error:
             if error.code not in SAMBA_ACCOUNT_REFUSALS:
@@ -946,17 +1012,17 @@ class SambaNativeServerRunner(ModuleRunner):
         self._write_record(written)
         self._config = parsed
         self._left_out = [share.name for share in parsed.shares if share not in served]
-        self._missing = missing
+        self._unserved = unserved + server_refused
         if self._left_out:
             notes.append("left out " + ", ".join(self._left_out))
-        notes += missing_notes(missing)
+        notes += refused_notes(unserved)
         self._log("samba: " + "; ".join(notes or ["unchanged"]))
         if refusal is not None:
             raise refusal
 
     def notice(self) -> dict:
-        """``share_users_unknown {shares}`` or ``share_path_missing {name, path}`` while the last apply left shares out."""
-        return share_notice(self._left_out, self._missing)
+        """``share_users_unknown {shares}``, else the code of the first share the last apply left off the server."""
+        return share_notice(self._left_out, self._unserved)
 
     def _set_passwords(self, config: SambaConfig, held: dict, refused: str) -> dict:
         """Set each account's password that differs from the one set last.
@@ -1068,7 +1134,8 @@ class SambaNativeServerRunner(ModuleRunner):
         record = self._read_record()
         self._config = None
         self._left_out = []
-        self._missing = []
+        self._unserved = []
+        self._folders.forget()
         try:
             self._applier.withdraw(record, is_removed=True)
         finally:
@@ -1095,8 +1162,8 @@ class SambaNativeServerRunner(ModuleRunner):
 
         Returns:
             ``{"is_active", "global", "shares", "users", "sessions",
-            "disk_usage"}`` in the shapes the Linux module reports,
-            ``global`` empty.
+            "disk_usage", "missing_shares"}`` in the shapes the Linux module
+            reports, ``global`` empty.
         """
         status = self._read_status()
         return {
@@ -1106,6 +1173,7 @@ class SambaNativeServerRunner(ModuleRunner):
             "users": list(status.get("users") or []),
             "sessions": list(status.get("sessions") or []),
             "disk_usage": SambaStatusReader().disk_usage(self._config or SambaConfig()),
+            "missing_shares": self._folders.missing_shares(self.ask_configure),
         }
 
     def journal_text(self, lines: int) -> list:

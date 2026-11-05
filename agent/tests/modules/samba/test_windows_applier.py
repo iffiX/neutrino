@@ -804,3 +804,61 @@ def test_an_apply_starts_again_the_services_a_stop_took_down():
 
     request = next(call[1] for call in host.calls if call[0] == "share_apply")
     assert request["server_dependents"] == ["Browser"]
+
+
+def test_a_share_the_host_could_not_make_is_named_and_the_rest_granted():
+    """R146 F1 on Windows: one share the server refuses stops no other."""
+    host = RecordingHost(
+        {
+            "share_apply": {
+                "notes": ["created share docs"],
+                "refused": [{"name": "media", "detail": "The device is not ready."}],
+            }
+        }
+    )
+    folders = Icacls()
+    refused: list = []
+
+    notes = applier_with(host, run=folders, denied=[]).apply(
+        CONFIG, {}, refused=refused
+    )
+
+    assert refused == [
+        {
+            "code": "share_not_served",
+            "params": {"name": "media", "detail": "The device is not ready."},
+        }
+    ]
+    assert "left share media off the server: The device is not ready." in notes
+    assert "created share docs" in notes
+
+
+class Handles:
+    """A folder opened by handle: each path's error, or none for a real folder."""
+
+    def __init__(self, errors):
+        self.errors = dict(errors)
+
+    def check(self, path):
+        if path in self.errors:
+            raise self.errors[path]
+
+
+def test_a_folder_read_by_handle_names_what_it_found():
+    applier = applier_with(
+        RecordingHost(),
+        run=Handles(
+            {
+                "D:\\gone": FileNotFoundError(errno.ENOENT, "not found"),
+                "D:\\file": OSError(errno.ENOTDIR, "D:\\file is no folder"),
+                "D:\\junction": OSError(errno.ELOOP, "a junction"),
+                "D:\\closed": PermissionError(errno.EACCES, "denied"),
+            }
+        ),
+    )
+
+    assert applier.read_folder("D:\\share") == "folder"
+    assert applier.read_folder("D:\\gone") == "missing"
+    assert applier.read_folder("D:\\file") == "missing"
+    assert applier.read_folder("D:\\junction") == "link"
+    assert applier.read_folder("D:\\closed") == "unreachable"

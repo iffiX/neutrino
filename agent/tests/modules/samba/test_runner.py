@@ -130,15 +130,18 @@ class FakeApplier:
     user_files: dict = {}
     # Whether the unit is active as the applier reads it.
     is_unit_active = True
-    # The share folders the machine does not have.
+    # The share folders the machine does not have, and those that are links.
     missing: set = set()
+    links: set = set()
 
     def __init__(self, *, unit):
         self.unit = unit
 
     @staticmethod
-    def is_folder(path):
-        return path not in FakeApplier.missing
+    def read_folder(path, *, platform=None):
+        if path in FakeApplier.missing:
+            return "missing"
+        return "link" if path in FakeApplier.links else "folder"
 
     def plan(self, *, is_served):
         FakeApplier.served.append(is_served)
@@ -265,6 +268,7 @@ def runner(monkeypatch, tmp_path):
     FakeApplier.applied = []
     FakeApplier.started = []
     FakeApplier.missing = set()
+    FakeApplier.links = set()
     FakeApplier.stops = 0
     FakeApplier.starts = 0
     FakeApplier.removals = 0
@@ -283,6 +287,7 @@ def runner(monkeypatch, tmp_path):
     (tmp_path / "configured").mkdir()
     (tmp_path / "configured" / "samba").write_text("")
     monkeypatch.setattr(runner_module, "SambaConfigApplier", FakeApplier)
+    monkeypatch.setattr(runner_module, "read_posix_folder", FakeApplier.read_folder)
     monkeypatch.setattr(runner_module, "SambaUserManager", FakeUsers)
     monkeypatch.setattr(runner_module, "testparm", lambda smb_conf, rendered: None)
     monkeypatch.setattr(
@@ -327,12 +332,75 @@ def test_a_share_whose_folder_is_missing_is_left_off_and_named_on_the_row(runner
         "params": {"name": "gone", "path": "/srv/gone"},
     }
     assert any(
-        "left share gone off the server: /srv/gone does not exist" in line
-        for line in lines
+        "left share gone off the server: share_path_missing" in line for line in lines
     )
     FakeApplier.missing = set()
     runner.apply(TWO_SHARES)
     assert runner.notice() == {}
+
+
+def test_a_share_whose_folder_is_a_link_is_left_off_and_the_rest_served(runner):
+    FakeApplier.links = {"/srv/gone"}
+
+    runner.apply(TWO_SHARES)
+
+    _unit, rendered, config = FakeApplier.applied[-1]
+    assert [share.name for share in config.shares] == ["share"]
+    assert "[share]" in rendered
+    assert runner.notice() == {
+        "code": "share_path_link",
+        "params": {"name": "gone", "path": "/srv/gone"},
+    }
+
+
+@pytest.mark.parametrize(
+    ("path", "outcome"),
+    [
+        ("/srv/share", {"exit_code": 0, "code": "", "params": {}}),
+        (
+            "/srv/gone",
+            {
+                "exit_code": 1,
+                "code": "share_path_missing",
+                "params": {"path": "/srv/gone"},
+            },
+        ),
+        (
+            "/srv/link",
+            {
+                "exit_code": 1,
+                "code": "share_path_link",
+                "params": {"path": "/srv/link"},
+            },
+        ),
+        (
+            "srv/share",
+            {"exit_code": 1, "code": "path_invalid", "params": {"path": "srv/share"}},
+        ),
+    ],
+)
+def test_the_folder_verb_reads_a_path_at_once(runner, path, outcome):
+    FakeApplier.missing = {"/srv/gone"}
+    FakeApplier.links = {"/srv/link"}
+
+    answer = runner.command("folder", {"path": path})
+
+    assert {name: answer[name] for name in ("exit_code", "code", "params")} == outcome
+    assert FakeApplier.applied == []
+
+
+def test_the_details_list_each_share_of_the_state_whose_folder_is_gone(
+    runner, monkeypatch
+):
+    runner.take_config(TWO_SHARES)
+    runner.apply(TWO_SHARES)
+    samba_commands(monkeypatch)
+    FakeApplier.missing = {"/srv/gone"}
+    runner._folders._clock = lambda: 1e12
+
+    details = observed(runner)["details"]
+
+    assert details["missing_shares"] == [{"name": "gone", "path": "/srv/gone"}]
 
 
 def test_a_share_with_no_account_is_named_before_a_missing_folder(runner):
@@ -1570,6 +1638,7 @@ def test_observe_reads_what_samba_itself_says_of_the_machine(runner, monkeypatch
         "users",
         "sessions",
         "disk_usage",
+        "missing_shares",
     }
     assert details["global"] == {
         "map to guest": "Bad User",
@@ -1637,6 +1706,9 @@ class FakeNativeApplier:
 
     def __init__(self):
         self.missing: set = set()
+        self.links: set = set()
+        # The shares the server refuses to make, by name, with its words.
+        self.refusing: dict = {}
         self.calls: list = []
         self.sweeps: list = []
         self.served: list = []
@@ -1647,8 +1719,10 @@ class FakeNativeApplier:
         self.dependents: list = []
         self.stop_refusal = None
 
-    def is_folder(self, path):
-        return path not in self.missing
+    def read_folder(self, path):
+        if path in self.missing:
+            return "missing"
+        return "link" if path in self.links else "folder"
 
     def read_server(self):
         return dict(self.server)
@@ -1672,7 +1746,7 @@ class FakeNativeApplier:
         self.reads += 1
         return dict(self.status)
 
-    def apply(self, config, record, *, is_sweep=False, is_served=True):
+    def apply(self, config, record, *, is_sweep=False, is_served=True, refused=None):
         self.calls.append(("apply", config.to_dict(), record))
         self.sweeps.append(is_sweep)
         self.served.append(is_served)
@@ -1680,6 +1754,17 @@ class FakeNativeApplier:
             raise self.error
         if is_served:
             self.status = dict(self.status, is_running=True)
+        for share in config.served_shares():
+            if share.name in self.refusing and refused is not None:
+                refused.append(
+                    {
+                        "code": "share_not_served",
+                        "params": {
+                            "name": share.name,
+                            "detail": self.refusing[share.name],
+                        },
+                    }
+                )
         return ["created share share"]
 
     def withdraw(self, record, *, is_removed):
@@ -1760,6 +1845,81 @@ def test_a_native_share_whose_folder_is_missing_is_left_off_and_named_on_the_row
         "params": {"name": "share", "path": "D:\\share"},
     }
     assert record_of(native)["shares"] == {}
+
+
+TWO_WINDOWS_SHARES = {
+    "shares": [
+        {"name": "share", "path": "D:\\share", "valid_users": ["neutrino-ann"]},
+        {"name": "media", "path": "D:\\media", "valid_users": ["neutrino-ann"]},
+        {"name": "lab", "path": "D:\\lab", "valid_users": ["neutrino-ann"]},
+    ],
+    "users": ["neutrino-ann"],
+    "passwords": {"neutrino-ann": "pw"},
+}
+
+
+def test_a_native_share_the_server_refuses_is_left_off_and_the_rest_served(native):
+    """One share that cannot be served never stops the others (R146 F1)."""
+    native.applier.links = {"D:\\lab"}
+    native.applier.refusing = {"media": "The path is not a directory."}
+
+    native.apply(TWO_WINDOWS_SHARES)
+
+    _name, config, _record = [
+        call for call in native.applier.calls if call[0] == "apply"
+    ][-1]
+    assert [share["name"] for share in config["shares"]] == ["share", "media"]
+    assert native.notice() == {
+        "code": "share_path_link",
+        "params": {"name": "lab", "path": "D:\\lab"},
+    }
+    native.applier.links = set()
+    native.apply(TWO_WINDOWS_SHARES)
+    assert native.notice() == {
+        "code": "share_not_served",
+        "params": {"name": "media", "detail": "The path is not a directory."},
+    }
+
+
+def test_the_native_folder_verb_reads_a_windows_path(native):
+    native.applier.missing = {"D:\\gone"}
+
+    found = native.command("folder", {"path": "D:\\gone"})
+    real = native.command("folder", {"path": "D:\\share"})
+    relative = native.command("folder", {"path": "/srv/share"})
+
+    assert (found["code"], found["params"]) == (
+        "share_path_missing",
+        {"path": "D:\\gone"},
+    )
+    assert (real["exit_code"], real["code"]) == (0, "")
+    assert relative["code"] == "path_invalid"
+    assert [call for call in native.applier.calls if call[0] == "apply"] == []
+
+
+def test_the_native_details_list_each_share_whose_folder_is_gone(native):
+    native.take_config(TWO_WINDOWS_SHARES)
+    native.apply(TWO_WINDOWS_SHARES)
+    native.applier.missing = {"D:\\media"}
+    native.clock.now += 31
+
+    details = native.details({})
+
+    assert details["missing_shares"] == [{"name": "media", "path": "D:\\media"}]
+
+
+def test_a_native_folder_turned_into_a_link_asks_for_a_configure_task(native):
+    native.take_config(TWO_WINDOWS_SHARES)
+    native.apply(TWO_WINDOWS_SHARES)
+    asked: list = []
+    native.bind_configure_asker(lambda: asked.append("samba"))
+    native.applier.links = {"D:\\lab"}
+    native.clock.now += 31
+
+    native.details({})
+    native.details({})
+
+    assert asked == ["samba"]
 
 
 def test_the_native_server_s_account_steps_take_system_accounts(native):
@@ -2397,6 +2557,7 @@ def test_the_details_have_the_linux_shape_and_no_fence(native):
         "users",
         "sessions",
         "disk_usage",
+        "missing_shares",
     }
     assert details["global"] == {}
 

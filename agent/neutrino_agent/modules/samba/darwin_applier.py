@@ -8,7 +8,8 @@ NT hash turned on first. Folders are granted to each SMB user and its
 machine account with ``chmod +a``, each as whoever owns the folder's
 place: the account that owns a level of its path, else root, and a path
 through a link or a folder others may write is left alone. A missing
-folder is never made. The module fences nothing: the pf
+folder is never made, and a share point ``sharing`` refuses is left off
+while every other share is served. The module fences nothing: the pf
 sub-anchor an earlier version fenced SMB in is emptied, and the rules file
 it kept deleted, at the first apply that finds the file.
 
@@ -47,7 +48,10 @@ from neutrino_agent.modules.samba.constants import (
     SAMBA_DARWIN_SMBD_PLIST,
     SAMBA_DARWIN_SMBD_LABEL,
     SAMBA_DARWIN_SMBD_TARGET,
+    SAMBA_FOLDER_UNREACHABLE,
+    SAMBA_SHARE_REFUSED_CODE,
 )
+from neutrino_agent.modules.samba.folder_reader import read_posix_folder
 from neutrino_agent.modules.shared.account_files import AccountFiles
 from neutrino_agent.modules.shared.handle_walk import place_owner
 from neutrino_agent.modules.shared.subprocess_run import CommandResult
@@ -180,17 +184,18 @@ class SambaDarwinApplier:
         self._run = run if run is not None else run_command
         self._platform = platform
 
-    @staticmethod
-    def is_folder(path: str) -> bool:
-        """Whether a share's folder is on the Mac. Nothing is made.
+    def read_folder(self, path: str) -> str:
+        """What a share's folder is, read by whoever owns its place. Nothing is made.
 
         Args:
             path: The share's folder.
 
         Returns:
-            True when the path names a folder.
+            ``folder``, ``missing``, ``link`` or ``unreachable``.
         """
-        return os.path.isdir(path)
+        if self._platform is None:
+            return SAMBA_FOLDER_UNREACHABLE
+        return read_posix_folder(path, platform=self._platform)
 
     def read_status(self, record: dict) -> dict:
         """What the server holds of the module's, read now.
@@ -217,6 +222,7 @@ class SambaDarwinApplier:
         *,
         is_sweep: bool = False,
         is_served: bool = True,
+        refused: "list | None" = None,
     ) -> list:
         """Make the server serve the configuration, and nothing else of ours.
 
@@ -234,6 +240,9 @@ class SambaDarwinApplier:
             is_served: Whether smbd is started and the share points made.
                 False takes every point of the module's off the server and
                 makes the accounts and grants the folders alone.
+            refused: Takes ``share_not_served {name, detail}`` for each share
+                point ``sharing`` refuses, left off while the others are
+                made; None keeps them nowhere.
 
         Returns:
             What changed, one note each.
@@ -272,14 +281,15 @@ class SambaDarwinApplier:
             notes += self._serve()
         account_notes, refusals = self._converge_accounts(config, owned_accounts)
         notes += account_notes
-        refused = {refusal.params["user"] for refusal in refusals}
+        refused_users = {refusal.params["user"] for refusal in refusals}
         notes += self._converge_shares(
             config,
             owned_shares,
             owned_accounts,
             points,
-            refused=refused,
+            refused=refused_users,
             is_served=is_served,
+            unserved=refused if refused is not None else [],
         )
         if refusals:
             raise refusals[0]
@@ -630,12 +640,15 @@ class SambaDarwinApplier:
         *,
         refused: "set | None" = None,
         is_served: bool = True,
+        unserved: "list | None" = None,
     ) -> list:
         """Keep one point per served share, and remove the module's others.
 
         An account in ``refused`` does not exist as one, so no folder names
         it. With ``is_served`` false every point of the module's goes and
-        the folders are granted alone.
+        the folders are granted alone. A point ``sharing`` refuses to make
+        is left off, ``share_not_served {name, detail}`` added to
+        ``unserved``, and the next share is made.
         """
         refused = refused or set()
         notes = []
@@ -694,7 +707,18 @@ class SambaDarwinApplier:
             ]
             if share.is_read_only:
                 command += ["-R", "1"]
-            self._run(command)
+            made = self._run(command, is_checked=False)
+            if not made.is_success:
+                detail = tool_line(made)
+                notes.append(f"left share {share.name} off the server: {detail}")
+                if unserved is not None:
+                    unserved.append(
+                        {
+                            "code": SAMBA_SHARE_REFUSED_CODE,
+                            "params": {"name": share.name, "detail": detail},
+                        }
+                    )
+                continue
             notes.append(f"created share {share.name}")
         return notes
 

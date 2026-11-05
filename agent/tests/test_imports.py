@@ -147,6 +147,7 @@ SURVIVING_MODULES = {
     "neutrino_agent.modules.samba.applier",
     "neutrino_agent.modules.samba.config",
     "neutrino_agent.modules.samba.darwin_applier",
+    "neutrino_agent.modules.samba.folder_reader",
     "neutrino_agent.modules.samba.constants",
     "neutrino_agent.modules.samba.renderer",
     "neutrino_agent.modules.samba.runner",

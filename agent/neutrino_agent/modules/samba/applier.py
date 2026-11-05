@@ -645,18 +645,6 @@ class SambaConfigApplier:
         """
         self._unit = unit
 
-    @staticmethod
-    def is_folder(path: str) -> bool:
-        """Whether a share's folder is on the machine. Nothing is made.
-
-        Args:
-            path: The share's folder.
-
-        Returns:
-            True when the path names a folder.
-        """
-        return os.path.isdir(path)
-
     def plan(self, *, is_served: bool) -> tuple:
         """``smb.conf`` as the next apply leaves it.
 
