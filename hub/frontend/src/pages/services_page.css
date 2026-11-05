@@ -102,15 +102,21 @@
   align-items: center;
 }
 
+/* A host breaks anywhere inside the row. */
 .app_row_machine {
+  min-width: 0;
   color: var(--color-text-faint);
   font-size: 12px;
+  overflow-wrap: anywhere;
 }
 
+/* Share, Test, Delete and the source badge wrap onto a second line. */
 .app_row_end {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-2);
   align-items: center;
+  justify-content: flex-end;
   margin-left: auto;
 }
 
@@ -120,16 +126,19 @@
   gap: var(--space-2);
 }
 
+/* A long address breaks anywhere inside its chip. The kind and the state
+   word stay whole on the first line. On one line the corners are the
+   pill's. */
 .app_entry {
   display: inline-flex;
   gap: 6px;
-  align-items: center;
+  align-items: baseline;
   max-width: 100%;
+  border-radius: var(--radius-md);
 }
 
 .app_entry_address {
-  overflow: hidden;
   min-width: 0;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
