@@ -1,5 +1,5 @@
 """The words a phone app ships: every word its source names is among them, and
-no Chinese one calls a computer joined to the hub 机器."""
+no Chinese one calls a computer joined to the hub 机器, 设备 or 电脑."""
 
 import json
 import re
@@ -57,12 +57,14 @@ def test_a_phone_names_no_word_it_does_not_ship(phone, language):
 
 
 @pytest.mark.parametrize("phone", sorted(PHONES))
-def test_no_chinese_word_of_a_phone_calls_a_computer_joined_to_the_hub_a_machine(
+def test_chinese_words_of_a_phone_name_a_computer_joined_to_the_hub_only_as_a_system(
     phone,
 ):
-    """Chinese writes 系统 and never 机器 (ui_text.md, "Names that are fixed")."""
+    """Chinese writes 系统 and never 机器, 设备 or 电脑 (ui_text.md, "Names that are
+    fixed")."""
     own_words = PHONES[phone][2]
     if not own_words.is_dir():
         pytest.skip(f"this tree has no {phone} app")
+    words = (own_words / "zh-CN.json").read_text("utf-8")
 
-    assert "机器" not in (own_words / "zh-CN.json").read_text("utf-8")
+    assert not [word for word in ("机器", "设备", "电脑") if word in words]
