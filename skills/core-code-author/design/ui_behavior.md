@@ -984,7 +984,11 @@ row's code where the step list does not. Such a row has no task, as an
 `absent` row with a code or a failed row after the agent restarted
 ([agent.md](agent.md), "A failure outlives a restart"), or is a failed row
 whose next task runs. A `stopped` row whose `want` is not `stopped` words its
-code in the notice too. A failed row's notice opens with the step its `step`
+code in the notice too. So does a `running` row, in the warn tone, whether a
+task runs or not. Its code names what the module leaves out while it runs, as
+a share the file share leaves off the server
+([agent/modules/file_share.md](agent/modules/file_share.md), "A share's
+folder"). A failed row's notice opens with the step its `step`
 names, `ui.modules.failed_step` with that step's words, and the code's words
 under it keep their line breaks, as they do under a step. A `reboot_required`
 row words its code in the notice
