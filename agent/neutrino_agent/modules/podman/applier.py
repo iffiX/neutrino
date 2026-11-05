@@ -542,12 +542,14 @@ class PodmanUnitApplier:
             )
 
     def remove_all(self) -> None:
-        """Stop and disable every generated unit, and delete its files."""
+        """Stop and disable every generated unit, delete its files, and remove the environment folder once it holds nothing."""
         for file_name in self.generated_names():
             self._retire_unit(file_name[: -len(PODMAN_UNIT_SUFFIX)])
         for name in self._stale_environments(()):
             with contextlib.suppress(OSError):
                 os.unlink(os.path.join(self._env_directory, name + PODMAN_ENV_SUFFIX))
+        with contextlib.suppress(OSError):
+            os.rmdir(self._env_directory)
 
     def generated_names(self) -> list:
         """The units this applier owns in its directory, ``<name>.service`` each."""

@@ -313,7 +313,19 @@ def test_remove_all_stops_disables_and_deletes_every_generated_file(commands, di
         ["systemctl", "disable", "--no-reload", "web.service"],
     ]
     assert sorted(path.name for path in dirs.units.iterdir()) == ["hand.service"]
-    assert list(dirs.envs.iterdir()) == []
+    assert not dirs.envs.exists()
+
+
+def test_remove_all_keeps_an_environment_folder_holding_a_file_of_another(
+    commands, dirs
+):
+    dirs.envs.mkdir(parents=True)
+    (dirs.envs / "web.env").write_text(env())
+    (dirs.envs / "hand.env").write_text("A=1\n")
+
+    dirs.applier().remove_all()
+
+    assert [path.name for path in dirs.envs.iterdir()] == ["hand.env"]
 
 
 def test_stop_all_stops_and_disables_every_generated_unit_at_once_and_keeps_the_files(

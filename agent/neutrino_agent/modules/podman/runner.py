@@ -133,16 +133,13 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
         self._source_sets: dict = {}
         self._probe = PodmanServiceProbe()
         var_dir = platform.agent_var_dir()
+        self._module_dir = os.path.join(var_dir, self.name)
         self._records = InstanceRecordStore(
-            directory=os.path.join(var_dir, self.name), fields=PODMAN_RECORD_FIELDS
+            directory=self._module_dir, fields=PODMAN_RECORD_FIELDS
         )
         self._page_ports = PodmanPagePortStore(directory=var_dir, log=self._log)
-        self._package_mark = PodmanPackageMark(
-            module_dir=os.path.join(var_dir, self.name)
-        )
-        self._found_units = PodmanFoundUnits(
-            module_dir=os.path.join(var_dir, self.name), run=run
-        )
+        self._package_mark = PodmanPackageMark(module_dir=self._module_dir)
+        self._found_units = PodmanFoundUnits(module_dir=self._module_dir, run=run)
 
     def take_config(self, config: dict) -> None:
         """Take the configuration the state names, before any apply of it.
@@ -199,7 +196,8 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
         """Take the ``podman`` package off where the package mark stands, then delete the mark.
 
         A Podman with no mark is the person's: no package is removed, and
-        its units go back as the module found them.
+        its units go back as the module found them. The module's directory
+        under the state root goes once it holds nothing.
 
         Args:
             recipe: The module's recipe.
@@ -214,10 +212,17 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
                 self._log(
                     f"podman: put {PODMAN_UNIT} and {PODMAN_API_UNIT} back as they were"
                 )
+            self._remove_empty_module_dir()
             return
         super().uninstall(recipe)
         self._package_mark.forget()
         self._found_units.forget()
+        self._remove_empty_module_dir()
+
+    def _remove_empty_module_dir(self) -> None:
+        """Remove the module's directory under the state root once it holds nothing."""
+        with contextlib.suppress(OSError):
+            os.rmdir(self._module_dir)
 
     def is_software_kept(self) -> bool:
         """Whether an uninstall leaves a Podman on the machine: a person's, one with no package mark.

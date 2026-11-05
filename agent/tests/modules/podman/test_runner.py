@@ -497,6 +497,7 @@ def test_an_uninstall_with_the_mark_removes_podman_and_the_mark_and_keeps_runc(
     assert machine.removed == [["podman"]]
     assert machine.programs == {"runc"}
     assert not package_mark(tmp_path).exists()
+    assert not (tmp_path / "podman").exists()
     assert runner.verify({}) is False
 
 
@@ -513,6 +514,7 @@ def test_an_uninstall_of_a_persons_podman_removes_no_package(
     assert machine.removed == []
     assert machine.programs == {"podman", "runc"}
     assert "podman: removed no package" in lines
+    assert not (tmp_path / "podman").exists()
     assert runner.is_software_kept() is True
 
 
@@ -800,7 +802,7 @@ def test_removing_the_configuration_drops_the_units_and_the_mirrors(
     runner.remove_configuration()
 
     assert sorted(path.name for path in units.iterdir()) == ["theirs.service"]
-    assert list(envs.iterdir()) == []
+    assert not envs.exists()
     assert not mirrors.exists()
 
 
