@@ -108,6 +108,7 @@ files as that account"):
 | The data directory, `/var/lib/gitea` on Linux and `gitea_data/` on macOS, and `/etc/gitea` sit in folders of root's: root makes each and gives it to the account on its open descriptor, each level opened with no link followed. | Each is a name in root's folder, which no account can replace. |
 | A handover is root's, since no account can take the files another uid owns: each entry is opened from its folder's open descriptor with no link followed and given on that descriptor, a link is left as it is, and a file that has a second name elsewhere is left, since that name may be a file of root's. | A link or a second name planted in the data then turns no change of owner onto a file outside it. |
 | On Linux root reads `app.ini` for its port and its address through no link and waiting on no pipe; on macOS the account reads it. | The file sits in the account's folder. |
+| Gitea's own log, `log/gitea.log` in the data directory, is read as the server's account on Linux and macOS: the end of it for the journal on macOS, and for the last error a start that does not listen names on both. On Windows the data directory is SYSTEM's, and SYSTEM reads the log. | The log sits in the account's folder, where the account can put a link to a file only root reads. |
 
 **A start waits for the server.** A `configure` that runs the server waits
 until it listens on `127.0.0.1` at its port, at most 60 seconds, and

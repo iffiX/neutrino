@@ -91,7 +91,10 @@ writes `package-lock.json` last, and the deletion above removes it first, so a
 tree that a cut or a failure left has none. An install is taken as there only
 with the lockfile, the package at the recipe's version, the three native
 modules' `package.json` and the Agent SDK's `claude` for the platform, and
-anything less runs npm.
+anything less runs npm. The package's `package.json`, which names its
+version, is read as the account, since the prefix is in the account's home
+([../../privilege.md](../../privilege.md), "The agent touches an account's
+files as that account").
 
 **The service's environment is written from scratch**: `HOST=127.0.0.1`,
 `SERVER_PORT` (CloudCLI's own name for its port), `CLAUDE_CLI_PATH` ("Claude
