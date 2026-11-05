@@ -280,7 +280,7 @@ CLIENT_CODE_WORDS = {
         "client_not_running": "客户端没有运行，先 nclient gui。",
         "resident_not_running": "客户端没有运行，先 nclient gui。",
         "busy": "仍在处理上一个请求",
-        "crashed": "上一个请求在这个系统上失败了",
+        "crashed": "上一个请求在这台电脑上失败了",
         "root_refused": "nclient 以你自己的身份运行，不能用 root",
         "bundle_missing": "此安装未包含 {binary}，请重新安装客户端",
         "unknown_terminal": "中枢没有提供 {device_id} 的终端",
@@ -401,7 +401,7 @@ CLIENT_CODE_WORDS = {
         "rdp_launch_failed": "RustDesk 查看器启动不了：{detail}",
         "rdp_no_address": "那个系统没有发布可连接的地址",
         "rdp_viewer_open": "这台桌面已经开着一个查看器，请先关掉它",
-        "unsupported_platform": "这个系统不支持此操作",
+        "unsupported_platform": "这台电脑不支持此操作",
         "gui_webkitgtk_missing": (
             "窗口需要 WebKitGTK，请安装：sudo apt install {packages}"
         ),

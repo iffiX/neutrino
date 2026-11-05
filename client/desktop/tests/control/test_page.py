@@ -2736,6 +2736,8 @@ KEYS_KEEPING_COMPUTER_WORD = {
     "code.pkexec_missing": "the computer the client runs on",
     "code.mount_not_authorized": "the computer the client runs on",
     "code.mount_tooling_missing": "the computer the client runs on",
+    "code.crashed": "the computer the client runs on",
+    "code.unsupported_platform": "the computer the client runs on",
 }
 
 

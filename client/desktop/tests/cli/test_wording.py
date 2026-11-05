@@ -46,6 +46,8 @@ CODES_KEEPING_COMPUTER_WORD = {
     "pkexec_missing": "the computer the client runs on",
     "mount_not_authorized": "the computer the client runs on",
     "mount_tooling_missing": "the computer the client runs on",
+    "crashed": "the computer the client runs on",
+    "unsupported_platform": "the computer the client runs on",
 }
 
 
