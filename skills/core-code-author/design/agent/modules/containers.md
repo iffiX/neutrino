@@ -80,12 +80,13 @@ module's.
 | | A person's Podman | A Podman the module installed |
 | --- | --- | --- |
 | **Install** | leaves `podman` out of the packages and writes no mark; a `runc` the machine lacks is installed, as on every machine | writes the mark, then installs `podman` and a `runc` the machine lacks |
-| **Uninstall** | removes no package, so `podman` stays at its version | removes `podman`, then deletes the mark |
+| **Uninstall** | removes no package, so `podman` stays at its version, and puts `podman.socket` and `podman.service` back as the module found them | removes `podman`, then deletes the mark |
 | `runc` | never removed | never removed |
 
 | Rule | Reason |
 | --- | --- |
 | After an **Uninstall** on a person's Podman the module reads `absent` through the uninstalled mark `uninstalled/podman`, the one the file share takes on a person's Samba ([module_install.md](../module_install.md), "From the system's packages"), across a restart of the agent. A later **Install** finds Podman there, installs no `podman`, writes no mark, and its `verify` deletes the uninstalled mark. | Podman stays on the machine, so its presence check alone reads `failed` `uninstall_unconfirmed`, with no press that clears it. |
+| The module's first **Install** or **Start** on a person's Podman, before it turns the socket on, keeps what `podman.socket` and `podman.service` were, each enabled and active or neither, as `found_units` in the module's directory, root-only; a **Stop** on a machine with no such record keeps it first. An **Uninstall** on a person's Podman puts both back from it after its **Stop**, and deletes it. On a machine with no such record an uninstall leaves them as they are. | Ubuntu's package enables both units when the person installs Podman, and the module's **Stop** disables both: in the lab both read `disabled` after an uninstall. The module gives the person's Podman back as it found it, as the file share gives back a person's Samba ([file_share.md](file_share.md), "A person's Samba and the module's, on Linux"). |
 | The rest of the uninstall is the same on either Podman: its **Stop**, and the removal of the declared and hub containers' units, their environment files and the mirrors drop-in. Images and volumes stay. | The units and the files are the module's own, whoever installed Podman. |
 
 ## Windows and macOS
