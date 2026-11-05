@@ -610,6 +610,54 @@ def test_the_rpm_tells_only_a_machine_that_has_not_joined_to_join(tmp_path, is_b
     assert ("nagent join" in printed) is (not is_bound)
 
 
+@pytest.mark.parametrize(
+    ("argument", "calls"),
+    [
+        (
+            "1",
+            [
+                "systemctl daemon-reload",
+                "systemctl enable --now neutrino_agent.service",
+            ],
+        ),
+        (
+            "2",
+            [
+                "systemctl daemon-reload",
+                "systemctl try-restart neutrino_agent.service",
+                "systemctl enable --now neutrino_agent.service",
+            ],
+        ),
+    ],
+    ids=["install", "upgrade"],
+)
+def test_the_rpm_starts_the_agent_at_its_install_and_restarts_it_at_an_upgrade(
+    tmp_path, argument, calls
+):
+    """R146: the rpm left the agent's unit inactive after ``install.sh agent``."""
+    fakes = tmp_path / "fakes"
+    fakes.mkdir()
+    record = tmp_path / "calls"
+    systemctl = fakes / "systemctl"
+    systemctl.write_text(f'#!/bin/sh\necho "systemctl $*" >>"{record}"\n')
+    systemctl.chmod(0o755)
+    post = _spec().split("%post\n")[1].split("\n%preun")[0]
+    script = tmp_path / "post"
+    script.write_text(
+        "#!/bin/sh\n"
+        + post.replace(payload.AGENT_BINDING_PATH, str(tmp_path / "agent.json"))
+    )
+
+    subprocess.run(
+        ["sh", str(script), argument],
+        env=dict(os.environ, PATH=f"{fakes}:/usr/bin:/bin"),
+        capture_output=True,
+        check=True,
+    )
+
+    assert record.read_text().splitlines() == calls
+
+
 def test_the_packages_read_the_binding_where_the_agent_writes_it():
     from neutrino_agent.constants import AGENT_CONFIG_NAME, AGENT_DATA_DIR_POSIX
 

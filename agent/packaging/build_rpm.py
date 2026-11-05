@@ -103,17 +103,19 @@ fi
 
 %post
 systemctl daemon-reload >/dev/null 2>&1 || true
-# An upgrade must restart the running agent: the self-update path ends
-# here, and without the restart the old process goes on beating.
+# The agent runs from install: unbound it waits for a link, and its control
+# socket serves nagent. An upgrade must restart the running agent: the
+# self-update path ends here, and without the restart the old process goes
+# on beating.
 if [ "$1" -ge 2 ]; then
     systemctl try-restart neutrino_agent.service >/dev/null 2>&1 || true
 fi
+systemctl enable --now neutrino_agent.service >/dev/null 2>&1 || true
 if [ "$1" = 1 ] && ! {bound_test}; then
     echo ""
-    echo "  Neutrino agent installed. Start it and join a hub:"
+    echo "  Neutrino agent installed. Join a hub with:"
     echo ""
-    echo "      systemctl enable --now neutrino_agent.service"
-    echo "      nagent join <enrollment link>"
+    echo "      sudo nagent join <enrollment link>"
     echo ""
 fi
 
