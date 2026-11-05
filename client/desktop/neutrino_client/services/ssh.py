@@ -9,8 +9,10 @@ machine of one slug give each ``<machine>.<hub>.nt``. ``User`` is the
 machine's first ``ssh`` entry's account. Each account's key is read with
 the entry's ``service`` frame when the entries change, the entry's
 ``account_key_fingerprint`` among them, written to
-``~/.ssh/neutrino/<host>_<account>`` at 0600, and each machine's host key
-to Neutrino's own known_hosts. The client never edits ``~/.ssh/config`` by
+``~/.ssh/neutrino/<host>_<account>`` at 0600, and each account's instance
+key to Neutrino's own known_hosts under that account's alias alone, which a
+``Match`` block after the machine's block names as its ``HostKeyAlias``.
+The client never edits ``~/.ssh/config`` by
 itself; installing adds ``Include ~/.ssh/neutrino_config`` as its first
 line, once, and uninstalling takes that line out and nothing else. When
 the last hub is left, the configuration, the keys and the known_hosts go.
@@ -46,6 +48,8 @@ SSH_USER_CONFIG_NAME = "config"
 SSH_KEYS_DIR_NAME = "neutrino"
 SSH_KNOWN_HOSTS_NAME = "known_hosts"
 SSH_HOST_SUFFIX = ".nt"
+# The mark before each capital letter of an account in its host key alias.
+SSH_ALIAS_CAPITAL_MARK = "+"
 SSH_INCLUDE_LINE = "Include ~/.ssh/neutrino_config"
 # The command a block's ProxyCommand runs, by system.
 SSH_PROXY_PROGRAM = "nclient"
@@ -177,28 +181,60 @@ def keep_forwards(forwards, *, hub_id: str, entries: list) -> dict:
     return outcomes
 
 
-def config_block(host: str, user: str, proxy_program: str) -> str:
-    """One machine's block of ``~/.ssh/neutrino_config``.
+def host_key_alias(host: str, account: str) -> str:
+    """The name one account's instance key is kept under in Neutrino's known_hosts.
+
+    ``ssh`` lowercases a ``HostKeyAlias``, so each capital letter of the
+    account is written as ``+`` and the letter in lower case.
 
     Args:
         host: The machine's host, without ``.nt``.
-        user: The account ``ssh`` logs in as when it names none.
+        account: The account.
+
+    Returns:
+        ``<account>@<host>.nt``.
+    """
+    spelled = "".join(
+        SSH_ALIAS_CAPITAL_MARK + letter.lower() if letter.isupper() else letter
+        for letter in account
+    )
+    return f"{spelled}@{host}{SSH_HOST_SUFFIX}"
+
+
+def config_block(host: str, accounts: list, proxy_program: str) -> str:
+    """One machine's blocks of ``~/.ssh/neutrino_config``.
+
+    The ``Host`` block comes first, so ``ssh`` has taken its ``User`` when
+    it reads the ``Match`` blocks after it.
+
+    Args:
+        host: The machine's host, without ``.nt``.
+        accounts: The machine's accounts, the first the one ``ssh`` logs in
+            as when it names none.
         proxy_program: ``nclient``, or ``nclient.exe`` on Windows.
 
     Returns:
-        The block, ending with an empty line.
+        The ``Host`` block, then one ``Match`` block per account naming that
+        account's ``HostKeyAlias``, each ending with an empty line.
     """
     alias = host + SSH_HOST_SUFFIX
-    return (
+    user = accounts[0] if accounts else ""
+    block = (
         f"Host {alias}\n"
         f"    User {user}\n"
         f'    ProxyCommand {proxy_program} ssh proxy "%r@%h"\n'
         f'    IdentityFile "~/.ssh/{SSH_KEYS_DIR_NAME}/{host}_%r"\n'
         "    IdentitiesOnly yes\n"
         f"    UserKnownHostsFile ~/.ssh/{SSH_KEYS_DIR_NAME}/{SSH_KNOWN_HOSTS_NAME}\n"
-        f"    HostKeyAlias {alias}\n"
         "\n"
     )
+    for account in accounts:
+        block += (
+            f'Match originalhost {alias} user "{account}"\n'
+            f"    HostKeyAlias {host_key_alias(host, account)}\n"
+            "\n"
+        )
+    return block
 
 
 def _nobody(*_args) -> None:
@@ -401,8 +437,7 @@ class SshConfigWriter:
         kept_keys = set()
         for row in machines:
             host = row["host"]
-            user = row["accounts"][0] if row["accounts"] else ""
-            blocks.append(config_block(host, user, self._proxy_program))
+            blocks.append(config_block(host, row["accounts"], self._proxy_program))
             for entry in row["entries"]:
                 account = str((entry.get("payload") or {}).get("account", "") or "")
                 key_name = f"{host}_{account}"
@@ -417,7 +452,7 @@ class SshConfigWriter:
                     self._write_key(key_name, private_key)
                     kept_keys.add(key_name)
                 if host_key:
-                    line = f"{host}{SSH_HOST_SUFFIX} {host_key}\n"
+                    line = f"{host_key_alias(host, account)} {host_key}\n"
                     if line not in known_hosts:
                         known_hosts.append(line)
                 private_key = ""

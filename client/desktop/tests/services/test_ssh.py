@@ -9,14 +9,25 @@ rewrites at once all finish and leave the newest list and its keys alone, a
 rewrite held by a slow hub never replaces a newer list, a clear during a
 rewrite leaves no file behind, a stop waits for a rewrite running and none
 runs after it, and many Include edits at once all finish and keep the
-person's lines.
+person's lines. Each account's instance key is kept under that account's
+alias alone, which a ``Match`` block after the machine's ``Host`` block
+names, and the system's ``ssh -G`` resolves each account and the default to
+its own alias and a name of no account to none.
 """
 
 import os
+import shutil
+import subprocess
 import threading
 
+import pytest
+
 from neutrino_client.exceptions import LocalPortTakenError
-from neutrino_client.services.ssh import SshConfigWriter, keep_forwards
+from neutrino_client.services.ssh import (
+    SshConfigWriter,
+    host_key_alias,
+    keep_forwards,
+)
 
 MATERIAL = {"private_key": "key", "host_key": "ssh-ed25519 AAAA"}  # scan: allow
 REWRITES_AT_ONCE = 64
@@ -329,3 +340,93 @@ def test_many_include_edits_at_once_all_finish_and_keep_the_persons_lines(tmp_pa
     assert failures == []
     assert os.listdir(tmp_path / ".ssh") == ["config"]
     assert (tmp_path / ".ssh/config").read_text().endswith("Host mine\n    User me\n")
+
+
+def two_accounts() -> dict:
+    """The arguments of a refresh that lists one machine with the accounts lab and Iffi."""
+    return {
+        "entries": [
+            dict(ssh_entry("SHA256:one")),
+            dict(
+                ssh_entry("SHA256:one"),
+                id="ssh_server_d1_Iffi",
+                payload={
+                    "account": "Iffi",
+                    "host_key_fingerprint": "SHA256:iffi",
+                    "account_key_fingerprint": "SHA256:one",
+                },
+            ),
+        ],
+        "apps": [
+            {"hub_id": "h1", "id": "ssh_server_d1", "local_name": "ssh.lab.localhost"}
+        ],
+        "hub_names": {},
+    }
+
+
+def instance_keys(hub_id, entry_id):
+    """Each account's own key and its instance's own host key."""
+    account = entry_id.rsplit("_", 1)[-1]
+    return {"private_key": f"key-{account}", "host_key": f"ssh-ed25519 HOST{account}"}
+
+
+def written_two_accounts(tmp_path) -> SshConfigWriter:
+    writer = SshConfigWriter(
+        home=str(tmp_path),
+        open_service=instance_keys,
+        log=str,
+        start_thread=run_inline,
+    )
+    writer.refresh(**two_accounts())
+    return writer
+
+
+def test_an_alias_writes_each_capital_after_a_mark():
+    assert host_key_alias("lab", "lab") == "lab@lab.nt"
+    assert host_key_alias("lab.home", "Iffi") == "+iffi@lab.home.nt"
+    assert host_key_alias("lab", "iffi") != host_key_alias("lab", "Iffi")
+
+
+def test_each_account_key_is_kept_under_that_account_alias_alone(tmp_path):
+    writer = written_two_accounts(tmp_path)
+
+    with open(os.path.join(writer.keys_dir, "known_hosts"), encoding="utf-8") as file:
+        known = file.read()
+    text = writer.config_text()["text"]
+
+    assert known == (
+        "lab@lab.nt ssh-ed25519 HOSTlab\n" "+iffi@lab.nt ssh-ed25519 HOSTIffi\n"
+    )
+    host_block, *match_blocks = text.strip().split("\n\n")
+    assert host_block.startswith("Host lab.nt\n    User lab\n")
+    assert "HostKeyAlias" not in host_block
+    assert match_blocks == [
+        'Match originalhost lab.nt user "lab"\n    HostKeyAlias lab@lab.nt',
+        'Match originalhost lab.nt user "Iffi"\n    HostKeyAlias +iffi@lab.nt',
+    ]
+
+
+def resolved_alias(config_path: str, target: str) -> str:
+    """The ``hostkeyalias`` the system's ``ssh -G`` resolves for a target."""
+    printed = subprocess.run(
+        ["ssh", "-G", "-F", config_path, target],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=True,
+    ).stdout
+    for line in printed.splitlines():
+        key, _, value = line.partition(" ")
+        if key == "hostkeyalias":
+            return value
+    return ""
+
+
+@pytest.mark.skipif(shutil.which("ssh") is None, reason="no ssh on this machine")
+def test_ssh_resolves_each_account_to_its_own_alias(tmp_path):
+    writer = written_two_accounts(tmp_path)
+
+    assert resolved_alias(writer.config_path, "lab@lab.nt") == "lab@lab.nt"
+    assert resolved_alias(writer.config_path, "Iffi@lab.nt") == "+iffi@lab.nt"
+    assert resolved_alias(writer.config_path, "lab.nt") == "lab@lab.nt"
+    assert resolved_alias(writer.config_path, "carol@lab.nt") == ""

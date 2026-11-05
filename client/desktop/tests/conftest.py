@@ -133,6 +133,9 @@ POWERSHELL_PROGRAMS = frozenset({"powershell", "powershell.exe", "pwsh", "pwsh.e
 MUTATING_IP_VERBS = frozenset(
     {"add", "del", "delete", "replace", "change", "set", "flush", "monitor"}
 )
+# The flag with which ``ssh`` prints the configuration it resolves and
+# connects nowhere.
+SSH_PRINT_CONFIG_FLAG = "-G"
 # The audit events that change a file by name, each to the places of its
 # paths. A place is the position of a path and the position of the folder
 # descriptor it is relative to, or None.
@@ -194,6 +197,8 @@ def _refuses(command, environment=None) -> "str | None":
     if name == "ip":
         if MUTATING_IP_VERBS.intersection(words[1:]):
             return "ip would change an address, a link, a route or a rule"
+        return None
+    if name == "ssh" and SSH_PRINT_CONFIG_FLAG in words[1:]:
         return None
     if name not in REFUSED_PROGRAMS:
         return None
