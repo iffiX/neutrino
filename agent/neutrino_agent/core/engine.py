@@ -487,7 +487,7 @@ class ModuleEngine(ReconcileWorker):
             return False
 
     def is_install_owed(self, name: str, entry: dict) -> bool:
-        """Whether one module's runner lacks a file its install keeps, checked now.
+        """Whether one module's runner lacks a part its install adds, checked now.
 
         Args:
             name: The module name.
@@ -496,8 +496,8 @@ class ModuleEngine(ReconcileWorker):
         Returns:
             True when the runner says its install is owed although the
             presence check passes, as Containers' does with no machine image
-            kept on Windows and macOS; False for a module this agent has no
-            runner for or cannot read.
+            kept on Windows and macOS and no ``runc`` on Linux; False for a
+            module this agent has no runner for or cannot read.
         """
         recipe = _recipe_of(entry)
         runner = self._runner_for(name, recipe)

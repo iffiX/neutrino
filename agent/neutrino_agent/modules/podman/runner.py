@@ -12,7 +12,9 @@ up by hand. The names of the declared and hub containers are kept in a
 root-only record, read until the first apply after a start. Every step of
 the module's task takes the step lock ``containers`` alone. **Stop** stops
 and disables every declared and hub unit, and an apply under ``stopped``
-enables and starts none of them. A Podman on the machine before the install
+enables and starts none of them. A ``runc`` missing from the path is an
+install owed, which the core plans only under ``installed`` or ``running``.
+A Podman on the machine before the install
 is the person's: the install leaves the ``podman`` package out and an
 uninstall removes no package and puts its two units back as the first
 Install, Start or Stop found them, and only a Podman the package mark
@@ -231,6 +233,18 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
             True while such a Podman is on the machine.
         """
         return not self._package_mark.is_kept() and self.verify({})
+
+    def is_install_owed(self, recipe: dict) -> bool:
+        """Whether the recipe's packages name ``runc`` and no ``runc`` is on the path.
+
+        Args:
+            recipe: The module's recipe.
+
+        Returns:
+            True while the machine lacks the ``runc`` the recipe installs.
+        """
+        packages = params_of(recipe).get("packages") or []
+        return PODMAN_RUNTIME in packages and shutil.which(PODMAN_RUNTIME) is None
 
     def step_locks(self, step: str) -> tuple:
         """``containers`` alone, for every step of the module's own task.

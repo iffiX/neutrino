@@ -7,8 +7,8 @@ volumes, environment and whether a unit stands for it, so containers
 somebody started by hand are reported the way the hub imports them. The
 ``podman`` package installed and removed only with the package mark: a
 Podman found before the install is the person's, left out of the packages
-and kept by an uninstall, a ``runc`` the machine lacks installed beside it,
-and ``runc`` never removed.
+and kept by an uninstall, a ``runc`` the machine lacks installed beside it
+and owed while it is missing, and ``runc`` never removed.
 """
 
 import json
@@ -379,7 +379,7 @@ RECIPE = {
     "method": "system",
     "params": {
         "packages": ["podman", "runc"],
-        "verify": "podman --version && runc --version",
+        "verify": "podman --version",
         "uninstall": {"packages": ["podman"], "post_uninstall": []},
     },
 }
@@ -453,6 +453,26 @@ def test_a_persons_podman_with_no_runc_gets_runc_alone(
     assert machine.installed == [["runc"]]
     assert not package_mark(tmp_path).exists()
     assert runner.is_software_kept() is True
+
+
+def test_a_machine_with_no_runc_owes_the_install_until_one_is_on_the_path(
+    runner, monkeypatch
+):
+    """A person's Podman that came without runc passes verify; the core plans
+    the owed install only under installed or running, so a join that adopts
+    it stopped installs nothing."""
+    machine = FakeMachine(monkeypatch, runner, programs={"podman"})
+
+    assert runner.is_install_owed(RECIPE) is True
+    machine.programs.add("runc")
+    assert runner.is_install_owed(RECIPE) is False
+
+
+def test_a_recipe_that_names_no_runc_owes_no_install(runner, monkeypatch):
+    FakeMachine(monkeypatch, runner, programs={"podman"})
+
+    assert runner.is_install_owed({"params": {"packages": ["podman"]}}) is False
+    assert runner.is_install_owed({}) is False
 
 
 def test_the_module_s_podman_goes_to_the_package_manager_again_with_its_mark(

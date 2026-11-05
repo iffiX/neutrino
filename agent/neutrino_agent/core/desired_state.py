@@ -551,8 +551,8 @@ class DesiredStateApplier:
         an install step; a present
         ``want`` plans the install when the software is missing, the last
         install failed, or, under ``installed`` or ``running``, the runner
-        lacks a file its install keeps, as Containers' machine image on
-        Windows and macOS, the version switch
+        lacks a part its install adds, as Containers' machine image on
+        Windows and macOS and its ``runc`` on Linux, the version switch
         when a ``hub`` module's kept
         version differs from its recipe's, then the configure steps under
         ``stopped`` and ``running``, less a second ``wait_module``.
