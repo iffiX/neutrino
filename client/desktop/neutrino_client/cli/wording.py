@@ -335,10 +335,10 @@ CLIENT_CODE_WORDS = {
         "ticket_spent": (
             "中枢拒绝了这个链接：它已被用过或已过期；请离开这台中枢，用新链接重新加入"
         ),
-        "mount_not_authorized": "这个系统上的挂载未获授权",
+        "mount_not_authorized": "这台电脑上的挂载未获授权",
         "mount_timed_out": "系统十分钟内没有完成挂载，再挂载一次",
-        "mount_tooling_missing": "这个系统上缺少挂载工具",
-        "pkexec_missing": "这个系统没有 pkexec，挂载要经过它；请安装 pkexec 后再挂载",
+        "mount_tooling_missing": "这台电脑上缺少挂载工具",
+        "pkexec_missing": "这台电脑没有 pkexec，挂载要经过它；请安装 pkexec 后再挂载",
         "control_peer_refused": "正在运行的客户端属于另一个账户",
         "control_socket_unavailable": "客户端在这个会话里启动不了",
         "control_channel_closed": "客户端不再应答，请重新打开它",
@@ -382,10 +382,10 @@ CLIENT_CODE_WORDS = {
         "credentials_missing": "保存的登录信息已丢失，重新挂载并重新填写",
         "fs_refused": "此账户不能使用那个文件夹",
         "client_held": (
-            "{account} 的客户端正在这个系统上运行；一个系统同一时间只运行一个人的客户端"
+            "{account} 的客户端正在这台电脑上运行；一台电脑同一时间只运行一个人的客户端"
         ),
         "files_adapter_in_use": (
-            "文件适配器正被这个系统上的另一个账户使用；那个账户的客户端退出后会再试挂载"
+            "文件适配器正被这台电脑上的另一个账户使用；那个账户的客户端退出后会再试挂载"
         ),
         "files_adapter_unavailable": (
             "文件适配器无法启动：{detail}；检查 NeutrinoClientFiles 服务"

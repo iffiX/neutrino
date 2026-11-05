@@ -2729,16 +2729,40 @@ def test_the_managed_reason_is_one_text_with_its_code_in_both_languages():
     )
 
 
+# The keys whose Chinese keeps 电脑, by the computer each names.
+KEYS_KEEPING_COMPUTER_WORD = {
+    "code.client_held": "the computer the client runs on",
+    "code.files_adapter_in_use": "the computer the client runs on",
+    "code.pkexec_missing": "the computer the client runs on",
+    "code.mount_not_authorized": "the computer the client runs on",
+    "code.mount_tooling_missing": "the computer the client runs on",
+}
+
+
 def test_chinese_words_name_a_computer_joined_to_the_hub_only_as_a_system():
     """Chinese writes 系统 and never 机器, 设备 or 电脑 (ui_text.md, "Names that are
-    fixed")."""
+    fixed"). A kept key names the computer the client runs on."""
     held = [
         key
         for key, words in CATALOGS["zh-CN"].items()
-        if "机器" in words or "设备" in words or "电脑" in words
+        if "机器" in words
+        or "设备" in words
+        or ("电脑" in words and key not in KEYS_KEEPING_COMPUTER_WORD)
     ]
 
     assert held == []
+
+
+def test_chinese_words_name_the_client_s_own_computer_a_computer():
+    """The computer a client runs on is 电脑 in its words about it (ui_text.md,
+    "Names that are fixed")."""
+    words = CATALOGS["zh-CN"]
+
+    assert [
+        key
+        for key in KEYS_KEEPING_COMPUTER_WORD
+        if "这台电脑" not in words[key] or "系统" in words[key]
+    ] == []
 
 
 def page_constant(name: str) -> str:

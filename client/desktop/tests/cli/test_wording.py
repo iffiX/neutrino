@@ -39,6 +39,14 @@ NEW_CODES = (
 
 # The help pages whose Chinese keeps 电脑, by the device each names.
 HELP_PAGES_KEEPING_DEVICE_WORDS = {"ai": "a computer as a kind of client device"}
+# The codes whose Chinese keeps 电脑, by the computer each names.
+CODES_KEEPING_COMPUTER_WORD = {
+    "client_held": "the computer the client runs on",
+    "files_adapter_in_use": "the computer the client runs on",
+    "pkexec_missing": "the computer the client runs on",
+    "mount_not_authorized": "the computer the client runs on",
+    "mount_tooling_missing": "the computer the client runs on",
+}
 
 
 @pytest.fixture(params=CLIENT_LANGUAGES)
@@ -66,7 +74,8 @@ def test_both_languages_carry_the_same_lines_and_states():
 
 def test_chinese_lines_name_a_computer_joined_to_the_hub_only_as_a_system():
     """Chinese writes 系统 and never 机器, 设备 or 电脑 (ui_text.md, "Names that are
-    fixed"). A kept help page names another device."""
+    fixed"). A kept help page names another device, and a kept code the
+    computer the client runs on."""
     held = [
         key
         for tables in (
@@ -78,13 +87,27 @@ def test_chinese_lines_name_a_computer_joined_to_the_hub_only_as_a_system():
         )
         for key, words in tables["zh-CN"].items()
         if "机器" in words
+        or ("设备" in words and key not in HELP_PAGES_KEEPING_DEVICE_WORDS)
         or (
-            key not in HELP_PAGES_KEEPING_DEVICE_WORDS
-            and ("设备" in words or "电脑" in words)
+            "电脑" in words
+            and key not in HELP_PAGES_KEEPING_DEVICE_WORDS
+            and key not in CODES_KEEPING_COMPUTER_WORD
         )
     ]
 
     assert held == []
+
+
+def test_chinese_codes_name_the_client_s_own_computer_a_computer():
+    """The computer a client runs on is 电脑 in its words about it (ui_text.md,
+    "Names that are fixed")."""
+    words = wording.CLIENT_CODE_WORDS["zh-CN"]
+
+    assert [
+        code
+        for code in CODES_KEEPING_COMPUTER_WORD
+        if "这台电脑" not in words[code] or "系统" in words[code]
+    ] == []
 
 
 def test_every_code_the_catalogs_word_has_words_in_each_language(language):
