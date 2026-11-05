@@ -1384,6 +1384,25 @@ def test_a_stop_on_a_machine_with_no_first_start_keeps_what_both_units_are(runne
     assert record["found_units"]["server"] == NAME_SERVER_UP
 
 
+def test_a_stop_of_a_person_s_samba_that_does_not_run_leaves_both_units_as_they_are(
+    runner,
+):
+    """The person enabled smbd for the next boot and stopped it; nmbd runs."""
+    FakeApplier.is_unit_active = False
+    FakeUnits.states[SERVER_UNIT] = {"is_enabled": True, "is_active": False}
+    FakeUnits.states[NAME_UNIT] = {"is_enabled": True, "is_active": True}
+
+    runner.apply_stopped({"shares": [], "users": [], "passwords": {}})
+    runner.stop()
+
+    assert FakeApplier.stops == 0
+    assert FakeUnits.calls == []
+    record = json.loads(runner.record_path.read_text())
+    assert "found_units" not in record
+    assert record["is_served"] is False
+    assert runner.is_active() is False
+
+
 def test_a_share_on_a_running_module_starts_nothing_and_the_last_going_moves_nothing(
     runner,
 ):
@@ -1516,6 +1535,31 @@ def test_a_person_s_samba_stops_starts_uninstalls_and_installs_again_through_the
     assert not (tmp_path / "uninstalled" / "samba").exists()
     assert row_of(restarted)["state"] == "installed"
     assert restarted.module_runners["samba"].is_software_kept() is True
+
+
+def test_a_join_that_adopts_a_person_s_samba_stopped_changes_no_unit(
+    linux, monkeypatch, tmp_path
+):
+    engine, _ = linux
+    samba_on_path(monkeypatch, is_there=True)
+    samba = engine.module_runners["samba"]
+    FakeApplier.is_unit_active = False
+    FakeUnits.states[samba.unit] = {"is_enabled": True, "is_active": False}
+
+    configure(engine, "stopped")
+
+    assert row_of(engine)["state"] == "stopped"
+    assert FakeUnits.calls == []
+    assert FakeApplier.stops == 0
+
+    configure(engine, "running")
+
+    assert row_of(engine)["state"] == "running"
+    record = json.loads((tmp_path / runner_module.SAMBA_RECORD_NAME).read_text())
+    assert record["found_units"]["server"] == {
+        "is_enabled": True,
+        "is_active": False,
+    }
 
 
 def test_an_uninstall_puts_a_person_s_units_back_as_the_first_start_found_them(

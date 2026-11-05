@@ -11,14 +11,15 @@ what the hub imports the first time it configures an engine somebody set
 up by hand. The names of the declared and hub containers are kept in a
 root-only record, read until the first apply after a start. Every step of
 the module's task takes the step lock ``containers`` alone. **Stop** stops
-and disables every declared and hub unit, and an apply under ``stopped``
-enables and starts none of them. A ``runc`` missing from the path is an
-install owed, which the core plans only under ``installed`` or ``running``.
-A Podman on the machine before the install
-is the person's: the install leaves the ``podman`` package out and an
+and disables every declared and hub unit, and a ``configure`` under
+``stopped`` writes nothing, so the next Start's writes the configuration. A
+``runc`` missing from the path is an install owed, which the core plans
+only under ``installed`` or ``running``. A Podman on the machine before the
+install is the person's: the install leaves the ``podman`` package out, an
 uninstall removes no package and puts its two units back as the first
-Install, Start or Stop found them, and only a Podman the package mark
-stands for is the module's.
+Install, Start or Stop found them, and a Stop with nothing kept while its
+socket is not active leaves both as they are. Only a Podman the package
+mark stands for is the module's.
 
 Not pure: drives podman and systemd through the applier.
 """
@@ -258,7 +259,7 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
         return CONTAINERS_ALONE_LOCKS
 
     def configure_steps(self, config: dict, want: str, steps: list) -> list:
-        """The core's steps, the ``configure`` under ``stopped`` applying with no container started.
+        """The core's steps, the ``configure`` under ``stopped`` checking the configuration and writing nothing.
 
         Args:
             config: The configuration the task's entry carries.
@@ -312,18 +313,27 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
                 refuses a unit; the first left-out container's refusal once
                 the rest is applied.
         """
-        self._apply(config, is_started=True)
+        self._apply(config)
 
     def apply_stopped(self, config: dict) -> None:
-        """Render the units and the mirror drop-in under ``stopped``, every unit disabled and none started.
+        """Check a configuration under ``stopped`` and write nothing: the next Start's ``configure`` writes it.
 
         Args:
             config: The desired configuration.
 
         Raises:
-            ModuleApplyError: As :meth:`apply` does.
+            ModuleApplyError: When the configuration is refused; the first
+                left-out container's refusal.
         """
-        self._apply(config, is_started=False)
+        parsed, refused = PodmanConfig.from_dict(config).without_refused()
+        parsed.validate()
+        PodmanRegistriesRenderer(config=parsed).render()
+        line = "podman: kept the configuration for the next Start"
+        if refused:
+            line += "; left out " + ", ".join(name for name, _ in refused)
+        self._log(line)
+        if refused:
+            raise refused[0][1]
 
     def start(self) -> None:
         """Turn ``podman.socket`` on, so Podman starts with the machine.
@@ -348,13 +358,19 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
 
         A container a person started by hand keeps running; images and
         volumes stay. A person's Podman: what its units were is kept first,
-        when nothing is kept yet.
+        when nothing is kept yet; with nothing kept and the socket not
+        active, both units stay as they are.
 
         Raises:
             ModuleApplyError: ``apply_failed`` when systemd refuses the socket.
             OSError: When the record cannot be written.
         """
-        if not self._package_mark.is_kept():
+        is_persons = not self._package_mark.is_kept()
+        if is_persons and not self._found_units.is_kept() and not self.is_active():
+            PodmanUnitApplier().stop_all()
+            self._log(f"podman: left {PODMAN_UNIT} and {PODMAN_API_UNIT} as they are")
+            return
+        if is_persons:
             self._found_units.keep()
         PodmanUnitApplier().stop_all()
         run(["systemctl", "disable", "--now", PODMAN_API_UNIT], is_checked=False)
@@ -615,8 +631,8 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
         """The ``configure`` step under ``stopped``."""
         self.apply_stopped(config)
 
-    def _apply(self, config: dict, *, is_started: bool) -> None:
-        """Render and write the configuration. With ``is_started`` false no container starts with the box."""
+    def _apply(self, config: dict) -> None:
+        """Render and write the configuration."""
         # A failed first apply after a start leaves every module unwritten.
         if self._written is None:
             self._written = PodmanConfig()
@@ -638,7 +654,7 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
                 autostart_names=[
                     container.name
                     for container in [*rendered.containers, *rendered.hub_containers]
-                    if container.is_autostart and is_started
+                    if container.is_autostart
                 ],
                 source_keys=renderer.source_keys(),
             )

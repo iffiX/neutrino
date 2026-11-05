@@ -311,7 +311,14 @@ def test_every_step_of_the_module_s_own_task_takes_containers_alone(runner):
     assert runner.step_locks("stop") == (("containers", "alone"),)
 
 
-def test_the_configure_under_stopped_enables_and_starts_no_container(runner):
+def test_the_configure_under_stopped_writes_nothing_and_runs_no_systemctl(
+    runner, system
+):
+    """A join adopts a person's Podman stopped: the container the person
+    started by hand gets no unit and no environment file, and reads as the
+    person's until the first Start writes the configuration."""
+    lines: list = []
+    runner._log = lines.append
     steps = runner.configure_steps(
         CONFIG, "stopped", [plain_step("configure"), plain_step("stop")]
     )
@@ -319,7 +326,33 @@ def test_the_configure_under_stopped_enables_and_starts_no_container(runner):
     steps[0].run(None)
 
     assert [step.name for step in steps] == ["configure", "stop"]
-    assert FakeUnitApplier.applied == [(["web.service"], [])]
+    assert FakeUnitApplier.applied == []
+    assert FakeRegistries.written == []
+    assert system.calls == []
+    assert lines == ["podman: kept the configuration for the next Start"]
+    by_name = {c["name"]: c for c in runner.details({})["containers"]}
+    assert by_name["web"]["source"] == "manual"
+
+
+def test_the_configure_under_stopped_raises_a_refused_container_and_writes_nothing(
+    runner, system
+):
+    refused = {"containers": [{"name": "bad", "image": "has space"}], "mirrors": []}
+
+    with pytest.raises(ModuleApplyError) as raised:
+        runner.apply_stopped(refused)
+
+    assert raised.value.code == "image_invalid"
+    assert FakeUnitApplier.applied == []
+    assert system.calls == []
+
+
+def test_a_start_after_the_configure_under_stopped_writes_the_configuration(runner):
+    runner.apply_stopped(CONFIG)
+
+    runner.apply(CONFIG)
+
+    assert FakeUnitApplier.applied == [(["web.service"], ["web"])]
 
 
 def test_the_configure_under_running_is_the_core_s_own(runner):
@@ -601,6 +634,65 @@ def test_a_stop_with_nothing_kept_keeps_what_the_units_were(
     runner.uninstall(RECIPE)
 
     assert system.changes() == PUT_BACK_AS_UBUNTU_HAS_THEM
+
+
+FEDORA_UNITS_THE_PERSON_ENABLED = {
+    "podman.socket": "UnitFileState=enabled\nActiveState=inactive\n",
+    "podman.service": "UnitFileState=disabled\nActiveState=inactive\n",
+}
+
+
+def test_a_stop_with_nothing_kept_and_the_socket_off_leaves_both_units_as_they_are(
+    runner, system, monkeypatch, tmp_path
+):
+    """A join adopts a person's Podman whose socket is not active stopped:
+    on Fedora 42 the person had enabled podman.socket for the next boot."""
+    lines: list = []
+    runner._log = lines.append
+    FakeMachine(monkeypatch, runner, programs={"podman"})
+    system.answers = dict(FEDORA_UNITS_THE_PERSON_ENABLED)
+    monkeypatch.setattr(runner_module, "unit_state", lambda unit: "inactive")
+
+    runner.stop()
+
+    assert system.calls == []
+    assert FakeUnitApplier.stops == 1
+    assert not found_units(tmp_path).exists()
+    assert "podman: left podman.socket and podman.service as they are" in lines
+
+
+def test_a_stop_after_a_start_disables_both_units_with_the_socket_off(
+    runner, system, monkeypatch, tmp_path
+):
+    FakeMachine(monkeypatch, runner, programs={"podman"})
+    system.answers = dict(FEDORA_UNITS_THE_PERSON_ENABLED)
+    runner.start()
+    monkeypatch.setattr(runner_module, "unit_state", lambda unit: "inactive")
+    system.calls.clear()
+
+    runner.stop()
+
+    assert system.changes() == [
+        ["systemctl", "disable", "--now", "podman.service"],
+        ["systemctl", "disable", "--now", "podman.socket"],
+    ]
+
+
+def test_the_module_s_podman_is_stopped_with_its_socket_off_too(
+    runner, system, monkeypatch, tmp_path
+):
+    FakeMachine(monkeypatch, runner)
+    runner.install(RECIPE)
+    monkeypatch.setattr(runner_module, "unit_state", lambda unit: "inactive")
+    system.calls.clear()
+
+    runner.stop()
+
+    assert system.changes() == [
+        ["systemctl", "disable", "--now", "podman.service"],
+        ["systemctl", "disable", "--now", "podman.socket"],
+    ]
+    assert not found_units(tmp_path).exists()
 
 
 def test_an_uninstall_with_nothing_kept_leaves_the_units_as_they_are(

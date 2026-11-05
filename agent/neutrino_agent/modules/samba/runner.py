@@ -20,9 +20,10 @@ The record marks a Samba the install step found missing and installed. On either
 Samba a start starts the server and the name server, share or no share, and a stop
 stops and disables both. On a person's Samba a stop also takes the module's own
 files off, the row reads the record's ``is_served`` and the unit, the record keeps
-what both units were at the first start, and an uninstall puts them back, removes
-no package and leaves the module absent through the engine's uninstalled mark. An
-uninstall of a Samba the module installed removes the package.
+what both units were at the first start, a stop with nothing kept on a row that
+does not read running leaves both as they are, and an uninstall puts them back,
+removes no package and leaves the module absent through the engine's uninstalled
+mark. An uninstall of a Samba the module installed removes the package.
 
 On Windows and macOS the same module drives the system's own SMB server
 through the platform's applier instead.
@@ -338,7 +339,8 @@ class SambaModuleRunner(SystemPackageModuleRunner):
         """Make the users, write the files and set the passwords.
 
         With ``is_started`` false the unit is left as it is, and on a person's
-        Samba the module's shares come off the server. A true one reloads an
+        Samba the module's shares come off the server, what both units were
+        kept first while the row reads running. A true one reloads an
         active unit and starts none: the ``start`` step does. A share whose
         folder is no real folder, or whose name a share of the person's has,
         is left off with its code.
@@ -352,6 +354,8 @@ class SambaModuleRunner(SystemPackageModuleRunner):
         record = _read_record(self._record_path)
         is_ours = record.get("is_package_ours") is True
         is_withdrawn = not is_ours and not is_started
+        if is_withdrawn and self.is_active():
+            self._keep_found_units(record)
         if not is_withdrawn:
             parsed, taken, _smb_conf = self._check_persons(parsed)
             unserved = in_config_order(whole, unserved + taken)
@@ -452,13 +456,19 @@ class SambaModuleRunner(SystemPackageModuleRunner):
         """Take the server and the name server down and disable them, on any Samba.
 
         A person's Samba: the record also marks the module stopped, and keeps
-        what both units were when no start has yet.
+        what both units were when no start has yet. With nothing kept, on a
+        row that does not read running, both units stay as they are.
 
         Raises:
             OSError: When the record cannot be written.
         """
         record = _read_record(self._record_path)
         if record.get("is_package_ours") is not True:
+            if "found_units" not in record and not self.is_active():
+                record["is_served"] = False
+                write_record(self._record_path, record)
+                self._log("samba: left the server and the name server as they are")
+                return
             self._keep_found_units(record)
             record["is_served"] = False
             write_record(self._record_path, record)
