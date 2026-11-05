@@ -10,10 +10,11 @@ module's software is container images, installed by the `container` method
 `agent/neutrino_agent/modules/hermes_webui/` holds `config.py`,
 `constants.py` and `hooks.py`: the forwarder's login, the gateway keys and the
 health read, which the `container` runner calls. The configuration is
-`{secret, password, cookie_name, local_name}`: the token secret, the webui's
-password, the name of the webui's login cookie ("The page"), and the app's
+`{secret, password, cookie_name, local_name, model}`: the token secret, the
+webui's password, the name of the webui's login cookie ("The page"), the app's
 local name, which the forwarder checks the `Host` against
-([../module_template.md](../module_template.md), "The run"). The hub
+([../module_template.md](../module_template.md), "The run"), and the first
+model the gateway serves, empty while it serves none ("The gateway"). The hub
 generates the secret and the password the first time the module is
 installed, and seals both in
 `config/devices/<id>/hermes_webui.json`, beside the module's gateway key. The
@@ -123,7 +124,7 @@ shares").
 
 ## The gateway
 
-The agent points Hermes at the hub's AI gateway by writing four keys into
+The agent points Hermes at the hub's AI gateway by writing five keys into
 `config.yaml` in `home`:
 
 | Key | Value |
@@ -132,13 +133,14 @@ The agent points Hermes at the hub's AI gateway by writing four keys into
 | `model.base_url` | `NEUTRINO_GATEWAY_URL` with `/v1` after it: `http://host.containers.internal:8317/v1` on a managed machine, and the gateway's `listen_port` in place of 8317 on the hub's own machine |
 | `model.key_env` | `NEUTRINO_GATEWAY_KEY` |
 | `model.api_key` | `${NEUTRINO_GATEWAY_KEY}`: the variable's name in the reference form Hermes expands, and never the key |
-| `model.default` | not written: the person picks it from the gateway's models, which the page lists under `custom` |
+| `model.default` | the configuration's `model`: the first model the gateway serves, the one every AI tool defaults to ([../../hub_components/ai.md](../../hub_components/ai.md), "The served list") |
 
 | Rule | Reason |
 | --- | --- |
 | The agent writes each key with `podman exec -u hermes -e HERMES_HOME=/opt/data neutrino_hermes_webui_agent hermes config set <key> <value>`. | Hermes reads a custom endpoint from `config.yaml` alone; `OPENAI_BASE_URL` picks no custom endpoint. `hermes config set` keeps every other line of the person's file. |
-| The keys are written after the install, when `config.yaml` exists in `home`, and again whenever the base URL differs from the one the module's record holds. | The agent image writes `config.yaml` at its first start, about 5 seconds in. The base URL changes with the gateway's `listen_port` on the hub's own machine. |
-| `model.default` is never written. | The model is the person's choice, made in the page from the models the gateway serves. |
+| The first four keys are written after the install, when `config.yaml` exists in `home`, and again whenever the base URL differs from the one the module's record holds. | The agent image writes `config.yaml` at its first start, about 5 seconds in. The base URL changes with the gateway's `listen_port` on the hub's own machine. |
+| `model.default` is written once the other four keys hold the current base URL, and again whenever the configuration's `model` differs from the one the module's record holds; the record keeps the model written. While the configuration holds no model, nothing is written and the record keeps the last one. | A new chat opens on `model.default`, and the agent image's own, `anthropic/claude-opus-4.6`, is a model the gateway does not serve. The first model is the one every AI tool of the hub defaults to. |
+| A default the person saves in the page's settings stays until the gateway's first model changes, and a model the person picks in a chat stays that chat's. | The webui saves its settings' default into `model.default` with `POST /api/default-model`, keeps a chat's pick in that chat with `POST /api/session/update`, and reads `config.yaml` again whenever the file changes. In the lab a `model.default` the agent wrote reached the next new chat with no restart. |
 | `model.api_key` names the variable beside `model.key_env`. | The webui lists a bare `custom` provider's models from the gateway's `/v1/models` with `model.api_key` alone. In the lab, with `model.key_env` alone, the page listed only the image's own `model.default`, which the gateway does not serve, and a chat ended `unknown provider for model`; with both, it listed the gateway's models and a chat reached the provider. |
 | The key is in the containers' environment alone, and `config.yaml` names only its variable. | The hub rewrites the environment at every apply, so a new or voided key reaches Hermes with no edit of the person's file. |
 | The webui container is the one that calls the gateway, with the key from its own environment. | The webui runs the agent's code in its own process: in the lab a stand-in gateway saw every chat request come from the webui's address. |
@@ -159,7 +161,7 @@ packages, the agent's dependencies among them. uv reads its index from
 | --- | --- |
 | The module's `container` entries list one source set, `source_sets: ["pypi"]`. Before the agent writes a container's environment file, it probes the set and writes each of the set's three variables, with the fastest index, into the container's environment ([module_install.md](../module_install.md), "Source sets"). | The index is the one download of the first start, and which index is fastest depends on the machine's own network. |
 | The `pypi` set holds PyPI and its mirrors at Tsinghua, Aliyun and Tencent, the publisher's first. | Each serves the same packages under the same hashes, and every module that fetches Python packages chooses from the same list. |
-| From the install, and after a version change, the module reads `installing` until `config.yaml` holds the keys with the current base URL and `/health` first returns 200. The module's task checks every 30 seconds in its step `first_start` meanwhile ([agent.md](../../agent.md), "The steps"). | The first start took 30 seconds on the lab machine with pypi.org, and a slow index takes minutes. The entry appears when the page can serve a chat. |
+| From the install, and after a version change, the module reads `installing` until `config.yaml` holds the first four keys with the current base URL and `/health` first returns 200. The module's task checks every 30 seconds in its step `first_start` meanwhile ([agent.md](../../agent.md), "The steps"). | The first start took 30 seconds on the lab machine with pypi.org, and a slow index takes minutes. The entry appears when the page can serve a chat. |
 | Once `/health` first returns 200 after the install or a version change, the agent signs in as the forwarder does and saves the webui's own setting `check_for_updates: false` with `POST /api/settings` in the step `update_check`, planned at each start of the module while the module's record does not hold it saved. A failed save is a line in the agent's log, and the module's state does not wait on it. | The webui's update check asks GitHub for its tags and shows a banner that tells the person to `docker pull` a new image and recreate the container, while the module's version comes with a hub release. The webui reads the setting from its `settings.json` in `home` alone. |
 | The manifest's `memory_mib` is 1024 ([containers.md](containers.md), "Memory for the container modules"). | In the lab on Ubuntu 22.04 the first start's own memory peaked at 410 MiB, 254 in the agent container and 156 in the webui's, and settled at 326 MiB. The page cache of the two containers peaked at 1.9 GiB beside it, mostly files copied into the volumes. 1024 leaves room for the imported code in the cache and for the agent's tools. |
 | The two images take about 3.2 GB, and the two caches about 2.4 GB, on the disk of Podman's storage. | The agent image is 2.8 GB, and `agent` and `app` hold copies of its code and of the packages built for the webui. |

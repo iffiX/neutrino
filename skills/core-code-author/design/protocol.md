@@ -1658,11 +1658,13 @@ images and the named volumes `neutrino_<module>_<volume>`.
 
 The `hermes_webui` module runs Hermes WebUI as two hub containers, the
 agent's gateway and the webui ([agent/modules/hermes_webui.md](agent/modules/hermes_webui.md)).
-Its configuration is `{secret, password, cookie_name, local_name}`: the
-token secret; the webui's password; the name of the webui's login cookie,
+Its configuration is `{secret, password, cookie_name, local_name, model}`:
+the token secret; the webui's password; the name of the webui's login cookie,
 `hermes_session_` and the first 12 characters of the device id, which the hub
-also sets in the webui's environment; and the app's local name, which its
-forwarder checks the `Host` against. The agent takes the forwarder's port
+also sets in the webui's environment; the app's local name, which its
+forwarder checks the `Host` against; and the first model the gateway serves,
+empty while it serves none, which the agent writes into Hermes's
+`model.default` when it differs from the one it last wrote. The agent takes the forwarder's port
 itself, from 8787 up. The hub generates both secrets the first time the
 module is installed, keeps them sealed in
 `config/devices/<id>/hermes_webui.json` beside the module's gateway key, and

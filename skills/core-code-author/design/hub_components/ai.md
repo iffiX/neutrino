@@ -107,8 +107,8 @@ the gateway. The hub probes the gateway at most
 once in 10 seconds, and every page of this standard that names the
 models the gateway serves means this list. Its readers are SiYuan's
 `models`, the AI tools' setting and their unchosen models, Ayakaleaf's
-model, the model of a client's `service` frame, and the model pickers of
-the machine page. The `ai` entry of the published list holds no model
+model, Hermes WebUI's `model`, the model of a client's `service` frame, and
+the model pickers of the machine page. The `ai` entry of the published list holds no model
 while the gateway's unit is stopped, and the probe line on Activity is a
 probe of its own at each read.
 
