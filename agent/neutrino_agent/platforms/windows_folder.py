@@ -22,7 +22,6 @@ from __future__ import annotations
 import ctypes
 import errno
 import ntpath
-import os
 
 from neutrino_agent.platforms import win32
 
@@ -163,29 +162,16 @@ class WindowsFolderAccess:
         finally:
             libraries.kernel32.CloseHandle(handle)
 
-    def make(self, path: str) -> None:
-        """Make a missing folder and each one missing above it, each checked by handle once made.
+    def check(self, path: str) -> None:
+        """Open a folder by handle and close it again.
 
         Raises:
-            OSError: ``ELOOP`` when a folder there or made is a reparse
-                point or is reached through one; any other when Windows
-                refuses.
+            OSError: ``ELOOP`` for a folder that is a reparse point or is
+                reached through one; ``ENOTDIR`` for no folder; any other
+                when it cannot be opened.
         """
-        missing = []
-        current = ntpath.normpath(path)
-        while not os.path.lexists(current):
-            missing.append(current)
-            parent = ntpath.dirname(current)
-            if parent == current:
-                break
-            current = parent
-        if not missing:
-            return
         libraries = self._bound()
-        libraries.kernel32.CloseHandle(self.open(current))
-        for level in reversed(missing):
-            os.mkdir(level)
-            libraries.kernel32.CloseHandle(self.open(level))
+        libraries.kernel32.CloseHandle(self.open(path))
 
     def open(self, path: str):
         """One folder's handle, its reparse point opened and never followed.

@@ -205,6 +205,7 @@
   "code.share_unverified": "The server answers, but the share name could not be checked.",
   "code.share_user_unknown": "There is no user {user} to share with.",
   "code.share_users_unknown": "The folder shares {shares} have no account and are not served; check an account for them, or remove them.",
+  "code.share_path_missing": "The folder {path} of the share {name} does not exist, so the share is not served; make the folder, then apply again.",
   "code.shell_failed": "The shell could not be opened: {detail}",
   "code.split_needs_wired_port": "Only a wired port can be split into VLANs.",
   "code.state_not_settled": "{module} is still applying its configuration.",

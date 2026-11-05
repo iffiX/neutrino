@@ -55,14 +55,7 @@ from neutrino_agent.modules.samba.constants import (
     SAMBA_USERS_DIR,
     SAMBA_USERS_FILE_SUFFIX,
 )
-from neutrino_agent.modules.shared.account_files import AccountFiles
-from neutrino_agent.modules.shared.handle_walk import make_dirs, open_dir, place_owner
 from neutrino_agent.modules.shared.subprocess_run import run, unit_state
-
-try:
-    import pwd
-except ImportError:  # Windows carries no pwd.
-    pwd = None
 
 # One row of ``smbstatus -p``: pid, user, group, then the client's name with
 # its address in parentheses.
@@ -645,16 +638,24 @@ class SambaUserManager:
 class SambaConfigApplier:
     """Writes the module's own file, keeps ``smb.conf`` including it, and loads both."""
 
-    def __init__(self, *, unit: str, platform=None):
+    def __init__(self, *, unit: str):
         """
         Args:
             unit: The unit this machine's Samba runs as.
-            platform: The machine's platform, which steps down to make a
-                share's missing folder in an account's place; None leaves
-                such a folder unmade.
         """
         self._unit = unit
-        self._platform = platform
+
+    @staticmethod
+    def is_folder(path: str) -> bool:
+        """Whether a share's folder is on the machine. Nothing is made.
+
+        Args:
+            path: The share's folder.
+
+        Returns:
+            True when the path names a folder.
+        """
+        return os.path.isdir(path)
 
     def plan(self, *, is_served: bool) -> tuple:
         """``smb.conf`` as the next apply leaves it.
@@ -688,8 +689,8 @@ class SambaConfigApplier:
 
         Args:
             rendered: The module's own file.
-            config: The configuration it was rendered from, for the share
-                directories to create.
+            config: The configuration it was rendered from, whose served
+                shares decide whether the file is written.
             user_files: The files under :data:`SAMBA_USERS_DIR` by name, as
                 the renderer gives them; every other file there goes.
             is_reloaded: Whether an active unit reloads the files. Nothing
@@ -715,7 +716,6 @@ class SambaConfigApplier:
                 notes.append("reloaded")
             return "; ".join(notes or ["unchanged"])
         testparm(smb_conf, rendered)
-        notes += self._ensure_share_directories(config)
         self._write_user_files(dict(user_files or {}))
         _write_file(SAMBA_MODULE_CONF_PATH, rendered.encode("utf-8"))
         if smb_conf != current:
@@ -772,66 +772,6 @@ class SambaConfigApplier:
         if read_bytes(SAMBA_CONF_PATH) is None:
             _write_smb_conf(read_stock_conf()[0])
         run(["systemctl", "enable", "--now", self._unit])
-
-    def _ensure_share_directories(self, config: SambaConfig) -> list:
-        """Make a share's folder that is missing, as whoever owns the place it goes in.
-
-        Where an account owns a level of the path, the folder is made as
-        that account, under umask 022. In root's place root makes it, each
-        level opened with no link followed, and gives it to the one account
-        the share writes as, on its open descriptor. A path through a link
-        or a folder others may write is left unmade.
-
-        Returns:
-            One note for each folder left unmade.
-        """
-        notes = []
-        for share in config.shares:
-            if os.path.isdir(share.path):
-                continue
-            try:
-                owner = place_owner(share.path)
-                if owner is None:
-                    notes.append(f"left {share.path} unmade: a link or a shared folder")
-                elif owner != 0:
-                    self._make_as(owner, share.path)
-                else:
-                    self._make_as_root(share.path, share_owner(share, config))
-            except (OSError, KeyError, ModuleApplyError) as error:
-                notes.append(f"left {share.path} unmade: {error}")
-        return notes
-
-    def _make_as(self, uid: int, path: str) -> None:
-        """Make a folder as the account that owns its place.
-
-        Raises:
-            KeyError: When the machine has no account of the uid.
-            OSError: When the platform cannot step down, or the folder
-                cannot be made.
-        """
-        if self._platform is None or pwd is None:
-            raise OSError("no account to make it as")
-        account = pwd.getpwuid(uid).pw_name
-        AccountFiles(platform=self._platform, account=account).make_dir(
-            path, umask=0o022
-        )
-
-    def _make_as_root(self, path: str, account: str) -> None:
-        """Make a folder in root's place, and give it to the account the share writes as.
-
-        Raises:
-            KeyError: When the machine lacks the account.
-            OSError: When a level is a link or the folder cannot be made.
-        """
-        made = make_dirs(path, 0o755)
-        if not made or not account or pwd is None:
-            return
-        entry = pwd.getpwnam(account)
-        descriptor = open_dir(path)
-        try:
-            os.fchown(descriptor, entry.pw_uid, entry.pw_gid)
-        finally:
-            os.close(descriptor)
 
     def _write_user_files(self, user_files: dict) -> None:
         """Write each user's file under the users directory and drop the rest."""
@@ -890,29 +830,6 @@ class SambaUnitApplier:
         run(["systemctl", verb, self._unit], is_checked=False)
         verb = "start" if found.get("is_active") else "stop"
         run(["systemctl", verb, self._unit], is_checked=False)
-
-
-def share_owner(share, config: SambaConfig) -> str:
-    """The machine's account a share's missing folder is made for.
-
-    Args:
-        share: The share.
-        config: The configuration, whose Home shares name each SMB user's
-            account.
-
-    Returns:
-        A Home share's forced account; for a folder share of one SMB user,
-        the account that user's Home share forces; empty for any other,
-        whose folder stays root's.
-    """
-    if share.force_user:
-        return share.force_user
-    if len(share.valid_users) != 1:
-        return ""
-    for held in config.shares:
-        if held.force_user and held.valid_users == share.valid_users:
-            return held.force_user
-    return ""
 
 
 def _write_smb_conf(data: bytes) -> None:

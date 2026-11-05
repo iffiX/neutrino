@@ -11,7 +11,7 @@ an account the password reaches first made by it; one share point per
 share, kept across applies, the module's duplicates removed and all of a
 name's points withdrawn; an apply under ``stopped`` starting no smbd,
 making no point and taking the module's off; folders granted with
-``chmod +a``; no fence, the
+``chmod +a`` and never made; no fence, the
 pf anchor an earlier version kept emptied and its file deleted at the first
 apply that finds the file; foreign names
 refused before anything is touched; the first apply's sweep noting each
@@ -983,7 +983,7 @@ def _folder_share(path) -> SambaConfig:
     )
 
 
-def test_a_folder_in_an_accounts_place_is_made_and_granted_as_that_account(
+def test_a_folder_in_an_accounts_place_is_granted_as_that_account_and_never_made(
     tools, tmp_path, monkeypatch
 ):
     monkeypatch.setattr(applier_module, "pwd", _Accounts)
@@ -1000,7 +1000,7 @@ def test_a_folder_in_an_accounts_place_is_made_and_granted_as_that_account(
         call for call in tools.ran("sharing", "-a")
     ]
     ran = [argv[:2] for _account, argv in platform.as_accounts]
-    assert ["mkdir", "-p"] in ran
+    assert ["mkdir", "-p"] not in ran
     assert ["chmod", "+a"] in ran
     assert {name for name, _argv in platform.as_accounts} == {"ann"}
 

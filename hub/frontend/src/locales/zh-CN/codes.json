@@ -205,6 +205,7 @@
   "code.share_unverified": "服务器有响应，但无法核实这个共享名。",
   "code.share_user_unknown": "没有 {user} 这个用户可以共享给。",
   "code.share_users_unknown": "文件夹共享 {shares} 没有勾选任何账户，所以没有提供；请给它们勾选账户，或删掉它们。",
+  "code.share_path_missing": "共享 {name} 的文件夹 {path} 不存在，所以没有提供；请先建好这个文件夹，再重新应用。",
   "code.shell_failed": "打不开 shell：{detail}",
   "code.split_needs_wired_port": "只有有线网口能拆分成 VLAN。",
   "code.state_not_settled": "“{module}”还在应用配置。",

@@ -8,8 +8,8 @@ then granted to its accounts and taken from the module's others on a
 handle, only where the list differs, a grant replacing the account's own
 rules and a grant Windows refuses failing the apply; a folder that is a
 junction or is reached through one is left ungranted with a note, and a
-share whose folder cannot be made through none is left off the server;
-the host makes no folder; the ``.ssh`` folder
+share whose folder does not open through none is left off the server;
+no folder is made; the ``.ssh`` folder
 under a share stops inheriting and loses every module account, and once it
 inherits nothing loses only the accounts holding a rule there; each
 configured account is denied the console and RDP through the local policy;
@@ -66,7 +66,7 @@ class Icacls:
 
     def __init__(self, refused=(), junctions=()):
         self.calls: list = []
-        self.made: list = []
+        self.checked: list = []
         self._refused = set(refused)
         self.junctions = set(junctions)
 
@@ -87,10 +87,10 @@ class Icacls:
     def keep_own(self, path):
         self._change([path, "/inheritance:d"])
 
-    def make(self, path):
+    def check(self, path):
         if path in self.junctions:
             raise OSError(errno.ELOOP, f"{path} is a junction or a link")
-        self.made.append(path)
+        self.checked.append(path)
 
 
 def folders_holding(held: dict, protected=()):

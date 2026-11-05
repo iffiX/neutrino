@@ -5,9 +5,9 @@ JSON object and answering one, so a password never appears on a command
 line. The module changes only the shares and accounts it made: a share
 whose description starts with the marker and that the module's record
 lists, an account the record lists. Accounts are local, in no group, hidden
-from the sign-in screen and denied the console and RDP. A share's missing
-folder is made before the host shares it, and each share's folder is
-granted to its accounts, and the account's ``.ssh`` folder under it taken
+from the sign-in screen and denied the console and RDP. A share's folder
+is never made; one that is a junction or is reached through one stays off
+the server with a note, and each share's folder is granted to its accounts, and the account's ``.ssh`` folder under it taken
 back from them, so OpenSSH goes on reading the account's own files. SYSTEM
 sets these grants itself, the one change to an account's folder not made
 as the account: each folder is opened by handle with no reparse point
@@ -259,17 +259,17 @@ class SambaWindowsApplier:
         the ``.ssh`` folder under it is taken from them all. Each folder's
         access list is read before the host converges the server, and
         a folder is changed only for an entry that differs from it. A
-        share's missing folder is made first; a share whose folder cannot
-        be made through no reparse point is left off the server with a
-        note, and a folder that is a reparse point or is reached through
-        one is left ungranted with a note.
+        share whose folder does not open by handle through no reparse
+        point is left off the server with a note, and a folder that is a
+        reparse point or is reached through one is left ungranted with a
+        note. No folder is made.
 
         Args:
             config: The validated configuration.
             record: The module's record: ``{"shares", "accounts"}``.
             is_served: Whether the server is started and the shares made.
                 False takes every share of the module's off the server and
-                makes the accounts and the folders alone.
+                makes the accounts and grants the folders alone.
 
         Returns:
             What changed, one note each.
@@ -339,10 +339,22 @@ class SambaWindowsApplier:
             self._deny_logon(name)
         return [str(note) for note in _listed(answer.get("notes"))] + notes
 
+    @staticmethod
+    def is_folder(path: str) -> bool:
+        """Whether a share's folder is on the computer. Nothing is made.
+
+        Args:
+            path: The share's folder.
+
+        Returns:
+            True when the path names a folder.
+        """
+        return os.path.isdir(path)
+
     def _has_folder(self, path: str, notes: list) -> bool:
-        """Make a share's missing folder, checked by handle; whether the share has its folder."""
+        """Whether a share's folder opens by handle with no reparse point on its way; a note for one that does not."""
         try:
-            self._folders.make(path)
+            self._folders.check(path)
         except OSError as error:
             notes.append(f"left share {path} off the server: {error}")
             return False

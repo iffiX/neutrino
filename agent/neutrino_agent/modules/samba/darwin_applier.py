@@ -5,10 +5,10 @@ with ``sharing``, their record names starting with the module's prefix, SMB
 only, no guest, never encrypted. Accounts are made with ``sysadminctl``,
 without a login shell or a home, hidden, and given an SMB password with the
 NT hash turned on first. Folders are granted to each SMB user and its
-machine account with ``chmod +a``, made where they are missing with
-``mkdir -p``, each as whoever owns the folder's place: the account that
-owns a level of its path, else root, and a path through a link or a
-folder others may write is left alone. The module fences nothing: the pf
+machine account with ``chmod +a``, each as whoever owns the folder's
+place: the account that owns a level of its path, else root, and a path
+through a link or a folder others may write is left alone. A missing
+folder is never made. The module fences nothing: the pf
 sub-anchor an earlier version fenced SMB in is emptied, and the rules file
 it kept deleted, at the first apply that finds the file.
 
@@ -179,6 +179,18 @@ class SambaDarwinApplier:
         self._rules_path = rules_path
         self._run = run if run is not None else run_command
         self._platform = platform
+
+    @staticmethod
+    def is_folder(path: str) -> bool:
+        """Whether a share's folder is on the Mac. Nothing is made.
+
+        Args:
+            path: The share's folder.
+
+        Returns:
+            True when the path names a folder.
+        """
+        return os.path.isdir(path)
 
     def read_status(self, record: dict) -> dict:
         """What the server holds of the module's, read now.
@@ -649,7 +661,6 @@ class SambaDarwinApplier:
                 self._take_back(path, known)
         for path, rights in grants.items():
             try:
-                self._in_place(path, ["mkdir", "-p", path])
                 self._take_back(path, known)
                 for name, entry in rights.items():
                     self._in_place(

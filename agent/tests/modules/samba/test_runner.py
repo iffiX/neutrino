@@ -130,10 +130,15 @@ class FakeApplier:
     user_files: dict = {}
     # Whether the unit is active as the applier reads it.
     is_unit_active = True
+    # The share folders the machine does not have.
+    missing: set = set()
 
-    def __init__(self, *, unit, platform=None):
+    def __init__(self, *, unit):
         self.unit = unit
-        self.platform = platform
+
+    @staticmethod
+    def is_folder(path):
+        return path not in FakeApplier.missing
 
     def plan(self, *, is_served):
         FakeApplier.served.append(is_served)
@@ -259,6 +264,7 @@ class FakeUsers:
 def runner(monkeypatch, tmp_path):
     FakeApplier.applied = []
     FakeApplier.started = []
+    FakeApplier.missing = set()
     FakeApplier.stops = 0
     FakeApplier.starts = 0
     FakeApplier.removals = 0
@@ -292,6 +298,57 @@ def runner(monkeypatch, tmp_path):
     )
     held.record_path = tmp_path / "samba.json"
     return held
+
+
+TWO_SHARES = {
+    "shares": [
+        {"name": "share", "path": "/srv/share", "valid_users": ["neutrino-ann"]},
+        {"name": "gone", "path": "/srv/gone", "valid_users": ["neutrino-ann"]},
+    ],
+    "users": ["neutrino-ann"],
+    "passwords": {"neutrino-ann": "generated"},
+}
+
+
+def test_a_share_whose_folder_is_missing_is_left_off_and_named_on_the_row(runner):
+    """No folder is made: the person makes it and applies again."""
+    FakeApplier.missing = {"/srv/gone"}
+    lines: list = []
+    runner._log = lines.append
+
+    runner.apply(TWO_SHARES)
+
+    _unit, rendered, config = FakeApplier.applied[-1]
+    assert [share.name for share in config.shares] == ["share"]
+    assert "[gone]" not in rendered
+    assert "[share]" in rendered
+    assert runner.notice() == {
+        "code": "share_path_missing",
+        "params": {"name": "gone", "path": "/srv/gone"},
+    }
+    assert any(
+        "left share gone off the server: /srv/gone does not exist" in line
+        for line in lines
+    )
+    FakeApplier.missing = set()
+    runner.apply(TWO_SHARES)
+    assert runner.notice() == {}
+
+
+def test_a_share_with_no_account_is_named_before_a_missing_folder(runner):
+    FakeApplier.missing = {"/srv/gone"}
+    config = {
+        **TWO_SHARES,
+        "shares": TWO_SHARES["shares"]
+        + [{"name": "nobody", "path": "/srv/nobody", "valid_users": []}],
+    }
+
+    runner.apply(config)
+
+    assert runner.notice() == {
+        "code": "share_users_unknown",
+        "params": {"shares": "nobody"},
+    }
 
 
 def test_the_unit_follows_the_family(runner):
@@ -1579,6 +1636,7 @@ class FakeNativeApplier:
     """The system server's applier, recording each call with its record."""
 
     def __init__(self):
+        self.missing: set = set()
         self.calls: list = []
         self.sweeps: list = []
         self.served: list = []
@@ -1588,6 +1646,9 @@ class FakeNativeApplier:
         self.server = {"start_type": "Automatic", "is_running": True}
         self.dependents: list = []
         self.stop_refusal = None
+
+    def is_folder(self, path):
+        return path not in self.missing
 
     def read_server(self):
         return dict(self.server)
@@ -1680,6 +1741,25 @@ def native(tmp_path):
 
 def record_of(native_runner) -> dict:
     return native_runner._read_record()
+
+
+def test_a_native_share_whose_folder_is_missing_is_left_off_and_named_on_the_row(
+    native,
+):
+    native.applier.missing = {"D:\\share"}
+
+    native.apply(WINDOWS_CONFIG)
+
+    _name, config, _record = [
+        call for call in native.applier.calls if call[0] == "apply"
+    ][-1]
+    assert config["shares"] == []
+    assert config["users"] == ["neutrino-ann"]
+    assert native.notice() == {
+        "code": "share_path_missing",
+        "params": {"name": "share", "path": "D:\\share"},
+    }
+    assert record_of(native)["shares"] == {}
 
 
 def test_the_native_server_s_account_steps_take_system_accounts(native):
