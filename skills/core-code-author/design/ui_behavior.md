@@ -663,6 +663,19 @@ An app's row with a `web` entry carries **Share** (分享), a ghost button
 that opens the Clients page's App share dialog with that entry chosen ("The
 Clients page"). An app with no `web` entry has no **Share**.
 
+An address of any length stays inside its row at a phone's width, 360 px and
+up, in either language, and so does every chip and button of the row. An
+entry's address breaks anywhere inside its chip, after the entry's kind and
+before a declared entry's state word, which stay whole on the chip's first
+line. A host shown beside the title breaks anywhere too. **Share**,
+**Test**, **Delete** and the source badge wrap onto a second line when the
+title's line is too short for them.
+
+| Rule | Reason |
+| --- | --- |
+| A long address wraps inside its chip and is shown whole. | A phone has no pointer to show a cut address in a tooltip, and the end of an address is often the part that tells two entries apart. |
+| The break inserts no character. | A copy of the address is the address. |
+
 ## The Clients page
 
 The **Clients** page, at `/clients`, is who reaches the hub's machines from
