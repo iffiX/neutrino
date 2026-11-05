@@ -16,7 +16,7 @@ Codeg 是 AI 编程工作台。你可以在同一个网页里使用 Claude Code�
 
 ## 安装
 
-Codeg 不包含 AI 工具。开始之前，你要先用你的账户在这个系统上安装要使用的工具，并登录一次。Claude Code 的安装方法见 [Claude Code 的安装页](https://code.claude.com/docs/en/setup)。
+Codeg 不包含 AI 工具。开始之前，你要先用你的账户在这个系统上安装要使用的工具，并登录一次。其中两个工具有现成的模块，见 [Claude Code](/deploy/claude_code) 和 [Codex](/deploy/codex)。Claude Code 的安装方法见 [Claude Code 的安装页](https://code.claude.com/docs/en/setup)。
 
 1. 在浏览器里打开面板并登录，再到左侧栏的下半部分，点你要安装到的系统。确认 **可用账户** 里有你的账户。如果没有，先按[添加账户](/deploy/on_a_machine#添加账户)的步骤添加它。
 1. 在 **模块配置** 区域，按 **+ 添加模块**。在弹窗里勾选 **Codeg** 卡片，卡片亮起后按 **关闭**。

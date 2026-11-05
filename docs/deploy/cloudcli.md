@@ -4,7 +4,7 @@ CloudCLI 是 Claude Code 等 AI 编程工具的网页界面。你可以在手机
 
 <Facts systems="Linux,Windows,macOS" editions="国际版,国内版" since="0.5.0" />
 
-每个账户运行一个实例。你用哪个账户登录 Claude Code，就为哪个账户启用 CloudCLI。如果你要在一个网页里使用多种 AI 工具，可以改用 [Codeg](/deploy/codeg)。
+每个账户运行一个实例。你在哪个账户里使用 CloudCLI，就为哪个账户启用它。如果你要在一个网页里使用多种 AI 工具，可以改用 [Codeg](/deploy/codeg)。
 
 ## 支持的系统
 
@@ -16,7 +16,7 @@ CloudCLI 是 Claude Code 等 AI 编程工具的网页界面。你可以在手机
 
 ## 安装
 
-CloudCLI 不包含 Claude Code。开始之前，你要先用你的账户在这个系统上安装 Claude Code，并运行一次 `claude` 登录。安装方法见 [Claude Code 的安装页](https://code.claude.com/docs/en/setup)。
+CloudCLI 自带 Claude Code，你不用另外安装。开始之前，你要让它能访问模型。推荐的做法是在中枢的 AI 页添加订阅或 API 密钥，再在这个账户的表单里打开 **AI 工具使用中枢网关**，见 [AI 网关](/hub/ai_gateway)。如果你不用 AI 网关，要先用你的 Claude 账号登录一次 Claude Code，比如安装 [Claude Code](/deploy/claude_code) 模块后在终端里运行 `claude`。登录信息保存在这个账户的 `~/.claude` 里，CloudCLI 共用它。
 
 CloudCLI 只在下面这些目录里查找 `claude`，官方安装命令的安装目录也在其中。
 
@@ -45,7 +45,7 @@ CloudCLI 只在下面这些目录里查找 `claude`，官方安装命令的安�
    ![标签显示安装中，第一步是安装 Node.js](/guide/zh/deploy_cloudcli_06_installing.webp "安装中")
    ![标签显示已安装，启动按钮标红](/guide/zh/deploy_cloudcli_07_installed.webp "按 启动")
 
-1. 标签变成 **运行中，没有账户**。按 **配置**，下面会展开设置。在 **启用的账户** 里勾选你安装 Claude Code 的账户。
+1. 标签变成 **运行中，没有账户**。按 **配置**，下面会展开设置。在 **启用的账户** 里勾选你的账户。
 
    ![标签显示运行中，没有账户，配置按钮标红](/guide/zh/deploy_cloudcli_17_started.webp "按 配置")
    ![启用的账户一栏，lab 这一行标红](/guide/zh/deploy_cloudcli_08_tick_account.webp "勾选 lab")

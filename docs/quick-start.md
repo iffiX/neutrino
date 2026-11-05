@@ -90,47 +90,20 @@
 
 如果向导报错或者你打不开向导，查看[安装中枢](/hub/install)和[故障排查](/reference/troubleshooting)。
 
-## 第二步：安装 Claude Code
+## 第二步：在 AI 网关里登录 Claude 订阅
 
-Claude Code 是 Anthropic 的 AI 编程工具，微子·中枢不包含它。你要用自己的 Claude 账号登录，费用由 Anthropic 决定。
+CloudCLI 通过中枢的 AI 网关使用 Claude，所以你不用在电脑上安装 Claude Code。下面用你的 Claude 订阅登录一次，费用由 Anthropic 决定。如果你使用 API 密钥，按 [AI 网关](/hub/ai_gateway) 的“添加 API 密钥”一节添加，再继续第三步。
 
-CloudCLI 不包含 Claude Code，所以你要先用自己的账户安装它。这一步不在面板上操作。
+1. 在面板左侧栏点 **AI**，在 **账号** 一栏按 **登录**，再在弹窗里选择 Claude。
 
-1. 用你平时登录这台电脑的账户打开一个新终端。下面的命令直接运行，前面不用加 `sudo`。
+   ![AI 页，账号一栏的登录按钮标红](/guide/zh/hub_ai_gateway_18_accounts.webp "按 登录")
+   ![登录订阅的弹窗，列出可选的服务商](/guide/zh/hub_ai_gateway_08_sign_in.webp "选择 Claude")
 
-1. 运行 Claude Code 官方的安装命令。详细说明见 [Claude Code 的安装页](https://code.claude.com/docs/en/setup)。
+1. 弹窗会显示一个地址。按 **复制**，在浏览器里打开这个地址，用你的 Claude 账号登录并同意。
 
-   ::: code-group
+1. 登录后，浏览器可能显示页面无法打开，这是正常现象。复制地址栏的内容，粘贴到弹窗的 **地址栏或验证码**，再按 **完成登录**。**账号** 一栏多出一行时，这一步就完成了。
 
-   ```bash [Linux、macOS]
-   curl -fsSL https://claude.ai/install.sh | bash
-   ```
-
-   ```powershell [Windows]
-   irm https://claude.ai/install.ps1 | iex
-   ```
-
-   :::
-
-1. 看到 `Claude Code successfully installed!`，就安装好了。如果结果显示 `~/.local/bin is not in your PATH`，运行它给出的那条命令。
-
-   ```text
-   Checking installation status...
-   Installing Claude Code native build latest...
-   Setting up launcher and shell integration...
-
-   ✔ Claude Code successfully installed!
-
-     Version: 2.1.316
-
-     Location: ~/.local/bin/claude
-
-     Next: Run claude --help to get started
-
-   ✅ Installation complete!
-   ```
-
-1. 打开一个新终端，运行 `claude`，按屏幕上的提示用你自己的 Claude 账号登录一次。如果你能和 Claude Code 对话，这一步就完成了。然后输入 `/exit` 退出。
+   ![使用 Claude 登录的弹窗，有地址和输入框](/guide/zh/hub_ai_gateway_17_sign_in_step.webp "粘贴后按 完成登录")
 
 ## 第三步：在面板上安装 CloudCLI
 
@@ -139,9 +112,10 @@ CloudCLI 不包含 Claude Code，所以你要先用自己的账户安装它。�
    ![左侧栏下半部分，这台电脑的名字标红](/guide/zh/deploy_on_a_machine_01_sidebar.webp "按这台电脑的名字")
    ![可用账户一栏，添加按钮标红](/guide/zh/deploy_on_a_machine_02_accounts_add.webp "按 添加")
 
-1. 在 **系统账户** 里选择你刚才安装 Claude Code 的账户。在 Windows 上，你还要在 **密码** 里填写这个账户的登录密码。如果你平时用 PIN 开机，这里也要填写密码，不是 PIN。然后按 **保存**。如果这一栏已经列出这个账户，跳过这一步。
+1. 在 **系统账户** 里选择你平时登录这台电脑的账户。在 Windows 上，你还要在 **密码** 里填写这个账户的登录密码。如果你平时用 PIN 开机，这里也要填写密码，不是 PIN。再打开 **AI 工具使用中枢网关**，然后按 **保存**。如果这一栏已经列出这个账户，按这一行的 **编辑**，打开这个开关后保存。
 
-   ![账户表单，系统账户选择框标红](/guide/zh/deploy_on_a_machine_03_account_form.webp "选择账户，按 保存")
+   ![账户表单，系统账户选择框标红](/guide/zh/deploy_on_a_machine_03_account_form.webp "选择账户")
+   ![账户表单，AI 工具使用中枢网关开关标红](/guide/zh/hub_ai_gateway_13_account_switch.webp "打开开关，按 保存")
 
 1. 在 **模块配置** 一栏按 **+ 添加模块**。在弹窗里点 **CloudCLI** 的卡片，卡片亮起表示已选中，再按右下角的 **关闭**。
 

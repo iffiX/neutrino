@@ -56,21 +56,23 @@ Windows 版只有 x86-64，RustDesk 和 cc-switch 都没有 ARM64 版。
 
 系统不能运行的应用，在 **添加模块** 弹窗里显示为灰色。
 
-| 应用         | Linux                        | Windows                      | macOS             | 其他要求                                          |
-| ------------ | ---------------------------- | ---------------------------- | ----------------- | ------------------------------------------------- |
-| 远程桌面     | 有                           | 有                           | 有                | 被控端自带                                        |
-| 文件共享     | Debian、RHEL、Arch 三族      | 系统自带                     | 系统自带          | Linux 上系统的 Samba 4.15 及以上                  |
-| 终端         | 有                           | 有                           | 有                | 被控端自带                                        |
-| SSH 服务器   | amd64、arm64                 | amd64                        | Apple 芯片、Intel | 被控端自带                                        |
-| VS Code      | amd64、arm64                 | amd64                        | Apple 芯片、Intel | 你要先接受微软的条款                              |
-| code-server  | amd64、arm64                 | 没有                         | Apple 芯片、Intel |                                                   |
-| Gitea        | amd64、arm64                 | amd64                        | Apple 芯片、Intel | 在 Windows、macOS 上，你要自行安装 git 2.0 及以上 |
-| CloudCLI     | amd64、arm64                 | amd64                        | Apple 芯片、Intel | 你要先用这个账户安装 Claude Code                  |
-| Codeg        | amd64、arm64                 | amd64                        | Apple 芯片、Intel |                                                   |
-| Hermes WebUI | 能运行 **容器** 的系统都支持 | amd64                        | Apple 芯片、Intel | 需要 **容器**，建议内存 1 GiB                     |
-| Ayakaleaf    | 能运行 **容器** 的系统都支持 | amd64                        | Apple 芯片、Intel | 需要 **容器**，建议内存 3 GiB                     |
-| 思源笔记     | amd64、arm64                 | amd64                        | Apple 芯片、Intel |                                                   |
-| 容器         | Debian、RHEL、Arch 三族      | amd64，内部版本 19041 及以上 | 13 及以上         | Linux 上系统的 Podman 3.4 及以上                  |
+| 应用         | Linux                        | Windows                      | macOS             | 其他要求                                           |
+| ------------ | ---------------------------- | ---------------------------- | ----------------- | -------------------------------------------------- |
+| 远程桌面     | 有                           | 有                           | 有                | 被控端自带                                         |
+| 文件共享     | Debian、RHEL、Arch 三族      | 系统自带                     | 系统自带          | Linux 上系统的 Samba 4.15 及以上                   |
+| 终端         | 有                           | 有                           | 有                | 被控端自带                                         |
+| SSH 服务器   | amd64、arm64                 | amd64                        | Apple 芯片、Intel | 被控端自带                                         |
+| VS Code      | amd64、arm64                 | amd64                        | Apple 芯片、Intel | 你要先接受微软的条款                               |
+| code-server  | amd64、arm64                 | 没有                         | Apple 芯片、Intel |                                                    |
+| Gitea        | amd64、arm64                 | amd64                        | Apple 芯片、Intel | 在 Windows、macOS 上，你要自行安装 git 2.0 及以上  |
+| CloudCLI     | amd64、arm64                 | amd64                        | Apple 芯片、Intel | 自带 Claude Code，推荐打开 **AI 工具使用中枢网关** |
+| Codeg        | amd64、arm64                 | amd64                        | Apple 芯片、Intel |                                                    |
+| Hermes WebUI | 能运行 **容器** 的系统都支持 | amd64                        | Apple 芯片、Intel | 需要 **容器**，建议内存 1 GiB                      |
+| Ayakaleaf    | 能运行 **容器** 的系统都支持 | amd64                        | Apple 芯片、Intel | 需要 **容器**，建议内存 3 GiB                      |
+| 思源笔记     | amd64、arm64                 | amd64                        | Apple 芯片、Intel |                                                    |
+| Claude Code  | amd64、arm64                 | amd64、arm64                 | Apple 芯片、Intel | 普通程序，在终端里运行                             |
+| Codex        | amd64、arm64                 | amd64、arm64                 | Apple 芯片、Intel | 普通程序，在终端里运行                             |
+| 容器         | Debian、RHEL、Arch 三族      | amd64，内部版本 19041 及以上 | 13 及以上         | Linux 上系统的 Podman 3.4 及以上                   |
 
 不属于这三族的 Linux，比如 Alpine，没有容器，所以也不能运行 Hermes WebUI 和 Ayakaleaf。
 
