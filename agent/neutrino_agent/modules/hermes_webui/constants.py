@@ -24,7 +24,7 @@ HERMES_WEBUI_EXEC_HOME = "HERMES_HOME=/opt/data"
 HERMES_WEBUI_CONFIG_FILE = "/opt/data/config.yaml"
 HERMES_WEBUI_CONFIG_COMMAND = ("hermes", "config", "set")
 # The variables the hub composes into both containers, and what the agent
-# writes into config.yaml from them; ``model.default`` stays the person's.
+# writes into config.yaml from them; ``model.default`` is the state's model.
 HERMES_WEBUI_GATEWAY_URL_VARIABLE = "NEUTRINO_GATEWAY_URL"
 HERMES_WEBUI_GATEWAY_KEY_VARIABLE = "NEUTRINO_GATEWAY_KEY"
 # The variable in the reference form the webui expands, which it reads a
@@ -32,6 +32,7 @@ HERMES_WEBUI_GATEWAY_KEY_VARIABLE = "NEUTRINO_GATEWAY_KEY"
 HERMES_WEBUI_GATEWAY_KEY_REFERENCE = "${NEUTRINO_GATEWAY_KEY}"
 HERMES_WEBUI_BASE_URL_SUFFIX = "/v1"
 HERMES_WEBUI_PROVIDER = "custom"
+HERMES_WEBUI_MODEL_KEY = "model.default"
 # How long one podman call the hooks make may take; ``hermes config set``
 # starts a Python program in the container.
 HERMES_WEBUI_PODMAN_TIMEOUT_S = 120
@@ -54,8 +55,8 @@ HERMES_WEBUI_UPDATE_CHECK_OFF = {"check_for_updates": False}
 # What the module keeps, root-only, in its record: the forwarder's port and
 # secrets, the login cookie's name, the app's local name, the loopback port
 # the webui is published at, the pair it last installed, the base URL the keys were written with,
-# whether its first start has ended, whether the webui's update check is
-# off, and whether it was stopped.
+# the model last written into ``model.default``, whether its first start has
+# ended, whether the webui's update check is off, and whether it was stopped.
 HERMES_WEBUI_RECORD_FIELDS = (
     "account",
     "port",
@@ -66,6 +67,7 @@ HERMES_WEBUI_RECORD_FIELDS = (
     "upstream_port",
     "version",
     "base_url",
+    "model",
     "is_ready",
     "is_update_check_off",
     "is_stopped",

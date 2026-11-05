@@ -14,7 +14,10 @@ sent them; every other request, and the browser's own login request, is
 Once ``config.yaml`` exists in ``home`` the agent writes ``model.provider``,
 ``model.base_url``, ``model.key_env`` and ``model.api_key``, the last two
 naming the key's variable, with ``hermes config set`` in the agent container, and again whenever the base URL differs from the one the
-record holds. From the install, and after a version change, the module
+record holds. Once they hold the current base URL it writes
+``model.default`` with the model the state sends, again whenever that model
+differs from the one the record holds, and nothing while the state sends
+none. From the install, and after a version change, the module
 reads ``installing`` until the keys hold the current base URL and the
 webui's ``/health`` first answers 200: the step ``first_start`` of the
 module's task checks every 30 seconds meanwhile. Then the step
@@ -63,6 +66,7 @@ from neutrino_agent.modules.hermes_webui.constants import (
     HERMES_WEBUI_HEALTH_PATH,
     HERMES_WEBUI_HEALTH_TIMEOUT_S,
     HERMES_WEBUI_LOGIN_PATH,
+    HERMES_WEBUI_MODEL_KEY,
     HERMES_WEBUI_PENDING,
     HERMES_WEBUI_PODMAN_TIMEOUT_S,
     HERMES_WEBUI_PROVIDER,
@@ -119,8 +123,8 @@ def gateway_keys(base_url: str) -> list:
     Returns:
         ``(key, value)`` for ``model.provider``, ``model.base_url`` and
         ``model.key_env`` and ``model.api_key``, both naming the key's
-        variable and neither holding the key; ``model.default`` is the
-        person's.
+        variable and neither holding the key; ``model.default`` is written
+        on its own.
     """
     return [
         ("model.provider", HERMES_WEBUI_PROVIDER),
@@ -318,7 +322,7 @@ class HermesWebuiHooks(ContainerHooks):
         """Take the module's configuration.
 
         Args:
-            config: ``{secret, password, cookie_name, local_name}``.
+            config: ``{secret, password, cookie_name, local_name, model}``.
         """
         self._config = HermesWebuiConfig.from_dict(config)
 
@@ -345,7 +349,7 @@ class HermesWebuiHooks(ContainerHooks):
             )
 
     def start(self) -> None:
-        """Serve the page, and write the gateway keys again once the first start has ended and the base URL changed.
+        """Serve the page, and once the first start has ended write the gateway keys again for a new base URL and ``model.default`` for a new model.
 
         Raises:
             ModuleApplyError: When the Containers runner cannot keep the
@@ -554,23 +558,49 @@ class HermesWebuiHooks(ContainerHooks):
             self._turn_update_check_off(record)
 
     def _keys_written(self, record: dict, base_url: str, *, context=None) -> dict:
-        """The record after the gateway keys are written for a base URL it does not hold, once ``config.yaml`` exists.
+        """The record after the gateway keys are written for a base URL it does not hold, once ``config.yaml`` exists, then ``model.default``.
 
         Args:
             record: The module's record.
             base_url: The base URL the agent container names now.
             context: The first start's task context. The record keeps no
-                base URL written after its agent began to stop. None keeps it.
+                base URL or model written after its agent began to stop.
+                None keeps it.
 
         Returns:
-            The record, with the base URL the keys hold.
+            The record, with the base URL the keys hold and the model
+            ``model.default`` holds.
         """
         if base_url and base_url != record.get("base_url") and self._has_config_file():
             if self._write_keys(base_url):
                 if context is not None and self._is_stopping(context, "base_url"):
                     return record
-                return self._keep({**record, "base_url": base_url})
-        return record
+                record = self._keep({**record, "base_url": base_url})
+        if not base_url or record.get("base_url") != base_url:
+            return record
+        return self._model_written(record, context=context)
+
+    def _model_written(self, record: dict, *, context=None) -> dict:
+        """The record after ``model.default`` is written with the configuration's model, when the record holds another.
+
+        Args:
+            record: The module's record, its keys holding the current base
+                URL.
+            context: As :meth:`_keys_written` takes it.
+
+        Returns:
+            The record, with the model ``model.default`` holds; unchanged
+            while the configuration holds no model.
+        """
+        model = self._config.model if self._config is not None else ""
+        if not model or model == record.get("model"):
+            return record
+        if not self._set_key(HERMES_WEBUI_MODEL_KEY, model):
+            return record
+        self._log(f"{self._name}: {HERMES_WEBUI_MODEL_KEY} is {model}")
+        if context is not None and self._is_stopping(context, "model"):
+            return record
+        return self._keep({**record, "model": model})
 
     def _turn_update_check_off(self, record: dict) -> None:
         """Save the webui's ``check_for_updates`` off once; a failure is a line in the log."""
@@ -673,24 +703,30 @@ class HermesWebuiHooks(ContainerHooks):
     def _write_keys(self, base_url: str) -> bool:
         """Write the four keys with ``hermes config set``; False at the first that fails."""
         for key, value in gateway_keys(base_url):
-            done = self._quietly(
-                [
-                    "exec",
-                    "-u",
-                    HERMES_WEBUI_EXEC_USER,
-                    "-e",
-                    HERMES_WEBUI_EXEC_HOME,
-                    HERMES_WEBUI_AGENT_CONTAINER,
-                    *HERMES_WEBUI_CONFIG_COMMAND,
-                    key,
-                    value,
-                ]
-            )
-            if done is None or not done.is_success:
-                said = (done.stderr or done.stdout or "").strip() if done else ""
-                self._log(f"{self._name}: {key} not written: {said[:DETAIL_CHARS]}")
+            if not self._set_key(key, value):
                 return False
         self._log(f"{self._name}: the gateway keys name {base_url}")
+        return True
+
+    def _set_key(self, key: str, value: str) -> bool:
+        """Write one key with ``hermes config set``; False when it fails, after a line in the log."""
+        done = self._quietly(
+            [
+                "exec",
+                "-u",
+                HERMES_WEBUI_EXEC_USER,
+                "-e",
+                HERMES_WEBUI_EXEC_HOME,
+                HERMES_WEBUI_AGENT_CONTAINER,
+                *HERMES_WEBUI_CONFIG_COMMAND,
+                key,
+                value,
+            ]
+        )
+        if done is None or not done.is_success:
+            said = (done.stderr or done.stdout or "").strip() if done else ""
+            self._log(f"{self._name}: {key} not written: {said[:DETAIL_CHARS]}")
+            return False
         return True
 
     def _reset_caches(self) -> None:

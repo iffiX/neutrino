@@ -6,8 +6,10 @@ name and a redirect to ``/``, the cookie passed on with ``Host`` and
 ``Origin`` unchanged, 401 for ``/api/auth/login`` whatever it holds and for
 a request with neither; two devices' pages open in one browser keeping both
 logins; the four gateway keys written with ``hermes config set``
-once ``config.yaml`` exists and again when the base URL changes, never
-``model.default``; ``installing`` until the keys and ``/health`` hold, the
+once ``config.yaml`` exists and again when the base URL changes;
+``model.default`` written after them once, again when the model the state
+sends changes, and never while it sends none; ``installing`` until the keys
+and ``/health`` hold, the
 step ``first_start`` waiting meanwhile; the webui's own update check saved
 off in the step ``update_check`` once the first start has ended, each step
 planned only while the record owes it; a version change making ``agent`` and ``app``
@@ -85,6 +87,7 @@ class FakePodman:
         self.url = url
         self.is_running = is_running
         self.has_config = has_config
+        self.refused_key = ""
         self.calls: list = []
 
     def __call__(self, command, *, is_checked=True, input_text=None, timeout_s=120):
@@ -104,6 +107,8 @@ class FakePodman:
             return CommandResult(list(command), 0, json.dumps([entry]), "")
         if verb == "exec" and "test" in command:
             return CommandResult(list(command), 0 if self.has_config else 1, "", "")
+        if self.refused_key and self.refused_key in command:
+            return CommandResult(list(command), 1, "", "refused")
         return CommandResult(list(command), 0, "", "")
 
     def config_sets(self) -> list:
@@ -309,6 +314,113 @@ def test_once_config_yaml_exists_the_four_keys_are_written_with_hermes_config_se
     assert box.record()["base_url"] == URL + "/v1"
     assert box.record()["is_ready"] is True
     assert box.hooks.is_installing() is False
+
+
+def model_sets(box) -> list:
+    return [call[-1] for call in box.podman.config_sets() if "model.default" in call]
+
+
+def test_the_state_s_model_is_written_once_after_the_four_keys(box):
+    box.podman.has_config = True
+    box.status = 200
+    box.hooks.installed("0.52.492")
+    box.hooks.apply({**CONFIG, "model": "deepseek-flash"})
+
+    box.start()
+    box.start()
+
+    sets = box.podman.config_sets()
+    assert [call[-2] for call in sets] == [
+        "model.provider",
+        "model.base_url",
+        "model.key_env",
+        "model.api_key",
+        "model.default",
+    ]
+    assert sets[-1][:-2] == sets[0][:-2]
+    assert model_sets(box) == ["deepseek-flash"]
+    assert box.record()["model"] == "deepseek-flash"
+    assert "hermes_webui: model.default is deepseek-flash" in box.lines
+
+
+def test_a_model_that_changes_is_written_again_and_the_same_one_is_not(box):
+    box.podman.has_config = True
+    box.status = 200
+    box.hooks.installed("0.52.492")
+    box.hooks.apply({**CONFIG, "model": "deepseek-flash"})
+    box.start()
+
+    box.hooks.apply({**CONFIG, "model": "deepseek-v4-pro"})
+    box.start()
+    box.hooks.apply({**CONFIG, "model": "deepseek-v4-pro"})
+    box.start()
+
+    assert model_sets(box) == ["deepseek-flash", "deepseek-v4-pro"]
+    assert box.record()["model"] == "deepseek-v4-pro"
+    assert len(box.podman.config_sets()) == 6
+
+
+def test_no_model_is_written_while_the_state_sends_none(box):
+    box.podman.has_config = True
+    box.status = 200
+    box.hooks.installed("0.52.492")
+    box.hooks.apply({**CONFIG, "model": "deepseek-flash"})
+    box.start()
+
+    box.hooks.apply({**CONFIG, "model": ""})
+    box.start()
+    box.hooks.apply({**CONFIG, "model": "deepseek-flash"})
+    box.start()
+
+    assert model_sets(box) == ["deepseek-flash"]
+    assert box.record()["model"] == "deepseek-flash"
+
+
+def test_no_model_is_written_before_the_keys_hold_the_base_url(box):
+    box.hooks.installed("0.52.492")
+    box.hooks.apply({**CONFIG, "model": "deepseek-flash"})
+
+    with pytest.raises(ModuleInstallPending):
+        box.start()
+    box.podman.has_config = True
+    box.podman.is_running = False
+    with pytest.raises(ModuleInstallPending):
+        box.start()
+
+    assert box.podman.config_sets() == []
+    assert not box.record()["model"]
+
+
+def test_a_model_not_written_is_tried_again_at_the_next_start(box):
+    box.podman.has_config = True
+    box.status = 200
+    box.hooks.installed("0.52.492")
+    box.hooks.apply(CONFIG)
+    box.start()
+    box.podman.refused_key = "model.default"
+
+    box.hooks.apply({**CONFIG, "model": "deepseek-flash"})
+    box.start()
+    assert not box.record()["model"]
+    assert any("model.default not written" in line for line in box.lines)
+    box.podman.refused_key = ""
+    box.start()
+
+    assert model_sets(box) == ["deepseek-flash", "deepseek-flash"]
+    assert box.record()["model"] == "deepseek-flash"
+
+
+def test_a_model_written_after_the_agent_began_to_stop_is_not_kept(box):
+    box.podman.has_config = True
+    box.hooks.installed("0.52.492")
+    box.hooks.apply({**CONFIG, "model": "deepseek-flash"})
+    box.context.is_stopped = True
+
+    with pytest.raises(ModuleInstallPending):
+        box.start()
+
+    assert model_sets(box) == []
+    assert not box.record()["model"]
 
 
 def test_keys_written_after_the_agent_began_to_stop_are_not_kept(box):

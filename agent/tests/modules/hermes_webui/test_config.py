@@ -1,4 +1,4 @@
-"""Hermes WebUI's configuration: its two secrets, the login cookie's name and the app's local name."""
+"""Hermes WebUI's configuration: its two secrets, the login cookie's name, the app's local name and the gateway's first model."""
 
 from neutrino_agent.modules.hermes_webui.config import HermesWebuiConfig
 
@@ -29,3 +29,11 @@ def test_the_cookie_name_is_the_hub_s_and_the_webui_s_default_without_one():
     assert HermesWebuiConfig.from_dict({"cookie_name": ""}).cookie_name == (
         "hermes_session"
     )
+
+
+def test_the_model_is_the_state_s_and_empty_without_one():
+    assert HermesWebuiConfig.from_dict({"model": "deepseek-flash"}).model == (
+        "deepseek-flash"
+    )
+    assert HermesWebuiConfig.from_dict({}).model == ""
+    assert HermesWebuiConfig.from_dict({"model": None}).model == ""
