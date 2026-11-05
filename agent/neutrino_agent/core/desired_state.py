@@ -25,7 +25,9 @@ boundary. Each artifact an install receives comes down a ``package
 {module}`` stream.
 
 The applied hash is what the hub compares against: it moves to the state's
-hash once every mentioned module's task has ended with no failure. Each
+hash once every mentioned module's task has ended with no failure, and a
+join and a leave empty it, so the first report of the new binding names no
+hash and the hub sends the state. Each
 module's entry, and the ``ai_tools`` section, is tried once: the hash of the
 entry a task last planned from is kept per section beside the state on
 disk, under the build of the agent that tried it, so a change to one entry,
@@ -435,21 +437,27 @@ class DesiredStateApplier:
             )
 
     def forget_tried(self) -> None:
-        """Forget every hash last tried, here and on disk: what each was tried
-        against is gone."""
+        """Forget the hashes last tried, here and on disk, and the applied hash.
+
+        A join and a leave end what each was tried against, and the first
+        report of the new binding names no hash.
+        """
         with self._lock:
             self._tried = {}
+            self._forget_applied()
         try:
             self._store.clear_tried()
         except OSError as error:
             self._log(f"could not forget the tried state: {error}")
 
     def reload_tried(self) -> None:
-        """Read the hashes last tried from disk again, after another process
-        changed the binding and, with it, the marks."""
+        """Read the hashes last tried from disk again and forget the applied
+        hash, after another process changed the binding and with it the
+        marks."""
         tried = self._store.read_tried()
         with self._lock:
             self._tried = tried
+            self._forget_applied()
 
     def latest(self) -> dict:
         """The last state taken from the hub, as it was kept.
@@ -1037,6 +1045,12 @@ class DesiredStateApplier:
         if self._rdp is None or not isinstance(wanted, dict):
             return
         self._rdp.take_seat_password(str(wanted.get("seat_password", "")))
+
+    def _forget_applied(self) -> None:
+        """Empty the applied hash, and the hash a task of the old binding
+        would move it to when it ends. Call under the lock."""
+        self._applied_hash = ""
+        self._document = {}
 
     def _write_tried(self) -> None:
         """Keep the hashes last tried on disk. A failure is a line in the log.

@@ -18,7 +18,8 @@ of the transport while the state says ``is_forwarded``; the streams this
 side opens on its own connections; the self-update a newer hub's
 ``software`` triggers once the first report has gone out; a command's
 line in the agent's log, written for every command but a read; a leave, a
-join, ``sync`` and the status ``probe``; a binding of 0.5 taking the hub's key;
+join, ``sync`` and the status ``probe``; a leave and a join another process
+wrote emptying the applied hash; a binding of 0.5 taking the hub's key;
 and the relays run with the loop. Nothing here talks to a network beyond
 a Unix socket in a temporary directory.
 """
@@ -282,6 +283,24 @@ def test_a_binding_removed_by_another_process_is_undialled(fake, config_path):
     fake.wait_command("undial")
     assert not agent.is_online()
     assert agent._operator is None
+
+
+def test_a_leave_and_a_join_from_another_process_report_no_applied_hash(
+    fake, config_path
+):
+    """``nagent leave`` and ``nagent join`` to the same hub, each in its own
+    process: the service's next report names no hash, so the hub sends the
+    state as at a first join."""
+    agent = live(agent_on(fake, config=config_path), fake)
+    fake.send_frame({"type": "state", "hash": "h9", "modules": {}})
+    until(lambda: agent.state_hash() == "h9")
+
+    config_path.unlink()
+    agent.run_once()
+    bind(config_path, url=LAN_URL)
+    agent.run_once()
+
+    assert agent.state_hash() == ""
 
 
 def test_a_rewrite_of_the_same_binding_wipes_no_state(fake, config_path):

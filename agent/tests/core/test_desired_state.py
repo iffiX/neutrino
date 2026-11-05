@@ -1744,6 +1744,36 @@ def test_a_mark_another_process_deleted_is_read_again(tmp_path):
     assert runner.tries == 2
 
 
+@pytest.mark.parametrize("binding_change", ["forget_tried", "reload_tried"])
+def test_a_join_or_a_leave_empties_the_applied_hash(tmp_path, binding_change):
+    """The first report of the new binding names no hash, so the hub sends
+    the state even to the row the machine had."""
+    held = _agent({"samba": _CountingRunner()}, tmp_path)
+    run(held, state(samba="running"))
+    assert held.applied_hash == "h1"
+
+    getattr(held, binding_change)()
+
+    assert held.applied_hash == ""
+
+
+def test_a_task_of_the_old_binding_ending_after_a_leave_names_no_hash(tmp_path):
+    gate = threading.Event()
+    runners = {"samba": FakeRunner()}
+    engine = FakeEngine(runners, absent=("samba",))
+    engine.install_gates["samba"] = gate
+    held, _ = applier(runners, engine=engine, tmp_path=tmp_path)
+    held.apply(state(samba="running"))
+    assert not held.settle("samba", 0.05)
+
+    held.forget_tried()
+    gate.set()
+    assert held.settle("", SETTLE_S)
+
+    assert runners["samba"].applied == [{"n": "samba"}]
+    assert held.applied_hash == ""
+
+
 def test_clearing_a_mark_that_is_not_there_is_no_error(tmp_path):
     DesiredStateStore(path=str(tmp_path / "desired.json")).clear_tried()
 
