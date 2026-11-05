@@ -167,16 +167,24 @@ filter chips, a page `Size`, and `Previous` / `Next` reading `n/m`; changing a
 filter or the size returns to the first page. A table with a bounded number of
 rows carries no controls and shows all of them (`ai_usage_keys.tsx`).
 
-Wide tables scroll inside their own box (`usage_table_scroll`); the page never
-scrolls sideways. The Agents and Clients tables keep their actions cell at the
-right edge of that box on a window wider than 720 px. Numeric columns are
-right-aligned (`.num`).
+The page never scrolls sideways. A table of activity wider than its box
+scrolls inside its own box: the usage tables on the AI page
+(`usage_table_scroll`), the usage grid, a machine's process table and an
+overlay's peer table. Numeric columns are right-aligned (`.num`).
 
-A column header shows whole. In the Agents and Clients tables each column is
-at least as wide as its header's words in either language, and the actions
-cell takes the room the other columns leave and wraps its buttons onto a
-second line. In a 1280 px window each table fits its box, and the actions cell
-covers no header.
+The Agents and Clients tables have no scrolling box. Each lays itself out by
+the width of its own box, through a container query, and a column header
+shows whole in either layout:
+
+| Box | Layout |
+| --- | --- |
+| As wide as every column: 968 px for Agents, 860 px for Clients | A table. Each column is at least as wide as its header's words in either language, and the actions cell takes the room the other columns leave and wraps its buttons onto a second line. A 1280 px window holds every column of both tables. |
+| Narrower | Each row is a card over two or more lines: the name line; the other fields as label and value pairs that wrap, each label its column's header, whole in either language; then the row's actions on a line of their own, from the left. A rename, a press's outcome line and a client's permission form keep their places in the row. |
+
+| Rule | Reason |
+| --- | --- |
+| A row too wide for its box wraps into a card and never scrolls. | A row read by scrolling sideways shows half of itself at a time, and its actions only at the far end. |
+| The width of the table's own box picks the layout. | The rail, the page's margins and each frame's padding stand between the window's width and the box's, and they differ between the two pages. |
 
 A destructive action repeated on every row arms instead of opening a dialog —
 `device_monitor`'s kill button turns red on the first click and acts on the
@@ -496,12 +504,13 @@ owner installs").
 ## The Agents page
 
 The **Agents** page (被控端), at `/agents`, is one table of the managed
-machines, one row each, every row the same height. Every machine on it was
-added as an agent, so the page and its sidebar entry in the hub group take
-the agent's name. The sidebar's machine group below the hub group is headed
-with the same word and lists each machine on its own, a link to its machine
-page; the hub group's entry opens this table of all of them. A panel address
-`/devices` from 0.5 answers with the panel's redirect to `/agents`.
+machines, one row each, every row the same height while the table holds
+every column, and a card each in a narrower box ("Tables"). Every machine on
+it was added as an agent, so the page and its sidebar entry in the hub group
+take the agent's name. The sidebar's machine group below the hub group is
+headed with the same word and lists each machine on its own, a link to its
+machine page; the hub group's entry opens this table of all of them. A panel
+address `/devices` from 0.5 answers with the panel's redirect to `/agents`.
 
 A row holds the icon, a button that opens a small picker of the device icons
 under it and writes the pick at once; the status dot; the name, a link to
