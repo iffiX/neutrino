@@ -12,6 +12,7 @@ clock, and stores what the person confirmed sealed.
 import base64
 import json
 import stat
+import threading
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
@@ -649,3 +650,18 @@ def test_a_login_ended_while_waiting_stores_nothing(box):
     login.end()
 
     assert login.view() == {"state": "idle", "authorization_url": ""}
+
+
+def test_a_second_start_runs_no_second_monitor():
+    """The panel builds its application once for each port it serves, and
+    each build started the monitor again: every check went out twice."""
+    name = f"{FRP_OPENFRP}_monitor"
+    before = [thread.name for thread in threading.enumerate()].count(name)
+    monitor = FrpMonitor(vendor=FRP_OPENFRP, controller=object())
+    monitor.start()
+    monitor.start()
+    try:
+        after = [thread.name for thread in threading.enumerate()].count(name)
+        assert after - before == 1
+    finally:
+        monitor.stop()

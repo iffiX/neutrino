@@ -12,6 +12,7 @@ import base64
 import hashlib
 import json
 import stat
+import threading
 
 import asyncssh
 import pytest
@@ -657,3 +658,17 @@ def test_the_unit_starts_on_the_key_file_or_the_password_file(box):
 
     assert "ConditionPathExists=|/var/lib/neutrino/hub/relay/key" in unit
     assert "ConditionPathExists=|/var/lib/neutrino/hub/relay/password" in unit
+
+
+def test_a_second_start_runs_no_second_monitor():
+    """The panel builds its application once for each port it serves, and
+    each build started the monitor again: every check went out twice."""
+    before = [thread.name for thread in threading.enumerate()].count("relay_monitor")
+    monitor = OverlayRelayMonitor(controller=object())
+    monitor.start()
+    monitor.start()
+    try:
+        after = [thread.name for thread in threading.enumerate()].count("relay_monitor")
+        assert after - before == 1
+    finally:
+        monitor.stop()

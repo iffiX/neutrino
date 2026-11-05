@@ -582,12 +582,17 @@ class FrpMonitor:
         self._is_check_matched: "bool | None" = None
         self._check_error = ""
         self._config_error = ""
+        self._thread: "threading.Thread | None" = None
 
     def start(self) -> None:
-        """Tick on a thread of its own until :meth:`stop`."""
-        threading.Thread(
-            target=self._run, name=f"{self._vendor}_monitor", daemon=True
-        ).start()
+        """Tick on a thread of its own until :meth:`stop`; a second start does nothing."""
+        with self._lock:
+            if self._thread is not None:
+                return
+            self._thread = threading.Thread(
+                target=self._run, name=f"{self._vendor}_monitor", daemon=True
+            )
+        self._thread.start()
 
     def stop(self) -> None:
         """End the thread."""
