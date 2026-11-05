@@ -326,7 +326,7 @@ walk theirs. A new code and its wording are one change.
 | `share_path_missing` | `{name, path}` | the `code` of a `running` or `stopped` `samba` row, the first share whose folder does not exist, which the module leaves off the server and makes no folder for while the hub keeps the share, and serves again once a read at the report finds the folder back; and 400 of the routes that name a share's folder, a path the agent's `folder` verb reads as no folder ([agent/modules/file_share.md](agent/modules/file_share.md), "A share's folder") | added |
 | `share_path_link` | `{name, path}` | 400 of the routes that name a share's folder, a path the agent's `folder` verb reads as a link or a junction; and the `code` of a `running` or `stopped` `samba` row, the first share whose folder the apply reads so, which the module leaves off the server ([agent/modules/file_share.md](agent/modules/file_share.md), "A share's folder") | added |
 | `share_not_served` | `{name, detail}` | the `code` of a `running` or `stopped` `samba` row on Windows and macOS, the first share the SMB server refused, with the server's words, which the module leaves off while it serves every other ([agent/modules/file_share.md](agent/modules/file_share.md), "A share's folder") | added |
-| `share_name_taken` | `{name}` | an apply of the `samba` module, a share of the person's that has the name of a Home share or a folder share; and the folder share routes and `samba/set`, a name another share of the machine has, compared without case ("`/api/agent/module`") | widened to folder shares |
+| `share_name_taken` | `{name}` | the `code` of a `running` or `stopped` `samba` row, the first Home share or folder share whose name a share of the person's has, which the module leaves off while it serves every other ([agent/modules/file_share.md](agent/modules/file_share.md), "A share's folder"); and the folder share routes and `samba/set`, a name an available account or another folder share has, compared without case ("`/api/agent/module`") | widened to folder shares; a row's code in place of the apply's refusal |
 | `share_name_invalid`, `share_account_not_enabled`, `folder_share_unknown` | `{name}`, `{account}`, `{name}` | the folder share routes: a name outside the form a folder share's name takes, an account the file share does not enable, and a name no folder share of the machine has | added |
 | `key_missing` | `{account}` | the SSH server's apply, an instance with no authorized key | added |
 | `containers_not_applied` | none | the `code` of a `failed` container module row, its start while the last apply of Containers did not write the module's containers as the state names them ([agent/modules/containers.md](agent/modules/containers.md), "A refused declared container") | added |
@@ -1310,7 +1310,7 @@ from the same facts, whoever installed the software:
 | `installed` | the software is present and the hub has never configured it; `is_active` says whether it runs |
 | `install_failed` | the last install failed with `{code, params}`, whatever it left on the machine |
 | `stopped` | the hub has configured it and the unit is stopped |
-| `running` | the hub has configured it and the unit is active; a `running` or `stopped` row can hold `{code, params}` a module names beside its state, `share_users_unknown {shares}`, `share_path_missing {name, path}`, `share_path_link {name, path}` or `share_not_served {name, detail}` ([agent/modules/file_share.md](agent/modules/file_share.md)); a `stopped` row of a container module reads `page_silent {port}` once its page stays silent for 5 minutes behind running containers, and of a program run as an account, once an instance with no stopped mark stays down for 5 minutes |
+| `running` | the hub has configured it and the unit is active; a `running` or `stopped` row can hold `{code, params}` a module names beside its state, `share_users_unknown {shares}`, `share_path_missing {name, path}`, `share_path_link {name, path}`, `share_name_taken {name}` or `share_not_served {name, detail}` ([agent/modules/file_share.md](agent/modules/file_share.md)); a `stopped` row of a container module reads `page_silent {port}` once its page stays silent for 5 minutes behind running containers, and of a program run as an account, once an instance with no stopped mark stays down for 5 minutes |
 | `installing`, `uninstalling` | in transit; an `installing` row can hold `{code, params}`, `reboot_required` while a Windows machine owes the restart an install step asked for ([agent.md](agent.md), "Status is typed") |
 | `queued` | in transit: its task has not run its first step, which waits for a step lock, named by `waiting_for_lock {lock, module}` ([agent.md](agent.md), "Step locks") |
 | `failed`, `unsupported` | the last step failed with `{code, params}`; the agent has no runner for this module |
@@ -1420,9 +1420,10 @@ nothing, and the module reports `installed`, `stopped` or `running` like any
 other. The configuration is the Linux one; `validate` wants a share path
 absolute from a drive on Windows and from `/` on macOS, and an account name
 of at most 20 characters on Windows. `stopped` takes the module's shares off
-the server and keeps its accounts. An apply refuses a name the
-machine already has for something the module did not make, on Linux too: a share with
-`share_name_taken {name}`, an account with `user_name_taken {user}`. An
+the server and keeps its accounts. A name the machine already has for
+something the module did not make, on Linux too, leaves a share off with
+`share_name_taken {name}` on the row while the others are served, and
+refuses an account with `user_name_taken {user}`. An
 account the system will not make is refused with `user_create_failed {user,
 detail}`, `detail` being the tool's own line, and a record of the name that is
 not a usable account and that macOS will not let root delete with

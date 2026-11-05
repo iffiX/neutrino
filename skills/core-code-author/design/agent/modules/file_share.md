@@ -27,7 +27,7 @@ them.
 
 | Rule | Reason |
 | --- | --- |
-| A folder share's name is compared with every other share name of the machine without regard to case. A name that an available account of the machine has, another folder share has, or a share of the person's own has, is refused `share_name_taken {name}`; enabling an account whose name a folder share has is refused the same way. | SMB names a share without case, and each available account takes a Home share of its own name once it is enabled. |
+| A folder share's name is compared with every other share name of the machine without regard to case. A name that an available account of the machine has or another folder share has is refused `share_name_taken {name}`; enabling an account whose name a folder share has is refused the same way. A share of the person's own with the name leaves the module's share off at the apply, `share_name_taken {name}` on the module row, while every other share is served ("A share's folder"). | SMB names a share without case, and each available account takes a Home share of its own name once it is enabled. Only the agent reads the person's shares, at the apply, and a check of the whole configuration at a route would refuse every later change while one name clashes. |
 | A file written to a folder share belongs to the account that connected: on Linux through the per-user include ("Linux"), and on Windows and macOS through that account's SMB user, as on its Home share ("Windows and macOS"). | A file has the owner it would have had if the account wrote it on the machine, so the account's own programs open and change it later. |
 | Disabling an account takes it out of every folder share in the same write. A folder share left with no account stays configured and is served to nobody, and the module row reads `share_users_unknown {shares}`. | A share never stays open to an SMB user the module has removed or disabled. |
 | Removing a folder share removes the share and the access the module gave its SMB users to the folder, and never the folder or a file in it. | The folder held the person's files before it was shared. |
@@ -105,9 +105,9 @@ What a hub of 0.5 had the module make, its shares and its Samba logins, is
 the person's own after the upgrade: the hub's move of the 0.5 files drops
 them from `samba.json`, so the hub neither carries nor manages them, and
 the machine goes on serving them as they are, to the logins they had. A
-0.5 share named after an account then refuses that account's share with
-`share_name_taken {name}`, as any share of the person's does, until the
-person renames or removes it. The ports a hub of 0.5 kept for VS Code,
+0.5 share named after an account then leaves that account's share off
+with `share_name_taken {name}`, as any share of the person's does, until
+the person renames or removes it. The ports a hub of 0.5 kept for VS Code,
 code-server and CloudCLI are not carried either; the agent takes fresh
 ones ([../../protocol.md](../../protocol.md), "The account layer in the
 state").
@@ -151,9 +151,10 @@ it puts no firewall rule in front of Samba.
 
 The person's account must exist, and is refused `account_unknown {account}`
 when it does not. A share of the person's that has the name an account's
-Home share or a folder share takes is left as it is, and the module's share
-is refused `share_name_taken {name}`, worded so the person renames one of
-the two; the module's own shares are told from the person's by the file
+Home share or a folder share takes is left as it is, and the module leaves
+its own share of that name out of its file with `share_name_taken {name}`
+on the module row, worded so the person renames one of the two, and serves
+the rest; the module's own shares are told from the person's by the file
 they are in. A
 setting in the person's `[global]` that stops the module's shares from
 answering is reported on the module row and never changed: a `hosts allow`
@@ -250,7 +251,7 @@ touches an account's files as that account").
 | Every route that names a share's folder asks the machine first, at once, through the agent's `folder {path}` verb, whether the path is a real folder: it is there, it is a folder, and its last level is no link or junction. These are a folder share's `add` and `set`; an available account's `add` and `set` with a share path, and its `set` with none at its home while the file share enables it; and the file share's `set` for each account it newly enables, at its share path or its home. A path that is no real folder is refused 400 `share_path_missing {name, path}`, or `share_path_link {name, path}` for a link, `name` the folder share's or the account's, and the route writes nothing and pushes nothing. An offline machine cannot be asked, so the route refuses 409 `agent_offline` and nothing is added. | The person reads the refusal in the form while the path is still in front of them, and a share that cannot be served never reaches the hub's configuration. Only the machine can tell whether a folder is there. |
 | The `folder` read runs as whoever owns the path's place on Linux and macOS: the account that owns the first level of the path an account owns, through the step-down, or root where every level is root's, none a link and none a folder others may write. A path through a link or such a folder in root's place reads as a link. A folder the reading account cannot reach reads as missing. On Windows SYSTEM opens the folder by handle with no reparse point followed, as for the grants below, and a junction at any level reads as a link. | As the account, a link it planted reaches only what it reaches itself; in root's place no account can plant one. |
 | A share whose folder does not exist is left off the server on every system, and the agent makes no folder: none as the account, none as root and none as SYSTEM. | The folder's place, its owner and its mode are the person's to choose. A folder the agent made sat in a place another account could change, and a mistyped path made a folder nobody asked for. |
-| A share the machine cannot serve is left off the server with a code of its own, and every other share is served, on every system: a folder the apply reads as missing, `share_path_missing {name, path}`; one it reads as a link, `share_path_link {name, path}`; and on Windows and macOS a share the SMB server refuses, `share_not_served {name, detail}` with the server's words. The module row reads the first share left off in the configuration's order, after `share_users_unknown {shares}` when that holds. | On the R146 Mac `sharing -a` refused a share whose folder was a link, and its error ended the whole apply, every other share left off with it. |
+| A share the machine cannot serve is left off the server with a code of its own, and every other share is served, on every system: a folder the apply reads as missing, `share_path_missing {name, path}`; one it reads as a link, `share_path_link {name, path}`; a share whose name a share of the person's has, `share_name_taken {name}`; and on Windows and macOS a share the SMB server refuses, `share_not_served {name, detail}` with the server's words. The module row reads the first share left off in the configuration's order, after `share_users_unknown {shares}` when that holds. | On the R146 Mac `sharing -a` refused a share whose folder was a link, and its error ended the whole apply, every other share left off with it; a share of the person's under a module share's name ended the apply the same way on every system. |
 | A share whose folder goes away after it was added stays in the hub's configuration: a folder share stays in `samba.json`, and a Home share's account stays enabled. The apply leaves it off the server and the module row reads `share_path_missing {name, path}`. The person takes a share out with the folder share's **Remove** or by unchecking the account, as for any other share. | A folder can be gone for a while, a disk not mounted or a folder moved and moved back, and whether its share goes is the person's choice. |
 | The agent reads the folder of each share the state names again at its report, at most every 30 seconds, the way the `folder` verb reads it. A read that finds a folder otherwise than the last apply read it, gone, back, a link put in its place or one taken away, asks for a configure task of the module's own, once for each change, with no press. A folder the reading account cannot reach asks for nothing. That apply reads each folder again: a real folder is served, and a link stays off with `share_path_link {name, path}`. | The read at the apply is the routes' own, so a folder made again at the path is served only when it would be added, and a link planted there stays off. |
 | On macOS whoever owns the folder's place sets and takes off its access entries: the account that owns the first level of the path an account owns, through the step-down; else root, each level of the path being root's and none a link or a folder others may write. A path through a link or such a folder is left alone with a note, and its share is left off as a link. | As the account, a link it planted reaches only what it reaches itself; in root's place no account can plant one. |
@@ -273,8 +274,9 @@ and sets each SMB user's password from `passwords`. On Windows and macOS,
 when the module's record under the state root was kept, the shares and
 accounts it lists are the module's again. When the record is gone, an
 account its marker names is the module's again, and a share left under the
-name of an enabled account or a folder share is not, so the apply refuses
-it `share_name_taken {name}` until the person removes that share.
+name of an enabled account or a folder share is not, so the apply leaves
+the module's share of that name off with `share_name_taken {name}` until
+the person removes that share.
 
 Its journal on Windows reads the SMB server's latest events from
 `Microsoft-Windows-SMBServer/Operational`, and on macOS what the unified
