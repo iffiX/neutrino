@@ -209,17 +209,22 @@ class FakeRenderer:
 
 
 class FakeSystem:
-    """Records every command the runner itself runs; podman's answers are canned."""
+    """Records every command the runner itself runs; podman's and systemd's answers are canned."""
 
     def __init__(self):
         self.calls: list = []
         self.error = None
+        self.answers: dict = {}
 
     def __call__(self, command, *, is_checked=True, input_text=None, timeout_s=120):
         self.calls.append(list(command))
         if self.error is not None:
             raise self.error
-        return CommandResult(list(command), 0, "", "")
+        return CommandResult(list(command), 0, self.answers.get(command[-1], ""), "")
+
+    def changes(self) -> list:
+        """The commands that change a unit, every ``systemctl show`` left out."""
+        return [call for call in self.calls if call[:2] != ["systemctl", "show"]]
 
 
 @pytest.fixture
@@ -290,7 +295,7 @@ def test_stop_takes_every_container_down_then_turns_the_service_and_socket_off(
     runner.stop()
 
     assert FakeUnitApplier.stops == 1
-    assert system.calls == [
+    assert system.changes() == [
         ["systemctl", "disable", "--now", "podman.service"],
         ["systemctl", "disable", "--now", "podman.socket"],
     ]
@@ -326,7 +331,7 @@ def test_the_configure_under_running_is_the_core_s_own(runner):
 def test_start_turns_the_socket_on(runner, system):
     runner.start()
 
-    assert system.calls == [["systemctl", "enable", "--now", "podman.socket"]]
+    assert system.changes() == [["systemctl", "enable", "--now", "podman.socket"]]
 
 
 def test_a_refused_socket_is_apply_failed(runner, system):
@@ -435,7 +440,7 @@ def test_a_persons_podman_gets_no_package_manager_and_no_mark(
     assert not package_mark(tmp_path).exists()
     assert "podman: found the machine's own Podman, left its package out" in lines
     assert runner.is_software_kept() is True
-    assert system.calls == [["systemctl", "enable", "--now", "podman.socket"]]
+    assert system.changes() == [["systemctl", "enable", "--now", "podman.socket"]]
 
 
 def test_a_persons_podman_with_no_runc_gets_runc_alone(
@@ -509,6 +514,97 @@ def test_an_uninstall_of_a_persons_podman_removes_no_package(
     assert machine.programs == {"podman", "runc"}
     assert "podman: removed no package" in lines
     assert runner.is_software_kept() is True
+
+
+UBUNTU_UNITS = {
+    "podman.socket": "UnitFileState=enabled\nActiveState=active\n",
+    "podman.service": "UnitFileState=enabled\nActiveState=inactive\n",
+}
+PUT_BACK_AS_UBUNTU_HAS_THEM = [
+    ["systemctl", "enable", "podman.socket"],
+    ["systemctl", "start", "podman.socket"],
+    ["systemctl", "enable", "podman.service"],
+    ["systemctl", "stop", "podman.service"],
+]
+
+
+def found_units(tmp_path):
+    return tmp_path / "podman" / "found_units"
+
+
+def test_a_persons_podman_units_are_put_back_at_the_uninstall_as_the_start_found_them(
+    runner, system, monkeypatch, tmp_path
+):
+    """Ubuntu's package enables both units, and Stop disables both."""
+    lines: list = []
+    runner._log = lines.append
+    FakeMachine(monkeypatch, runner, programs={"podman", "runc"})
+    system.answers = dict(UBUNTU_UNITS)
+
+    runner.start()
+    system.answers = {}
+    runner.start()
+    runner.stop()
+    runner.remove_configuration()
+    system.calls.clear()
+    runner.uninstall(RECIPE)
+
+    assert system.changes() == PUT_BACK_AS_UBUNTU_HAS_THEM
+    assert not found_units(tmp_path).exists()
+    assert "podman: put podman.socket and podman.service back as they were" in lines
+
+
+def test_a_persons_podman_units_are_kept_before_the_install_turns_the_socket_on(
+    runner, system, monkeypatch, tmp_path
+):
+    FakeMachine(monkeypatch, runner, programs={"podman", "runc"})
+    system.answers = dict(UBUNTU_UNITS)
+
+    runner.install(RECIPE)
+
+    shows = [call[-1] for call in system.calls if call[:2] == ["systemctl", "show"]]
+    assert shows == ["podman.socket", "podman.service"]
+    assert system.calls.index(["systemctl", "enable", "--now", "podman.socket"]) > 1
+    assert oct(found_units(tmp_path).stat().st_mode & 0o777) == oct(0o600)
+
+
+def test_a_stop_with_nothing_kept_keeps_what_the_units_were(
+    runner, system, monkeypatch, tmp_path
+):
+    FakeMachine(monkeypatch, runner, programs={"podman", "runc"})
+    system.answers = dict(UBUNTU_UNITS)
+
+    runner.stop()
+    system.calls.clear()
+    runner.uninstall(RECIPE)
+
+    assert system.changes() == PUT_BACK_AS_UBUNTU_HAS_THEM
+
+
+def test_an_uninstall_with_nothing_kept_leaves_the_units_as_they_are(
+    runner, system, monkeypatch, tmp_path
+):
+    FakeMachine(monkeypatch, runner, programs={"podman", "runc"})
+
+    runner.uninstall(RECIPE)
+
+    assert system.calls == []
+
+
+def test_the_module_s_podman_keeps_and_puts_back_no_unit(
+    runner, system, monkeypatch, tmp_path
+):
+    machine = FakeMachine(monkeypatch, runner)
+    runner.install(RECIPE)
+    runner.start()
+    runner.stop()
+    system.calls.clear()
+
+    runner.uninstall(RECIPE)
+
+    assert machine.removed == [["podman"]]
+    assert not found_units(tmp_path).exists()
+    assert [call for call in system.calls if call[0] == "systemctl"] == []
 
 
 def test_is_active_is_the_units_word(runner, monkeypatch):

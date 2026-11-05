@@ -14,8 +14,9 @@ the module's task takes the step lock ``containers`` alone. **Stop** stops
 and disables every declared and hub unit, and an apply under ``stopped``
 enables and starts none of them. A Podman on the machine before the install
 is the person's: the install leaves the ``podman`` package out and an
-uninstall removes no package, and only a Podman the package mark stands for
-is the module's.
+uninstall removes no package and puts its two units back as the first
+Install, Start or Stop found them, and only a Podman the package mark
+stands for is the module's.
 
 Not pure: drives podman and systemd through the applier.
 """
@@ -66,6 +67,7 @@ from neutrino_agent.modules.podman.constants import (
     PODMAN_RUNTIME,
     PODMAN_UNIT,
 )
+from neutrino_agent.modules.podman.found_units import PodmanFoundUnits
 from neutrino_agent.modules.podman.package_mark import PodmanPackageMark
 from neutrino_agent.modules.podman.page_ports import PodmanPagePortStore
 from neutrino_agent.modules.podman.renderer import (
@@ -138,6 +140,9 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
         self._package_mark = PodmanPackageMark(
             module_dir=os.path.join(var_dir, self.name)
         )
+        self._found_units = PodmanFoundUnits(
+            module_dir=os.path.join(var_dir, self.name), run=run
+        )
 
     def take_config(self, config: dict) -> None:
         """Take the configuration the state names, before any apply of it.
@@ -160,9 +165,10 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
 
         ``runc`` is left out where a ``runc`` is already on the path. A
         Podman on the machine with no package mark is the person's: the
-        ``podman`` package is left out as well, and no mark is written. The
-        mark is written before the package manager runs on a machine with no
-        Podman, and deleted again when the run leaves no Podman.
+        ``podman`` package is left out as well, no mark is written, and what
+        its units were is kept first. The mark is written before the package
+        manager runs on a machine with no Podman, and deleted again when the
+        run leaves no Podman.
 
         Args:
             recipe: The module's recipe.
@@ -171,11 +177,12 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
             InstallError: If a step or the package manager refuses.
             PlatformUnsupportedError: If this platform installs nothing.
             subprocess.CalledProcessError: If systemd refuses the socket.
-            OSError: When the mark cannot be written.
+            OSError: When the mark or the record cannot be written.
         """
         recipe = without_present_runtime(recipe)
         if not self._package_mark.is_kept() and self.verify(recipe):
             self._log("podman: found the machine's own Podman, left its package out")
+            self._found_units.keep()
             recipe = without_package(recipe, PODMAN_PACKAGE)
             if params_of(recipe).get("packages"):
                 super().install(recipe)
@@ -191,7 +198,8 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
     def uninstall(self, recipe: dict) -> None:
         """Take the ``podman`` package off where the package mark stands, then delete the mark.
 
-        A Podman with no mark is the person's: no package is removed.
+        A Podman with no mark is the person's: no package is removed, and
+        its units go back as the module found them.
 
         Args:
             recipe: The module's recipe.
@@ -202,9 +210,14 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
         """
         if not self._package_mark.is_kept():
             self._log("podman: removed no package")
+            if self._found_units.put_back():
+                self._log(
+                    f"podman: put {PODMAN_UNIT} and {PODMAN_API_UNIT} back as they were"
+                )
             return
         super().uninstall(recipe)
         self._package_mark.forget()
+        self._found_units.forget()
 
     def is_software_kept(self) -> bool:
         """Whether an uninstall leaves a Podman on the machine: a person's, one with no package mark.
@@ -296,10 +309,15 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
     def start(self) -> None:
         """Turn ``podman.socket`` on, so Podman starts with the machine.
 
+        A person's Podman: what its units were is kept first, once.
+
         Raises:
-            ModuleApplyError: ``apply_failed`` when systemd refuses.
+            ModuleApplyError: ``apply_failed`` when systemd refuses or the
+                record cannot be written.
         """
         try:
+            if not self._package_mark.is_kept():
+                self._found_units.keep()
             run(["systemctl", "enable", "--now", PODMAN_UNIT])
         except (OSError, subprocess.SubprocessError) as error:
             raise ModuleApplyError(
@@ -310,11 +328,15 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
         """Stop and disable every declared and hub container, then ``podman.service`` and ``podman.socket``.
 
         A container a person started by hand keeps running; images and
-        volumes stay.
+        volumes stay. A person's Podman: what its units were is kept first,
+        when nothing is kept yet.
 
         Raises:
             ModuleApplyError: ``apply_failed`` when systemd refuses the socket.
+            OSError: When the record cannot be written.
         """
+        if not self._package_mark.is_kept():
+            self._found_units.keep()
         PodmanUnitApplier().stop_all()
         run(["systemctl", "disable", "--now", PODMAN_API_UNIT], is_checked=False)
         try:

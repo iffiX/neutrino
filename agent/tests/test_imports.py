@@ -112,6 +112,7 @@ SURVIVING_MODULES = {
     "neutrino_agent.modules.podman.constants",
     "neutrino_agent.modules.podman.container_runner",
     "neutrino_agent.modules.podman.darwin_applier",
+    "neutrino_agent.modules.podman.found_units",
     "neutrino_agent.modules.podman.machine",
     "neutrino_agent.modules.podman.machine_keeper",
     "neutrino_agent.modules.podman.machine_paths",

@@ -101,6 +101,9 @@ PODMAN_MACHINE_SOCKET_PATH = "/run/podman/podman.sock"
 # package, msi or pkg on a computer with no Podman. A Podman with no mark is
 # the person's.
 PODMAN_PACKAGE_MARK = "package_mark"
+# The record in the module's directory of what a person's Podman units were
+# before the module first changed them, on Linux.
+PODMAN_FOUND_UNITS = "found_units"
 # The distribution's package of Podman, removed only where the mark stands.
 PODMAN_PACKAGE = "podman"
 
