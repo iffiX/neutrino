@@ -1363,9 +1363,14 @@ Containers' **Stop** disables and its install and every apply under `want`
 Package operations on one machine run one at a time, serialized on the agent,
 because one package manager holds the machine-wide lock.
 
-Taking over a machine happens at its first report on a session, for each
-module that has an import (`gitea`, `podman`; the account layer's modules
-have none) and no `want` in `modules.json`. A module reporting `stopped` or `running` gets that
+Taking over a machine happens at the first report on a session that
+carries the module's row, for each module that has an import (`gitea`,
+`podman`; the account layer's modules have none) and no `want` in
+`modules.json`. The agent reads its modules one after another from its
+start or its join, and a report carries the rows read by then: on the
+lab's Ubuntu 22.04 the Podman row came in a later report of the join's
+session than its first, and a person's running Podman was never taken
+over. A module reporting `stopped` or `running` gets that
 state as its `want`, and its configuration is imported from the report's
 `details` when the hub holds no file for it. A module reporting `installed`
 is imported, and gets `running` or `stopped` as its `want` by `is_active`,
@@ -1373,7 +1378,7 @@ when the import finds something. An import that finds nothing leaves the
 module as it reports, and Gitea is taken over only while the hub holds
 `gitea_secrets.json` for the device. The state is pushed and the published
 list recomposed in the same step; a later report on the same session takes
-nothing over.
+over no module an earlier one carried.
 
 A module with no `want` that the machine reports `installed`, `stopped` or
 `running`, one with no import such as the file share, VS Code,
