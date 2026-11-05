@@ -3,9 +3,11 @@
 The file is ``config/devices/<id>/hermes_webui.json``: the token secret and
 the webui's password, generated the first time the module is installed and
 sealed under the vault's data key, and the module's gateway key. The state
-carries ``{secret, password, cookie_name, local_name}`` opened: the name of
-the webui's login cookie on the device and the app's local name, which its
-forwarder checks the ``Host`` against. The forwarder's port is the agent's.
+carries ``{secret, password, cookie_name, local_name, model}``, the secrets
+opened: the name of the webui's login cookie on the device, the app's local
+name, which its forwarder checks the ``Host`` against, and the first model
+the gateway serves, which the agent writes into Hermes's ``model.default``.
+The forwarder's port is the agent's.
 The module runs two hub containers on Containers: the agent's gateway first,
 then the webui, which starts after it and whose 8787 the module's forwarder
 serves.
@@ -86,7 +88,9 @@ def cookie_name(key: str) -> str:
     return DEVICE_HERMES_WEBUI_COOKIE_PREFIX + key[:DEVICE_HERMES_WEBUI_COOKIE_ID_CHARS]
 
 
-def agent_config(stored: dict, key: str, *, local_name: str = "") -> dict:
+def agent_config(
+    stored: dict, key: str, *, local_name: str = "", models: "list | tuple" = ()
+) -> dict:
     """What the agent is sent for Hermes WebUI.
 
     Args:
@@ -94,16 +98,19 @@ def agent_config(stored: dict, key: str, *, local_name: str = "") -> dict:
         key: The device.
         local_name: The app's local name, which the forwarder checks the
             ``Host`` against.
+        models: The names the gateway serves now.
 
     Returns:
-        ``{secret, password, cookie_name, local_name}``, each secret opened,
-        empty when the file holds none or the vault cannot open it.
+        ``{secret, password, cookie_name, local_name, model}``, each secret
+        opened, empty when the file holds none or the vault cannot open it;
+        ``model`` the first name served, empty while none is.
     """
     config = {}
     for sealed in module_row(DEVICE_HERMES_WEBUI_MODULE).sealed_fields:
         config[sealed.opened_key] = _opened(stored.get(sealed.key), sealed.aad)
     config["cookie_name"] = cookie_name(key)
     config["local_name"] = local_name
+    config["model"] = str(models[0]) if models else ""
     return config
 
 

@@ -1383,15 +1383,18 @@ class DesiredStateStore:
         Returns:
             True while an account's AI tools switch is on, a module that
             holds a gateway key per account enables an account, or the
-            Ayakaleaf module, whose app reads its model from the state, is
-            installed.
+            Ayakaleaf or Hermes WebUI module, each reading its model from
+            the state, is installed.
         """
         modules = self.modules(key) if wanted is None else wanted
         return (
             self.is_ai_tools_enabled(key)
             or self.has_gateway_instances(key)
-            or modules.get(DEVICE_AYAKALEAF_MODULE, {}).get("want", "")
-            not in ("", CHANNEL_MODULE_STATE_ABSENT)
+            or any(
+                modules.get(name, {}).get("want", "")
+                not in ("", CHANNEL_MODULE_STATE_ABSENT)
+                for name in (DEVICE_AYAKALEAF_MODULE, DEVICE_HERMES_WEBUI_MODULE)
+            )
         )
 
     def agent_config(
@@ -1433,7 +1436,7 @@ class DesiredStateStore:
                 title alone.
             ai_models: The names the gateway serves now, which a module that
                 holds a gateway key per account is sent, and which pick
-                Ayakaleaf's model.
+                Ayakaleaf's model and Hermes WebUI's.
             releases: The publishers' feeds as last read, which name the
                 digest of a hub container's image at the version the machine
                 chose; None takes the tested digests.
@@ -1449,7 +1452,8 @@ class DesiredStateStore:
             secrets it signs with and its SSH entry's local port, Containers
             as :func:`podman_agent_config` composes it with the hub
             containers of the machine's container modules, and Hermes WebUI
-            and Ayakaleaf with their secrets opened and their names. A
+            and Ayakaleaf with their secrets opened and their names, Hermes
+            WebUI with the gateway's first model. A
             module whose manifest's ``web_share`` names ``guest_login``
             ``guest_account`` also carries ``guests``, the guest account of
             each live App share of its page.
@@ -1498,7 +1502,10 @@ class DesiredStateStore:
             app_id = f"{SERVICES_HERMES_WEBUI_ID}_{key}"
             made = (app_slug_of or {}).get(app_id) or slug(SERVICES_HERMES_WEBUI_TITLE)
             config = hermes_webui.agent_config(
-                config, key, local_name=local_name(made, machine_slug)
+                config,
+                key,
+                local_name=local_name(made, machine_slug),
+                models=ai_models,
             )
         elif name == DEVICE_AYAKALEAF_MODULE:
             app_id = module_app_id(name, key)

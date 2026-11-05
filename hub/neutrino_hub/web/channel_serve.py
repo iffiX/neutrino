@@ -1008,8 +1008,8 @@ class _AgentFrames:
             )
         elif await asyncio.to_thread(runtime.desired_states.uses_gateway_models, key):
             # Whether the gateway serves moves with no write to announce it,
-            # so a machine whose AI tools, SiYuan accounts or Ayakaleaf use
-            # it has its state read again.
+            # so a machine whose AI tools, SiYuan accounts, Ayakaleaf or
+            # Hermes WebUI use it has its state read again.
             await asyncio.to_thread(
                 channel_state.offer_agent_state, runtime, session, session.offered_hash
             )

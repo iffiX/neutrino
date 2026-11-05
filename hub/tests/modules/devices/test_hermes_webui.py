@@ -3,7 +3,8 @@
 What these pin: the first install generates the token secret and the
 webui's password once and keeps them; the state carries ``{secret,
 password}`` opened, the login cookie's name, ``hermes_session_`` and the
-device id's first 12 characters, and the app's local name;
+device id's first 12 characters, the app's local name, and the gateway's
+first served model, empty while it serves none;
 the two hub containers as the module's page lists them, the cookie's name in
 the webui's environment, with the gateway's address on a
 managed machine and on the hub's own; no container while the password does
@@ -80,7 +81,31 @@ def test_the_state_carries_both_secrets_opened_and_the_local_name(store):
         "password": opened(stored, "password_sealed", b"device_hermes_webui:password"),
         "cookie_name": "hermes_session_dev-1",
         "local_name": "hermes-webui.argon.localhost",
+        "model": "",
     }
+
+
+def test_the_state_carries_the_gateway_s_first_model_and_none_while_none_is_served(
+    store,
+):
+    stored = hermes_webui.ensure_config(store, DEVICE)
+    store.set_want(DEVICE, "hermes_webui", "running")
+
+    served, _ = store.compose(DEVICE, LINUX, ai_models=["m1", "m2"])
+    none, _ = store.compose(DEVICE, LINUX, ai_models=[])
+
+    assert served["modules"]["hermes_webui"]["config"]["model"] == "m1"
+    assert none["modules"]["hermes_webui"]["config"]["model"] == ""
+    config = hermes_webui.agent_config(stored, DEVICE, models=("m2", "m1"))
+    assert config["model"] == "m2"
+
+
+def test_a_machine_with_hermes_webui_reads_the_gateway_s_models_until_it_goes(store):
+    assert not store.uses_gateway_models(DEVICE)
+    store.set_want(DEVICE, "hermes_webui", "installed")
+    assert store.uses_gateway_models(DEVICE)
+    store.set_want(DEVICE, "hermes_webui", "absent")
+    assert not store.uses_gateway_models(DEVICE)
 
 
 def test_a_file_with_nothing_sealed_sends_empty_secrets():
@@ -89,6 +114,7 @@ def test_a_file_with_nothing_sealed_sends_empty_secrets():
         "password": "",
         "cookie_name": "hermes_session_dev-1",
         "local_name": "",
+        "model": "",
     }
 
 

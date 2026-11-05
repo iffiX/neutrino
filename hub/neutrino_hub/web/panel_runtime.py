@@ -969,7 +969,7 @@ class PanelRuntime:
         )
 
     def _gateway_models_for(self, key: str, *, wanted: "dict | None" = None) -> list:
-        """The names the gateway serves, for a device whose AI tools, SiYuan accounts or Ayakaleaf call it.
+        """The names the gateway serves, for a device whose AI tools, SiYuan accounts, Ayakaleaf or Hermes WebUI call it.
 
         Args:
             key: The device.
