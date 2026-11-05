@@ -936,7 +936,6 @@ class FakeModuleRuntime:
         self.device_accounts: dict = {}
         self.device_account_details: dict = {}
         self.device_scope: dict = {}
-        self.device_share_removals: dict = {}
         self.lan_addresses = list(lan_addresses)
         self.served_models = None
 

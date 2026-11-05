@@ -2672,10 +2672,6 @@ class FolderShareListView(BaseModel):
     shares: list[FolderShareView] = Field(default_factory=list)
     # The file share's enabled accounts, in their order.
     accounts: list[str] = Field(default_factory=list)
-    # What the hub deleted for a folder the machine reported gone, until the
-    # person's next change of the file share: ``share_folder_removed {name,
-    # path}`` and ``share_home_removed {account, path}``.
-    removals: list[ApplyChange] = Field(default_factory=list)
 
 
 class FolderShareUpdate(BaseModel):

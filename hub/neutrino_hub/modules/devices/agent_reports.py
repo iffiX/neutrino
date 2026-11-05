@@ -5,7 +5,7 @@ every few seconds. Both land in the runtime's memory alone, which is what
 the panel reads: a machine's presence is true only while this hub runs.
 
 A report is read by its sections: ``machine``, ``network``, ``modules``,
-``desktop`` and ``error``. It writes five things. The seat password: a
+``desktop`` and ``error``. It writes four things. The seat password: a
 machine reporting the remote desktop host present is given one, sealed
 under the vault's data key, the first time it says so. The MAC its socket
 runs on, noted on the device's row when it is new. ``modules.json``: a
@@ -14,16 +14,12 @@ settled there, so the hub's state stops naming software it took off while
 the module's row goes on saying what the person asked for. At the
 first report on a socket, the hub's record of each module it holds no
 ``want`` for: what the machine hosts becomes the hub's configuration and
-its want, and the hub's copy is the one truth from then on. And the file
-share's entry of each share whose folder the machine reports gone: a folder
-share leaves ``samba.json`` with its permission row, and a Home share's
-account leaves the file share's enabled accounts.
+its want, and the hub's copy is the one truth from then on.
 """
 
 import logging
 
 from neutrino_hub.exceptions import AgentOfflineError, StreamRefusedError
-from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.modules.channel.constants import (
     CHANNEL_MODULE_PRESENT_STATES,
     CHANNEL_MODULE_STATE_ABSENT,
@@ -31,15 +27,9 @@ from neutrino_hub.modules.channel.constants import (
     CHANNEL_MODULE_STATE_RUNNING,
     CHANNEL_MODULE_STATE_STOPPED,
 )
-from neutrino_hub.modules.devices.accounts import DeviceAccountStore
 from neutrino_hub.modules.devices.constants import (
     DEVICE_GITEA_MODULE,
     DEVICE_HUB_ADDRESS,
-    DEVICE_SAMBA_MODULE,
-)
-from neutrino_hub.modules.devices.folder_shares import (
-    find_folder_share,
-    without_folder_share,
 )
 from neutrino_hub.modules.devices.module_import import (
     MODULE_IMPORTS,
@@ -47,20 +37,13 @@ from neutrino_hub.modules.devices.module_import import (
 )
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.modules.services.constants import SERVICES_RDP_PORT
-from neutrino_hub.modules.services.file_ids import folder_share_id
 from neutrino_hub.modules.services.host_scope import (
     lan_in_place_of_overlay,
     scope_of,
 )
 from neutrino_hub.system.machine import machine_id
-from neutrino_hub.utils.json_file import CONFIG_WRITE_LOCK
 
 LOGGER = logging.getLogger(__name__)
-# The file share's report of each share whose folder is gone, and what the
-# hub says it removed for one.
-MISSING_SHARES_KEY = "missing_shares"
-CODE_SHARE_FOLDER_REMOVED = "share_folder_removed"
-CODE_SHARE_HOME_REMOVED = "share_home_removed"
 
 
 def record_hello(
@@ -113,10 +96,9 @@ def record_report(
     is_adopted = is_first and _adopt_modules(runtime, key, modules)
     is_shared = _adopt_desktop_share(runtime, key, report.get("desktop"))
     is_seated = _ensure_seat_password(runtime, key)
-    is_dropped = _drop_missing_shares(runtime, key, modules)
-    if is_settled or is_adopted or is_shared or is_seated or is_dropped:
+    if is_settled or is_adopted or is_shared or is_seated:
         _push_state(runtime, key)
-    if is_adopted or is_dropped:
+    if is_adopted:
         runtime.published_services.schedule_refresh()
     record_desktop_share(
         runtime,
@@ -329,95 +311,6 @@ def _import(store, key: str, name: str, status: dict) -> bool:
     if not config:
         return False
     store.write(key, name, config)
-    return True
-
-
-def _drop_missing_shares(runtime, key: str, modules: dict) -> bool:
-    """Delete the file share's entry of each share whose folder the machine reports gone.
-
-    A folder share whose stored folder is the reported path leaves
-    ``samba.json`` with its permission row, as its Remove takes it out. A
-    Home share's account whose folder, its share path or else its home, is
-    the reported path leaves the file share's enabled accounts, as
-    unchecking it does, and every folder share with it. An entry whose
-    folder differs stays. Each removal is kept for the Folder shares panel.
-
-    Args:
-        runtime: The shared runtime.
-        key: The device.
-        modules: The module states the report carries.
-
-    Returns:
-        True when an entry was deleted, so the state is pushed again and the
-        published list recomposed.
-    """
-    status = modules.get(DEVICE_SAMBA_MODULE)
-    details = status.get("details") if isinstance(status, dict) else None
-    missing = details.get(MISSING_SHARES_KEY) if isinstance(details, dict) else None
-    if not isinstance(missing, list) or not missing:
-        return False
-    store = runtime.desired_states
-    homes = runtime.account_details(key)
-    removals: list = []
-    dropped_ids: list = []
-    try:
-        with CONFIG_WRITE_LOCK:
-            stored = store.read(key, DEVICE_SAMBA_MODULE)
-            enabled = store.enabled_accounts(key, DEVICE_SAMBA_MODULE)
-            rows = {row.account: row for row in DeviceAccountStore(store).accounts(key)}
-            written = stored
-            kept = list(enabled)
-            for entry in missing:
-                entry = entry if isinstance(entry, dict) else {}
-                name = str(entry.get("name", "") or "")
-                path = str(entry.get("path", "") or "")
-                share = find_folder_share(written, name) if name and path else None
-                if share is not None:
-                    if share["path"] != path:
-                        continue
-                    written = without_folder_share(written, name)
-                    dropped_ids.append(folder_share_id(key, name))
-                    removals.append(
-                        {
-                            "code": CODE_SHARE_FOLDER_REMOVED,
-                            "params": {"name": name, "path": path},
-                        }
-                    )
-                    continue
-                if not path or name not in kept:
-                    continue
-                folder = rows[name].share_path if name in rows else ""
-                folder = folder or str((homes.get(name) or {}).get("home", "") or "")
-                if folder != path:
-                    continue
-                kept.remove(name)
-                removals.append(
-                    {
-                        "code": CODE_SHARE_HOME_REMOVED,
-                        "params": {"account": name, "path": path},
-                    }
-                )
-            if not removals:
-                return False
-            if written is not stored:
-                store.write(key, DEVICE_SAMBA_MODULE, written)
-            if kept != enabled:
-                store.set_enabled_accounts(key, DEVICE_SAMBA_MODULE, kept)
-    except OSError as error:
-        LOGGER.warning("device %s: the file share could not be written: %s", key, error)
-        return False
-    if dropped_ids:
-        try:
-            ClientRegistry().forget_permission_rows(dropped_ids)
-        except OSError as error:
-            LOGGER.warning("device %s: permissions not written: %s", key, error)
-    held = runtime.device_share_removals.setdefault(key, [])
-    held.extend(removal for removal in removals if removal not in held)
-    LOGGER.info(
-        "device %s: removed %s for a folder the machine reports gone",
-        key,
-        ", ".join(str(removal["params"]) for removal in removals),
-    )
     return True
 
 

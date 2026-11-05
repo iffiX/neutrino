@@ -9,11 +9,8 @@ names none, and the MAC the socket runs on, noted on the device's row;
 reports absent is settled in the device's file, keeping its want and
 leaving the state, and the state pushed again, while a module reported
 ``install_failed`` keeps its want and is neither settled nor taken over;
-``desktop`` and ``error``. A file share row's ``missing_shares`` deletes a
-folder share whose stored folder is the reported one, with its permission
-row, and takes a Home share's account out of the file share, each kept as a
-removal; an entry whose folder differs stays, and the same report again
-changes nothing.
+``desktop`` and ``error``. A file share row naming a share left off for a
+folder that is gone changes nothing of the hub's file share.
 The desktop share is recorded
 against the device the token resolved to, at the address the hub holds,
 and withdrawn when the machine stops or its socket ends.
@@ -770,27 +767,13 @@ def test_a_machine_that_joins_brings_its_own_containers_and_no_module_s(box):
 # --- a share whose folder is gone ---
 
 
-class ShareRuntime(FakeRuntime):
-    """The runtime with the device's real file share under the test's config."""
-
-    def __init__(self):
-        super().__init__()
-        from neutrino_hub.modules.devices.desired_state import DesiredStateStore
-
-        self.desired_states = DesiredStateStore()
-        self.device_account_details = {}
-        self.device_share_removals = {}
-
-    def account_details(self, key):
-        return dict(self.device_account_details.get(key, {}))
-
-
 @pytest.fixture
 def shares(config_dir, monkeypatch):
-    """Alice with her own share path and bob at his home, both enabled, and
-    the folder share ``lab`` open to both, its permission row granted."""
+    """Alice enabled at her own share path and the folder share ``lab``
+    open to her, its permission row granted, in the hub's real stores."""
     from neutrino_hub.modules.clients.registry import ClientRegistry
     from neutrino_hub.modules.devices.accounts import DeviceAccount, DeviceAccountStore
+    from neutrino_hub.modules.devices.desired_state import DesiredStateStore
     from neutrino_hub.modules.services.file_ids import folder_share_id
 
     from tests.conftest import unlock_vault
@@ -799,109 +782,45 @@ def shares(config_dir, monkeypatch):
     monkeypatch.setattr(
         "neutrino_hub.modules.devices.desired_state.UTILS_CONFIG_DIR", config_dir
     )
-    runtime = ShareRuntime()
-    store = runtime.desired_states
-    accounts = DeviceAccountStore(store)
-    accounts.add(DEVICE, DeviceAccount(account="alice", share_path="/srv/alice"))
-    accounts.add(DEVICE, DeviceAccount(account="bob"))
-    store.set_enabled_accounts(DEVICE, "samba", ["alice", "bob"])
+    runtime = FakeRuntime()
+    runtime.desired_states = store = DesiredStateStore()
+    DeviceAccountStore(store).add(
+        DEVICE, DeviceAccount(account="alice", share_path="/srv/alice")
+    )
+    store.set_enabled_accounts(DEVICE, "samba", ["alice"])
     held = store.read(DEVICE, "samba")
-    held["shares"] = [
-        {"name": "lab", "path": "/srv/lab", "accounts": ["alice", "bob"]},
-        {"name": "media", "path": "/srv/media", "accounts": ["bob"]},
-    ]
+    held["shares"] = [{"name": "lab", "path": "/srv/lab", "accounts": ["alice"]}]
     store.write(DEVICE, "samba", held)
-    registry = ClientRegistry()
-    registry.set_default_permission(
+    ClientRegistry().set_default_permission(
         ["file"], entries={folder_share_id(DEVICE, "lab"): True}
     )
-    runtime.device_account_details[DEVICE] = {"bob": {"home": "/home/bob"}}
     return runtime, ManagedDevice(id=DEVICE, name="testbox")
 
 
-def gone(*shares) -> dict:
-    return {
-        "samba": {
-            "state": "running",
-            "details": {
-                "missing_shares": [
-                    {"name": name, "path": path} for name, path in shares
-                ]
-            },
-        }
-    }
-
-
-def test_a_folder_share_whose_folder_is_gone_is_removed_as_its_remove_would(shares):
+def test_a_share_left_off_for_a_folder_that_is_gone_stays_in_the_hubs_file_share(
+    shares, config_dir
+):
     from neutrino_hub.modules.clients.registry import ClientRegistry
 
     runtime, device = shares
-
-    agent_reports.record_report(
-        runtime, device, report(modules=gone(("lab", "/srv/lab")))
-    )
-
-    held = runtime.desired_states.read(DEVICE, "samba")
-    assert [share["name"] for share in held["shares"]] == ["media"]
-    assert ClientRegistry().default_permission_entries() == {}
-    assert runtime.desired_states.enabled_accounts(DEVICE, "samba") == ["alice", "bob"]
-    assert runtime.pushed == [DEVICE]
-    assert runtime.device_share_removals[DEVICE] == [
-        {"code": "share_folder_removed", "params": {"name": "lab", "path": "/srv/lab"}}
+    files = sorted(config_dir.rglob("*.json"))
+    before = {path: path.read_bytes() for path in files}
+    gone = [
+        {"name": "lab", "path": "/srv/lab"},
+        {"name": "alice", "path": "/srv/alice"},
     ]
+    row = {
+        "state": "running",
+        "is_active": True,
+        "code": "share_path_missing",
+        "params": dict(gone[0]),
+        "details": {"shares": [], "missing_shares": gone},
+    }
 
+    agent_reports.record_report(runtime, device, report(modules={"samba": row}))
 
-def test_a_home_share_whose_folder_is_gone_unchecks_its_account(shares):
-    runtime, device = shares
-
-    agent_reports.record_report(
-        runtime,
-        device,
-        report(modules=gone(("alice", "/srv/alice"), ("bob", "/home/bob"))),
-    )
-
-    store = runtime.desired_states
-    assert store.enabled_accounts(DEVICE, "samba") == []
-    assert [share["accounts"] for share in store.read(DEVICE, "samba")["shares"]] == [
-        [],
-        [],
-    ]
-    assert runtime.device_share_removals[DEVICE] == [
-        {
-            "code": "share_home_removed",
-            "params": {"account": "alice", "path": "/srv/alice"},
-        },
-        {
-            "code": "share_home_removed",
-            "params": {"account": "bob", "path": "/home/bob"},
-        },
-    ]
-    assert runtime.pushed == [DEVICE]
-
-
-def test_an_entry_whose_folder_differs_from_the_reported_one_stays(shares):
-    runtime, device = shares
-    before = runtime.desired_states.read(DEVICE, "samba")
-
-    agent_reports.record_report(
-        runtime,
-        device,
-        report(modules=gone(("lab", "/srv/old_lab"), ("alice", "/home/alice"))),
-    )
-
-    assert runtime.desired_states.read(DEVICE, "samba") == before
+    assert sorted(config_dir.rglob("*.json")) == files
+    assert {path: path.read_bytes() for path in files} == before
+    assert runtime.desired_states.enabled_accounts(DEVICE, "samba") == ["alice"]
+    assert list(ClientRegistry().default_permission_entries().values()) == [True]
     assert runtime.pushed == []
-    assert runtime.device_share_removals == {}
-
-
-def test_the_same_report_again_changes_nothing(shares):
-    runtime, device = shares
-    sent = report(modules=gone(("lab", "/srv/lab")))
-    agent_reports.record_report(runtime, device, sent)
-    after = runtime.desired_states.read(DEVICE, "samba")
-
-    agent_reports.record_report(runtime, device, sent)
-
-    assert runtime.desired_states.read(DEVICE, "samba") == after
-    assert runtime.pushed == [DEVICE]
-    assert len(runtime.device_share_removals[DEVICE]) == 1

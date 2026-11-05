@@ -248,8 +248,6 @@ def replace_accounts(
             apply_keys()
         raise
     context.config = written
-    if row.name == DEVICE_SAMBA_MODULE:
-        runtime.device_share_removals.pop(context.key, None)
     record_running(runtime, context)
     push_state(runtime, context.key)
     recompose_published(runtime, row.name)
