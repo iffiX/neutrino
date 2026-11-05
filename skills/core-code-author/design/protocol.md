@@ -756,14 +756,14 @@ to pick one.
 | --- | --- | --- |
 | `GET /api/agent/module` | `?device_id=` | one row per module, `{name, title, description, runner, method, source, kind, publisher, uninstall_data, requires, is_configured, is_without_accounts, task_id, want, state, is_active, version, code, params, details, is_supported, is_carried, is_shown}`: the manifest's words first, `source` the source chip's word, `agent`, `system`, `upstream` or `container`, and `kind` the kind chip's, `service` or `program` ([agent/module_install.md](agent/module_install.md), "The source chip and the kind chip"), `requires` the modules the machine's entry requires ([agent/module_install.md](agent/module_install.md), "Dependencies"), `uninstall_data` being the manifest's `{is_deleted, text}` with `{data_dir}` written in for the machine's system and absent for a module the agent carries ([agent/module_install.md](agent/module_install.md), "The manifest"), `is_configured` whether the hub holds a file for it, `task_id` the running install or removal task's, `want` the stored one, empty when the hub holds none, `version` the version installed as the machine reports it, `code` and `params` the reported failure or hold-up; the rows come in the description table's order, which the page keeps, and its tabs are the rows `is_shown` names, each with its `source` and `kind` chips ([ui_behavior.md](ui_behavior.md), "The machine page"); beside the rows `memory_need`, `{need_gib, memory_gib}` on Windows and macOS while the container modules need more memory than the Podman machine has and null otherwise ([agent/modules/containers.md](agent/modules/containers.md), "Memory for the container modules") |
 | `GET /api/agent/module/catalog` | `?device_id=` | `ModuleCatalogView`: `categories`, the activity filters in their order, and `modules`, each `{name, category, is_available, is_supported, is_carried, is_shown, state, requires}`, in the order `data/module_catalog.json` lists them: `is_available` false for a module the hub has no manifest of yet, `is_supported` whether the machine's platform has an entry and each module that entry requires has one too, `requires` the modules that entry requires, `is_carried` for Terminal, Remote desktop and the SSH server, `is_shown` whether its tab is on the page, and `state` as last reported |
-| `POST /api/agent/module/install` | `{device_id, module}` | writes `want: installed`, and `want: running` for a command line program; on a module whose last report is `failed` or `install_failed`, and on one reading `absent`, `stopped` or `running`, also a fresh `retry_mark`; first `want: running` on each module the machine's entry requires whose `want` is another, with the same `retry_mark` on it, and all in one hold of `CONFIG_WRITE_LOCK` ([agent/module_install.md](agent/module_install.md), "Dependencies"); 409 `no_platform_build {module}` naming a required module with no entry for the machine |
+| `POST /api/agent/module/install` | `{device_id, module}` | writes `want: installed`, and `want: running` for a command line program, and a `want` written by this route or the three below ends the module's `is_taken_over` ("The sections"); on a module whose last report is `failed` or `install_failed`, and on one reading `absent`, `stopped` or `running`, also a fresh `retry_mark`; first `want: running` on each module the machine's entry requires, ending its `is_taken_over`, with the same `retry_mark` on one whose `want` is another, and all in one hold of `CONFIG_WRITE_LOCK` ([agent/module_install.md](agent/module_install.md), "Dependencies"); 409 `no_platform_build {module}` naming a required module with no entry for the machine |
 | `POST /api/agent/module/start` | `{device_id, module}` | writes `want: running`; the same `retry_mark` on a failed module and on one reading `absent`, `installed` or `stopped`; first `want: running` on each module it requires as **Install** does; 400 `module_not_service {module}` for a command line program |
 | `POST /api/agent/module/stop` | `{device_id, module}` | writes `want: stopped`; the same `retry_mark` on a failed module and on one reading `absent`, `installed` or `running`; 400 `module_not_service {module}` for a command line program |
 | `POST /api/agent/module/uninstall` | `{device_id, module}` | writes `want: absent`; the same `retry_mark` on a failed module and on one reading `installed`, `stopped` or `running`; 409 `module_in_use {modules}` while a module whose `want` is not `absent` requires it on the machine, `modules` those modules |
 | `GET /api/agent/module/version` | `?device_id=&module=` | `ModuleVersionView`: `installed`, the version the machine reports; `chosen`, the machine's choice in `modules.json`, empty while it follows the tested one; `tested`; `newest`; `is_locked`, true for a module of the `agent`, `builtin` or `system` method, for a `container` module whose manifest names no `releases`, and for a module whose reported `details` say `has_package_mark: false`, Containers on a person's Podman ([agent/modules/containers.md](agent/modules/containers.md), "A person's Podman and the module's"); `versions`, newest first, each `{version, is_tested, is_untested}`, `is_untested` for a version newer than the tested one, and the one locked version for a locked module, on a person's Podman the version the machine reports, none while it reports none; `is_data_forward_only` from the manifest; and `read_at`, when the feeds were last read ([agent/module_install.md](agent/module_install.md), "Module versions") |
-| `POST /api/agent/module/version/set` | `{device_id, module, version}`, `version` empty to follow the tested one | writes `version` into the module's entry in `modules.json` and pushes the state; a module the file does not name takes the state the machine reports as its `want`, and a settled `absent` while the machine reports it neither `installed`, `stopped` nor `running`; `ModuleVersionView`; 400 `version_unknown {version}` for a version the feeds did not list for the machine's platform, 409 `version_locked {module}` for a module whose version is locked, 409 `agent_offline` |
+| `POST /api/agent/module/version/set` | `{device_id, module, version}`, `version` empty to follow the tested one | writes `version` into the module's entry in `modules.json`, ending its `is_taken_over`, and pushes the state; a module the file does not name takes the state the machine reports as its `want`, and a settled `absent` while the machine reports it neither `installed`, `stopped` nor `running`; `ModuleVersionView`; 400 `version_unknown {version}` for a version the feeds did not list for the machine's platform, 409 `version_locked {module}` for a module whose version is locked, 409 `agent_offline` |
 | `GET /api/agent/module/journal` | `?device_id=&module=&lines=` | the tail of the module's log on the device: its units' journal on Linux, its own sources and the agent's lines naming it on Windows and macOS ([agent.md](agent.md), "Which modules each system runs") |
-| `POST /api/agent/module/<name>/apply` | `{device_id}` | pushes the device's state again, for every module alike, with a fresh `retry_mark` on a module whose last report is `failed` or `install_failed`, or `absent`, `installed`, `stopped` or `running` other than its `want`, and writes `want: running` on a module with no `want` that reads `running`; 409 `agent_offline` |
+| `POST /api/agent/module/<name>/apply` | `{device_id}` | pushes the device's state again, for every module alike, with a fresh `retry_mark` on a module whose last report is `failed` or `install_failed`, or `absent`, `installed`, `stopped` or `running` other than its `want`, ends the module's `is_taken_over`, and writes `want: running` on a module with no `want` that reads `running`; 409 `agent_offline` |
 | `GET /api/agent/module/account` | `?device_id=` | `AccountListView`: `accounts`, the available accounts in the order they were added, each `{account, has_login, share_path, shell_path, is_ai_tools_enabled, tool_configs, modules, ai_tools}`, `modules` the module names that enable it and `ai_tools` its last AI tools result as reported, `{state, code, params}`, `state` empty before the machine reported it; `system_accounts`, the machine's `account_details` for the form's picker and its defaults; `platform_os`; `models`, the names the gateway serves, for the model pickers; and `is_gateway_serving` |
 | `POST /api/agent/module/account/add` | `{device_id, account, password, share_path, shell_path, is_ai_tools_enabled, tool_configs}`, `password` on a Windows machine alone, `share_path` and `shell_path` empty for the defaults, each `tool_configs` slot empty for the gateway's default | adds the account: on Windows stores `password` as a vault login and names it `login_id`, turns the AI tools on for it when asked, and pushes the state; `AccountListView`; 400 `account_unknown {account}` for an account the machine does not report, `account_duplicate {account}`, `credential_missing {account}` for a Windows account with no password, `path_invalid {path}` for a path that is not absolute, the agent's own `shell_program_unusable {path}`, `share_path_missing {name, path}` and `share_path_link {name, path}` for a `share_path` the agent's `folder` verb reads as no real folder, `name` the account, `vault_locked`; 409 `gateway_not_serving` for the AI tools turned on while the gateway serves no model, `agent_offline` |
 | `POST /api/agent/module/account/set` | the fields of `add`, `password` empty to keep the login | replaces the account's row; a new password is a new login and the old one is deleted; an AI tools switch turned on mints the device's gateway key when it has none, and the last one turned off revokes it; `AccountListView`; the refusals of `add`, the `folder` verb asked also of the account's home for an empty `share_path` while the file share enables the account |
@@ -1031,7 +1031,7 @@ and platform, which change between releases.
 | `machine` | | `{hostname, platform, accounts, account_details, metrics, sessions}`, `account_details` one `{account, home, shell}` per account | | `{hostname, platform, os_machine_id}` |
 | `is_refresh` | | | | bool: a refresh the person asked for, answered with the whole state |
 | `network` | | `{link: {interface, mac, address}, interfaces: [{name, mac, addresses[]}]}` | | |
-| `modules` | `{name: {want, config, install, retry_mark}}` | `{name: {state, is_active, version, code, params, details, task}}` | | |
+| `modules` | `{name: {want, config, install, retry_mark, is_taken_over}}` | `{name: {state, is_active, version, code, params, details, task}}` | | |
 | `desktop` | `{seat_password}` | `{is_shared, origin, account, share_id, port, attention, connected_count}`, `origin` `switch` or `command` (a share an old `nagent rdp start` record keeps running), empty while nothing is shared | | |
 | `ai_tools` | `{is_enabled, is_forwarded, gateway_port, base_url, api_key, accounts: [{account, password, tool_configs}], cc_switch_version, cc_switch_artifact, retry_mark}` | `{accounts: [{account, state, code, params, has_records}]}` | | |
 | `source_sets` | `{name: {probe, sources, variables}}`: each source set a recipe of the state names, as `data/source_sets.json` defines it | | | |
@@ -1165,6 +1165,20 @@ same entry. The hub
 keeps one mark per module and one for the AI tools per device in
 `device_retry_marks.json` under its state root, replaced by each press and
 dropped with the device ([files.md](files.md)).
+
+`is_taken_over`, in a module's entry, is true from the report at which the
+hub took the module over ("The modules section, one entry per module")
+until the person's first press on that module: **Install**, **Start**,
+**Stop**, **Uninstall**, **Update** or another version, and an apply of
+the module's configuration; an **Install** or a **Start** of a module that
+requires it ends it as well. The hub keeps it in the module's entry of
+`modules.json` and sends it only while it is true. While it stands, the
+agent plans no install and no version switch for the module, the install a
+runner owes among them, so it runs no package manager and fetches no
+artifact for it; it reads and reports the module as the machine shows it
+([agent.md](agent.md), "The steps"). The field is added and keeps
+`PROTOCOL`: an agent of an earlier build ignores it, as it ignores any
+unknown field, and plans as before.
 
 `ai_tools` in the state is the machine's AI tools setting, one switch per
 available account ([agent/ai_tools.md](agent/ai_tools.md)). `is_enabled` is
@@ -1364,8 +1378,8 @@ Package operations on one machine run one at a time, serialized on the agent,
 because one package manager holds the machine-wide lock.
 
 Taking over a machine happens at the first report on a session that
-carries the module's row, for each module that has an import (`gitea`,
-`podman`; the account layer's modules have none) and no `want` in
+carries the module's row, for each module that has an import (`samba`,
+`gitea`, `podman`; the account layer's modules have none) and no `want` in
 `modules.json`. The agent reads its modules one after another from its
 start or its join, and a report carries the rows read by then: on the
 lab's Ubuntu 22.04 the Podman row came in a later report of the join's
@@ -1376,9 +1390,11 @@ state as its `want`, and its configuration is imported from the report's
 is imported, and gets `running` or `stopped` as its `want` by `is_active`,
 when the import finds something. An import that finds nothing leaves the
 module as it reports, and Gitea is taken over only while the hub holds
-`gitea_secrets.json` for the device. The state is pushed and the published
-list recomposed in the same step; a later report on the same session takes
-over no module an earlier one carried.
+`gitea_secrets.json` for the device. Each module taken over is written
+`is_taken_over` in `modules.json` beside its `want` ("The sections"), so the
+agent installs nothing for it until the person's first press on it. The
+state is pushed and the published list recomposed in the same step; a later
+report on the same session takes over no module an earlier one carried.
 
 A module with no `want` that the machine reports `installed`, `stopped` or
 `running`, one with no import such as the file share, VS Code,

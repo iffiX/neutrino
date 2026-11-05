@@ -256,7 +256,10 @@ import, Gitea's and the containers', what the machine has becomes the hub's
 configuration at the first report on a session that carries the module's
 row, and the first
 **Configure** imports it when that report found none
-([protocol.md](protocol.md), "The modules section, one entry per module"). A
+([protocol.md](protocol.md), "The modules section, one entry per module").
+A module taken over, the file share's among them, carries `is_taken_over`
+in the state until the person's first press on it, and its task installs
+nothing until then ("The steps"). A
 failure is
 in the machine's report and in the agent's record of it, and a hub restart
 loses nothing, because `want` is in `config/`. Machinery whose only purpose
@@ -374,6 +377,7 @@ account carries it as a parameter.
 | --- | --- |
 | A module has at most one task at a time. The `ai_tools` section is one task of its own, under the same rules, and reports through its own section. | Two tasks on one module would fight over the same files and units. |
 | A task's plan comes from the `want` and what the machine shows, by the table of "One session, everything on it": `absent` plans the uninstall when the software is there or the last install failed; a present `want` plans the install when the software is missing, the last install failed, or, under `installed` or `running`, the runner lacks a part its install adds, as Containers' machine image on Windows and macOS ([modules/containers.md](agent/modules/containers.md), "What the install puts on the computer") and its `runc` on Linux ([modules/containers.md](agent/modules/containers.md), "Linux"), the version switch when a `hub` module's kept version differs from its recipe's, then the configure steps under `stopped` and `running`, then `start` or `stop`. | The decision is the same for every module, and only the work is cut into steps. A part the install adds comes at the press that needs it: a join adopts a person's Podman `stopped` and fetches and installs nothing. |
+| A task whose entry carries `is_taken_over` plans no install and no version switch, whatever the machine shows, the install a runner owes among them: under `stopped` and `running` its plan is the configure steps and `start` or `stop` alone, and it runs no package manager and fetches no artifact. The person's first press on the module ends the mark ([protocol.md](protocol.md), "The sections"), and the next plan takes the install the row above owes. The rule holds for every module the hub takes over, Containers, the file share and Gitea alike, and the module's state and the software it runs are read and reported as the machine shows them meanwhile. | A join changes nothing on the machine. On the lab's Ubuntu 22.04 a person's running Podman was taken over `running`, and its task installed `runc` at the join with no press. |
 | A command line program's plan under `running` is a `hub` module's: the install or the version switch of the module's copy, then `configure` and one `account` step per enabled account, which puts the module's copy first on the account's `PATH` and reads which copy the account's shell runs ("Parallel, never take over"). | Every enabled account runs the module's copy, and only a step that runs as the account sees which copy its shell finds. |
 | Each task runs on a thread of its own from its first step, and any number of tasks run at once. | The steps of two modules then wait only for what they share ("Step locks"), and the long steps wait on the network or inside a container. |
 | A task is not kept on disk. After a restart the next state plans each module again from what the machine shows. | Every step is safe to run again (below), so a record of the task would only be survival machinery ([../kill_on_sight.md](../kill_on_sight.md)). |
