@@ -1,17 +1,16 @@
-/* The table scrolls here; the page body never scrolls sideways. The card
-   gives the table its whole width, and the outer cells keep the margin. */
-.devices_table_scroll {
-  overflow-x: auto;
+/* The box the table lays itself out by. The card gives the table its whole
+   width, and the outer cells keep the margin. */
+.devices_table_box {
   padding: var(--space-2) 0;
+  container: devices_table / inline-size;
 }
 
 /* Fixed column widths, one set for the header and every row, each holding its
    header's words in either language. The actions take whatever the other
-   columns leave, and the minimum width leaves them room for their buttons on
-   two lines. */
+   columns leave: at the 968 px the cards below start under, room for their
+   buttons on two lines. */
 .devices_table {
   width: 100%;
-  min-width: 968px;
   border-collapse: separate;
   border-spacing: 0;
   font-size: 12px;
@@ -168,4 +167,85 @@
 .devices_skeleton_row {
   height: 64px;
   margin: var(--space-2);
+}
+
+/* A box narrower than every column: each row a card, the name line, the
+   other fields as label and value pairs that wrap, then the actions. */
+@container devices_table (max-width: 967px) {
+  .devices_table,
+  .devices_table tbody,
+  .devices_table td {
+    display: block;
+  }
+
+  .devices_table colgroup,
+  .devices_table thead {
+    display: none;
+  }
+
+  .devices_row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3) var(--space-5);
+    height: auto;
+    padding: var(--space-3);
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .devices_table tbody tr:last-child {
+    border-bottom: none;
+  }
+
+  .devices_table td,
+  .devices_table td:first-child,
+  .devices_table td:last-child {
+    overflow: visible;
+    padding: 0;
+    border-bottom: none;
+    white-space: normal;
+  }
+
+  .devices_row > td:first-child,
+  .devices_actions_cell {
+    flex-basis: 100%;
+  }
+
+  .devices_name_link {
+    overflow-wrap: anywhere;
+  }
+
+  /* A field's label is its column's header. */
+  .devices_table td[data-label]::before {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--color-text-faint);
+    font-family: var(--font-sans);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    content: attr(data-label);
+  }
+
+  .devices_actions {
+    justify-content: flex-start;
+  }
+
+  .devices_row--editing {
+    background-image: linear-gradient(
+      var(--color-accent-wash),
+      var(--color-accent-wash)
+    );
+  }
+
+  .devices_row--editing td {
+    background-image: none;
+  }
+
+  .devices_outcome_row {
+    display: block;
+    padding: var(--space-2) var(--space-3);
+    background: var(--color-bg);
+  }
 }

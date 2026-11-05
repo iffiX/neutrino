@@ -45,7 +45,8 @@ import "./clients_page.css";
  * link expires. Presence, hostname and version come from its live session.
  * A client's name and permission are edited in its row, lit while the edit
  * is open; the default permission is a dialog from the panel's header. The
- * switch and the delete write at once.
+ * switch and the delete write at once. A box narrower than every column lays
+ * each row out as a card.
  */
 
 const CLIENTS_PATH = "/hub/client";
@@ -322,7 +323,7 @@ export function ClientsPage() {
             </div>
           )
         ) : (
-          <div className="clients_table_scroll">
+          <div className="clients_table_box">
             <table className="clients_table">
               <colgroup>
                 <col className="clients_col--name" />
@@ -341,7 +342,7 @@ export function ClientsPage() {
                   <th>{t("ui.clients.header_version")}</th>
                   <th>{t("ui.clients.header_status")}</th>
                   <th>{t("ui.clients.header_last_seen")}</th>
-                  <th className="table_actions_cell" />
+                  <th />
                 </tr>
               </thead>
               <tbody>
@@ -494,6 +495,7 @@ function ClientRow({
   return (
     <tr
       className={[
+        "clients_row",
         client.is_disabled ? "clients_row--disabled" : "",
         isRenaming || isPermissionOpen ? "clients_row--editing" : "",
       ]
@@ -559,21 +561,27 @@ function ClientRow({
       )}
       {!isRenaming && waitingMinutes === null && (
         <>
-          <td className="mono">{client.hostname || NOTHING}</td>
-          <td>{client.platform_os || NOTHING}</td>
-          <td className="mono">{client.version || NOTHING}</td>
+          <td className="mono" data-label={t("ui.clients.header_hostname")}>
+            {client.hostname || NOTHING}
+          </td>
+          <td data-label={t("ui.clients.header_platform")}>
+            {client.platform_os || NOTHING}
+          </td>
+          <td className="mono" data-label={t("ui.clients.header_version")}>
+            {client.version || NOTHING}
+          </td>
         </>
       )}
-      <td>
+      <td data-label={t("ui.clients.header_status")}>
         <StatusDot
           tone={PRESENCE_TONES[presence]}
           label={t(PRESENCE_KEYS[presence])}
         />
       </td>
-      <td className="mono">
+      <td className="mono" data-label={t("ui.clients.header_last_seen")}>
         {client.is_online ? t("state.online") : formatTimeAgo(client.last_seen)}
       </td>
-      <td className="table_actions_cell">
+      <td className="clients_actions_cell">
         <div className="clients_actions">
           {waitingMinutes === null && (
             <button

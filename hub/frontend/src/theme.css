@@ -289,25 +289,6 @@ textarea {
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
 }
 
-/* --- Tables --- */
-
-/* A row's actions stay at the right edge of the table's scrolling box, over
-   the cells that scroll under them. The table needs separate borders. A
-   collapsed border would stay behind with the table. */
-.table_actions_cell {
-  position: sticky;
-  right: 0;
-  z-index: 1;
-  background-color: var(--color-surface);
-}
-
-/* A phone's box is no wider than the actions. */
-@media (max-width: 720px) {
-  .table_actions_cell {
-    position: static;
-  }
-}
-
 /* --- Buttons --- */
 
 .button {

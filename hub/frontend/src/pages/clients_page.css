@@ -24,19 +24,18 @@
   flex-shrink: 0;
 }
 
-/* The table scrolls here; the page body never scrolls sideways. */
-.clients_table_scroll {
-  overflow-x: auto;
+/* The box the table lays itself out by. */
+.clients_table_box {
+  container: clients_table / inline-size;
 }
 
 /* Fixed column widths, one set for the header and every row, so a badge in
    the name cell wraps inside that cell and never moves the columns after it.
    Each column holds its header's words in either language. The actions take
-   whatever the other columns leave, and the minimum width leaves them room
-   for their buttons on two lines. */
+   whatever the other columns leave: at the 860 px the cards below start
+   under, room for their buttons on two lines. */
 .clients_table {
   width: 100%;
-  min-width: 860px;
   border-collapse: separate;
   border-spacing: 0;
   font-size: 12px;
@@ -126,4 +125,76 @@
   gap: var(--space-2);
   justify-content: flex-end;
   white-space: nowrap;
+}
+
+/* A box narrower than every column: each row a card, the name line, the
+   other fields as label and value pairs that wrap, then the actions. */
+@container clients_table (max-width: 859px) {
+  .clients_table,
+  .clients_table tbody,
+  .clients_table td {
+    display: block;
+  }
+
+  .clients_table colgroup,
+  .clients_table thead {
+    display: none;
+  }
+
+  .clients_row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3) var(--space-5);
+    padding: var(--space-3) 10px;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .clients_permission_row {
+    display: block;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .clients_table tr:last-child {
+    border-bottom: none;
+  }
+
+  .clients_row td {
+    overflow: visible;
+    padding: 0;
+    border-bottom: none;
+  }
+
+  .clients_row > td:first-child,
+  .clients_actions_cell {
+    flex-basis: 100%;
+  }
+
+  /* A field's label is its column's header. */
+  .clients_table td[data-label]::before {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--color-text-faint);
+    font-family: var(--font-sans);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    content: attr(data-label);
+  }
+
+  .clients_actions {
+    justify-content: flex-start;
+  }
+
+  .clients_row--editing {
+    background-image: linear-gradient(
+      var(--color-accent-wash),
+      var(--color-accent-wash)
+    );
+  }
+
+  .clients_row--editing td {
+    background-image: none;
+  }
 }

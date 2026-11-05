@@ -46,8 +46,9 @@ import "./devices_page.css";
  * `metrics` event: CPU, memory, disk, the busiest GPU and the temperature,
  * or how long ago an offline machine was seen. The row's actions sit at its
  * right; Rename turns the name into an input and leaves Save and Cancel
- * alone. The header adds a machine through two dialogs, by link or over
- * SSH. What a press started reads on the row's own line under it.
+ * alone. A box narrower than every column lays each row out as a card. The
+ * header adds a machine through two dialogs, by link or over SSH. What a
+ * press started reads on the row's own line under it.
  */
 
 // What moves this list: a machine's session opening or ending, a machine
@@ -324,7 +325,7 @@ export function DevicesPage() {
       </div>
 
       {resource.data === null ? (
-        <div className="card devices_table_scroll">
+        <div className="card devices_table_box">
           {Array.from({ length: SKELETON_ROWS }, (_, index) => (
             <div key={index} className="skeleton devices_skeleton_row" />
           ))}
@@ -335,7 +336,7 @@ export function DevicesPage() {
           <span className="faint">{t("ui.devices.empty_hint")}</span>
         </div>
       ) : (
-        <div className="card devices_table_scroll">
+        <div className="card devices_table_box">
           <table className="devices_table">
             <colgroup>
               <col className="devices_col--name" />
@@ -354,7 +355,7 @@ export function DevicesPage() {
                 <th>{t("ui.devices.header_status")}</th>
                 <th>{t("ui.devices.header_version")}</th>
                 <th>{t("ui.devices.header_last_seen")}</th>
-                <th className="table_actions_cell" />
+                <th />
               </tr>
             </thead>
             <tbody>
@@ -492,14 +493,21 @@ function DeviceRow({
         </td>
         {!isRenaming && (
           <>
-            <td className="mono">{device.ipv4_address || NOTHING}</td>
-            <td className="mono devices_mac">{device.link_mac || NOTHING}</td>
+            <td className="mono" data-label={t("ui.devices.header_address")}>
+              {device.ipv4_address || NOTHING}
+            </td>
+            <td
+              className="mono devices_mac"
+              data-label={t("ui.devices.header_mac")}
+            >
+              {device.link_mac || NOTHING}
+            </td>
           </>
         )}
-        <td>
+        <td data-label={t("ui.devices.header_status")}>
           <StatusCell device={device} />
         </td>
-        <td className="mono">
+        <td className="mono" data-label={t("ui.devices.header_version")}>
           {client?.version == null ? (
             NOTHING
           ) : client.is_version_mismatched ? (
@@ -513,10 +521,10 @@ function DeviceRow({
             client.version
           )}
         </td>
-        <td className="mono">
+        <td className="mono" data-label={t("ui.devices.header_last_seen")}>
           {isOnline ? t("state.online") : formatTimeAgo(lastSeen(device))}
         </td>
-        <td className="table_actions_cell">
+        <td className="devices_actions_cell">
           <div className="devices_actions">
             {isRenaming ? (
               <>
