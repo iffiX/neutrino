@@ -153,8 +153,9 @@ its own word, and a string in one language carries no word of the other.
 | the page of the ways in | **Access** | **外部访问** | The page, its sidebar entry and every link to it use this name. The configuration, the routes and the protocol keep `overlay`, and so do the catalog keys (`ui.nav.overlay`, `ui.overlay.*`). |
 | the way in through the person's own server | SSH relay | SSH 中继 | The card, the section, the client's hub row and the docs use it; a sentence that names it again may say "the relay" (中继). The server it reaches is "your server" (你的服务器) in a label and VPS in the guide. The client's word, `reached_through`, is `ssh_relay`; the configuration, routes and codes keep `relay`. |
 | the two frp vendors | SakuraFrp, OpenFrp | SakuraFrp，OpenFrp | Spelled as each vendor spells itself, in both languages; never 樱花 or a shortened name. The program both run is frpc, and a sentence about the tunnel says "tunnel" (隧道). |
+| a computer joined to the hub | machine | 系统 | Chinese writes 系统 for it on every surface and never 机器: 这个系统, 系统页, 系统离线. 主机 stays for a host on a network and 虚拟机 for a virtual machine. |
 | the page of the managed machines | **Agents** | **被控端** | The page, its sidebar entry in the hub group, the header chip and the Overview card use this name, and the sidebar's machine group below carries the same word. The routes keep `device` (`/api/hub/device`) and the catalog keys keep `devices`; the panel's address is `/agents`. |
-| a managed machine's page | the machine page | 机器页 | Each machine's own page, `/agents/<id>`, which holds its modules; the panel has no Modules, Terminals or Files page. |
+| a managed machine's page | the machine page | 系统页 | Each machine's own page, `/agents/<id>`, which holds its modules; the panel has no Modules, Terminals or Files page. |
 
 The sidebar's lines under the renamed entries, the Agents page's among them in "The Agents page's words":
 
@@ -209,7 +210,7 @@ The VS Code notice and its button:
 
 | Key | English | Chinese |
 | --- | --- | --- |
-| `ui.vscode.terms_notice` | You install VS Code Server on this machine under Microsoft's license terms. Open them to accept them and use VS Code here. | 你在这台机器上按微软的许可条款安装 VS Code Server。打开条款即接受，之后才能在这里使用 VS Code。 |
+| `ui.vscode.terms_notice` | You install VS Code Server on this machine under Microsoft's license terms. Open them to accept them and use VS Code here. | 你在这个系统上按微软的许可条款安装 VS Code Server。打开条款即接受，之后才能在这里使用 VS Code。 |
 | `ui.vscode.terms_accept` | Open and accept the terms | 打开并接受条款 |
 | `ui.vscode.terms_accepted` | Terms accepted | 已接受条款 |
 
@@ -223,13 +224,13 @@ that page, its count or its sidebar entry as a device changes with it:
 | Key | English | Chinese |
 | --- | --- | --- |
 | `ui.nav.devices`, `ui.devices.title` | Agents | 被控端 |
-| `ui.nav.devices_description` | Managed machines and what you do with them | 被管理的机器和对它们的操作 |
+| `ui.nav.devices_description` | Managed machines and what you do with them | 被管理的系统和对它们的操作 |
 | `ui.shell.chip_devices`, the header chip's label | agents | 被控端 |
 | `ui.dashboard.tile_devices`, the Overview card, which links to `/agents` | Agents | 被控端 |
 | `ui.devices.badge`, beside the title | {total} agents, {online} online | {total} 台被控端，{online} 台在线 |
 | `ui.usage.device_row`, a usage row of a machine's key | agent {device} | 被控端 {device} |
-| `ui.settings.update_confirm_body`, `ui.settings.update_confirm_body_installer` | The panel restarts, and agents on an older protocol need Reinstall on their machine page. If {version} does not answer within three minutes, {from} is put back. | 面板会重启，协议更旧的被控端要在各自的机器页上重新安装。{version} 三分钟内没有应答时，会装回 {from}。 |
-| `ui.device_pick.no_devices_hint` | Add a machine on the Agents page. | 到“被控端”页添加一台机器。 |
+| `ui.settings.update_confirm_body`, `ui.settings.update_confirm_body_installer` | The panel restarts, and agents on an older protocol need Reinstall on their machine page. If {version} does not answer within three minutes, {from} is put back. | 面板会重启，协议更旧的被控端要在各自的系统页上重新安装。{version} 三分钟内没有应答时，会装回 {from}。 |
+| `ui.device_pick.no_devices_hint` | Add a machine on the Agents page. | 到“被控端”页添加一个系统。 |
 | `ui.clients.filter_no_devices` | No agents yet. | 还没有被控端。 |
 | `ui.nav.services_description` | What the hub publishes to clients | 中枢向客户端发布的内容 |
 | `ui.install_agent.running_label`, the dot over the install output while it runs | installing | 安装中 |
@@ -257,7 +258,7 @@ Chinese a kind is 权限, as in 默认权限.
 | Key | English | Chinese |
 | --- | --- | --- |
 | `ui.clients.fine_mode` | Choose per app | 逐个应用选择 |
-| `ui.clients.fine_mode_description` | Whether each app, share, desktop and machine has a switch of its own under its kind. A switch set here wins over its kind. | 是否在每种权限下给每个应用、共享、桌面和机器单独一个开关。这里设的开关优先于所属权限。 |
+| `ui.clients.fine_mode_description` | Whether each app, share, desktop and machine has a switch of its own under its kind. A switch set here wins over its kind. | 是否在每种权限下给每个应用、共享、桌面和系统单独一个开关。这里设的开关优先于所属权限。 |
 | `ui.clients.follow_kind` | Follow the kind | 跟随所属权限 |
 | `ui.clients.fine_mode_clear_warning` | The switches set per app are cleared. | 逐个应用设的开关会全部清除。 |
 | `ui.clients.rows_empty` | None yet | 暂时没有 |
@@ -266,7 +267,7 @@ Chinese a kind is 权限, as in 默认权限.
 | `ui.clients.waiting` | Waiting to join ({minutes} min left) | 等待加入（还剩 {minutes} 分钟） |
 | `ui.clients.waiting_delete_body` | Its link stops working. | 它的链接随即失效。 |
 | `ui.devices.generate_link`, the **Add by link** dialog's foot | Generate link | 生成链接 |
-| `ui.devices.link_name_hint` | Left empty, the machine's host name names it. | 留空时用机器的主机名。 |
+| `ui.devices.link_name_hint` | Left empty, the machine's host name names it. | 留空时用系统的主机名。 |
 | `ui.clients.panel_clients`, `ui.web_shares.title`, the two panels | Clients, App shares | 客户端、应用分享 |
 | `ui.web_shares.new_link` | New App share link | 新建应用分享链接 |
 | `ui.web_shares.share`, on a Services page row | Share | 分享 |
@@ -298,7 +299,7 @@ keys are in `locales/<language>/devices.json` beside the page's other `ui.creden
 | Key | English | Chinese |
 | --- | --- | --- |
 | `ui.credentials.generated_title` | Generated by the hub | 中枢生成的 |
-| `ui.credentials.generated_hint` | Passwords and keys the hub made for your machines. Clients receive them by themselves; you need one to sign in by hand. | 中枢为你的机器生成的密码和密钥。客户端会自己取用，手动登录时才需要它们。 |
+| `ui.credentials.generated_hint` | Passwords and keys the hub made for your machines. Clients receive them by themselves; you need one to sign in by hand. | 中枢为你的系统生成的密码和密钥。客户端会自己取用，手动登录时才需要它们。 |
 | `ui.credentials.smb_password` | SMB password · {account} | SMB 密码 · {account} |
 | `ui.credentials.seat_password` | Remote desktop password | 远程桌面密码 |
 | `ui.credentials.ssh_key` | SSH key · {account} | SSH 密钥 · {account} |
@@ -306,9 +307,9 @@ keys are in `locales/<language>/devices.json` beside the page's other `ui.creden
 | `ui.credentials.rotate_title` | Rotate {name} | 轮换{name} |
 | `ui.credentials.rotate_smb_body` | The share takes the new password at once. Clients use it at their next mount; a mount made by hand with the old one stops working. | 共享立即改用新密码。客户端下次挂载时自动用新密码；手动用旧密码挂载的会失效。 |
 | `ui.credentials.rotate_seat_body` | Every viewer is disconnected, and clients use the new password at their next connection. | 所有正在看的人都会断开，客户端下次连接时用新密码。 |
-| `ui.credentials.rotate_ssh_body` | The machine stops accepting the old key. Clients fetch the new one by themselves; a copy of the old key elsewhere stops working. | 机器不再接受旧密钥。客户端会自己取新密钥；别处留着的旧密钥副本随即失效。 |
+| `ui.credentials.rotate_ssh_body` | The machine stops accepting the old key. Clients fetch the new one by themselves; a copy of the old key elsewhere stops working. | 这个系统不再接受旧密钥。客户端会自己取新密钥；别处留着的旧密钥副本随即失效。 |
 | `ui.credentials.generated_empty` | No generated secrets yet | 还没有中枢生成的密钥 |
-| `code.generated_credential_unknown` | The machine no longer has this secret. | 这台机器已没有这个密钥。 |
+| `code.generated_credential_unknown` | The machine no longer has this secret. | 这个系统已没有这个密钥。 |
 
 ## The App share page's words
 
@@ -340,8 +341,8 @@ gateway listens on the hub's loopback alone.
 
 | Key | English | Chinese |
 | --- | --- | --- |
-| `ui.ai.access_hint` | For a tool on the hub's machine, or one using an SSH tunnel to it. | 给中枢这台机器上的工具用，或经 SSH 隧道连到它的工具用。 |
-| `ui.ai.keys_empty_hint` | Generate one for a tool on the hub's machine. | 给中枢这台机器上的工具生成一个。 |
+| `ui.ai.access_hint` | For a tool on the hub's machine, or one using an SSH tunnel to it. | 给中枢所在系统上的工具用，或经 SSH 隧道连到它的工具用。 |
+| `ui.ai.keys_empty_hint` | Generate one for a tool on the hub's machine. | 给中枢所在系统上的工具生成一个。 |
 | `ui.ai.key_default_name` | tool | 工具 |
 | `ui.ai.key_name_placeholder` | e.g. my tool | 例如 我的工具 |
 | `ui.ai.port_apply_warning` | A tool set up by hand with a generated key stops reaching the gateway until its endpoint is changed too. | 手动配置了生成密钥的工具，在地址改过来之前都连不上网关。 |
@@ -364,7 +365,7 @@ where they fit.
 | `ui.machine.agent_reinstall` | Reinstall | 重新安装 |
 | `ui.accounts.title` | Available accounts | 可用账户 |
 | `ui.accounts.empty` | No account added yet. | 还没有添加账户。 |
-| `ui.accounts.empty_hint` | Add the accounts of this machine its terminal, files and programs run as. | 添加这台机器上的账户，终端、文件和各个程序都以这些账户运行。 |
+| `ui.accounts.empty_hint` | Add the accounts of this machine its terminal, files and programs run as. | 添加这个系统上的账户，终端、文件和各个程序都以这些账户运行。 |
 | `ui.accounts.add` | Add | 添加 |
 | `ui.accounts.system_account` | System account | 系统账户 |
 | `ui.accounts.password` | Password | 密码 |
@@ -375,10 +376,10 @@ where they fit.
 | `ui.accounts.edit`, `ui.accounts.remove` | Edit, Remove | 编辑、移除 |
 | `ui.accounts.remove_title` | Remove {account} | 移除 {account} |
 | `ui.accounts.remove_body` | What runs as {account} stops: {modules}. Its AI tools go back to their own settings. | {modules} 不再以 {account} 运行，它的 AI 工具改回原来的设置。 |
-| `ui.accounts.remove_body_none` | {account} leaves this machine's accounts, and its AI tools go back to their own settings. | {account} 从这台机器的可用账户里移除，它的 AI 工具改回原来的设置。 |
+| `ui.accounts.remove_body_none` | {account} leaves this machine's accounts, and its AI tools go back to their own settings. | {account} 从这个系统的可用账户里移除，它的 AI 工具改回原来的设置。 |
 | `ui.machine.version`, `ui.machine.platform`, `ui.machine.hostname`, `ui.machine.last_report` | Version, Platform, Host name, Last report | 版本、平台、主机名、最后上报 |
 | `ui.machine.uptime`, `ui.machine.load`, `ui.machine.disk`, `ui.machine.temperature` | Uptime, Load 1/5/15 min, Disk, Temperature | 运行时间、负载 1/5/15 分钟、磁盘、温度 |
-| `ui.machine.not_found` | This machine is not on record. | 没有这台机器的记录。 |
+| `ui.machine.not_found` | This machine is not on record. | 没有这个系统的记录。 |
 | `ui.ai_tools.gateway_default` | Gateway default | 网关默认 |
 | `ui.modules.tabs_title` | Module configuration | 模块配置 |
 | `ui.modules.source_agent`, `ui.modules.source_system`, `ui.modules.source_upstream`, `ui.modules.source_container`, the source chip of a module's tab | Built-in, System, Upstream, Container | 自带、系统、外部源、容器 |
@@ -398,10 +399,10 @@ where they fit.
 | `ui.samba.folder_empty` | No folder shares yet. | 还没有文件夹共享。 |
 | `ui.samba.folder_no_accounts` | Enable an account under Home shares first. | 先在“主目录共享”里启用账户。 |
 | `ui.samba.stop_title` | Stop File share on {device} | 停止 {device} 上的文件共享 |
-| `ui.samba.stop_body` | The machine's SMB server stops, with every share on it. | 这台机器的 SMB 服务会停止，上面所有共享都会停。 |
+| `ui.samba.stop_body` | The machine's SMB server stops, with every share on it. | 这个系统的 SMB 服务会停止，上面所有共享都会停。 |
 | `code.share_name_invalid` | {name} cannot name a share: use 1 to 64 letters, digits, -, _ and ., other than global, homes and printers. | {name} 不能用作共享名：只能用 1 到 64 个字母、数字、-、_ 和 .，也不能是 global、homes 或 printers。 |
-| `code.share_account_not_enabled` | {account} is not enabled for this machine's file share. | 这台机器的文件共享没有启用 {account}。 |
-| `code.folder_share_unknown` | This machine has no folder share named {name}. | 这台机器没有叫 {name} 的文件夹共享。 |
+| `code.share_account_not_enabled` | {account} is not enabled for this machine's file share. | 这个系统的文件共享没有启用 {account}。 |
+| `code.folder_share_unknown` | This machine has no folder share named {name}. | 这个系统没有叫 {name} 的文件夹共享。 |
 | `ui.modules.add_module` | + Add module | + 添加模块 |
 | `ui.module_catalog.title` | Add module | 添加模块 |
 | `ui.module_catalog.search` | Search names and descriptions | 搜索名称或说明 |
@@ -436,7 +437,7 @@ where they fit.
 | `ui.modules.downgrade_body` | {module} moves its data forward when it starts on a newer version, and {version} is older than the one installed, so it can fail to read that data. | {module} 换到新版本启动时会把数据往前迁移，{version} 比装着的版本旧，可能读不了这些数据。 |
 | `code.download_failed` | No source served {file}: {sources} | 没有来源能提供 {file}：{sources} |
 | `code.version_switch_failed` | Version {version} did not start, so the previous version runs again: {detail} | 版本 {version} 没能启动，已换回原来的版本：{detail} |
-| `code.version_unknown` | Version {version} is not listed for this machine. | 这台机器没有版本 {version}。 |
+| `code.version_unknown` | Version {version} is not listed for this machine. | 这个系统没有版本 {version}。 |
 | `code.version_locked` | The version of {module} follows the system or the agent and cannot be chosen. | {module} 的版本跟随系统或被控端，不能选择。 |
 | `ui.modules.stopped_hint`, the hint of every apply bar of a module's panel while its module's `want` is not `running`, and under the file share's folder shares. The panels of the modules the agent carries keep their own hint | The module is stopped; these settings take effect at the next Start. | 模块已停止，这些设置在下次启动时生效。 |
 
@@ -467,7 +468,7 @@ refuses with:
 
 | Key | English | Chinese |
 | --- | --- | --- |
-| `ui.reason.ai_managed`, `code.ai_tools_managed` | This is an agent's machine: set its AI tools on the hub's panel, in the account's form on its machine page. | 这是被控端所在的机器，请到中枢面板上这台机器的机器页，在账户的表单里设置它的 AI 工具。 |
+| `ui.reason.ai_managed`, `code.ai_tools_managed` | This is an agent's machine: set its AI tools on the hub's panel, in the account's form on its machine page. | 这是被控端所在的系统，请到中枢面板上它的系统页，在账户的表单里设置它的 AI 工具。 |
 
 ## A module task's words
 
@@ -610,13 +611,13 @@ account and the shell program it set before.
 | `ui.terminal_module.apply` | Apply terminal | 应用终端设置 |
 | `ui.terminal_module.apply_hint` | Terminals opened from now on use these; open ones keep what they run. | 之后打开的终端用这些设置，已打开的不变。 |
 | `state.ready`, an enabled account's row on the Terminal tab while the module reads `running` | ready | 可用 |
-| `ui.remote_desktop_module.switch` | Share this machine's desktop | 共享这台机器的桌面 |
-| `ui.remote_desktop_module.switch_hint` | Whether this machine runs the agent's RustDesk for this hub's clients. Turning it on stops every other RustDesk host on the machine; turning it off puts back what was there. | 是否让这台机器运行被控端自带的 RustDesk，供这台中枢的客户端连接。打开时会停掉机器上其它的 RustDesk 主机，关闭时还原原来的。 |
+| `ui.remote_desktop_module.switch` | Share this machine's desktop | 共享这个系统的桌面 |
+| `ui.remote_desktop_module.switch_hint` | Whether this machine runs the agent's RustDesk for this hub's clients. Turning it on stops every other RustDesk host on the machine; turning it off puts back what was there. | 是否让这个系统运行被控端自带的 RustDesk，供这台中枢的客户端连接。打开时会停掉系统上其它的 RustDesk 主机，关闭时还原原来的。 |
 | `ui.remote_desktop_module.apply` | Apply remote desktop | 应用远程桌面 |
 | `ui.remote_desktop_module.apply_hint` | Starts or stops sharing this desktop now. | 立即开始或停止共享这个桌面。 |
-| `code.shell_program_unusable` | {path} is not a program this machine can run. | {path} 不是这台机器能运行的程序。 |
+| `code.shell_program_unusable` | {path} is not a program this machine can run. | {path} 不是这个系统能运行的程序。 |
 | `code.rdp_takeover_failed` | Remote desktop could not start at {step}: {detail} | 远程桌面在 {step} 这一步没能启动：{detail} |
-| `code.rdp_restore_failed` | Remote desktop could not put back the machine's RustDesk at {step}: {detail} | 远程桌面在 {step} 这一步没能还原机器原来的 RustDesk：{detail} |
+| `code.rdp_restore_failed` | Remote desktop could not put back the machine's RustDesk at {step}: {detail} | 远程桌面在 {step} 这一步没能还原系统原来的 RustDesk：{detail} |
 
 ## The command line programs' words
 
@@ -630,15 +631,15 @@ whose line named Gemini; each tool is one entry of the `code` category.
 | --- | --- | --- |
 | `ui.module_catalog.codex` | Codex on the command line, for each account. | 命令行里的 Codex，每个账户都能用。 |
 | `ui.module_catalog.claude_code` | Claude Code on the command line, for each account. | 命令行里的 Claude Code，每个账户都能用。 |
-| `ui.codex.owner_notice` | You install Codex, Apache-2.0-licensed, on this machine. | 你在这台机器上安装 Codex，它以 Apache-2.0 许可发布。 |
-| `ui.claude_code.owner_notice` | You install Claude Code on this machine under Anthropic's legal agreements. | 你在这台机器上按 Anthropic 的法律协议安装 Claude Code。 |
+| `ui.codex.owner_notice` | You install Codex, Apache-2.0-licensed, on this machine. | 你在这个系统上安装 Codex，它以 Apache-2.0 许可发布。 |
+| `ui.claude_code.owner_notice` | You install Claude Code on this machine under Anthropic's legal agreements. | 你在这个系统上按 Anthropic 的法律协议安装 Claude Code。 |
 | `ui.codex.apply` | Apply Codex | 应用 Codex |
 | `ui.claude_code.apply` | Apply Claude Code | 应用 Claude Code |
 | `ui.program.apply_hint` | Puts this module's copy first on each checked account's PATH. | 让每个勾选账户的 PATH 先找到本模块安装的副本。 |
 | `ui.program.replace_title` | Replace the copy {account} runs | 替换 {account} 运行的副本 |
 | `ui.program.replace_body` | {account}'s shell runs {path}, version {version}. This module's copy, version {module_version}, will run in its place. | {account} 的 shell 现在运行 {path}，版本 {version}。之后改为运行本模块安装的副本，版本 {module_version}。 |
 | `ui.program.replace_body_unversioned` | {account}'s shell runs {path}. This module's copy, version {module_version}, will run in its place. | {account} 的 shell 现在运行 {path}。之后改为运行本模块安装的副本，版本 {module_version}。 |
-| `ui.program.replace_detail` | {path} stays on the machine as it is. | {path} 原样留在机器上。 |
+| `ui.program.replace_detail` | {path} stays on the machine as it is. | {path} 原样留在系统上。 |
 | `ui.program.replace_confirm` | Replace | 替换 |
 | `ui.program.system_copy_title` | {account} cannot use this module's copy | {account} 无法使用本模块安装的副本 |
 | `ui.program.system_copy_close` | Close | 关闭 |
@@ -657,8 +658,8 @@ agent takes its port, so `ui.hermes_webui.port`, `port_hint`, `apply` and
 
 | Key | English | Chinese |
 | --- | --- | --- |
-| `ui.hermes_webui.owner_notice` | You install Hermes WebUI and Hermes Agent, both MIT-licensed, on this machine. | 你在这台机器上安装 Hermes WebUI 和 Hermes Agent，两者都以 MIT 许可发布。 |
-| `ui.hermes_webui.owner_notice_version` | You install Hermes WebUI and Hermes Agent, both MIT-licensed, on this machine. Installed: {version}. | 你在这台机器上安装 Hermes WebUI 和 Hermes Agent，两者都以 MIT 许可发布。已安装：{version}。 |
+| `ui.hermes_webui.owner_notice` | You install Hermes WebUI and Hermes Agent, both MIT-licensed, on this machine. | 你在这个系统上安装 Hermes WebUI 和 Hermes Agent，两者都以 MIT 许可发布。 |
+| `ui.hermes_webui.owner_notice_version` | You install Hermes WebUI and Hermes Agent, both MIT-licensed, on this machine. Installed: {version}. | 你在这个系统上安装 Hermes WebUI 和 Hermes Agent，两者都以 MIT 许可发布。已安装：{version}。 |
 
 ## The Ayakaleaf tab's words
 
@@ -667,7 +668,7 @@ are in `locales/<language>/modules.json`, and the code's in `codes.json`.
 
 | Key | English | Chinese |
 | --- | --- | --- |
-| `ui.ayakaleaf.owner_notice` | You install Ayakaleaf, MongoDB and Redis on this machine, each under its publisher's license. | 你在这台机器上安装 Ayakaleaf、MongoDB 和 Redis，各自遵循发布者的许可证。 |
+| `ui.ayakaleaf.owner_notice` | You install Ayakaleaf, MongoDB and Redis on this machine, each under its publisher's license. | 你在这个系统上安装 Ayakaleaf、MongoDB 和 Redis，各自遵循发布者的许可证。 |
 | `ui.ayakaleaf.model` | AI model | AI 模型 |
 | `ui.ayakaleaf.model_hint` | The model the editor's AI assistant uses. | 编辑器里的 AI 助手用这个模型。 |
 | `ui.ayakaleaf.apply` | Apply Ayakaleaf | 应用 Ayakaleaf 设置 |
@@ -704,7 +705,7 @@ the agent's `cli/wording.py` words the same codes in English.
 | `ui.containers.run_account_warning` | The old account's machine stops; its images and named volumes stay there. | 旧账户的虚拟机会停下，里面的镜像和命名卷留在原处。 |
 | `ui.containers.run_needed` | Choose an account under Run settings first. | 先在“运行设置”里选一个账户。 |
 | `ui.containers.account_title`, the dialog before an **Install** | Choose the account that runs the containers | 选择运行容器的账户 |
-| `ui.containers.account_empty` | This machine reports no account. | 这台机器没有上报账户。 |
+| `ui.containers.account_empty` | This machine reports no account. | 这个系统没有上报账户。 |
 | `ui.containers.browse` | Browse… | 浏览… |
 | `ui.containers.volume_placeholder_linux`, `ui.containers.volume_placeholder_windows`, `ui.containers.volume_placeholder_darwin` | `/srv/share:/data`, `C:\data:/data`, `/Users/me/data:/data` | `/srv/share:/data`、`C:\data:/data`、`/Users/me/data:/data` |
 | `ui.containers.services` | Services | 服务 |
@@ -715,11 +716,11 @@ the agent's `cli/wording.py` words the same codes in English.
 | `ui.containers.services_hint` | Each port is an entry of the container's app on the clients' Apps page, Web opening in the browser. | 每个端口都是这个容器在客户端“应用”页上的一个入口，网页入口会在浏览器里打开。 |
 | `ui.containers.hub_title` | Hub containers | 中枢的容器 |
 | `ui.containers.hub_hint` | The hub's modules run these. Change them in their module's tab. | 这些由中枢的模块运行，要改就到对应模块的标签页里改。 |
-| `ui.containers.hub_empty` | No module runs a container on this machine. | 这台机器上还没有模块运行容器。 |
+| `ui.containers.hub_empty` | No module runs a container on this machine. | 这个系统上还没有模块运行容器。 |
 | `ui.containers.source_hub`, `ui.containers.source_declared`, `ui.containers.source_manual` | hub, declared, manual | 中枢、声明、手动 |
 | `ui.modules.restart_now` | Restart now | 立即重启 |
 | `ui.modules.restart_title` | Restart {device} | 重启 {device} |
-| `ui.modules.restart_body` | The machine restarts now, and every program open on it closes. | 这台机器会立即重启，上面打开的程序都会关闭。 |
+| `ui.modules.restart_body` | The machine restarts now, and every program open on it closes. | 这个系统会立即重启，上面打开的程序都会关闭。 |
 | `ui.modules.restart_confirm` | Restart | 重启 |
 | `code.reboot_required` | Windows needs a restart to finish turning on WSL; the install goes on after it. | Windows 需要重启才能装好 WSL，重启后会接着安装。 |
 | `code.service_protocol_none` | Port {port} needs TCP, UDP or both. | 端口 {port} 至少要勾选 TCP 或 UDP。 |
@@ -744,7 +745,7 @@ the agent's `cli/wording.py` words the same codes in English.
 | `code.machine_disk_invalid` | The disk limit {disk_gib} GiB is not valid: on Windows it is 1 GiB or more. | 非法磁盘上限：Windows 上至少要 1 GiB，{disk_gib} GiB 不行。 |
 | `code.volume_not_shared` | The volume {volume} of {name} is outside what the Podman machine shares: a fixed drive on Windows; /Users, /private or /var/folders on macOS. | 容器 {name} 的卷 {volume} 不在 Podman 虚拟机共享的范围内：Windows 上是本机的固定磁盘，macOS 上是 /Users、/private 或 /var/folders。 |
 | `code.udp_not_forwarded` | Port {port} of {name} is UDP, and WSL forwards TCP alone; on Windows publish it on TCP. | 容器 {name} 的端口 {port} 是 UDP，而 WSL 只转发 TCP；在 Windows 上请用 TCP 发布。 |
-| `code.machine_image_missing` | The Podman machine image is not on this machine; install the module again. | 这台机器上没有 Podman 虚拟机映像，重新安装这个模块。 |
+| `code.machine_image_missing` | The Podman machine image is not on this machine; install the module again. | 这个系统上没有 Podman 虚拟机映像，重新安装这个模块。 |
 | `code.machine_init_failed` | Podman could not create the machine: {detail} | Podman 没能新建虚拟机：{detail} |
 | `code.machine_set_failed` | Podman could not change the machine: {detail} | Podman 没能修改虚拟机：{detail} |
 | `code.machine_unreachable` | The Podman machine does not answer: {detail} | Podman 虚拟机没有响应：{detail} |
@@ -782,7 +783,7 @@ A UDP port record is in neither number of the page's badge, `{healthy} of
 | Key | English | Chinese |
 | --- | --- | --- |
 | `ui.proxy.dead_exits` | Every enabled exit node is unreachable. Traffic sent to the proxy (the LAN's names included) fails until one answers. | 所有启用的出口节点都不可达。在有节点应答之前，送往代理的流量都会失败，局域网的域名解析也一样。 |
-| `ui.proxy.dead_exits_fallback` | Every enabled exit node is unreachable, so traffic sent to the proxy is leaving through the WAN instead, under this machine's own address. | 所有启用的出口节点都不可达，送往代理的流量正改从 WAN 出去，用的是这台机器自己的地址。 |
+| `ui.proxy.dead_exits_fallback` | Every enabled exit node is unreachable, so traffic sent to the proxy is leaving through the WAN instead, under this machine's own address. | 所有启用的出口节点都不可达，送往代理的流量正改从 WAN 出去，用的是这个系统自己的地址。 |
 
 ## Direct's words
 
@@ -974,19 +975,19 @@ page and SSH setting ([client.md](client.md)). A code is in the hub's
 | `code.control_unavailable` | The hub is busy and did not answer; try again. | 中枢正忙，没有应答，稍后再试。 |
 | `code.transport_key_missing` | The hub's connection port is not ready yet; make the link again in a moment. | 中枢的连接端口还没就绪，稍后再生成链接。 |
 | `code.transport_apply_failed` | The transport could not be started: {detail} | 传输层没能启动：{detail} |
-| `code.account_home_unknown` | The machine has not reported a home directory for {account}; set its share path. | 这台机器还没有报告 {account} 的家目录，请填写它的共享路径。 |
-| `code.account_no_profile` | {account} has never signed in on this machine. Sign in as {account} once, then try again. | {account} 还没有在这台机器上登录过。请先用这个账户登录一次，再重试。 |
-| `code.share_name_taken` | The machine already has a share named {name}. Give the new share another name, or rename or remove the other one. | 这台机器上已经有一个叫 {name} 的共享。请给新的共享换个名字，或者把原来那个改名或删掉。 |
-| `code.samba_hosts_allow_no_loopback` | Samba's hosts allow on this machine leaves out 127.0.0.1, so the module's shares cannot answer; add it there. | 这台机器的 Samba hosts allow 没有 127.0.0.1，本模块的共享无法应答；请在那里加上它。 |
-| `code.samba_interfaces_no_loopback` | Samba binds to interfaces without lo on this machine, so the module's shares cannot answer; add lo there. | 这台机器的 Samba 只绑定了不含 lo 的网卡，本模块的共享无法应答；请在那里加上 lo。 |
-| `code.samba_domain_member` | Samba on this machine is a domain member, which the module's local users cannot sign in to. | 这台机器的 Samba 是域成员，本模块的本地用户无法登录。 |
+| `code.account_home_unknown` | The machine has not reported a home directory for {account}; set its share path. | 这个系统还没有报告 {account} 的家目录，请填写它的共享路径。 |
+| `code.account_no_profile` | {account} has never signed in on this machine. Sign in as {account} once, then try again. | {account} 还没有在这个系统上登录过。请先用这个账户登录一次，再重试。 |
+| `code.share_name_taken` | The machine already has a share named {name}. Give the new share another name, or rename or remove the other one. | 这个系统上已经有一个叫 {name} 的共享。请给新的共享换个名字，或者把原来那个改名或删掉。 |
+| `code.samba_hosts_allow_no_loopback` | Samba's hosts allow on this machine leaves out 127.0.0.1, so the module's shares cannot answer; add it there. | 这个系统的 Samba hosts allow 没有 127.0.0.1，本模块的共享无法应答；请在那里加上它。 |
+| `code.samba_interfaces_no_loopback` | Samba binds to interfaces without lo on this machine, so the module's shares cannot answer; add lo there. | 这个系统的 Samba 只绑定了不含 lo 的网卡，本模块的共享无法应答；请在那里加上 lo。 |
+| `code.samba_domain_member` | Samba on this machine is a domain member, which the module's local users cannot sign in to. | 这个系统的 Samba 是域成员，本模块的本地用户无法登录。 |
 | `code.share_users_unknown` | The folder shares {shares} have no account and are not served; check an account for them, or remove them. | 文件夹共享 {shares} 没有勾选任何账户，所以没有提供；请给它们勾选账户，或删掉它们。 |
-| `code.share_path_missing` | There is no folder {path} on this machine for the share {name}. | 这台机器上没有共享 {name} 的文件夹 {path}。 |
-| `code.share_not_served` | This machine's SMB server refused the share {name}: {detail} | 这台机器的 SMB 服务拒绝了共享 {name}：{detail} |
+| `code.share_path_missing` | There is no folder {path} on this machine for the share {name}. | 这个系统上没有共享 {name} 的文件夹 {path}。 |
+| `code.share_not_served` | This machine's SMB server refused the share {name}: {detail} | 这个系统的 SMB 服务拒绝了共享 {name}：{detail} |
 | `code.share_path_link` | The folder {path} of the share {name} is a link, or is reached through one; choose the folder it leads to. | 共享 {name} 的文件夹 {path} 是一个链接，或者要经过链接才能到达；请改选它指向的那个文件夹。 |
-| `code.share_hub_login_rejected`, a machine's share refusing the login the hub gave | The share refused the login the hub gave. Check this machine's file share in the panel. | 中枢给的登录被拒了，请在面板检查这台机器的文件共享。 |
-| `code.terminal_account_missing` | No account is enabled for this machine's terminal; enable one on its machine page. | 这台机器的终端没有启用的账户，到它的机器页上启用一个。 |
-| `code.account_not_enabled` | {account} is not enabled for this machine's terminal. | 这台机器的终端没有启用 {account}。 |
+| `code.share_hub_login_rejected`, a machine's share refusing the login the hub gave | The share refused the login the hub gave. Check this machine's file share in the panel. | 中枢给的登录被拒了，请在面板检查这个系统的文件共享。 |
+| `code.terminal_account_missing` | No account is enabled for this machine's terminal; enable one on its machine page. | 这个系统的终端没有启用的账户，到它的系统页上启用一个。 |
+| `code.account_not_enabled` | {account} is not enabled for this machine's terminal. | 这个系统的终端没有启用 {account}。 |
 | `code.key_missing` | The SSH server of {account} has no key from the hub; apply the module again. | {account} 的 SSH 服务器没有中枢发的密钥，重新应用这个模块。 |
 | `code.op_unknown` | This agent cannot do {op} on files. | 这个被控端不能对文件做 {op}。 |
 | `code.hub_untrusted` | The hub's key does not match; if it was reset, join it again. | 中枢的密钥对不上；中枢重置过的话就重新加入。 |
@@ -1001,15 +1002,15 @@ page and SSH setting ([client.md](client.md)). A code is in the hub's
 | `code.app_no_page`, **Open** on an app with no `http` or `https` entry | This app has no web page to open. | 这个应用没有可以打开的网页。 |
 | `code.app_in_use`, **Configure** on an app in use | Stop the app first to change its local ports. | 先停止这个应用，才能改它的本机端口。 |
 | `ui.app.port_dialog_title` | Local ports of {app} | {app} 的本机端口 |
-| `ui.reason.terminal_no_account` | No account is enabled for this machine's terminal. | 这台机器的终端没有启用的账户。 |
+| `ui.reason.terminal_no_account` | No account is enabled for this machine's terminal. | 这个系统的终端没有启用的账户。 |
 | `ui.terminal.account` | Account | 账户 |
 | `ui.terminal.disabled`, a plain session's terminal tab's status line once the hub switched this client off | The hub has switched this client off, and this terminal has ended. | 中枢已把本机停用，这个终端已结束。 |
 | `ui.terminal.unknown_device`, the same once the hub no longer knows this client | The hub has no record of this client, and this terminal has ended. | 中枢没有本机的记录，这个终端已结束。 |
 | `ui.terminal.detached_ended`, the same once the hub's channel dropped | Detached, and this terminal has ended. | 已断开，这个终端已结束。 |
-| `ui.terminal.unknown_device_running`, a persistent or shared session's tab's status line once the hub no longer knows this client | The hub has no record of this client; this terminal still runs on its machine. | 中枢没有本机的记录，这个终端仍在机器上运行。 |
+| `ui.terminal.unknown_device_running`, a persistent or shared session's tab's status line once the hub no longer knows this client | The hub has no record of this client; this terminal still runs on its machine. | 中枢没有本机的记录，这个终端仍在它所在的系统上运行。 |
 | `ui.terminal.detached`, the same while the hub's channel is down or the hub has this client switched off | Detached; waiting for the hub | 已断开，正在等待中枢 |
 | `ui.settings.ssh_include` | SSH programs reach the machines | 让 SSH 程序直接连被控端 |
-| `ui.settings.ssh_include_hint` | Whether ssh, scp, git and VS Code reach each machine as `<machine>.nt`. | 是否让 ssh、scp、git 和 VS Code 用 `<机器>.nt` 直接连到每台机器。 |
+| `ui.settings.ssh_include_hint` | Whether ssh, scp, git and VS Code reach each machine as `<machine>.nt`. | 是否让 ssh、scp、git 和 VS Code 用 `<系统>.nt` 直接连到每个系统。 |
 | `ui.services.apps_title`, the Services page's section | Apps | 应用 |
 | `ui.services.entries`, `ui.services.add_entry`, `ui.services.entry_type`, `ui.services.entry_path`, `ui.services.entry_remove` | Entries, Add entry, Type, Path, Remove | 入口、添加入口、类型、路径、移除 |
 | `ui.services.entry_share`, a `file` entry's field | Share name | 共享名 |
