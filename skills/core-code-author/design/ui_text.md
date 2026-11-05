@@ -983,8 +983,6 @@ page and SSH setting ([client.md](client.md)). A code is in the hub's
 | `code.share_users_unknown` | The folder shares {shares} have no account and are not served; check an account for them, or remove them. | 文件夹共享 {shares} 没有勾选任何账户，所以没有提供；请给它们勾选账户，或删掉它们。 |
 | `code.share_path_missing` | There is no folder {path} on this machine for the share {name}. | 这台机器上没有共享 {name} 的文件夹 {path}。 |
 | `code.share_not_served` | This machine's SMB server refused the share {name}: {detail} | 这台机器的 SMB 服务拒绝了共享 {name}：{detail} |
-| `code.share_folder_removed` | The folder {path} of the folder share {name} no longer exists, so the hub removed the share. | 文件夹共享 {name} 的文件夹 {path} 已经不存在，中枢删掉了这个共享。 |
-| `code.share_home_removed` | The folder {path} of {account}'s Home share no longer exists, so the hub took {account} out of Home shares. | {account} 的主目录共享的文件夹 {path} 已经不存在，中枢把 {account} 从主目录共享中去掉了。 |
 | `code.share_path_link` | The folder {path} of the share {name} is a link, or is reached through one; choose the folder it leads to. | 共享 {name} 的文件夹 {path} 是一个链接，或者要经过链接才能到达；请改选它指向的那个文件夹。 |
 | `code.share_hub_login_rejected`, a machine's share refusing the login the hub gave | The share refused the login the hub gave. Check this machine's file share in the panel. | 中枢给的登录被拒了，请在面板检查这台机器的文件共享。 |
 | `code.terminal_account_missing` | No account is enabled for this machine's terminal; enable one on its machine page. | 这台机器的终端没有启用的账户，到它的机器页上启用一个。 |

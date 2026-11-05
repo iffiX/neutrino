@@ -945,11 +945,10 @@ row's place. **Remove** asks through `useConfirm`, the title
 `ui.samba.folder_remove_body {path}`, and acts at once. With no folder share
 the panel shows `ui.samba.folder_empty`. While **Home shares** has no
 account applied, **Add** is disabled with `ui.samba.folder_no_accounts` as
-its reason. While the hub holds removals for the machine, a folder share or
-a Home share it deleted for a folder that is gone, the panel shows them over
-its rows in one `notice notice--warn`, one line per removal worded from its
-code, as the Overlay page shows the routes the hub refused; the next add,
-edit or remove, or an apply of **Home shares**, takes the notice away.
+its reason. A share whose folder went away keeps its row, and a Home
+share's account stays checked; the module row reads `share_path_missing`
+for it until the folder is back, when the share is served with no press,
+or until the person removes the share or unchecks the account.
 
 | Rule | Reason |
 | --- | --- |
