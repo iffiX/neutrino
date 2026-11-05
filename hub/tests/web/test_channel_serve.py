@@ -2,7 +2,9 @@
 it waited with, and a machine that has a row lands back on it with the link's
 name and permission while the waiting row goes. A package stream: how it ends
 when the file or the agent goes. A client's report that lands after its
-session ended: nothing raised and nothing else hidden."""
+session ended: nothing raised and nothing else hidden. An agent's module
+taken over at the first report on the session that carries its row, and
+never at a later one."""
 
 import asyncio
 from types import SimpleNamespace
@@ -13,9 +15,12 @@ from neutrino_hub.exceptions import AgentOfflineError
 from neutrino_hub.modules.clients.permissions import ClientPermission
 from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.modules.channel.sessions import ChannelSession
+from neutrino_hub.modules.devices.registry import ManagedDevice
+from neutrino_hub.modules.services.device_shares import DeviceShareRegistry
 from neutrino_hub.web import channel_serve
 from neutrino_hub.web.channel_serve import join_client, serve_package_stream
 from neutrino_hub.web.models import ChannelJoin
+from tests.conftest import StubDesiredStates, StubPublishedServices
 
 PUBLIC_KEY = "ab" * 32
 
@@ -280,3 +285,102 @@ def test_a_client_s_report_keeps_a_failure_that_is_not_its_session_s_end(
         asyncio.run(
             channel_serve._ClientFrames(Runtime(), session, client).take_report({})
         )
+
+
+class AgentRuntime:
+    """The runtime as an agent's reports reach it."""
+
+    def __init__(self):
+        self.events = Events()
+        self.published_services = StubPublishedServices()
+        self.desired_states = StubDesiredStates()
+        self.device_shares = DeviceShareRegistry()
+        self.device_metrics: dict = {}
+        self.device_modules: dict = {}
+        self.device_platform: dict = {}
+        self.device_hostname: dict = {}
+        self.device_accounts: dict = {}
+        self.device_interfaces: dict = {}
+        self.device_address: dict = {}
+        self.device_last_error: dict = {}
+        self.pushed: list = []
+
+    def host_scopes(self):
+        return []
+
+    def push_desired_state(self, key):
+        self.pushed.append(key)
+
+
+def podman_row(state: str, *, is_active: bool) -> dict:
+    """Containers' row as the agent reports a person's Podman."""
+    return {
+        "state": state,
+        "is_active": is_active,
+        "details": {"containers": [], "mirrors": []},
+    }
+
+
+def reports_on_one_session(monkeypatch, *reports) -> tuple:
+    """Each report taken in turn on one agent's session; the runtime and the device."""
+    monkeypatch.setattr(
+        channel_serve.channel_state,
+        "offer_agent_state",
+        lambda runtime, session, state_hash: None,
+    )
+    runtime = AgentRuntime()
+    device = ManagedDevice(id="device-one", name="box")
+
+    async def take():
+        session = ChannelSession(
+            key=device.id,
+            role="agent",
+            session_id="s1",
+            channel=None,
+            loop=asyncio.get_running_loop(),
+        )
+        frames = channel_serve._AgentFrames(
+            runtime, session, device, hub_version="0.6.0"
+        )
+        for report in reports:
+            await frames.take_report(report)
+
+    asyncio.run(take())
+    return runtime, device
+
+
+def test_a_module_whose_row_comes_after_the_session_s_first_report_is_taken_over(
+    monkeypatch,
+):
+    """The agent reads its modules one after another from its join: on the
+    lab's Ubuntu 22.04 the first report carried no row of the person's
+    running Podman."""
+    runtime, device = reports_on_one_session(
+        monkeypatch,
+        {"modules": {"samba": {"state": "absent"}}},
+        {
+            "modules": {
+                "samba": {"state": "absent"},
+                "podman": podman_row("installed", is_active=True),
+            }
+        },
+    )
+
+    assert runtime.desired_states.want_of(device.id, "podman") == "running"
+    assert runtime.desired_states.read(device.id, "podman") == {
+        "containers": [],
+        "mirrors": [],
+    }
+    assert runtime.pushed == [device.id]
+
+
+def test_a_later_report_takes_over_no_module_an_earlier_one_carried(monkeypatch):
+    """Podman a person installs by hand while the session runs stays theirs."""
+    runtime, device = reports_on_one_session(
+        monkeypatch,
+        {"modules": {"podman": {"state": "absent"}}},
+        {"modules": {"podman": podman_row("installed", is_active=True)}},
+    )
+
+    assert runtime.desired_states.want_of(device.id, "podman") == ""
+    assert runtime.pushed == []

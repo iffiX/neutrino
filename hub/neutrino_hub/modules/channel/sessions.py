@@ -50,6 +50,8 @@ class ChannelSession:
         report: The most recent report, whole.
         reported_at: When that report arrived, as an ISO stamp; empty
             before the first one.
+        reported_modules: Every module whose row a report on this session
+            carried.
         state_hash: The state hash the peer last claimed.
         offered_hash: The hash of the state this session was last handed;
             None before the first report was judged.
@@ -91,6 +93,7 @@ class ChannelSession:
         self.listener = listener
         self.report: dict = {}
         self.reported_at = ""
+        self.reported_modules: set = set()
         self.report_serial = 0
         self.state_hash = ""
         self.offered_hash: "str | None" = None
@@ -212,15 +215,24 @@ class ChannelSession:
             params=dict(params or {}),
         )
 
-    def record_report(self, report: dict) -> None:
+    def record_report(self, report: dict) -> set:
         """Keep the peer's latest report.
 
         Args:
             report: The whole ``report`` frame.
+
+        Returns:
+            The modules whose row this report carries and no earlier report
+            on the session did.
         """
+        modules = report.get("modules")
+        names = set(modules) if isinstance(modules, dict) else set()
+        new_rows = names - self.reported_modules
+        self.reported_modules |= names
         self.report = dict(report)
         self.reported_at = _now()
         self.state_hash = str(report.get("state_hash", "") or "")
+        return new_rows
 
     def note_report_recorded(self) -> None:
         """Count a report once everything read from it is in place."""

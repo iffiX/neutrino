@@ -12,9 +12,10 @@ runs on, noted on the device's row when it is new. ``modules.json``: a
 module the hub wanted ``absent`` that the machine now reports absent is
 settled there, so the hub's state stops naming software it took off while
 the module's row goes on saying what the person asked for. At the
-first report on a socket, the hub's record of each module it holds no
-``want`` for: what the machine hosts becomes the hub's configuration and
-its want, and the hub's copy is the one truth from then on.
+first report on a socket that carries a module's row, the hub's record of
+that module when it holds no ``want`` for it: what the machine hosts
+becomes the hub's configuration and its want, and the hub's copy is the
+one truth from then on.
 """
 
 import logging
@@ -72,7 +73,12 @@ def record_hello(
 
 
 def record_report(
-    runtime, device, report: dict, *, peer_host: str = "", is_first: bool = False
+    runtime,
+    device,
+    report: dict,
+    *,
+    peer_host: str = "",
+    new_rows: "set | frozenset" = frozenset(),
 ) -> None:
     """Take one report: what is true of the machine right now.
 
@@ -82,8 +88,8 @@ def record_report(
         report: The report message.
         peer_host: Where the socket comes from, the address recorded when
             the report's link names none.
-        is_first: Whether this is the socket's first report, at which the
-            hub's record of each module it holds no want for is made to
+        new_rows: The modules whose row no earlier report on the socket
+            carried, the hub's record of each it holds no want for made to
             match the machine.
     """
     key = device.id
@@ -93,7 +99,11 @@ def record_report(
     modules = dict(modules) if isinstance(modules, dict) else {}
     runtime.device_modules[key] = modules
     is_settled = _settle_absent(runtime, key, modules)
-    is_adopted = is_first and _adopt_modules(runtime, key, modules)
+    is_adopted = _adopt_modules(
+        runtime,
+        key,
+        {name: status for name, status in modules.items() if name in new_rows},
+    )
     is_shared = _adopt_desktop_share(runtime, key, report.get("desktop"))
     is_seated = _ensure_seat_password(runtime, key)
     if is_settled or is_adopted or is_shared or is_seated:

@@ -1,10 +1,10 @@
 """What a machine's own module amounts to as the hub's configuration.
 
 Each import is a pure function of the ``details`` a module's report
-carries. The report path runs one at a machine's first report on a socket,
-and a module's ``import`` route runs the same one when a person presses
-**Configure** on a module the hub holds no configuration for. A module
-with no import here is never taken over.
+carries. The report path runs one at the first report on a socket that
+carries the module's row, and a module's ``import`` route runs the same one
+when a person presses **Configure** on a module the hub holds no
+configuration for. A module with no import here is never taken over.
 """
 
 import math

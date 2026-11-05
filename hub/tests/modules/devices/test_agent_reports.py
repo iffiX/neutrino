@@ -394,7 +394,7 @@ def test_a_failed_install_is_not_taken_over_at_the_first_report(box):
         runtime,
         device,
         report(modules={"samba": {"state": "install_failed", "code": "x"}}),
-        is_first=True,
+        new_rows={"samba"},
     )
 
     assert runtime.desired_states.want_of(DEVICE, "samba") == ""
@@ -454,7 +454,7 @@ def test_a_person_s_samba_reported_absent_after_its_uninstall_is_not_adopted_aga
             runtime,
             device,
             report(modules={"samba": {"state": "absent", "is_active": True}}),
-            is_first=True,
+            new_rows={"samba"},
         )
 
     assert runtime.desired_states.want_of(DEVICE, "samba") == want
@@ -721,7 +721,7 @@ def test_a_takeover_of_a_person_s_containers_wants_what_the_machine_shows(
         runtime,
         device,
         installed_podman_report(HAND_STARTED, is_active=is_active),
-        is_first=True,
+        new_rows={"podman"},
     )
 
     assert runtime.desired_states.want_of(DEVICE, "podman") == want
@@ -733,7 +733,7 @@ def test_a_takeover_keeps_the_settings_a_person_applied_before_any_start(box):
     runtime.desired_states.files[(DEVICE, "podman")] = dict(applied)
 
     agent_reports.record_report(
-        runtime, device, installed_podman_report(HAND_STARTED), is_first=True
+        runtime, device, installed_podman_report(HAND_STARTED), new_rows={"podman"}
     )
 
     assert runtime.desired_states.files[(DEVICE, "podman")] == applied
@@ -747,7 +747,7 @@ def test_a_machine_that_joins_brings_its_own_containers_and_no_module_s(box):
     runtime, device = box
 
     agent_reports.record_report(
-        runtime, device, podman_report(LABELLED, HAND_STARTED), is_first=True
+        runtime, device, podman_report(LABELLED, HAND_STARTED), new_rows={"podman"}
     )
 
     assert runtime.desired_states.want_of(DEVICE, "podman") == "running"

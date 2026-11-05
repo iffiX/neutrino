@@ -6,9 +6,9 @@ state push is one ``state`` frame that remembers the hash, a refusal is the
 ``session_close`` command, a stream the hub opens is one ``open``
 connection whose records come back, the presence the registry keeps after a
 session ends, a replaced session left to the transport, the reports kept
-per binding, the last report of the session before as the latest report
-until a new session reports, and that a thread's call rides the loop and
-comes back or is given a code.
+per binding with the module rows each carries first, the last report of the
+session before as the latest report until a new session reports, and that a
+thread's call rides the loop and comes back or is given a code.
 """
 
 import asyncio
@@ -258,6 +258,19 @@ def test_reports_are_kept_per_binding_and_counted():
     assert reports == {DEVICE: {"state_hash": "h2", "modules": {"samba": {}}}}
     assert state_hash == "h2"
     assert serial == 1
+
+
+def test_a_report_names_the_module_rows_no_earlier_report_on_the_session_carried():
+    async def scenario():
+        held = session(FakeLocalChannel())
+        return [
+            held.record_report({"modules": {"samba": {}}}),
+            held.record_report({"modules": {"samba": {}, "podman": {}}}),
+            held.record_report({"modules": {"podman": {}}}),
+            held.record_report({}),
+        ]
+
+    assert run(scenario) == [{"samba"}, {"podman"}, set(), set()]
 
 
 def test_until_a_session_reports_the_latest_report_is_the_last_session_s():
