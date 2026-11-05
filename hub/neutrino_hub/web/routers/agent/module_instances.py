@@ -75,7 +75,11 @@ from neutrino_hub.web.routers.agent.module import (
     run_command,
     write_module_config,
 )
-from neutrino_hub.web.routers.agent.module_account import reported_tools
+from neutrino_hub.web.routers.agent.module_account import (
+    account_home,
+    reported_tools,
+    require_share_folder,
+)
 
 CODE_ACCOUNT_UNKNOWN = "account_unknown"
 CODE_ACCOUNT_DUPLICATE = "account_duplicate"
@@ -190,8 +194,11 @@ def replace_accounts(
             is not available, ``account_duplicate {account}``; 409
             ``terms_not_accepted {module}`` for VS Code before its terms,
             ``agent_offline``; 400 ``share_name_taken {name}`` for a file
-            share account a folder share's name takes; 400 with the agent's
-            code when it refuses the configuration; 500 ``config_unwritable``.
+            share account a folder share's name takes, ``share_path_missing
+            {name, path}`` or ``share_path_link {name, path}`` for a newly
+            checked file share account whose folder the machine reads as no
+            real folder; 400 with the agent's code when it refuses the
+            configuration; 500 ``config_unwritable``.
         VaultLockedError: When a secret has to be sealed and the vault is
             locked.
     """
@@ -215,6 +222,7 @@ def replace_accounts(
         chosen.append(account)
     if row.name == DEVICE_SAMBA_MODULE:
         _refuse_folder_share_names(chosen, context.config)
+        _require_home_share_folders(runtime, context, chosen)
     previous = dict(context.config)
     is_keyed = row.name in gateway_instance_names()
     try:
@@ -244,6 +252,32 @@ def replace_accounts(
     push_state(runtime, context.key)
     recompose_published(runtime, row.name)
     return device_view(row, runtime, context)
+
+
+def _require_home_share_folders(
+    runtime: PanelRuntime, context: DeviceModuleContext, chosen: list
+) -> None:
+    """Ask the machine whether each newly checked account's Home share folder is a real folder.
+
+    The folder is the account's share path, else its home as the machine
+    reported it; an account with neither is left to ``account_home_unknown``.
+
+    Raises:
+        HTTPException: As :func:`require_share_folder` says.
+    """
+    enabled = set(
+        runtime.desired_states.enabled_accounts(context.key, DEVICE_SAMBA_MODULE)
+    )
+    rows = {
+        account.account: account
+        for account in DeviceAccountStore(runtime.desired_states).accounts(context.key)
+    }
+    for account in chosen:
+        if account in enabled:
+            continue
+        folder = rows[account].share_path or account_home(runtime, context.key, account)
+        if folder:
+            require_share_folder(runtime, context.key, name=account, path=folder)
 
 
 def program_copy(

@@ -5,7 +5,11 @@ login holding ``password``, the row references it, and the view says it
 holds one; removing an account a module with a gateway key per account
 enables hands the gateway its keys again. A password test sends the typed
 password, or the stored login's with none typed, to the agent's one verb,
-answers the agent's refusal and writes nothing.
+answers the agent's refusal and writes nothing. A share path is read by the
+file share's ``folder`` verb first, and the home of an account the file
+share enables when its share path is emptied; a folder the machine reads as
+missing or a link is refused with the account as the share's name, nothing
+written and nothing pushed.
 """
 
 import json
@@ -201,3 +205,77 @@ def test_a_machine_with_no_socket_answers_agent_offline(api):
 
     assert answer.status_code == 409
     assert answer.json()["detail"]["code"] == "agent_offline"
+
+
+# --- the share path ---
+
+
+def test_a_share_path_at_no_real_folder_is_refused_and_nothing_written(api):
+    client, runtime, tmp_path = api
+    runtime.agent_sessions.outcomes["folder"] = {
+        "exit_code": 1,
+        "code": "share_path_missing",
+        "params": {"path": "D:\\gone"},
+    }
+
+    answer = client.post(
+        f"{BASE}/add",
+        json={
+            "device_id": DEVICE,
+            "account": "lab",
+            "password": "pw",
+            "share_path": "D:\\gone",
+        },
+    )
+
+    assert answer.status_code == 400
+    assert answer.json()["detail"] == {
+        "code": "share_path_missing",
+        "params": {"name": "lab", "path": "D:\\gone"},
+    }
+    assert runtime.agent_sessions.commands == [
+        ("device-one", "samba", "folder", {"path": "D:\\gone"})
+    ]
+    assert not (tmp_path / "devices" / DEVICE / "accounts.json").exists()
+    assert runtime.agent_sessions.pushes == []
+
+
+def test_an_add_with_no_share_path_asks_the_machine_nothing(api):
+    client, runtime, _tmp_path = api
+
+    answer = client.post(
+        f"{BASE}/add", json={"device_id": DEVICE, "account": "lab", "password": "pw"}
+    )
+
+    assert answer.status_code == 200, answer.text
+    assert runtime.agent_sessions.commands == []
+
+
+def test_an_emptied_share_path_of_a_file_share_account_reads_its_home(api):
+    client, runtime, _tmp_path = api
+    client.post(
+        f"{BASE}/add",
+        json={
+            "device_id": DEVICE,
+            "account": "lab",
+            "password": "pw",
+            "share_path": "D:\\share",
+        },
+    )
+    runtime.desired_states.set_enabled_accounts(DEVICE, "samba", ["lab"])
+    runtime.device_account_details[DEVICE] = {"lab": {"home": "C:\\Users\\lab"}}
+    runtime.agent_sessions.outcomes["folder"] = {
+        "exit_code": 1,
+        "code": "share_path_link",
+        "params": {"path": "C:\\Users\\lab"},
+    }
+
+    answer = client.post(
+        f"{BASE}/set", json={"device_id": DEVICE, "account": "lab", "share_path": ""}
+    )
+
+    assert answer.json()["detail"] == {
+        "code": "share_path_link",
+        "params": {"name": "lab", "path": "C:\\Users\\lab"},
+    }
+    assert stored_accounts(_tmp_path)[0]["share_path"] == "D:\\share"

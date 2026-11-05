@@ -6,7 +6,11 @@ folder and the accounts in that order, has the agent check the section the
 state will carry, stores ``{name, path, accounts}`` with the accounts in the
 file share's order and pushes; an add, a set or a remove writes no ``want``, on
 a module not running as on a stopped one; a set keeps the name; a remove takes the share and its permission row away and pushes; and
-the Home shares' set refuses an account a folder share's name takes.
+the Home shares' set refuses an account a folder share's name takes. A
+folder share's add and set, an account's add and set with a share path, and
+the Home shares' set for a newly checked account ask the machine's ``folder``
+verb first, and a folder it reads as missing or a link is refused with the
+share's name and the path, nothing written and nothing pushed.
 """
 
 import json
@@ -75,6 +79,9 @@ def test_an_add_stores_the_share_with_its_accounts_in_the_file_shares_order(
         "shares": [{"name": "lab", "path": "/srv/lab", "accounts": ["bob", "alice"]}],
         "accounts": ["bob", "alice"],
     }
+    assert ("device-one", "samba", "folder", {"path": "/srv/lab"}) in (
+        runtime.agent_sessions.commands
+    )
     assert stored(tmp_path)["shares"] == [
         {"name": "lab", "path": "/srv/lab", "accounts": ["bob", "alice"]}
     ]
@@ -368,4 +375,126 @@ def test_the_home_shares_refuse_an_account_a_folder_shares_name_takes(api):
     assert narrowed.status_code == 200
     assert client.get(PATH, params={"device_id": DEVICE}).json()["shares"] == [
         {"name": "DAVE", "path": "/srv/lab", "accounts": ["alice"]}
+    ]
+
+
+FOLDER_REFUSALS = [
+    ("share_path_missing", {"path": "/srv/gone"}),
+    ("share_path_link", {"path": "/srv/gone"}),
+]
+
+
+def folder_refused(runtime, code, params):
+    runtime.agent_sessions.outcomes["folder"] = {
+        "exit_code": 1,
+        "code": code,
+        "params": dict(params),
+    }
+
+
+@pytest.mark.parametrize(("code", "params"), FOLDER_REFUSALS)
+def test_a_folder_share_at_no_real_folder_is_refused_and_nothing_written(
+    api, tmp_path, code, params
+):
+    client, runtime = api
+    folder_refused(runtime, code, params)
+    before = stored(tmp_path)
+
+    added = add(client, path="/srv/gone")
+
+    assert added.status_code == 400
+    assert added.json()["detail"] == {
+        "code": code,
+        "params": {"name": "lab", "path": "/srv/gone"},
+    }
+    assert stored(tmp_path) == before
+    assert runtime.agent_sessions.pushes == []
+    assert runtime.agent_sessions.validations == []
+
+
+def test_an_edit_to_no_real_folder_keeps_the_share_as_it_was(api, tmp_path):
+    client, runtime = api
+    assert add(client).status_code == 200
+    folder_refused(runtime, "share_path_link", {"path": "/srv/link"})
+
+    replaced = client.post(
+        f"{PATH}/set",
+        json={
+            "device_id": DEVICE,
+            "name": "lab",
+            "path": "/srv/link",
+            "accounts": ["alice"],
+        },
+    )
+
+    assert replaced.json()["detail"] == {
+        "code": "share_path_link",
+        "params": {"name": "lab", "path": "/srv/link"},
+    }
+    assert stored(tmp_path)["shares"] == [
+        {"name": "lab", "path": "/srv/lab", "accounts": ["bob", "alice"]}
+    ]
+    assert [push[0] for push in runtime.agent_sessions.pushes] == [DEVICE]
+
+
+def test_an_offline_machine_cannot_be_asked_and_nothing_is_added(api, tmp_path):
+    client, runtime = api
+    DeviceAccountStore(runtime.desired_states).add(
+        OFFLINE, DeviceAccount(account="alice", share_path="/home/alice")
+    )
+    runtime.desired_states.set_enabled_accounts(OFFLINE, "samba", ["alice"])
+
+    added = client.post(
+        f"{PATH}/add",
+        json={
+            "device_id": OFFLINE,
+            "name": "more",
+            "path": "/srv/more",
+            "accounts": ["alice"],
+        },
+    )
+
+    assert (added.status_code, added.json()["detail"]["code"]) == (
+        409,
+        "agent_offline",
+    )
+    assert runtime.agent_sessions.commands == []
+    assert "shares" not in runtime.desired_states.read(OFFLINE, "samba")
+
+
+def test_the_home_shares_ask_for_each_newly_checked_accounts_folder(api, tmp_path):
+    client, runtime = api
+    folder_refused(runtime, "share_path_missing", {"path": "/home/carol"})
+
+    refused = client.post(
+        "/api/agent/module/samba/set",
+        json={"device_id": DEVICE, "accounts": ["bob", "alice", "carol"]},
+    )
+
+    assert refused.json()["detail"] == {
+        "code": "share_path_missing",
+        "params": {"name": "carol", "path": "/home/carol"},
+    }
+    assert [command[3] for command in runtime.agent_sessions.commands] == [
+        {"path": "/home/carol"}
+    ]
+    assert runtime.desired_states.enabled_accounts(DEVICE, "samba") == ["bob", "alice"]
+    assert runtime.agent_sessions.pushes == []
+
+
+def test_the_home_shares_read_the_reported_home_for_an_empty_share_path(api):
+    client, runtime = api
+    DeviceAccountStore(runtime.desired_states).add(
+        DEVICE, DeviceAccount(account="dave", share_path="")
+    )
+    runtime.device_account_details[DEVICE] = {"dave": {"home": "/home/dave"}}
+
+    answer = client.post(
+        "/api/agent/module/samba/set",
+        json={"device_id": DEVICE, "accounts": ["bob", "alice", "dave"]},
+    )
+
+    assert answer.status_code == 200, answer.text
+    assert [command[3] for command in runtime.agent_sessions.commands] == [
+        {"path": "/home/dave"}
     ]

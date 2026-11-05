@@ -20,6 +20,7 @@ from neutrino_hub.modules.channel.constants import (
     CHANNEL_COMMAND_MODULE_AGENT,
     CHANNEL_STREAM_COMMAND,
     CHANNEL_VERB_ACCOUNT_PASSWORD_TEST,
+    CHANNEL_VERB_FOLDER,
     CHANNEL_VERB_VALIDATE,
 )
 from neutrino_hub.modules.clients.ai_keys import (
@@ -33,6 +34,7 @@ from neutrino_hub.modules.devices.accounts import DeviceAccount, DeviceAccountSt
 from neutrino_hub.modules.devices.constants import (
     DEVICE_MODULE_VALIDATE_TIMEOUT_S,
     DEVICE_PASSWORD_OS,
+    DEVICE_SAMBA_MODULE,
     DEVICE_TERMINAL_MODULE,
 )
 from neutrino_hub.modules.devices.module_table import (
@@ -71,6 +73,10 @@ CODE_PATH_INVALID = "path_invalid"
 CODE_GATEWAY_NOT_SERVING = "gateway_not_serving"
 CODE_CONFIG_UNWRITABLE = "config_unwritable"
 CODE_UNSUPPORTED_PLATFORM = "unsupported_platform"
+# What the file share's folder read refuses a share's folder with.
+CODE_SHARE_PATH_MISSING = "share_path_missing"
+CODE_SHARE_PATH_LINK = "share_path_link"
+SHARE_FOLDER_CODES = (CODE_SHARE_PATH_MISSING, CODE_SHARE_PATH_LINK)
 # The vault kind a Windows account's password is stored as, and its label.
 LOGIN_KIND = "login"
 LOGIN_NAME = "{device} / {account}"
@@ -116,8 +122,10 @@ def add_account(
             machine does not report, ``account_duplicate {account}``,
             ``credential_missing {account}`` for a Windows account with no
             password, ``path_invalid {path}`` for a path that is not
-            absolute, the agent's own ``shell_program_unusable {path}``; 409
-            ``gateway_not_serving`` for the AI tools turned on while the
+            absolute, the agent's own ``shell_program_unusable {path}``,
+            ``share_path_missing {name, path}`` or ``share_path_link {name,
+            path}`` for a share path the machine reads as no real folder;
+            409 ``gateway_not_serving`` for the AI tools turned on while the
             gateway serves no model, ``agent_offline``; 500
             ``config_unwritable``.
         VaultLockedError: When a password cannot be sealed.
@@ -161,8 +169,10 @@ def set_account(
         The rows afterwards.
 
     Raises:
-        HTTPException: The refusals of ``add``; 400 ``account_unknown`` for
-            an account that is not available.
+        HTTPException: The refusals of ``add``, the folder read also of
+            the account's home for an empty share path while the file share
+            enables it; 400 ``account_unknown`` for an account that is not
+            available.
         VaultLockedError: When a password cannot be sealed.
     """
     key = _require_device(request.device_id).id
@@ -383,6 +393,14 @@ def _checked_row(
         raise _refusal(status.HTTP_409_CONFLICT, CODE_GATEWAY_NOT_SERVING)
     if request.shell_path:
         _check_shell(runtime, key, request)
+    folder = request.share_path
+    is_shared = held is not None and request.account in (
+        runtime.desired_states.enabled_accounts(key, DEVICE_SAMBA_MODULE)
+    )
+    if not folder and is_shared:
+        folder = account_home(runtime, key, request.account)
+    if folder:
+        require_share_folder(runtime, key, name=request.account, path=folder)
     login_id = held.login_id if held is not None else ""
     if request.password and is_windows:
         login_id = _store_login(key, request.account, request.password)
@@ -416,6 +434,55 @@ def _check_shell(runtime: PanelRuntime, key: str, request: AccountCreate) -> Non
         },
         fallback_code="config_invalid",
     )
+
+
+def account_home(runtime: PanelRuntime, key: str, account: str) -> str:
+    """An account's home as the machine last reported it; empty when it named none.
+
+    Args:
+        runtime: The shared runtime.
+        key: The device.
+        account: The account.
+
+    Returns:
+        The home folder.
+    """
+    details = runtime.account_details(key).get(account) or {}
+    return str(details.get("home", "") or "")
+
+
+def require_share_folder(runtime: PanelRuntime, key: str, *, name: str, path: str):
+    """Ask the machine at once whether a share's folder is a real folder.
+
+    The file share's ``folder`` verb reads it as whoever owns the path's
+    place, and nothing is written or pushed before it answers.
+
+    Args:
+        runtime: The shared runtime.
+        key: The device.
+        name: The share's name: the folder share's, or the account's for a
+            Home share.
+        path: The folder.
+
+    Raises:
+        HTTPException: 409 ``agent_offline``; 400 ``share_path_missing
+            {name, path}`` or ``share_path_link {name, path}``; 400 with the
+            agent's own code otherwise; 502 when the stream is refused.
+    """
+    try:
+        _ask_machine(
+            runtime,
+            key,
+            {"module": DEVICE_SAMBA_MODULE, "verb": CHANNEL_VERB_FOLDER, "path": path},
+            fallback_code=CODE_COMMAND_FAILED,
+        )
+    except HTTPException as error:
+        detail = error.detail if isinstance(error.detail, dict) else {}
+        if detail.get("code") in SHARE_FOLDER_CODES:
+            raise _refusal(
+                status.HTTP_400_BAD_REQUEST, detail["code"], name=name, path=path
+            ) from error
+        raise
 
 
 def _ask_machine(

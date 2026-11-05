@@ -46,7 +46,10 @@ from neutrino_hub.web.routers.agent.module import (
     validate_config,
     write_module_config,
 )
-from neutrino_hub.web.routers.agent.module_account import is_machine_path_absolute
+from neutrino_hub.web.routers.agent.module_account import (
+    is_machine_path_absolute,
+    require_share_folder,
+)
 
 MODULE = DEVICE_SAMBA_MODULE
 CODE_SHARE_NAME_INVALID = "share_name_invalid"
@@ -136,7 +139,9 @@ def add_folder_share(
     Raises:
         HTTPException: 404 ``device_unknown``; 400 ``share_name_invalid
             {name}``, ``share_name_taken {name}``, ``path_invalid {path}``,
-            ``share_account_not_enabled {account}``, then the agent's own
+            ``share_account_not_enabled {account}``, ``share_path_missing
+            {name, path}`` or ``share_path_link {name, path}`` for a folder
+            the machine reads as no real folder, then the agent's own
             refusals; 409 ``agent_offline``; 500 ``config_unwritable``.
     """
     context = device_context(runtime, MODULE, request.device_id)
@@ -258,6 +263,7 @@ def _save(
                 CODE_SHARE_ACCOUNT_NOT_ENABLED,
                 account=account,
             )
+    require_share_folder(runtime, context.key, name=request.name, path=request.path)
     written = with_folder_share(
         context.config,
         {
