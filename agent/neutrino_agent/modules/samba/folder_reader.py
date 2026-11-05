@@ -6,9 +6,8 @@ the first level of the path an account owns, through the step-down, and as
 root where every level is root's; a link or a folder others may write in
 root's place reads as a link. On Windows the applier opens the folder by
 handle. :class:`SambaFolderReader` takes the shares that cannot be served out
-of a configuration at an apply, and at the report lists the shares whose
-folder is no longer there and asks for a configure task when a folder
-changed from what the last apply read.
+of a configuration at an apply, and at the report asks for a configure task
+when a folder reads otherwise than the last apply read it.
 
 Not pure: reads folders, as an account where the folder is in its place.
 """
@@ -196,26 +195,21 @@ class SambaFolderReader:
             self._applied = {}
             self._asked = set()
 
-    def missing_shares(self, ask) -> list:
-        """Each share the state names whose folder is no longer there, read at most every 30 seconds.
+    def check(self, ask) -> None:
+        """Read each share the state names again, at most every 30 seconds, and ask for a task on a change.
 
-        A folder that reads otherwise than the last apply read it, a link
-        put in its place or taken away, calls ``ask`` once.
+        A folder that reads otherwise than the last apply read it, gone,
+        back, a link put in its place or one taken away, calls ``ask`` once
+        for each change. A folder the reading account cannot reach calls
+        nothing.
 
         Args:
             ask: Asks for a configure task of the module.
-
-        Returns:
-            ``{"name", "path"}`` per share, in the state's order.
         """
         with self._lock:
             named = list(self._named)
-        missing = []
         for share in named:
             found = self._kept(share.path)
-            if found == SAMBA_FOLDER_MISSING:
-                missing.append({"name": share.name, "path": share.path})
-                continue
             with self._lock:
                 applied = self._applied.get(share.path)
                 is_changed = (
@@ -228,7 +222,6 @@ class SambaFolderReader:
                     self._asked.add((share.path, found))
             if is_changed:
                 ask()
-        return missing
 
     def _kept(self, path: str) -> str:
         """One folder's read, read again once 30 seconds old."""

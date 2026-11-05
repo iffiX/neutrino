@@ -7,11 +7,10 @@ link at the last level and a folder the account cannot reach; in root's
 place, every level root's, the folder is opened level by level with no link
 followed and no account is asked; a link or a folder others may write in
 root's place reads as a link. The reader takes each share that cannot be
-served out of a configuration with its code, lists at the report each share
-the state names whose folder is no longer there, read again only once 30
-seconds old, leaves out a link and a folder it cannot reach, and asks once
-for a configure task when a folder reads otherwise than the last apply read
-it.
+served out of a configuration with its code, reads each folder the state
+names again at the report only once 30 seconds old, and asks once for a
+configure task when a folder reads otherwise than the last apply read it,
+gone, back, a link or no longer one, and never for a folder it cannot reach.
 """
 
 import os
@@ -199,23 +198,56 @@ def test_an_apply_takes_each_share_that_cannot_be_served_out_with_its_code():
     assert "/srv/nobody" not in folders.reads
 
 
-def test_the_report_lists_each_missing_folder_of_the_state_read_once_per_half_minute():
+def test_the_report_reads_each_folder_of_the_state_once_per_half_minute():
     folders = Folders({"/srv/media": "missing", "/srv/lab": "unreachable"})
     clock = Clock()
     reader = SambaFolderReader(read=folders, clock=clock)
     reader.take_config(SECTION)
     asked: list = []
 
-    first = reader.missing_shares(lambda: asked.append(1))
-    again = reader.missing_shares(lambda: asked.append(1))
+    reader.check(lambda: asked.append(1))
+    reader.check(lambda: asked.append(1))
     clock.now += 31
     folders.found = {}
-    later = reader.missing_shares(lambda: asked.append(1))
+    reader.check(lambda: asked.append(1))
 
-    assert first == [{"name": "media", "path": "/srv/media"}]
-    assert again == first
     assert folders.reads == ["/home/ann", "/srv/media", "/srv/lab"] * 2
-    assert later == []
+    assert asked == []
+
+
+def test_a_folder_gone_and_back_asks_for_a_task_once_for_each_change():
+    folders = Folders()
+    clock = Clock()
+    reader = SambaFolderReader(read=folders, clock=clock)
+    reader.take_config(SECTION)
+    reader.served(SambaConfig.from_dict(SECTION))
+    asked: list = []
+
+    folders.found = {"/srv/media": "missing"}
+    clock.now += 31
+    reader.check(lambda: asked.append("gone"))
+    clock.now += 31
+    reader.check(lambda: asked.append("gone"))
+    reader.served(SambaConfig.from_dict(SECTION))
+    folders.found = {}
+    clock.now += 31
+    reader.check(lambda: asked.append("back"))
+
+    assert asked == ["gone", "back"]
+
+
+def test_a_folder_the_account_cannot_reach_asks_for_nothing():
+    folders = Folders()
+    clock = Clock()
+    reader = SambaFolderReader(read=folders, clock=clock)
+    reader.take_config(SECTION)
+    reader.served(SambaConfig.from_dict(SECTION))
+    asked: list = []
+
+    folders.found = {"/srv/media": "unreachable"}
+    clock.now += 31
+    reader.check(lambda: asked.append(1))
+
     assert asked == []
 
 
@@ -229,15 +261,15 @@ def test_a_folder_that_reads_otherwise_than_the_last_apply_asks_for_a_task_once(
 
     folders.found = {"/srv/lab": "link"}
     clock.now += 31
-    reader.missing_shares(lambda: asked.append("lab"))
+    reader.check(lambda: asked.append("lab"))
     clock.now += 31
-    reader.missing_shares(lambda: asked.append("lab"))
+    reader.check(lambda: asked.append("lab"))
 
     assert asked == ["lab"]
     reader.served(SambaConfig.from_dict(SECTION))
     folders.found = {}
     clock.now += 31
-    reader.missing_shares(lambda: asked.append("back"))
+    reader.check(lambda: asked.append("back"))
     assert asked == ["lab", "back"]
 
 
@@ -252,6 +284,6 @@ def test_a_removed_configuration_asks_for_nothing():
     clock.now += 31
     asked: list = []
 
-    reader.missing_shares(lambda: asked.append(1))
+    reader.check(lambda: asked.append(1))
 
     assert asked == []

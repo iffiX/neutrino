@@ -389,18 +389,34 @@ def test_the_folder_verb_reads_a_path_at_once(runner, path, outcome):
     assert FakeApplier.applied == []
 
 
-def test_the_details_list_each_share_of_the_state_whose_folder_is_gone(
+def test_a_folder_gone_and_made_again_asks_for_a_task_each_time_and_is_served_again(
     runner, monkeypatch
 ):
+    asked: list = []
+    runner.bind_configure_asker(lambda: asked.append("samba"))
     runner.take_config(TWO_SHARES)
     runner.apply(TWO_SHARES)
     samba_commands(monkeypatch)
+    now = [1e12]
+    runner._folders._clock = lambda: now[0]
     FakeApplier.missing = {"/srv/gone"}
-    runner._folders._clock = lambda: 1e12
 
-    details = observed(runner)["details"]
+    observed(runner)
+    observed(runner)
+    runner.apply(TWO_SHARES)
+    gone = runner.notice()
+    FakeApplier.missing = set()
+    now[0] += 31
+    observed(runner)
+    runner.apply(TWO_SHARES)
 
-    assert details["missing_shares"] == [{"name": "gone", "path": "/srv/gone"}]
+    assert asked == ["samba", "samba"]
+    assert gone == {
+        "code": "share_path_missing",
+        "params": {"name": "gone", "path": "/srv/gone"},
+    }
+    assert runner.notice() == {}
+    assert "[gone]" in FakeApplier.applied[-1][1]
 
 
 def test_a_share_with_no_account_is_named_before_a_missing_folder(runner):
@@ -1638,7 +1654,6 @@ def test_observe_reads_what_samba_itself_says_of_the_machine(runner, monkeypatch
         "users",
         "sessions",
         "disk_usage",
-        "missing_shares",
     }
     assert details["global"] == {
         "map to guest": "Bad User",
@@ -1897,15 +1912,33 @@ def test_the_native_folder_verb_reads_a_windows_path(native):
     assert [call for call in native.applier.calls if call[0] == "apply"] == []
 
 
-def test_the_native_details_list_each_share_whose_folder_is_gone(native):
+def test_a_native_folder_gone_and_made_again_asks_for_a_task_each_time(native):
     native.take_config(TWO_WINDOWS_SHARES)
     native.apply(TWO_WINDOWS_SHARES)
+    asked: list = []
+    native.bind_configure_asker(lambda: asked.append("samba"))
     native.applier.missing = {"D:\\media"}
     native.clock.now += 31
 
-    details = native.details({})
+    native.details({})
+    native.details({})
+    native.apply(TWO_WINDOWS_SHARES)
+    gone = native.notice()
+    native.applier.missing = set()
+    native.clock.now += 31
+    native.details({})
+    native.apply(TWO_WINDOWS_SHARES)
 
-    assert details["missing_shares"] == [{"name": "media", "path": "D:\\media"}]
+    assert asked == ["samba", "samba"]
+    assert gone == {
+        "code": "share_path_missing",
+        "params": {"name": "media", "path": "D:\\media"},
+    }
+    _name, config, _record = [
+        call for call in native.applier.calls if call[0] == "apply"
+    ][-1]
+    assert [share["name"] for share in config["shares"]] == ["share", "media", "lab"]
+    assert native.notice() == {}
 
 
 def test_a_native_folder_turned_into_a_link_asks_for_a_configure_task(native):
@@ -2557,7 +2590,6 @@ def test_the_details_have_the_linux_shape_and_no_fence(native):
         "users",
         "sessions",
         "disk_usage",
-        "missing_shares",
     }
     assert details["global"] == {}
 

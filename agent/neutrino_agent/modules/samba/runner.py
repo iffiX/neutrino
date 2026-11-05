@@ -10,8 +10,9 @@ digest of each password the module set, so a password is set again only
 when the hub's differs. The record also stores whether the module turned the
 SELinux boolean on, and an uninstall turns off only what the module turned on.
 A share whose folder is no real folder is left off the server with its code,
-and no folder is made. The report lists each share the state names whose
-folder is no longer there, for the hub to delete.
+and no folder is made. A folder the report reads otherwise than the last
+apply read it asks for a configure task, which serves the share again or
+leaves it off.
 
 A Samba that was on the machine before the module installed it is the person's.
 The record marks a Samba the install step found missing and installed. On either
@@ -647,17 +648,18 @@ class SambaModuleRunner(SystemPackageModuleRunner):
         The global section and the shares are what ``testparm -s`` prints
         for the live file, whoever wrote it; the users are every account
         the hub configures and every account of the module's prefix Samba
-        holds a credential for.
+        holds a credential for. Each share's folder is read again first, and
+        one that changed asks for a configure task.
 
         Args:
             recipe: The module's recipe.
 
         Returns:
             ``{"is_active", "global", "shares", "users", "sessions",
-            "disk_usage", "missing_shares"}``, each user ``{"name",
-            "is_present", "has_password"}``, each share ``{"name", "path",
-            "params"}`` and each missing share ``{"name", "path"}``.
+            "disk_usage"}``, each user ``{"name", "is_present",
+            "has_password"}`` and each share ``{"name", "path", "params"}``.
         """
+        self._folders.check(self.ask_configure)
         config = self._config or SambaConfig()
         reader = SambaStatusReader()
         accounts = SambaUserManager()
@@ -679,7 +681,6 @@ class SambaModuleRunner(SystemPackageModuleRunner):
             "users": [vars(state) for state in users],
             "sessions": reader.sessions(),
             "disk_usage": reader.disk_usage(config),
-            "missing_shares": self._folders.missing_shares(self.ask_configure),
         }
 
 
@@ -1157,14 +1158,18 @@ class SambaNativeServerRunner(ModuleRunner):
     def details(self, recipe: dict) -> dict:
         """What the server serves of the module's, and who uses it.
 
+        Each share's folder is read again first, and one that changed asks
+        for a configure task.
+
         Args:
             recipe: The module's recipe.
 
         Returns:
             ``{"is_active", "global", "shares", "users", "sessions",
-            "disk_usage", "missing_shares"}`` in the shapes the Linux module
-            reports, ``global`` empty.
+            "disk_usage"}`` in the shapes the Linux module reports, ``global``
+            empty.
         """
+        self._folders.check(self.ask_configure)
         status = self._read_status()
         return {
             "is_active": self.is_active(),
@@ -1173,7 +1178,6 @@ class SambaNativeServerRunner(ModuleRunner):
             "users": list(status.get("users") or []),
             "sessions": list(status.get("sessions") or []),
             "disk_usage": SambaStatusReader().disk_usage(self._config or SambaConfig()),
-            "missing_shares": self._folders.missing_shares(self.ask_configure),
         }
 
     def journal_text(self, lines: int) -> list:
