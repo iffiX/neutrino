@@ -2,7 +2,9 @@
 
 The hub sends one state per device: ``{hash, modules, desktop}``, with one
 entry per module it has a say about, ``{want, config, install}``, the
-recipe ``install`` being ``{runner, method, params}``, and the seat password
+recipe ``install`` being ``{runner, method, params}``, and ``is_taken_over``
+on a module the hub took over and no press has touched since, whose task
+installs nothing; and the seat password
 this machine's desktop answers with. A copy lands here on every ``state``
 frame, root-only on disk, and each mentioned module whose entry is news
 gets a task, :class:`ModuleTask`, that makes its actual state equal its
@@ -62,6 +64,7 @@ from neutrino_agent.constants import (
     AGENT_MODULE_INSTALL_RECHECK_S,
     AGENT_PRESENT_WANTS,
     AGENT_STEP_WAIT_MODULE,
+    AGENT_TAKEN_OVER_KEY,
     AGENT_WAIT_CHECK,
     AGENT_WANT_ABSENT,
     AGENT_WANT_INSTALLED,
@@ -555,7 +558,9 @@ class DesiredStateApplier:
         Windows and macOS and its ``runc`` on Linux, the version switch
         when a ``hub`` module's kept
         version differs from its recipe's, then the configure steps under
-        ``stopped`` and ``running``, less a second ``wait_module``.
+        ``stopped`` and ``running``, less a second ``wait_module``. An entry
+        that carries ``is_taken_over`` plans no install and no version
+        switch, whatever the machine shows: the configure steps alone.
 
         Args:
             task: The task.
@@ -587,7 +592,8 @@ class DesiredStateApplier:
             return PLAN_CONFIGURE, []
         kind = PLAN_CONFIGURE
         steps = []
-        if (
+        is_taken_over = entry.get(AGENT_TAKEN_OVER_KEY) is True
+        if not is_taken_over and (
             self._engine.is_install_failed(name)
             or not self._engine.is_installed(name, entry)
             or (
@@ -596,7 +602,7 @@ class DesiredStateApplier:
         ):
             kind = PLAN_INSTALL
             steps += self._engine.install_steps(name, entry)
-        elif self._engine.take_version_switch(name, entry):
+        elif not is_taken_over and self._engine.take_version_switch(name, entry):
             kind = PLAN_SWITCH
             steps += self._engine.switch_steps(name, entry)
         if want in CONFIGURING_WANTS:

@@ -133,6 +133,9 @@ AGENT_WANT_STOPPED = "stopped"
 AGENT_WANT_RUNNING = "running"
 # The wants under which the software must be there.
 AGENT_PRESENT_WANTS = (AGENT_WANT_INSTALLED, AGENT_WANT_STOPPED, AGENT_WANT_RUNNING)
+# The key of a module's entry that is true while the hub took the module over
+# and no press has touched it since: its task plans no install.
+AGENT_TAKEN_OVER_KEY = "is_taken_over"
 # What the agent reports a module to be, one closed table on every surface:
 # five steady states, three in transit, and two shared by every failure.
 AGENT_MODULE_STATE_ABSENT = "absent"

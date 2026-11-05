@@ -3,7 +3,8 @@
 What these pin: what each ``want`` plans (absent uninstalls and clears the
 mark, installed puts the software there and nothing else, stopped and
 running install what is missing then configure and settle the unit, with
-the mark written once the task took), a module the state does not mention
+the mark written once the task took), a module the hub took over planning
+no install and no switch until a press, a module the state does not mention
 untouched, an install's bytes asked for down a ``package {module, artifact,
 digest}`` stream, one ``log {module}`` stream per task with a ``step
 <i>/<n>`` line per step and closed with the module's state, the applied
@@ -623,6 +624,60 @@ def test_a_join_that_adopts_a_module_stopped_plans_no_install_it_owes(tmp_path):
     assert engine.installs == []
     assert runners["podman"].applied == [{"n": "podman"}]
     assert engine.owing == {"podman"}
+
+
+def taken_over(document: dict, name: str) -> dict:
+    """The same state with the hub's takeover mark on one module's entry."""
+    document["modules"][name]["is_taken_over"] = True
+    return document
+
+
+@pytest.mark.parametrize("want", ["installed", "running"])
+def test_a_module_taken_over_plans_no_install_it_owes_until_a_press(tmp_path, want):
+    """A join changes nothing on the machine: a person's running Podman taken
+    over ``running`` gets no ``runc`` until the person's first press."""
+    runners = {"podman": FakeRunner()}
+    held, engine = applier(runners, tmp_path=tmp_path)
+    engine.owing.add("podman")
+
+    run(held, taken_over(state(podman=want), "podman"))
+
+    assert engine.installs == []
+    assert engine.owing == {"podman"}
+
+    run(held, state("h2", podman=want))
+
+    assert [name for name, _ in engine.installs] == ["podman"]
+
+
+def test_a_module_taken_over_is_configured_and_started_as_the_machine_has_it(
+    tmp_path,
+):
+    runners = {"podman": FakeRunner()}
+    held, engine = applier(runners, tmp_path=tmp_path)
+    engine.owing.add("podman")
+
+    run(held, taken_over(state(podman="running"), "podman"))
+
+    assert runners["podman"].applied == [{"n": "podman"}]
+    assert held.applied_hash == "h1"
+
+
+def test_a_module_taken_over_is_neither_installed_nor_switched(tmp_path):
+    runners = {"gitea": FakeRunner(), "samba": FakeRunner()}
+    held, engine = applier(runners, tmp_path=tmp_path)
+    engine.installed.discard("samba")
+    engine.switching.add("gitea")
+
+    run(
+        held,
+        taken_over(
+            taken_over(state(gitea="running", samba="stopped"), "gitea"), "samba"
+        ),
+    )
+
+    assert engine.installs == []
+    assert engine.switches == []
 
 
 def test_an_installed_module_that_owes_nothing_plans_no_install(tmp_path):
