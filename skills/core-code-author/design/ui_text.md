@@ -153,7 +153,7 @@ its own word, and a string in one language carries no word of the other.
 | the page of the ways in | **Access** | **外部访问** | The page, its sidebar entry and every link to it use this name. The configuration, the routes and the protocol keep `overlay`, and so do the catalog keys (`ui.nav.overlay`, `ui.overlay.*`). |
 | the way in through the person's own server | SSH relay | SSH 中继 | The card, the section, the client's hub row and the docs use it; a sentence that names it again may say "the relay" (中继). The server it reaches is "your server" (你的服务器) in a label and VPS in the guide. The client's word, `reached_through`, is `ssh_relay`; the configuration, routes and codes keep `relay`. |
 | the two frp vendors | SakuraFrp, OpenFrp | SakuraFrp，OpenFrp | Spelled as each vendor spells itself, in both languages; never 樱花 or a shortened name. The program both run is frpc, and a sentence about the tunnel says "tunnel" (隧道). |
-| a computer joined to the hub | machine | 系统 | Chinese writes 系统 for it on every surface and never 机器: 这个系统, 系统页, 系统离线. 主机 stays for a host on a network and 虚拟机 for a virtual machine. |
+| a computer joined to the hub | machine | 系统 | Chinese writes 系统 for it on every surface and never 机器, 设备 or 电脑: 这个系统, 系统页, 系统离线, {count} 个系统. The computer a client runs on is one too: 这个系统没有 pkexec. 主机 stays for a host on a network and 虚拟机 for a virtual machine. 设备 and 电脑 stay for a host on a network the hub serves, a phone or computer named as the person's own device, and a hardware device: 对内接设备, 只给你自己的设备打开, 在这台设备上安装证书. |
 | the page of the managed machines | **Agents** | **被控端** | The page, its sidebar entry in the hub group, the header chip and the Overview card use this name, and the sidebar's machine group below carries the same word. The routes keep `device` (`/api/hub/device`) and the catalog keys keep `devices`; the panel's address is `/agents`. |
 | a managed machine's page | the machine page | 系统页 | Each machine's own page, `/agents/<id>`, which holds its modules; the panel has no Modules, Terminals or Files page. |
 
@@ -326,7 +326,7 @@ link's `app.title`.
 | The introduction | Neutrino App share / To use the shared app, open the full share link you were sent. | 微子应用分享 / 用别人发给你的完整分享链接，就能打开他分享的应用。 |
 | The link is incomplete | This link is incomplete. / Copy the whole share link and open it again. | 这个链接不完整。/ 请把分享链接整段复制下来再打开。 |
 | The link no longer works | This link is no longer valid. / Ask the person who shared it for a new one. | 这个链接已失效。/ 请向分享给你的人要一个新链接。 |
-| The hub is offline | The hub is offline. / The computer that shares this app cannot be reached right now. | 中枢已离线。/ 分享这个应用的电脑现在连不上。 |
+| The hub is offline | The hub is offline. / The computer that shares this app cannot be reached right now. | 中枢已离线。/ 分享这个应用的系统现在连不上。 |
 | The app is unavailable | The app cannot be opened right now. / It opens by itself once it is back. | 应用暂时打不开。/ 恢复后会自动打开。 |
 | Another tab has an app | An app is already open in another tab. / Only one can be open at a time. | 已经在另一个标签页打开了一个应用。/ 一次只能打开一个。 |
 | The app moved to another tab | This app is now open in another tab. | 这个应用已在另一个标签页打开。 |
