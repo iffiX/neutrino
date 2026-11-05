@@ -13,7 +13,7 @@ import json
 
 import pytest
 
-from neutrino_client.cli import wording
+from neutrino_client.cli import help_pages, wording
 from neutrino_client.constants import CLIENT_LANGUAGES
 from tests.control.test_page import (
     ATTACH_RENDERED_STATES,
@@ -59,6 +59,24 @@ def test_both_languages_carry_the_same_lines_and_states():
         wording.CLIENT_MOUNT_STATE_WORDS,
     ):
         assert set(tables["en"]) == set(tables["zh-CN"])
+
+
+def test_no_chinese_line_calls_a_computer_joined_to_the_hub_a_machine():
+    """Chinese writes 系统 and never 机器 (ui_text.md, "Names that are fixed")."""
+    held = [
+        key
+        for tables in (
+            wording.CLIENT_CODE_WORDS,
+            wording.CLIENT_LINES,
+            wording.CLIENT_STATE_WORDS,
+            wording.CLIENT_MOUNT_STATE_WORDS,
+            help_pages.CLIENT_HELP,
+        )
+        for key, words in tables["zh-CN"].items()
+        if "机器" in words
+    ]
+
+    assert held == []
 
 
 def test_every_code_the_catalogs_word_has_words_in_each_language(language):

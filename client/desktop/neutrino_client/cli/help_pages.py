@@ -333,26 +333,26 @@ Change one setting. The names and the values they take are in nclient settings s
 
 用 ssh 登录被控端。被控端自带 SSH 服务器，只接受中枢发给你的密钥，不用密码。
 
-  list         开了 ssh 的机器、各自启用的账户和本机地址
-  open         登录一台机器
+  list         开了 ssh 的系统、各自启用的账户和本机地址
+  open         登录一个系统
   config       给别的软件用的 ssh 配置
   proxy        给 ProxyCommand 用，不直接敲
 
 例子：nclient ssh open lab-gpu""",
         "ssh list": """用法：nclient ssh list
 
-列出开了 ssh 的机器：每台机器一行，后面是启用的账户，第一个是默认账户。
+列出开了 ssh 的系统：每个系统一行，后面是启用的账户，第一个是默认账户。
 每个账户后面是它的本机地址，给 FileZilla 这类只支持主机和端口的软件用；
 客户端运行时一直转发着。
 
 例子：nclient ssh list
   lab-gpu     iffi 127.0.0.1:26017  lab 127.0.0.1:29443
   iffi-mac    iffi 127.0.0.1:24802""",
-        "ssh open": """用法：nclient ssh open [<账户>@]<机器> [-- <命令>]
+        "ssh open": """用法：nclient ssh open [<账户>@]<系统> [-- <命令>]
 
-登录一台机器。不写账户就用第一个启用的；写了 -- 就只跑那条命令然后退出。
+登录一个系统。不写账户就用第一个启用的；写了 -- 就只跑那条命令然后退出。
 
-  机器         机器名，和窗口里一样
+  系统         系统名，和窗口里一样
   账户         要用的账户，必须是启用的
   -- 命令      只执行这条命令，保留输入输出和退出码
 
@@ -360,11 +360,11 @@ Change one setting. The names and the values they take are in nclient settings s
       nclient ssh open lab@lab-gpu -- nvidia-smi""",
         "ssh config": """用法：nclient ssh config <命令>
 
-客户端为每台机器写一份 ssh 配置（~/.ssh/neutrino_config），机器列表一变就重写。
+客户端为每个系统写一份 ssh 配置（~/.ssh/neutrino_config），系统列表一变就重写。
 这组命令看它，和决定要不要把它接进 ~/.ssh/config。
 
   show         打印这份配置
-  install      在 ~/.ssh/config 加一行 Include，让 ssh、scp、VS Code 直接认 <机器>.nt
+  install      在 ~/.ssh/config 加一行 Include，让 ssh、scp、VS Code 直接认 <系统>.nt
   uninstall    拿掉那行 Include
 
 例子：nclient ssh config install""",
@@ -378,14 +378,14 @@ Change one setting. The names and the values they take are in nclient settings s
         "ssh config uninstall": """用法：nclient ssh config uninstall
 
 拿掉 ~/.ssh/config 里那行 Include。微子自己的配置文件不删。""",
-        "ssh proxy": """用法：nclient ssh proxy [<账户>@]<机器>[.nt]
+        "ssh proxy": """用法：nclient ssh proxy [<账户>@]<系统>[.nt]
 
-给 ssh 的 ProxyCommand 用：把标准输入输出接到那台机器上该账户的 SSH 服务器。
+给 ssh 的 ProxyCommand 用：把标准输入输出接到那个系统上该账户的 SSH 服务器。
 配置文件里写的是 ProxyCommand nclient ssh proxy %r@%h，所以它收到的是
-"账户@机器.nt"：.nt 后缀能识别，去掉就是机器名；账户不写就用第一个启用的。
+"账户@系统.nt"：.nt 后缀能识别，去掉就是系统名；账户不写就用第一个启用的。
 需要客户端正在运行。一般不用自己敲。
 
-  机器         机器名，带不带 .nt 都行
+  系统         系统名，带不带 .nt 都行
   账户         启用的账户""",
         "hub": """用法：nclient hub <命令> [参数]
 
@@ -420,7 +420,7 @@ Change one setting. The names and the values they take are in nclient settings s
 
 被控端上发布的应用。一个应用有一个或几个入口（网页、端口）。
 
-  list         每台机器下的应用、入口、本机地址
+  list         每个系统下的应用、入口、本机地址
   use          使用一个应用：给它的每个入口开转发
   open         应用在用时，在浏览器里打开它的网页
   stop         收回它的转发
@@ -429,24 +429,24 @@ Change one setting. The names and the values they take are in nclient settings s
 例子：nclient app use gitea""",
         "app list": """用法：nclient app list
 
-按机器列出应用：名字、来源、每个入口的种类和本机地址、是否在用。""",
+按系统列出应用：名字、来源、每个入口的种类和本机地址、是否在用。""",
         "app use": """用法：nclient app use <应用>
 
 使用一个应用：给它的每个入口开转发，并列出本机地址。
-网页入口的本机地址是 <应用>.<机器>.localhost:<端口>，端口入口的是
+网页入口的本机地址是 <应用>.<系统>.localhost:<端口>，端口入口的是
 127.0.0.1:<端口>，端口第一次分配后不再变。
 
-  应用         应用名；同名时写 <机器>/<应用>""",
+  应用         应用名；同名时写 <系统>/<应用>""",
         "app open": """用法：nclient app open <应用>
 
 在浏览器里打开这个应用的第一个 http/https 入口。应用要先在用：先 nclient app use。
 
-  应用         应用名；同名时写 <机器>/<应用>""",
+  应用         应用名；同名时写 <系统>/<应用>""",
         "app stop": """用法：nclient app stop <应用>
 
 收回这个应用的转发。
 
-  应用         应用名；同名时写 <机器>/<应用>""",
+  应用         应用名；同名时写 <系统>/<应用>""",
         "app set": """用法：nclient app set <应用> --port <入口>=<本机端口>
 
 固定某个入口的本机端口。入口名在 nclient app list 里。
@@ -469,31 +469,31 @@ Change one setting. The names and the values they take are in nclient settings s
 
 被控端的文件共享。不用密码，客户端从中枢拿。
 
-  list         每台机器的共享和本机的挂载状态
+  list         每个系统的共享和本机的挂载状态
   mount        挂载一个共享
   unmount      卸载
 
 例子：nclient file mount lab-gpu""",
         "file list": """用法：nclient file list
 
-按机器列出共享：共享名、挂在本机哪里、挂着没有。""",
-        "file mount": """用法：nclient file mount <机器>[/<共享>] [--account <账户>] [--path <路径> | --drive <盘符>]
+按系统列出共享：共享名、挂在本机哪里、挂着没有。""",
+        "file mount": """用法：nclient file mount <系统>[/<共享>] [--account <账户>] [--path <路径> | --drive <盘符>]
 
 挂载一个共享。什么都不写就用默认位置：
-Linux 和 macOS 是 ~/remote/<机器-共享>，文件夹共享再加 -<账户>，Windows 是第一个空盘符。
+Linux 和 macOS 是 ~/remote/<系统-共享>，文件夹共享再加 -<账户>，Windows 是第一个空盘符。
 
-  机器/共享    机器名；机器只有一个共享时共享名可以不写
+  系统/共享    系统名；系统只有一个共享时共享名可以不写
   --account    文件夹共享以哪个账户挂载；只有一个账户能用时可以不写
   --path       挂到这个目录（Linux、macOS）
   --drive      挂到这个盘符（Windows），比如 Z:""",
-        "file unmount": """用法：nclient file unmount <机器>[/<共享>] [--account <账户>]
+        "file unmount": """用法：nclient file unmount <系统>[/<共享>] [--account <账户>]
 
 卸载。文件夹共享挂了几个账户时，用 --account 指定卸哪个。""",
-        "terminal": """用法：nclient terminal <命令> <机器> [参数]
+        "terminal": """用法：nclient terminal <命令> <系统> [参数]
 
 被控端上的终端会话，以启用的账户运行，不用密码。
 
-  list         机器上的会话
+  list         系统上的会话
   open         开一个新 shell
   attach       接上一个会话
   exec         跑一条命令
@@ -501,20 +501,20 @@ Linux 和 macOS 是 ~/remote/<机器-共享>，文件夹共享再加 -<账户>�
   stop         结束一个会话
 
 例子：nclient terminal open lab-gpu""",
-        "terminal list": """用法：nclient terminal list <机器>
+        "terminal list": """用法：nclient terminal list <系统>
 
-机器上的会话：序号、账户、开了多久、持久不持久、共享不共享、谁在看。""",
-        "terminal open": """用法：nclient terminal open <机器> [--account <账户>]
+系统上的会话：序号、账户、开了多久、持久不持久、共享不共享、谁在看。""",
+        "terminal open": """用法：nclient terminal open <系统> [--account <账户>]
 
 开一个新 shell，接在这个终端里。退出 shell 就结束。
 
   --account    用哪个启用的账户，默认第一个""",
-        "terminal attach": """用法：nclient terminal attach <机器> <会话>
+        "terminal attach": """用法：nclient terminal attach <系统> <会话>
 
 接上一个还在的会话。Ctrl+] 脱开，会话留着。
 
   会话         nclient terminal list 里的序号或 id""",
-        "terminal exec": """用法：nclient terminal exec <机器> [--account <账户>] [--tty] -- <命令>
+        "terminal exec": """用法：nclient terminal exec <系统> [--account <账户>] [--tty] -- <命令>
 
 跑一条命令，输入输出和退出码原样回来。给脚本和 agent 用。
 
@@ -524,26 +524,26 @@ Linux 和 macOS 是 ~/remote/<机器-共享>，文件夹共享再加 -<账户>�
 
 例子：nclient terminal exec lab-gpu -- nvidia-smi
       nclient terminal exec lab-gpu --tty -- htop""",
-        "terminal set": """用法：nclient terminal set <机器> <会话> [--persist on|off] [--share on|off]
+        "terminal set": """用法：nclient terminal set <系统> <会话> [--persist on|off] [--share on|off]
 
 改一个会话：persist 是脱开以后还留不留，share 是别的客户端能不能接上。""",
-        "terminal stop": """用法：nclient terminal stop <机器> <会话>
+        "terminal stop": """用法：nclient terminal stop <系统> <会话>
 
 结束一个会话，里面的程序一起结束。""",
         "rdp": """用法：nclient rdp <命令> [参数]
 
 远程桌面。
 
-  list         共享着桌面的机器
+  list         共享着桌面的系统
   connect      打开查看器
 
 例子：nclient rdp connect iffi-mac""",
         "rdp list": """用法：nclient rdp list
 
-共享着桌面的机器一行一台：屏幕前的用户、有几个人在看。""",
-        "rdp connect": """用法：nclient rdp connect <机器>
+共享着桌面的系统一行一个：屏幕前的用户、有几个人在看。""",
+        "rdp connect": """用法：nclient rdp connect <系统>
 
-打开查看器连上这台机器的桌面。座位密码客户端自己拿，不用输。""",
+打开查看器连上这个系统的桌面。座位密码客户端自己拿，不用输。""",
         "settings": """用法：nclient settings <命令> [参数]
 
 客户端自己的设置，和设置页一一对应。

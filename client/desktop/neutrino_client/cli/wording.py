@@ -280,7 +280,7 @@ CLIENT_CODE_WORDS = {
         "client_not_running": "客户端没有运行，先 nclient gui。",
         "resident_not_running": "客户端没有运行，先 nclient gui。",
         "busy": "仍在处理上一个请求",
-        "crashed": "上一个请求在这台机器上失败了",
+        "crashed": "上一个请求在这个系统上失败了",
         "root_refused": "nclient 以你自己的身份运行，不能用 root",
         "bundle_missing": "此安装未包含 {binary}，请重新安装客户端",
         "unknown_terminal": "中枢没有提供 {device_id} 的终端",
@@ -288,21 +288,21 @@ CLIENT_CODE_WORDS = {
         "agent_offline": "{device} 不在线",
         "connect_failed": "中枢连不上那个服务（{reason}）",
         "connect_limit": "这个客户端经中枢开着的连接太多了（{limit}）",
-        "port_not_published": "那台机器现在没有发布 {port} 端口",
+        "port_not_published": "那个系统现在没有发布 {port} 端口",
         "admission_paused": "中枢暂停了新的加入；本客户端 {retry_after_s} 秒后再试",
         "control_unavailable": "中枢正忙，没有应答，稍后再试。",
         "shell_unknown": "中枢那边已经没有这个终端了",
         "terminal_input_failed": "客户端结束了这个终端：读不到它的按键（{detail}）",
         "terminal_account_missing": (
-            "这台机器的终端没有启用的账户，到它的机器页上启用一个。"
+            "这个系统的终端没有启用的账户，到它的系统页上启用一个。"
         ),
-        "account_not_enabled": "这台机器的终端没有启用 {account}。",
+        "account_not_enabled": "这个系统的终端没有启用 {account}。",
         "key_missing": "{account} 的 SSH 服务器没有中枢发的密钥，重新应用这个模块。",
         "op_unknown": "这个被控端不能对文件做 {op}。",
         "session_not_owned": "这个会话属于别人，且没有共享",
-        "session_unknown": "那台机器已不再保留这个会话",
-        "account_unknown": "那台机器上没有账户 {account}",
-        "shell_program_unusable": "那台机器无法运行 {path}",
+        "session_unknown": "那个系统已不再保留这个会话",
+        "account_unknown": "那个系统上没有账户 {account}",
+        "shell_program_unusable": "那个系统无法运行 {path}",
         "kind_unknown": "中枢版本太旧，打不开这个；请先更新中枢",
         "overlay_daemon_down": "本机的虚拟网服务没有运行；请重新安装客户端",
         "overlay_not_authorized": "本机没有授权加入虚拟网",
@@ -335,9 +335,9 @@ CLIENT_CODE_WORDS = {
         "ticket_spent": (
             "中枢拒绝了这个链接：它已被用过或已过期；请离开这台中枢，用新链接重新加入"
         ),
-        "mount_not_authorized": "这台机器上的挂载未获授权",
+        "mount_not_authorized": "这个系统上的挂载未获授权",
         "mount_timed_out": "系统十分钟内没有完成挂载，再挂载一次",
-        "mount_tooling_missing": "这台机器上缺少挂载工具",
+        "mount_tooling_missing": "这个系统上缺少挂载工具",
         "pkexec_missing": "这台电脑没有 pkexec，挂载要经过它；请安装 pkexec 后再挂载",
         "control_peer_refused": "正在运行的客户端属于另一个账户",
         "control_socket_unavailable": "客户端在这个会话里启动不了",
@@ -367,11 +367,11 @@ CLIENT_CODE_WORDS = {
         "protocol_too_new": "此客户端使用协议 {peer}，中枢使用 {hub}，请先升级中枢",
         "no_endpoint": "中枢还没有给你密钥",
         "ai_tools_managed": (
-            "这是已管理的设备，请到中枢面板它的机器页上设置它的 AI 工具。"
+            "这是已管理的设备，请到中枢面板它的系统页上设置它的 AI 工具。"
         ),
         "mountpoint_not_empty": "那个文件夹不是空的",
         "share_login_rejected": "用户名或密码不对，重新挂载并重新填写。",
-        "share_hub_login_rejected": "中枢给的登录被拒了，请在面板检查这台机器的文件共享。",
+        "share_hub_login_rejected": "中枢给的登录被拒了，请在面板检查这个系统的文件共享。",
         "share_access_denied": "登录被拒绝：密码不对，或者这个账号不能用这个共享。",
         "share_not_found": "主机上没有这个共享。",
         "share_unreachable": "连不上主机，稍后会再试挂载。",
@@ -399,9 +399,9 @@ CLIENT_CODE_WORDS = {
         "vault_locked": "中枢的保险库已锁定，取不到此客户端的密钥",
         "rdp_no_desktop": "此会话没有可供查看器打开的屏幕",
         "rdp_launch_failed": "RustDesk 查看器启动不了：{detail}",
-        "rdp_no_address": "那台机器没有发布可连接的地址",
+        "rdp_no_address": "那个系统没有发布可连接的地址",
         "rdp_viewer_open": "这台桌面已经开着一个查看器，请先关掉它",
-        "unsupported_platform": "这台机器不支持此操作",
+        "unsupported_platform": "这个系统不支持此操作",
         "gui_webkitgtk_missing": (
             "窗口需要 WebKitGTK，请安装：sudo apt install {packages}"
         ),
@@ -411,8 +411,8 @@ CLIENT_CODE_WORDS = {
         "ssh_key_unwritable": "{machine} 的 SSH 密钥写不进去：{detail}",
         "transport_missing": "这份安装缺少 neutrino_transport，重新安装客户端",
         "transport_unavailable": "客户端的传输进程没有运行，退出客户端再重新打开",
-        "rdp_nobody_seated": "那台机器的屏幕前没有人",
-        "rdp_screen_not_allowed": "那台机器还不允许共享屏幕",
+        "rdp_nobody_seated": "那个系统的屏幕前没有人",
+        "rdp_screen_not_allowed": "那个系统还不允许共享屏幕",
         "unknown_request": "客户端无法识别这个请求",
     },
 }
@@ -555,7 +555,7 @@ CLIENT_LINES = {
         "nothing_changed": "没有改动",
         "no_terminal": "错误：没有终端可以回答；加上 --yes 再运行一次就不再确认",
         "exec_command_missing": (
-            "在 -- 后面写命令，例如：nclient terminal exec <机器> -- uptime"
+            "在 -- 后面写命令，例如：nclient terminal exec <系统> -- uptime"
         ),
         "session_ambiguous": "{machine} 上有几个会话都以 {prefix} 开头；多写几位：",
         "joined": "已加入 {url}，正在连接",
@@ -566,7 +566,7 @@ CLIENT_LINES = {
         "unknown_name": "没有叫 {name} 的{what}，有这些：{names}",
         "unknown_name_none": "没有叫 {name} 的{what}，一个也没有",
         "ambiguous_name": "{name} 对得上不止一个{what}，指明是哪个：{names}",
-        "what_machine": "机器",
+        "what_machine": "系统",
         "what_hub": "中枢",
         "what_app": "应用",
         "what_share": "共享",
