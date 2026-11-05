@@ -10,6 +10,8 @@
    columns leave: at the 968 px the cards below start under, room for their
    buttons on two lines. */
 .devices_table {
+  --devices-rings-height: 54px;
+
   width: 100%;
   border-collapse: separate;
   border-spacing: 0;
@@ -113,10 +115,15 @@
   min-width: 0;
 }
 
+/* The rings' block is centred on the rings: the space above them matches
+   the labels under them, so a value centred beside the block sits on the
+   rings' middle line. */
 .devices_rings {
   display: flex;
   gap: 6px;
   align-items: center;
+  height: var(--devices-rings-height);
+  padding-top: 12px;
 }
 
 .devices_mac {
@@ -213,6 +220,14 @@
     border-bottom: none;
     overflow-wrap: anywhere;
     white-space: normal;
+  }
+
+  /* Under its label each value is centred in the rings' height, in a card
+     with rings or without. */
+  .devices_table td[data-label] {
+    display: grid;
+    grid-template-rows: auto minmax(var(--devices-rings-height), auto);
+    align-items: center;
   }
 
   .devices_cell--name {
