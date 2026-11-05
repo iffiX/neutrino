@@ -197,19 +197,19 @@ class PanelUsageCollector:
         return True
 
     def _read_served_models(self) -> tuple:
-        """Whether the probe succeeded and the served list; ``(False, [])`` with no key."""
+        """Whether the probe succeeded and the served list, probed with the hub's own key.
+
+        Returns:
+            ``(is_answered, names)``; ``(False, [])`` while no key opens.
+        """
         try:
             config = load_config()
         except ValueError:
             return False, []
-        for stored in config.client_keys:
-            try:
-                key = stored.open_key()
-            except ValueError:
-                continue
-            if key:
-                is_answered, names = self._served_models.served(
-                    port=config.listen_port, client_key=key
-                )
-                return is_answered, list(names)
-        return False, []
+        key = config.probe_key()
+        if not key:
+            return False, []
+        is_answered, names = self._served_models.served(
+            port=config.listen_port, client_key=key
+        )
+        return is_answered, list(names)

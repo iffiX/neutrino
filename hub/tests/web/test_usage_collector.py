@@ -352,3 +352,43 @@ def test_a_collector_asked_to_tell_nobody_still_folds(collector, monkeypatch, tm
 
     assert watcher.sample_once() is True
     assert (tmp_path / "usage.json").exists()
+
+
+class KeyRecordingServedModels(StubServedModels):
+    """The served-model cache, recording the key each probe carried."""
+
+    def __init__(self, names=()):
+        super().__init__(names)
+        self.keys = []
+
+    def served(self, *, port, client_key) -> tuple:
+        self.keys.append(client_key)
+        return super().served(port=port, client_key=client_key)
+
+
+def test_a_hub_with_no_access_key_probes_with_its_own_key(monkeypatch, tmp_path):
+    """A fresh hub holds no Access key, and the AI page kept "no models" after an
+    apply until a reload: the collector probed with Access keys alone."""
+    unlock_vault(monkeypatch, tmp_path)
+    hub_key = CliproxyApiClientKey(
+        id="hub",
+        name="hub",
+        key_sealed=seal_bytes(b"hub-key", CLIPROXYAPI_CLIENT_KEY_AAD),
+    )
+    config = CliproxyApiConfig(listen_port=18317, hub_key=hub_key)
+    monkeypatch.setattr(collector_module, "load_config", lambda: config)
+    monkeypatch.setattr(collector_module, "read_management_key", lambda: None)
+    served = KeyRecordingServedModels()
+    changes = ChangeCounter()
+    watcher = PanelUsageCollector(
+        store=CliproxyApiUsageStore(path=tmp_path / "usage.json"),
+        served_models=served,
+        on_change=changes,
+    )
+    assert watcher.sample_once() is False
+
+    served.names = ["deepseek-flash", "deepseek-v4-pro"]
+
+    assert watcher.sample_once() is True
+    assert changes.count == 1
+    assert served.keys == ["hub-key", "hub-key"]
