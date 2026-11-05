@@ -173,18 +173,27 @@ scrolls inside its own box: the usage tables on the AI page
 overlay's peer table. Numeric columns are right-aligned (`.num`).
 
 The Agents and Clients tables have no scrolling box. Each lays itself out by
-the width of its own box, through a container query, and a column header
-shows whole in either layout:
+the width of its own box, and a column header shows whole in either layout:
 
 | Box | Layout |
 | --- | --- |
-| As wide as every column: 968 px for Agents, 860 px for Clients | A table. Each column is at least as wide as its header's words in either language, and the actions cell takes the room the other columns leave and wraps its buttons onto a second line. A 1280 px window holds every column of both tables. |
-| Narrower | Each row is a card over two or more lines: the name line; the other fields as label and value pairs that wrap, each label its column's header, whole in either language; then the row's actions on a line of their own, from the left. A rename, a press's outcome line and a client's permission form keep their places in the row. |
+| As wide as every column with each row's actions on one line | A table. Each column is at least as wide as its header's words in either language, and the actions cell takes the room the other columns leave, its buttons on one line. With the panel's fonts the Agents table needs about 1017 px in Chinese and 1136 px in English, the Clients table about 980 px and 1074 px, so a 1280 px window shows both as cards. |
+| Narrower | Each row is a card over two or more lines: the name line; the other fields as label and value pairs on one grid every card shares, each label its column's header, whole in either language, each track holding its field's longest value and stretching to the card's; then the row's actions on a line of their own, at the card's right edge. A rename, a press's outcome line and a client's permission form keep their places in the row. |
+
+An Agents card puts its fields in five tracks, in three under 718 px, and
+under 510 px gives the rings a track of their own, five rings wide, with the
+version and the last seen side by side in two equal tracks to their right.
+Under 408 px, where those two labels no longer fit there in either language,
+the rings take a line and the version and the last seen the next. A Clients
+card puts its fields in five tracks, three under 624 px and two under 380 px.
 
 | Rule | Reason |
 | --- | --- |
 | A row too wide for its box wraps into a card and never scrolls. | A row read by scrolling sideways shows half of itself at a time, and its actions only at the far end. |
+| A table's actions never wrap: a box too narrow for them on one line lays every row out as a card. | Buttons over two lines make a row twice as tall as its fields, and half the width holds no table worth reading. |
 | The width of the table's own box picks the layout. | The rail, the page's margins and each frame's padding stand between the window's width and the box's, and they differ between the two pages. |
+| The page measures the width the fixed columns and the widest row's actions need (`use_table_cards.ts`), and container queries lay out the cards' grids. | The actions' width depends on the language and on the buttons a row has, which a container query cannot know. |
+| Every card shares one grid, so a field starts at the same place in every card. | An offline machine's short status moved the fields after it left of the cards above. |
 
 A destructive action repeated on every row arms instead of opening a dialog —
 `device_monitor`'s kill button turns red on the first click and acts on the
@@ -462,7 +471,8 @@ same component is every such list; none gets a table or a second idiom.
 | A row keeps the order it was added in, and that order is the order the backend uses. Reordering is removing a row and adding it again. | The chips have no drag handle, and the order is rarely changed. |
 | A blank row or a duplicate is dropped at the add; what the value means is checked by the backend, and its refusal shows on the apply bar. | The editor keeps the list tidy and the backend owns the rules. |
 | An editor can have **Browse…** after its **Add**: it opens the path window (`directory_picker_modal.tsx`) on the device, at the folder the input names or at the machine's root, and writes the folder chosen into the input with `:` after it, for the person to finish the row and add it. | A volume is `<folder>:<path in the container>`, and only the first half is a folder of the machine. |
-| With **Browse…** the input is at least 16rem wide, and **Add** and **Browse…** move under it together where the row has no room for the three; an editor without **Browse…** keeps one line. | A folder path does not fit in the room two buttons leave in one column of the container editor. |
+| An editor narrower than 440 px puts its buttons under the input, with **Browse…** or without; wider, the input and the buttons share one line. 440 px holds a 16rem input, **Add** and **Browse…** in either language. | A folder path does not fit in the room two buttons leave in one column of the container editor, and editors side by side are equally wide, so their buttons move under together and stay in line. |
+| The add row is the container of that query, not the editor. | An editor is a subgrid of the row it shares, and a container's layout containment cuts it off from those rows. |
 
 The container editor's **Volumes** has **Browse…** on every system, and its
 placeholder is a volume in the machine's own form,
@@ -665,16 +675,18 @@ Clients page"). An app with no `web` entry has no **Share**.
 
 An address of any length stays inside its row at a phone's width, 360 px and
 up, in either language, and so does every chip and button of the row. An
-entry's address breaks anywhere inside its chip, after the entry's kind and
-before a declared entry's state word, which stay whole on the chip's first
-line. A host shown beside the title breaks anywhere too. **Share**,
-**Test**, **Delete** and the source badge wrap onto a second line when the
-title's line is too short for them.
+entry's chip is one line: its address shows at most 56 characters, fewer
+where the row is narrower, and ends in an ellipsis past that, between the
+entry's kind and a declared entry's state word, which stay whole. A host
+shown beside the title is cut the same way. The chip's and the host's title
+hold them whole. **Share**, **Test**, **Delete** and the source badge wrap
+onto a second line when the title's line is too short for them.
 
 | Rule | Reason |
 | --- | --- |
-| A long address wraps inside its chip and is shown whole. | A phone has no pointer to show a cut address in a tooltip, and the end of an address is often the part that tells two entries apart. |
-| The break inserts no character. | A copy of the address is the address. |
+| A long address is cut with an ellipsis after 56 characters, or at the row's edge. | An app's own address fits in 56 characters, and what follows is a path that only makes the row long. |
+| The cut is drawn, not written: the text is the whole address. | A copy of the address is the address, and the title shows it on hover. |
+| An app's row is one flex line, so each of its parts is as wide as the row. | A row that wraps sizes each part by its widest content, and a chip then grew past the row. |
 
 ## The Clients page
 
@@ -694,10 +706,12 @@ The press creates the client's row and its link ([protocol.md](protocol.md),
 copy button, its QR under it, and `ui.clients.enrollment_hint`, which says
 the link works for 30 minutes; the form goes, and the foot becomes **Done**.
 
-A row whose device has not joined waits: in place of its host name, its
-system and its version it reads `ui.clients.waiting {minutes}`, the minutes
-`link_expires_in_s` leaves, counted down between the page's reads of the
-list. Its actions are **Permissions** and **Delete**, whose dialog says
+A row whose device has not joined waits: its name carries
+`ui.clients.waiting {minutes}` as a badge, the minutes `link_expires_in_s`
+leaves, counted down between the page's reads of the list, and its host
+name, system and version read `—`. A client's badges, waiting, disabled and
+its own permission, stay together on one line after its name, or under it
+as one group. Its actions are **Permissions** and **Delete**, whose dialog says
 that the link stops working. The hub removes the row when the link expires
 unused, and the page's next read drops it; a join makes it an ordinary row
 with the permission it waited with.
