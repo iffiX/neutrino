@@ -684,7 +684,7 @@ def module_router(
     ):
         context = device_context(runtime, module, request.device_id)
         require_online(context)
-        record_running(runtime, context)
+        record_apply(runtime, context)
         mark_retry(runtime, context.key, module)
         push_state(runtime, context.key)
         return ApplyResult(is_applied=True)
@@ -960,7 +960,7 @@ def store_config(
     written = dict(config)
     write_module_config(runtime, context.key, context.module, written)
     context.config = written
-    record_running(runtime, context)
+    record_apply(runtime, context)
     push_state(runtime, context.key)
     recompose_published(runtime, context.module)
 
@@ -1035,21 +1035,22 @@ def write_module_config(
         raise _config_unwritable(error) from error
 
 
-def record_running(runtime: PanelRuntime, context: DeviceModuleContext) -> None:
-    """Write ``want: running`` on a module with no ``want`` that reads ``running``.
+def record_apply(runtime: PanelRuntime, context: DeviceModuleContext) -> None:
+    """Write what an apply of a module's configuration records, ahead of its push.
 
-    An apply calls this ahead of its push. The ``want`` records what already
-    runs and starts nothing. A container module gets what its containers are
-    composed from, as at a **Start**. A module the agent carries, and a row
-    with a ``want`` or in any other state, writes nothing.
+    The apply ends the module's takeover. On a module with no ``want`` that
+    reads ``running`` it writes ``want: running``: the ``want`` records what
+    already runs and starts nothing. A container module then gets what its
+    containers are composed from, as at a **Start**. A module the agent
+    carries writes nothing.
 
     Args:
         runtime: The shared runtime.
         context: The device and the module.
 
     Raises:
-        HTTPException: 500 ``config_unwritable`` when the ``want`` cannot be
-            written.
+        HTTPException: 500 ``config_unwritable`` when the ``want`` or the
+            mark cannot be written.
     """
     key = context.key
     module = context.module
@@ -1059,6 +1060,7 @@ def record_running(runtime: PanelRuntime, context: DeviceModuleContext) -> None:
     minted = ""
     try:
         with CONFIG_WRITE_LOCK:
+            runtime.desired_states.end_takeover(key, module)
             state = module_status(runtime, key, module)["state"]
             if (
                 runtime.desired_states.want_of(key, module)
@@ -1271,9 +1273,9 @@ def _set_want(
 def _want_required_running(runtime: PanelRuntime, key: str, required: list) -> None:
     """Want each required module running ahead of the module's install or start.
 
-    A required module that reads anything but its new ``want`` takes a
-    retry mark, as a press of its own **Start** would. Call under
-    ``CONFIG_WRITE_LOCK``.
+    The want ends each required module's takeover, and one that reads
+    anything but its new ``want`` takes a retry mark, as a press of its own
+    **Start** would. Call under ``CONFIG_WRITE_LOCK``.
 
     Args:
         runtime: The shared runtime.
@@ -1286,8 +1288,7 @@ def _want_required_running(runtime: PanelRuntime, key: str, required: list) -> N
     store = runtime.desired_states
     for name in required:
         is_retried = _is_retried(runtime, key, name, CHANNEL_MODULE_STATE_RUNNING)
-        if store.want_of(key, name) != CHANNEL_MODULE_STATE_RUNNING:
-            store.set_want(key, name, CHANNEL_MODULE_STATE_RUNNING)
+        store.set_want(key, name, CHANNEL_MODULE_STATE_RUNNING)
         if is_retried:
             DeviceRetryMarks().mark(key, name)
 

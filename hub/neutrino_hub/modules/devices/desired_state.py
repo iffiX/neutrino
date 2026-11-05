@@ -1,7 +1,8 @@
 """One desired state per device: what the hub wants a machine to host.
 
 ``config/devices/<id>/`` holds ``modules.json``, each module's ``want``, the
-version the machine chose and whether the machine has settled the want, one
+version the machine chose, whether the machine has settled the want and
+whether the hub took the module over and no press has touched it since, one
 file per module with its configuration, ``accounts.json`` with the machine's
 available accounts, and ``rdp.json``, which seals the machine's seat
 password; ``<id>`` is the device's id. Composing a device's state gathers
@@ -86,6 +87,7 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_SSH_SERVER_MODULE,
     DEVICE_TERMINAL_MODULE,
     DEVICE_RETRY_MARK_KEY,
+    DEVICE_TAKEN_OVER_KEY,
     DEVICE_FORWARDER_TOKEN_EXPIRY_BYTES,
     DEVICE_FORWARDER_TOKEN_LIFETIME_S,
     DEVICE_FORWARDER_TOKEN_NONCE_BYTES,
@@ -674,6 +676,8 @@ class DesiredStateStore:
             Module name to ``{"want", "is_settled", "version"}``, for the
             modules ``modules.json`` names and no other; ``version`` is the
             machine's choice, empty while it follows the tested one.
+            ``is_taken_over`` stands true beside them while the hub took
+            the module over and no press has touched it since.
         """
         try:
             stored = read_config(self._path(key, DEVICE_MODULES_FILE))
@@ -691,6 +695,8 @@ class DesiredStateStore:
                     "is_settled": bool(entry.get("is_settled", False)),
                     "version": str(entry.get("version", "") or ""),
                 }
+                if entry.get(DEVICE_TAKEN_OVER_KEY) is True:
+                    modules[str(name)][DEVICE_TAKEN_OVER_KEY] = True
         return modules
 
     def named_versions(self) -> dict:
@@ -731,16 +737,21 @@ class DesiredStateStore:
                     named.add(name)
         return named
 
-    def set_want(self, key: str, module: str, want: str) -> None:
+    def set_want(
+        self, key: str, module: str, want: str, *, is_taken_over: bool = False
+    ) -> None:
         """Write what one device is to make of one module.
 
         A press asks again, so the module is unsettled: the state names it
-        until the machine reports the want true.
+        until the machine reports the want true. A press also ends the
+        module's takeover.
 
         Args:
             key: The device key.
             module: The module name.
             want: ``absent``, ``installed``, ``stopped`` or ``running``.
+            is_taken_over: Whether a takeover writes the want; its mark
+                holds every install of the module until a press.
 
         Raises:
             ValueError: For a ``want`` outside those four.
@@ -755,7 +766,32 @@ class DesiredStateStore:
                 "is_settled": False,
                 "version": held.get("version", ""),
             }
+            if is_taken_over:
+                modules[module][DEVICE_TAKEN_OVER_KEY] = True
             write_config(self._path(key, DEVICE_MODULES_FILE), {"modules": modules})
+
+    def end_takeover(self, key: str, module: str) -> bool:
+        """Take the takeover mark off one module, once a press touched it.
+
+        Args:
+            key: The device key.
+            module: The module name.
+
+        Returns:
+            True when the module carried the mark and no longer does.
+        """
+        with CONFIG_WRITE_LOCK:
+            modules = self.modules(key)
+            entry = modules.get(module)
+            if entry is None or not entry.get(DEVICE_TAKEN_OVER_KEY):
+                return False
+            modules[module] = {
+                name: value
+                for name, value in entry.items()
+                if name != DEVICE_TAKEN_OVER_KEY
+            }
+            write_config(self._path(key, DEVICE_MODULES_FILE), {"modules": modules})
+        return True
 
     def want_of(self, key: str, module: str) -> str:
         """What one device is asked for on one module.
@@ -791,6 +827,8 @@ class DesiredStateStore:
         unnamed_want: str = CHANNEL_MODULE_STATE_ABSENT,
     ) -> None:
         """Write the version one device is to run one module at.
+
+        The choice ends the module's takeover.
 
         Args:
             key: The device key.
@@ -1491,7 +1529,8 @@ class DesiredStateStore:
         """One device's whole desired state and its hash.
 
         Every module ``modules.json`` names and has not settled is sent with
-        its ``want`` and the recipe of the version the machine chose; one it
+        its ``want``, the recipe of the version the machine chose, and
+        ``is_taken_over`` while the takeover mark stands; one it
         does not name, and one the machine has already settled, is left out,
         so the agent leaves it as it is. The three modules the agent
         carries, ``terminal``, ``remote_desktop`` and ``ssh_server``, are
@@ -1556,6 +1595,8 @@ class DesiredStateStore:
             }
             if marks.get(name):
                 modules[name][DEVICE_RETRY_MARK_KEY] = marks[name]
+            if entry.get(DEVICE_TAKEN_OVER_KEY):
+                modules[name][DEVICE_TAKEN_OVER_KEY] = True
         for name in DEVICE_AGENT_MODULES:
             modules[name] = {
                 "want": self.agent_module_want(key, name),

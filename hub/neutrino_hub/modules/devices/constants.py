@@ -115,6 +115,9 @@ AGENT_PACKAGE_CACHE_DIR = UTILS_STATE_ROOT / "agent_cache"
 DEVICE_RETRY_MARKS_PATH = UTILS_STATE_ROOT / "device_retry_marks.json"
 DEVICE_RETRY_MARK_KEY = "retry_mark"
 DEVICE_RETRY_MARK_BYTES = 8
+# The key of the mark a module the hub took over carries, in ``modules.json``
+# and in its entry of the state, until the person's first press on it.
+DEVICE_TAKEN_OVER_KEY = "is_taken_over"
 
 # Per platform key, ``{name, url, sha256, size}``. Stamped by the build that
 # seeded the cache: a release names every platform it publishes, with the URL

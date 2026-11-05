@@ -1914,6 +1914,9 @@ class ChannelModuleState(BaseModel):
     install: dict = Field(default_factory=dict)
     # The mark a press after a failure left; it changes the entry's hash.
     retry_mark: str = ""
+    # True while the hub took the module over and no press has touched it
+    # since: the agent then plans no install for it.
+    is_taken_over: bool = False
 
 
 class ChannelDesktopState(BaseModel):

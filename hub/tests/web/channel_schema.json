@@ -626,6 +626,11 @@
               "default": "",
               "title": "Retry Mark",
               "type": "string"
+            },
+            "is_taken_over": {
+              "default": false,
+              "title": "Is Taken Over",
+              "type": "boolean"
             }
           },
           "required": [
@@ -1923,6 +1928,11 @@
           "default": "",
           "title": "Retry Mark",
           "type": "string"
+        },
+        "is_taken_over": {
+          "default": false,
+          "title": "Is Taken Over",
+          "type": "boolean"
         }
       },
       "required": [

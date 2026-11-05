@@ -795,6 +795,7 @@ class StubDesiredStates:
         settled: Every ``(key, module)`` a report settled in the file.
         files: ``(key, module)`` to the module's file, what a report reads
             and writes.
+        taken_over: Every ``(key, module)`` whose want a takeover wrote.
     """
 
     def __init__(self):
@@ -803,6 +804,7 @@ class StubDesiredStates:
         self.settled: list = []
         self.desktop_switches: dict = {}
         self.files: dict = {}
+        self.taken_over: set = set()
 
     def modules(self, key: str) -> dict:
         return {
@@ -843,8 +845,14 @@ class StubDesiredStates:
     def want_of(self, key: str, module: str) -> str:
         return self.wants.get((key.lower(), module), "")
 
-    def set_want(self, key: str, module: str, want: str) -> None:
+    def set_want(
+        self, key: str, module: str, want: str, *, is_taken_over: bool = False
+    ) -> None:
         self.wants[(key.lower(), module)] = want
+        if is_taken_over:
+            self.taken_over.add((key.lower(), module))
+        else:
+            self.taken_over.discard((key.lower(), module))
 
     def settle_want(self, key: str, module: str) -> bool:
         pair = (key.lower(), module)

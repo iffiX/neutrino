@@ -1,8 +1,8 @@
 """One desired state per device under config/, composed under one hash.
 
 What these pin: the directory a device id names, the module files and the
-wants and versions beside them, a module the file does not name being
-mentioned nowhere, a module the machine settled keeping its want and
+wants and versions beside them, the takeover mark a press ends, a module
+the file does not name being mentioned nowhere, a module the machine settled keeping its want and
 leaving the state, a hash that moves only with the state, the composed
 shape the agent applies, and the account layer: the available accounts,
 each module's enabled accounts with secrets generated once and kept across
@@ -103,6 +103,52 @@ def test_a_module_is_named_once_a_want_is_written_and_keeps_its_version(config):
     assert store.named_versions() == {"vscode": {"1.2.3"}}
     with pytest.raises(ValueError):
         store.set_want(DEVICE, "samba", "installing")
+
+
+def test_a_takeover_s_mark_reaches_the_state_until_a_press_ends_it(config):
+    store = DesiredStateStore()
+    store.set_want(DEVICE, "samba", "running", is_taken_over=True)
+
+    taken, taken_hash = store.compose(DEVICE, PLATFORM)
+    store.set_want(DEVICE, "samba", "running")
+    pressed, pressed_hash = store.compose(DEVICE, PLATFORM)
+
+    assert taken["modules"]["samba"]["is_taken_over"] is True
+    assert "is_taken_over" not in pressed["modules"]["samba"]
+    assert pressed_hash != taken_hash
+    assert store.modules(DEVICE)["samba"] == {
+        "want": "running",
+        "is_settled": False,
+        "version": "",
+    }
+
+
+def test_a_version_ends_a_takeover_and_keeps_the_want(config):
+    store = DesiredStateStore()
+    store.set_want(DEVICE, "vscode", "running", is_taken_over=True)
+
+    store.set_version(DEVICE, "vscode", "1.2.3")
+
+    assert store.modules(DEVICE)["vscode"] == {
+        "want": "running",
+        "is_settled": False,
+        "version": "1.2.3",
+    }
+
+
+def test_ending_a_takeover_keeps_the_want_and_ends_it_once(config):
+    store = DesiredStateStore()
+    store.set_want(DEVICE, "samba", "stopped", is_taken_over=True)
+    store.set_want(DEVICE, "gitea", "running")
+
+    assert store.end_takeover(DEVICE, "samba") is True
+    assert store.end_takeover(DEVICE, "samba") is False
+    assert store.end_takeover(DEVICE, "gitea") is False
+    assert store.end_takeover(DEVICE, "vscode") is False
+    assert store.modules(DEVICE) == {
+        "samba": {"want": "stopped", "is_settled": False, "version": ""},
+        "gitea": {"want": "running", "is_settled": False, "version": ""},
+    }
 
 
 def test_settling_a_module_keeps_its_want_and_leaves_it_out_of_the_state(config):

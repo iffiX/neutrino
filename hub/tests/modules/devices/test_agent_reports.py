@@ -8,7 +8,8 @@ names none, and the MAC the socket runs on, noted on the device's row;
 ``modules``, where a module the hub wanted absent and the machine now
 reports absent is settled in the device's file, keeping its want and
 leaving the state, and the state pushed again, while a module reported
-``install_failed`` keeps its want and is neither settled nor taken over;
+``install_failed`` keeps its want and is neither settled nor taken over,
+and a module taken over carries the takeover mark beside its want;
 ``desktop`` and ``error``. A file share row naming a share left off for a
 folder that is gone changes nothing of the hub's file share.
 The desktop share is recorded
@@ -738,6 +739,27 @@ def test_a_takeover_keeps_the_settings_a_person_applied_before_any_start(box):
 
     assert runtime.desired_states.files[(DEVICE, "podman")] == applied
     assert runtime.desired_states.want_of(DEVICE, "podman") == "stopped"
+
+
+@pytest.mark.parametrize(
+    "module, row",
+    [
+        ("podman", installed_podman_report(is_active=True)["modules"]["podman"]),
+        ("samba", {"state": "running", "is_active": True}),
+    ],
+)
+def test_a_takeover_marks_the_module_so_its_installs_wait_for_a_press(box, module, row):
+    """A person's running Podman is wanted ``running`` and marked, so the
+    machine installs no ``runc`` for it before a press; the file share alike."""
+    runtime, device = box
+
+    agent_reports.record_report(
+        runtime, device, report(modules={module: row}), new_rows={module}
+    )
+
+    assert runtime.desired_states.want_of(DEVICE, module) == "running"
+    assert runtime.desired_states.taken_over == {(DEVICE, module)}
+    assert runtime.pushed == [DEVICE]
 
 
 def test_a_machine_that_joins_brings_its_own_containers_and_no_module_s(box):

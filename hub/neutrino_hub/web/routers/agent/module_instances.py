@@ -69,7 +69,7 @@ from neutrino_hub.web.routers.agent.module import (
     module_router,
     push_state,
     recompose_published,
-    record_running,
+    record_apply,
     require_online,
     require_terms,
     run_command,
@@ -248,7 +248,7 @@ def replace_accounts(
             apply_keys()
         raise
     context.config = written
-    record_running(runtime, context)
+    record_apply(runtime, context)
     push_state(runtime, context.key)
     recompose_published(runtime, row.name)
     return device_view(row, runtime, context)

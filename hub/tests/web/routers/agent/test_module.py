@@ -602,6 +602,39 @@ def test_each_press_writes_its_want_and_pushes_the_state(api, tmp_path, press, w
     assert [push[0] for push in runtime.agent_sessions.pushes] == [DEVICE]
 
 
+@pytest.mark.parametrize("press", ["install", "start", "stop", "uninstall"])
+def test_each_press_ends_the_takeover_of_its_module(api, tmp_path, press):
+    client, runtime = api
+    runtime.agent_sessions.online.add(DEVICE)
+    runtime.desired_states.set_want(DEVICE, "fakedesk", "running", is_taken_over=True)
+
+    client.post(
+        f"{MODULE_PATH}/{press}", json={"device_id": DEVICE, "module": "fakedesk"}
+    )
+
+    assert "is_taken_over" not in modules_file(tmp_path)["fakedesk"]
+
+
+def test_a_version_press_ends_the_takeover_and_keeps_the_want(
+    api, tmp_path, monkeypatch
+):
+    client, runtime = api
+    runtime.agent_sessions.online.add(DEVICE)
+    monkeypatch.setattr(device_modules, "is_locked", lambda manifest, entry: False)
+    runtime.module_releases = ModuleReleaseStore(path=tmp_path / "releases.json")
+    runtime.desired_states.set_want(DEVICE, "fakedesk", "running", is_taken_over=True)
+
+    answer = client.post(
+        f"{MODULE_PATH}/version/set",
+        json={"device_id": DEVICE, "module": "fakedesk", "version": ""},
+    )
+
+    assert answer.status_code == 200, answer.text
+    assert modules_file(tmp_path) == {
+        "fakedesk": {"want": "running", "is_settled": False, "version": ""}
+    }
+
+
 def test_a_press_on_an_offline_device_is_refused_before_anything_is_written(
     api, tmp_path
 ):
@@ -1239,6 +1272,40 @@ def test_an_apply_writes_running_only_on_a_running_module_with_no_want(
     assert runtime.desired_states.want_of(LAPTOP, MODULE) == want
 
 
+def test_an_apply_ends_the_takeover_and_keeps_the_want(box):
+    client, runtime = box
+    runtime.report(LAPTOP, MODULE, "running")
+    runtime.desired_states.set_want(LAPTOP, MODULE, "running", is_taken_over=True)
+
+    answer = client.post(f"{BLOCK_PATH}/apply", json={"device_id": LAPTOP})
+
+    assert answer.status_code == 200, answer.text
+    assert runtime.desired_states.modules(LAPTOP)[MODULE] == {
+        "want": "running",
+        "is_settled": False,
+        "version": "",
+    }
+
+
+def test_a_configuration_stored_ends_the_takeover_ahead_of_the_push(box):
+    _, runtime = box
+    runtime.report(LAPTOP, MODULE, "stopped")
+    runtime.desired_states.set_want(LAPTOP, MODULE, "stopped", is_taken_over=True)
+    context = device_modules.device_context(runtime, MODULE, LAPTOP)
+    marks_at_push = []
+    push = runtime.push_desired_state
+
+    def push_noting_the_mark(key):
+        marks_at_push.append(runtime.desired_states.modules(key)[MODULE])
+        push(key)
+
+    runtime.push_desired_state = push_noting_the_mark
+
+    device_modules.store_config(runtime, context, {"accounts": []})
+
+    assert marks_at_push == [{"want": "stopped", "is_settled": False, "version": ""}]
+
+
 @pytest.mark.parametrize("want", ["installed", "stopped", "absent"])
 def test_an_apply_on_a_running_module_leaves_the_want_it_has(box, want):
     client, runtime = box
@@ -1634,6 +1701,27 @@ def test_a_version_press_on_a_container_module_with_no_want_starts_neither_modul
     assert modules_file(tmp_path) == {
         "demo": {"want": "installed", "is_settled": False, "version": ""},
     }
+
+
+@pytest.mark.parametrize("press", ["install", "start"])
+def test_a_container_module_s_press_ends_the_takeover_of_containers(
+    containers_api, tmp_path, press
+):
+    client, runtime = containers_api
+    runtime.desired_states.set_want(DEVICE, "podman", "running", is_taken_over=True)
+    runtime.device_modules[DEVICE] = {"podman": {"state": "running"}}
+
+    answer = client.post(
+        f"{MODULE_PATH}/{press}", json={"device_id": DEVICE, "module": "demo"}
+    )
+
+    assert answer.status_code == 200
+    assert modules_file(tmp_path)["podman"] == {
+        "want": "running",
+        "is_settled": False,
+        "version": "",
+    }
+    assert "podman" not in retry_marks()
 
 
 def test_a_stop_of_a_failed_containers_wanted_running_writes_stopped_and_a_retry(

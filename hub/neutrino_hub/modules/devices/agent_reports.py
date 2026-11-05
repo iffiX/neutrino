@@ -274,9 +274,11 @@ def _adopt_modules(runtime, key: str, modules: dict) -> bool:
     machine reports, its configuration imported when the hub holds none:
     one the hub's mark says is configured (``stopped`` or ``running``) is
     wanted as it reports, and one installed by hand ``running`` or
-    ``stopped`` by whether its unit is active. An import that finds nothing
-    leaves the module as it is, and Gitea is taken over only while the hub
-    still holds the secrets its instance signs with.
+    ``stopped`` by whether its unit is active. The want carries the
+    takeover mark: the machine installs nothing for the module until a
+    press. An import that finds nothing leaves the module as it is, and
+    Gitea is taken over only while the hub still holds the secrets its
+    instance signs with.
 
     Args:
         runtime: The shared runtime.
@@ -308,7 +310,7 @@ def _adopt_modules(runtime, key: str, modules: dict) -> bool:
                 if status.get("is_active")
                 else CHANNEL_MODULE_STATE_STOPPED
             )
-        store.set_want(key, name, want)
+        store.set_want(key, name, want, is_taken_over=True)
         LOGGER.info("device %s: %s reported %s, adopted as %s", key, name, state, want)
         is_changed = True
     return is_changed

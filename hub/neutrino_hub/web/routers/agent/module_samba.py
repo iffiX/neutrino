@@ -41,7 +41,7 @@ from neutrino_hub.web.routers.agent.module import (
     device_context,
     push_state,
     recompose_published,
-    record_running,
+    record_apply,
     require_online,
     validate_config,
     write_module_config,
@@ -217,7 +217,7 @@ def remove_folder_share(
         )
     except OSError as error:
         raise _config_unwritable(error) from error
-    record_running(runtime, context)
+    record_apply(runtime, context)
     push_state(runtime, context.key)
     recompose_published(runtime, MODULE)
     return _view(runtime, context)
@@ -275,7 +275,7 @@ def _save(
     validate_config(runtime, context, written)
     write_module_config(runtime, context.key, MODULE, written)
     context.config = written
-    record_running(runtime, context)
+    record_apply(runtime, context)
     push_state(runtime, context.key)
     recompose_published(runtime, MODULE)
     return _view(runtime, context)
