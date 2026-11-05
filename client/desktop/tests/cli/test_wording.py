@@ -37,6 +37,9 @@ NEW_CODES = (
     "agent_offline",
 )
 
+# The help pages whose Chinese keeps 电脑, by the device each names.
+HELP_PAGES_KEEPING_DEVICE_WORDS = {"ai": "a computer as a kind of client device"}
+
 
 @pytest.fixture(params=CLIENT_LANGUAGES)
 def language(request):
@@ -61,8 +64,9 @@ def test_both_languages_carry_the_same_lines_and_states():
         assert set(tables["en"]) == set(tables["zh-CN"])
 
 
-def test_no_chinese_line_calls_a_computer_joined_to_the_hub_a_machine():
-    """Chinese writes 系统 and never 机器 (ui_text.md, "Names that are fixed")."""
+def test_chinese_lines_name_a_computer_joined_to_the_hub_only_as_a_system():
+    """Chinese writes 系统 and never 机器, 设备 or 电脑 (ui_text.md, "Names that are
+    fixed"). A kept help page names another device."""
     held = [
         key
         for tables in (
@@ -74,6 +78,10 @@ def test_no_chinese_line_calls_a_computer_joined_to_the_hub_a_machine():
         )
         for key, words in tables["zh-CN"].items()
         if "机器" in words
+        or (
+            key not in HELP_PAGES_KEEPING_DEVICE_WORDS
+            and ("设备" in words or "电脑" in words)
+        )
     ]
 
     assert held == []
