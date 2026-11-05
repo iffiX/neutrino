@@ -422,6 +422,21 @@ def test_a_folder_gone_and_made_again_asks_for_a_task_each_time_and_is_served_ag
     assert "[gone]" in FakeApplier.applied[-1][1]
 
 
+def test_the_first_report_after_a_restart_asks_for_one_configure_task(
+    runner, monkeypatch
+):
+    """The agent keeps neither the last apply's reads nor the shares it left off."""
+    asked: list = []
+    runner.bind_configure_asker(lambda: asked.append("samba"))
+    runner.take_config(TWO_SHARES)
+    samba_commands(monkeypatch)
+
+    observed(runner)
+    observed(runner)
+
+    assert asked == ["samba"]
+
+
 def test_a_share_with_no_account_is_named_before_a_missing_folder(runner):
     FakeApplier.missing = {"/srv/gone"}
     config = {

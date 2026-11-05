@@ -7,7 +7,8 @@ root where every level is root's; a link or a folder others may write in
 root's place reads as a link. On Windows the applier opens the folder by
 handle. :class:`SambaFolderReader` takes the shares that cannot be served out
 of a configuration at an apply, and at the report asks for a configure task
-when a folder reads otherwise than the last apply read it.
+when a folder reads otherwise than the last apply read it, and once at the
+first report of a run, before any apply read the folders.
 
 Not pure: reads folders, as an account where the folder is in its place.
 """
@@ -127,7 +128,8 @@ class SambaFolderReader:
         self._lock = threading.Lock()
         self._held: dict = {}
         self._named: list = []
-        self._applied: dict = {}
+        # None until an apply of this run reads the folders.
+        self._applied: "dict | None" = None
         self._asked: set = set()
 
     def read(self, path: str) -> str:
@@ -201,17 +203,24 @@ class SambaFolderReader:
         A folder that reads otherwise than the last apply read it, gone,
         back, a link put in its place or one taken away, calls ``ask`` once
         for each change. A folder the reading account cannot reach calls
-        nothing.
+        nothing. Before any apply of this run, the first check calls ``ask``
+        once, whatever the folders read.
 
         Args:
             ask: Asks for a configure task of the module.
         """
         with self._lock:
             named = list(self._named)
+            is_first = self._applied is None and bool(named)
+            if is_first:
+                self._applied = {}
+        if is_first:
+            ask()
+            return
         for share in named:
             found = self._kept(share.path)
             with self._lock:
-                applied = self._applied.get(share.path)
+                applied = (self._applied or {}).get(share.path)
                 is_changed = (
                     applied is not None
                     and applied != found

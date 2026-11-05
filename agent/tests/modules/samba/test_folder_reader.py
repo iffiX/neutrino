@@ -10,7 +10,8 @@ root's place reads as a link. The reader takes each share that cannot be
 served out of a configuration with its code, reads each folder the state
 names again at the report only once 30 seconds old, and asks once for a
 configure task when a folder reads otherwise than the last apply read it,
-gone, back, a link or no longer one, and never for a folder it cannot reach.
+gone, back, a link or no longer one, and never for a folder it cannot reach;
+the first report of a run, before any apply, asks once and reads nothing.
 """
 
 import os
@@ -198,17 +199,31 @@ def test_an_apply_takes_each_share_that_cannot_be_served_out_with_its_code():
     assert "/srv/nobody" not in folders.reads
 
 
+def test_the_first_report_of_a_run_asks_for_one_task_and_reads_nothing():
+    folders = Folders()
+    reader = SambaFolderReader(read=folders, clock=Clock())
+    reader.take_config(SECTION)
+    asked: list = []
+
+    reader.check(lambda: asked.append(1))
+    first_reads = list(folders.reads)
+    reader.check(lambda: asked.append(1))
+
+    assert asked == [1]
+    assert first_reads == []
+
+
 def test_the_report_reads_each_folder_of_the_state_once_per_half_minute():
     folders = Folders({"/srv/media": "missing", "/srv/lab": "unreachable"})
     clock = Clock()
     reader = SambaFolderReader(read=folders, clock=clock)
     reader.take_config(SECTION)
+    reader.served(SambaConfig.from_dict(SECTION))
     asked: list = []
 
     reader.check(lambda: asked.append(1))
     reader.check(lambda: asked.append(1))
     clock.now += 31
-    folders.found = {}
     reader.check(lambda: asked.append(1))
 
     assert folders.reads == ["/home/ann", "/srv/media", "/srv/lab"] * 2
