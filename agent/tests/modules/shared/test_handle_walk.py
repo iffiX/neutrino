@@ -115,6 +115,43 @@ def test_a_folder_moved_out_after_its_open_is_left_with_what_it_holds(
     assert given == [str(root / "kept"), str(root)]
 
 
+def test_a_folder_moved_out_while_its_contents_are_walked_stops_its_walk(
+    tmp_path, monkeypatch
+):
+    """Once the folder itself is elsewhere, nothing more of it is given and
+    one path is named."""
+    given = []
+    monkeypatch.setattr(
+        os,
+        "fchown",
+        lambda descriptor, uid, gid: given.append(chowned_path(descriptor)),
+    )
+    root = tmp_path / "data"
+    for index in range(3):
+        (root / "moved" / f"d{index}").mkdir(parents=True)
+    outside = tmp_path / "elsewhere"
+    real_open = os.open
+    opened = []
+
+    def open_then_move(name, flags, mode=0o777, *, dir_fd=None):
+        held = real_open(name, flags, mode, dir_fd=dir_fd)
+        if name.startswith("d") and dir_fd is not None:
+            opened.append(name)
+            if len(opened) == 2:
+                os.rename(root / "moved", outside)
+        return held
+
+    monkeypatch.setattr(os, "open", open_then_move)
+
+    left = give_tree(str(root), 1001, 1001)
+
+    assert left == [str(outside)]
+    assert len(opened) == 2
+    assert str(outside) not in given
+    assert [path for path in given if path.startswith(str(outside))] == []
+    assert given[-1] == str(root)
+
+
 def test_a_link_at_the_top_of_a_tree_gives_nothing(tmp_path, monkeypatch):
     given = []
     monkeypatch.setattr(os, "fchown", lambda *args: given.append(args))

@@ -178,8 +178,13 @@ def give_tree(path: str, uid: int, gid: int) -> list:
     return left
 
 
-def _give_below(descriptor: int, uid: int, gid: int, prefix: str, left: list) -> None:
-    """Give what one open folder holds inside ``prefix``, each folder after its contents; add each entry outside it to ``left``."""
+def _give_below(descriptor: int, uid: int, gid: int, prefix: str, left: list) -> bool:
+    """Give what one open folder holds inside ``prefix``, each folder after its contents; add each entry outside it to ``left``.
+
+    Returns:
+        False once the folder's own descriptor names a path outside
+        ``prefix``: the walk of it stops there, and only that path is added.
+    """
     for name in os.listdir(descriptor):
         try:
             status = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
@@ -201,16 +206,22 @@ def _give_below(descriptor: int, uid: int, gid: int, prefix: str, left: list) ->
         try:
             where = opened_path(held)
             if not where.startswith(prefix):
+                here = opened_path(descriptor)
+                if not (here + os.sep).startswith(prefix):
+                    left.append(here or name)
+                    return False
                 left.append(where or name)
                 continue
             opened = os.fstat(held)
             if stat.S_ISDIR(opened.st_mode):
-                _give_below(held, uid, gid, prefix, left)
+                if not _give_below(held, uid, gid, prefix, left):
+                    continue
             elif not stat.S_ISREG(opened.st_mode) or opened.st_nlink > 1:
                 continue
             os.fchown(held, uid, gid)
         finally:
             os.close(held)
+    return True
 
 
 def place_owner(path: str) -> "int | None":
