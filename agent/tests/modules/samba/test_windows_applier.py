@@ -14,7 +14,9 @@ under a share stops inheriting and loses every module account, and once it
 inherits nothing loses only the accounts holding a rule there; each
 configured account is denied the console and RDP through the local policy;
 an apply under ``stopped`` names every share of the module's to remove and
-still grants the folders; a refusal stops before any folder or policy; the
+still grants the folders; a refusal stops before any folder or policy; a
+share the host left off is named by its code, ``share_name_taken`` for a
+name the person's share has and ``share_not_served`` else; the
 withdrawal, the server's log and a password are one request each, the
 password in the request alone;
 and the status reading is shaped the way the Linux module reports.
@@ -831,6 +833,25 @@ def test_a_share_the_host_could_not_make_is_named_and_the_rest_granted():
     ]
     assert "left share media off the server: The device is not ready." in notes
     assert "created share docs" in notes
+
+
+def test_a_share_a_share_of_the_persons_names_is_named_by_its_code():
+    host = RecordingHost(
+        {
+            "share_apply": {
+                "notes": ["created share docs"],
+                "refused": [{"name": "media", "code": "share_name_taken"}],
+            }
+        }
+    )
+    refused: list = []
+
+    notes = applier_with(host, run=Icacls(), denied=[]).apply(
+        CONFIG, {}, refused=refused
+    )
+
+    assert refused == [{"code": "share_name_taken", "params": {"name": "media"}}]
+    assert "left share media off the server: share_name_taken" in notes
 
 
 class Handles:

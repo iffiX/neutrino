@@ -7,7 +7,10 @@ and each share and ``pdbedit -L`` into the accounts. Each apply sets the
 passwords of the hub's map whose digest differs from the root-only record,
 which keeps digests and never a password; a user that is no account of the
 machine's lacks, the account a share writes as, is refused ``account_unknown``;
-the SMB users are made before the file is written; ``configure`` and
+the SMB users are made before the file is written; a share a share of the
+person's names is left off with ``share_name_taken`` and the rest served,
+the row naming the first share left off in the configuration's order;
+``configure`` and
 ``uninstall`` take ``system_accounts``; the ``set_password`` verb is gone.
 On Windows and macOS the apply sets each account's password the same way,
 after the server has made the account, and a removal forgets the digests.
@@ -538,25 +541,55 @@ def test_validate_has_samba_check_the_render_with_the_planned_smb_conf(
     assert checked[0][1].endswith("[global]\n")
 
 
-@pytest.mark.parametrize(
-    "persons, code",
-    [
-        (({}, [{"name": "SHARE", "path": "/p", "params": {}}]), "share_name_taken"),
-        (({"hosts allow": "10.0.0.0/8"}, []), "samba_hosts_allow_no_loopback"),
-    ],
-)
-def test_the_persons_own_samba_refuses_before_anything_is_applied(
-    runner, persons, code
-):
-    FakeReader.persons = persons
+def test_the_persons_own_samba_refuses_before_anything_is_applied(runner):
+    FakeReader.persons = ({"hosts allow": "10.0.0.0/8"}, [])
 
     for step in (runner.validate, runner.apply):
         with pytest.raises(ModuleApplyError) as refused:
             step(CONFIG)
-        assert refused.value.code == code
+        assert refused.value.code == "samba_hosts_allow_no_loopback"
     assert FakeApplier.applied == []
     assert FakeUsers.made == []
     assert FakeReader.judged == b"[global]\n   include = /etc/samba/neutrino.conf\n"
+
+
+def test_a_share_named_like_one_of_the_persons_is_left_off_and_the_rest_served(
+    runner, monkeypatch
+):
+    """One share never stops the others: the person's share keeps its name."""
+    FakeReader.persons = ({}, [{"name": "SHARE", "path": "/p", "params": {}}])
+    checked: list = []
+    monkeypatch.setattr(
+        runner_module,
+        "testparm",
+        lambda smb_conf, rendered: checked.append(rendered),
+    )
+    lines: list = []
+    runner._log = lines.append
+
+    runner.validate(TWO_SHARES)
+    runner.apply(TWO_SHARES)
+
+    assert "[share]" not in checked[0]
+    assert "[gone]" in checked[0]
+    _unit, rendered, config = FakeApplier.applied[-1]
+    assert [share.name for share in config.shares] == ["gone"]
+    assert "[share]" not in rendered
+    assert "[gone]" in rendered
+    assert runner.notice() == {"code": "share_name_taken", "params": {"name": "share"}}
+    assert any(
+        "left share share off the server: share_name_taken" in line for line in lines
+    )
+
+
+def test_the_row_names_the_first_share_left_off_in_the_configurations_order(runner):
+    FakeReader.persons = ({}, [{"name": "share", "path": "/p", "params": {}}])
+    FakeApplier.missing = {"/srv/gone"}
+
+    runner.apply(TWO_SHARES)
+
+    assert runner.notice() == {"code": "share_name_taken", "params": {"name": "share"}}
+    assert FakeApplier.applied[-1][2].shares == []
 
 
 def logged_runner(tmp_path) -> tuple:
@@ -1885,14 +1918,14 @@ def test_a_native_share_the_server_refuses_is_left_off_and_the_rest_served(nativ
     ][-1]
     assert [share["name"] for share in config["shares"]] == ["share", "media"]
     assert native.notice() == {
-        "code": "share_path_link",
-        "params": {"name": "lab", "path": "D:\\lab"},
-    }
-    native.applier.links = set()
-    native.apply(TWO_WINDOWS_SHARES)
-    assert native.notice() == {
         "code": "share_not_served",
         "params": {"name": "media", "detail": "The path is not a directory."},
+    }
+    native.applier.refusing = {}
+    native.apply(TWO_WINDOWS_SHARES)
+    assert native.notice() == {
+        "code": "share_path_link",
+        "params": {"name": "lab", "path": "D:\\lab"},
     }
 
 
@@ -2046,12 +2079,12 @@ def test_a_failed_apply_still_lists_the_shares_it_may_have_made(native):
 
 
 def test_a_refusal_from_the_server_keeps_its_code(native):
-    native.applier.error = ModuleApplyError("share_name_taken", {"name": "share"})
+    native.applier.error = ModuleApplyError("user_name_taken", {"user": "neutrino-ann"})
 
     with pytest.raises(ModuleApplyError) as refused:
         native.apply(WINDOWS_CONFIG)
 
-    assert refused.value.code == "share_name_taken"
+    assert refused.value.code == "user_name_taken"
 
 
 def test_a_path_is_checked_for_the_system_that_serves_it(native):

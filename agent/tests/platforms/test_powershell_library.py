@@ -8,7 +8,8 @@ kept, refusals as values, errors caught; the task, the one-shot task, the
 file share, the thermal zones and the removal keep what the scripts they
 replace did, the task settings, the login refusal, the fence before any
 share or account, the share accounts' sign-in denial and hiding; the file
-share under ``stopped`` starting no server and making no share; a read of the
+share under ``stopped`` starting no server and making no share, and a share
+named like one of the person's left off while the others are made; a read of the
 server naming its dependents, a stop disabling it first, and a put back as it was; the
 folders' access read listing each folder's own allow rules by SID and
 whether it inherits, and changing nothing; a relay's
@@ -166,10 +167,12 @@ def test_a_stopped_task_is_disabled_and_a_started_one_enabled_first():
     assert start.index("Enable-ScheduledTask") < start.index("Start-ScheduledTask")
 
 
-def test_the_file_share_refuses_foreign_names_and_never_grants_everyone():
+def test_the_file_share_leaves_a_foreign_share_name_off_and_never_grants_everyone():
     apply = body("share_apply")
 
-    assert "code = 'share_name_taken'" in apply
+    assert "$refused += @{name = $s.name; code = 'share_name_taken'}" in apply
+    assert "$taken -contains $s.name" in apply
+    assert "refusal = @{code = 'share_name_taken'" not in apply
     assert "code = 'user_name_taken'" in apply
     assert "Everyone" not in apply
     assert "-NoPassword -Disabled" in apply

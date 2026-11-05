@@ -18,8 +18,8 @@ the stock file where the machine has no ``smb.conf``; a unit reads as enabled an
 it, and a put back makes it as it was found; the
 sweep takes every ``neutrino-`` user and
 credential off the machine; the person's own
-configuration refuses a taken share name and the global settings that stop
-the module's shares; each user's Samba password is set from the hub's map
+``[global]`` refuses the settings that stop the module's shares, and each
+served share a share of the person's names is taken, without case; each user's Samba password is set from the hub's map
 when it differs from the digest held or Samba holds no credential, never
 otherwise, and a user the module set a password for and the configuration
 dropped loses its credential, and the account too when the module made it;
@@ -50,6 +50,7 @@ from neutrino_agent.modules.samba.applier import (
     is_include_line,
     password_digest,
     plan_smb_conf,
+    taken_shares,
     testparm as samba_testparm,
     with_include_line,
     without_include_line,
@@ -676,39 +677,27 @@ def test_the_persons_configuration_is_read_without_the_modules_line(box):
 
 
 @pytest.mark.parametrize(
-    "global_section, shares, code, params",
+    "global_section, code",
     [
-        (
-            {},
-            [{"name": "Ann", "path": "/x", "params": {}}],
-            "share_name_taken",
-            {"name": "Ann"},
-        ),
-        ({"hosts allow": "192.168.1.0/24"}, [], "samba_hosts_allow_no_loopback", {}),
+        ({"hosts allow": "192.168.1.0/24"}, "samba_hosts_allow_no_loopback"),
         (
             {"bind interfaces only": "Yes", "interfaces": "eth0"},
-            [],
             "samba_interfaces_no_loopback",
-            {},
         ),
-        ({"security": "ADS"}, [], "samba_domain_member", {}),
-        ({"server role": "member server"}, [], "samba_domain_member", {}),
+        ({"security": "ADS"}, "samba_domain_member"),
+        ({"server role": "member server"}, "samba_domain_member"),
     ],
 )
 def test_the_persons_configuration_refuses_what_stops_the_modules_shares(
-    global_section, shares, code, params
+    global_section, code
 ):
-    config = SambaConfig.from_dict({"shares": [{"name": "ann", "path": "/a"}]})
-
     with pytest.raises(ModuleApplyError) as refused:
-        check_person_config(global_section, shares, config)
+        check_person_config(global_section)
 
-    assert (refused.value.code, refused.value.params) == (code, params)
+    assert (refused.value.code, refused.value.params) == (code, {})
 
 
 def test_the_persons_configuration_that_leaves_the_loopback_open_passes():
-    config = SambaConfig.from_dict({"shares": [{"name": "ann", "path": "/a"}]})
-
     check_person_config(
         {
             "hosts allow": "192.168.1., 127.0.0.1",
@@ -716,10 +705,32 @@ def test_the_persons_configuration_that_leaves_the_loopback_open_passes():
             "interfaces": "eth0 lo",
             "security": "user",
             "server role": "standalone server",
-        },
-        [{"name": "media", "path": "/m", "params": {}}],
-        config,
+        }
     )
+
+
+def test_each_served_share_a_share_of_the_persons_names_is_taken_without_case():
+    config = SambaConfig.from_dict(
+        {
+            "shares": [
+                {"name": "media", "path": "/m", "valid_users": ["neutrino-ann"]},
+                {"name": "Ann", "path": "/a", "valid_users": ["neutrino-ann"]},
+                {"name": "docs", "path": "/d", "valid_users": []},
+                {"name": "lab", "path": "/l", "valid_users": ["neutrino-ann"]},
+            ],
+            "users": ["neutrino-ann"],
+        }
+    )
+    persons = [
+        {"name": "ann", "path": "/x", "params": {}},
+        {"name": "DOCS", "path": "/y", "params": {}},
+        {"name": "Media", "path": "/z", "params": {}},
+    ]
+
+    assert taken_shares(persons, config) == [
+        {"code": "share_name_taken", "params": {"name": "media"}},
+        {"code": "share_name_taken", "params": {"name": "Ann"}},
+    ]
 
 
 def test_a_withdrawal_takes_the_shares_off_a_running_server_with_one_reload(

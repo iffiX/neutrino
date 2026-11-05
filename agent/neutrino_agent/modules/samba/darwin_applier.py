@@ -49,6 +49,7 @@ from neutrino_agent.modules.samba.constants import (
     SAMBA_DARWIN_SMBD_LABEL,
     SAMBA_DARWIN_SMBD_TARGET,
     SAMBA_FOLDER_UNREACHABLE,
+    SAMBA_SHARE_NAME_TAKEN_CODE,
     SAMBA_SHARE_REFUSED_CODE,
 )
 from neutrino_agent.modules.samba.folder_reader import read_posix_folder
@@ -230,9 +231,10 @@ class SambaDarwinApplier:
         is the module's; a record of the account's name that the module did
         not make, a bare one included, is refused. A share point is the
         module's when the record lists its name and its record name has the
-        module's prefix. Each share keeps one point: a matching one stays,
-        the others of its name go. The fence an earlier version kept goes
-        first.
+        module's prefix. A share whose name a point of the person's has is
+        left off, and its folder granted as the configuration says. Each
+        share keeps one point: a matching one stays, the others of its name
+        go. The fence an earlier version kept goes first.
 
         Args:
             config: The validated configuration.
@@ -240,16 +242,18 @@ class SambaDarwinApplier:
             is_served: Whether smbd is started and the share points made.
                 False takes every point of the module's off the server and
                 makes the accounts and grants the folders alone.
-            refused: Takes ``share_not_served {name, detail}`` for each share
-                point ``sharing`` refuses, left off while the others are
-                made; None keeps them nowhere.
+            refused: Takes ``share_name_taken {name}`` for each share whose
+                name a point of the person's has, and ``share_not_served
+                {name, detail}`` for each share point ``sharing`` refuses,
+                each left off while the others are made; None keeps them
+                nowhere.
 
         Returns:
             What changed, one note each.
 
         Raises:
-            ModuleApplyError: ``share_name_taken`` or ``user_name_taken`` for
-                a name the module did not make, before anything is touched;
+            ModuleApplyError: ``user_name_taken`` for an account name the
+                module did not make, before anything is touched;
                 ``user_create_failed`` or ``user_record_unusable`` for the
                 first account the system would not make, once every other
                 account and every share is applied.
@@ -264,19 +268,26 @@ class SambaDarwinApplier:
             swept = self._sweep(points)
             owned_shares, owned_accounts = {}, []
             points = self._share_points()
+        taken = []
         for share in config.served_shares():
             held = [point for point in points if point["smb_name"] == share.name]
             is_ours = share.name in owned_shares and all(
                 point["record"].startswith(SAMBA_DARWIN_SHARE_PREFIX) for point in held
             )
             if held and not is_ours:
-                raise ModuleApplyError("share_name_taken", {"name": share.name})
+                taken.append(share.name)
         for name in config.users:
             if name in owned_accounts or not self._record_exists(name):
                 continue
             if not is_module_full_name(self._full_name(name)):
                 raise ModuleApplyError("user_name_taken", {"user": name})
         notes = swept + self._remove_fence()
+        for name in taken:
+            notes.append(f"left share {name} off the server: share_name_taken")
+            if refused is not None:
+                refused.append(
+                    {"code": SAMBA_SHARE_NAME_TAKEN_CODE, "params": {"name": name}}
+                )
         if is_served:
             notes += self._serve()
         account_notes, refusals = self._converge_accounts(config, owned_accounts)
@@ -290,6 +301,7 @@ class SambaDarwinApplier:
             refused=refused_users,
             is_served=is_served,
             unserved=refused if refused is not None else [],
+            taken=set(taken),
         )
         if refusals:
             raise refusals[0]
@@ -641,16 +653,19 @@ class SambaDarwinApplier:
         refused: "set | None" = None,
         is_served: bool = True,
         unserved: "list | None" = None,
+        taken: "set | None" = None,
     ) -> list:
         """Keep one point per served share, and remove the module's others.
 
         An account in ``refused`` does not exist as one, so no folder names
         it. With ``is_served`` false every point of the module's goes and
-        the folders are granted alone. A point ``sharing`` refuses to make
-        is left off, ``share_not_served {name, detail}`` added to
-        ``unserved``, and the next share is made.
+        the folders are granted alone. A share named in ``taken`` gets no
+        point. A point ``sharing`` refuses to make is left off,
+        ``share_not_served {name, detail}`` added to ``unserved``, and the
+        next share is made.
         """
         refused = refused or set()
+        taken = taken or set()
         notes = []
         served = config.served_shares()
         wanted = {share.name for share in served} if is_served else set()
@@ -684,6 +699,8 @@ class SambaDarwinApplier:
         if not is_served:
             return notes
         for share in served:
+            if share.name in taken:
+                continue
             held = [point for point in ours if point["smb_name"] == share.name]
             kept = _kept_point(held, share)
             for point in held:

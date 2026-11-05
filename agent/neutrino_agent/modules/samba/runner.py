@@ -9,10 +9,11 @@ never imported. A root-only record under the agent's work root keeps the
 digest of each password the module set, so a password is set again only
 when the hub's differs. The record also stores whether the module turned the
 SELinux boolean on, and an uninstall turns off only what the module turned on.
-A share whose folder is no real folder is left off the server with its code,
-and no folder is made. A folder the report reads otherwise than the last
-apply read it asks for a configure task, which serves the share again or
-leaves it off.
+A share whose folder is no real folder, or whose name a share of the
+person's has, is left off the server with its code while the rest are
+served, and no folder is made. A folder the report reads otherwise than the
+last apply read it asks for a configure task, which serves the share again
+or leaves it off.
 
 A Samba that was on the machine before the module installed it is the person's.
 The record marks a Samba the install step found missing and installed. On either
@@ -62,6 +63,7 @@ from neutrino_agent.modules.samba.applier import (
     conf_digest,
     password_digest,
     remove_conf,
+    taken_shares,
     testparm,
 )
 from neutrino_agent.modules.samba.config import SambaConfig, is_absolute_path
@@ -154,6 +156,25 @@ def share_notice(left_out: list, unserved: list) -> dict:
             "params": dict(unserved[0]["params"]),
         }
     return {}
+
+
+def in_config_order(config: SambaConfig, left_off: list) -> list:
+    """Each share left off the server, in the configuration's order. Pure.
+
+    Args:
+        config: The configuration the apply took, before any share was
+            left off.
+        left_off: ``{"code", "params"}`` per share, ``params`` naming it.
+
+    Returns:
+        The same items, sorted by where their share stands in the
+        configuration.
+    """
+    order = {share.name: index for index, share in enumerate(config.shares)}
+    return sorted(
+        left_off,
+        key=lambda item: order.get(str(item["params"].get("name", "")), len(order)),
+    )
 
 
 def folder_command(args: dict, read, os_name: str) -> dict:
@@ -259,13 +280,14 @@ class SambaModuleRunner(SystemPackageModuleRunner):
             ModuleApplyError: Naming the first problem found;
                 ``account_unknown {account}`` for an account a share writes
                 as that the machine does not have, and the person's own
-                configuration's refusals as :func:`check_person_config`
-                names them.
+                ``[global]``'s refusals as :func:`check_person_config`
+                names them. A share whose name a share of the person's has
+                is left out of the check, as the apply leaves it off.
         """
         parsed = SambaConfig.from_dict(config)
         parsed.validate()
         SambaUserManager().check_accounts(parsed.forced_users())
-        smb_conf = self._check_persons(parsed)
+        parsed, _taken, smb_conf = self._check_persons(parsed)
         if parsed.served_shares():
             testparm(smb_conf, SambaConfigRenderer(config=parsed).render())
 
@@ -317,19 +339,22 @@ class SambaModuleRunner(SystemPackageModuleRunner):
 
         With ``is_started`` false the unit is left as it is, and on a person's
         Samba the module's shares come off the server. A true one reloads an
-        active unit and starts none: the ``start`` step does.
+        active unit and starts none: the ``start`` step does. A share whose
+        folder is no real folder, or whose name a share of the person's has,
+        is left off with its code.
         """
-        parsed = SambaConfig.from_dict(config)
-        parsed.validate()
+        whole = SambaConfig.from_dict(config)
+        whole.validate()
         applier = SambaConfigApplier(unit=self._unit)
-        parsed, unserved = self._folders.served(parsed)
+        parsed, unserved = self._folders.served(whole)
         users = SambaUserManager()
         users.check_accounts(parsed.forced_users())
         record = _read_record(self._record_path)
         is_ours = record.get("is_package_ours") is True
         is_withdrawn = not is_ours and not is_started
         if not is_withdrawn:
-            self._check_persons(parsed)
+            parsed, taken, _smb_conf = self._check_persons(parsed)
+            unserved = in_config_order(whole, unserved + taken)
         renderer = SambaConfigRenderer(config=parsed)
         rendered = renderer.render()
         held = read_digests(self._record_path)
@@ -610,18 +635,26 @@ class SambaModuleRunner(SystemPackageModuleRunner):
             os.path.join(self._var_dir, AGENT_CONFIGURED_DIR_NAME, self.name)
         )
 
-    def _check_persons(self, parsed: SambaConfig) -> bytes:
-        """Refuse what the person's own ``smb.conf`` makes impossible.
+    def _check_persons(self, parsed: SambaConfig) -> tuple:
+        """Refuse what the person's own ``[global]`` makes impossible, and leave out each share whose name a share of the person's has.
 
         Returns:
-            ``smb.conf`` as the next apply leaves it, which the check read.
+            ``(config, taken, smb_conf)``: the configuration less those
+            shares, ``share_name_taken {name}`` for each, and ``smb.conf``
+            as the next apply leaves it, which the check read.
+
+        Raises:
+            ModuleApplyError: As :func:`check_person_config` names them.
         """
         smb_conf, _ = SambaConfigApplier(unit=self._unit).plan(
             is_served=bool(parsed.served_shares())
         )
         global_section, shares = SambaConfigReader().read_persons(smb_conf)
-        check_person_config(global_section, shares, parsed)
-        return smb_conf
+        check_person_config(global_section)
+        taken = taken_shares(shares, parsed)
+        names = {item["params"]["name"] for item in taken}
+        kept = [share for share in parsed.shares if share.name not in names]
+        return dataclasses.replace(parsed, shares=kept), taken, smb_conf
 
     def is_active(self) -> bool:
         """Whether the module serves.
@@ -950,9 +983,9 @@ class SambaNativeServerRunner(ModuleRunner):
 
     def _apply(self, config: dict, *, is_served: bool) -> None:
         """Converge the server with the configuration. With ``is_served`` false no share is served."""
-        parsed = SambaConfig.from_dict(config)
-        parsed.validate(os_name=self._platform.os_name)
-        parsed, unserved = self._folders.served(parsed)
+        whole = SambaConfig.from_dict(config)
+        whole.validate(os_name=self._platform.os_name)
+        parsed, unserved = self._folders.served(whole)
         record = self._read_record()
         is_sweep = not os.path.exists(
             os.path.join(
@@ -1013,7 +1046,7 @@ class SambaNativeServerRunner(ModuleRunner):
         self._write_record(written)
         self._config = parsed
         self._left_out = [share.name for share in parsed.shares if share not in served]
-        self._unserved = unserved + server_refused
+        self._unserved = in_config_order(whole, unserved + server_refused)
         if self._left_out:
             notes.append("left out " + ", ".join(self._left_out))
         notes += refused_notes(unserved)

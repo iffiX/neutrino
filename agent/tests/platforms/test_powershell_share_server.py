@@ -3,7 +3,8 @@
 What these pin: while ``LanmanServer`` is stopped no read asks the server for
 a share or a session, since Windows starts a stopped server of Manual start
 type for such a read; while it runs the reads ask, and an apply that serves
-reads whatever the server is.
+reads whatever the server is. A share whose name a share of the person's
+has is left off with ``share_name_taken`` and every other share is made.
 """
 
 import json
@@ -71,7 +72,45 @@ WITHDRAW = {
 }
 
 
-def asked_of(tmp_path, request: dict, *, server: str) -> tuple:
+# A running server holding the person's own share ``taken``; each share made
+# is a line in FAKE_ASKED.
+PERSONS_SHARE_STAND_INS = """
+function Get-SmbShare {
+    [CmdletBinding()]
+    param([string]$Name)
+    Add-Content -LiteralPath $env:FAKE_ASKED -Value "share $Name"
+    if ($Name -eq 'taken') {
+        return [pscustomobject]@{ Name = 'taken'; Path = 'C:\\theirs'; Description = 'their own' }
+    }
+}
+function New-SmbShare {
+    param($Name, $Path, $Description, $FullAccess, $ChangeAccess, $ReadAccess)
+    Add-Content -LiteralPath $env:FAKE_ASKED -Value "made $Name"
+}
+"""
+TAKEN = {
+    "op": "share_apply",
+    "args": {
+        **APPLY["args"],
+        "owned_shares": [],
+        "removed_shares": [],
+        "shares": [
+            {
+                "name": name,
+                "path": f"C:\\{name}",
+                "description": "neutrino",
+                "accounts": [],
+                "share_right": "Change",
+            }
+            for name in ("TAKEN", "free")
+        ],
+        "is_sweep": False,
+        "is_served": True,
+    },
+}
+
+
+def asked_of(tmp_path, request: dict, *, server: str, stand_ins: str = "") -> tuple:
     """Ask the library's own loop one request.
 
     Returns:
@@ -80,7 +119,7 @@ def asked_of(tmp_path, request: dict, *, server: str) -> tuple:
     if pwsh is None:
         pytest.skip("PowerShell is not installed")
     driver = tmp_path / "driver.ps1"
-    driver.write_text(f"{SHARE_STAND_INS}\n. '{library_path()}'\n")
+    driver.write_text(f"{SHARE_STAND_INS}\n{stand_ins}\n. '{library_path()}'\n")
     asked = tmp_path / "asked"
     done = subprocess.run(
         [pwsh, "-NoProfile", "-NonInteractive", "-File", str(driver)],
@@ -144,3 +183,16 @@ def test_a_withdrawal_asks_a_running_server(tmp_path):
 
     assert answer["ok"] is True
     assert reads == ["share old"]
+
+
+def test_a_share_named_like_one_of_the_persons_is_left_off_and_the_rest_made(
+    tmp_path,
+):
+    answer, reads = asked_of(
+        tmp_path, TAKEN, server="Running", stand_ins=PERSONS_SHARE_STAND_INS
+    )
+
+    assert answer["ok"] is True
+    assert answer["value"]["refused"] == [{"name": "TAKEN", "code": "share_name_taken"}]
+    assert "made free" in reads
+    assert "made TAKEN" not in reads

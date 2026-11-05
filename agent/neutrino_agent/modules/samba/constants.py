@@ -88,14 +88,16 @@ SAMBA_FOLDER_REAL = "folder"
 SAMBA_FOLDER_MISSING = "missing"
 SAMBA_FOLDER_LINK = "link"
 SAMBA_FOLDER_UNREACHABLE = "unreachable"
-# The row's code for each read that leaves a share off the server, and for a
-# share the SMB server refuses.
+# The row's code for each read that leaves a share off the server, for a
+# share the SMB server refuses, and for a share whose name a share of the
+# person's has.
 SAMBA_FOLDER_CODES = {
     SAMBA_FOLDER_MISSING: "share_path_missing",
     SAMBA_FOLDER_UNREACHABLE: "share_path_missing",
     SAMBA_FOLDER_LINK: "share_path_link",
 }
 SAMBA_SHARE_REFUSED_CODE = "share_not_served"
+SAMBA_SHARE_NAME_TAKEN_CODE = "share_name_taken"
 # How long one read of a share's folder is believed at the report.
 SAMBA_FOLDER_READ_TTL_S = 30.0
 # What ``sh`` runs as the account to read the folder ``$0``: 0 for a folder,

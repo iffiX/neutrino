@@ -51,6 +51,7 @@ from neutrino_agent.modules.samba.constants import (
     SAMBA_MODULE_CONF_PATH,
     SAMBA_SELINUX_ACTIVE_MODES,
     SAMBA_SELINUX_BOOLEAN,
+    SAMBA_SHARE_NAME_TAKEN_CODE,
     SAMBA_STOCK_CONF_PATHS,
     SAMBA_USERS_DIR,
     SAMBA_USERS_FILE_SUFFIX,
@@ -263,29 +264,38 @@ def testparm(smb_conf: bytes, rendered: str) -> None:
         )
 
 
-def check_person_config(
-    global_section: dict, shares: list, config: SambaConfig
-) -> None:
-    """Refuse what the person's own ``smb.conf`` makes impossible, changing nothing.
+def taken_shares(shares: list, config: SambaConfig) -> list:
+    """Each served share of the module's whose name a share of the person's has. Pure.
 
     Args:
-        global_section: The person's ``[global]`` as testparm prints it.
         shares: The person's shares, each ``{"name", "path", "params"}``.
         config: The module's configuration.
 
+    Returns:
+        ``share_name_taken {name}`` for each, in the configuration's order,
+        the names compared without case.
+    """
+    persons = {str(share.get("name", "")).lower() for share in shares}
+    return [
+        {"code": SAMBA_SHARE_NAME_TAKEN_CODE, "params": {"name": share.name}}
+        for share in config.served_shares()
+        if share.name.lower() in persons
+    ]
+
+
+def check_person_config(global_section: dict) -> None:
+    """Refuse what the person's own ``[global]`` makes impossible, changing nothing.
+
+    Args:
+        global_section: The person's ``[global]`` as testparm prints it.
+
     Raises:
-        ModuleApplyError: ``share_name_taken {name}`` for a share of the
-            person's with the name one of the module's takes;
-            ``samba_hosts_allow_no_loopback`` for a ``hosts allow`` without
-            the loopback; ``samba_interfaces_no_loopback`` for ``bind
-            interfaces only`` whose ``interfaces`` has no ``lo``;
+        ModuleApplyError: ``samba_hosts_allow_no_loopback`` for a ``hosts
+            allow`` without the loopback; ``samba_interfaces_no_loopback``
+            for ``bind interfaces only`` whose ``interfaces`` has no ``lo``;
             ``samba_domain_member`` for a domain member's ``security`` or
             ``server role``.
     """
-    ours = {share.name.lower() for share in config.shares}
-    for share in shares:
-        if str(share.get("name", "")).lower() in ours:
-            raise ModuleApplyError("share_name_taken", {"name": share["name"]})
     allowed = global_section.get("hosts allow", "").replace(",", " ").split()
     if allowed and not any(_is_loopback_word(word) for word in allowed):
         raise ModuleApplyError("samba_hosts_allow_no_loopback")

@@ -340,11 +340,12 @@ function Get-NeutrinoFolderAccess($Request) {
     return @{folders = $folders}
 }
 
-# Refuses a share or an account name the module did not make, then
-# converges the server, the accounts and the shares, and deletes the block
-# rule an earlier version made when it finds one; the shares' folders are
-# made here and granted by the agent afterwards. Without is_served the
-# server is left as it is and no share is made.
+# Leaves off a share whose name a share the module did not make has, and
+# refuses an account name the module did not make, then converges the
+# server, the accounts and the shares, and deletes the block rule an earlier
+# version made when it finds one; the shares' folders are granted by the
+# agent afterwards. Without is_served the server is left as it is and no
+# share is made.
 function Set-NeutrinoShare {
     [CmdletBinding(SupportsShouldProcess = $true)]
     [OutputType([hashtable])]
@@ -370,12 +371,17 @@ function Set-NeutrinoShare {
             }
         }
     }
+    # A share the server refuses, or whose name a share of the person's has,
+    # is left off, and every other one is served.
+    $refused = @()
+    $taken = @()
     foreach ($s in @($Request.shares)) {
         $held = if ($is_readable) { Get-SmbShare -Name $s.name -ErrorAction SilentlyContinue }
         $is_ours = (@($Request.owned_shares) -contains $s.name) -and
             "$($held.Description)".StartsWith($Request.marker)
         if ($held -and -not $is_ours) {
-            return @{refusal = @{code = 'share_name_taken'; params = @{name = $s.name}}}
+            $taken += $s.name
+            $refused += @{name = $s.name; code = 'share_name_taken'}
         }
     }
     foreach ($u in @($Request.users)) {
@@ -431,10 +437,11 @@ function Set-NeutrinoShare {
             $notes += "removed share $name"
         }
     }
-    # A share the server refuses is left off, and every other one is served.
-    $refused = @()
     foreach ($s in @($Request.shares)) {
         if (-not $Request.is_served) {
+            continue
+        }
+        if ($taken -contains $s.name) {
             continue
         }
         try {

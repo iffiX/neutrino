@@ -13,8 +13,9 @@ name's points withdrawn; an apply under ``stopped`` starting no smbd,
 making no point and taking the module's off; folders granted with
 ``chmod +a`` and never made; no fence, the
 pf anchor an earlier version kept emptied and its file deleted at the first
-apply that finds the file; foreign names
-refused before anything is touched; the first apply's sweep noting each
+apply that finds the file; a foreign account name refused before anything
+is touched, and a share a foreign point names left off while the rest are
+made; the first apply's sweep noting each
 point and account the tool refused with its words; and the status read from launchctl,
 the share list and lsof, a password counted only once the record says one
 was set.
@@ -317,15 +318,19 @@ def test_a_loaded_smbd_is_left_as_it_is(applier, tools):
     assert tools.ran("launchctl", "bootstrap") == []
 
 
-def test_a_share_point_the_module_did_not_make_is_refused_untouched(applier, tools):
+def test_a_share_named_like_a_point_the_module_did_not_make_is_left_off_and_the_rest_made(
+    applier, tools
+):
     tools.answers[("sharing", "-l")] = share_list(("media", "/Users/a/m", "media", 0))
+    refused: list = []
 
-    with pytest.raises(ModuleApplyError) as refused:
-        applier.apply(CONFIG, {"shares": {"media": "/Users/a/m"}})
+    notes = applier.apply(CONFIG, {"shares": {"media": "/Users/a/m"}}, refused=refused)
 
-    assert refused.value.code == "share_name_taken"
-    assert tools.ran("launchctl", "enable") == []
+    assert [call[2] for call in tools.ran("sharing", "-a")] == ["/Volumes/data/docs"]
     assert tools.ran("sharing", "-r") == []
+    assert refused == [{"code": "share_name_taken", "params": {"name": "media"}}]
+    assert "left share media off the server: share_name_taken" in notes
+    assert "created share docs" in notes
 
 
 def test_an_account_the_module_did_not_make_is_refused_untouched(applier, tools):

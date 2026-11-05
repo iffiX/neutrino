@@ -38,6 +38,7 @@ from neutrino_agent.modules.samba.constants import (
     SAMBA_FOLDER_MISSING,
     SAMBA_FOLDER_REAL,
     SAMBA_FOLDER_UNREACHABLE,
+    SAMBA_SHARE_NAME_TAKEN_CODE,
     SAMBA_SHARE_REFUSED_CODE,
     SAMBA_WINDOWS_DENIED_RIGHTS,
     SAMBA_LINUX_USER_PREFIX,
@@ -277,16 +278,18 @@ class SambaWindowsApplier:
             is_served: Whether the server is started and the shares made.
                 False takes every share of the module's off the server and
                 makes the accounts and grants the folders alone.
-            refused: Takes ``share_not_served {name, detail}`` for each share
-                the host could not make or change, left off while the others
-                are served; None keeps them nowhere.
+            refused: Takes ``share_name_taken {name}`` for each share whose
+                name a share the module did not make has, and
+                ``share_not_served {name, detail}`` for each share the host
+                could not make or change, each left off while the others are
+                served; None keeps them nowhere.
 
         Returns:
             What changed, one note each.
 
         Raises:
-            ModuleApplyError: ``share_name_taken`` or ``user_name_taken`` for
-                a name the module did not make.
+            ModuleApplyError: ``user_name_taken`` for an account name the
+                module did not make.
             OSError: When the host, an access list or the local policy
                 fails.
         """
@@ -350,15 +353,15 @@ class SambaWindowsApplier:
         for entry in _listed(answer.get("refused")):
             entry = entry if isinstance(entry, dict) else {}
             name = str(entry.get("name", ""))
-            detail = str(entry.get("detail", ""))[:500]
-            notes.append(f"left share {name} off the server: {detail}")
+            code = SAMBA_SHARE_REFUSED_CODE
+            params = {"name": name, "detail": str(entry.get("detail", ""))[:500]}
+            if entry.get("code") == SAMBA_SHARE_NAME_TAKEN_CODE:
+                code, params = SAMBA_SHARE_NAME_TAKEN_CODE, {"name": name}
+            notes.append(
+                f"left share {name} off the server: {params.get('detail', code)}"
+            )
             if refused is not None:
-                refused.append(
-                    {
-                        "code": SAMBA_SHARE_REFUSED_CODE,
-                        "params": {"name": name, "detail": detail},
-                    }
-                )
+                refused.append({"code": code, "params": params})
         return [str(note) for note in _listed(answer.get("notes"))] + notes
 
     def read_folder(self, path: str) -> str:
