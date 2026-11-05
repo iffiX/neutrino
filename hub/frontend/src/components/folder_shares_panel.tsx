@@ -27,7 +27,9 @@ import "./folder_shares_panel.css";
  * the share's name, its folder and its accounts. **Remove** asks first. Each
  * write acts at once, with no apply bar, and while the module is not running
  * it takes effect at the next Start. The checkboxes list the accounts
- * **Home shares** enables as applied, and **Add** waits for one.
+ * **Home shares** enables as applied, and **Add** waits for one. What the hub
+ * removed for a folder the machine reported gone shows over the rows in one
+ * notice until the person's next change of the file share.
  */
 
 /** Which form is open: a new share's, or a share's by name. */
@@ -132,6 +134,18 @@ export function FolderSharesPanel({
         <div className="skeleton" style={{ height: 96 }} />
       ) : (
         <>
+          {view.removals.length > 0 && (
+            <div className="notice notice--warn">
+              <Icon name="alert" size={15} />
+              <div className="notice_body">
+                {view.removals.map((removal) => (
+                  <div key={`${removal.code}-${String(removal.params.path)}`}>
+                    {t(`code.${removal.code}`, removal.params)}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {view.shares.length === 0 && editing === null && (
             <div className="placeholder">
               <span>{t("ui.samba.folder_empty")}</span>
