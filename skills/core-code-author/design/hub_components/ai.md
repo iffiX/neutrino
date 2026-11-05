@@ -106,11 +106,11 @@ returned with at least one name in it, and empty once no credential feeds
 the gateway. The hub probes the gateway at most
 once in 10 seconds, and every page of this standard that names the
 models the gateway serves means this list. Its readers are SiYuan's
-`models`, the AI tools' setting and their unchosen models, Ayakaleaf's
-model, Hermes WebUI's `model`, the model of a client's `service` frame, and
-the model pickers of the machine page. The `ai` entry of the published list holds no model
-while the gateway's unit is stopped, and the probe line on Activity is a
-probe of its own at each read.
+`models`, the AI tools' setting, the default model ("The default model"),
+and the model pickers of the machine page. The `ai` entry of the published list holds no model
+while the gateway's unit is stopped. The probe line on Activity and the
+**Default model** picker of Access read a probe of their own at each read
+of the page.
 
 | Rule | Reason |
 | --- | --- |
@@ -119,6 +119,24 @@ probe of its own at each read.
 | A probe that returns another set of names replaces the list, and each reader follows it once. | An account signed in or out, a provider turned on or off, and a new catalog in the gateway's binary each change the names the gateway serves. |
 | The hub stores the list in `cliproxyapi/served_models.json` under the state root, writes it when the list changes, an emptied list included, and reads it at the panel's start. | A reboot or a hub update starts the panel and the gateway together, and a machine that reconnects before the gateway first returns a name gets the stored list in its state. The list is what the gateway last served and no person's decision, so it stays out of `config/`. A restored box probes the gateway again. |
 
+## The default model
+
+The default model is the model every tool and app of the hub uses where
+nobody chose one. A person picks it in the **Default model** picker of the
+Access panel ([../ui_behavior.md](../ui_behavior.md), "The Access panel of
+the AI page"), and the hub keeps the pick as `default_model` in
+`config/cliproxyapi/cliproxyapi.json`, empty until a person picks one. Its
+readers are the unchosen models of the AI tools, on a managed machine and on
+a client; Ayakaleaf's model while its tab names none; Hermes WebUI's `model`;
+and SiYuan's `model`.
+
+| Rule | Reason |
+| --- | --- |
+| The default model is the pick while the served list holds it, and otherwise the first name of the served list, which is sorted by name. It is empty while the list is empty. | The gateway rejects a request that names a model it does not serve with `400 unknown provider for model`, and a provider turned off or an account signed out takes its names out of the list. |
+| A pick the gateway no longer serves stays in the file, and the picker shows it until a person picks another. | The pick is in force again when its name comes back, as when its provider is turned on again. |
+| The pick is written by `POST /api/hub/ai/gateway/set {default_model}`, which restarts nothing. The hub then sends its state to every online machine and client whose state changes, a client's through its `ai` entry, which carries the default model; a client sends its `service` frame again at each state ([../protocol.md](../protocol.md), "The service frame"). | The gateway serves every name the same with any pick. What changes is the model the readers are sent. |
+| A model chosen for one account's tool, or in one Ayakaleaf tab, stays. | The default model fills only what nobody chose. |
+
 ## What each panel surface owns
 
 | Surface | Owns |
@@ -126,7 +144,7 @@ probe of its own at each read.
 | Activity | Status dots, today's counters, the probe line (`/v1/models` as served), journal, and the chip-switched usage tables |
 | Providers | API-key provider records, their aliases, their serving order, enable/disable — staged behind the panel's apply, with the gateway-behind signal |
 | Accounts | Subscription sign-in (redirect flows finish by pasting the dead callback page's address; device flows show a pairing code; a timeout keeps the dialog open, [../ui_behavior.md](../ui_behavior.md), "Account sign-in on the AI page"), status, revocation — immediate, never staged |
-| Access | Keys for a tool on the hub's machine or one using an SSH tunnel to it, plus the endpoint line, which names the gateway on the hub's loopback; a managed device is keyed when the first of its accounts turns its AI tools switch on, on the machine page, and its key reaches it over the agent channel. The hub holds a key of its own beside them, minted on the first apply and shown nowhere: it is what the hub probes `/v1/models` with, and it keeps the gateway's key list from ever being empty, since CLIProxyAPI with no key configured asks nobody for one |
+| Access | Keys for a tool on the hub's machine or one using an SSH tunnel to it, plus the endpoint line, which names the gateway on the hub's loopback, and the default model, staged behind the panel's apply while a key's generate and revoke write at once; a managed device is keyed when the first of its accounts turns its AI tools switch on, on the machine page, and its key reaches it over the agent channel. The hub holds a key of its own beside them, minted on the first apply and shown nowhere: it is what the hub probes `/v1/models` with, and it keeps the gateway's key list from ever being empty, since CLIProxyAPI with no key configured asks nobody for one |
 | Gateway port | `listen_port`, staged behind its own apply |
 
 ## How a client points its tools at the gateway
@@ -230,7 +248,7 @@ sections").
 | The endpoint | `http://127.0.0.1:<local-port><path>`, the client's forward | `http://127.0.0.1:8317`, the agent's own forward, which relays each connection to the hub over the agent's channel ([../agent.md](../agent.md), "The AI gateway forward"); on the hub's own machine `http://127.0.0.1:<listen-port>`, the gateway itself |
 | A tool works | while the client runs and its channel to the hub is up | while the agent runs and its channel to the hub is up |
 | The key | the client's own, from the `service` frame | the device's own, from the `ai_tools` section |
-| The unchosen models | the gateway's first model, from the `service` frame | the gateway's first served model, filled in by the hub before the state is sent |
+| The unchosen models | the default model ("The default model"), from the `service` frame | the default model, filled in by the hub before the state is sent |
 | The cc-switch | the copy the client's package carries | the copy the agent fetches from the hub into `ai_tools/bin/` under its state root, the same pinned version |
 | The record per tool | `original/<tool>.json` under the client's configuration | `ai_tools/<account>/<tool>.json` under the agent's state root, never in the account's home ([../agent/ai_tools.md](../agent/ai_tools.md)) |
 | Switched back | when the chip goes off | when the account's switch goes off, when the account is removed from the machine page, before `nagent service uninstall`, and when the machine leaves the hub |

@@ -520,7 +520,15 @@ the forward listens. The desktop controls:
 | Control | Enabled | Does |
 | --- | --- | --- |
 | **AI tools use this gateway** (a chip) | when the entry is not unhealthy, the hub is not disabled and no switch runs | job `ui.job.switching`: makes the entry's forward, reads this client's key with the `service` frame, and points Claude Code, Codex and Gemini at `http://127.0.0.1:<local-port>` with that key ([hub_components/ai.md](hub_components/ai.md)); one hub is the exit at a time, and only a chip the person turned on makes it so: with no chip turned on no hub is the exit; the chip of the other hub turns off in the same push, and its forward ends |
-| **Configure** | the same | opens the configuration dialog: a picker per tool for its model and, for Codex, its effort; **Save** and **Cancel**; the dialog is the inline-form idiom with a dirty frame |
+| **Configure** | the same | opens the configuration dialog: a picker per tool for its model and, for Codex, its effort, each picker's first row `ui.gateway_default`; **Save** and **Cancel**; the dialog is the inline-form idiom with a dirty frame |
+
+A model left at `ui.gateway_default` is the hub's default model, the
+`model` of the `ai` material of the `service` frame
+([hub_components/ai.md](hub_components/ai.md), "The default model"). The
+client fills each such model with it before it hands the configuration to
+cc-switch, and sends the frame again at each state the exit hub sends, so a
+new default model switches each tool whose model it fills, and leaves a
+model the person picked as it is.
 
 Under the controls is the line `ui.ai_needs_client`: the tools reach the
 gateway only while this client runs.

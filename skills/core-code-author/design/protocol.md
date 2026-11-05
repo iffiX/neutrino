@@ -292,7 +292,7 @@ The HTTP status names the class of the refusal:
 
 | Status | Class | Codes |
 | --- | --- | --- |
-| 400 | a body, a query or a path that does not validate, or a value the route refuses | `body_invalid` for what the models refuse, then the route's own: `password_wrong`, `path_invalid`, `unknown_credential`, `login_refused`, `vault_locked`, `language_unknown`, `theme_unknown`, `hub_name_required`, `invalid_range`, `unsupported_kind`, `permission_kind_unknown {kind}`, `permission_device_unknown {device_id}`, `easytier_mode_unknown {mode}`, `easytier_config_server_invalid`, `overlay_subnet_overlap {title, subnet, conflict}`, `account_unknown {account}`, `account_duplicate {account}`, `credential_missing {account}`, `credential_invalid {account}`, `account_logon_refused {account, detail}`, `declared_service_invalid {field}`, `relay_host_invalid {host}`, `relay_account_invalid {account}`, `relay_ssh_missing`, `direct_host_invalid {host}`, `frpc_missing {title}`, `frp_credential_refused {title}`, `frp_tunnel_unknown {title, tunnel_id}`, `no_exit_node_enabled`, `resolver_required {field}`, `resolver_address_invalid {address}`, `network_invalid {field, name}`, `shell_program_unusable {path}`, `account_not_enabled {account}`, `web_share_entry_invalid {entry_id}`, `web_share_site_invalid {site}`, `share_name_taken {name}`, `share_name_invalid {name}`, `share_account_not_enabled {account}`, `share_path_missing {name, path}`, `share_path_link {name, path}`, `key_passphrase_not_stored` |
+| 400 | a body, a query or a path that does not validate, or a value the route refuses | `body_invalid` for what the models refuse, then the route's own: `password_wrong`, `path_invalid`, `unknown_credential`, `login_refused`, `vault_locked`, `language_unknown`, `theme_unknown`, `hub_name_required`, `invalid_range`, `unsupported_kind`, `permission_kind_unknown {kind}`, `permission_device_unknown {device_id}`, `easytier_mode_unknown {mode}`, `easytier_config_server_invalid`, `overlay_subnet_overlap {title, subnet, conflict}`, `account_unknown {account}`, `account_duplicate {account}`, `credential_missing {account}`, `credential_invalid {account}`, `account_logon_refused {account, detail}`, `declared_service_invalid {field}`, `relay_host_invalid {host}`, `relay_account_invalid {account}`, `relay_ssh_missing`, `direct_host_invalid {host}`, `frpc_missing {title}`, `frp_credential_refused {title}`, `frp_tunnel_unknown {title, tunnel_id}`, `no_exit_node_enabled`, `resolver_required {field}`, `resolver_address_invalid {address}`, `network_invalid {field, name}`, `shell_program_unusable {path}`, `account_not_enabled {account}`, `web_share_entry_invalid {entry_id}`, `web_share_site_invalid {site}`, `share_name_taken {name}`, `share_name_invalid {name}`, `share_account_not_enabled {account}`, `share_path_missing {name, path}`, `share_path_link {name, path}`, `key_passphrase_not_stored`, `model_not_served {model}` |
 | 401 | a missing session | `not_authenticated` |
 | 404 | an unknown member | `device_unknown`, `https_authority_missing`, `declared_service_unknown`, `web_share_unknown`, `generated_credential_unknown`, `folder_share_unknown {name}` |
 | 409 | a state the action cannot run in | `agent_offline`, `protocol_too_old`, `protocol_too_new`, `update_in_progress`, `release_not_latest`, `no_platform_build {module}`, `terms_not_accepted {module}`, `gateway_not_serving`, `frp_not_signed_in {title}`, `version_locked {module}`, `transport_key_missing` |
@@ -348,6 +348,7 @@ walk theirs. A new code and its wording are one change.
 | `web_share_entry_invalid`, `web_share_site_invalid`, `web_share_unknown` | `{entry_id}`, `{site}`, none | `web_share/create` naming an entry no share can offer now or a site that is not a listed one or an `https://` address, and `web_share/destroy` naming no share | added |
 | `ayakaleaf_guest_failed` | `{step, detail}` | a guest of the Ayakaleaf module in its `details.guests`, `step` being `admin_login`, `register`, `password` or `name` ([agent/modules/ayakaleaf.md](agent/modules/ayakaleaf.md), "The guest account") | added |
 | `op_unknown` | `{op}` | a `file` stream naming any `op` but `list` | added |
+| `model_not_served` | `{model}` | 400 of `ai/gateway/set`, a `default_model` the gateway does not serve ([hub_components/ai.md](hub_components/ai.md), "The default model") | added |
 | `key_passphrase_not_stored` | none | 400 of `device/add` and `device/agent/install`, an encrypted SSH key the hub stores with no passphrase: a key file named in `config/devices` or an older vault entry. The Credentials page keeps `key_passphrase_needed` | added |
 | `hub_untrusted` | none | a client's or an agent's own word for a message 2 that opens under no psk | kept, now of the handshake |
 | `client_not_running` | none | `nclient`'s own, any command but `gui` while no client runs | added |
@@ -498,8 +499,8 @@ moved. Its steps and their order are [network.md](hub_components/network.md),
 | `POST /api/hub/ai/provider/set` | `{provider_id, ...}` | |
 | `POST /api/hub/ai/provider/remove` | `{provider_id}` | |
 | `POST /api/hub/ai/provider/order/set` | the ordered ids | |
-| `GET /api/hub/ai/gateway` | | the gateway's settings |
-| `POST /api/hub/ai/gateway/set` | its settings | |
+| `GET /api/hub/ai/gateway` | | the gateway's settings, `default_model` among them: the saved pick of the default model, empty while none is saved, and kept while the gateway no longer serves it ([hub_components/ai.md](hub_components/ai.md), "The default model") |
+| `POST /api/hub/ai/gateway/set` | its settings, `{listen_port}` or `{default_model}`, each written only when it is sent | a `listen_port` renders and restarts the gateway; a `default_model` restarts nothing and hands every online machine and client its state where the state changed; 400 `model_not_served {model}` for a `default_model` the gateway does not serve |
 | `POST /api/hub/ai/gateway/apply` | | renders and applies the gateway |
 | `GET /api/hub/ai/gateway/usage` | | what it metered, per key id: the hub's, each client's and each device's |
 | `GET /api/hub/ai/gateway/journal` | | its journal |
@@ -787,8 +788,8 @@ to pick one.
 | `GET /api/agent/module/remote_desktop` | `?device_id=` | `RemoteDesktopDeviceView`: the fields of every module view, `state` being the module's as last reported; `is_enabled`, the switch; `platform_os`, the machine's `linux`, `windows` or `darwin`; and `rdp`, the share as the machine last declared it, `{is_shared, account, port, attention, connected_count, is_available}`, the last true unless the machine's agent package reports the host absent |
 | `POST /api/agent/module/remote_desktop/set` | `{device_id, is_enabled}` | stores `config/devices/<id>/remote_desktop.json` and pushes; turning it on generates the seat password when the device has none; 409 `agent_offline`; `RemoteDesktopDeviceView` |
 | `GET /api/agent/module/hermes_webui` | `?device_id=` | `HermesWebuiDeviceView`: `port`, the forwarder's port as the machine reports it, and `state`, `version` and `details` as last reported |
-| `GET /api/agent/module/ayakaleaf` | `?device_id=` | `AyakaleafDeviceView`: `port`, the forwarder's port as the machine reports it; `model`, the stored one, empty for the gateway's first; `models`, the names the gateway serves, for the picker; `is_gateway_serving`; and `state`, `version` and `details` as last reported |
-| `POST /api/agent/module/ayakaleaf/set` | `{device_id, model}`, `model` empty for the gateway's first | stores `model` in `config/devices/<id>/ayakaleaf.json` and pushes the state, whose new environment restarts the app; `AyakaleafDeviceView`; 409 `agent_offline` |
+| `GET /api/agent/module/ayakaleaf` | `?device_id=` | `AyakaleafDeviceView`: `port`, the forwarder's port as the machine reports it; `model`, the stored one, empty for the default model; `models`, the names the gateway serves, for the picker; `is_gateway_serving`; and `state`, `version` and `details` as last reported |
+| `POST /api/agent/module/ayakaleaf/set` | `{device_id, model}`, `model` empty for the default model | stores `model` in `config/devices/<id>/ayakaleaf.json` and pushes the state, whose new environment restarts the app; `AyakaleafDeviceView`; 409 `agent_offline` |
 | `GET /api/agent/module/podman` | `?device_id=` | `PodmanDeviceView`: the declared `containers`, each with its `services`; `hub_containers`, the hub containers the modules compose, read only; the `mirrors`; `running`, each container as last reported with its `module`, its `source`, its `host_bindings` and their `detected`, `source` being `hub`, `declared` or `manual` by the owner rule of [agent/modules/containers.md](agent/modules/containers.md), "Hub containers"; and on Windows and macOS `machine`, the stored Run settings, the machine as last reported (`details.machine`), the machine's available accounts, and `memory_need` as the module list carries it |
 | `POST /api/agent/module/podman/import` | `{device_id}` | |
 | `POST /api/agent/module/podman/container/set` | `{device_id, containers}` | replaces the declared containers, each with its `services`; 400 `container_name_reserved {name}` for a new name that starts with `neutrino_`; the agent's own refusals as 400, `service_invalid {name, port}`, `service_protocol_none {port}`, on Windows and macOS `volume_not_shared {name, volume}` and on Windows `udp_not_forwarded {name, port}` among them |
@@ -1198,7 +1199,8 @@ else in the state; `api_key` is the device's own gateway key. `accounts`
 names every available account whose `is_ai_tools_enabled` is true, each with
 its `tool_configs`, `{claude: {default, opus, sonnet, haiku}, codex: {model,
 model_reasoning_effort}, gemini: {model}}`, every slot the person left at the
-gateway's default filled with the gateway's first served model, as the
+gateway's default filled with the default model ([hub_components/ai.md](hub_components/ai.md),
+"The default model"), as the
 client's `resolved_configs` fills it, and `password`, the account's login,
 sent only to a Windows machine. An account whose switch goes off leaves
 `accounts`, and the agent switches it back. `cc_switch_version` is the version
@@ -1522,14 +1524,15 @@ fields are added and keep `PROTOCOL` 4.
 The `siyuan` module runs SiYuan's kernel once per enabled account, on Linux,
 macOS and Windows ([agent/modules/siyuan.md](agent/modules/siyuan.md)). Its
 configuration is `{instances: [{account, secret, access_code, gateway_key,
-password}], gateway_url, models}`: `secret` the instance's token secret,
+password}], gateway_url, models, model}`: `secret` the instance's token secret,
 `access_code` the kernel's own login, and `gateway_key` the instance's key
 to the AI gateway, each generated by the hub, kept sealed in
 `config/devices/<id>/siyuan.json` and sent opened inside the state;
 `password` the login of a Windows account, as VS Code's; `gateway_url` the
 gateway's address on the machine, `http://127.0.0.1:8317` on a managed
-machine and the gateway's `listen_port` on the hub's own; and `models` the
-names the gateway serves. Its recipe names one artifact, the desktop build,
+machine and the gateway's `listen_port` on the hub's own; `models` the
+names the gateway serves; and `model` the default model, which the agent
+writes into an account's settings that name no model of `models`. Its recipe names one artifact, the desktop build,
 of kind `tar_gz` on Linux, `dmg` on macOS and `nsis` on Windows, which the
 agent opens `package {module: siyuan, artifact, digest}` for. `details` is
 `{version, instances: [{account, port, is_running, code}]}`. An apply
@@ -1662,8 +1665,9 @@ Its configuration is `{secret, password, cookie_name, local_name, model}`:
 the token secret; the webui's password; the name of the webui's login cookie,
 `hermes_session_` and the first 12 characters of the device id, which the hub
 also sets in the webui's environment; the app's local name, which its
-forwarder checks the `Host` against; and the first model the gateway serves,
-empty while it serves none, which the agent writes into Hermes's
+forwarder checks the `Host` against; and the default model
+([hub_components/ai.md](hub_components/ai.md), "The default model"),
+empty while the gateway serves none, which the agent writes into Hermes's
 `model.default` when it differs from the one it last wrote. The agent takes the forwarder's port
 itself, from 8787 up. The hub generates both secrets the first time the
 module is installed, keeps them sealed in
@@ -1736,7 +1740,7 @@ the hub generated for each, sealed under the vault's data key:
 | `code_server` | `{accounts: [{account, secret_sealed}]}` | `{instances: [{account, secret, local_name, cookie_name}]}` |
 | `cloudcli` | `{accounts: [{account, web_password_sealed, token_secret_sealed}]}` | `{instances: [{account, web_password, token_secret, password, local_name, cookie_name}]}`, `token_secret` being the secret its tokens are minted from |
 | `codeg` | `{accounts: [{account, secret_sealed}]}` | `{instances: [{account, secret, password, local_name, cookie_name}]}` |
-| `siyuan` | `{accounts: [{account, secret_sealed, access_code_sealed, gateway_key_sealed}]}`, `gateway_key_sealed` present while the account is enabled | `{instances: [{account, secret, access_code, gateway_key, password, local_name, cookie_name}], gateway_url, models}` |
+| `siyuan` | `{accounts: [{account, secret_sealed, access_code_sealed, gateway_key_sealed}]}`, `gateway_key_sealed` present while the account is enabled | `{instances: [{account, secret, access_code, gateway_key, password, local_name, cookie_name}], gateway_url, models, model}` |
 | `ssh_server` | `{accounts: [{account, private_key_sealed}]}` | `{instances: [{account, authorized_key, shell_path, password, programs}]}`, `authorized_key` the public half of the sealed key and `programs` as the Terminal's |
 | `codex`, `claude_code` | `{accounts: [{account}]}` | `{accounts: [{account, password}]}` |
 
@@ -1761,7 +1765,7 @@ what the entry's `payload` names:
 | `web` | `{url, is_token_required}`, `is_token_required` present and true only on a VS Code, code-server, CloudCLI, Codeg or SiYuan instance and on Hermes WebUI and Ayakaleaf, whose page opens with a token the `service` frame hands | a device's Gitea module reports a URL, a device's VS Code, code-server, CloudCLI, Codeg or SiYuan module runs an instance, a device's Hermes WebUI or Ayakaleaf module reads `running`, a device's Podman container publishes a TCP port whose service is web, chosen or detected (`http` or `https` under `auto`), with `url` `<scheme>://<host>:<port>/`, or a declared app names a `web` entry |
 | `port` | `{host, port, protocol}`, `protocol` being `tcp` or `udp`, `tcp` when absent. One entry has one protocol, so a number published on both is two entries | a device's Podman container publishes a host port whose service is port, chosen or under `auto` on a TCP binding detected `tcp` or not yet detected and on every UDP binding, one entry for each item of its `host_bindings` (a report with no `host_bindings`, from an agent before 0.5.0, gives each `host_ports` number as `tcp`), or a declared app names a `port` entry |
 | `ssh` | `{host, port, account, host_key_fingerprint, account_key_fingerprint}`: `port` the loopback port the account's instance of the machine's SSH server listens on, `account` the account it runs as, `host_key_fingerprint` the host key of the account's instance and `account_key_fingerprint` the account's key the hub made, each as `SHA256:<base64>` | a device's SSH server module enables that account ([agent/modules/ssh_server.md](agent/modules/ssh_server.md)); the hub lists a machine's `ssh` entries in the order the module enables the accounts |
-| `ai` | `{endpoint, protocol, models}`, `protocol` being `openai` | the AI gateway is installed and enabled |
+| `ai` | `{endpoint, protocol, models, model}`, `protocol` being `openai` and `model` the default model ([hub_components/ai.md](hub_components/ai.md), "The default model") | the AI gateway is installed and enabled |
 | `file` | `{protocol, host, share, users, account}`, `protocol` being `smb`; `users` is `[<user>]`, the SMB user the entry logs in as, and empty on a declared app's entry; `account` is the account a folder share's entry logs in as, and empty on a Home share's entry, whose share has the account's name, and on a declared app's | a device's Samba module reports the share, one entry for a Home share and one for each account of a folder share, or a declared app names a `file` entry |
 | `rdp` | `{protocol, host, port, attention, platform_os}`, `protocol` being `rustdesk`, `platform_os` the sharing machine's `linux`, `windows` or `darwin` | a machine keeps reporting that it shares its desktop; `attention` is what somebody must do at that machine before a peer sees the desktop, as a code, empty when nothing is in the way and always empty from a Mac |
 
@@ -2011,7 +2015,7 @@ type:
 | `type` | The material |
 | --- | --- |
 | `rdp` | `{password}`: the seat password of the machine sharing the desktop |
-| `ai` | `{api_key, model}`: this client's own gateway key, which the gateway checks on every request, and the first model the gateway serves |
+| `ai` | `{api_key, model}`: this client's own gateway key, which the gateway checks on every request, and the default model |
 | `web` with `description_code` `vscode_module` | `{token}`: the instance's connection token |
 | `web` with `description_code` `code_server_module`, `cloudcli_module`, `codeg_module`, `siyuan_module`, `hermes_webui_module` or `ayakaleaf_module` | `{token}`: `base64url(expiry \|\| nonce \|\| HMAC-SHA256(secret, expiry \|\| nonce))`, minted by the hub for this answer alone with `expiry` 60 seconds ahead by the hub's clock and `secret` the instance's own, or the container module's ([agent/module_template.md](agent/module_template.md), "The run"); it works once, and the agent judges its expiry by the hub's time ("The control stream") |
 | `ssh` | `{account, private_key, host_key}`: the private half of the key the hub made for that account on that machine, in OpenSSH form, and the public host key of that account's instance in OpenSSH form, which the client writes into Neutrino's own known_hosts ([agent/modules/ssh_server.md](agent/modules/ssh_server.md), "Keys") |

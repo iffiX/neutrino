@@ -8,7 +8,7 @@ account on Linux (amd64 and arm64), macOS (arm64 and amd64) and Windows
 `agent/neutrino_agent/modules/siyuan/` holds `config.py`, `constants.py` and
 `hooks.py`, and `modules/shared/` does the rest. Its configuration is
 `{instances: [{account, secret, access_code, gateway_key, password}],
-gateway_url, models}`, and the agent takes each instance's port, the
+gateway_url, models, model}`, and the agent takes each instance's port, the
 forwarder's, itself from 6810 up ([../../protocol.md](../../protocol.md), "The account layer in the
 state").
 
@@ -137,19 +137,22 @@ which is open while the module is installed ([../../agent.md](../../agent.md),
 the hub's own machine. `models` is the hub's served list
 ([../../hub_components/ai.md](../../hub_components/ai.md), "The served
 list"): every name the gateway serves, the models of the accounts signed in
-on the AI page and of the API-key providers alike.
+on the AI page and of the API-key providers alike. `model` is the hub's
+default model ([../../hub_components/ai.md](../../hub_components/ai.md),
+"The default model").
 
 The hook writes into the workspace's `conf/conf.json`, as the account:
 
 | Key | Value |
 | --- | --- |
 | `ai.providers`, the provider whose `id` is the module's | `{id, enabled: true, apiKey, baseURL, protocol: "openai", requestTimeout: 120, models}`: the instance's `gateway_key`, `gateway_url` with `/v1` after it, and one `{id, enabled: true, name}` per name in `models` |
-| `ai.agent.modelId`, `ai.editing.modelId` | the provider's first model's id, written only while the setting names no model the file holds |
+| `ai.agent.modelId`, `ai.editing.modelId` | the id of `model`, or of the provider's first model while `model` is not among `models`, written only while the setting names no model the file holds |
 | `system.downloadInstallPkg` | `false` |
 
 | Rule | Reason |
 | --- | --- |
 | The hook writes the file after the instance's first start, and again whenever the key, `gateway_url` or `models` differ from what the instance's record holds, with the instance stopped and started again after. | The kernel makes `conf.json` at its first start, reads it at each start and writes it back from what it holds. `SIYUAN_OPENAI_API_BASE_URL`, `_KEY` and `_MODEL` fill one provider at the first start alone. |
+| A new `model` alone writes nothing: an instance takes it at its first write, and at a write a new key, `gateway_url` or `models` brings. | Each write stops and starts the kernel, and an instance already written names a model of its file, which a write keeps. |
 | `models` holds the accounts' models beside the providers'. | The models of an account signed in on the AI page are in the gateway's catalog alone, and no file of `config/` names them. |
 | `models` changes only when a name is added or dropped, and is empty once no account is signed in and no provider is turned on. While either remains, a gateway that restarts, stops or serves nothing leaves it as it was. | Each change stops and starts every instance. The served list stays across a failed or empty probe while a credential feeds the gateway, so a gateway restart restarts no instance, and an account signed in or out or a provider turned on or off restarts each instance once, the last of them included. |
 | The provider's id and each model's id have the form of SiYuan's own ids, `20000101000000-` and seven hex characters, from the SHA-256 of `neutrino` for the provider and of `neutrino/<name>` for a model. | A fixed id finds the module's provider again among the person's own, and the kernel gives its AI entries ids of that form. |

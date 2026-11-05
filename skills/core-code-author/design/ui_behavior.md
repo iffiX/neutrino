@@ -1333,6 +1333,26 @@ gateway reports the flow `complete` or `failed`.
 | When the hub's session for the flow ends before the gateway reports either, the route returns `login_expired`, and the dialog stays open on the screen it was showing, with the code's words under it. It never resets to its first screen. | A person who sees the first screen again cannot tell a timeout from a click that did nothing. |
 | A flow that ends `failed` shows the gateway's own reason, the view's `message`, under the code's words when the gateway sent one. | The gateway's reason names the provider's refusal, which the code alone cannot. |
 
+## The Access panel of the AI page
+
+The **Access** panel of the AI page holds the endpoint line, then the
+**Default model** picker (`ui.ai.default_model`), then the keys, and ends in
+its apply bar, **Apply access settings** (`ui.ai.access_apply`). The picker
+is a `Picker` of the names the gateway serves, by name, and it is the
+panel's draft: a pick lights the frame and the bar, and the bar writes it
+with `POST /api/hub/ai/gateway/set {default_model}`
+([hub_components/ai.md](hub_components/ai.md), "The default model").
+Generating and revoking a key write where they are pressed and light
+nothing, as `node_card.tsx` does where a draft and a list that writes meet
+("Inline forms").
+
+| Rule | Reason |
+| --- | --- |
+| The picker shows the saved pick, and the first name served while none is saved. | The first name is the default model while none is saved. |
+| A saved pick the gateway no longer serves stays shown, as the picker's first row with `ui.ai.default_model_not_served` drawn faint at its right, until a person picks another. | The hub keeps the pick, and it is in force again when its name comes back; the row says it is not in force now. |
+| The bar lights while the picked row differs from the row the saved pick shows, and goes dark when the person picks that row again. | A pick of the row already shown changes nothing the hub sends. |
+| While the gateway serves no name, the picker is disabled, with no line under it. | A pick needs a name the gateway serves, and the probe line of Activity, above it on the page, already says why there is none. |
+
 ## The hub's faces
 
 The panel draws the hub's wolf from `images/icons/neutrino_hub/`, as an SVG in

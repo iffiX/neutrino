@@ -226,7 +226,7 @@ other in the page. The tab's **AI model** field holds it, `model` in
 
 | Rule | Reason |
 | --- | --- |
-| `AI_MODEL` is the field's model, or the first model the gateway serves while the field is empty. The hub writes the four `AI_` variables while the gateway serves a model, and none while it serves none. | The app shows its AI features only with all four set. |
+| `AI_MODEL` is the field's model, or the default model ([../../hub_components/ai.md](../../hub_components/ai.md), "The default model") while the field is empty. The hub writes the four `AI_` variables while the gateway serves a model, and none while it serves none. | The app shows its AI features only with all four set. |
 | A new model rewrites the app's environment, which restarts the app. | The app reads the model at its start alone. |
 | The app calls the gateway itself, at `host.containers.internal`, with the module's key. | In the lab a stand-in gateway logged the app container as the caller of the editor's AI chat. |
 | `DOCS_MCP_URL` is empty, and the web search stays off. | Its default is `https://docs.overleaf.com/~gitbook/mcp`, a call to another host. The web search needs a Tavily key, which the module does not set. |
