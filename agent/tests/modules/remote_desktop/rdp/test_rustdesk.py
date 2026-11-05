@@ -29,8 +29,6 @@ from neutrino_agent.modules.remote_desktop.rdp.rustdesk import (
     write_settings,
 )
 
-from tests.conftest import fd_owners
-
 
 def write_password(path, password):
     """One ``RustDesk.toml`` written with a password, as the share writes it."""
@@ -353,71 +351,6 @@ def test_folders_outside_the_home_are_made_as_this_process(monkeypatch, tmp_path
 
     assert [target for target, _, _ in chowned if not target.endswith(".tmp")] == []
     assert "seat-pass" in path.read_text()
-
-
-def _seat_folders(tmp_path):
-    home = tmp_path / "pat"
-    settings = home / ".config" / "rustdesk"
-    settings.mkdir(parents=True)
-    return home, home / ".config", settings
-
-
-def test_folders_root_owns_under_a_home_are_given_to_its_owner(monkeypatch, tmp_path):
-    """A machine an earlier agent shared has the seat's folders made as
-    root."""
-    home, config, settings = _seat_folders(tmp_path)
-    given = fd_owners(
-        monkeypatch,
-        {str(home): (4242, 4343), str(config): (0, 0), str(settings): (0, 0)},
-    )
-
-    assert rustdesk.give_back_dirs(str(settings), str(home)) == [
-        str(config),
-        str(settings),
-    ]
-    assert given == [(str(config), 4242, 4343), (str(settings), 4242, 4343)]
-
-
-def test_a_folder_another_person_owns_keeps_its_owner(monkeypatch, tmp_path):
-    home, config, settings = _seat_folders(tmp_path)
-    given = fd_owners(
-        monkeypatch,
-        {str(home): (4242, 4343), str(config): (1001, 1001), str(settings): (0, 0)},
-    )
-
-    assert rustdesk.give_back_dirs(str(settings), str(home)) == [str(settings)]
-    assert [path for path, _, _ in given] == [str(settings)]
-
-
-def test_under_roots_own_home_nothing_is_given(monkeypatch, tmp_path):
-    home, config, settings = _seat_folders(tmp_path)
-    given = fd_owners(
-        monkeypatch,
-        {str(home): (0, 0), str(config): (0, 0), str(settings): (0, 0)},
-    )
-
-    assert rustdesk.give_back_dirs(str(settings), str(home)) == []
-    assert rustdesk.give_back_dirs(str(tmp_path / "elsewhere"), str(home)) == []
-    assert given == []
-
-
-def test_a_symbolic_link_on_the_way_stops_the_giving(monkeypatch, tmp_path):
-    home = tmp_path / "pat"
-    home.mkdir()
-    (tmp_path / "dotfiles" / "rustdesk").mkdir(parents=True)
-    (home / ".config").symlink_to(tmp_path / "dotfiles")
-    settings = home / ".config" / "rustdesk"
-    given = fd_owners(
-        monkeypatch,
-        {
-            str(home): (4242, 4343),
-            str(tmp_path / "dotfiles"): (0, 0),
-            str(tmp_path / "dotfiles" / "rustdesk"): (0, 0),
-        },
-    )
-
-    assert rustdesk.give_back_dirs(str(settings), str(home)) == []
-    assert given == []
 
 
 # --- what RustDesk itself writes into RustDesk.toml ---

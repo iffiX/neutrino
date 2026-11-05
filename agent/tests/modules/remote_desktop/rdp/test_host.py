@@ -796,55 +796,19 @@ def test_a_link_planted_before_the_switch_off_is_never_written_through(
     )
 
 
-def _seat_folders_root_owns(host, monkeypatch):
-    """The seat's settings folders there, read on their descriptors as
-    root's, under a home that reads as uid 4242; returns the changes of
-    owner made on a descriptor."""
+def test_the_seats_folders_root_owns_keep_their_owner(host, monkeypatch):
+    """A folder root left in a home is no layout the agent reads, so neither
+    a standing share nor the agent's start changes its owner."""
     home = host.root / "home" / "pat"
     settings = home / ".config" / "rustdesk"
     settings.mkdir(parents=True, exist_ok=True)
-    return fd_owners(
+    host.set_switch(True)
+    chowned = fd_owners(
         monkeypatch,
-        {
-            str(home): (4242, 4343),
-            str(home / ".config"): (0, 0),
-            str(settings): (0, 0),
-        },
+        {str(home): (4242, 4343), str(home / ".config"): (0, 0), str(settings): (0, 0)},
     )
 
-
-def test_a_standing_share_gives_the_seats_folders_root_owns_back(host, monkeypatch):
     host.set_switch(True)
-    host.applier.calls.clear()
-    chowned = _seat_folders_root_owns(host, monkeypatch)
-
-    host.set_switch(True)
-
-    home = host.root / "home" / "pat"
-    assert _steps(host.applier) == []
-    assert chowned == [
-        (str(home / ".config"), 4242, 4343),
-        (str(home / ".config" / "rustdesk"), 4242, 4343),
-    ]
-
-
-def test_the_agent_at_start_gives_the_seats_folders_root_owns_back(host, monkeypatch):
-    """An unchanged state applies nothing after an upgrade, so the start
-    does it."""
-    host.set_switch(True)
-    chowned = _seat_folders_root_owns(host, monkeypatch)
-
-    host.settle_at_start()
-
-    assert [target for target, _, _ in chowned] == [
-        str(host.root / "home" / "pat" / ".config"),
-        str(host.root / "home" / "pat" / ".config" / "rustdesk"),
-    ]
-
-
-def test_with_the_switch_off_the_seats_folders_are_left_alone(host, monkeypatch):
-    chowned = _seat_folders_root_owns(host, monkeypatch)
-
     host.settle_at_start()
 
     assert chowned == []

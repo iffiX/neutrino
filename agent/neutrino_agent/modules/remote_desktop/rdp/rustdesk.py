@@ -20,10 +20,8 @@ Wayland it stores the screen-capture permission there, so a copy left owned
 by root costs that person the permission dialog on every connection. Every
 read and write of a file under a home runs as the home's account through
 :class:`AccountFiles`, keeping the mode the file had; the file and each
-folder made for it are that account's. A folder there that root owns,
-which RustDesk run as root leaves, is given to that account on its open
-descriptor, each level opened with no link followed. Root's own copies
-keep the owner and mode they had.
+folder made for it are that account's. Root's own copies keep the owner
+and mode they had.
 
 **RustDesk seals the password when it rewrites the file**: ``00``, then
 base64 of the format byte 1, a 24-byte nonce and the secretbox, keyed by the
@@ -47,7 +45,6 @@ import stat
 import sys
 
 from neutrino_agent.exceptions import InstallError, ModuleApplyError
-from neutrino_agent.modules.shared.handle_walk import WALK_DIR_FLAGS, open_dir
 from neutrino_agent.modules.remote_desktop.rdp.ed25519 import (
     ED25519_SEED_BYTES,
     public_key,
@@ -415,24 +412,6 @@ def stored_password(path: str, machine_id) -> "str | None":
     return open_sealed(stored, machine_id())
 
 
-def give_back_dirs(directory: str, home: str) -> list:
-    """Give each folder below a home down to a settings folder that root
-    owns to the home's owner.
-
-    Args:
-        directory: The settings folder.
-        home: The home of the account the folder is for.
-
-    Returns:
-        The folders given, top down; empty when ``directory`` is not under
-        ``home``, the home is root's, or this system sets no owners.
-
-    Raises:
-        OSError: If a folder's owner cannot be changed.
-    """
-    return _give_dirs(os.path.normpath(directory), home)
-
-
 def is_below_link(path: str, home: str) -> bool:
     """Whether a settings file under a home is reached through a symbolic
     link, the file itself included.
@@ -691,40 +670,6 @@ def _unquoted(value: str) -> str:
 def _make_dirs(directory: str) -> None:
     """Make one of root's folders and each missing one above it."""
     os.makedirs(os.path.normpath(directory), exist_ok=True)
-
-
-def _give_dirs(directory: str, home: str) -> list:
-    """Give each folder below ``home`` down to ``directory`` that root owns
-    to the home's owner, each level opened from the home with no link
-    followed and given on its descriptor; the walk stops at a link or at a
-    level that is missing."""
-    levels = _levels_below(home, directory)
-    if not home or not levels or not hasattr(os, "fchown"):
-        return []
-    try:
-        descriptor = open_dir(home)
-    except OSError:
-        return []
-    given = []
-    try:
-        owner = os.fstat(descriptor)
-        if owner.st_uid == 0:
-            return []
-        for level in levels:
-            try:
-                below = os.open(
-                    os.path.basename(level), WALK_DIR_FLAGS, dir_fd=descriptor
-                )
-            except OSError:
-                break
-            os.close(descriptor)
-            descriptor = below
-            if os.fstat(descriptor).st_uid == 0:
-                os.fchown(descriptor, owner.st_uid, owner.st_gid)
-                given.append(level)
-    finally:
-        os.close(descriptor)
-    return given
 
 
 def _levels_below(home: str, directory: str) -> list:
