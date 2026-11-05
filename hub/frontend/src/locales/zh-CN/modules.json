@@ -101,7 +101,7 @@
   "ui.ai.kind_custom": "OpenAI 兼容 — /chat/completions",
   "ui.ai.kind_gemini": "Gemini — generateContent",
   "ui.ai.kind_openai": "OpenAI — /v1/responses",
-  "ui.ai.models_hint": "每行一个，先写真实名称；要让工具看到别的名字就加 = 别名。第一个是设备的默认模型。",
+  "ui.ai.models_hint": "每行一个，先写真实名称；要让工具看到别的名字就加 = 别名。第一个是各个系统的默认模型。",
   "ui.ai.name_placeholder": "Anthropic 直连",
   "ui.ai.needs_token": "配上令牌才能服务",
   "ui.ai.new_provider": "新建提供方",

@@ -34,6 +34,22 @@ LOCALES_DIR = FRONTEND_SRC_DIR / "locales"
 KEY_PATTERN = re.compile(r'"((?:ui|state|code)\.[a-z0-9_]+(?:\.[a-z0-9_]+)*)"')
 PLACEHOLDER_PATTERN = re.compile(r"\{(\w+)\}")
 
+# The keys whose Chinese keeps 设备 or 电脑, by the device each names.
+KEYS_KEEPING_DEVICE_WORDS = {
+    "code.static_lease_address_invalid": "a host on a served network",
+    "ui.clients.kind_panel_description": "a client device of the person's own",
+    "ui.network.diagram_more_devices": "the hosts on a served network",
+    "ui.network.inter_lan_description": "the hosts on the gateway's networks",
+    "ui.network.upstream_hint": "a host naming the hub its gateway",
+    "ui.overlay.peers_empty": "a NetBird peer",
+    "ui.overlay.topology_more_devices": "the hosts on a served network",
+    "ui.overlay.topology_no_devices": "the hosts on a served network",
+    "ui.setup.port_lan": "the hosts on a served network",
+    "ui.setup.vlan_tag": "the hosts on a served network",
+    "ui.setup.proxy_lead_router": "the hosts on a served network",
+    "ui.setup.install_title": "the device the browser runs on",
+}
+
 
 def catalog(language: str, name: str) -> dict:
     """One catalog file's sentences.
@@ -97,10 +113,23 @@ def test_every_sentence_fills_the_same_placeholders(language, name):
 
 
 @pytest.mark.parametrize("name", catalog_names())
-def test_no_chinese_sentence_calls_a_computer_joined_to_the_hub_a_machine(name):
-    """Chinese writes 系统 for it and never 机器 (ui_text.md, "Names that are fixed")."""
+def test_chinese_names_a_computer_joined_to_the_hub_only_as_a_system(name):
+    """Chinese writes 系统 for it and never 机器, 设备 or 电脑 (ui_text.md, "Names
+    that are fixed"). A kept key names another device."""
     for key, sentence in catalog("zh-CN", name).items():
         assert "机器" not in sentence, key
+        if key not in KEYS_KEEPING_DEVICE_WORDS:
+            assert "设备" not in sentence and "电脑" not in sentence, key
+
+
+def test_every_key_kept_with_a_device_word_still_has_one():
+    sentences = {
+        key: sentence
+        for name in catalog_names()
+        for key, sentence in catalog("zh-CN", name).items()
+    }
+    for key in KEYS_KEEPING_DEVICE_WORDS:
+        assert "设备" in sentences[key] or "电脑" in sentences[key], key
 
 
 @pytest.mark.parametrize("language", list(WEB_LANGUAGES))
