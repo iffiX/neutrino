@@ -209,7 +209,14 @@ the entry it tried on disk, so a restart does not try it again. The mark
 holds for one install, one build and one binding: `nagent service
 uninstall`, which every package's removal runs, deletes it, and so do a join
 and a leave, so the next agent that holds the same state applies it again
-after a removal undid it. The file keeps the build that wrote it, the
+after a removal undid it. A join and a leave also empty the applied hash the
+report carries, in the running service as well when `nagent join` or
+`nagent leave` wrote the binding from a process of its own. The first
+report of a new binding then names no hash, and the hub sends the state at
+once, as at a first join ([protocol.md](protocol.md), "The rules the
+details settle"). On the lab's Ubuntu 22.04 a machine that left and joined
+the same hub again landed on its old row, reported the hash of the state it
+held before the leave, and got no state until the next press. The file keeps the build that wrote it, the
 agent's version and the time its package was built, which the packaging
 stamps into `_version.py` as `AGENT_BUILT_AT`; an agent of another build,
 after an upgrade or a reinstall of another package, uses none of the
