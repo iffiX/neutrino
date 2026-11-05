@@ -4,7 +4,8 @@ The hub sends one state per device: ``{hash, modules, desktop}``, with one
 entry per module it has a say about, ``{want, config, install}``, the
 recipe ``install`` being ``{runner, method, params}``, and ``is_taken_over``
 on a module the hub took over and no press has touched since, whose task
-installs nothing; and the seat password
+installs and writes nothing: its one step checks the configuration; and
+the seat password
 this machine's desktop answers with. A copy lands here on every ``state``
 frame, root-only on disk, and each mentioned module whose entry is news
 gets a task, :class:`ModuleTask`, that makes its actual state equal its
@@ -568,7 +569,9 @@ class DesiredStateApplier:
         version differs from its recipe's, then the configure steps under
         ``stopped`` and ``running``, less a second ``wait_module``. An entry
         that carries ``is_taken_over`` plans no install and no version
-        switch, whatever the machine shows: the configure steps alone.
+        switch, whatever the machine shows, and under ``stopped`` and
+        ``running`` one ``configure`` step that checks the configuration
+        and writes nothing.
 
         Args:
             task: The task.
@@ -598,10 +601,13 @@ class DesiredStateApplier:
         if want not in AGENT_PRESENT_WANTS:
             self._log(task_line(name, f"want {want!r} is not one this agent knows"))
             return PLAN_CONFIGURE, []
+        if entry.get(AGENT_TAKEN_OVER_KEY) is True:
+            if want not in CONFIGURING_WANTS:
+                return PLAN_CONFIGURE, []
+            return PLAN_CONFIGURE, self._engine.check_steps(name, entry)
         kind = PLAN_CONFIGURE
         steps = []
-        is_taken_over = entry.get(AGENT_TAKEN_OVER_KEY) is True
-        if not is_taken_over and (
+        if (
             self._engine.is_install_failed(name)
             or not self._engine.is_installed(name, entry)
             or (
@@ -610,7 +616,7 @@ class DesiredStateApplier:
         ):
             kind = PLAN_INSTALL
             steps += self._engine.install_steps(name, entry)
-        elif not is_taken_over and self._engine.take_version_switch(name, entry):
+        elif self._engine.take_version_switch(name, entry):
             kind = PLAN_SWITCH
             steps += self._engine.switch_steps(name, entry)
         if want in CONFIGURING_WANTS:
@@ -943,10 +949,19 @@ class DesiredStateApplier:
                 self._log(task_line(name, f"not taken down: {error}"))
 
     def _keep_outcome(self, task, entry: dict, outcome, *, is_cut: bool) -> None:
-        """Mark a module configured once its task took, keep its failure, and read its row again."""
+        """Mark a module configured once its task took, keep its failure, and read its row again.
+
+        A task of a module taken over checked the configuration alone and
+        marks nothing.
+        """
         name = task.name
         want = str(entry.get("want", "") or "")
-        if outcome is None and not is_cut and want in CONFIGURING_WANTS:
+        if (
+            outcome is None
+            and not is_cut
+            and want in CONFIGURING_WANTS
+            and entry.get(AGENT_TAKEN_OVER_KEY) is not True
+        ):
             try:
                 self._engine.mark_configured(name)
             except OSError as error:

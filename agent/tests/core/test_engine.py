@@ -7,7 +7,8 @@ here is the runner the recipe's ``runner`` chooses, an unknown one reading
 unsupported; the state derived from three facts (the software there by the
 method's one presence check, the unit active, the configured mark on disk)
 with the unit and the details read whenever that check passes, whatever the
-runner's own check says; a ``verify`` that passed run again only once the
+runner's own check says, and a module taken over read by its unit with no
+mark; a ``verify`` that passed run again only once the
 program file it names changed; the five fields of every row; the mark written and
 cleared by name; an install and an uninstall run in the caller's thread
 with each output line handed on as it comes and the row transient
@@ -27,7 +28,9 @@ off the row while the module's task runs; an uninstall of what a failed
 install left judged by the check afterwards; a ``builtin`` module reading
 absent from its uninstall to its next install's ``verify``, the system's
 software there all the while; the steps of the programs run
-as an account, the file share and Gitea with their locks; a container
+as an account, the file share and Gitea with their locks; the one
+``configure`` of a module taken over running the runner's ``validate`` and
+nothing else; a container
 module read stopped after its start task read again until it runs; and
 that nothing in it ever retries anything.
 """
@@ -758,6 +761,25 @@ def test_the_state_of_software_that_is_there_follows_the_unit_and_the_mark(
     assert row["state"] == state
     assert row["is_active"] is is_active_now
     assert row["code"] == ""
+
+
+@pytest.mark.parametrize(
+    "is_active_now, state", [(True, "running"), (False, "stopped")]
+)
+def test_a_module_taken_over_reads_its_unit_with_no_configured_mark(
+    tmp_path, is_active_now, state
+):
+    """The hub took the module over as it runs; its task wrote no mark, so
+    the first press's configure is its first apply."""
+    runner = ConfigurableRunner(is_active_now=is_active_now)
+    wanted = module_wanted("running")
+    wanted["samba"]["is_taken_over"] = True
+    engine = module_engine(runner, wanted, tmp_path)
+
+    engine._refresh(is_forced=True)
+
+    assert engine.report()["samba"]["state"] == state
+    assert engine.is_configured("samba") is False
 
 
 @pytest.mark.parametrize("is_marked", [True, False])
@@ -2527,6 +2549,50 @@ def test_a_stop_step_takes_down_the_modules_requiring_it_before_the_stop(
 
     assert stop.name == "stop"
     assert context.waits == ["stop_requiring", "stop"]
+
+
+SYSTEM_ACCOUNTS = ("system_accounts", "alone")
+
+
+@pytest.mark.parametrize("is_windows", [False, True])
+@pytest.mark.parametrize(
+    "name, locks",
+    [("podman", (CONTAINERS_ALONE,)), ("samba", (SYSTEM_ACCOUNTS,)), ("gitea", ())],
+)
+def test_a_module_taken_over_plans_one_configure_that_checks_and_writes_nothing(
+    tmp_path, monkeypatch, is_windows, name, locks
+):
+    """A join changes nothing on the machine: the step runs the runner's
+    ``validate`` and none of its apply, start, stop or account work."""
+    if is_windows:
+        platform = HubPackagesPlatform(str(tmp_path / "Neutrino"))
+    else:
+        platform = StateRootPlatform(str(tmp_path))
+    engine = ModuleEngine(platform=platform, configured_dir=str(tmp_path / "c"))
+    runner = engine.runner_of(name)
+    calls = []
+    monkeypatch.setattr(runner, "validate", lambda config: calls.append(config))
+    for verb in ("apply", "apply_stopped", "keep", "start", "stop"):
+        monkeypatch.setattr(
+            runner, verb, lambda *args, verb=verb: calls.append(verb), raising=False
+        )
+    entry = {
+        "want": "running",
+        "config": {"n": name},
+        "install": {"runner": runner.runner, "method": "system", "params": {}},
+        "is_taken_over": True,
+    }
+    lines = []
+
+    steps = engine.check_steps(name, entry)
+    engine.set_line_sink(lines.append)
+    failure = run_step(steps[0], StepContext(name))
+    engine.set_line_sink(None)
+
+    assert planned(steps) == [("configure", {}, locks)]
+    assert failure is None
+    assert calls == [{"n": name}]
+    assert lines == [f"{name}: taken over, checked the configuration and wrote nothing"]
 
 
 def test_containers_on_windows_plans_the_features_and_the_restart_first(tmp_path):

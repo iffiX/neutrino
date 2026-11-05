@@ -75,6 +75,7 @@ from neutrino_agent.constants import (
     AGENT_STEP_UNINSTALL,
     AGENT_STEP_VERIFY,
     AGENT_STEP_WAIT_MODULE,
+    AGENT_TAKEN_OVER_KEY,
     AGENT_UNINSTALLED_DIR_NAME,
     AGENT_VERSIONS_DIR_NAME,
     AGENT_WANT_RUNNING,
@@ -883,6 +884,28 @@ class ModuleEngine(ReconcileWorker):
             return planned
         return self._wait_module_steps(recipe, AGENT_MODULE_STATE_FAILED) + planned
 
+    def check_steps(self, name: str, entry: dict) -> list:
+        """The one step of a module taken over: ``configure``, which checks the configuration and writes nothing.
+
+        Args:
+            name: The module name.
+            entry: The state's entry the task plans from, which carries
+                ``is_taken_over``.
+
+        Returns:
+            The ``configure`` step, which runs the runner's ``validate``,
+            with the locks the runner adds to its ``configure``.
+        """
+        recipe = _recipe_of(entry)
+        runner = self._runner_for(name, recipe)
+        config = entry.get("config")
+        config = dict(config) if isinstance(config, dict) else {}
+        step = ModuleStep(
+            name=AGENT_STEP_CONFIGURE,
+            run=functools.partial(self._run_check, name, runner, config),
+        )
+        return self._with_runner_locks(runner, [step])
+
     def uninstall_steps(self, name: str, entry: dict) -> list:
         """The one ``uninstall`` step that takes one module's software off the machine.
 
@@ -1061,6 +1084,17 @@ class ModuleEngine(ReconcileWorker):
     def _run_pull(self, runner, image: dict, context) -> None:
         """Have Containers' Podman pull one image of a container module."""
         runner.pull_image(image)
+
+    def _run_check(self, name: str, runner, config: dict, context) -> None:
+        """The ``configure`` step of a module taken over: the runner's ``validate``, which writes nothing.
+
+        Raises:
+            ModuleApplyError: Naming the first problem the check finds.
+        """
+        runner.validate(dict(config))
+        self._collect(
+            f"{name}: taken over, checked the configuration and wrote nothing"
+        )
 
     def _run_switch(self, name: str, entry: dict, context) -> None:
         """Run the version switch.
@@ -1467,7 +1501,9 @@ class ModuleEngine(ReconcileWorker):
             ``installing`` row carries the runner's install wait as its
             code and params, and a module whose last install failed reads
             ``install_failed`` with that install's code and params,
-            whatever is on the machine, except while its task runs. A row
+            whatever is on the machine, except while its task runs. A module
+            whose entry carries ``is_taken_over`` reads ``running`` or
+            ``stopped`` by its unit, as a configured one does. A row
             with a kept failure adds its ``step``. A module the check does
             not find reads ``installing`` while its install mark stands.
         """
@@ -1499,10 +1535,9 @@ class ModuleEngine(ReconcileWorker):
             is_active = bool(runner.is_active()) or (
                 _want_of(wanted) == AGENT_WANT_RUNNING and runner.is_without_instances()
             )
+            is_configured = self.is_configured(name) or _is_taken_over(wanted)
             status = _typed(
-                _steady_state(
-                    is_active=is_active, is_configured=self.is_configured(name)
-                ),
+                _steady_state(is_active=is_active, is_configured=is_configured),
                 is_active=is_active,
             )
             if runner.is_installing():
@@ -1839,6 +1874,11 @@ def _has_step(task: dict, step: str) -> bool:
 def _want_of(wanted: "dict | None") -> str:
     """The ``want`` a state's entry names, empty for none."""
     return str((wanted or {}).get("want", "") or "")
+
+
+def _is_taken_over(wanted: "dict | None") -> bool:
+    """Whether a state's entry carries the hub's takeover mark."""
+    return (wanted or {}).get(AGENT_TAKEN_OVER_KEY) is True
 
 
 def _steady_state(*, is_active: bool, is_configured: bool) -> str:

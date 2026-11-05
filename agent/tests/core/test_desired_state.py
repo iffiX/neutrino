@@ -4,7 +4,8 @@ What these pin: what each ``want`` plans (absent uninstalls and clears the
 mark, installed puts the software there and nothing else, stopped and
 running install what is missing then configure and settle the unit, with
 the mark written once the task took), a module the hub took over planning
-no install and no switch until a press, a module the state does not mention
+no install and no switch until a press, its one ``configure`` checking the
+configuration and writing nothing, a module the state does not mention
 untouched, an install's bytes asked for down a ``package {module, artifact,
 digest}`` stream, one ``log {module}`` stream per task with a ``step
 <i>/<n>`` line per step and closed with the module's state, the applied
@@ -197,6 +198,13 @@ class FakeEngine:
             )
         ]
 
+    def check_steps(self, name, entry):
+        runner = self.runners[name]
+        config = dict(entry.get("config") or {})
+        return [
+            ModuleStep(name="configure", run=functools.partial(_check, runner, config))
+        ]
+
     def configure_steps(self, name, entry, want):
         runner = self.runners[name]
         config = dict(entry.get("config") or {})
@@ -313,6 +321,10 @@ def _apply(runner, config, context):
     runner.apply(config)
 
 
+def _check(runner, config, context):
+    runner.validate(config)
+
+
 def _start(runner, context):
     runner.start()
 
@@ -339,9 +351,13 @@ class FakeRunner:
         self.failure = failure
         self.journal = journal if journal is not None else []
         self.applied: list = []
+        self.checked: list = []
         self.stops = 0
         self.required_stops = 0
         self.wait = wait or {}
+
+    def validate(self, config):
+        self.checked.append(config)
 
     def apply(self, config):
         if self.failure is not None:
@@ -650,17 +666,41 @@ def test_a_module_taken_over_plans_no_install_it_owes_until_a_press(tmp_path, wa
     assert [name for name, _ in engine.installs] == ["podman"]
 
 
-def test_a_module_taken_over_is_configured_and_started_as_the_machine_has_it(
-    tmp_path,
+@pytest.mark.parametrize("want", ["stopped", "running"])
+def test_a_module_taken_over_checks_its_configuration_and_writes_nothing(
+    tmp_path, want
 ):
+    """A join changes nothing on the machine: one ``configure`` that checks,
+    no start or stop, no configured mark; the first press applies."""
     runners = {"podman": FakeRunner()}
     held, engine = applier(runners, tmp_path=tmp_path)
-    engine.owing.add("podman")
 
-    run(held, taken_over(state(podman="running"), "podman"))
+    run(held, taken_over(state(podman=want), "podman"))
+
+    task, _state, _wait = engine.last("podman")
+    assert [step["name"] for step in task["steps"]] == ["configure"]
+    assert runners["podman"].checked == [{"n": "podman"}]
+    assert runners["podman"].applied == []
+    assert runners["podman"].journal == []
+    assert engine.configured == set()
+    assert held.applied_hash == "h1"
+
+    run(held, state("h2", podman=want))
 
     assert runners["podman"].applied == [{"n": "podman"}]
-    assert held.applied_hash == "h1"
+    assert engine.configured == {"podman"}
+
+
+def test_a_module_taken_over_under_installed_plans_no_step(tmp_path):
+    runners = {"samba": FakeRunner()}
+    held, engine = applier(runners, tmp_path=tmp_path)
+
+    run(held, taken_over(state(samba="installed"), "samba"))
+
+    task, _state, _wait = engine.last("samba")
+    assert task["steps"] == []
+    assert runners["samba"].checked == []
+    assert engine.configured == set()
 
 
 def test_a_module_taken_over_is_neither_installed_nor_switched(tmp_path):
@@ -678,6 +718,10 @@ def test_a_module_taken_over_is_neither_installed_nor_switched(tmp_path):
 
     assert engine.installs == []
     assert engine.switches == []
+    assert runners["gitea"].checked == [{"n": "gitea"}]
+    assert runners["samba"].checked == [{"n": "samba"}]
+    assert runners["gitea"].applied == runners["samba"].applied == []
+    assert runners["samba"].stops == 0
 
 
 def test_an_installed_module_that_owes_nothing_plans_no_install(tmp_path):
