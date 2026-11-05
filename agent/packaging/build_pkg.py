@@ -30,8 +30,10 @@ PACKAGE_NAME = payload.PACKAGE_NAME
 UNIT_DIR = "usr/lib/systemd/system"
 
 # The agent is a headless service; the interpreter it runs from is its own.
-# The rest is what the RustDesk host the package carries loads, under the
-# names upstream's Arch package gives those libraries.
+# Arch's systemd depends on acl, which holds the setfacl the SSH server's run
+# folder takes its account's entry from. The rest is what the RustDesk host
+# the package carries loads, under the names upstream's Arch package gives
+# those libraries.
 RUNTIME_DEPENDS = (
     "systemd",
     "gtk3",

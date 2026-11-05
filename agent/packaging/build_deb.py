@@ -24,10 +24,13 @@ AGENT_ROOT = payload.AGENT_ROOT
 PACKAGE_NAME = payload.PACKAGE_NAME
 
 # The agent is a headless service; the interpreter it runs from is its own.
-# The rest is what the RustDesk host the package carries loads: upstream's
-# own list, with the alternatives Debian's t64 transition split names over.
+# ``acl`` holds the setfacl the SSH server's run folder takes its account's
+# entry from. The rest is what the RustDesk host the package carries loads:
+# upstream's own list, with the alternatives Debian's t64 transition split
+# names over.
 RUNTIME_DEPENDENCIES = (
     "systemd",
+    "acl",
     "libgtk-3-0t64 | libgtk-3-0",
     "libxcb-randr0",
     "libxdo3 | libxdo4",

@@ -71,14 +71,14 @@ def test_the_deb_entry_point_runs_the_carried_interpreter(tmp_path, carried):
 
 def test_the_deb_asks_for_systemd_and_no_python(tmp_path, carried):
     """The interpreter is the package's own; what the machine still owes is
-    the init system that runs the service, and the C libraries the desktop
-    host loads."""
+    the init system that runs the service, the setfacl of the SSH server's
+    run folder, and the C libraries the desktop host loads."""
     build_deb._lay_out(tmp_path, "9.9.9", "amd64", "somebody")
 
     control = (tmp_path / "DEBIAN/control").read_text()
 
     assert "Architecture: amd64" in control
-    assert "Depends: systemd" in control
+    assert "Depends: systemd, acl," in control
     assert "libgtk-3-0t64 | libgtk-3-0" in control
     assert "gstreamer1.0-pipewire" in control
     assert "Recommends" not in control
@@ -299,6 +299,7 @@ def test_the_rpm_spec_names_the_machine_and_asks_for_no_python():
     assert "BuildArch:      aarch64" in spec
     assert "noarch" not in spec
     assert "Requires:       systemd" in spec
+    assert "Requires:       acl\n" in spec
     assert "Requires:       gtk3" in spec
     assert "Requires:       pipewire-gstreamer" in spec
     assert "Requires:       python3" not in spec
