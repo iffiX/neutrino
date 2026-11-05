@@ -522,14 +522,17 @@ def test_a_system_module_names_its_packages_per_family(name, debian, rhel):
 def test_containers_on_linux_names_podman_and_runc_and_keeps_runc():
     """podman-docker adds a docker command and conflicts with Docker CE. Every
     unit runs runc, since Ubuntu 22.04's crun 0.17 answers EPERM to
-    fchmodat2; an uninstall keeps runc, which another program can run on."""
+    fchmodat2; an uninstall keeps runc, which another program can run on.
+    verify finds Podman alone: a missing runc is an install the agent owes
+    only under installed or running, so a join that adopts a person's Podman
+    stopped installs nothing."""
     manifest = load_module_manifests()["podman"]
 
     for key in ("linux-debian", "linux-rhel", "linux-arch"):
         assert entry_params(manifest["platforms"][key]) == {
             "version": "system",
             "packages": ["podman", "runc"],
-            "verify": "podman --version && runc --version",
+            "verify": "podman --version",
             "uninstall": {"packages": ["podman"], "post_uninstall": []},
         }, key
     shipped = json.dumps(load_module_manifests())
