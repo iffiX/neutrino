@@ -1025,10 +1025,11 @@ moves or removes the module's entry ("Parallel, never take over").
 The seventh is every read, write, `chmod`, `chown`, rename and removal in a
 place an account can write, its home and every folder it owns, whichever
 module makes it: its RustDesk settings, Codeg's data directory, the access
-entries of a share's folder on macOS and Gitea's folders among them, each made through
+entries of a share's folder on macOS, the read of whether a share's folder
+is a real folder on Linux and macOS and Gitea's folders among them, each made through
 `modules/shared/account_files.py`. The one exception is the file share on
-Windows, whose grants on a share's folder SYSTEM sets itself, on the
-folder's handle with no reparse point followed
+Windows, whose grants on a share's folder SYSTEM sets itself, and whose
+folder it reads itself, on the folder's handle with no reparse point followed
 ([modules/file_share.md](agent/modules/file_share.md), "A share's folder").
 On Linux and macOS it runs through the step-down; on Windows under a logon
 of the account with the login its row names (`LogonUserW`), as the

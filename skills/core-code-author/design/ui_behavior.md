@@ -932,7 +932,12 @@ each kind of share ([agent/modules/file_share.md](agent/modules/file_share.md)):
 disabled while the name or the folder is empty or no account is checked.
 **Save** writes at once, `folder_share/add` or `folder_share/set`
 ([protocol.md](protocol.md), "`/api/agent/module`"), as the form of
-**Available accounts** does. A row shows the share's name, its folder in
+**Available accounts** does. A refused **Save** keeps the form open with
+what was typed and shows the refusal's words under it, a folder the
+machine reads as no real folder, `share_path_missing` or `share_path_link`,
+among them ([agent/modules/file_share.md](agent/modules/file_share.md), "A
+share's folder"); the account form shows the same two for its share path,
+and **Home shares** under its apply bar for an account it checks. A row shows the share's name, its folder in
 mono and its accounts, with **Edit** (`ui.samba.folder_edit`) and **Remove**
 (`ui.samba.folder_remove`) at its right; **Edit** opens the same form in the
 row's place. **Remove** asks through `useConfirm`, the title
