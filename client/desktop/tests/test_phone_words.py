@@ -1,4 +1,5 @@
-"""Every word a phone app names in its source is in the words it ships."""
+"""The words a phone app ships: every word its source names is among them, and
+no Chinese one calls a computer joined to the hub 机器."""
 
 import json
 import re
@@ -53,3 +54,15 @@ def test_a_phone_names_no_word_it_does_not_ship(phone, language):
     }
 
     assert not missing
+
+
+@pytest.mark.parametrize("phone", sorted(PHONES))
+def test_no_chinese_word_of_a_phone_calls_a_computer_joined_to_the_hub_a_machine(
+    phone,
+):
+    """Chinese writes 系统 and never 机器 (ui_text.md, "Names that are fixed")."""
+    own_words = PHONES[phone][2]
+    if not own_words.is_dir():
+        pytest.skip(f"this tree has no {phone} app")
+
+    assert "机器" not in (own_words / "zh-CN.json").read_text("utf-8")
