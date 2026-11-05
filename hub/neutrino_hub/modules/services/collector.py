@@ -154,6 +154,7 @@ class ServiceListCollector:
         hub_slug: str = SERVICES_MACHINE_SLUG_FALLBACK,
         device_ids_by_address: "dict | None" = None,
         device_names: "dict | None" = None,
+        ai_model: str = "",
     ):
         """
         Args:
@@ -194,11 +195,13 @@ class ServiceListCollector:
             device_ids_by_address: Address to the device reached there, which
                 a declared app at that address belongs to.
             device_names: Device id to what the hub calls the machine.
+            ai_model: The default model, which the ``ai`` entry carries.
         """
         self._hub_host = hub_host
         self._is_ai_served = is_ai_served
         self._ai_port = ai_port
         self._ai_models = ai_models
+        self._ai_model = ai_model
         self._is_ai_healthy = is_ai_healthy
         self._device_modules = list(device_modules)
         self._declared_apps = declared_apps
@@ -524,6 +527,7 @@ class ServiceListCollector:
                     "endpoint": f"http://{_url_host(self._hub_host)}:{self._ai_port}",
                     "protocol": SERVICES_AI_PROTOCOL,
                     "models": list(self._ai_models),
+                    "model": self._ai_model,
                 },
                 is_healthy=self._is_ai_healthy,
                 description=SERVICES_AI_DESCRIPTION,

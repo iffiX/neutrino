@@ -4,7 +4,7 @@ The file is ``config/devices/<id>/ayakaleaf.json``: the token secret, the
 administrator's password and the app's session and invitation secrets,
 generated the first time the module is installed and sealed under the
 vault's data key, the module's gateway key, and ``model``, the tab's AI
-model, empty for the gateway's first. The state carries ``{secret,
+model, empty for the default model. The state carries ``{secret,
 password, cookie_name, local_name}`` opened: the name of the app's session
 cookie on the device and the app's local name, which its forwarder checks
 the ``Host`` against; the desired state adds the guests of the app's Web
@@ -12,12 +12,13 @@ shares. The forwarder's port is the agent's. The module runs three hub
 containers on Containers: MongoDB and Redis first, then the app, which
 starts after both and whose 80 the module's forwarder serves.
 
-Pure apart from the module's file, read and written through the store.
+Pure apart from the module's file, read and written through the store, and
+the gateway's file, which names the default model.
 """
 
 import secrets
 
-from neutrino_hub.modules.clients.ai_keys import module_key
+from neutrino_hub.modules.clients.ai_keys import gateway_default_model, module_key
 from neutrino_hub.modules.credentials.vault import seal_bytes, unseal_bytes
 from neutrino_hub.modules.devices.constants import (
     DEVICE_AYAKALEAF_AI_PATH,
@@ -133,13 +134,13 @@ def chosen_model(stored: dict, models) -> str:
         models: The names the gateway serves now.
 
     Returns:
-        The tab's model, or the first model the gateway serves while the
-        tab names none; empty while the gateway serves none.
+        The tab's model, or the default model while the tab names none;
+        empty while the gateway serves none.
     """
-    served = [str(model) for model in models or () if model]
-    if not served:
+    default_model = gateway_default_model(models)
+    if not default_model:
         return ""
-    return str(stored.get(DEVICE_AYAKALEAF_MODEL_KEY, "") or "") or served[0]
+    return str(stored.get(DEVICE_AYAKALEAF_MODEL_KEY, "") or "") or default_model
 
 
 def compose_containers(request: HubContainerRequest) -> tuple:

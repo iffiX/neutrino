@@ -278,13 +278,16 @@ class PublishedServiceCache:
 
         cliproxyapi = self._unit("cliproxyapi")
         is_ai_served = self._is_ai_served()
-        ai_port, ai_models, is_ai_healthy = self._ai_state(cliproxyapi.is_active)
+        ai_port, ai_models, ai_model, is_ai_healthy = self._ai_state(
+            cliproxyapi.is_active
+        )
         names = self._device_names() if self._device_names is not None else {}
         collector = ServiceListCollector(
             hub_host=hub_host,
             is_ai_served=is_ai_served,
             ai_port=ai_port,
             ai_models=ai_models,
+            ai_model=ai_model,
             is_ai_healthy=is_ai_healthy,
             device_modules=self._device_modules(),
             declared_apps=declared,
@@ -553,23 +556,28 @@ class PublishedServiceCache:
         return CLIPROXYAPI_BINARY_PATH.is_file() and has_credentials()
 
     def _ai_state(self, is_active: bool) -> tuple:
-        """The gateway's port, served models and health.
+        """The gateway's port, served models, default model and health.
 
         With no key to probe with, which is a box that has never applied the
         gateway, the unit's own state is the health and the model list stays
         empty.
 
         Returns:
-            ``(port, models, is_healthy)``.
+            ``(port, models, default_model, is_healthy)``.
         """
         config = load_cliproxyapi_config()
         key = config.probe_key()
         if key is None or not is_active:
-            return config.listen_port, [], is_active
+            return config.listen_port, [], "", is_active
         is_answered, models = self._served_models.served(
             port=config.listen_port, client_key=key
         )
-        return config.listen_port, models, is_answered
+        return (
+            config.listen_port,
+            models,
+            config.resolved_default_model(models),
+            is_answered,
+        )
 
 
 __all__ = ["PublishedServiceCache"]

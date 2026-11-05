@@ -327,6 +327,7 @@
   "code.wol_sent": "已发送唤醒包",
   "code.setup_in_progress": "这个中枢已在配置中。",
   "code.gateway_not_serving": "中枢的 AI 网关还没有可用的模型，先到 AI 页设置好。",
+  "code.model_not_served": "网关不提供 {model}。",
   "code.switch_failed": "cc-switch 没能把工具指向网关：{detail}",
   "code.shell_program_unusable": "{path} 不是这个系统能运行的程序。",
   "code.rdp_takeover_failed": "远程桌面在 {step} 这一步没能启动：{detail}",

@@ -516,6 +516,44 @@ def test_the_last_account_signed_out_empties_the_state_once(monkeypatch, tmp_pat
     ]
 
 
+def test_the_default_model_fills_the_ai_tools_and_siyuan_and_a_new_pick_moves_the_state(
+    monkeypatch, tmp_path
+):
+    """The same machine, the gateway serving m1 and m2. Unset, the AI tools'
+    unchosen models and SiYuan's model are m1; picking m2 moves the state
+    once to m2; a pick the gateway no longer serves falls back to m1."""
+    answers = [(True, None, ["m1", "m2"])] * 3 + [(True, None, ["m1"])]
+    panel = gateway_reader(monkeypatch, tmp_path, list(answers))
+    sign_in(tmp_path)
+
+    def pick(model: str) -> None:
+        config = cliproxyapi_ops.load_config()
+        config.default_model = model
+        cliproxyapi_ops.save_config(config)
+
+    unset = panel.desired_state_for("other")
+    pick("m2")
+    picked = panel.desired_state_for("other")
+    again = panel.desired_state_for("other")
+    gone = panel.desired_state_for("other")
+
+    def filled(state) -> list:
+        (account,) = state["ai_tools"]["accounts"]
+        configs = account["tool_configs"]
+        return [
+            *configs["claude"].values(),
+            configs["codex"]["model"],
+            configs["gemini"]["model"],
+            state["modules"]["siyuan"]["config"]["model"],
+        ]
+
+    assert set(filled(unset[1])) == {"m1"}
+    assert set(filled(picked[1])) == {"m2"}
+    assert set(filled(gone[1])) == {"m1"}
+    assert unset[0] != picked[0] == again[0] != gone[0]
+    assert cliproxyapi_ops.load_config().default_model == "m2"
+
+
 class SlowEnginePart:
     """NetBird's part on a hub whose own daemon is not running: its status
     command takes ten seconds before it gives up."""

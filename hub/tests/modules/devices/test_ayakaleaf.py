@@ -225,6 +225,20 @@ def test_the_tab_s_model_is_the_app_s_while_the_gateway_serves_one(store):
     assert ai_lines(store, []) == []
 
 
+def test_the_ai_model_is_the_saved_default_model_while_the_tab_names_none(store):
+    ayakaleaf.ensure_config(store, DEVICE)
+    ai_keys.ensure_module_key(store, DEVICE, "ayakaleaf", "argon")
+    store.set_want(DEVICE, "ayakaleaf", "running")
+    config = cliproxyapi_ops.load_config()
+    config.default_model = "m2"
+    cliproxyapi_ops.save_config(config)
+
+    assert "AI_MODEL=m2" in ai_lines(store, ["m1", "m2"])
+    assert "AI_MODEL=m1" in ai_lines(store, ["m1", "m3"])
+    store.write(DEVICE, "ayakaleaf", {**store.read(DEVICE, "ayakaleaf"), "model": "m3"})
+    assert "AI_MODEL=m3" in ai_lines(store, ["m1", "m2", "m3"])
+
+
 def test_no_ai_variable_is_written_while_the_module_has_no_key(store):
     ayakaleaf.ensure_config(store, DEVICE)
     store.set_want(DEVICE, "ayakaleaf", "running")

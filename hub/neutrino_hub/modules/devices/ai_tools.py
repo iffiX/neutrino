@@ -46,11 +46,11 @@ def clean_tool_configs(raw: dict) -> dict:
 
 
 def resolved_tool_configs(tool_configs: dict, default_model: str) -> dict:
-    """The choices with the gateway's first model filling the unchosen models.
+    """The choices with the default model filling the unchosen models.
 
     Args:
         tool_configs: The cleaned choices.
-        default_model: The first model the gateway serves.
+        default_model: The default model the hub sends its readers.
 
     Returns:
         ``{claude: {default, opus, sonnet, haiku}, codex: {model,

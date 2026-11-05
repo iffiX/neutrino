@@ -55,6 +55,7 @@ from neutrino_hub.modules.channel.constants import (
 )
 from neutrino_hub.modules.clients.ai_keys import (
     device_gateway,
+    gateway_default_model,
     gateway_port,
     instance_key,
 )
@@ -293,7 +294,8 @@ def account_layer_agent_config(
             :func:`app_slugs` give them; None slugs each title alone.
         gateway_url: Where a module that holds a gateway key per account
             reaches the gateway on the machine.
-        models: The names the gateway serves, for such a module.
+        models: The names the gateway serves, for such a module, which
+            also give the default model it is sent.
         programs_of: Account to the command line programs it is enabled in,
             which the Terminal's accounts and the SSH server's instances
             carry; None names none.
@@ -306,7 +308,8 @@ def account_layer_agent_config(
         password, local_name, cookie_name}]}``, the last two on a module
         with a forwarder and ``password`` on a Windows machine alone; a
         module that holds a gateway key per account adds each instance's
-        ``gateway_key`` and ``{gateway_url, models}`` beside the instances.
+        ``gateway_key`` and ``{gateway_url, models, model}`` beside the
+        instances, ``model`` the default model.
     """
     is_windows = platform.get("os") == DEVICE_PASSWORD_OS
     by_name = {account.account: account for account in available}
@@ -374,6 +377,7 @@ def account_layer_agent_config(
     if row.name in gateway_instance_names():
         config["gateway_url"] = gateway_url
         config["models"] = [str(name) for name in models]
+        config["model"] = gateway_default_model(models)
     return config
 
 
@@ -564,8 +568,8 @@ def ai_tools_agent_config(
         it, the version and the artifact each left out when none is given;
         else ``{is_enabled, is_forwarded, gateway_port, base_url, api_key,
         accounts: [{account, password, tool_configs}], cc_switch_version,
-        cc_switch_artifact}``, every model filled with the first served
-        model where none was chosen and ``password`` sent to a Windows
+        cc_switch_artifact}``, every model filled with the default model
+        where none was chosen and ``password`` sent to a Windows
         machine alone.
     """
     base_url = str(gateway.get("gateway_url", "") or "")
@@ -583,11 +587,12 @@ def ai_tools_agent_config(
             off["cc_switch_artifact"] = dict(switcher_artifact)
         return off
     is_windows = platform.get("os") == DEVICE_PASSWORD_OS
+    default_model = gateway_default_model(models)
     sent_accounts = []
     for account in accounts:
         sent = _with_password({"account": account.account}, account, is_windows)
         sent["tool_configs"] = resolved_tool_configs(
-            account.tool_configs, str(models[0])
+            account.tool_configs, default_model
         )
         sent_accounts.append(sent)
     section = {
@@ -1453,7 +1458,7 @@ class DesiredStateStore:
             as :func:`podman_agent_config` composes it with the hub
             containers of the machine's container modules, and Hermes WebUI
             and Ayakaleaf with their secrets opened and their names, Hermes
-            WebUI with the gateway's first model. A
+            WebUI with the default model. A
             module whose manifest's ``web_share`` names ``guest_login``
             ``guest_account`` also carries ``guests``, the guest account of
             each live App share of its page.

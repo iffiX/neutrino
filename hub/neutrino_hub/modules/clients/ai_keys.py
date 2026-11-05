@@ -427,6 +427,20 @@ def gateway_models(served_models) -> list:
     return list(models)
 
 
+def gateway_default_model(models) -> str:
+    """The default model among the names the gateway serves.
+
+    Args:
+        models: The names the gateway serves now, sorted by name.
+
+    Returns:
+        The saved ``default_model`` of ``config/cliproxyapi/cliproxyapi.json``
+        while ``models`` holds it, else the first name of ``models``; empty
+        while ``models`` is empty.
+    """
+    return load_config().resolved_default_model(models)
+
+
 def settle_device_keys(enabled_ids) -> list:
     """Revoke every device key whose device's AI tools setting is not on.
 
@@ -461,9 +475,8 @@ def client_credential(
             :class:`neutrino_hub.modules.cliproxyapi.ops.CliproxyApiServedModelCache`.
 
     Returns:
-        ``{api_key, model}``: the client's own key and the first model the
-        gateway serves; None while the client is disabled or the vault is
-        locked.
+        ``{api_key, model}``: the client's own key and the default model;
+        None while the client is disabled or the vault is locked.
     """
     if client.is_disabled:
         return None
@@ -473,7 +486,7 @@ def client_credential(
     port = load_config().listen_port
     return {
         "api_key": api_key,
-        "model": served_models.first_model(port=port, client_key=api_key),
+        "model": served_models.default_model(port=port, client_key=api_key),
     }
 
 

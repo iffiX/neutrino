@@ -515,7 +515,7 @@ def _opened_module_keys() -> list:
 class CliproxyApiServedModelCache:
     """The gateway's served model names, probed and kept for a short while.
 
-    Heartbeats answer with the first served name, and a fleet beats every few
+    Heartbeats answer with the default model, and a fleet beats every few
     seconds; the cache keeps that from asking the gateway on every beat. A
     probe that fails or finds no name leaves the last list that held a name
     while :func:`has_credentials` is true, and empties it otherwise. The state
@@ -560,16 +560,16 @@ class CliproxyApiServedModelCache:
                 _write_served_models([])
         return self._is_answered, list(self._models)
 
-    def first_model(self, *, port: int, client_key: str) -> str:
-        """The first model the gateway serves, re-probed only when stale.
+    def default_model(self, *, port: int, client_key: str) -> str:
+        """The default model among the names the gateway serves, re-probed only when stale.
 
         Args:
             port: Where the gateway listens.
             client_key: A key to authenticate the probe with.
 
         Returns:
-            The first name of :meth:`served`'s list, or empty while it is
-            empty.
+            :meth:`CliproxyApiConfig.resolved_default_model` of
+            :meth:`served`'s list, empty while it is empty.
         """
         _, models = self.served(port=port, client_key=client_key)
-        return models[0] if models else ""
+        return load_config().resolved_default_model(models)

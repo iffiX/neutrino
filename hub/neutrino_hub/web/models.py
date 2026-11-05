@@ -804,6 +804,9 @@ class CliproxyApiStatusView(BaseModel):
     # Signed-in subscription accounts, which serve beside the key providers
     # and are counted separately because nothing applies them.
     account_count: int = 0
+    # The saved default model, kept while the gateway no longer serves it;
+    # empty while none is saved.
+    default_model: str = ""
 
 
 class CliproxyApiUsageRates(BaseModel):
@@ -897,9 +900,11 @@ class CliproxyApiKeyCreate(BaseModel):
 
 
 class CliproxyApiSettingsUpdate(BaseModel):
-    """The AI gateway's adjustable settings."""
+    """The AI gateway's adjustable settings, each written only when it is sent."""
 
-    listen_port: int
+    listen_port: int | None = None
+    # The default model; empty takes the first name the gateway serves.
+    default_model: str | None = None
 
 
 class CliproxyApiAccountView(BaseModel):
@@ -3302,7 +3307,7 @@ class AyakaleafDeviceView(ModuleDeviceFields):
 
     # The forwarder's port as the machine reports it; 0 before it does.
     port: int = 0
-    # The tab's AI model; empty for the gateway's first.
+    # The tab's AI model; empty for the gateway's default model.
     model: str = ""
     # The names the gateway serves, for the picker.
     models: list[str] = Field(default_factory=list)
@@ -3314,7 +3319,7 @@ class AyakaleafDeviceView(ModuleDeviceFields):
 
 
 class AyakaleafModelUpdate(BaseModel):
-    """The AI model Ayakaleaf's app uses on one device; empty for the gateway's first."""
+    """The AI model Ayakaleaf's app uses on one device; empty for the gateway's default model."""
 
     device_id: str
     model: str = Field(default="", max_length=200)

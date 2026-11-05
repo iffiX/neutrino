@@ -70,7 +70,7 @@ def set_model(
     """Store the AI model the app uses, and push the state whose new environment restarts the app.
 
     Args:
-        update: The device, and the model; empty for the gateway's first.
+        update: The device, and the model; empty for the gateway's default model.
         runtime: The shared runtime.
 
     Returns:

@@ -133,12 +133,15 @@ class CliproxyApiConfig:
             on the first apply and never handed out; it is what keeps the
             gateway's key list from being empty, since an empty list is a
             gateway that asks nobody for a key.
+        default_model: The default model the AI page's Access panel saved;
+            empty while none is saved.
     """
 
     listen_port: int = CLIPROXYAPI_DEFAULT_PORT
     client_keys: list[CliproxyApiClientKey] = field(default_factory=list)
     hub_key: "CliproxyApiClientKey | None" = None
     device_keys: dict[str, CliproxyApiClientKey] = field(default_factory=dict)
+    default_model: str = ""
 
     @classmethod
     def from_dict(cls, data: dict) -> "CliproxyApiConfig":
@@ -159,6 +162,7 @@ class CliproxyApiConfig:
                 for device_id, entry in (data.get("device_keys") or {}).items()
                 if _has_seal(entry)
             },
+            default_model=str(data.get("default_model", "") or ""),
         )
 
     def to_dict(self) -> dict:
@@ -169,7 +173,23 @@ class CliproxyApiConfig:
             "device_keys": {
                 device_id: key.to_dict() for device_id, key in self.device_keys.items()
             },
+            "default_model": self.default_model,
         }
+
+    def resolved_default_model(self, models) -> str:
+        """The default model the hub sends its readers.
+
+        Args:
+            models: The names the gateway serves now, sorted by name.
+
+        Returns:
+            The saved ``default_model`` while ``models`` holds it, else the
+            first name of ``models``; empty while ``models`` is empty.
+        """
+        served = [str(name) for name in models or () if name]
+        if not served:
+            return ""
+        return self.default_model if self.default_model in served else served[0]
 
     def gateway_keys(self) -> list[CliproxyApiClientKey]:
         """Every key a caller of the gateway is counted under.

@@ -37,6 +37,7 @@ from neutrino_hub.exceptions import (
     VaultLockedError,
 )
 from neutrino_hub.modules.channel.constants import CHANNEL_ROLE_CLIENT
+from neutrino_hub.modules.clients.ai_keys import gateway_models
 from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.platforms.detect import process_controller
@@ -265,21 +266,37 @@ def _push_key_holder(runtime: PanelRuntime, key_id: str) -> None:
 def update_settings(
     request: CliproxyApiSettingsUpdate, runtime: PanelRuntime = Depends(get_runtime)
 ) -> CliproxyApiStatusView:
-    """Change the listen port.
+    """Change the listen port, the default model, or both.
+
+    A new port renders and restarts the gateway. A new default model restarts
+    nothing: every online machine whose state changes is handed its state,
+    and the published list is composed again, whose ``ai`` entry carries the
+    model to the clients.
 
     Args:
-        request: The new settings.
-        runtime: The shared runtime, whose client sockets are told.
+        request: The settings sent; one left out keeps what is stored.
+        runtime: The shared runtime, whose machines and clients are told.
 
     Returns:
         The state after the change.
 
     Raises:
-        HTTPException: 400 when the settings do not validate.
+        HTTPException: 400 when the settings do not validate, and
+            ``model_not_served`` for a default model the gateway does not
+            serve.
     """
+    model = request.default_model
+    if model and model not in gateway_models(runtime.served_models):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "model_not_served", "params": {"model": model}},
+        )
     with CONFIG_WRITE_LOCK:
         config = load_config()
-        config.listen_port = request.listen_port
+        if request.listen_port is not None:
+            config.listen_port = request.listen_port
+        if model is not None:
+            config.default_model = model
         try:
             config.validate()
         except ValueError as error:
@@ -291,8 +308,21 @@ def update_settings(
                 },
             ) from error
         save_config(config)
-    _apply_quietly()
+    if request.listen_port is not None:
+        _apply_quietly()
+    if model is not None:
+        _hand_on_default_model(runtime)
     return _status()
+
+
+def _hand_on_default_model(runtime: PanelRuntime) -> None:
+    """Hand every online machine its state where it changed, and compose the published list again."""
+    for session in runtime.agent_sessions.sessions():
+        try:
+            channel_state.offer_agent_state(runtime, session, session.offered_hash)
+        except (AgentOfflineError, StreamRefusedError):
+            continue
+    runtime.published_services.schedule_refresh()
 
 
 @router.post("/gateway/apply", response_model=ApplyResult)
@@ -529,6 +559,7 @@ def _status() -> CliproxyApiStatusView:
         requests_today=today["requests"],
         tokens_today=today["input_tokens"] + today["output_tokens"],
         account_count=_account_count() if service.is_active else 0,
+        default_model=config.default_model,
     )
 
 

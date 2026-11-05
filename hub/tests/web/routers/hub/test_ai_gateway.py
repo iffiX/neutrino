@@ -182,6 +182,99 @@ def test_a_locked_vault_refuses_rather_than_serving_a_blank_key(
         keys_client.get("/api/hub/ai/gateway")
 
 
+# --- the default model: saved, handed on, never a gateway restart ---
+
+
+class DefaultModelRuntime(KeysRuntime):
+    """The keys' runtime, one machine online and the published list counted."""
+
+    refreshes: list = []
+
+    def __init__(self):
+        super().__init__()
+        self.served_models = None
+        self.agent_sessions = type(
+            "Sessions",
+            (),
+            {"sessions": lambda self: [type("Session", (), {"offered_hash": "h0"})()]},
+        )()
+        self.published_services = type(
+            "Published",
+            (),
+            {"schedule_refresh": lambda self: DefaultModelRuntime.refreshes.append(1)},
+        )()
+
+
+@pytest.fixture
+def model_client(keys_client, monkeypatch):
+    """The gateway routes with the gateway serving m1 and m2, its applies and
+    the states offered counted."""
+    DefaultModelRuntime.refreshes = []
+    applied: list = []
+    offered: list = []
+    keys_client.app.dependency_overrides[get_runtime] = DefaultModelRuntime
+    monkeypatch.setattr(
+        cliproxyapi_router, "gateway_models", lambda served: ["m1", "m2"]
+    )
+    monkeypatch.setattr(cliproxyapi_router, "_apply_quietly", lambda: applied.append(1))
+    monkeypatch.setattr(
+        cliproxyapi_router.channel_state,
+        "offer_agent_state",
+        lambda runtime, session, held: offered.append(held),
+    )
+    keys_client.applied = applied
+    keys_client.offered = offered
+    return keys_client
+
+
+def test_a_default_model_is_saved_and_handed_on_with_no_gateway_apply(
+    model_client, tmp_path
+):
+    response = model_client.post(
+        "/api/hub/ai/gateway/set", json={"default_model": "m2"}
+    )
+
+    assert response.status_code == 200
+    assert response.json()["default_model"] == "m2"
+    assert response.json()["listen_port"] == 8317
+    assert _stored(tmp_path)["default_model"] == "m2"
+    assert model_client.get("/api/hub/ai/gateway").json()["default_model"] == "m2"
+    assert model_client.applied == []
+    assert model_client.offered == ["h0"]
+    assert DefaultModelRuntime.refreshes == [1]
+
+
+def test_a_model_the_gateway_does_not_serve_is_refused_and_nothing_is_written(
+    model_client, tmp_path
+):
+    response = model_client.post(
+        "/api/hub/ai/gateway/set", json={"default_model": "m9"}
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == {
+        "code": "model_not_served",
+        "params": {"model": "m9"},
+    }
+    assert not (tmp_path / CONFIG_RELATIVE).exists()
+    assert model_client.offered == []
+
+
+def test_a_port_change_applies_the_gateway_and_keeps_the_default_model(
+    model_client, tmp_path
+):
+    model_client.post("/api/hub/ai/gateway/set", json={"default_model": "m2"})
+    model_client.offered.clear()
+
+    response = model_client.post("/api/hub/ai/gateway/set", json={"listen_port": 9317})
+
+    assert response.status_code == 200
+    assert model_client.applied == [1]
+    assert model_client.offered == []
+    assert _stored(tmp_path)["listen_port"] == 9317
+    assert _stored(tmp_path)["default_model"] == "m2"
+
+
 # --- the accounts: listing, signing in, polling, and signing out ---
 
 

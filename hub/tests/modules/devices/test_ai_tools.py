@@ -1,6 +1,6 @@
 """The tool configuration a managed machine's AI tools setting holds.
 
-Every model nobody chose is the gateway's first served model. Codex and
+Every model nobody chose is the default model it is given. Codex and
 Gemini given no model wrote cc-switch's own defaults, names the gateway did
 not serve.
 """
@@ -8,7 +8,7 @@ not serve.
 from neutrino_hub.modules.devices.ai_tools import resolved_tool_configs
 
 
-def test_every_unchosen_model_is_the_first_served_model():
+def test_every_unchosen_model_is_the_default_model_given():
     resolved = resolved_tool_configs({"claude": {"opus": "m2"}}, "m1")
 
     assert resolved == {

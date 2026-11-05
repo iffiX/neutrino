@@ -3,8 +3,8 @@
 What these pin: the first install generates the token secret and the
 webui's password once and keeps them; the state carries ``{secret,
 password}`` opened, the login cookie's name, ``hermes_session_`` and the
-device id's first 12 characters, the app's local name, and the gateway's
-first served model, empty while it serves none;
+device id's first 12 characters, the app's local name, and the default
+model, empty while the gateway serves none;
 the two hub containers as the module's page lists them, the cookie's name in
 the webui's environment, with the gateway's address on a
 managed machine and on the hub's own; no container while the password does
@@ -85,7 +85,7 @@ def test_the_state_carries_both_secrets_opened_and_the_local_name(store):
     }
 
 
-def test_the_state_carries_the_gateway_s_first_model_and_none_while_none_is_served(
+def test_the_state_carries_the_first_served_model_while_none_is_picked_and_none_while_none_is_served(
     store,
 ):
     stored = hermes_webui.ensure_config(store, DEVICE)
@@ -98,6 +98,22 @@ def test_the_state_carries_the_gateway_s_first_model_and_none_while_none_is_serv
     assert none["modules"]["hermes_webui"]["config"]["model"] == ""
     config = hermes_webui.agent_config(stored, DEVICE, models=("m2", "m1"))
     assert config["model"] == "m2"
+
+
+def test_the_state_carries_the_saved_default_model_while_the_gateway_serves_it(
+    store,
+):
+    hermes_webui.ensure_config(store, DEVICE)
+    store.set_want(DEVICE, "hermes_webui", "running")
+    config = cliproxyapi_ops.load_config()
+    config.default_model = "m2"
+    cliproxyapi_ops.save_config(config)
+
+    served, _ = store.compose(DEVICE, LINUX, ai_models=["m1", "m2"])
+    gone, _ = store.compose(DEVICE, LINUX, ai_models=["m1", "m3"])
+
+    assert served["modules"]["hermes_webui"]["config"]["model"] == "m2"
+    assert gone["modules"]["hermes_webui"]["config"]["model"] == "m1"
 
 
 def test_a_machine_with_hermes_webui_reads_the_gateway_s_models_until_it_goes(store):

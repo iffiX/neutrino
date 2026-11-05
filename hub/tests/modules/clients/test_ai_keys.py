@@ -19,7 +19,7 @@ class StubServedModels:
         self.model = model
         self.asked: list = []
 
-    def first_model(self, *, port, client_key):
+    def default_model(self, *, port, client_key):
         self.asked.append((port, client_key))
         return self.model
 
@@ -95,7 +95,7 @@ def test_a_key_removed_behind_the_record_is_minted_again(unlocked):
     assert ClientRegistry().get(client_id).ai_key_id == load_config().client_keys[0].id
 
 
-def test_the_credential_is_the_clients_key_and_the_first_model(unlocked):
+def test_the_credential_is_the_clients_key_and_the_default_model(unlocked):
     registry = ClientRegistry()
     client_id = registry.create("alice")
     served = StubServedModels("claude-x")
@@ -401,3 +401,14 @@ def test_a_locked_vault_mints_no_siyuan_key(config_dir, monkeypatch):
 
     assert store.read("dev-1", "siyuan") == {"accounts": [{"account": "ann"}]}
     assert ai_keys.instance_key({"account": "ann"}) == ""
+
+
+def test_the_gateway_default_model_is_the_saved_pick_while_it_is_served(config_dir):
+    assert ai_keys.gateway_default_model(["m1", "m2"]) == "m1"
+    config = load_config()
+    config.default_model = "m2"
+    cliproxyapi_ops.save_config(config)
+
+    assert ai_keys.gateway_default_model(["m1", "m2"]) == "m2"
+    assert ai_keys.gateway_default_model(["m1", "m3"]) == "m1"
+    assert ai_keys.gateway_default_model([]) == ""

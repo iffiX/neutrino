@@ -343,7 +343,8 @@ def test_the_last_list_that_held_a_name_outlives_a_restart(box, monkeypatch):
     )
     assert not stored.exists()
     assert (
-        ops.CliproxyApiServedModelCache().first_model(port=8317, client_key="k") == "a"
+        ops.CliproxyApiServedModelCache().default_model(port=8317, client_key="k")
+        == "a"
     )
     assert ops.CliproxyApiServedModelCache().served(port=8317, client_key="k") == (
         False,
@@ -374,7 +375,7 @@ def test_a_failed_or_empty_probe_with_no_credential_empties_the_list(box, monkey
     assert cache.served(port=8317, client_key="k") == (False, [])
     assert json.loads(stored.read_text(encoding="utf-8")) == {"models": []}
     restarted = ops.CliproxyApiServedModelCache()
-    assert restarted.first_model(port=8317, client_key="k") == ""
+    assert restarted.default_model(port=8317, client_key="k") == ""
     assert restarted.served(port=8317, client_key="k") == (True, ["c"])
 
 
@@ -543,3 +544,19 @@ def test_a_box_that_never_applied_is_applied_whole(installed_box, monkeypatch):
 
     assert CliproxyApiConfigApplier().apply_keys(new_key="k").endswith("restarted")
     assert restarts == [["systemctl", "restart", "neutrino_hub_cliproxyapi.service"]]
+
+
+def test_the_default_model_is_the_saved_pick_while_the_gateway_serves_it(
+    box, monkeypatch
+):
+    keyed_provider()
+    config = ops.load_config()
+    config.default_model = "c"
+    ops.save_config(config)
+    scripted_probes(
+        monkeypatch, [(True, None, ["a", "b", "c"]), (True, None, ["a", "b"])]
+    )
+    cache = ops.CliproxyApiServedModelCache()
+
+    assert cache.default_model(port=8317, client_key="k") == "c"
+    assert cache.default_model(port=8317, client_key="k") == "a"

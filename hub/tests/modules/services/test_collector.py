@@ -467,3 +467,21 @@ def test_entries_are_resolved_per_scope_and_the_hubs_own_take_the_hubs_address()
     )
     assert resolved["ai"]["payload"]["endpoint"] == "http://100.64.0.1:8317"
     assert by_id(entries)["ai"]["payload"]["endpoint"] == "http://192.168.100.1:8317"
+
+
+def test_the_ai_entry_carries_the_served_names_and_the_default_model():
+    entries = by_id(
+        collector(
+            is_ai_served=True,
+            ai_models=["m1", "m2"],
+            ai_model="m2",
+            is_ai_healthy=True,
+        ).render()
+    )
+
+    assert entries["ai"]["payload"] == {
+        "endpoint": "http://192.168.100.1:8317",
+        "protocol": "openai",
+        "models": ["m1", "m2"],
+        "model": "m2",
+    }

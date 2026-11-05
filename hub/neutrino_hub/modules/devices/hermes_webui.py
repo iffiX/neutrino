@@ -5,19 +5,24 @@ the webui's password, generated the first time the module is installed and
 sealed under the vault's data key, and the module's gateway key. The state
 carries ``{secret, password, cookie_name, local_name, model}``, the secrets
 opened: the name of the webui's login cookie on the device, the app's local
-name, which its forwarder checks the ``Host`` against, and the first model
-the gateway serves, which the agent writes into Hermes's ``model.default``.
+name, which its forwarder checks the ``Host`` against, and the default
+model, which the agent writes into Hermes's ``model.default``.
 The forwarder's port is the agent's.
 The module runs two hub containers on Containers: the agent's gateway first,
 then the webui, which starts after it and whose 8787 the module's forwarder
 serves.
 
-Pure apart from the module's file, read and written through the store.
+Pure apart from the module's file, read and written through the store, and
+the gateway's file, which names the default model.
 """
 
 import secrets
 
-from neutrino_hub.modules.clients.ai_keys import gateway_port, module_key
+from neutrino_hub.modules.clients.ai_keys import (
+    gateway_default_model,
+    gateway_port,
+    module_key,
+)
 from neutrino_hub.modules.credentials.vault import seal_bytes, unseal_bytes
 from neutrino_hub.modules.devices.constants import (
     DEVICE_CONTAINER_GATEWAY_FORWARD_PORT,
@@ -103,14 +108,14 @@ def agent_config(
     Returns:
         ``{secret, password, cookie_name, local_name, model}``, each secret
         opened, empty when the file holds none or the vault cannot open it;
-        ``model`` the first name served, empty while none is.
+        ``model`` the default model, empty while no name is served.
     """
     config = {}
     for sealed in module_row(DEVICE_HERMES_WEBUI_MODULE).sealed_fields:
         config[sealed.opened_key] = _opened(stored.get(sealed.key), sealed.aad)
     config["cookie_name"] = cookie_name(key)
     config["local_name"] = local_name
-    config["model"] = str(models[0]) if models else ""
+    config["model"] = gateway_default_model(models)
     return config
 
 

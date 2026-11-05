@@ -90,3 +90,27 @@ def test_a_device_key_is_kept_by_device_and_counted_with_the_client_keys(box):
     assert [key.name for key in loaded.gateway_keys()] == ["laptop", "device/box"]
     assert loaded.device_key_material() == [config.device_keys["dev-1"].open_key()]
     assert "key_sealed" in json.dumps(loaded.to_dict()["device_keys"])
+
+
+def test_the_default_model_is_the_pick_while_served_and_else_the_first_by_name():
+    picked = CliproxyApiConfig(default_model="m2")
+
+    assert picked.resolved_default_model(["m1", "m2", "m3"]) == "m2"
+    assert picked.resolved_default_model(["m1", "m3"]) == "m1"
+    assert picked.resolved_default_model([]) == ""
+    assert CliproxyApiConfig().resolved_default_model(["m1", "m2"]) == "m1"
+    assert CliproxyApiConfig().resolved_default_model([]) == ""
+
+
+def test_the_default_model_is_kept_in_the_file_while_the_gateway_does_not_serve_it(
+    box,
+):
+    config = load_config()
+    assert config.default_model == ""
+    config.default_model = "m9"
+    save_config(config)
+
+    stored = json.loads((box / CONFIG_RELATIVE).read_text(encoding="utf-8"))
+    assert stored["default_model"] == "m9"
+    assert load_config().default_model == "m9"
+    assert load_config().resolved_default_model(["m1"]) == "m1"
