@@ -24,15 +24,15 @@ NetBird 是把你的设备组成一张虚拟网的软件。中枢和设备加入
 
 1. 打开 **Setup Keys**，再按 **Create Key**。
 
-   <div class="pic-holder">图：Setup Keys 页和 Create Key 按钮</div>
+   ![NetBird 控制台的 Setup Keys 页，右上角有 Create Key](/guide/zh/access_netbird_20_console_keys.webp)
 
-1. 填写 **Name**，打开 **Make this key reusable**。**Usage limit** 和 **Expires in** 留空，然后按 **Create Setup Key**。
+1. 填写 **Name**，打开 **Make this key reusable**。**Usage limit** 保持空白，再清空 **Expires in** 里默认的 7，然后按 **Create Setup Key**。
 
-   <div class="pic-holder">图：新建 key 的表单</div>
+   ![新建 setup key 的表单，Expires in 默认填着 7](/guide/zh/access_netbird_21_console_key_form.webp)
 
 1. 复制 key，因为它只显示这一次。
 
-   <div class="pic-holder">图：只显示一次的 key</div>
+   ![setup key 已创建，只显示这一次，图里的 key 是示例](/guide/zh/access_netbird_22_console_key_once.webp)
 
 ## 把中枢加入虚拟网
 

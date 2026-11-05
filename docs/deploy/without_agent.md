@@ -24,7 +24,7 @@
 
 1. 打开 NetBird 的控制台，进入 **Networks**，按 **Add Network**，填写名称。
 
-   <div class="pic-holder">图：NetBird 控制台的 Networks</div>
+   ![NetBird 控制台的一个网络，里面有一个资源 home LAN](/guide/zh/deploy_without_agent_01_netbird_network.webp)
 
 1. 接着按 **Add Resource**，在 **Address** 里粘贴刚才复制的网段。
 
@@ -44,7 +44,7 @@
 
 1. 打开 EasyTier 的控制台，在 **网络** 下选择中枢所在的网络，打开 **子网路由**。
 
-   <div class="pic-holder">图：EasyTier 控制台的子网路由</div>
+   ![EasyTier 控制台的子网路由，列出一条经过中枢的路由](/guide/zh/deploy_without_agent_05_easytier_subnet.webp)
 
 1. 按 **新增路由**，填写 **目标网段**，经过的设备选择中枢，再按 **创建路由**。
 
