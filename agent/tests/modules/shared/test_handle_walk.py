@@ -83,6 +83,38 @@ def test_a_tree_is_given_folder_after_contents_leaving_links_and_second_names(
     assert str(outside / "secret") not in given
 
 
+def test_a_folder_moved_out_after_its_open_is_left_with_what_it_holds(
+    tmp_path, monkeypatch
+):
+    """The account owns the folders it can move out between the listing and
+    the open; the descriptor's own path shows where the folder now is."""
+    given = []
+    monkeypatch.setattr(
+        os,
+        "fchown",
+        lambda descriptor, uid, gid: given.append(chowned_path(descriptor)),
+    )
+    root = tmp_path / "data"
+    (root / "moved" / "inner").mkdir(parents=True)
+    (root / "moved" / "inner" / "file").write_text("x")
+    (root / "kept").mkdir()
+    outside = tmp_path / "elsewhere"
+    real_open = os.open
+
+    def open_then_move(name, flags, mode=0o777, *, dir_fd=None):
+        held = real_open(name, flags, mode, dir_fd=dir_fd)
+        if name == "moved" and dir_fd is not None:
+            os.rename(root / "moved", outside)
+        return held
+
+    monkeypatch.setattr(os, "open", open_then_move)
+
+    left = give_tree(str(root), 1001, 1001)
+
+    assert left == [str(outside)]
+    assert given == [str(root / "kept"), str(root)]
+
+
 def test_a_link_at_the_top_of_a_tree_gives_nothing(tmp_path, monkeypatch):
     given = []
     monkeypatch.setattr(os, "fchown", lambda *args: given.append(args))

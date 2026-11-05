@@ -245,6 +245,34 @@ def test_the_account_step_gives_a_work_root_another_uid_owns_to_the_account(
     assert (str(tmp_path / "etc/app.ini"), -1, os.getuid() + 8) in chowns
 
 
+def test_a_handover_logs_each_entry_its_descriptor_names_outside_the_work_root(
+    box, monkeypatch
+):
+    commands, chowns, tmp_path = box
+    data = tmp_path / "gitea" / "data"
+    (data / "moved").mkdir(parents=True)
+    (data / "moved" / "inner.db").write_text("")
+    monkeypatch.setattr(applier_module.pwd, "getpwnam", account_of(os.getuid() + 7))
+    real_open = os.open
+    outside = tmp_path / "elsewhere"
+
+    def open_then_move(name, flags, mode=0o777, *, dir_fd=None):
+        held = real_open(name, flags, mode, dir_fd=dir_fd)
+        if name == "moved" and dir_fd is not None:
+            os.rename(data / "moved", outside)
+        return held
+
+    monkeypatch.setattr(os, "open", open_then_move)
+    lines: list = []
+
+    assert GiteaInstaller().ensure_account(log=lines.append) is True
+
+    paths = {path for path, uid, _gid in chowns if uid == os.getuid() + 7}
+    assert str(outside) not in paths
+    assert str(outside / "inner.db") not in paths
+    assert lines == [f"gitea: left {outside}, which is outside {tmp_path / 'gitea'}"]
+
+
 def test_a_handover_cut_short_runs_again_by_gitea_s_own_parts(box, monkeypatch):
     _, chowns, tmp_path = box
     root = tmp_path / "gitea"

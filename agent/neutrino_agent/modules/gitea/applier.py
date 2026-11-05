@@ -135,6 +135,20 @@ def give_group(path: str, gid: int) -> None:
         os.close(folder)
 
 
+def log_left(left: list, folder: str, log) -> None:
+    """Log each entry a handover left outside the folder it gave.
+
+    Args:
+        left: The paths :func:`give_tree` left.
+        folder: The folder given.
+        log: Called with each line; None for nobody listening.
+    """
+    if log is None:
+        return
+    for path in left:
+        log(f"gitea: left {path}, which is outside {folder}")
+
+
 def git_files(platform) -> AccountFiles:
     """The git account's places, reached as that account through the step-down."""
     return AccountFiles(platform=platform, account=GITEA_USER)
@@ -164,13 +178,17 @@ class GiteaInstaller:
         place_binary(binary_path, GITEA_BINARY_PATH)
         self.install_unit()
 
-    def ensure_account(self) -> bool:
+    def ensure_account(self, *, log=None) -> bool:
         """Make the git account when it is missing, and its directories.
 
         A work root where another uid owns one of Gitea's own parts,
         ``custom``, ``data`` or ``log``, is given to the account with
         everything under it, and ``app.ini`` to its group. A ``git``
         account removed by hand leaves such a root.
+
+        Args:
+            log: Called with a line for each entry the handover leaves
+                outside the work root; None for nobody listening.
 
         Returns:
             Whether the work root changed hands.
@@ -183,7 +201,8 @@ class GiteaInstaller:
         account = pwd.getpwnam(GITEA_USER)
         is_given = is_handover_owed(GITEA_DIR, account.pw_uid)
         if is_given:
-            give_tree(GITEA_DIR, account.pw_uid, account.pw_gid)
+            left = give_tree(GITEA_DIR, account.pw_uid, account.pw_gid)
+            log_left(left, GITEA_DIR, log)
             give_group(GITEA_CONF_PATH, account.pw_gid)
         self.create_directories()
         return is_given

@@ -32,6 +32,7 @@ import time
 
 from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.gitea.applier import (
+    log_left,
     GiteaState,
     is_handover_owed,
     listen_port_in,
@@ -243,13 +244,17 @@ class GiteaDarwinApplier:
             self._unload()
         place_binary(binary_path, self.binary_path)
 
-    def ensure_account(self) -> bool:
+    def ensure_account(self, *, log=None) -> bool:
         """Make the account when it is missing, and the data directory its own.
 
         The data directory is also the account's home, where macOS writes
         ``Library``. When another uid owns one of Gitea's own parts,
         ``custom``, ``data`` or ``log``, those parts alone are given to the
-        account with everything under them.
+        account with everything under them, each within its own path.
+
+        Args:
+            log: Called with a line for each entry the handover leaves
+                outside its part; None for nobody listening.
 
         Returns:
             Whether Gitea's own parts changed hands.
@@ -264,7 +269,8 @@ class GiteaDarwinApplier:
         is_given = is_handover_owed(self.data_dir, uid)
         if is_given:
             for part in GITEA_OWN_PARTS:
-                give_tree(os.path.join(self.data_dir, part), uid, gid)
+                folder = os.path.join(self.data_dir, part)
+                log_left(give_tree(folder, uid, gid), folder, log)
         self._prepare_data(uid, gid)
         return is_given
 

@@ -4,7 +4,9 @@ Each level of a path is opened relative to the folder above it, with no
 link followed: a link at any level stops the walk. What the agent does as root in a folder
 it made or owns goes through these; what it does in an account's place
 runs as the account (:mod:`account_files`). :func:`place_owner` tells the
-two apart: the account that can change a path, or root.
+two apart: the account that can change a path, or root. :func:`give_tree`
+gives an entry only while the path its open descriptor names, read from the
+descriptor itself, is inside the folder given.
 
 Not pure: opens, makes and gives folders.
 """
@@ -17,6 +19,7 @@ import contextlib
 import errno
 import os
 import stat
+import sys
 
 # How each level is opened: a folder, no link followed.
 WALK_DIR_FLAGS = (
@@ -35,6 +38,8 @@ WALK_FILE_FLAGS = (
 )
 # The bits that let others than a folder's owner change what it holds.
 SHARED_WRITE_BITS = stat.S_IWGRP | stat.S_IWOTH
+# The buffer macOS writes an open descriptor's path into, ``MAXPATHLEN``.
+GETPATH_BYTES = 1024
 
 
 def _levels(path: str) -> list:
@@ -107,12 +112,37 @@ def make_dirs(path: str, mode: int, *, owner: tuple = ()) -> list:
     return made
 
 
-def give_tree(path: str, uid: int, gid: int) -> None:
+def opened_path(descriptor: int) -> str:
+    """The path an open descriptor names, read from the descriptor itself.
+
+    Linux reads ``/proc/self/fd/<fd>``; macOS asks ``fcntl`` with
+    ``F_GETPATH``.
+
+    Args:
+        descriptor: The open file or folder.
+
+    Returns:
+        The absolute path; empty when the system names none.
+    """
+    try:
+        if sys.platform == "darwin":
+            import fcntl
+
+            held = fcntl.fcntl(descriptor, fcntl.F_GETPATH, bytes(GETPATH_BYTES))
+            return os.fsdecode(held.split(b"\0", 1)[0])
+        return os.readlink(f"/proc/self/fd/{descriptor}")
+    except (OSError, AttributeError):
+        return ""
+
+
+def give_tree(path: str, uid: int, gid: int) -> list:
     """Give a folder and everything under it to an account, by open handle.
 
     Each entry is opened relative to its folder with no link followed and
     given on its descriptor; a link stays as it is, and a file that has a
-    second name elsewhere is left. A folder is given after what it holds.
+    second name elsewhere is left. An entry whose descriptor names a path
+    outside the one the folder's own descriptor names is left with what it
+    holds. A folder is given after what it holds.
 
     Args:
         path: The absolute folder; nothing happens when it is not there or
@@ -120,26 +150,36 @@ def give_tree(path: str, uid: int, gid: int) -> None:
         uid: The account's uid.
         gid: The account's group.
 
+    Returns:
+        The paths left because their descriptors named them outside the
+        folder; the folder itself when its own descriptor names no path, and
+        nothing is given.
+
     Raises:
         OSError: When an entry cannot be given.
     """
     try:
         descriptor = open_dir(path)
     except FileNotFoundError:
-        return
+        return []
     except OSError as error:
         if error.errno in (errno.ELOOP, errno.ENOTDIR):
-            return
+            return []
         raise
+    left: list = []
     try:
-        _give_below(descriptor, uid, gid)
+        top = opened_path(descriptor)
+        if not top:
+            return [path]
+        _give_below(descriptor, uid, gid, top.rstrip(os.sep) + os.sep, left)
         os.fchown(descriptor, uid, gid)
     finally:
         os.close(descriptor)
+    return left
 
 
-def _give_below(descriptor: int, uid: int, gid: int) -> None:
-    """Give what one open folder holds, each folder after its contents."""
+def _give_below(descriptor: int, uid: int, gid: int, prefix: str, left: list) -> None:
+    """Give what one open folder holds inside ``prefix``, each folder after its contents; add each entry outside it to ``left``."""
     for name in os.listdir(descriptor):
         try:
             status = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
@@ -159,9 +199,13 @@ def _give_below(descriptor: int, uid: int, gid: int) -> None:
                 continue
             raise
         try:
+            where = opened_path(held)
+            if not where.startswith(prefix):
+                left.append(where or name)
+                continue
             opened = os.fstat(held)
             if stat.S_ISDIR(opened.st_mode):
-                _give_below(held, uid, gid)
+                _give_below(held, uid, gid, prefix, left)
             elif not stat.S_ISREG(opened.st_mode) or opened.st_nlink > 1:
                 continue
             os.fchown(held, uid, gid)

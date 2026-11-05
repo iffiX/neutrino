@@ -224,8 +224,11 @@ class GiteaWindowsApplier:
             )
         self._run(["sc.exe", "failure", GITEA_WINDOWS_SERVICE, *SC_FAILURE_ACTIONS])
 
-    def ensure_account(self) -> bool:
+    def ensure_account(self, *, log=None) -> bool:
         """Make nothing: the server runs as LocalSystem.
+
+        Args:
+            log: Unused: nothing is handed over.
 
         Returns:
             Always False.

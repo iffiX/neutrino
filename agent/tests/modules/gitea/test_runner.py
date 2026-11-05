@@ -55,7 +55,7 @@ class FakeInstaller:
     def install(self, binary_path):
         FakeInstaller.installed.append(binary_path)
 
-    def ensure_account(self):
+    def ensure_account(self, *, log=None):
         FakeInstaller.accounts.append("git")
 
     def uninstall(self):
