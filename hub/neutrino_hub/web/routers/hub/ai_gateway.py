@@ -39,6 +39,8 @@ from neutrino_hub.exceptions import (
 from neutrino_hub.modules.channel.constants import CHANNEL_ROLE_CLIENT
 from neutrino_hub.modules.clients.ai_keys import gateway_models
 from neutrino_hub.modules.clients.registry import ClientRegistry
+from neutrino_hub.modules.devices.ayakaleaf import has_default_model_follower
+from neutrino_hub.modules.devices.desired_state import DesiredStateStore
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.platforms.detect import process_controller
 from neutrino_hub.utils.json_file import CONFIG_WRITE_LOCK
@@ -560,6 +562,10 @@ def _status() -> CliproxyApiStatusView:
         tokens_today=today["input_tokens"] + today["output_tokens"],
         account_count=_account_count() if service.is_active else 0,
         default_model=config.default_model,
+        has_ayakaleaf_on_default=has_default_model_follower(
+            DesiredStateStore(),
+            [device.id for device in DeviceRegistry().all_stored()],
+        ),
     )
 
 

@@ -311,3 +311,16 @@ def test_every_entry_names_the_three_images_the_oci_feed_and_the_ctan_set():
                 "sources": ["docker.io/library/redis"],
             },
         ]
+
+
+def test_an_installed_ayakaleaf_with_no_model_of_its_own_follows_the_default(store):
+    assert not ayakaleaf.has_default_model_follower(store, [DEVICE])
+    ayakaleaf.ensure_config(store, DEVICE)
+    store.set_want(DEVICE, "ayakaleaf", "installed")
+
+    assert ayakaleaf.has_default_model_follower(store, ["other", DEVICE])
+    store.write(DEVICE, "ayakaleaf", {**store.read(DEVICE, "ayakaleaf"), "model": "m2"})
+    assert not ayakaleaf.has_default_model_follower(store, [DEVICE])
+    store.write(DEVICE, "ayakaleaf", {**store.read(DEVICE, "ayakaleaf"), "model": ""})
+    store.set_want(DEVICE, "ayakaleaf", "absent")
+    assert not ayakaleaf.has_default_model_follower(store, [DEVICE])

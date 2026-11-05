@@ -275,6 +275,36 @@ def test_a_port_change_applies_the_gateway_and_keeps_the_default_model(
     assert _stored(tmp_path)["default_model"] == "m2"
 
 
+def test_the_view_says_whether_an_installed_ayakaleaf_follows_the_default_model(
+    keys_client, monkeypatch, tmp_path
+):
+    from neutrino_hub.modules.devices import ayakaleaf
+    from neutrino_hub.modules.devices.desired_state import DesiredStateStore
+
+    monkeypatch.setattr(
+        "neutrino_hub.modules.devices.desired_state.UTILS_CONFIG_DIR", tmp_path
+    )
+    stored = [type("Device", (), {"id": "dev-1"})()]
+    monkeypatch.setattr(
+        cliproxyapi_router,
+        "DeviceRegistry",
+        lambda: type("Registry", (), {"all_stored": lambda self: stored})(),
+    )
+    store = DesiredStateStore()
+
+    def view() -> bool:
+        return keys_client.get("/api/hub/ai/gateway").json()["has_ayakaleaf_on_default"]
+
+    assert view() is False
+    ayakaleaf.ensure_config(store, "dev-1")
+    store.set_want("dev-1", "ayakaleaf", "running")
+    assert view() is True
+    store.write(
+        "dev-1", "ayakaleaf", {**store.read("dev-1", "ayakaleaf"), "model": "m2"}
+    )
+    assert view() is False
+
+
 # --- the accounts: listing, signing in, polling, and signing out ---
 
 

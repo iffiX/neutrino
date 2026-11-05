@@ -807,6 +807,9 @@ class CliproxyApiStatusView(BaseModel):
     # The saved default model, kept while the gateway no longer serves it;
     # empty while none is saved.
     default_model: str = ""
+    # Whether an installed Ayakaleaf names no model of its own, so a new
+    # default model restarts its app.
+    has_ayakaleaf_on_default: bool = False
 
 
 class CliproxyApiUsageRates(BaseModel):

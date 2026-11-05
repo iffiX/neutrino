@@ -18,6 +18,7 @@ the gateway's file, which names the default model.
 
 import secrets
 
+from neutrino_hub.modules.channel.constants import CHANNEL_MODULE_STATE_ABSENT
 from neutrino_hub.modules.clients.ai_keys import gateway_default_model, module_key
 from neutrino_hub.modules.credentials.vault import seal_bytes, unseal_bytes
 from neutrino_hub.modules.devices.constants import (
@@ -124,6 +125,27 @@ def agent_config(stored: dict, key: str, *, local_name: str = "") -> dict:
     config["cookie_name"] = cookie_name(key)
     config["local_name"] = local_name
     return config
+
+
+def has_default_model_follower(store, device_ids) -> bool:
+    """Whether an installed Ayakaleaf takes the default model.
+
+    Args:
+        store: The desired state store.
+        device_ids: The devices to look at.
+
+    Returns:
+        True while a device's ``modules.json`` names the module with a
+        ``want`` other than ``absent`` and its file names no ``model``.
+    """
+    for key in device_ids:
+        want = store.want_of(key, DEVICE_AYAKALEAF_MODULE)
+        if want in ("", CHANNEL_MODULE_STATE_ABSENT):
+            continue
+        stored = store.read(key, DEVICE_AYAKALEAF_MODULE)
+        if not str(stored.get(DEVICE_AYAKALEAF_MODEL_KEY, "") or ""):
+            return True
+    return False
 
 
 def chosen_model(stored: dict, models) -> str:
