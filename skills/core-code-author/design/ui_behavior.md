@@ -1337,7 +1337,9 @@ gateway reports the flow `complete` or `failed`.
 
 The **Access** panel of the AI page holds the endpoint line, then the
 **Default model** picker (`ui.ai.default_model`), then the keys, and ends in
-its apply bar, **Apply access settings** (`ui.ai.access_apply`). The picker
+its apply bar, **Apply access settings** (`ui.ai.access_apply`), which has
+no hint: with nothing changed it says `ui.apply_bar.clean`, and while the
+pick is unapplied it says nothing but its warning, where it has one. The picker
 is a `Picker` of the names the gateway serves, by name, and it is the
 panel's draft: a pick lights the frame and the bar, and the bar writes it
 with `POST /api/hub/ai/gateway/set {default_model}`
@@ -1352,6 +1354,7 @@ nothing, as `node_card.tsx` does where a draft and a list that writes meet
 | A saved pick the gateway no longer serves stays shown, as the picker's first row with `ui.ai.default_model_not_served` drawn faint at its right, until a person picks another. | The hub keeps the pick, and it is in force again when its name comes back; the row says it is not in force now. |
 | The bar lights while the picked row differs from the row the saved pick shows, and goes dark when the person picks that row again. | A pick of the row already shown changes nothing the hub sends. |
 | While the gateway serves no name, the picker is disabled, with no line under it. | A pick needs a name the gateway serves, and the probe line of Activity, above it on the page, already says why there is none. |
+| The bar's warning, `ui.ai.access_apply_warning`, shows while the pick is unapplied and the gateway view's `has_ayakaleaf_on_default` is true, and the bar has no warning otherwise. | A new default model restarts an Ayakaleaf app whose tab names no model of its own, and no other reader of the default model restarts. |
 
 ## The hub's faces
 

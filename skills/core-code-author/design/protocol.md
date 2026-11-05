@@ -499,7 +499,7 @@ moved. Its steps and their order are [network.md](hub_components/network.md),
 | `POST /api/hub/ai/provider/set` | `{provider_id, ...}` | |
 | `POST /api/hub/ai/provider/remove` | `{provider_id}` | |
 | `POST /api/hub/ai/provider/order/set` | the ordered ids | |
-| `GET /api/hub/ai/gateway` | | the gateway's settings, `default_model` among them: the saved pick of the default model, empty while none is saved, and kept while the gateway no longer serves it ([hub_components/ai.md](hub_components/ai.md), "The default model") |
+| `GET /api/hub/ai/gateway` | | the gateway's settings, `default_model` among them: the saved pick of the default model, empty while none is saved, and kept while the gateway no longer serves it ([hub_components/ai.md](hub_components/ai.md), "The default model"); and `has_ayakaleaf_on_default`, true while a machine's `modules.json` names Ayakaleaf with a `want` other than `absent` and its `ayakaleaf.json` names no `model`, so a new default model restarts that app |
 | `POST /api/hub/ai/gateway/set` | its settings, `{listen_port}` or `{default_model}`, each written only when it is sent | a `listen_port` renders and restarts the gateway; a `default_model` restarts nothing and hands every online machine and client its state where the state changed; 400 `model_not_served {model}` for a `default_model` the gateway does not serve |
 | `POST /api/hub/ai/gateway/apply` | | renders and applies the gateway |
 | `GET /api/hub/ai/gateway/usage` | | what it metered, per key id: the hub's, each client's and each device's |

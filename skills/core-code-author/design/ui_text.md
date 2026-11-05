@@ -350,8 +350,7 @@ gateway listens on the hub's loopback alone.
 | `ui.ai.default_model`, the Access panel's picker ([ui_behavior.md](ui_behavior.md), "The Access panel of the AI page") | Default model | 默认模型 |
 | `ui.ai.default_model_not_served`, at the right of a saved pick the gateway no longer serves | no longer served | 已不再提供 |
 | `ui.ai.access_apply`, the Access panel's apply bar | Apply access settings | 应用接入配置 |
-| `ui.ai.access_apply_hint` | Tools and apps on the gateway default switch to this model. | 用网关默认的工具和应用都改用这个模型。 |
-| `ui.ai.access_apply_warning` | An Ayakaleaf on the gateway default restarts. | 用网关默认的 Ayakaleaf 会重启。 |
+| `ui.ai.access_apply_warning`, shown only while an installed Ayakaleaf follows the gateway default ([ui_behavior.md](ui_behavior.md), "The Access panel of the AI page") | An Ayakaleaf on the gateway default restarts. | 用网关默认的 Ayakaleaf 会重启。 |
 | `code.model_not_served` | The gateway does not serve {model}. | 网关不提供 {model}。 |
 
 ## The machine page's words
