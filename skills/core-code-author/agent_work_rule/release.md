@@ -278,6 +278,13 @@ RustDesk's: the agent does when a machine's Remote desktop switch goes on. No ag
 carries cc-switch: the agent fetches it from the hub when the machine's AI
 tools need it, at the pin the client's packages carry.
 
+Every agent package starts the agent when it installs and restarts it when
+it upgrades: the deb, the rpm and the Arch package enable and start
+`neutrino_agent.service`, the `.pkg` bootstraps `com.neutrino.agent` and
+the `.msi` starts the `neutrino_agent` service. An agent that has not
+joined waits for a link, and its control socket answers `nagent`, so
+`nagent join` is the one step after the install on every system.
+
 | File | For |
 | --- | --- |
 | `neutrino-agent_<version>_amd64.deb` | Debian, Ubuntu, Raspberry Pi OS on x86-64 |
