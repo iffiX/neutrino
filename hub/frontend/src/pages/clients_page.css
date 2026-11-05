@@ -128,7 +128,9 @@
 }
 
 /* A box narrower than every column: each row a card, the name line, the
-   other fields as label and value pairs that wrap, then the actions. */
+   other fields on one grid every card shares, then the actions at the right
+   edge. Each track is at least its table column's width and stretches to
+   the card's width. */
 @container clients_table (max-width: 859px) {
   .clients_table,
   .clients_table tbody,
@@ -142,8 +144,14 @@
   }
 
   .clients_row {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-areas:
+      "name name name name name"
+      "hostname platform version status seen"
+      "actions actions actions actions actions";
+    grid-template-columns:
+      minmax(136px, 1fr) minmax(88px, 1fr) minmax(76px, 1fr)
+      minmax(108px, 1fr) minmax(100px, 1fr);
     gap: var(--space-3) var(--space-5);
     padding: var(--space-3) 10px;
     border-bottom: 1px solid var(--color-border);
@@ -159,14 +167,45 @@
   }
 
   .clients_row td {
+    min-width: 0;
     overflow: visible;
     padding: 0;
     border-bottom: none;
+    overflow-wrap: anywhere;
   }
 
-  .clients_row > td:first-child,
-  .clients_actions_cell {
-    flex-basis: 100%;
+  .clients_cell--name {
+    grid-area: name;
+  }
+
+  /* The words of a client waiting to join stand where its hostname,
+     platform and version go. */
+  .clients_cell--waiting {
+    grid-area: hostname-start / hostname-start / hostname-end / version-end;
+  }
+
+  .clients_cell--hostname {
+    grid-area: hostname;
+  }
+
+  .clients_cell--platform {
+    grid-area: platform;
+  }
+
+  .clients_cell--version {
+    grid-area: version;
+  }
+
+  .clients_cell--status {
+    grid-area: status;
+  }
+
+  .clients_cell--seen {
+    grid-area: seen;
+  }
+
+  .clients_cell--actions {
+    grid-area: actions;
   }
 
   /* A field's label is its column's header. */
@@ -183,10 +222,6 @@
     content: attr(data-label);
   }
 
-  .clients_actions {
-    justify-content: flex-start;
-  }
-
   .clients_row--editing {
     background-image: linear-gradient(
       var(--color-accent-wash),
@@ -196,5 +231,36 @@
 
   .clients_row--editing td {
     background-image: none;
+  }
+}
+
+/* A card too narrow for every field on one line: the same grid in three
+   columns, and under 380 px in two. */
+@container clients_table (max-width: 623px) {
+  .clients_row {
+    grid-template-areas:
+      "name name name"
+      "hostname platform version"
+      "status seen ."
+      "actions actions actions";
+    grid-template-columns:
+      minmax(136px, 1fr) minmax(100px, 1fr)
+      minmax(76px, 1fr);
+  }
+}
+
+@container clients_table (max-width: 379px) {
+  .clients_row {
+    grid-template-areas:
+      "name name"
+      "hostname platform"
+      "version status"
+      "seen ."
+      "actions actions";
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .clients_cell--waiting {
+    grid-column: 1 / -1;
   }
 }

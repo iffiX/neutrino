@@ -502,7 +502,10 @@ function ClientRow({
         .filter((name) => name !== "")
         .join(" ")}
     >
-      <td colSpan={isRenaming ? RENAME_COLUMN_SPAN : undefined}>
+      <td
+        className="clients_cell--name"
+        colSpan={isRenaming ? RENAME_COLUMN_SPAN : undefined}
+      >
         {isRenaming ? (
           <div className="clients_rename">
             <input
@@ -555,33 +558,51 @@ function ClientRow({
         )}
       </td>
       {!isRenaming && waitingMinutes !== null && (
-        <td colSpan={WAITING_COLUMN_SPAN} className="faint">
+        <td
+          colSpan={WAITING_COLUMN_SPAN}
+          className="faint clients_cell--waiting"
+        >
           {t("ui.clients.waiting", { minutes: waitingMinutes })}
         </td>
       )}
       {!isRenaming && waitingMinutes === null && (
         <>
-          <td className="mono" data-label={t("ui.clients.header_hostname")}>
+          <td
+            className="mono clients_cell--hostname"
+            data-label={t("ui.clients.header_hostname")}
+          >
             {client.hostname || NOTHING}
           </td>
-          <td data-label={t("ui.clients.header_platform")}>
+          <td
+            className="clients_cell--platform"
+            data-label={t("ui.clients.header_platform")}
+          >
             {client.platform_os || NOTHING}
           </td>
-          <td className="mono" data-label={t("ui.clients.header_version")}>
+          <td
+            className="mono clients_cell--version"
+            data-label={t("ui.clients.header_version")}
+          >
             {client.version || NOTHING}
           </td>
         </>
       )}
-      <td data-label={t("ui.clients.header_status")}>
+      <td
+        className="clients_cell--status"
+        data-label={t("ui.clients.header_status")}
+      >
         <StatusDot
           tone={PRESENCE_TONES[presence]}
           label={t(PRESENCE_KEYS[presence])}
         />
       </td>
-      <td className="mono" data-label={t("ui.clients.header_last_seen")}>
+      <td
+        className="mono clients_cell--seen"
+        data-label={t("ui.clients.header_last_seen")}
+      >
         {client.is_online ? t("state.online") : formatTimeAgo(client.last_seen)}
       </td>
-      <td className="clients_actions_cell">
+      <td className="clients_cell--actions">
         <div className="clients_actions">
           {waitingMinutes === null && (
             <button

@@ -456,7 +456,10 @@ function DeviceRow({
   return (
     <>
       <tr className={`devices_row ${isRenaming ? "devices_row--editing" : ""}`}>
-        <td colSpan={isRenaming ? RENAME_COLUMN_SPAN : undefined}>
+        <td
+          className="devices_cell--name"
+          colSpan={isRenaming ? RENAME_COLUMN_SPAN : undefined}
+        >
           <div className="devices_name">
             <DeviceIconPicker
               icon={icon}
@@ -493,21 +496,30 @@ function DeviceRow({
         </td>
         {!isRenaming && (
           <>
-            <td className="mono" data-label={t("ui.devices.header_address")}>
+            <td
+              className="mono devices_cell--address"
+              data-label={t("ui.devices.header_address")}
+            >
               {device.ipv4_address || NOTHING}
             </td>
             <td
-              className="mono devices_mac"
+              className="mono devices_mac devices_cell--mac"
               data-label={t("ui.devices.header_mac")}
             >
               {device.link_mac || NOTHING}
             </td>
           </>
         )}
-        <td data-label={t("ui.devices.header_status")}>
+        <td
+          className="devices_cell--status"
+          data-label={t("ui.devices.header_status")}
+        >
           <StatusCell device={device} />
         </td>
-        <td className="mono" data-label={t("ui.devices.header_version")}>
+        <td
+          className="mono devices_cell--version"
+          data-label={t("ui.devices.header_version")}
+        >
           {client?.version == null ? (
             NOTHING
           ) : client.is_version_mismatched ? (
@@ -521,10 +533,13 @@ function DeviceRow({
             client.version
           )}
         </td>
-        <td className="mono" data-label={t("ui.devices.header_last_seen")}>
+        <td
+          className="mono devices_cell--seen"
+          data-label={t("ui.devices.header_last_seen")}
+        >
           {isOnline ? t("state.online") : formatTimeAgo(lastSeen(device))}
         </td>
-        <td className="devices_actions_cell">
+        <td className="devices_cell--actions">
           <div className="devices_actions">
             {isRenaming ? (
               <>

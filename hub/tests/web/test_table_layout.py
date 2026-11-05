@@ -3,8 +3,10 @@ and a card per row in a narrower one, with no sideways scrolling.
 
 What these pin: the box lays the table out by its own width and never scrolls
 sideways; the cards start under the width every column needs, which a 1280 px
-window holds; each field in a card carries its column's header as its label;
-and the actions take the room the other columns leave and wrap their buttons.
+window holds; each field in a card carries its column's header as its label
+and keeps its place on one grid every card shares, its tracks filling the card;
+the actions stand at the card's right edge; and in the table the actions take
+the room the other columns leave and wrap their buttons.
 """
 
 import re
@@ -20,6 +22,21 @@ PAGES = ["devices", "clients"]
 # taken off.
 COLUMNS_WIDTH = {"devices": 968, "clients": 860}
 BOX_AT_1280 = {"devices": 982, "clients": 934}
+# The fields' line of each card grid, widest first, and the box widths under
+# which the narrower ones start.
+GRIDS = {
+    "devices": [
+        ["address", "mac", "status", "version", "seen"],
+        ["address mac status", "version seen ."],
+        ["address mac", "status status", "version seen"],
+    ],
+    "clients": [
+        ["hostname", "platform", "version", "status", "seen"],
+        ["hostname platform version", "status seen ."],
+        ["hostname platform", "version status", "seen ."],
+    ],
+}
+NARROWER = {"devices": [718, 510], "clients": [624, 380]}
 
 
 def flat(name: str) -> str:
@@ -74,12 +91,51 @@ def test_a_narrow_box_lays_each_row_out_as_a_card(page):
     )
     assert f".{page}_table colgroup, .{page}_table thead {{ display: none; }}" in rules
     row = rules.split(f".{page}_row {{", 1)[1].split("}", 1)[0]
-    assert "display: flex; flex-wrap: wrap;" in row
-    assert (
-        f".{page}_row > td:first-child, .{page}_actions_cell {{ flex-basis: 100%; }}"
-        in rules
-    )
-    assert f".{page}_actions {{ justify-content: flex-start; }}" in rules
+    assert "display: grid;" in row
+
+
+@pytest.mark.parametrize("page", PAGES)
+def test_every_card_lines_its_fields_up_on_one_grid(page):
+    """In a card the fields followed one another, so an offline machine's short
+    status moved the version and the last seen left of the cards above it."""
+    rules = card_rules(page)
+    source = flat(f"pages/{page}_page.tsx")
+    for areas in GRIDS[page]:
+        names = set(" ".join(areas).split()) - {"."}
+        for name in names:
+            assert f".{page}_cell--{name} {{ grid-area: {name}; }}" in rules
+            assert f"{page}_cell--{name}" in source
+    assert f'"{" ".join(GRIDS[page][0])}"' in rules
+
+
+@pytest.mark.parametrize("page", PAGES)
+def test_the_tracks_stretch_from_their_table_column_s_width(page):
+    """In a card the fields kept their own widths and left the right of the card
+    empty."""
+    style = flat(f"pages/{page}_page.css")
+    widths = [
+        int(style.split(f".{page}_col--{column} {{ width: ", 1)[1].split("px", 1)[0])
+        for column in GRIDS[page][0]
+    ]
+    tracks = " ".join(f"minmax({width}px, 1fr)" for width in widths)
+    assert f"grid-template-columns: {tracks};" in card_rules(page)
+
+
+@pytest.mark.parametrize("page", PAGES)
+def test_a_narrower_box_wraps_the_fields_onto_the_same_grid(page):
+    style = flat(f"pages/{page}_page.css")
+    for width, areas in zip(NARROWER[page], GRIDS[page][1:]):
+        query = f"@container {page}_table (max-width: {width - 1}px) {{"
+        assert query in style
+        grid = style.split(query, 1)[1].split("} }", 1)[0]
+        assert " ".join(f'"{line}"' for line in areas) in grid
+
+
+@pytest.mark.parametrize("page", PAGES)
+def test_the_actions_stand_at_the_card_s_right_edge(page):
+    assert "flex-start" not in card_rules(page)
+    actions = flat(f"pages/{page}_page.css").split(f".{page}_actions {{", 1)[1]
+    assert "justify-content: flex-end;" in actions.split("}", 1)[0]
 
 
 @pytest.mark.parametrize("page", PAGES)
@@ -123,6 +179,6 @@ def test_the_actions_wrap_rather_than_widen_the_table(page):
 def test_every_row_names_its_actions_cell(page):
     source = flat(f"pages/{page}_page.tsx")
     assert (
-        f'<td className="{page}_actions_cell"> <div className="{page}_actions">'
+        f'<td className="{page}_cell--actions"> <div className="{page}_actions">'
         in source
     )
