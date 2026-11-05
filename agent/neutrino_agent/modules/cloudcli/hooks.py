@@ -113,10 +113,10 @@ from neutrino_agent.modules.cloudcli.constants import (
     CLOUDCLI_WINDOWS_NPM_PATH,
     CLOUDCLI_WINDOWS_SERVICE_PATH,
 )
+from neutrino_agent.modules.shared.account_files import AccountFiles
 from neutrino_agent.modules.shared.account_service import (
     AccountEntry,
     AccountService,
-    read_regular,
 )
 from neutrino_agent.modules.shared.account_service.constants import (
     ACCOUNT_SERVICE_LOGON_FAILURES,
@@ -287,19 +287,23 @@ def server_path(prefix: str, join=os.path.join) -> str:
     return join(prefix, *CLOUDCLI_PACKAGE_PARTS, *CLOUDCLI_SERVER_PARTS)
 
 
-def installed_version(prefix: str) -> str:
+def installed_version(prefix: str, read) -> str:
     """The CloudCLI version an npm prefix holds.
 
     Args:
         prefix: The npm prefix.
+        read: Reads a file's bytes as the account whose home holds the
+            prefix, None when it is not there.
 
     Returns:
-        The version its ``package.json`` names, empty when there is none,
-        it is a link or no regular file. The file is read through no link
-        and waiting on no pipe: the prefix is the account's.
+        The version its ``package.json`` names, empty when there is none or
+        the account cannot read it.
     """
     path = os.path.join(prefix, *CLOUDCLI_PACKAGE_PARTS, "package.json")
-    held = read_regular(path)
+    try:
+        held = read(path)
+    except (OSError, ModuleApplyError):
+        return ""
     if held is None:
         return ""
     try:
@@ -359,7 +363,7 @@ def sdk_program(prefix: str, os_name: str, arch: str) -> str:
     return ""
 
 
-def is_install_whole(prefix: str, version: str, os_name: str, arch: str) -> bool:
+def is_install_whole(prefix: str, version: str, os_name: str, arch: str, read) -> bool:
     """Whether an npm prefix holds a whole install of CloudCLI at a version.
 
     Args:
@@ -367,13 +371,15 @@ def is_install_whole(prefix: str, version: str, os_name: str, arch: str) -> bool
         version: The version the recipe names.
         os_name: The system.
         arch: The architecture, ``amd64`` or ``arm64``.
+        read: Reads a file's bytes as the account whose home holds the
+            prefix, None when it is not there.
 
     Returns:
         True when npm's lockfile is there, the package names the version,
         every native module has its ``package.json`` beside it or inside it,
         and the Agent SDK holds its Claude Code for the platform.
     """
-    if not version or installed_version(prefix) != version:
+    if not version or installed_version(prefix, read) != version:
         return False
     if not os.path.isfile(os.path.join(prefix, CLOUDCLI_NPM_LOCK_NAME)):
         return False
@@ -976,7 +982,7 @@ class CloudcliHooks(InstanceHooks):
         directory = account_dir(entry.home, self._os_name)
         if self._os_name == "linux":
             self._wait_for_install_left(account)
-        if self._is_whole(npm_dir(entry.home, self._os_name)):
+        if self._is_whole(npm_dir(entry.home, self._os_name), instance):
             self._remove_old_app(instance, entry)
             return []
         attempts = self._attempts()
@@ -1468,10 +1474,10 @@ class CloudcliHooks(InstanceHooks):
         if task is not None:
             if str(task.get("state", "")) in INSTALL_RUNNING_STATES:
                 return INSTALL_RUNNING
-            if not self._judge_install(task, prefix, name, script, log_file, account):
+            if not self._judge_install(task, prefix, name, script, log_file, instance):
                 return INSTALL_FINISHED
             self._log(f"{self.name}: the install for {account} was cut; it runs again")
-        if self._is_whole(prefix):
+        if self._is_whole(prefix, instance):
             return INSTALL_READY
         attempts = self._attempts()
         node = self.node
@@ -1519,7 +1525,7 @@ class CloudcliHooks(InstanceHooks):
         name: str,
         script: str,
         log_file: str,
-        account: str,
+        instance: CloudcliInstance,
     ) -> bool:
         """Unregister an ended install task and raise the step it failed at.
 
@@ -1530,6 +1536,7 @@ class CloudcliHooks(InstanceHooks):
         Raises:
             ModuleApplyError: The step a run that ended by itself failed at.
         """
+        account = instance.account
         self.machine.powershell.call("task_remove", {"task": name})
         if self.machine.batch_logon is not None:
             self.machine.batch_logon.release(account, name)
@@ -1543,7 +1550,7 @@ class CloudcliHooks(InstanceHooks):
         if result == NATIVE_CHECK_EXIT:
             lines = output.strip().splitlines()
             raise native_check_failure(lines[-1] if lines else "", account)
-        if result != 0 or not self._is_whole(prefix):
+        if result != 0 or not self._is_whole(prefix, instance):
             raise npm_failure(output, account)
         return False
 
@@ -1571,9 +1578,16 @@ class CloudcliHooks(InstanceHooks):
         run(["systemctl", "stop", pattern], is_checked=False)
         run(["systemctl", "reset-failed", pattern], is_checked=False)
 
-    def _is_whole(self, prefix: str) -> bool:
-        """Whether an account's prefix holds a whole install at the recipe's version."""
-        return is_install_whole(prefix, self._version, self._os_name, self._arch())
+    def _is_whole(self, prefix: str, instance: CloudcliInstance) -> bool:
+        """Whether an account's prefix holds a whole install at the recipe's version, its version read as the account."""
+        files = AccountFiles(
+            platform=self._platform,
+            account=instance.account,
+            password=instance.password,
+        )
+        return is_install_whole(
+            prefix, self._version, self._os_name, self._arch(), files.read
+        )
 
     def _arch(self) -> str:
         """This machine's architecture, ``amd64`` or ``arm64``."""

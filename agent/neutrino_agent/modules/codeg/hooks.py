@@ -90,7 +90,7 @@ from neutrino_agent.modules.shared.http_forward import (
     refused,
 )
 from neutrino_agent.modules.shared.instances import InstanceHooks
-from neutrino_agent.modules.shared.log_tail import file_tail, tail_limit, tail_lines
+from neutrino_agent.modules.shared.log_tail import account_file_tail, file_tail
 
 # The header a request carries the instance token in, and its scheme.
 AUTHORIZATION_HEADER = "authorization"
@@ -533,11 +533,7 @@ class CodegHooks(InstanceHooks):
         directory = self._log_dir(account)
         if not directory or self._dirname(path) != directory:
             return file_tail(path, lines)
-        held = self._files(account).read_tail(path, tail_limit())
-        if held is None:
-            return []
-        size, data = held
-        return tail_lines(data, size > len(data), lines)
+        return account_file_tail(self._files(account), path, lines)
 
     def _log_dir(self, account: str) -> str:
         """The account's Codeg log directory; empty for an account the machine lacks."""

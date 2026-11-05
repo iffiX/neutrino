@@ -45,6 +45,7 @@ from neutrino_agent.modules.gitea.constants import (
     GITEA_WINDOWS_STOP_TIMEOUT_S,
 )
 from neutrino_agent.modules.gitea.renderer import GiteaLayout
+from neutrino_agent.modules.shared.log_tail import file_tail
 from neutrino_agent.modules.shared.package import place_binary
 from neutrino_agent.modules.shared.subprocess_run import run as run_command
 from neutrino_agent.modules.shared.account_service import write_if_changed
@@ -365,6 +366,14 @@ class GiteaWindowsApplier:
     def server_log_path(self) -> str:
         """The log file the server writes itself."""
         return self.log_path()
+
+    def server_log_tail(self, lines: int) -> list:
+        """The last lines of the server's own log, in SYSTEM's data directory.
+
+        Raises:
+            OSError: When the log exists and cannot be read.
+        """
+        return file_tail(self.log_path(), lines)
 
     def output_path(self) -> str:
         """The server's own log file: the service's output goes nowhere else."""

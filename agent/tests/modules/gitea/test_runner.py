@@ -19,7 +19,9 @@ from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.gitea import runner as runner_module
 from neutrino_agent.modules.gitea.applier import GiteaState
 from neutrino_agent.modules.gitea.runner import GiteaModuleRunner
+from neutrino_agent.modules.shared.account_files import READ_TAIL_SHELL
 from neutrino_agent.modules.shared.base import ModuleStep
+from neutrino_agent.modules.shared.log_tail import file_tail, tail_limit
 from neutrino_agent.platforms.base import AgentPlatform
 
 SECRETS = {
@@ -494,9 +496,70 @@ class SystemApplier:
     def server_log_path(self):
         return str(self.log)
 
+    def server_log_tail(self, lines):
+        return file_tail(str(self.log), lines)
+
 
 class MacPlatform(AgentPlatform):
     os_name = "darwin"
+
+
+class StepDownPlatform(RecordingPlatform):
+    """A Linux machine whose accounts' commands are recorded and run as the test's own user."""
+
+    def __init__(self):
+        super().__init__()
+        self.as_accounts: list = []
+
+    def account_process(self, account, argv):
+        self.as_accounts.append((account, list(argv)))
+        return list(argv), {}
+
+
+def test_a_failed_start_on_linux_reads_the_servers_log_as_git(monkeypatch, tmp_path):
+    """The log is in the git account's folder, where it can put a link to a
+    file only root reads."""
+    platform = StepDownPlatform()
+    log = tmp_path / "gitea" / "log" / "gitea.log"
+    log.parent.mkdir(parents=True)
+    log.write_text("db.go:35:InitDBEngine() [E] unable to open database file (14)\n")
+    monkeypatch.setattr(runner_module, "GITEA_DIR", str(tmp_path / "gitea"))
+    monkeypatch.setattr(runner_module, "units_journal", lambda units, lines: [])
+    runner = GiteaModuleRunner(
+        platform=platform,
+        log=lambda m: None,
+        applier=runner_module.GiteaLinuxApplier(platform=platform),
+        record_dir=str(tmp_path / "record"),
+    )
+
+    said = runner._last_words()
+
+    assert said == "db.go:35:InitDBEngine() [E] unable to open database file (14)"
+    assert platform.as_accounts == [
+        ("git", ["/bin/sh", "-c", READ_TAIL_SHELL, str(log), str(tail_limit())])
+    ]
+
+
+def test_the_journal_on_macos_reads_the_servers_log_as_its_account(tmp_path):
+    platform = StepDownPlatform()
+    platform.os_name = "darwin"
+    applier = runner_module.GiteaDarwinApplier(
+        platform=platform,
+        state_dir=str(tmp_path / "state"),
+        output_path=str(tmp_path / "Logs" / "gitea.log"),
+    )
+    log = tmp_path / "state" / "gitea_data" / "log" / "gitea.log"
+    log.parent.mkdir(parents=True)
+    log.write_text("...s/web.go:87:serveInstalled() Listen\n")
+    runner = GiteaModuleRunner(platform=platform, log=lambda m: None, applier=applier)
+
+    outcome = runner.command("journal", {"lines": 20})
+
+    assert outcome["output"].endswith("Listen")
+    assert [argv[:3] for _, argv in platform.as_accounts] == [
+        ["/bin/sh", "-c", READ_TAIL_SHELL]
+    ]
+    assert {account for account, _ in platform.as_accounts} == {"neutrino_gitea"}
 
 
 def test_a_configure_that_runs_the_server_waits_until_it_listens(tmp_path):

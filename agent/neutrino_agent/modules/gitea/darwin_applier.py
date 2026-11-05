@@ -61,6 +61,7 @@ from neutrino_agent.modules.gitea.renderer import GiteaLayout
 from neutrino_agent.modules.samba.darwin_applier import tool_line
 from neutrino_agent.modules.shared.account_files import AccountFiles
 from neutrino_agent.modules.shared.handle_walk import give_tree, make_dirs, open_dir
+from neutrino_agent.modules.shared.log_tail import account_file_tail
 from neutrino_agent.modules.shared.package import place_binary
 from neutrino_agent.modules.shared.subprocess_run import CommandResult
 from neutrino_agent.modules.shared.subprocess_run import run as run_command
@@ -439,6 +440,15 @@ class GiteaDarwinApplier:
     def server_log_path(self) -> str:
         """The log file the server writes itself."""
         return self.log_path()
+
+    def server_log_tail(self, lines: int) -> list:
+        """The last lines of the server's own log, read as the server's account.
+
+        Raises:
+            OSError: When the log exists and cannot be read.
+            ModuleApplyError: When it cannot be read as the account.
+        """
+        return account_file_tail(self._files(), self.log_path(), lines)
 
     def output_path(self) -> str:
         """The file launchd writes the server's output to."""

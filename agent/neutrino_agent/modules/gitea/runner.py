@@ -41,6 +41,7 @@ from neutrino_agent.modules.gitea.applier import (
     GiteaAdminManager,
     GiteaConfigApplier,
     GiteaInstaller,
+    git_files,
     read_listen_port,
     read_root_url,
 )
@@ -66,7 +67,7 @@ from neutrino_agent.modules.gitea.constants import (
 from neutrino_agent.modules.gitea.darwin_applier import GiteaDarwinApplier
 from neutrino_agent.modules.gitea.renderer import GiteaConfigRenderer, GiteaLayout
 from neutrino_agent.modules.gitea.windows_applier import GiteaWindowsApplier
-from neutrino_agent.modules.shared.log_tail import file_tail
+from neutrino_agent.modules.shared.log_tail import account_file_tail, file_tail
 from neutrino_agent.modules.shared.loopback_port import (
     is_listening as loopback_is_listening,
 )
@@ -185,6 +186,17 @@ class GiteaLinuxApplier:
     def server_log_path(self) -> str:
         """The log file the server writes itself."""
         return os.path.join(GITEA_DIR, *GITEA_LOG_PARTS)
+
+    def server_log_tail(self, lines: int) -> list:
+        """The last lines of the server's own log, read as the ``git`` account.
+
+        Raises:
+            OSError: When the log exists and cannot be read.
+            ModuleApplyError: When it cannot be read as the account.
+        """
+        return account_file_tail(
+            git_files(self._platform), self.server_log_path(), lines
+        )
 
 
 def gitea_applier_for(platform):
@@ -465,7 +477,7 @@ class GiteaModuleRunner(ModuleRunner):
         path = self._applier.log_path()
         if not path:
             return super().journal_text(lines)
-        own = self._read_source(path, lambda: file_tail(path, lines))
+        own = self._read_source(path, lambda: self._applier.server_log_tail(lines))
         return self._with_agent_lines(own, lines)
 
     def details(self, recipe: dict) -> dict:
@@ -579,8 +591,8 @@ class GiteaModuleRunner(ModuleRunner):
         elsewhere.
         """
         try:
-            logged = file_tail(self._applier.server_log_path(), GITEA_FAILURE_LINES)
-        except OSError:
+            logged = self._applier.server_log_tail(GITEA_FAILURE_LINES)
+        except (OSError, ModuleApplyError):
             logged = []
         errors = [
             line

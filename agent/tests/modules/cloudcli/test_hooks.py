@@ -72,6 +72,7 @@ from neutrino_agent.modules.cloudcli.hooks import (
     sdk_program,
     service_environment,
 )
+from neutrino_agent.modules.shared.account_files import READ_SHELL
 from neutrino_agent.modules.shared.account_service import (
     AccountEntry,
     ServiceMachine,
@@ -174,8 +175,19 @@ ANN = AccountEntry(1000, 1000, "/home/ann", "/bin/bash")
 
 
 class Platform(AgentPlatform):
+    """A machine whose acts as an account are recorded and run as the test's own user."""
+
     def __init__(self, os_name="linux"):
         self.os_name = os_name
+        self.as_accounts: list = []
+
+    def account_process(self, account, argv):
+        self.as_accounts.append((account, list(argv)))
+        return list(argv), {}
+
+    def as_account(self, account, step, *arguments, password=""):
+        self.as_accounts.append((account, step.__name__))
+        return step(*arguments)
 
 
 def tarball(path, top=NODE, extra=()):
@@ -205,6 +217,15 @@ def land_sdk(prefix: str, platform: str = "linux-x64", program: str = "claude") 
     with open(path, "w", encoding="utf-8") as stream:
         stream.write("")
     return path
+
+
+def read_file(path: str) -> "bytes | None":
+    """A file's bytes, read as the test's own user; None when it is not there."""
+    try:
+        with open(path, "rb") as stream:
+            return stream.read()
+    except FileNotFoundError:
+        return None
 
 
 def land_package(prefix: str, *, is_finished: bool = True, is_sdk: bool = True) -> None:
@@ -896,11 +917,11 @@ def test_a_mac_removes_the_old_app_as_the_account(tmp_path):
 def test_a_prefix_holds_a_whole_install_once_npm_wrote_its_lockfile(tmp_path):
     prefix = str(tmp_path / "npm")
     land_package(prefix, is_finished=False)
-    assert is_install_whole(prefix, "1.37.3", "linux", "amd64") is False
+    assert is_install_whole(prefix, "1.37.3", "linux", "amd64", read_file) is False
 
     land_package(prefix)
-    assert is_install_whole(prefix, "1.37.3", "linux", "amd64") is True
-    assert is_install_whole(prefix, "1.37.4", "linux", "amd64") is False
+    assert is_install_whole(prefix, "1.37.3", "linux", "amd64", read_file) is True
+    assert is_install_whole(prefix, "1.37.4", "linux", "amd64", read_file) is False
 
 
 def test_a_prefix_without_the_sdk_s_claude_for_the_platform_is_no_whole_install(
@@ -908,11 +929,11 @@ def test_a_prefix_without_the_sdk_s_claude_for_the_platform_is_no_whole_install(
 ):
     prefix = str(tmp_path / "npm")
     land_package(prefix, is_sdk=False)
-    assert is_install_whole(prefix, "1.37.3", "linux", "amd64") is False
+    assert is_install_whole(prefix, "1.37.3", "linux", "amd64", read_file) is False
 
     land_sdk(prefix, "darwin-arm64")
-    assert is_install_whole(prefix, "1.37.3", "linux", "amd64") is False
-    assert is_install_whole(prefix, "1.37.3", "darwin", "arm64") is True
+    assert is_install_whole(prefix, "1.37.3", "linux", "amd64", read_file) is False
+    assert is_install_whole(prefix, "1.37.3", "darwin", "arm64", read_file) is True
 
 
 def test_the_sdk_s_claude_is_resolved_from_the_sdk_s_own_directory_glibc_first(
@@ -1222,7 +1243,7 @@ def ready(monkeypatch):
     """Whether the npm prefix holds a whole install."""
     held = {"is_ready": False}
 
-    def is_whole(prefix, version, os_name, arch):
+    def is_whole(prefix, version, os_name, arch, read):
         return held["is_ready"]
 
     monkeypatch.setattr(hooks_module, "is_install_whole", is_whole)
@@ -2128,19 +2149,42 @@ def test_a_set_the_state_does_not_carry_is_download_failed(tmp_path):
     assert machine.tried == []
 
 
-def test_the_version_file_is_read_through_no_link_and_no_pipe(tmp_path):
+def test_the_version_file_is_read_by_the_reader_given(tmp_path):
     package = tmp_path.joinpath("npm", *CLOUDCLI_PACKAGE_PARTS)
     package.mkdir(parents=True)
-    secret = tmp_path / "secret.json"
-    secret.write_text('{"version": "9.9.9"}')
-    (package / "package.json").symlink_to(secret)
+    asked = []
 
-    assert installed_version(str(tmp_path / "npm")) == ""
+    def refused(path):
+        asked.append(path)
+        raise OSError("cat: Permission denied")
 
-    (package / "package.json").unlink()
-    os.mkfifo(package / "package.json")
-    assert installed_version(str(tmp_path / "npm")) == ""
+    assert installed_version(str(tmp_path / "npm"), refused) == ""
+    assert asked == [str(package / "package.json")]
+    assert installed_version(str(tmp_path / "npm"), lambda path: None) == ""
+    assert (
+        installed_version(str(tmp_path / "npm"), lambda path: b'{"version": "1.2.3"}')
+        == "1.2.3"
+    )
 
-    (package / "package.json").unlink()
-    (package / "package.json").write_text('{"version": "1.2.3"}')
-    assert installed_version(str(tmp_path / "npm")) == "1.2.3"
+
+def test_an_accounts_version_file_is_read_as_the_account(tmp_path):
+    """The prefix is in the account's home, where it can put a link to a
+    file only root reads."""
+    hooks = hooks_for("linux", with_node(tmp_path))
+    entry = AccountEntry(1000, 1000, str(tmp_path / "home" / "ann"), "/bin/bash")
+    prefix = os.path.join(
+        entry.home, ".local", "share", "neutrino", "agent", "cloudcli", "npm"
+    )
+    land_package(prefix)
+    land_sdk(prefix, "linux-x64")
+
+    assert hooks._is_whole(prefix, CONFIG.instances[0]) is True
+    assert [(account, argv[:3]) for account, argv in hooks._platform.as_accounts] == [
+        (
+            CONFIG.instances[0].account,
+            ["/bin/sh", "-c", READ_SHELL],
+        )
+    ]
+    assert hooks._platform.as_accounts[0][1][3].endswith(
+        os.path.join("cloudcli", "package.json")
+    )

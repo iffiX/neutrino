@@ -4,8 +4,9 @@ Only the end of the file is read. The file is opened for reading alone,
 which on Windows shares it with the handle the agent's logging writes
 through, following no link at its last level and waiting on no pipe. A
 file its program has not written yet reads as no lines.
-:func:`mask_secrets` hides a token in a URL's query and a token printed on
-a line of its own.
+A file in an account's place is read as that account
+(:func:`account_file_tail`). :func:`mask_secrets` hides a token in a URL's
+query and a token printed on a line of its own.
 
 Not pure: reads files.
 """
@@ -91,6 +92,29 @@ def file_tail(path: str, lines: int, *, needle: str = "", skipped: str = "") -> 
         stream.seek(start)
         data = stream.read()
     return tail_lines(data, start > 0, lines, needle=needle, skipped=skipped)
+
+
+def account_file_tail(files, path: str, lines: int) -> list:
+    """The last lines of one file in an account's place, read as the account, oldest first.
+
+    Args:
+        files: The :class:`AccountFiles` of the account whose place holds
+            the file.
+        path: The file.
+        lines: How many lines to return at most.
+
+    Returns:
+        The non-blank lines; none while the file does not exist.
+
+    Raises:
+        OSError: When the file exists and cannot be read.
+        ModuleApplyError: When it cannot be read as the account.
+    """
+    held = files.read_tail(path, tail_limit())
+    if held is None:
+        return []
+    size, data = held
+    return tail_lines(data, size > len(data), lines)
 
 
 def tail_limit(needle: str = "") -> int:
