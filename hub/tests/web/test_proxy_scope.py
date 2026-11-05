@@ -32,7 +32,7 @@ DEAD_EXITS_WORDS = {
         ),
         "ui.proxy.dead_exits_fallback": (
             "所有启用的出口节点都不可达，送往代理的流量正改从 WAN 出去，"
-            "用的是这台机器自己的地址。"
+            "用的是这个系统自己的地址。"
         ),
     },
 }

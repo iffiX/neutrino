@@ -23,7 +23,7 @@ WORDS = {
     },
     "zh-CN": {
         "ui.samba.stop_title": "停止 {device} 上的文件共享",
-        "ui.samba.stop_body": "这台机器的 SMB 服务会停止，上面所有共享都会停。",
+        "ui.samba.stop_body": "这个系统的 SMB 服务会停止，上面所有共享都会停。",
         "ui.modules.stop": "停止",
     },
 }

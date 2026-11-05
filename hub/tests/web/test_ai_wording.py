@@ -22,8 +22,8 @@ WORDS = {
         "ui.ai.keys_empty_hint": "Generate one for a tool on the hub's machine.",
     },
     "zh-CN": {
-        "ui.ai.access_hint": "给中枢这台机器上的工具用，或经 SSH 隧道连到它的工具用。",
-        "ui.ai.keys_empty_hint": "给中枢这台机器上的工具生成一个。",
+        "ui.ai.access_hint": "给中枢所在系统上的工具用，或经 SSH 隧道连到它的工具用。",
+        "ui.ai.keys_empty_hint": "给中枢所在系统上的工具生成一个。",
     },
 }
 

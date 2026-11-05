@@ -46,7 +46,7 @@ WORDS = {
     "zh-CN": {
         "ui.containers.hub_title": "中枢的容器",
         "ui.containers.hub_hint": "这些由中枢的模块运行，要改就到对应模块的标签页里改。",
-        "ui.containers.hub_empty": "这台机器上还没有模块运行容器。",
+        "ui.containers.hub_empty": "这个系统上还没有模块运行容器。",
         "ui.containers.source_hub": "中枢",
         "ui.containers.source_declared": "声明",
         "ui.containers.source_manual": "手动",

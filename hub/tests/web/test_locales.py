@@ -96,6 +96,13 @@ def test_every_sentence_fills_the_same_placeholders(language, name):
         ), key
 
 
+@pytest.mark.parametrize("name", catalog_names())
+def test_no_chinese_sentence_calls_a_computer_joined_to_the_hub_a_machine(name):
+    """Chinese writes 系统 for it and never 机器 (ui_text.md, "Names that are fixed")."""
+    for key, sentence in catalog("zh-CN", name).items():
+        assert "机器" not in sentence, key
+
+
 @pytest.mark.parametrize("language", list(WEB_LANGUAGES))
 def test_every_module_state_has_a_word(language):
     """The state table is closed on every surface; a tab wears one of these."""
