@@ -2725,8 +2725,15 @@ def test_the_managed_reason_is_one_text_with_its_code_in_both_languages():
         "in the account's form on its machine page."
     )
     assert CATALOGS["zh-CN"]["ui.reason.ai_managed"] == (
-        "这是被控端所在的机器，请到中枢面板上这台机器的机器页，在账户的表单里设置它的 AI 工具。"
+        "这是被控端所在的系统，请到中枢面板上它的系统页，在账户的表单里设置它的 AI 工具。"
     )
+
+
+def test_no_chinese_word_calls_a_computer_joined_to_the_hub_a_machine():
+    """Chinese writes 系统 and never 机器 (ui_text.md, "Names that are fixed")."""
+    held = [key for key, words in CATALOGS["zh-CN"].items() if "机器" in words]
+
+    assert held == []
 
 
 def page_constant(name: str) -> str:
@@ -3208,12 +3215,12 @@ UI_TEXT_060 = (
         "code.terminal_account_missing",
         "No account is enabled for this machine's terminal; enable one on its "
         "machine page.",
-        "这台机器的终端没有启用的账户，到它的机器页上启用一个。",
+        "这个系统的终端没有启用的账户，到它的系统页上启用一个。",
     ),
     (
         "code.account_not_enabled",
         "{account} is not enabled for this machine's terminal.",
-        "这台机器的终端没有启用 {account}。",
+        "这个系统的终端没有启用 {account}。",
     ),
     (
         "code.key_missing",
@@ -3258,7 +3265,7 @@ UI_TEXT_060 = (
     (
         "ui.reason.terminal_no_account",
         "No account is enabled for this machine's terminal.",
-        "这台机器的终端没有启用的账户。",
+        "这个系统的终端没有启用的账户。",
     ),
     ("ui.terminal.account", "Account", "账户"),
     (
@@ -3279,7 +3286,7 @@ UI_TEXT_060 = (
     (
         "ui.terminal.unknown_device_running",
         "The hub has no record of this client; this terminal still runs on its machine.",
-        "中枢没有本机的记录，这个终端仍在机器上运行。",
+        "中枢没有本机的记录，这个终端仍在它所在的系统上运行。",
     ),
     ("ui.terminal.detached", "Detached; waiting for the hub", "已断开，正在等待中枢"),
     (
@@ -3290,7 +3297,7 @@ UI_TEXT_060 = (
     (
         "ui.settings.ssh_include_hint",
         "Whether ssh, scp, git and VS Code reach each machine as <machine>.nt.",
-        "是否让 ssh、scp、git 和 VS Code 用 <机器>.nt 直接连到每台机器。",
+        "是否让 ssh、scp、git 和 VS Code 用 <系统>.nt 直接连到每个系统。",
     ),
 )
 
