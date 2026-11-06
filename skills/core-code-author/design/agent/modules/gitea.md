@@ -136,10 +136,15 @@ nor stops. The person's first press writes them
 ([../../agent.md](../../agent.md), "The steps").
 
 **Uninstall takes what the module added and keeps the data**: the unit,
-the LaunchDaemon or the service, the binary and `app.ini` go; the data
-directory and the account stay, so an install afterwards serves the same
-repositories and accounts. On Windows and macOS its journal reads the end of
-its own log, `log/gitea.log` under its data directory. Removing the agent
+the LaunchDaemon or the service, the binary, MinGit on Windows and `app.ini`
+go; the data directory stays, so an install afterwards serves the same
+repositories and accounts. On macOS the account `neutrino_gitea` goes too,
+deleted with `dscl . -delete` after the job, which leaves its home, the
+data directory, in place; the next install makes the account again and its
+`account` step hands the data to it. On Linux the account `git` stays: its
+name is not Neutrino's, and it can be the person's own. On Windows and
+macOS its journal reads the end of its own log, `log/gitea.log` under its
+data directory. Removing the agent
 takes the LaunchDaemon and the
 service with its own ([agent.md](../../agent.md), "One session, everything on
 it").
