@@ -446,6 +446,10 @@ that exist:
 - A device that joins a different hub cannot tell the first one, which keeps
   a managed-and-quiet row until somebody forgets it there.
 
+Whichever end lets go, the agent stops every module the hub wanted running
+and keeps each one installed, and the next hub it joins lists them stopped
+([agent.md](agent.md), "Leaving a hub, and joining again").
+
 The agent mirrors the three states: unbound and waiting for a link, bound and
 reporting, and bound but rejected, which stays bound until the hub ends the
 session with `binding_unknown`. Its binding lives in one file, and the

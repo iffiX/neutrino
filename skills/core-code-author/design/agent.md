@@ -1413,13 +1413,30 @@ hub's own key and so only the hub can say. The agent then deletes its
 binding file, switches the AI tools back,
 turns the desktop share off
 ([modules/remote_desktop.md](agent/modules/remote_desktop.md), "The desktop
-is the hub's order") and is bound again by a fresh link.
+is the hub's order"), stops the modules the hub wanted running ("Leaving a
+hub, and joining again") and is bound again by a fresh link.
 
 Admission by `PROTOCOL`, the two protocol codes and the upgrade an agent
 performs when `welcome` names a newer `software` are in
 [transport.md](transport.md), "Admission and the binding". An agent of 0.5
 speaks TLS, which a hub of 0.6 refuses. Its machine is reinstalled with the
 0.6 agent and joins again ([transport.md](transport.md), "A peer of 0.5").
+
+## Leaving a hub, and joining again
+
+A machine leaves its hub when its binding ends: the hub's `binding_unknown`
+after **Forget** deletes it, `nagent leave` deletes it, and `nagent join`
+writes another binding over it. The agent then stops every module the hub
+wanted running and keeps each one installed, with its data and its records.
+
+| Rule | Reason |
+| --- | --- |
+| The agent stops each module that the last state it kept wants `running`, by the task of a **Stop**: `configure` under `stopped`, then `stop`, with that state's recipe and configuration. The task plans no install and no version switch, and a module the presence check does not find gets no step. | A module the hub started runs on with no hub to reach or stop it: in the lab a Debian 12 machine kept Gitea, the file share, code-server, its SSH server and Ayakaleaf's three containers running after **Forget**. A **Stop** disables what it stops, so nothing starts again at the next boot ("A stopped module stays stopped"). No hub is there to send an artifact. |
+| The stop leaves Terminal and Remote desktop, which run no service of their own, the command line programs, which a person runs from a shell, and each module whose entry carries `is_taken_over`, which ran before the join. | The binding's end already turns the desktop share off. A join and a leave change nothing of the person's own on the machine ("The steps"). |
+| The service stops the modules at its first turn after the binding is gone or replaced, whichever process changed the file. The kept state stays as the hub sent it. | `nagent join` and `nagent leave` run in a process of their own, which exits before a stop's tasks end. |
+| Nothing is uninstalled and nothing is deleted: the software, the data, the configured marks, each instance's record and each module's record stay. | **Forget** lets the machine go. An uninstall is a press of its own. |
+| At the next join every module the machine holds reports as it stands: `stopped` where its configured mark stands and `installed` where none does. A container module reports from the recipe the agent kept ([agent/module_install.md](agent/module_install.md), "From container images"). The hub lists each module that does not read `absent`, and one it holds no `want` for starts at the person's **Start** ([protocol.md](protocol.md), "Taking over a machine"). | The person chooses what runs again. |
+| A rejoin after `nagent leave` is matched to the row the hub kept, with its `want`s, and its state starts each module wanted `running` again. A rejoin after **Forget** gets a new row, on the same hub or another: the hub kept nothing of the machine, its available accounts included, and the person adds each account again. | **Forget** deletes the row and `config/devices/<id>/`, and `nagent leave` keeps both ([protocol.md](protocol.md), "Joining and leaving"). |
 
 ## The agent's packages come from the hub
 
