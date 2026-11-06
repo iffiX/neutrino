@@ -290,6 +290,13 @@ PODMAN_COMMAND_CONTROL = "control"
 PODMAN_COMMAND_JOURNAL = "journal"
 PODMAN_COMMAND_MACHINE_READ = "machine_read"
 PODMAN_JOURNAL_LINES = 200
+# The journal entries a container's journal reads for each line it shows.
+# conmon writes a line of a container in pieces, each an entry of its own.
+PODMAN_JOURNAL_ENTRIES_PER_LINE = 4
+# The fields a container's journal prints as JSON.
+PODMAN_JOURNAL_FIELDS = (
+    "MESSAGE,CONTAINER_PARTIAL_MESSAGE,SYSLOG_IDENTIFIER,_COMM,_PID,_HOSTNAME"
+)
 
 # The service type of a container's host port, and what each type holds.
 PODMAN_SERVICE_AUTO = "auto"

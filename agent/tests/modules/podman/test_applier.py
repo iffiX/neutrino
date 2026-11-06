@@ -4,6 +4,7 @@ import json
 import os
 import stat
 import subprocess
+import time
 
 import pytest
 
@@ -17,6 +18,7 @@ from neutrino_agent.modules.podman.applier import (
     fastest_sources,
     fix_cni_version,
     image_references,
+    journal_entry_lines,
     journal_lines,
     network_gateway,
     owner_of,
@@ -715,21 +717,86 @@ def test_an_action_outside_the_list_is_refused():
         PodmanContainerController().control("web", "rm", source="declared")
 
 
-def test_the_journal_is_read_by_unit(commands):
-    commands.answers[("journalctl", "-u")] = (0, "one\ntwo\n")
+# One container line conmon wrote in pieces, as Podman 3.4.4 put the
+# Hermes WebUI image's `+ cffi==2.1.1` in the journal, then a line of
+# podman's own and an empty line.
+PIECES = [
+    {"MESSAGE": " ", "CONTAINER_PARTIAL_MESSAGE": "true"},
+    {"MESSAGE": "+", "CONTAINER_PARTIAL_MESSAGE": "true"},
+    {"MESSAGE": [27, 91, 51, 50, 109], "CONTAINER_PARTIAL_MESSAGE": "true"},
+    {"MESSAGE": " cffi", "CONTAINER_PARTIAL_MESSAGE": "true"},
+    {"MESSAGE": "==2.1.1", "CONTAINER_PARTIAL_MESSAGE": "true"},
+    {"MESSAGE": "\n"},
+    {"MESSAGE": "container start", "SYSLOG_IDENTIFIER": "podman", "_PID": "6507"},
+    {"MESSAGE": "\n"},
+]
 
-    assert journal_lines("web", 50) == ["one", "two"]
+
+def journal_json(entries: list) -> str:
+    """The entries as `journalctl --output json` prints them, a second apart."""
+    base = {"_HOSTNAME": "hub", "SYSLOG_IDENTIFIER": "conmon", "_PID": "11765"}
+    return "".join(
+        json.dumps({**base, "__REALTIME_TIMESTAMP": str((60 + index) * 10**6), **entry})
+        + "\n"
+        for index, entry in enumerate(entries)
+    )
+
+
+@pytest.fixture
+def utc(monkeypatch):
+    monkeypatch.setenv("TZ", "UTC")
+    time.tzset()
+    yield
+    monkeypatch.undo()
+    time.tzset()
+
+
+def test_the_journal_is_read_by_unit(commands, utc):
+    commands.answers[("journalctl", "-u")] = (
+        0,
+        journal_json([{"MESSAGE": "one"}, {"MESSAGE": "two"}]),
+    )
+
+    assert journal_lines("web", 50) == [
+        "1970-01-01T00:01:00+0000 hub conmon[11765]: one",
+        "1970-01-01T00:01:01+0000 hub conmon[11765]: two",
+    ]
     assert [
         "journalctl",
         "-u",
         "web.service",
         "-n",
-        "50",
+        "200",
         "--no-pager",
         "--quiet",
+        "--all",
         "--output",
-        "short-iso",
+        "json",
+        "--output-fields",
+        "MESSAGE,CONTAINER_PARTIAL_MESSAGE,SYSLOG_IDENTIFIER,_COMM,_PID,_HOSTNAME",
     ] in commands.calls
+
+
+def test_a_line_written_in_pieces_reads_as_one_line(commands, utc):
+    commands.answers[("journalctl", "-u")] = (0, journal_json(PIECES))
+
+    assert journal_lines("web", 50) == [
+        "1970-01-01T00:01:00+0000 hub conmon[11765]:  +\x1b[32m cffi==2.1.1",
+        "1970-01-01T00:01:06+0000 hub podman[6507]: container start",
+        "1970-01-01T00:01:07+0000 hub conmon[11765]: ",
+    ]
+
+
+def test_the_journal_keeps_the_newest_lines_once_joined(commands, utc):
+    commands.answers[("journalctl", "-u")] = (0, journal_json(PIECES))
+
+    assert journal_lines("web", 1) == ["1970-01-01T00:01:07+0000 hub conmon[11765]: "]
+
+
+def test_a_line_that_is_no_entry_reads_as_it_came():
+    assert journal_entry_lines("No journal files were found.\n") == [
+        "No journal files were found."
+    ]
 
 
 def test_the_inspected_ports_keep_their_protocol_as_the_configuration_writes_it():

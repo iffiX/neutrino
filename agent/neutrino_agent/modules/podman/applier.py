@@ -22,6 +22,7 @@ import re
 import subprocess
 import time
 from dataclasses import dataclass, field
+from datetime import datetime
 
 from neutrino_agent.modules.podman.config import PodmanConfig
 from neutrino_agent.modules.podman.constants import (
@@ -39,6 +40,8 @@ from neutrino_agent.modules.podman.constants import (
     PODMAN_ENV_FILE_MODE,
     PODMAN_ENV_SUFFIX,
     PODMAN_GENERATED_MARKER,
+    PODMAN_JOURNAL_ENTRIES_PER_LINE,
+    PODMAN_JOURNAL_FIELDS,
     PODMAN_MODULE_LABEL,
     PODMAN_PROBE_ADDRESS,
     PODMAN_PROTOCOL_TCP,
@@ -888,7 +891,7 @@ def journal_lines(name: str, lines: int) -> list:
         lines: How many lines to read.
 
     Returns:
-        The lines, in order.
+        The lines, in order, each line a container wrote in pieces joined.
     """
     try:
         result = run(
@@ -897,18 +900,82 @@ def journal_lines(name: str, lines: int) -> list:
                 "-u",
                 f"{name}.service",
                 "-n",
-                str(lines),
+                str(lines * PODMAN_JOURNAL_ENTRIES_PER_LINE),
                 "--no-pager",
                 "--quiet",
+                "--all",
                 "--output",
-                "short-iso",
+                "json",
+                "--output-fields",
+                PODMAN_JOURNAL_FIELDS,
             ],
             is_checked=False,
             timeout_s=30,
         )
     except (OSError, subprocess.SubprocessError):
         return []
-    return (result.stdout or result.stderr).splitlines()
+    return journal_entry_lines(result.stdout or result.stderr)[-lines:]
+
+
+def journal_entry_lines(output: str) -> list:
+    """The lines of a journal printed as JSON, as ``short-iso`` prints them.
+
+    conmon writes a line of a container in pieces, each entry marked
+    ``CONTAINER_PARTIAL_MESSAGE``, and the newline that ends it as an entry
+    of its own. The pieces of one process join into one line.
+
+    Args:
+        output: What ``journalctl --output json`` printed. A line that is no
+            entry stands as it is.
+
+    Returns:
+        The lines, in order.
+    """
+    lines: list = []
+    # The line each process's open pieces join, by process id.
+    open_lines: dict = {}
+    for text in output.splitlines():
+        try:
+            entry = json.loads(text)
+        except ValueError:
+            entry = None
+        if not isinstance(entry, dict):
+            lines.append(text)
+            continue
+        process = str(entry.get("_PID", ""))
+        at = open_lines.pop(process, None)
+        if at is None:
+            lines.append(_journal_prefix(entry))
+            at = len(lines) - 1
+        lines[at] += _journal_message(entry.get("MESSAGE"))
+        if entry.get("CONTAINER_PARTIAL_MESSAGE") == "true":
+            open_lines[process] = at
+    return [line.rstrip("\n") for line in lines]
+
+
+def _journal_prefix(entry: dict) -> str:
+    """The time, the host and the process ``short-iso`` writes before a message."""
+    try:
+        stamp = int(entry.get("__REALTIME_TIMESTAMP", "")) / 1_000_000
+        when = datetime.fromtimestamp(stamp).astimezone()
+        moment = when.strftime("%Y-%m-%dT%H:%M:%S%z")
+    except (TypeError, ValueError, OverflowError, OSError):
+        moment = ""
+    name = str(entry.get("SYSLOG_IDENTIFIER") or entry.get("_COMM") or "")
+    process = str(entry.get("_PID") or "")
+    source = f"{name}[{process}]:" if process else f"{name}:"
+    parts = (moment, str(entry.get("_HOSTNAME") or ""), source)
+    return " ".join(part for part in parts if part) + " "
+
+
+def _journal_message(value) -> str:
+    """A message's text. JSON prints a message that is not UTF-8 as a list of bytes."""
+    if isinstance(value, list):
+        try:
+            return bytes(value).decode("utf-8", "replace")
+        except (TypeError, ValueError):
+            return ""
+    return "" if value is None else str(value)
 
 
 def owner_of(name: str, module: str, declared_names: list) -> str:

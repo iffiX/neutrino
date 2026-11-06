@@ -55,6 +55,7 @@ from neutrino_agent.modules.podman.applier import (
     ensure_network,
     fastest_sources,
     image_references,
+    journal_entry_lines,
     podman_version,
     read_image_references,
     ready_hub_containers,
@@ -1208,7 +1209,7 @@ class PodmanMachineModuleRunner(ModuleRunner):
             except ModuleApplyError as error:
                 self._log(f"podman: the journal was not read: {error}")
                 return []
-            read = (done.stdout or "").splitlines()
+            read = journal_entry_lines(done.stdout or "")
             self._journal_read = (list(names), lines, self._clock(), read)
             return list(read)
 
@@ -1662,7 +1663,8 @@ class PodmanMachineModuleRunner(ModuleRunner):
             done = machine.shell(machine_journal_script(name, PODMAN_JOURNAL_LINES))
         except ModuleApplyError as error:
             return command_outcome(1, error.code, error.params)
-        lines = (done.stdout or done.stderr or "").splitlines()
+        lines = journal_entry_lines(done.stdout or done.stderr or "")
+        lines = lines[-PODMAN_JOURNAL_LINES:]
         for line in lines:
             if on_line is not None:
                 on_line(line)

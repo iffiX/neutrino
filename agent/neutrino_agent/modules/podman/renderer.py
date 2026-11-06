@@ -36,6 +36,8 @@ from neutrino_agent.modules.podman.constants import (
     PODMAN_ENV_SUFFIX,
     PODMAN_GENERATED_MARKER,
     PODMAN_HOST_ALIAS,
+    PODMAN_JOURNAL_ENTRIES_PER_LINE,
+    PODMAN_JOURNAL_FIELDS,
     PODMAN_MACHINE_CGROUPS,
     PODMAN_MODULE_LABEL,
     PODMAN_PAGE_ADDRESS,
@@ -395,8 +397,9 @@ def machine_journal_script(name: str, lines: int) -> str:
         The POSIX sh text.
     """
     return (
-        f"journalctl -u {name}.service -n {int(lines)} --no-pager --quiet "
-        "--output short-iso\n"
+        f"journalctl -u {name}.service "
+        f"-n {int(lines) * PODMAN_JOURNAL_ENTRIES_PER_LINE} --no-pager --quiet "
+        f"--all --output json --output-fields {PODMAN_JOURNAL_FIELDS}\n"
     )
 
 

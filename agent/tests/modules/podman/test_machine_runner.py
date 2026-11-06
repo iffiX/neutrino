@@ -1639,6 +1639,32 @@ def test_a_containers_journal_is_read_in_the_machine(rig):
     assert rig.world.scripts[-1][2] == machine_journal_script("web", 200)
 
 
+def test_a_containers_line_written_in_pieces_reads_as_one_line(rig):
+    rig.keep_image()
+    rig.runner.apply(CONFIG)
+    pieces = [
+        {"MESSAGE": "+", "CONTAINER_PARTIAL_MESSAGE": "true"},
+        {"MESSAGE": " cffi", "CONTAINER_PARTIAL_MESSAGE": "true"},
+        {"MESSAGE": "\n"},
+    ]
+    rig.world.shell_answers = [
+        (
+            0,
+            "".join(
+                json.dumps(
+                    {"MESSAGE": "", "SYSLOG_IDENTIFIER": "conmon", "_PID": "9", **one}
+                )
+                + "\n"
+                for one in pieces
+            ),
+        )
+    ]
+
+    outcome = rig.runner.command("journal", {"name": "web"})
+
+    assert outcome["output"] == "conmon[9]: + cffi"
+
+
 def test_a_verb_before_any_apply_knows_no_container(rig):
     assert rig.runner.command("control", {"name": "web", "action": "stop"})["code"] == (
         "container_unknown"
