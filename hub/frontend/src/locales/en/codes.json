@@ -366,6 +366,8 @@
   "code.container_hub_owned": "{name} is run by a module of the hub; change it in that module's tab.",
   "code.containers_not_applied": "Containers did not apply the containers of this module; fix the error on the Containers tab, then press Start here.",
   "code.page_silent": "The page at port {port} does not respond. Check what else listens on that port.",
+  "code.image_pull_failed": "The image {image} of {name} could not be pulled. Check its tag and the registry mirrors.",
+  "code.container_start_failed": "The container {name} did not start from {image}. Its journal names the reason.",
   "code.control_unavailable": "The hub is busy and did not answer; try again.",
   "code.hub_key_missing": "This binding is from 0.5 and the hub no longer moves it; join the hub again with a new link.",
   "code.key_missing": "The SSH server of {account} has no key from the hub; apply the module again.",

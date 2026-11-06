@@ -112,6 +112,14 @@
   color: var(--color-text);
 }
 
+/* Why a container did not start, on a line of its own under the row. */
+.container_row_failure {
+  flex-basis: 100%;
+  font-family: var(--font-sans);
+  color: var(--color-error);
+  overflow-wrap: anywhere;
+}
+
 /* A running container's four buttons and its source chip, kept together at
    the end of the row; the group wraps inside a row too narrow for it. */
 .container_row_actions {

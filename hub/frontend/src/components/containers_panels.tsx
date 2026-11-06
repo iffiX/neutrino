@@ -17,6 +17,7 @@ import {
   apiPath,
   apiPost,
   describeApplyFailure,
+  describeCode,
   describeError,
 } from "../api_client";
 import { t, useLanguage } from "../i18n";
@@ -989,11 +990,12 @@ function ContainerRow({
   // Redrawn when the panel's language changes.
   useLanguage();
   const isHub = state.source === "hub";
+  const isFailed = state.code !== "";
   return (
     <div className="container_row">
       <span className="container_row_name">
         <StatusDot
-          tone={state.is_running ? "ok" : "idle"}
+          tone={state.is_running ? "ok" : isFailed ? "error" : "idle"}
           isPulsing={state.is_running}
         />
         {state.name}
@@ -1058,6 +1060,11 @@ function ContainerRow({
           {t(SOURCE_KEYS[state.source])}
         </span>
       </div>
+      {isFailed && (
+        <span className="container_row_failure">
+          {describeCode({ code: state.code, params: state.params })}
+        </span>
+      )}
     </div>
   );
 }

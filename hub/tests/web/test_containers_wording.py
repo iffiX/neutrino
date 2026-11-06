@@ -68,6 +68,16 @@ LOGON_WORDS = {
         "code.account_logon_refused": "Windows 拒绝了 {account} 的登录：{detail}",
     },
 }
+START_FAILED_WORDS = {
+    "en": {
+        "code.image_pull_failed": "The image {image} of {name} could not be pulled. Check its tag and the registry mirrors.",
+        "code.container_start_failed": "The container {name} did not start from {image}. Its journal names the reason.",
+    },
+    "zh-CN": {
+        "code.image_pull_failed": "容器 {name} 的镜像 {image} 拉取失败。请检查镜像标签和镜像源。",
+        "code.container_start_failed": "容器 {name} 没能用镜像 {image} 启动，原因见它的日志。",
+    },
+}
 PAGE_SILENT_WORDS = {
     "en": "The page at port {port} does not respond. Check what else listens on that port.",
     "zh-CN": "端口 {port} 上的页面没有响应。请检查这个端口上还有什么程序在监听。",
@@ -109,6 +119,35 @@ def test_a_silent_page_says_what_ui_text_writes(language):
     worded = catalog(language, "codes.json")
 
     assert worded["code.page_silent"] == PAGE_SILENT_WORDS[language]
+
+
+@pytest.mark.parametrize("language", ["en", "zh-CN"])
+def test_a_container_that_did_not_start_says_what_ui_text_writes(language):
+    worded = catalog(language, "codes.json")
+
+    for key, sentence in START_FAILED_WORDS[language].items():
+        assert worded[key] == sentence
+
+
+def test_a_row_whose_container_did_not_start_shows_its_code_in_the_error_tone():
+    """In the lab a declared container whose image did not exist read only
+    as not created yet, beside systemd's words on the whole module."""
+    panels = " ".join(PANELS_PATH.read_text(encoding="utf-8").split())
+    row = panels[panels.index("function ContainerRow(") :]
+    row = row[: row.index("interface HubContainerRowProps")]
+
+    assert 'const isFailed = state.code !== "";' in row
+    assert 'tone={state.is_running ? "ok" : isFailed ? "error" : "idle"}' in row
+    assert (
+        '{isFailed && ( <span className="container_row_failure">'
+        " {describeCode({ code: state.code, params: state.params })} </span> )}"
+    ) in row
+    css = " ".join((PANELS_PATH.parent / "containers_panels.css").read_text().split())
+    assert ".container_row_failure {" in css
+    failure = css.split(".container_row_failure {", 1)[1].split("}", 1)[0]
+    assert "color: var(--color-error);" in failure
+    assert "flex-basis: 100%;" in failure
+    assert "overflow-wrap: anywhere;" in failure
 
 
 @pytest.mark.parametrize("language", ["en", "zh-CN"])

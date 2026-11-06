@@ -2330,6 +2330,10 @@ export interface PodmanContainerState {
   /** The module its label names; empty for any other container. */
   module: string;
   host_bindings: PodmanHostBinding[];
+  /** image_pull_failed or container_start_failed for a container whose
+   * start systemd refused and which does not run; empty otherwise. */
+  code: string;
+  params: Record<string, string | number>;
 }
 
 /** A hub container's image: its digest and the references that serve it. */

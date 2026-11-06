@@ -178,6 +178,8 @@ CONTAINERS_CODES = (
     "mirror_invalid",
     "containers_not_applied",
     "page_silent",
+    "image_pull_failed",
+    "container_start_failed",
 )
 
 
@@ -222,6 +224,8 @@ AGENT_ROW_PARAMS = {
     "page_silent": {"port"},
     "package_manager_busy": {"holder"},
     "state_not_settled": {"module"},
+    "image_pull_failed": {"name", "image"},
+    "container_start_failed": {"name", "image"},
 }
 
 
