@@ -1,7 +1,8 @@
 """The dashboard, held against ui_behavior.md's "The dashboard".
 
 What these pin: each active exit reads its node's name from the frame's
-probes and falls back to its tag.
+probes and falls back to its tag; a day's activity grid draws a label on
+every sixth hour, spanning the six cells.
 """
 
 from pathlib import Path
@@ -27,3 +28,16 @@ def test_an_active_exit_reads_its_node_s_name_and_else_its_tag():
 
     assert "name: probe?.name || outbound.tag," in exits
     assert '<div className="dashboard_exit_tag">{exit.name}</div>' in page
+
+
+def test_a_day_s_hour_label_spans_its_six_cells():
+    grid = flat("components/usage_grid.tsx")
+
+    assert "const HOUR_LABEL_STEP = 6;" in grid
+    assert 'const step = range === "week" ? 1 : HOUR_LABEL_STEP;' in grid
+    assert (
+        "{series.map((point, index) => index % step === 0 ? ( <span "
+        'key={point.bucket} className="usage_grid_label" style={{ gridColumn: '
+        "`span ${Math.min(step, series.length - index)}`, }} > "
+        "{formatBucketLabel(point.bucket, range)} </span> ) : null, )}"
+    ) in grid

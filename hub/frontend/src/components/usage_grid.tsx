@@ -30,6 +30,9 @@ const FAILING_SHARE = 0.5;
 
 const HEAT_LEVEL_STEPS = [0, 1, 2, 3, 4] as const;
 
+/** The hours between two labels of a day's row. */
+const HOUR_LABEL_STEP = 6;
+
 type UsageGridMode = "tokens" | "health";
 
 interface UsageGridProps {
@@ -80,6 +83,8 @@ interface RowProps {
 function SingleRow({ series, range, mode }: RowProps) {
   const highest = Math.max(...series.map(tokensOf));
   const columns = `repeat(${series.length}, minmax(14px, 1fr))`;
+  // A day's label spans the cells up to the next one.
+  const step = range === "week" ? 1 : HOUR_LABEL_STEP;
   return (
     <div className="usage_grid_strip">
       <div className="usage_grid_row" style={{ gridTemplateColumns: columns }}>
@@ -97,13 +102,19 @@ function SingleRow({ series, range, mode }: RowProps) {
         className="usage_grid_labels"
         style={{ gridTemplateColumns: columns }}
       >
-        {series.map((point, index) => (
-          <span key={point.bucket} className="usage_grid_label">
-            {range === "week" || index % 6 === 0
-              ? formatBucketLabel(point.bucket, range)
-              : ""}
-          </span>
-        ))}
+        {series.map((point, index) =>
+          index % step === 0 ? (
+            <span
+              key={point.bucket}
+              className="usage_grid_label"
+              style={{
+                gridColumn: `span ${Math.min(step, series.length - index)}`,
+              }}
+            >
+              {formatBucketLabel(point.bucket, range)}
+            </span>
+          ) : null,
+        )}
       </div>
     </div>
   );
