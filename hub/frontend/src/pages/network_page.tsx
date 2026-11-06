@@ -18,6 +18,7 @@ import { StringListEditor } from "../components/string_list_editor";
 import { TabStrip } from "../components/tab_strip";
 import type { StripTab } from "../components/tab_strip";
 import { ToggleSwitch } from "../components/toggle_switch";
+import { UnaddedRowsSection } from "../components/unadded_rows_section";
 import { UpstreamGatewayPanel } from "../components/upstream_gateway_panel";
 import { WifiScanPanel } from "../components/wifi_scan_panel";
 import { apiPost, describeError } from "../api_client";
@@ -31,6 +32,7 @@ import { interruptionWarning } from "../network_warnings";
 import { resolversOf, resolverRow } from "../resolver_rows";
 import type { InterfaceErrors, ServedNetwork } from "../network_validation";
 import { useDraftSeeding } from "../use_draft_seeding";
+import { useUnaddedRows } from "../use_unadded_rows";
 import { useApiResource } from "../use_api_resource";
 import {
   HUB_EVENT_CONFIG,
@@ -222,6 +224,7 @@ export function NetworkPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const interfaceRows = useUnaddedRows();
   const [options, setOptions] = useState<NetworkOptions | null>(null);
   const [isSavingOptions, setIsSavingOptions] = useState(false);
   const [optionsNotice, setOptionsNotice] = useState<string | null>(null);
@@ -522,7 +525,10 @@ export function NetworkPage() {
       {isRouting && (
         <>
           {selected !== null && draft !== null && (
-            <section className={`card ${isDirty ? "card--dirty" : ""}`}>
+            <UnaddedRowsSection
+              rows={interfaceRows}
+              className={`card ${isDirty || interfaceRows.hasRows ? "card--dirty" : ""}`}
+            >
               <LinkSummary entry={selected} />
 
               <div className="network_form">
@@ -644,7 +650,7 @@ export function NetworkPage() {
                   onApply={() => void handleSubmit()}
                 />
               </div>
-            </section>
+            </UnaddedRowsSection>
           )}
 
           {network.data !== null && (

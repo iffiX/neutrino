@@ -12,6 +12,7 @@ import { ShellTerminal } from "./shell_terminal";
 import { StatusDot } from "./status_dot";
 import { StringListEditor } from "./string_list_editor";
 import { ToggleSwitch } from "./toggle_switch";
+import { UnaddedRowsSection } from "./unadded_rows_section";
 import {
   apiGet,
   apiPath,
@@ -27,6 +28,7 @@ import { useApiResource } from "../use_api_resource";
 import { useDraft } from "../use_draft";
 import { HUB_EVENT_CONFIG, HUB_EVENT_DEVICE_REPORT } from "../use_hub_events";
 import { isFailing, useSettledApply } from "../use_settled_apply";
+import { useUnaddedRows } from "../use_unadded_rows";
 import type { ReportedModule, SettledApply } from "../use_settled_apply";
 import type {
   ApplyResult,
@@ -189,6 +191,7 @@ export function ContainersPanels({
   const report = saved === null ? null : podmanReport(saved, isMachineRun);
   const mirrorsSettle = useSettledApply(report, want);
   const containersSettle = useSettledApply(report, want);
+  const containersRows = useUnaddedRows();
 
   const isDirty = containersDraft.isDirty;
   const filledMirrors = mirrors.filter((mirror) => mirror !== "");
@@ -449,8 +452,9 @@ export function ContainersPanels({
         />
       </section>
 
-      <section
-        className={`settings_group ${isDirty ? "settings_group--dirty" : ""}`}
+      <UnaddedRowsSection
+        rows={containersRows}
+        className={`settings_group ${isDirty || containersRows.hasRows ? "settings_group--dirty" : ""}`}
       >
         <div className="settings_group_title">
           <h2>{t("ui.containers.declared_title")}</h2>
@@ -517,7 +521,7 @@ export function ContainersPanels({
           }}
           onApply={() => void applyContainers()}
         />
-      </section>
+      </UnaddedRowsSection>
 
       {shellTarget !== null && (
         <ContainerShellModal

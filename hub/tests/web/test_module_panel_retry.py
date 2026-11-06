@@ -39,7 +39,9 @@ def test_reset_is_dead_on_a_bar_lit_with_nothing_changed():
     bar = flat("components/apply_bar.tsx")
 
     assert "hasChanges = isDirty," in bar
-    assert "disabled={isBusy || !hasChanges || blockedHint !== null}" in bar
+    assert (
+        "disabled={ isBusy || !(hasChanges || hasRows) || blockedHint !== null }" in bar
+    )
     assert "isDirty={isPending} hasChanges={isDirty}" in flat(
         "components/frp_panels.tsx"
     )

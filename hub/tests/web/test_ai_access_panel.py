@@ -99,9 +99,7 @@ def test_the_bar_s_hint_may_be_left_out():
     bar = flat("components/apply_bar.tsx")
 
     assert "hint?: string;" in bar
-    assert (
-        '{blockedHint ?? (isDirty || isBusy ? hint : t("ui.apply_bar.clean"))}' in bar
-    )
+    assert '{blockedHint ?? (isLit || isBusy ? hint : t("ui.apply_bar.clean"))}' in bar
 
 
 def test_the_bar_writes_the_pick_alone_and_the_keys_touch_no_draft():

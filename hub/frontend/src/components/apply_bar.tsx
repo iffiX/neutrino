@@ -1,6 +1,9 @@
+import { useContext, useEffect, useState } from "react";
+
 import { Icon } from "./icon";
 import { Spinner } from "./spinner";
 import { t, useLanguage } from "../i18n";
+import { UnaddedRowsContext } from "../use_unadded_rows";
 
 import "./apply_bar.css";
 
@@ -21,6 +24,10 @@ import "./apply_bar.css";
  * interface — it drops live connections, and changing the LAN address drops
  * the session doing the changing. A setting that expensive should take a
  * deliberate press.
+ *
+ * Inside a frame that hands its list editors an `UnaddedRowsContext`, a row
+ * typed and not added lights the bar too: Apply adds every such row first,
+ * as Add does, and applies once the lists hold them; Reset empties them.
  */
 
 interface ApplyBarProps {
@@ -67,9 +74,39 @@ export function ApplyBar({
 }: ApplyBarProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
+  const rows = useContext(UnaddedRowsContext);
+  const hasRows = rows?.hasRows ?? false;
+  const isLit = isDirty || hasRows;
+  const [isApplyAfterAdd, setIsApplyAfterAdd] = useState(false);
+
+  // A press that added typed rows applies at the render that draws them.
+  useEffect(() => {
+    if (!isApplyAfterAdd) {
+      return;
+    }
+    setIsApplyAfterAdd(false);
+    if (isDirty) {
+      onApply();
+    }
+  }, [isApplyAfterAdd, isDirty, onApply]);
+
+  const handleApply = () => {
+    if (rows !== null && rows.hasRows) {
+      rows.addAll();
+      setIsApplyAfterAdd(true);
+      return;
+    }
+    onApply();
+  };
+
+  const handleReset = () => {
+    rows?.clearAll();
+    onReset();
+  };
+
   return (
     <div className="apply_bar">
-      {warning !== undefined && isDirty && (
+      {warning !== undefined && isLit && (
         <div className="notice notice--warn">
           <Icon name="alert" size={15} />
           <div className="notice_body">{warning}</div>
@@ -92,23 +129,25 @@ export function ApplyBar({
 
       <div className="apply_bar_row">
         <span className="field_hint">
-          {blockedHint ?? (isDirty || isBusy ? hint : t("ui.apply_bar.clean"))}
+          {blockedHint ?? (isLit || isBusy ? hint : t("ui.apply_bar.clean"))}
         </span>
         <div className="button_row">
           <button
             type="button"
             className="button button--ghost"
-            onClick={onReset}
-            disabled={isBusy || !hasChanges || blockedHint !== null}
+            onClick={handleReset}
+            disabled={
+              isBusy || !(hasChanges || hasRows) || blockedHint !== null
+            }
           >
             {t("ui.apply_bar.reset")}
           </button>
           <button
             type="button"
             className="button button--primary"
-            onClick={onApply}
+            onClick={handleApply}
             disabled={
-              isBusy || !isDirty || blockedHint !== null || isApplyDisabled
+              isBusy || !isLit || blockedHint !== null || isApplyDisabled
             }
           >
             {isBusy ? <Spinner size={13} /> : <Icon name="check" size={14} />}

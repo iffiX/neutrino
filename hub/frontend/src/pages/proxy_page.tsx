@@ -8,6 +8,7 @@ import { Icon } from "../components/icon";
 import { NodesPanel } from "../components/nodes_panel";
 import { StringListEditor } from "../components/string_list_editor";
 import { ToggleSwitch } from "../components/toggle_switch";
+import { UnaddedRowsSection } from "../components/unadded_rows_section";
 import {
   apiPost,
   describeApplied,
@@ -19,6 +20,7 @@ import { DIRECT_EXIT_TAG, describeProxy } from "../proxy_status";
 import type { ProxyTone } from "../proxy_status";
 import { useApiResource } from "../use_api_resource";
 import { useDraft } from "../use_draft";
+import { useUnaddedRows } from "../use_unadded_rows";
 import { useLiveStats } from "../use_live_stats";
 import { resolversOf, resolverRow } from "../resolver_rows";
 import type {
@@ -91,6 +93,7 @@ export function ProxyPage() {
     isDirty,
     reset: resetDraft,
   } = useDraft(saved, routeDraftOf);
+  const routeRows = useUnaddedRows();
   const [busyGroup, setBusyGroup] = useState<GroupName | null>(null);
   const [notice, setNotice] = useState<Partial<Record<GroupName, string>>>({});
   const [errors, setErrors] = useState<Partial<Record<GroupName, string>>>({});
@@ -213,8 +216,9 @@ export function ProxyPage() {
 
       <NodesPanel onNodesChanged={resource.reload} />
 
-      <section
-        className={`settings_group ${isDirty ? "settings_group--dirty" : ""}`}
+      <UnaddedRowsSection
+        rows={routeRows}
+        className={`settings_group ${isDirty || routeRows.hasRows ? "settings_group--dirty" : ""}`}
       >
         <div className="settings_group_title">
           <h2>{t("ui.proxy.route_title")}</h2>
@@ -381,7 +385,7 @@ export function ProxyPage() {
           onReset={resetGroup}
           onApply={() => void applyGroup("route")}
         />
-      </section>
+      </UnaddedRowsSection>
     </div>
   );
 }

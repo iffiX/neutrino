@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useContext, useEffect, useId, useRef, useState } from "react";
 import type { FormEvent } from "react";
 
 import { Icon } from "./icon";
 import { t, useLanguage } from "../i18n";
+import { UnaddedRowsContext } from "../use_unadded_rows";
 
 import "./string_list_editor.css";
 
@@ -14,6 +15,8 @@ import "./string_list_editor.css";
  * trim, refuse blanks, and refuse a duplicate rather than silently adding a
  * second copy that would confuse the rendered config. With Browse… a row
  * starts with a folder of a machine, `<folder>:<rest>`, as a volume does.
+ * Inside a frame a typed row is held in the frame's `UnaddedRowsContext`,
+ * whose apply bar adds it before it applies.
  */
 
 /** A Windows drive at the start of a row: its colon belongs to the folder. */
@@ -49,18 +52,51 @@ export function StringListEditor({
 }: StringListEditorProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
+  const hold = useContext(UnaddedRowsContext)?.hold;
+  const id = useId();
   const [draft, setDraft] = useState("");
+  const isTyped = draft.trim().length > 0;
   const isBrowsable = onBrowse !== undefined && browseLabel !== undefined;
 
-  const handleAdd = (event: FormEvent) => {
-    event.preventDefault();
+  /** Add the typed row; a blank or a duplicate is dropped. */
+  const addTyped = () => {
     const entry = draft.trim();
+    setDraft("");
     if (entry.length === 0 || values.includes(entry)) {
-      setDraft("");
       return;
     }
     onChange([...values, entry]);
-    setDraft("");
+  };
+  // The frame's apply adds the row with the lists of the last render.
+  const addTypedRef = useRef(addTyped);
+  useEffect(() => {
+    addTypedRef.current = addTyped;
+  });
+  useEffect(() => {
+    if (hold === undefined) {
+      return undefined;
+    }
+    hold(
+      id,
+      isTyped
+        ? {
+            add: () => {
+              addTypedRef.current();
+            },
+            clear: () => {
+              setDraft("");
+            },
+          }
+        : null,
+    );
+    return () => {
+      hold(id, null);
+    };
+  }, [hold, id, isTyped]);
+
+  const handleAdd = (event: FormEvent) => {
+    event.preventDefault();
+    addTyped();
   };
 
   const handleRemove = (entry: string) => {
