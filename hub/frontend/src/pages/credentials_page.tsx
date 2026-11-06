@@ -736,7 +736,7 @@ function TokenCard({ value, onDeleted }: TokenCardProps) {
   const handleDelete = () => {
     confirm.ask({
       title: t("ui.credentials.delete_title", { name: value.name }),
-      body: tokenDeleteBody(value.provider_count, value.node_count),
+      body: tokenDeleteBody(value.provider_count, value.node_names),
       confirmLabel: t("ui.credentials.delete"),
       onConfirm: () => void deleteToken(),
     });
@@ -850,7 +850,7 @@ function loginDeleteBody(deviceCount: number): string {
 }
 
 /** The delete confirmation's body for a token: who loses it, one sentence each. */
-function tokenDeleteBody(providerCount: number, nodeCount: number): string {
+function tokenDeleteBody(providerCount: number, nodeNames: string[]): string {
   const sentences: string[] = [];
   if (providerCount > 0) {
     sentences.push(
@@ -859,11 +859,15 @@ function tokenDeleteBody(providerCount: number, nodeCount: number): string {
         : t("ui.credentials.token_delete_providers", { count: providerCount }),
     );
   }
-  if (nodeCount > 0) {
+  if (nodeNames.length > 0) {
     sentences.push(
-      nodeCount === 1
-        ? t("ui.credentials.token_delete_node_one")
-        : t("ui.credentials.token_delete_nodes", { count: nodeCount }),
+      nodeNames.length === 1
+        ? t("ui.credentials.token_delete_node_one", {
+            name: nodeNames[0] ?? "",
+          })
+        : t("ui.credentials.token_delete_nodes", {
+            names: nodeNames.join(t("ui.credentials.name_separator")),
+          }),
     );
   }
   return sentences.length === 0

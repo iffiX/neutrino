@@ -588,6 +588,8 @@ export interface TokenView {
   provider_count: number;
   /** xray nodes referencing it; share-link imports generate these. */
   node_count: number;
+  /** The names of those nodes, in the node list's order. */
+  node_names: string[];
 }
 
 /** A secret the hub generated for a machine, without its value. */
