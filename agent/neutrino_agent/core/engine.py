@@ -1594,26 +1594,32 @@ class ModuleEngine(ReconcileWorker):
             self._read_serial += 1
             serial = self._read_serial
         status = self._read_one(name, wanted)
-        with self._lock:
-            if serial < self._landed_reads.get(name, 0):
-                return
-            self._landed_reads[name] = serial
-        self._publish_observed(name, status)
+        self._publish_observed(name, status, serial=serial)
 
-    def _publish_observed(self, name: str, status: dict) -> None:
+    def _publish_observed(
+        self, name: str, status: dict, *, serial: "int | None" = None
+    ) -> None:
         """Record one module's status as read, with its task on the row.
 
         A module whose task's plan has the row read ``queued``,
         ``installing`` or ``uninstalling`` keeps that row, with the step's
         wait as its code, as it stands when the row is written: a read of
-        every module takes seconds, and a task can begin meanwhile.
+        every module takes seconds, and a task can begin meanwhile. A read's
+        order is checked in the same hold of the lock that writes its row,
+        so a read begun earlier never writes over a later one.
 
         Args:
             name: The module name.
             status: What a read found.
+            serial: The read's place in the order reads began; None for a
+                row no read found.
         """
         newest_run = self.newest_run(name)
         with self._lock:
+            if serial is not None:
+                if serial < self._landed_reads.get(name, 0):
+                    return
+                self._landed_reads[name] = serial
             status = _with_task(status, self._task_rows.get(name))
             status["newest_run"] = newest_run
             is_news = self._statuses.get(name) != status

@@ -1249,6 +1249,34 @@ def test_a_module_that_cannot_be_read_is_logged_once_per_change():
     ]
 
 
+def test_a_read_begun_earlier_never_lands_over_a_later_one(tmp_path):
+    """The earlier read passes the order check, then pauses before it writes
+    its row, while a later read lands; its row is then never written."""
+    engine = bare_engine(tmp_path=tmp_path)
+    found = iter([engine_module._typed("absent"), engine_module._typed("installed")])
+    engine._read_one = lambda name, wanted: dict(next(found))
+    earlier_paused = threading.Event()
+    later_landed = threading.Event()
+    asked: list = []
+
+    def newest_run(name):
+        asked.append(name)
+        if len(asked) == 1:
+            earlier_paused.set()
+            later_landed.wait(5)
+        return ""
+
+    engine.newest_run = newest_run
+    earlier = threading.Thread(target=engine.refresh_one, args=("fakedesk",))
+    earlier.start()
+    assert earlier_paused.wait(5)
+    engine.refresh_one("fakedesk")
+    later_landed.set()
+    earlier.join(5)
+
+    assert engine.report()["fakedesk"]["state"] == "installed"
+
+
 def test_report_wakes_the_worker_for_stale_details_and_never_waits():
     engine = module_engine(ConfigurableRunner())
     engine._refresh(is_forced=True)
