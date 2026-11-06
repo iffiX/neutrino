@@ -54,6 +54,9 @@ SAMBA_LINUX_NOLOGIN_SHELLS = (
     "/usr/bin/nologin",
     "/bin/false",
 )
+# Linux: the group a module of 0.5 put every user it made into, which a 0.5
+# share with no users of its own named as its valid users.
+SAMBA_EARLIER_GROUP = "sambashare"
 
 # Linux: the directory beside smb.conf holding one file per SMB user, named
 # after the user, which a share the file names itself includes by the

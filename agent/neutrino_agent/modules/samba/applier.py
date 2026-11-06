@@ -41,7 +41,9 @@ from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.samba.config import SambaConfig
 from neutrino_agent.modules.samba.constants import (
     SAMBA_CONF_PATH,
+    SAMBA_CONF_MARKER,
     SAMBA_DOMAIN_SECURITY_MODES,
+    SAMBA_EARLIER_GROUP,
     SAMBA_DOMAIN_SERVER_ROLES,
     SAMBA_GLOBAL_HEADER,
     SAMBA_LINUX_NOLOGIN_SHELLS,
@@ -66,6 +68,10 @@ SECTION_PATTERN = re.compile(r"^\[(.+)\]\s*$")
 GLOBAL_SECTION = "global"
 # The shares Samba serves for printing, which a file share never declares.
 PRINTER_SECTIONS = ("printers", "print$")
+# The user ids ``useradd`` gives an ordinary account, the ones a module of 0.5
+# made.
+EARLIER_UID_FIRST = 1000
+EARLIER_UID_END = 60000
 
 
 @dataclass
@@ -195,6 +201,119 @@ def without_include_line(data: bytes) -> bytes:
     if kept and is_include_line(lines[-1]) and not lines[-1].endswith(b"\n"):
         kept[-1] = kept[-1].removesuffix(_conf_line_ending(lines))
     return b"".join(kept)
+
+
+def earlier_share_lines(params: dict, name: str) -> "list | None":
+    """The lines a module of 0.5 rendered for one share, without their endings. Pure.
+
+    Args:
+        params: The section's ``key = value`` pairs, keys lowered.
+        name: The section's name.
+
+    Returns:
+        The lines, None when the section lacks a line every 0.5 share has.
+    """
+    if not {"path", "valid users", "read only"} <= set(params):
+        return None
+    lines = [
+        f"[{name}]",
+        f"   path = {params['path']}",
+        f"   valid users = {params['valid users']}",
+        f"   read only = {params['read only']}",
+    ]
+    if "comment" in params:
+        lines.append(f"   comment = {params['comment']}")
+    if params["read only"] != "yes":
+        lines += [
+            f"   force group = {SAMBA_EARLIER_GROUP}",
+            "   create mask = 0664",
+            "   directory mask = 2775",
+        ]
+    return lines
+
+
+def without_earlier_shares(data: bytes) -> tuple:
+    """``smb.conf`` without the shares a module of 0.5 rendered in it. Pure.
+
+    A file whose first line is the module's marker was rendered whole by
+    0.5. Each share section in it whose lines are, one for one, the lines
+    0.5 rendered for a share of its values goes, with the one blank line 0.5
+    rendered after each such share but the last; every other byte stays. A
+    file without the marker is the person's alone and stays as it is.
+
+    Args:
+        data: The file.
+
+    Returns:
+        ``(data, names, users)``: the file, the shares taken out, and the
+        words of their ``valid users`` lines in order, each once.
+    """
+    lines = _conf_lines(data)
+    if not lines or lines[0].rstrip(b"\r\n").decode("utf-8", "replace") != (
+        SAMBA_CONF_MARKER
+    ):
+        return data, [], []
+    starts = [
+        index
+        for index, line in enumerate(lines)
+        if SECTION_PATTERN.match(line.decode("utf-8", "replace").strip())
+    ]
+    texts = [line.rstrip(b"\r\n").decode("utf-8", "replace") for line in lines]
+    shares: list = []
+    for position, start in enumerate(starts):
+        end = starts[position + 1] if position + 1 < len(starts) else len(lines)
+        name = SECTION_PATTERN.match(texts[start].strip()).group(1).strip()
+        if name.lower() == GLOBAL_SECTION:
+            continue
+        body = list(range(start, end))
+        while body and not texts[body[-1]].strip():
+            body.pop()
+        params = {}
+        for index in body[1:]:
+            key, is_pair, value = texts[index].partition("=")
+            if is_pair:
+                params[key.strip().lower()] = value.strip()
+        if earlier_share_lines(params, name) == [texts[index] for index in body]:
+            shares.append((name, body, end, params["valid users"]))
+    dropped: set = set()
+    users: list = []
+    for position, (_name, body, end, valid) in enumerate(shares):
+        dropped.update(body)
+        following = body[-1] + 1
+        # 0.5 ended each share but its last with one blank line.
+        is_last = position == len(shares) - 1
+        if not is_last and following < end and not texts[following].strip():
+            dropped.add(following)
+        for word in valid.split():
+            if word not in users:
+                users.append(word)
+    kept = [line for index, line in enumerate(lines) if index not in dropped]
+    return b"".join(kept), [name for name, _, _, _ in shares], users
+
+
+def named_users(data: bytes) -> set:
+    """Every word of each share's ``valid users`` and ``force user`` lines in ``smb.conf``. Pure.
+
+    Args:
+        data: The file.
+
+    Returns:
+        The words, a group's with its ``@``.
+    """
+    named: set = set()
+    section = ""
+    for line in _conf_lines(data):
+        text = line.decode("utf-8", "replace").strip()
+        header = SECTION_PATTERN.match(text)
+        if header:
+            section = header.group(1).strip().lower()
+            continue
+        key, is_pair, value = text.partition("=")
+        if not is_pair or section == GLOBAL_SECTION:
+            continue
+        if key.strip().lower() in ("valid users", "force user"):
+            named.update(value.split())
+    return named
 
 
 def plan_smb_conf(current: "bytes | None", *, stock: tuple, is_served: bool) -> tuple:
@@ -590,6 +709,47 @@ class SambaUserManager:
             notes.append(f"swept the account {name}")
         return notes
 
+    def sweep_earlier(
+        self, named: list, *, kept: "set | frozenset" = frozenset()
+    ) -> list:
+        """Take away the Samba logins of the users the shares of 0.5 named.
+
+        Each user named, and each member of the group 0.5 put its users in
+        where a share named the group, loses its Samba credential; its
+        account goes too when 0.5 made it (:meth:`_is_earlier_account`). A
+        ``neutrino-`` name, a user ``kept`` names and any other group are
+        passed over.
+
+        Args:
+            named: The words of the swept shares' ``valid users`` lines.
+            kept: The words the shares that stay name.
+
+        Returns:
+            One note per credential and per account removed.
+
+        Raises:
+            subprocess.CalledProcessError: If Samba or ``userdel`` refuses.
+        """
+        names: list = []
+        for word in named:
+            if word.startswith("@"):
+                if word[1:] == SAMBA_EARLIER_GROUP:
+                    names += self._group_members(SAMBA_EARLIER_GROUP)
+                continue
+            names.append(word)
+        credentialed = self._credentialed_users()
+        notes = []
+        for name in dict.fromkeys(names):
+            if name.startswith(SAMBA_LINUX_USER_PREFIX) or name in kept:
+                continue
+            if name in credentialed:
+                run(["smbpasswd", "-x", name])
+                notes.append(f"swept the 0.5 credential of {name}")
+            if self._is_earlier_account(name):
+                run(["userdel", name])
+                notes.append(f"swept the 0.5 account {name}")
+        return notes
+
     def set_password(self, name: str, password: str) -> None:
         """Set one user's share password.
 
@@ -630,6 +790,35 @@ class SambaUserManager:
             return False
         fields = result.stdout.strip().split(":")
         return len(fields) > 4 and fields[4] == SAMBA_LINUX_USER_COMMENT
+
+    def _is_earlier_account(self, name: str) -> bool:
+        """Whether a module of 0.5 made the account.
+
+        0.5 ran ``useradd --no-create-home --shell <nologin>``: an ordinary
+        account, no comment, a login shell that never signs in, and a home
+        folder that is not on the machine.
+        """
+        result = run(["getent", "passwd", name], is_checked=False)
+        if not result.is_success:
+            return False
+        fields = result.stdout.strip().split(":")
+        if len(fields) < 7 or not fields[2].isdigit():
+            return False
+        return (
+            EARLIER_UID_FIRST <= int(fields[2]) < EARLIER_UID_END
+            and not fields[4]
+            and fields[6] in SAMBA_LINUX_NOLOGIN_SHELLS
+            and not os.path.isdir(fields[5])
+        )
+
+    def _group_members(self, group: str) -> list:
+        result = run(["getent", "group", group], is_checked=False)
+        if not result.is_success:
+            return []
+        fields = result.stdout.strip().split(":")
+        return [
+            name for name in (fields[3] if len(fields) > 3 else "").split(",") if name
+        ]
 
     def _credentialed_users(self) -> set:
         return set(self.credentialed_users())
@@ -729,6 +918,32 @@ class SambaConfigApplier:
         data = read_bytes(SAMBA_CONF_PATH)
         if data is not None and has_include_line(data):
             _write_smb_conf(without_include_line(data))
+
+    def sweep_earlier(self) -> tuple:
+        """Take the shares a module of 0.5 rendered out of ``smb.conf``, and reload an active unit.
+
+        Every other byte of the file stays, with its mode, its owner and its
+        link (:func:`without_earlier_shares`).
+
+        Returns:
+            ``(notes, named, kept)``: one note per share taken out, the words
+            of their ``valid users`` lines, and the words the shares that
+            stay name.
+
+        Raises:
+            OSError: When the file cannot be written.
+        """
+        data = read_bytes(SAMBA_CONF_PATH)
+        if data is None:
+            return [], [], set()
+        kept, names, named = without_earlier_shares(data)
+        if not names:
+            return [], [], set()
+        _write_smb_conf(kept)
+        notes = [f"swept the 0.5 share {name}" for name in names]
+        if unit_state(self._unit) == "active":
+            run(["systemctl", "reload", self._unit], is_checked=False)
+        return notes, named, named_users(kept)
 
     def withdraw(self) -> str:
         """Take the module's shares off a server that goes on running.

@@ -48,11 +48,13 @@ from neutrino_agent.modules.samba.applier import (
     check_person_config,
     has_include_line,
     is_include_line,
+    named_users,
     password_digest,
     plan_smb_conf,
     taken_shares,
     testparm as samba_testparm,
     with_include_line,
+    without_earlier_shares,
     without_include_line,
 )
 from neutrino_agent.modules.samba.config import SambaConfig
@@ -1277,3 +1279,151 @@ def test_a_machine_with_no_getenforce_runs_nothing(monkeypatch, turn):
     assert getattr(SambaSelinuxApplier(), turn)() is False
 
     assert commands.calls == []
+
+
+# --- what a module of 0.5 made ---
+
+EARLIER_GLOBAL = (
+    f"{SAMBA_CONF_MARKER}\n"
+    "\n"
+    "[global]\n"
+    "   include = /etc/samba/neutrino.conf\n"
+    "   server role = standalone server\n"
+    "   hosts allow = 192.168.122.0/24 127.0.0.1\n"
+    "   hosts deny = 0.0.0.0/0\n"
+    "\n"
+)
+EARLIER_DOCS = (
+    "[olddocs]\n"
+    "   path = /srv/olddocs\n"
+    "   valid users = smbold alice\n"
+    "   read only = no\n"
+    "   force group = sambashare\n"
+    "   create mask = 0664\n"
+    "   directory mask = 2775\n"
+    "\n"
+)
+EARLIER_EDITED = (
+    "[edited]\n"
+    "   path = /srv/edited\n"
+    "   valid users = bob\n"
+    "   read only = yes\n"
+    "   browseable = no\n"
+    "\n"
+)
+EARLIER_GROUP = (
+    "[team]\n"
+    "   path = /srv/team\n"
+    "   valid users = @sambashare\n"
+    "   read only = yes\n"
+    "   comment = the team\n"
+)
+# The last share 0.5 rendered ends its file with no blank line.
+EARLIER_DOCS_LAST = EARLIER_DOCS[:-1]
+HANDMADE = (
+    "\n[handmade]\n   path = /srv/handmade\n   valid users = handuser\n"
+    "   read only = no\n"
+)
+
+
+def test_a_0_5_file_loses_exactly_the_shares_0_5_rendered_and_every_other_byte_stays():
+    data = EARLIER_GLOBAL + EARLIER_DOCS + EARLIER_EDITED + EARLIER_GROUP + HANDMADE
+
+    kept, names, named = without_earlier_shares(data.encode())
+
+    assert kept.decode() == EARLIER_GLOBAL + EARLIER_EDITED + HANDMADE
+    assert names == ["olddocs", "team"]
+    assert named == ["smbold", "alice", "@sambashare"]
+    assert named_users(kept) == {"bob", "handuser"}
+
+
+def test_a_0_5_file_with_crlf_endings_loses_its_shares_and_keeps_its_endings():
+    data = (
+        (EARLIER_GLOBAL + EARLIER_DOCS_LAST + HANDMADE).replace("\n", "\r\n").encode()
+    )
+
+    kept, names, _ = without_earlier_shares(data)
+
+    assert names == ["olddocs"]
+    assert kept == (EARLIER_GLOBAL + HANDMADE).replace("\n", "\r\n").encode()
+
+
+def test_a_file_without_the_marker_is_the_persons_byte_for_byte():
+    data = (EARLIER_GLOBAL + EARLIER_DOCS).replace(SAMBA_CONF_MARKER, "# mine").encode()
+
+    assert without_earlier_shares(data) == (data, [], [])
+
+
+def test_the_0_5_shares_go_from_the_file_in_place_and_an_active_unit_reloads(
+    box, monkeypatch
+):
+    commands, tmp_path = box
+    (tmp_path / "etc").mkdir()
+    smb_conf = tmp_path / "etc/smb.conf"
+    smb_conf.write_text(EARLIER_GLOBAL + EARLIER_DOCS_LAST + HANDMADE)
+    os.chmod(smb_conf, 0o640)
+    monkeypatch.setattr(applier_module, "unit_state", lambda unit: "active")
+
+    notes, named, kept = SambaConfigApplier(unit="smbd.service").sweep_earlier()
+    again = SambaConfigApplier(unit="smbd.service").sweep_earlier()
+
+    assert smb_conf.read_text() == EARLIER_GLOBAL + HANDMADE
+    assert stat.S_IMODE(os.stat(smb_conf).st_mode) == 0o640
+    assert notes == ["swept the 0.5 share olddocs"]
+    assert (named, kept) == (["smbold", "alice"], {"handuser"})
+    assert commands.ran("systemctl") == [
+        (["systemctl", "reload", "smbd.service"], None)
+    ]
+    assert again == ([], [], set())
+
+
+def test_the_0_5_users_lose_their_credential_and_only_0_5_s_accounts_go(box):
+    commands, tmp_path = box
+    for name in ("alice", "carl"):
+        (tmp_path / "home" / name).mkdir(parents=True)
+    homes = {
+        name: str(tmp_path / "home" / name) for name in ("smbold", "alice", "carl")
+    }
+    passwd = {
+        "smbold": f"smbold:x:1002:1002::{homes['smbold']}:/usr/sbin/nologin",
+        "alice": f"alice:x:1001:1001::{homes['alice']}:/bin/bash",
+        "carl": f"carl:x:1004:1004::{homes['carl']}:/usr/sbin/nologin",
+        "nobody": "nobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin",
+        "sys": "sys:x:998:998::/nonexistent:/usr/sbin/nologin",
+    }
+    commands.answers[("getent", "passwd")] = (
+        lambda command: (
+            (0, passwd[command[2]] + "\n") if command[2] in passwd else (2, "")
+        ),
+        "",
+    )
+    commands.answers[("getent", "group")] = (0, "sambashare:x:122:smbold,carl\n")
+    commands.answers[("pdbedit", "-L")] = (
+        0,
+        "smbold:1002:\nalice:1001:\ncarl:1004:\nhanduser:1003:\nneutrino-x:997:\n",
+    )
+
+    notes = SambaUserManager().sweep_earlier(
+        [
+            "smbold",
+            "alice",
+            "@sambashare",
+            "@staff",
+            "neutrino-x",
+            "handuser",
+            "nobody",
+            "sys",
+        ],
+        kept={"handuser"},
+    )
+
+    assert commands.ran("smbpasswd") == [
+        (["smbpasswd", "-x", name], None) for name in ("smbold", "alice", "carl")
+    ]
+    assert commands.ran("userdel") == [(["userdel", "smbold"], None)]
+    assert notes == [
+        "swept the 0.5 credential of smbold",
+        "swept the 0.5 account smbold",
+        "swept the 0.5 credential of alice",
+        "swept the 0.5 credential of carl",
+    ]
