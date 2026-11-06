@@ -142,7 +142,7 @@ reset prints which of the three it did.
 | DNS queries | `journalctl -u neutrino_hub_dnsmasq` (also the panel's Dashboard) |
 | Control panel | `journalctl -u neutrino_hub_web` |
 | An update of the hub itself | `journalctl -u neutrino_hub_update`, and `/var/lib/neutrino/hub/hub_update/update.log` |
-| The hub's own agent following the hub | `journalctl -u neutrino_hub_local_agent`, and `/var/lib/neutrino/hub/hub_update/local_agent.log` |
+| The hub's own agent following the hub | `journalctl -u neutrino_hub_local_agent`, and `/var/lib/neutrino/hub/hub_update/local_agent.log`; its join, `journalctl -u neutrino_hub_web` and `/var/log/neutrino/hub/setup.log` |
 | Device agents | `journalctl -u neutrino_agent` on the device itself |
 
 ## A hub on macOS or Windows
@@ -316,11 +316,28 @@ manager's output, to `local_agent.log` beside it:
 A machine with no agent gets none. A hub that is not set up serves the setup
 wizard and starts no panel, and `nhub setup` installs its agent
 ([../design/architecture.md](../design/architecture.md), "`nhub setup`
-configures and starts, and installs nothing"). An agent of 0.5 is replaced
-by the agent of 0.6, which reads `hub_key_missing` until it joins again with
-a new link from **Add by link** on the Agents page, its name left empty: it
-lands back on its row by `machine_id`
-([../design/transport.md](../design/transport.md), "A peer of 0.5").
+configures and starts, and installs nothing").
+
+The panel also joins the agent again when the row of the hub's machine, the
+row whose `machine_id` is that machine's, holds a binding that no longer
+works. An agent of 0.5 leaves such a binding: the row holds a token and no
+static key, and the agent of 0.6 that replaces it reads `hub_key_missing`
+([../design/transport.md](../design/transport.md), "A peer of 0.5"). The
+panel waits while the script runs, at most 45 minutes, and once
+`nagent --version` names the package's version it makes a link for that row
+with loopback first, as setup does, and runs `nagent join <link> --yes`.
+The agent lands on its row, which keeps its name, its icon and its modules.
+Nothing is uninstalled, and nobody makes a link for the hub's own machine.
+An agent the script left at another version is joined at a later start.
+
+The browser wizard leaves the mark `setup_local_agent` for the panel's first
+start, which installs the machine's agent from the cache and joins it. The
+mark is removed once the agent has joined, and at once on a machine the
+hub's cache holds no agent package for. A reboot or a failure that cuts
+the install or the join short leaves it, and every later start installs the
+package again, which a package manager that already holds it passes over,
+and joins the agent. The panel's journal and `/var/log/neutrino/hub/setup.log`
+hold each try.
 
 | Rule | Reason |
 | --- | --- |
@@ -328,6 +345,10 @@ lands back on its row by `machine_id`
 | The script runs apart from the panel and installs once the package manager lets go. | The package manager holds its lock while the hub package's scripts run, which is when the panel starts, and an install in the panel's own process ends when the panel stops. |
 | The script waits for the hub's own update to end and installs only while the hub is still the version it was written for. | The update's gate can put the previous version back, and the agent follows the version the update ends on. |
 | Nothing else holds the script back, and each wait looks every second. | The agent reaches the hub's version within seconds of the panel's start. The agent's own update installs nothing once the agent is at its version. |
+| The hub joins its own agent by itself, at setup and after an upgrade. | The agent on the hub's machine is the hub's own, and the person never makes a link for it. |
+| The join waits for the agent at the package's version. | An agent of 0.5 reads no link of 0.6. |
+| The agent joins its row again, and is not uninstalled. | A join lands on the row its link names, which keeps the name, the icon and the modules; an uninstall clears the modules' state on the machine. |
+| The setup mark goes only once the agent has joined. | A reboot during the first install ends the package manager, and nothing else records that the machine's own agent is still due. |
 
 ## Trying a change on an installed box
 

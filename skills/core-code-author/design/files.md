@@ -189,7 +189,9 @@ overrides both, which is what makes a second instance testable. Details of the f
         setup_token         the one-time token the setup wizard is reached
                             with, mode 0600, removed when setup finishes
         setup_local_agent   a mark the browser wizard leaves so the panel's
-                            first start installs the box's own agent
+                            start installs and joins the box's own agent;
+                            removed once that agent has joined, so every
+                            start tries again until it has
         stood_down.json     which units the hub stopped so it could drive
                             the network
         device_retry_marks.json

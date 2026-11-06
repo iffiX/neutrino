@@ -539,7 +539,8 @@ at 85. The GPU ring shows the busiest card and wears a `×N` badge at its
 corner when the machine has more than one; a machine with none has no GPU
 ring. An offline machine's cell reads `Offline · <ago>`. A machine whose
 row holds a token and no static key joined under 0.5, and it stays offline
-until its agent is reinstalled and joins again. Its cell reads the words of
+until its agent is reinstalled and joins again; the panel joins the hub's own
+machine again by itself. Its cell reads the words of
 `code.hub_key_missing` in place of `Offline · <ago>`
 ([transport.md](transport.md), "A peer of 0.5"). The rings move on the
 `metrics` event and ask for nothing.

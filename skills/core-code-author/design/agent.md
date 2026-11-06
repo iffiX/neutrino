@@ -1436,6 +1436,15 @@ package once no other install runs
 follows its hub"). A machine with no agent gets none, and `nhub setup`
 installs the first one.
 
+The hub joins its own agent by itself, at setup and after every install of
+its package, and nobody makes a link for the hub's own machine. When the
+row of the hub's machine holds a binding that no longer works, a token and
+no static key as an agent of 0.5 left it, the panel waits for the agent at
+the package's version and joins it again onto that row, as setup does. The
+row keeps its name, its icon and its modules, and nothing is uninstalled.
+A first install or join that a reboot or a failure cut short is tried again
+at every panel start until the agent has joined.
+
 Another platform's agent package is fetched when a device of that platform
 needs it, for an install over SSH or for a self-update:
 
