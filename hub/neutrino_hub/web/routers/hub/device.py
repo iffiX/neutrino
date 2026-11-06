@@ -768,7 +768,8 @@ async def add_device(
 
     The row is stored with no name and the typed host as its SSH host, and
     the machine's join names it. A request refused before the task starts
-    leaves no row.
+    leaves no row, and so does a task that ends with the row holding no
+    binding.
 
     Args:
         request: The host and how to reach the machine.
@@ -786,14 +787,18 @@ async def add_device(
     """
     device = DeviceRegistry().create(None)
     try:
-        return await _start_agent_install(runtime, device, request)
+        return await _start_agent_install(runtime, device, request, is_added=True)
     except Exception:
         DeviceRegistry().forget(device.id)
         raise
 
 
 async def _start_agent_install(
-    runtime: PanelRuntime, device: ManagedDevice, request: DeviceAddRequest
+    runtime: PanelRuntime,
+    device: ManagedDevice,
+    request: DeviceAddRequest,
+    *,
+    is_added: bool = False,
 ) -> TaskStarted:
     """Start the agent's install over SSH on one device, as a task.
 
@@ -801,6 +806,8 @@ async def _start_agent_install(
         runtime: The shared runtime.
         device: The device, a scan row or a stored one.
         request: How to reach the machine.
+        is_added: Whether the row was made for this install, and goes when
+            the task ends with the row holding no binding.
 
     Returns:
         A task id the browser streams output from; the one already running
@@ -845,16 +852,37 @@ async def _start_agent_install(
     link, _ = generate_enrollment_link(
         runtime, name=device.name or "", device_id=device.id
     )
-    stream = runtime.tasks.start(
-        label=label,
-        source=operator.install_client(
-            packages=packages,
-            enrollment_link=link,
-            sudo_password=_sudo_material(request),
-        ),
+    source = operator.install_client(
+        packages=packages,
+        enrollment_link=link,
+        sudo_password=_sudo_material(request),
     )
+    if is_added:
+        source = _dropped_unless_joined(runtime, device.id, source)
+    stream = runtime.tasks.start(label=label, source=source)
     runtime.events.publish(WEB_EVENT_DEVICES)
     return TaskStarted(task_id=stream.id)
+
+
+async def _dropped_unless_joined(runtime: PanelRuntime, device_id: str, source):
+    """Pass an install's output through, then drop its row when it holds no binding.
+
+    Args:
+        runtime: The shared runtime, which says the device list moved.
+        device_id: The row the install made.
+        source: The install's output.
+
+    Yields:
+        Every chunk the install produced.
+    """
+    try:
+        async for chunk in source:
+            yield chunk
+    finally:
+        device = DeviceRegistry().get(device_id)
+        if device is not None and not device.is_managed:
+            DeviceRegistry().forget(device_id)
+            runtime.events.publish(WEB_EVENT_DEVICES)
 
 
 @router.post("/agent/reinstall", response_model=TaskStarted)

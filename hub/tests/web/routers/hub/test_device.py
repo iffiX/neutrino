@@ -18,7 +18,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from neutrino_hub.modules.channel.tickets import ChannelTicketRegistry
-from neutrino_hub.exceptions import AgentOfflineError
+from neutrino_hub.exceptions import AgentOfflineError, TaskExitStatusError
 from neutrino_hub.modules.credentials.vault import SecretVault
 from neutrino_hub.modules.devices import desired_state as desired_state_module
 from neutrino_hub.modules.devices.agent_package import AgentPackageCache
@@ -1164,13 +1164,15 @@ def test_adding_by_address_stores_a_row_by_its_host_and_starts_the_install(
     install_api, monkeypatch
 ):
     client, tmp_path, _ = install_api
-    captured = ready(monkeypatch, tmp_path)
+    hub_carries_a_package(tmp_path, monkeypatch)
+    probe_answers(monkeypatch, 0, "Linux")
+    captured = install_ending(monkeypatch, status=0, is_joined=True)
     login_id = stored_login()
 
     started = add(client, login_id=login_id)
 
     assert started.status_code == 200
-    assert started.json()["task_id"]
+    finished(started.json()["task_id"])
     (row,) = added_rows()
     assert row.name is None
     assert row.mac_addresses == []
@@ -1207,6 +1209,83 @@ def test_a_refused_add_leaves_no_row(
     assert refused.json()["detail"]["code"] == code
     assert added_rows() == []
     assert InstallRuntime.instance.tasks.streams() == []
+
+
+def install_ending(monkeypatch, *, status: int, is_joined: bool) -> dict:
+    """The install prints a line, joins the row when told to, and ends with a status.
+
+    Returns:
+        What the install was started with, filled in when it starts.
+    """
+    captured: dict = {}
+
+    def install_client(self, *, packages, enrollment_link, sudo_password=None):
+        captured["credentials"] = self._credentials
+
+        async def lines():
+            yield "[install]\n"
+            if is_joined:
+                (row,) = added_rows()
+                DeviceRegistry().issue_token(row.id)
+            if status:
+                raise TaskExitStatusError(status)
+
+        return lines()
+
+    monkeypatch.setattr(
+        devices_router.DeviceSshOperator, "install_client", install_client
+    )
+    return captured
+
+
+def finished(task_id: str):
+    stream = InstallRuntime.instance.tasks.get(task_id)
+    deadline = time.monotonic() + 5
+    while not stream.is_finished and time.monotonic() < deadline:
+        time.sleep(0.01)
+    return stream
+
+
+@pytest.mark.parametrize("status", [255, 95, 1, 0])
+def test_an_add_whose_install_ends_without_a_join_leaves_no_row(
+    install_api, monkeypatch, status
+):
+    """R166 block 2a: four failed adds left four offline rows named by the host."""
+    client, tmp_path, _ = install_api
+    hub_carries_a_package(tmp_path, monkeypatch)
+    probe_answers(monkeypatch, 0, "Linux")
+    install_ending(monkeypatch, status=status, is_joined=False)
+
+    started = add(client, login_id=stored_login())
+
+    assert started.status_code == 200
+    assert finished(started.json()["task_id"]).exit_code == status
+    assert added_rows() == []
+
+
+def test_an_add_whose_machine_joined_keeps_its_row(install_api, monkeypatch):
+    client, tmp_path, _ = install_api
+    hub_carries_a_package(tmp_path, monkeypatch)
+    probe_answers(monkeypatch, 0, "Linux")
+    install_ending(monkeypatch, status=0, is_joined=True)
+
+    started = add(client, login_id=stored_login())
+
+    assert finished(started.json()["task_id"]).exit_code == 0
+    (row,) = added_rows()
+    assert row.ssh["host"] == ADDED_HOST
+
+
+def test_a_failed_install_on_a_stored_row_keeps_the_row(install_api, monkeypatch):
+    client, tmp_path, device_id = install_api
+    hub_carries_a_package(tmp_path, monkeypatch)
+    probe_answers(monkeypatch, 0, "Linux")
+    install_ending(monkeypatch, status=255, is_joined=False)
+
+    started = install(client, device_id, login_id=stored_login())
+
+    assert finished(started.json()["task_id"]).exit_code == 255
+    assert DeviceRegistry().get(device_id) is not None
 
 
 # --- the reinstall ---
