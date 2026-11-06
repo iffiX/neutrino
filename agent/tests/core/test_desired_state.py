@@ -27,7 +27,8 @@ after the agent began to stop keeping nothing, the mark of a task that ran an
 install step kept across a restart and cleared when a task ends, and a
 container module waiting for Containers once in its install plan, asking it
 to render, ending quietly while Containers is not to run, and taking a read of
-Containers older than its task's end as no failure.
+Containers older than its task's end as no failure; and the stop after a leave
+of each module the kept state wants running, with no install and no switch.
 """
 
 import functools

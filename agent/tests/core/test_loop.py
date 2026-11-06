@@ -19,8 +19,9 @@ side opens on its own connections; the self-update a newer hub's
 ``software`` triggers once the first report has gone out; a command's
 line in the agent's log, written for every command but a read; a leave, a
 join, ``sync`` and the status ``probe``; a leave and a join another process
-wrote emptying the applied hash; a binding of 0.5 taking the hub's key;
-and the relays run with the loop. Nothing here talks to a network beyond
+wrote emptying the applied hash; a binding ended by ``binding_unknown``,
+removed or written over stopping the modules once; a binding of 0.5 taking
+the hub's key; and the relays run with the loop. Nothing here talks to a network beyond
 a Unix socket in a temporary directory.
 """
 
