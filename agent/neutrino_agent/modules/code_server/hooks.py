@@ -318,8 +318,11 @@ class CodeServerHooks(InstanceHooks):
             raise
         return upstream
 
-    def module_details(self) -> dict:
+    def module_details(self, records: "list | tuple" = ()) -> dict:
         """The release installed.
+
+        Args:
+            records: Every instance's record, unread here.
 
         Returns:
             ``{"version"}``.

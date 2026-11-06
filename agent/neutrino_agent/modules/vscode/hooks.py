@@ -215,8 +215,11 @@ class VscodeHooks(InstanceHooks):
         host = record.get("host") or VSCODE_LOOPBACK_ADDRESS
         return {"url": f"http://{host}:{record.get('port')}/"}
 
-    def module_details(self) -> dict:
+    def module_details(self, records: "list | tuple" = ()) -> dict:
         """The CLI installed.
+
+        Args:
+            records: Every instance's record, unread here.
 
         Returns:
             ``{"version"}``, the version ``code --version`` prints, empty

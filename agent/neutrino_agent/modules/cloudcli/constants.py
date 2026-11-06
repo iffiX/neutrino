@@ -156,8 +156,9 @@ CLOUDCLI_INSTALL_LOG_PATTERN = "install_{account}.log"
 CLOUDCLI_WINDOWS_SERVICE_PATH = ("%APPDATA%\\npm", "%PATH%")
 CLOUDCLI_WINDOWS_NPM_PATH = ("%SystemRoot%\\System32", "%SystemRoot%", "%PATH%")
 
-# The fields one instance's record holds, and the ones its forwarder
-# serves: the database file it runs on changes under a running forwarder.
+# The fields one instance's record holds, the version npm installed into its
+# prefix among them, and the ones its forwarder serves: the database file it
+# runs on changes under a running forwarder.
 CLOUDCLI_RECORD_FIELDS = (
     "account",
     "port",
@@ -167,6 +168,7 @@ CLOUDCLI_RECORD_FIELDS = (
     "database",
     "local_name",
     "cookie_name",
+    "version",
 )
 CLOUDCLI_FORWARDER_FIELDS = (
     "account",

@@ -163,7 +163,8 @@ class DemoHooks(InstanceHooks):
     def details_extra(self, record):
         return {"upstream_port": record.get("upstream_port")}
 
-    def module_details(self):
+    def module_details(self, records=()):
+        self.detail_records = [dict(record) for record in records]
         return {"version": "1.0"}
 
     def forget_module(self):
@@ -390,6 +391,15 @@ def test_an_unchanged_instance_is_only_kept_up_and_its_record_kept(runner, syste
         ["systemctl", "enable", "--now", "neutrino_demo@ann.service"]
     ]
     assert runner.details({})["instances"][0]["upstream_port"] == 41000
+
+
+def test_the_module_s_details_are_read_from_the_instances_records(runner, systemd):
+    runner.apply(CONFIG)
+
+    details = runner.details({})
+
+    assert details["version"] == "1.0"
+    assert [record["account"] for record in runner._hooks.detail_records] == ["ann"]
 
 
 def test_a_changed_environment_restarts_the_instance(runner, systemd, tmp_path):

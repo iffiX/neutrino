@@ -393,8 +393,11 @@ class InstanceHooks:
         """
         return {}
 
-    def module_details(self) -> dict:
+    def module_details(self, records: "list | tuple" = ()) -> dict:
         """What ``details`` carries beside the instances.
+
+        Args:
+            records: Every instance's record, as held.
 
         Returns:
             More fields, empty by default.
@@ -827,7 +830,7 @@ class InstancesModuleRunner(ModuleRunner):
             instance runs and its forwarder listens, ``code`` the reason it
             does not.
         """
-        details = dict(self._hooks.module_details())
+        details = dict(self._hooks.module_details(self._records.read_all()))
         details["instances"] = [dict(state) for state in self._read_states()]
         return details
 

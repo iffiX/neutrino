@@ -495,8 +495,11 @@ class CodegHooks(InstanceHooks):
             timeout=AGENT_FORWARD_UPSTREAM_TIMEOUT_S,
         )
 
-    def module_details(self) -> dict:
+    def module_details(self, records: "list | tuple" = ()) -> dict:
         """The server installed.
+
+        Args:
+            records: Every instance's record, unread here.
 
         Returns:
             ``{"version"}``, what the server prints for ``--version``.

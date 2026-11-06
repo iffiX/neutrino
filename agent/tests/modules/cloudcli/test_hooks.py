@@ -890,6 +890,37 @@ def test_an_old_app_goes_beside_a_whole_install_and_stays_when_npm_fails(linux):
     assert not os.path.exists(app)
 
 
+def test_the_record_keeps_the_version_npm_installed_and_details_name_the_oldest(
+    linux,
+):
+    hooks, machine, entry = linux
+    instance = CONFIG.instances[0]
+    before = hooks.record(CONFIG, instance, {"port": 3001})
+
+    hooks.prepare(CONFIG, instance, entry)
+    after = hooks.record(CONFIG, instance, {"port": 3001})
+    kept = hooks.record(CONFIG, instance, after)
+
+    assert before["version"] == ""
+    assert after["version"] == kept["version"] == "1.37.3"
+    assert hooks.module_details(
+        [after, dict(after, account="bob", version="1.37.7")]
+    ) == {"version": "1.37.3"}
+    assert hooks.module_details([before]) == {"version": ""}
+
+
+def test_a_whole_install_found_in_place_is_the_version_recorded(linux):
+    hooks, machine, entry = linux
+    land_package(
+        os.path.join(
+            entry.home, ".local", "share", "neutrino", "agent", "cloudcli", "npm"
+        )
+    )
+
+    assert hooks.prepare(CONFIG, CONFIG.instances[0], entry) == []
+    assert hooks.record(CONFIG, CONFIG.instances[0], {})["version"] == "1.37.3"
+
+
 def test_a_mac_removes_the_old_app_as_the_account(tmp_path):
     calls = []
 
@@ -1640,6 +1671,7 @@ def test_the_record_keeps_the_loopback_port_and_the_database_across_applies(tmp_
         "database": "auth.db",
         "local_name": "cloudcli-ann.m.localhost",
         "cookie_name": COOKIE,
+        "version": "",
     }
     assert again == first
     assert fresh["database"] == "auth-x.db" and fresh["upstream_port"] == 41000

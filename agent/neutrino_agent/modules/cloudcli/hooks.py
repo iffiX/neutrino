@@ -40,6 +40,7 @@ import time
 import urllib.parse
 
 from neutrino_agent.constants import AGENT_FORWARD_UPSTREAM_TIMEOUT_S, AGENT_STEP_NPM
+from neutrino_agent.core.version import parse_version
 from neutrino_agent.exceptions import (
     ModuleApplyError,
     ModuleInstallPending,
@@ -846,6 +847,9 @@ class CloudcliHooks(InstanceHooks):
         self._version = ""
         self._npm: dict = {}
         self._source_sets: dict = {}
+        # Account to the version its prefix holds whole, as its npm step
+        # found or installed it, for the instance's record.
+        self._installed: dict = {}
 
     @property
     def node(self) -> str:
@@ -973,6 +977,7 @@ class CloudcliHooks(InstanceHooks):
                 self.installing = frozenset(self.installing | {account})
                 return []
             self.installing = frozenset(self.installing - {account})
+            self._installed[account] = self._version
             self._remove_old_app(instance, entry)
             return (
                 [f"installed CloudCLI for {account}"]
@@ -983,6 +988,7 @@ class CloudcliHooks(InstanceHooks):
         if self._os_name == "linux":
             self._wait_for_install_left(account)
         if self._is_whole(npm_dir(entry.home, self._os_name), instance):
+            self._installed[account] = self._version
             self._remove_old_app(instance, entry)
             return []
         attempts = self._attempts()
@@ -991,6 +997,7 @@ class CloudcliHooks(InstanceHooks):
             self._install_attempts(account, entry, directory, attempts)
         finally:
             self.installing = frozenset()
+        self._installed[account] = self._version
         self._remove_old_app(instance, entry)
         return [f"installed CloudCLI for {account}"]
 
@@ -1017,7 +1024,25 @@ class CloudcliHooks(InstanceHooks):
             "database": str(held.get("database") or CLOUDCLI_DATABASE_NAME),
             "local_name": instance.local_name,
             "cookie_name": instance.cookie_name,
+            "version": self._installed.get(instance.account)
+            or str(held.get("version") or ""),
         }
+
+    def module_details(self, records: "list | tuple" = ()) -> dict:
+        """The version npm installed, the oldest among the instances' records.
+
+        Args:
+            records: Every instance's record, as held.
+
+        Returns:
+            ``{"version"}``, empty while no record names one.
+        """
+        versions = [
+            str(record.get("version") or "")
+            for record in records
+            if parse_version(str(record.get("version") or "")) is not None
+        ]
+        return {"version": min(versions, key=parse_version) if versions else ""}
 
     def service(
         self, instance: CloudcliInstance, entry: AccountEntry, record: dict
