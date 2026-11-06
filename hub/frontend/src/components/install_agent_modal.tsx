@@ -99,8 +99,11 @@ export function InstallAgentModal({
   const isPortValid = isValidPort(port);
   const hasCredential =
     credentialKind === "key" ? keyId !== null : loginId !== null;
-  // One press adds the machine; a retry is Reinstall on its machine page.
-  const isAdded = device === null && taskId !== null;
+  // One press adds the machine. A failed install leaves no row, and the press
+  // adds it again.
+  const isFailed =
+    !task.isRunning && task.exitCode !== null && task.exitCode !== 0;
+  const isAdded = device === null && taskId !== null && !isFailed;
   const isReady =
     host.trim().length > 0 &&
     username.trim().length > 0 &&
