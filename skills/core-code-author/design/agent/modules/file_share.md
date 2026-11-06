@@ -224,7 +224,10 @@ of the module's shares by handle, and the record then keeps the current SID.
 A grant whose SID the record does not list is never touched: an account
 deleted by hand otherwise left its grant on the folder as an unknown SID.
 Before the apply makes an account again, it closes the server's sessions of
-that name, which hold the token of the account that is gone.
+that name, which hold the token of the account that is gone. An account the
+apply makes, a first time or again, takes its password whatever digest the
+record keeps: on the R168 lab machine `neutrino_ann`, deleted by hand, came
+back disabled and with no password.
 Every change
 walks the whole tree under the folder as Windows carries an inherited
 entry down, and a home folder holds the account's whole profile: granting
