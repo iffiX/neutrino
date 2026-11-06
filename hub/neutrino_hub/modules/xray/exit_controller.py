@@ -23,6 +23,7 @@ and not a failure, and a round that found the uplink down records nothing at
 all: a node cannot be blamed for a WAN that is not there.
 """
 
+import ipaddress
 import logging
 import threading
 import time
@@ -46,6 +47,25 @@ from neutrino_hub.modules.xray.constants import (
 from neutrino_hub.modules.xray.node_health import XrayNodeHealth
 
 LOGGER = logging.getLogger(__name__)
+
+
+def _is_dialed(node, host: str, port: int) -> bool:
+    """Whether a failed dial of ``host:port`` was a dial to this node."""
+    if int(node.port) != port:
+        return False
+    try:
+        address = ipaddress.ip_address(node.address)
+    except ValueError:
+        return True
+    return address == _address_or_none(host)
+
+
+def _address_or_none(host: str):
+    """The address a host names, or None for a host name."""
+    try:
+        return ipaddress.ip_address(host)
+    except ValueError:
+        return None
 
 
 def _score_of(health: XrayNodeHealth) -> float:
@@ -132,6 +152,8 @@ class XrayExitController:
         self._status = XrayExitStatus()
         self._round_lock = threading.Lock()
         self._state_lock = threading.Lock()
+        # Held while a measurement a failed dial started runs.
+        self._check_lock = threading.Lock()
         self._is_stopped = threading.Event()
         self._wake = threading.Event()
         self._thread: "threading.Thread | None" = None
@@ -198,6 +220,39 @@ class XrayExitController:
             raise KeyError(f"no node with id {only!r}")
         return self._round(node_list=node_list, nodes=chosen)
 
+    @property
+    def is_checking(self) -> bool:
+        """Whether a measurement a failed dial started runs now."""
+        return self._check_lock.locked()
+
+    def failed_dial(self, host: str, port: int) -> bool:
+        """Start one measurement of the pinned exit when a failed dial names it.
+
+        The measurement runs on a thread of its own, as a Test of that node.
+        It starts while the exit's latest sample succeeded and no other such
+        measurement runs. A node named by a host name matches on its port.
+
+        Args:
+            host: The address xray dialed, as its log names it.
+            port: The port it dialed.
+
+        Returns:
+            Whether a measurement started.
+        """
+        tag = self._store.exit_tag
+        node = next((one for one in self._node_list_of().nodes if one.tag == tag), None)
+        if node is None or not _is_dialed(node, host, port):
+            return False
+        with self._state_lock:
+            if not self._store.health_of(tag).is_alive:
+                return False
+        if not self._check_lock.acquire(blocking=False):
+            return False
+        threading.Thread(
+            target=self._check, args=(node.id,), name="xray_exit_check", daemon=True
+        ).start()
+        return True
+
     def reselect(self) -> XrayExitStatus:
         """Rank and pin again from what is stored, measuring nothing.
 
@@ -254,6 +309,15 @@ class XrayExitController:
         """
         with self._state_lock:
             return self._store.health()
+
+    def _check(self, node_id: str) -> None:
+        """Measure one node a failed dial named, then let the next one start."""
+        try:
+            self.refresh(only=node_id)
+        except Exception:  # noqa: BLE001 - one bad check never stops the next
+            LOGGER.exception("the check of the exit failed")
+        finally:
+            self._check_lock.release()
 
     def _loop(self) -> None:
         """Re-pin what the store names, then run a round every interval."""

@@ -4,6 +4,8 @@ Ports and tags here are referenced by the nftables ruleset and the dnsmasq
 config, so they are wire-level identifiers rather than user settings.
 """
 
+import re
+
 from neutrino_hub.modules.tun.constants import TUN_SUPERVISED_NAME
 from neutrino_hub.utils.constants import (
     UTILS_STATE_ROOT,
@@ -260,10 +262,35 @@ XRAY_NODE_HEALTH_RELATIVE = "xray_node_health.json"
 
 # xray's own logs. The access log is a line per connection that nothing reads,
 # so it is never written. The error log is given no path, which leaves it on
-# the console, where systemd collects it into the journal and journald bounds
-# it without anything here rotating a file.
+# the console. xray writes a failed dial only at info; on Linux the run filter
+# keeps the info of every connection out of the journal.
 XRAY_ACCESS_LOG = "none"
-XRAY_LOG_LEVEL = "warning"
+XRAY_LOG_LEVEL = "info"
+# The levels of xray's log the run filter drops, as each line names its level.
+XRAY_LOG_DROPPED_LEVEL = re.compile(r"^\S+ \S+ \[(?:Info|Debug)\] ")
+# A failed dial in xray's log: the address and the port it dialed.
+XRAY_FAILED_DIAL_PATTERN = re.compile(
+    r"failed to process outbound traffic > .*?\bdial (?:tcp|udp) "
+    r"(\[[0-9A-Fa-f:.]+\]|[^\s:\[\]]+):(\d+): "
+)
+# The least time between two failed dials of one address the run filter keeps.
+XRAY_FAILED_DIAL_GAP_S = 10.0
+# How the panel follows the unit's log on Linux, from its end.
+XRAY_LOG_FOLLOW_COMMAND = [
+    "journalctl",
+    "-u",
+    f"{XRAY_SERVICE_NAME}.service",
+    "-f",
+    "-n",
+    "0",
+    "-o",
+    "cat",
+    "--no-pager",
+]
+# How often the panel reads the child's log file outside Linux, and how long it
+# waits before it follows a log again that ended.
+XRAY_LOG_POLL_S = 0.5
+XRAY_LOG_FOLLOW_RETRY_S = 5.0
 XRAY_SUPPORTED_ARCHITECTURES = ("amd64", "arm64")
 
 # The direct lists reach xray as one routing rule each. An entry naming a

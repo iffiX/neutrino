@@ -5,6 +5,7 @@ down, and an xray that is not answering: each of them used to be a reason to
 re-pick, and each of them is a reason to hold still.
 """
 
+import threading
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -761,3 +762,113 @@ def test_the_interval_is_read_from_the_node_list_each_tick(tmp_path):
     assert box.controller._interval_s() == 60
     box.nodes.probe_interval_s = 900
     assert box.controller._interval_s() == 900
+
+
+def _settled(box, *, probe_count: int) -> None:
+    """Wait for the measurement a failed dial started to be measured and stored."""
+    for _ in range(500):
+        if len(box.probe.probed) >= probe_count and not box.controller.is_checking:
+            return
+        threading.Event().wait(0.01)
+    raise AssertionError(f"probed {box.probe.probed}, wanted {probe_count}")
+
+
+def test_a_failed_dial_to_the_pinned_exit_measures_it_at_once(tmp_path):
+    """The dial failed and the measurement fails twice: the exit is marked
+    failed between two rounds, and the next candidate takes it."""
+    box = _Box(
+        tmp_path,
+        probe=_StubProbe({"node_a": [measured("node_a", None)]}),
+        api=_StubApi(),
+    )
+    box.seed("node_a", 40)
+    box.seed("node_b", 60)
+    box.pin("node_a", held_s=10)
+
+    assert box.controller.failed_dial("203.0.113.10", 5800)
+    _settled(box, probe_count=2)
+
+    assert box.probe.probed == ["node_a", "node_a"]
+    assert not box.store.health_of("node_a").is_alive
+    assert box.store.exit_tag == "node_b"
+
+
+def test_a_failed_dial_whose_measurement_succeeds_marks_nothing(tmp_path):
+    box = _Box(
+        tmp_path,
+        probe=_StubProbe({"node_a": [measured("node_a", 40)]}),
+        api=_StubApi(),
+    )
+    box.seed("node_a", 40)
+    box.pin("node_a", held_s=10)
+
+    assert box.controller.failed_dial("203.0.113.10", 5800)
+    _settled(box, probe_count=1)
+
+    assert box.probe.probed == ["node_a"]
+    assert box.store.health_of("node_a").is_alive
+    assert box.store.exit_tag == "node_a"
+
+
+@pytest.mark.parametrize(
+    ("host", "port"),
+    [("203.0.113.11", 5800), ("203.0.113.10", 443), ("198.51.100.1", 53)],
+    ids=["another_node", "another_port", "a_destination"],
+)
+def test_a_failed_dial_elsewhere_measures_nothing(tmp_path, host, port):
+    box = _Box(tmp_path, probe=_StubProbe({}), api=_StubApi())
+    box.seed("node_a", 40)
+    box.pin("node_a", held_s=10)
+
+    assert not box.controller.failed_dial(host, port)
+    assert box.probe.probed == []
+
+
+def test_a_failed_dial_to_an_exit_already_failed_measures_nothing(tmp_path):
+    """The routine round brings it back; a failed dial adds nothing."""
+    box = _Box(tmp_path, probe=_StubProbe({}), api=_StubApi())
+    box.seed("node_a", 40, None)
+    box.pin("node_a", held_s=10)
+
+    assert not box.controller.failed_dial("203.0.113.10", 5800)
+    assert box.probe.probed == []
+
+
+def test_a_node_named_by_a_host_name_matches_on_its_port(tmp_path):
+    nodes = node_list()
+    nodes.nodes[0].address = "hk.exit.example.net"
+    box = _Box(
+        tmp_path,
+        probe=_StubProbe({"node_a": [measured("node_a", 40)]}),
+        api=_StubApi(),
+        nodes=nodes,
+    )
+    box.seed("node_a", 40)
+    box.pin("node_a", held_s=10)
+
+    assert not box.controller.failed_dial("203.0.113.10", 443)
+    assert box.controller.failed_dial("203.0.113.77", 5800)
+    _settled(box, probe_count=1)
+
+
+def test_one_measurement_runs_at_a_time(tmp_path):
+    release = threading.Event()
+
+    class _SlowProbe(_StubProbe):
+        def probe(self, node, *, url: str):
+            release.wait(5)
+            return super().probe(node, url=url)
+
+    box = _Box(
+        tmp_path,
+        probe=_SlowProbe({"node_a": [measured("node_a", 40)]}),
+        api=_StubApi(),
+    )
+    box.seed("node_a", 40)
+    box.pin("node_a", held_s=10)
+
+    assert box.controller.failed_dial("203.0.113.10", 5800)
+    assert not box.controller.failed_dial("203.0.113.10", 5800)
+    release.set()
+    _settled(box, probe_count=1)
+    assert box.probe.probed == ["node_a"]

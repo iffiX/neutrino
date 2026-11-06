@@ -355,6 +355,23 @@ def test_the_proxys_own_lookups_ask_the_first_direct_resolver(monkeypatch):
     assert part.direct_resolver() == ("192.168.1.1", 53)
 
 
+@pytest.mark.parametrize("is_on_linux", [True, False], ids=["linux", "elsewhere"])
+def test_the_part_follows_xray_s_log_for_failed_dials_of_the_exit(
+    monkeypatch, is_on_linux
+):
+    """The unit's journal on Linux, the child's log file under the hub's one
+    service elsewhere; each failed dial goes to the exit controller."""
+    monkeypatch.setattr(proxy_router, "is_linux", lambda: is_on_linux)
+
+    part = proxy_router.ProxyPanelPart(on_change=None, on_out_of_sync=None)
+
+    watcher = part.dial_watcher
+    assert watcher.on_failed_dial == part.exit_controller.failed_dial
+    assert watcher.log_path == (
+        None if is_on_linux else proxy_router.SYSTEM_CHILD_LOG_DIR / "xray.log"
+    )
+
+
 # --- A routing.json from an earlier build ---
 
 

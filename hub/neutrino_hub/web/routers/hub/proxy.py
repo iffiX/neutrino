@@ -41,8 +41,10 @@ from neutrino_hub.modules.xray.constants import (
     XRAY_REMOTE_DNS_FIELD,
     XRAY_ROUTING_FILE,
     XRAY_SCOPE_SWITCHES,
+    XRAY_SUPERVISED_NAME,
     XRAY_VERSION,
 )
+from neutrino_hub.modules.xray.dial_watcher import XrayDialWatcher
 from neutrino_hub.modules.xray.exit_controller import XrayExitController
 from neutrino_hub.modules.xray.geodata import XrayGeodataState
 from neutrino_hub.modules.xray.node_config import XrayNodeList
@@ -59,6 +61,8 @@ from neutrino_hub.modules.xray.routing_rules import (
 )
 from neutrino_hub.modules.xray.stats_client import XrayStatsClient
 from neutrino_hub.platforms.constants import PLATFORM_OS_DARWIN, PLATFORM_OS_WINDOWS
+from neutrino_hub.platforms.detect import is_linux
+from neutrino_hub.system.constants import SYSTEM_CHILD_LOG_DIR, SYSTEM_CHILD_LOG_SUFFIX
 from neutrino_hub.utils.json_file import read_config, write_config
 from neutrino_hub.utils.subprocess_run import command_failure_text, run
 from neutrino_hub.web.constants import WEB_PORT_MAX, WEB_PORT_MIN
@@ -382,6 +386,8 @@ class ProxyPanelPart:
         node_probe: Measures one exit node.
         node_health: Every node's measurement window.
         exit_controller: Measures the nodes and pins the exit.
+        dial_watcher: Hands each failed dial in xray's log to the exit
+            controller.
     """
 
     def __init__(self, *, on_change, on_out_of_sync):
@@ -405,10 +411,20 @@ class ProxyPanelPart:
             on_change=on_change,
             on_out_of_sync=on_out_of_sync,
         )
+        self.dial_watcher = XrayDialWatcher(
+            on_failed_dial=self.exit_controller.failed_dial,
+            log_path=(
+                None
+                if is_linux()
+                else SYSTEM_CHILD_LOG_DIR
+                / f"{XRAY_SUPERVISED_NAME}{SYSTEM_CHILD_LOG_SUFFIX}"
+            ),
+        )
 
     def start(self) -> None:
-        """Start measuring the nodes, as the application starts."""
+        """Start measuring the nodes and following xray's log, as the application starts."""
         self.exit_controller.start()
+        self.dial_watcher.start()
 
     def routing(self) -> dict:
         """Read the current routing options.

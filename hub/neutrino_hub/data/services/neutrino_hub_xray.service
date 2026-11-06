@@ -26,9 +26,9 @@ NoNewPrivileges=true
 Environment=GODEBUG=multipathtcp=0
 # Through the hub rather than straight at the binary: the config path and the
 # database directory are the hub's to know, and a unit repeating them is a
-# second copy to keep in step. It replaces itself with xray, so this account
-# and the capabilities above carry into the binary and nothing lingers between
-# systemd and the daemon it is watching.
+# second copy to keep in step. It runs xray as its child, which takes this
+# account and the ambient capabilities above, and writes on every line of
+# xray's log but the info of each connection.
 ExecStart=@PYTHON@ -m neutrino_hub.cli.entry run --only-xray
 Restart=on-failure
 RestartSec=5
