@@ -50,6 +50,15 @@ container's journal is `journalctl -u <name>.service`. The module's own
 journal reads `podman.socket` and the declared containers' units, and a
 container module's units are in that module's journal alone.
 
+A container's journal is read as JSON, four entries for each line it shows,
+and printed in the lines `short-iso` writes. conmon writes a line of a
+container in pieces, each entry marked `CONTAINER_PARTIAL_MESSAGE`, and the
+newline that ends the line as an entry of its own. The pieces one process
+wrote join into one line. Measured on Podman 3.4.4: the Hermes WebUI image's
+first start put `+ cffi==2.1.1` in the journal as eleven entries, and
+`short-iso` printed every line a container wrote with an empty line after it.
+On Windows and macOS the root script prints the same JSON in the machine.
+
 The Podman report gives each container's `host_bindings` as one `{address,
 port, protocol, detected}` per published host port, on TCP and UDP alike,
 `address` empty for every address and `detected` as "Services of a
