@@ -512,6 +512,15 @@ shows in place under the button, which stays live. CloudCLI, Codeg, Gitea
 and code-server tabs carry no notice ([ui_text.md](ui_text.md), "Software the
 owner installs").
 
+## The dashboard
+
+The **Dashboard** (总览), at `/`, opens with its stat tiles, then the two
+traffic charts beside the active exits and the DNS log, then the AI usage.
+
+| Rule | Reason |
+| --- | --- |
+| An active exit reads its node's name, which each node's probe in the stats frame carries as `name`. An exit no node names reads its tag. | A tag such as `node_68b6b740` names nothing a person made. |
+
 ## The Agents page
 
 The **Agents** page (被控端), at `/agents`, is one table of the managed
