@@ -114,7 +114,7 @@
               "name": "git",
               "kind": "zip",
               "directory": "git",
-              "file": "MinGit-2.56.0.4-64-bit.zip",
+              "file": "MinGit-2.56.0.4-64-bit.zip", "_file_scan": "scan: allow",
               "digest": "sha256:e3bf78351fe777fba47ddee5950082f8a98bb0f02604fdc7ba3ee2cb68ffa877", "_digest_scan": "scan: allow",
               "sources": ["https://github.com/git-for-windows/git/releases/download/v2.56.0.windows.4/{file}", "https://registry.npmmirror.com/-/binary/git-for-windows/v2.56.0.windows.4/{file}"], "_sources_scan": "scan: allow"
             },
