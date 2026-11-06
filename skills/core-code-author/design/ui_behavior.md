@@ -520,6 +520,7 @@ traffic charts beside the active exits and the DNS log, then the AI usage.
 
 | Rule | Reason |
 | --- | --- |
+| A stat tile's value and its detail each stay on one line inside the tile's padding. Each shrinks with the tile's width, the value until a rate of 9 characters such as `1023 KB/s` fits and the detail until an address of 18 such as `255.255.255.255/32` fits. | At 1440 px eight tiles share a row: a rate wrapped after its number, and the uptime tile's address ran to the tile's edge. |
 | An active exit reads its node's name, which each node's probe in the stats frame carries as `name`. An exit no node names reads its tag. | A tag such as `node_68b6b740` names nothing a person made. |
 | An activity grid of the day range labels every sixth hour, and each label spans its six cells. The AI page's grids are the same component. | A label one cell wide cut `19:00` to `19:0` at every desktop width. |
 
