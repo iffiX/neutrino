@@ -4,6 +4,7 @@
   "title": "Codeg",
   "description": "AI coding sessions in the browser from Codeg, one per account, opened from a client with a token",
   "publisher": "spacering-net/codeg",
+  "is_data_forward_only": true,
   "uninstall_data": {
     "is_deleted": false,
     "text": {

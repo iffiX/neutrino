@@ -2307,6 +2307,9 @@ class DeviceModuleView(BaseModel):
     # The kind chip's word: program for a command line program, service for
     # every other module.
     kind: str = ""
+    # Whether the manifest says the module's data moves forward only, which
+    # shows the upgrade only chip.
+    is_data_forward_only: bool = False
     is_supported: bool = True
     # The line the uninstall dialog shows under its body. None for a module
     # the agent carries.
@@ -2435,6 +2438,9 @@ class ModuleVersionEntryView(BaseModel):
     is_tested: bool = False
     # Newer than the tested one, so not what the hub's release ran.
     is_untested: bool = False
+    # Older than the newest version the module has run at on a module whose
+    # data moves forward only, so the module cannot go to it.
+    is_older_than_run: bool = False
 
 
 class ModuleVersionView(BaseModel):
@@ -2453,6 +2459,9 @@ class ModuleVersionView(BaseModel):
     # Whether the module's data moves forward only, so an older version
     # cannot read it.
     is_data_forward_only: bool = False
+    # The newest version the module has run at on the machine; empty while
+    # it has run at none the hub knows of.
+    newest_run: str = ""
     # When the feeds were last read; empty before the first time.
     read_at: str = ""
 

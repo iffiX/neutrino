@@ -306,7 +306,12 @@ def test_a_persons_podman_reads_locked_at_the_version_it_prints(
     assert view["newest"] == "6.1.3"
     assert view["tested"] == "6.1.4"
     assert view["versions"] == [
-        {"version": "6.1.3", "is_tested": False, "is_untested": False}
+        {
+            "version": "6.1.3",
+            "is_tested": False,
+            "is_untested": False,
+            "is_older_than_run": False,
+        }
     ]
 
 
@@ -344,6 +349,131 @@ def test_a_version_press_on_a_persons_podman_is_refused_version_locked(
     assert answer.json()["detail"]["code"] == "version_locked"
     assert modules_file(tmp_path)["fakedesk"]["version"] == ""
     assert runtime.agent_sessions.pushes == []
+
+
+def forward_only(runtime, tmp_path, monkeypatch, *, row, is_flagged=True) -> None:
+    """Gitea's case: fakedesk listed at 28.0.0, the tested 1.27.3 and 1.27.2,
+    its manifest saying ``is_data_forward_only`` or not, the machine
+    reporting ``row``."""
+    manifest = dict(device_box_manifest(), is_data_forward_only=is_flagged)
+    monkeypatch.setattr(
+        device_modules, "load_module_manifests", lambda: {"fakedesk": manifest}
+    )
+    monkeypatch.setattr(device_modules, "is_locked", lambda manifest, entry: False)
+    runtime.module_releases = ModuleReleaseStore(path=tmp_path / "releases.json")
+    runtime.module_releases.versions = lambda module, platform: [
+        {"version": "28.0.0", "is_tested": False, "is_untested": True},
+        {"version": "1.27.3", "is_tested": True, "is_untested": False},
+        {"version": "1.27.2", "is_tested": False, "is_untested": False},
+    ]
+    runtime.device_modules[DEVICE] = {"fakedesk": dict(row)}
+    runtime.desired_states.set_want(DEVICE, "fakedesk", "running")
+    runtime.agent_sessions.online.add(DEVICE)
+
+
+def device_box_manifest() -> dict:
+    from tests.web.device_api_box import MANIFESTS
+
+    return json.loads(json.dumps(MANIFESTS["fakedesk"]))
+
+
+FAILED_UPGRADE = {
+    "state": "failed",
+    "code": "apply_failed",
+    "details": {"version": "28.0.0"},
+    "newest_run": "28.0.0",
+}
+
+
+def test_every_version_older_than_the_newest_run_is_marked(api, tmp_path, monkeypatch):
+    client, runtime = api
+    forward_only(runtime, tmp_path, monkeypatch, row=FAILED_UPGRADE)
+
+    view = client.get(
+        f"{MODULE_PATH}/version", params={"device_id": DEVICE, "module": "fakedesk"}
+    ).json()
+
+    assert view["newest_run"] == "28.0.0"
+    assert {row["version"]: row["is_older_than_run"] for row in view["versions"]} == {
+        "28.0.0": False,
+        "1.27.3": True,
+        "1.27.2": True,
+    }
+
+
+@pytest.mark.parametrize("version, refused", [("1.27.2", "1.27.2"), ("", "1.27.3")])
+def test_a_version_older_than_the_newest_run_is_refused_tested_one_too(
+    api, tmp_path, monkeypatch, version, refused
+):
+    client, runtime = api
+    forward_only(runtime, tmp_path, monkeypatch, row=FAILED_UPGRADE)
+    runtime.desired_states.set_version(DEVICE, "fakedesk", "28.0.0")
+
+    answer = client.post(
+        f"{MODULE_PATH}/version/set",
+        json={"device_id": DEVICE, "module": "fakedesk", "version": version},
+    )
+
+    assert answer.status_code == 409
+    assert answer.json()["detail"] == {
+        "code": "version_older_than_run",
+        "params": {"module": "fakedesk", "version": refused, "newest_run": "28.0.0"},
+    }
+    assert modules_file(tmp_path)["fakedesk"]["version"] == "28.0.0"
+    assert runtime.agent_sessions.pushes == []
+
+
+def test_a_running_version_counts_as_run_with_no_note(api, tmp_path, monkeypatch):
+    client, runtime = api
+    forward_only(
+        runtime,
+        tmp_path,
+        monkeypatch,
+        row={"state": "running", "details": {"version": "1.27.3"}},
+    )
+
+    older = client.post(
+        f"{MODULE_PATH}/version/set",
+        json={"device_id": DEVICE, "module": "fakedesk", "version": "1.27.2"},
+    )
+    newer = client.post(
+        f"{MODULE_PATH}/version/set",
+        json={"device_id": DEVICE, "module": "fakedesk", "version": "28.0.0"},
+    )
+
+    assert older.status_code == 409
+    assert newer.status_code == 200
+    assert newer.json()["newest_run"] == "1.27.3"
+
+
+def test_a_module_without_the_flag_installs_an_older_version(
+    api, tmp_path, monkeypatch
+):
+    client, runtime = api
+    forward_only(runtime, tmp_path, monkeypatch, row=FAILED_UPGRADE, is_flagged=False)
+
+    answer = client.post(
+        f"{MODULE_PATH}/version/set",
+        json={"device_id": DEVICE, "module": "fakedesk", "version": "1.27.2"},
+    )
+
+    assert answer.status_code == 200
+    assert not any(row["is_older_than_run"] for row in answer.json()["versions"])
+    assert modules_file(tmp_path)["fakedesk"]["version"] == "1.27.2"
+
+
+@pytest.mark.parametrize("is_flagged", [True, False])
+def test_a_row_carries_the_manifest_s_forward_only_flag(
+    api, tmp_path, monkeypatch, is_flagged
+):
+    client, runtime = api
+    forward_only(
+        runtime, tmp_path, monkeypatch, row=FAILED_UPGRADE, is_flagged=is_flagged
+    )
+
+    row = client.get(MODULE_PATH, params={"device_id": DEVICE}).json()["modules"][0]
+
+    assert row["is_data_forward_only"] is is_flagged
 
 
 def test_an_uninstall_the_machine_confirmed_reads_absent_on_both_halves(api):

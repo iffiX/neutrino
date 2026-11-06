@@ -98,6 +98,7 @@ from neutrino_hub.modules.devices.manifests import (
     platform_keys,
     resolve_platform_entry,
     uninstall_line,
+    version_parts,
 )
 from neutrino_hub.modules.devices.registry import DeviceRegistry, ManagedDevice
 from neutrino_hub.modules.devices.retry_marks import DeviceRetryMarks
@@ -142,6 +143,7 @@ CODE_CONFIG_UNWRITABLE = "config_unwritable"
 CODE_MODULE_IN_USE = "module_in_use"
 CODE_VERSION_UNKNOWN = "version_unknown"
 CODE_VERSION_LOCKED = "version_locked"
+CODE_VERSION_OLDER_THAN_RUN = "version_older_than_run"
 
 # What a module reads as until its agent has said.
 STATE_UNKNOWN = "unknown"
@@ -245,6 +247,7 @@ def list_modules(
                 method=resolved["method"],
                 source=module_source(resolved["method"]),
                 kind=module_kind(name),
+                is_data_forward_only=manifest.get("is_data_forward_only") is True,
                 # With no platform reported yet, nothing is ruled out: the
                 # agent will say what it cannot do once it beats.
                 is_supported=(
@@ -426,7 +429,10 @@ def set_module_version(
             ``version_unknown {version}`` for a version the feeds did not
             list for the machine's platform; 409 ``version_locked {module}``
             for a module whose version is locked, a person's Podman among
-            them, ``agent_offline``; 500
+            them, ``version_older_than_run {module, version, newest_run}``
+            for a version older than the newest the module has run at on a
+            module whose data moves forward only, the tested one for an
+            empty ``version``, ``agent_offline``; 500
             ``config_unwritable``.
     """
     key = _require_device(request.device_id).id
@@ -445,6 +451,16 @@ def set_module_version(
     if request.version and request.version not in listed:
         raise _refusal(
             status.HTTP_400_BAD_REQUEST, CODE_VERSION_UNKNOWN, version=request.version
+        )
+    target = request.version or _tested_version(runtime, module, platform)
+    newest_run = _newest_run(runtime, key, module, manifest)
+    if is_older_than_run(manifest, target, newest_run):
+        raise _refusal(
+            status.HTTP_409_CONFLICT,
+            CODE_VERSION_OLDER_THAN_RUN,
+            module=module,
+            version=target,
+            newest_run=newest_run,
         )
     if not runtime.agent_sessions.is_online(key):
         raise _refusal(status.HTTP_409_CONFLICT, CODE_AGENT_OFFLINE, device_id=key)
@@ -490,16 +506,82 @@ def _version_view(
     is_persons = is_persons_package(reported["details"])
     if is_persons:
         versions = persons_versions(reported["version"], tested)
+    newest_run = _newest_run(runtime, key, module, manifest)
     return ModuleVersionView(
         installed=reported["version"],
         chosen=runtime.desired_states.version_of(key, module),
         tested=tested,
         newest=versions[0]["version"] if versions else tested,
         is_locked=is_locked(manifest, entry) or is_persons,
-        versions=[ModuleVersionEntryView(**row) for row in versions],
+        versions=[
+            ModuleVersionEntryView(
+                **row,
+                is_older_than_run=is_older_than_run(
+                    manifest, row["version"], newest_run
+                ),
+            )
+            for row in versions
+        ],
         is_data_forward_only=manifest.get("is_data_forward_only") is True,
+        newest_run=newest_run,
         read_at=runtime.module_releases.read_at(),
     )
+
+
+def _tested_version(runtime: PanelRuntime, module: str, platform: dict) -> str:
+    """The tested version of one module on one platform, as the feeds list it.
+
+    Args:
+        runtime: The shared runtime.
+        module: The module.
+        platform: The tuple the machine reported.
+
+    Returns:
+        The tested version; empty when nothing lists one.
+    """
+    versions = runtime.module_releases.versions(module, platform)
+    return next((row["version"] for row in versions if row["is_tested"]), "")
+
+
+def _newest_run(runtime: PanelRuntime, key: str, module: str, manifest: dict) -> str:
+    """The newest version one module has run at on one machine.
+
+    Args:
+        runtime: The shared runtime.
+        key: The device.
+        module: The module.
+        manifest: Its manifest.
+
+    Returns:
+        The newer of the row's ``newest_run`` and, on a row reading
+        ``running``, its installed version; empty while neither names one.
+    """
+    reported = module_status(runtime, key, module, manifest=manifest)
+    row = runtime.device_modules.get(key, {}).get(module) or {}
+    found = [str(row.get("newest_run") or "")]
+    if reported["state"] == CHANNEL_MODULE_STATE_RUNNING:
+        found.append(reported["version"])
+    found = [version for version in found if version]
+    return max(found, key=version_parts) if found else ""
+
+
+def is_older_than_run(manifest: dict, version: str, newest_run: str) -> bool:
+    """Whether a version is one a module whose data moves forward only cannot go to.
+
+    Args:
+        manifest: The module's manifest.
+        version: The version asked for.
+        newest_run: The newest version the module has run at; empty for none.
+
+    Returns:
+        True on a module whose manifest says ``is_data_forward_only`` for a
+        version older than ``newest_run``.
+    """
+    if manifest.get("is_data_forward_only") is not True:
+        return False
+    if not version or not newest_run:
+        return False
+    return version_parts(version) < version_parts(newest_run)
 
 
 @router.post("/install", response_model=DeviceModuleListView)

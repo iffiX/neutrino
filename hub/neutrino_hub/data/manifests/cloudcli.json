@@ -4,6 +4,7 @@
   "title": "CloudCLI",
   "description": "AI coding sessions in the browser, one per account, opened from a client with a token",
   "publisher": "siteboon/claudecodeui",
+  "is_data_forward_only": true,
   "uninstall_data": {
     "is_deleted": false,
     "text": {

@@ -599,6 +599,16 @@ def test_gitea_pins_the_release_binary_and_its_published_digest_per_machine():
     )
 
 
+def test_the_modules_whose_data_moves_forward_only_are_flagged():
+    flagged = {
+        name
+        for name, manifest in load_module_manifests().items()
+        if manifest.get("is_data_forward_only") is True
+    }
+
+    assert flagged == {"gitea", "ayakaleaf", "codeg", "cloudcli"}
+
+
 def test_gitea_resolves_by_machine_and_refuses_the_rest():
     manifest = load_module_manifests()["gitea"]
 
