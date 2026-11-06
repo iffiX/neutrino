@@ -480,6 +480,10 @@ AGENT_INSTALL_MARKS_DIR_NAME = "install_marks"
 # from its uninstall until its next install's ``verify``; beside the configured
 # marks.
 AGENT_UNINSTALLED_DIR_NAME = "uninstalled"
+# Where the recipe of each container module a state named present is kept, one
+# root-only ``<module>.json`` each, until its uninstall took; beside the
+# configured marks.
+AGENT_CONTAINER_RECIPES_DIR_NAME = "container_recipes"
 # Where a package coming down a stream lands until its digest is checked.
 # A module's package is deleted once its install ran; the agent's own
 # outlives the process that received it, and the agent the install put

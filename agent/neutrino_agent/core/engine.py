@@ -52,6 +52,7 @@ from neutrino_agent.constants import (
     AGENT_METHOD_HUB,
     AGENT_METHOD_SYSTEM,
     AGENT_FAILURES_DIR_NAME,
+    AGENT_CONTAINER_RECIPES_DIR_NAME,
     AGENT_INSTALL_MARKS_DIR_NAME,
     AGENT_MODULE_DETAILS_TTL_S,
     AGENT_MODULE_STATE_ABSENT,
@@ -62,6 +63,7 @@ from neutrino_agent.constants import (
     AGENT_MODULE_STATE_RUNNING,
     AGENT_MODULE_STATE_STOPPED,
     AGENT_MODULE_STATE_UNSUPPORTED,
+    AGENT_PRESENT_WANTS,
     AGENT_STARTED_REREAD_S,
     AGENT_STARTED_WATCH_S,
     AGENT_STEP_ARTIFACT,
@@ -303,6 +305,12 @@ class ModuleEngine(ReconcileWorker):
         self._uninstalled_dir = os.path.join(
             os.path.dirname(self._configured_dir), AGENT_UNINSTALLED_DIR_NAME
         )
+        self._container_recipes_dir = os.path.join(
+            os.path.dirname(self._configured_dir), AGENT_CONTAINER_RECIPES_DIR_NAME
+        )
+        # Module name to the recipe kept for it, for each container module a
+        # state named present, until its uninstall took.
+        self._kept_recipes: dict = {}
         self._platform_tuple = platform_tuple()
         # The line sink of the task running on each thread.
         self._lines = threading.local()
@@ -379,6 +387,7 @@ class ModuleEngine(ReconcileWorker):
         self._configure_asker = None
         self._failures = self._read_failures()
         super().__init__(log=log, on_change=on_change)
+        self._take_kept_recipes()
 
     @property
     def module_runners(self) -> dict:
@@ -429,7 +438,8 @@ class ModuleEngine(ReconcileWorker):
 
         Each module's runner is handed its recipe and its configuration, a
         container module getting its runner the first time the state names
-        it, and every runner the state's source sets. The failure and the
+        it, and every runner the state's source sets. A container module
+        named with a present want has its recipe kept. The failure and the
         install mark kept for a module the state no longer names are deleted,
         and an empty state deletes every uninstalled mark.
 
@@ -459,6 +469,11 @@ class ModuleEngine(ReconcileWorker):
                 runner.take_recipe(recipe)
                 config = entry.get("config")
                 runner.take_config(dict(config) if isinstance(config, dict) else {})
+            if (
+                recipe.get("runner") == AGENT_CONTAINER_RUNNER
+                and _want_of(entry) in AGENT_PRESENT_WANTS
+            ):
+                self._keep_recipe(name, recipe)
         for name in dropped:
             self.record_failure(name, None)
         self._clear_install_marks_except(wanted)
@@ -1258,6 +1273,71 @@ class ModuleEngine(ReconcileWorker):
         except OSError as error:
             self._log(f"{name}: could not keep its version: {error}")
 
+    def _take_kept_recipes(self) -> None:
+        """Make the runner of each container module whose recipe is kept, and hand it that recipe."""
+        try:
+            files = sorted(os.listdir(self._container_recipes_dir))
+        except OSError:
+            return
+        for file_name in files:
+            name = file_name[: -len(FAILURE_SUFFIX)]
+            if not file_name.endswith(FAILURE_SUFFIX) or not _is_plain(name):
+                continue
+            try:
+                with open(self._recipe_path(name), "r", encoding="utf-8") as stream:
+                    recipe = json.load(stream)
+            except (OSError, ValueError):
+                continue
+            if not isinstance(recipe, dict):
+                continue
+            with self._lock:
+                self._kept_recipes[name] = recipe
+                self._add_container_runner(name, recipe)
+                runner = self._container_runners.get(name)
+            if runner is not None:
+                runner.take_recipe(recipe)
+
+    def _kept_recipe(self, name: str) -> dict:
+        """The recipe kept for one container module; empty for any other module."""
+        with self._lock:
+            return dict(self._kept_recipes.get(name) or {})
+
+    def _keep_recipe(self, name: str, recipe: dict) -> None:
+        """Keep one container module's recipe root-only, whole or not at all, when it changed."""
+        if not _is_plain(name):
+            return
+        with self._lock:
+            if self._kept_recipes.get(name) == recipe:
+                return
+            self._kept_recipes[name] = dict(recipe)
+        try:
+            os.makedirs(self._container_recipes_dir, mode=0o700, exist_ok=True)
+            handle, temporary = tempfile.mkstemp(
+                dir=self._container_recipes_dir, prefix=".recipe_"
+            )
+            try:
+                with os.fdopen(handle, "w", encoding="utf-8") as stream:
+                    json.dump(recipe, stream, sort_keys=True)
+                os.chmod(temporary, 0o600)
+                os.replace(temporary, self._recipe_path(name))
+            except BaseException:
+                with contextlib.suppress(OSError):
+                    os.unlink(temporary)
+                raise
+        except OSError as error:
+            self._log(f"{name}: could not keep its recipe: {error}")
+
+    def _forget_recipe(self, name: str) -> None:
+        """Delete one container module's kept recipe."""
+        with self._lock:
+            self._kept_recipes.pop(name, None)
+        if _is_plain(name):
+            with contextlib.suppress(OSError):
+                os.unlink(self._recipe_path(name))
+
+    def _recipe_path(self, name: str) -> str:
+        return os.path.join(self._container_recipes_dir, name + FAILURE_SUFFIX)
+
     def _forget_version(self, name: str) -> None:
         """Delete one module's kept version."""
         if _is_plain(name):
@@ -1309,6 +1389,7 @@ class ModuleEngine(ReconcileWorker):
         if self._is_present(runner, recipe):
             return {"code": "uninstall_unconfirmed", "params": {}}
         self._forget_version(name)
+        self._forget_recipe(name)
         return {}
 
     def _keep_uninstalled_mark(self, name: str) -> None:
@@ -1505,9 +1586,11 @@ class ModuleEngine(ReconcileWorker):
             whose entry carries ``is_taken_over`` reads ``running`` or
             ``stopped`` by its unit, as a configured one does. A row
             with a kept failure adds its ``step``. A module the check does
-            not find reads ``installing`` while its install mark stands.
+            not find reads ``installing`` while its install mark stands. A
+            container module the state does not name is read against its
+            kept recipe.
         """
-        recipe = _recipe_of(wanted)
+        recipe = _recipe_of(wanted) if wanted is not None else self._kept_recipe(name)
         runner = self._runner_for(name, recipe)
         if runner is None:
             return _typed(AGENT_MODULE_STATE_UNSUPPORTED)

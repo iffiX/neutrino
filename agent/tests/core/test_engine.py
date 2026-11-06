@@ -38,6 +38,7 @@ that nothing in it ever retries anything.
 import functools
 import json
 import os
+import stat
 import subprocess
 import threading
 import time
@@ -154,6 +155,12 @@ def bare_engine(*, runner=None, verified=None, tmp_path=None):
     engine._uninstalled_dir = (
         str(tmp_path / "uninstalled") if tmp_path else "/nowhere/uninstalled"
     )
+    engine._container_recipes_dir = (
+        str(tmp_path / "container_recipes")
+        if tmp_path
+        else "/nowhere/container_recipes"
+    )
+    engine._kept_recipes = {}
     engine._platform_tuple = {"os": "linux", "family": "debian", "arch": "amd64"}
     engine._lines = threading.local()
     engine._task_rows = {}
@@ -2224,6 +2231,83 @@ def test_a_container_module_reads_unsupported_where_no_containers_runner_is(
 
     assert engine.container_runners() == {}
     assert engine._read_one("demo", wanted)["state"] == "unsupported"
+
+
+def test_a_container_module_s_recipe_is_kept_root_only_while_a_state_names_it(
+    tmp_path,
+):
+    engine, _containers = container_engine(tmp_path)
+
+    engine.take_state(
+        {"demo": {"want": "installed", "config": {}, "install": CONTAINER_RECIPE}}
+    )
+
+    path = tmp_path / "container_recipes" / "demo.json"
+    assert json.loads(path.read_text()) == CONTAINER_RECIPE
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert stat.S_IMODE(path.parent.stat().st_mode) == 0o700
+
+
+def test_a_container_module_no_state_names_reads_against_its_kept_recipe(
+    tmp_path, monkeypatch
+):
+    """After the machine left its hub, its Ayakaleaf still reads as it is."""
+    engine, _containers = container_engine(tmp_path)
+    engine.take_state(
+        {"demo": {"want": "running", "config": {}, "install": CONTAINER_RECIPE}}
+    )
+    engine.mark_configured("demo")
+    engine.take_state({})
+    checked: list = []
+    monkeypatch.setattr(
+        ContainerModuleRunner,
+        "verify",
+        lambda self, recipe: checked.append(recipe) or True,
+    )
+    monkeypatch.setattr(ContainerModuleRunner, "is_active", lambda self: False)
+    monkeypatch.setattr(ContainerModuleRunner, "details", lambda self, recipe: {})
+
+    assert engine._read_one("demo", None)["state"] == "stopped"
+    assert checked == [CONTAINER_RECIPE]
+
+
+def test_a_new_engine_makes_the_runner_of_each_kept_recipe(tmp_path):
+    kept = tmp_path / "container_recipes"
+    kept.mkdir()
+    (kept / "demo.json").write_text(json.dumps(CONTAINER_RECIPE))
+
+    class PackagesPlatform(FakePlatform):
+        capabilities = frozenset({"packages"})
+
+    engine = ModuleEngine(
+        platform=PackagesPlatform(), configured_dir=str(tmp_path / "configured")
+    )
+
+    runner = engine.container_runners()["demo"]
+    assert isinstance(runner, ContainerModuleRunner)
+    assert runner._version == "1.0"
+    assert "demo" in engine._observed()
+
+
+def test_a_container_module_s_kept_recipe_goes_once_its_uninstall_took(
+    tmp_path, monkeypatch
+):
+    engine, _containers = container_engine(tmp_path)
+    wanted = {"want": "installed", "config": {}, "install": CONTAINER_RECIPE}
+    engine.take_state({"demo": wanted})
+    answers = iter([True, False])
+    monkeypatch.setattr(
+        ContainerModuleRunner,
+        "verify",
+        lambda self, recipe: bool(recipe) and next(answers),
+    )
+    monkeypatch.setattr(ContainerModuleRunner, "uninstall", lambda self, recipe: None)
+
+    assert engine._uninstall("demo", dict(wanted, want="absent")) == {}
+
+    assert not (tmp_path / "container_recipes" / "demo.json").exists()
+    engine.take_state({})
+    assert engine._read_one("demo", None)["state"] == "absent"
 
 
 def test_a_container_install_runs_the_runner_s_install_and_checks_it_took(
