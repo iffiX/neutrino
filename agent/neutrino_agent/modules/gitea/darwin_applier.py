@@ -253,7 +253,8 @@ class GiteaDarwinApplier:
         """Install Apple's Command Line Tools with ``softwareupdate``.
 
         The placeholder file makes ``softwareupdate`` list the tools, and
-        the newest label it lists is installed.
+        the newest label it lists is installed. The placeholder sits in
+        ``/tmp``, where any account can put a link, so its open follows none.
 
         Args:
             log: Called with the line naming the label installed.
@@ -265,8 +266,13 @@ class GiteaDarwinApplier:
                 the install.
             OSError: When the placeholder cannot be written.
         """
-        with open(GITEA_DARWIN_CLT_PLACEHOLDER, "a", encoding="utf-8"):
-            pass
+        os.close(
+            os.open(
+                GITEA_DARWIN_CLT_PLACEHOLDER,
+                os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW,
+                0o644,
+            )
+        )
         try:
             listed = self._run(
                 ["softwareupdate", "--list"],

@@ -451,6 +451,24 @@ def test_the_command_line_tools_are_installed_by_softwareupdate(
     assert lines == ["gitea: installing Command Line Tools for Xcode-16.4"]
 
 
+def test_a_link_planted_at_the_placeholder_is_not_followed(
+    applier, tools, tmp_path, monkeypatch
+):
+    placeholder = tmp_path / "in-progress"
+    target = tmp_path / "root_file"
+    placeholder.symlink_to(target)
+    monkeypatch.setattr(
+        "neutrino_agent.modules.gitea.darwin_applier.GITEA_DARWIN_CLT_PLACEHOLDER",
+        str(placeholder),
+    )
+
+    with pytest.raises(OSError):
+        applier.install_git(log=lambda line: None)
+
+    assert not target.exists()
+    assert tools.ran("softwareupdate") == []
+
+
 def test_no_command_line_tools_listed_is_gitea_git_missing(
     applier, tools, tmp_path, monkeypatch
 ):
