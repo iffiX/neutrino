@@ -454,6 +454,7 @@ the first failure in `APPLY_ORDER`.
 | `render` | a configure task of Containers, asked for and waited for | `install_failed` |
 | `windows_features`, `restart` | Containers on Windows: the two Windows features turned on with dism, and the restart they owe | `install_failed` |
 | `machine` | Containers on Windows and macOS: the Podman machine made or taken over, sized and started, and the wait until it answers | `failed` |
+| `command_line_tools` | Gitea on macOS with no usable `git`: Apple's Command Line Tools installed with `softwareupdate` ([modules/gitea.md](agent/modules/gitea.md), "Gitea brings its git on macOS and Windows") | `install_failed` |
 | `first_start`, `update_check` | Hermes WebUI's first start and its one read of the update setting ([modules/hermes_webui.md](agent/modules/hermes_webui.md), "The first start") | `install_failed` |
 | `replica_set`, `wait_app`, `admin`, `tex`, `guests` | Ayakaleaf's first start ([modules/ayakaleaf.md](agent/modules/ayakaleaf.md), "The first start") | `install_failed` |
 | `tools {account}` | the `ai_tools` section's switch of one account ([ai_tools.md](agent/ai_tools.md)) | the account's own result |
@@ -467,7 +468,7 @@ that can pass 30 seconds by the lab's times:
 | File share on Windows and macOS | `verify`, `configure`, `start` | none |
 | Terminal, Remote desktop | `configure` | none |
 | SSH server | `configure`, then `account {account}` per enabled account | none |
-| Gitea | `packages` on Linux for `git`, `artifact gitea`, `verify`, `account {account}`, `configure`, `start` | `configure` waits for the server, about 30 seconds for the whole task |
+| Gitea | `packages` on Linux for `git`, `command_line_tools` on macOS while no `git` is found, `artifact git` on Windows for MinGit, `artifact gitea`, `verify`, `account {account}`, `configure`, `start` | `command_line_tools` about 7 minutes; `configure` waits for the server, about 30 seconds for the whole task otherwise |
 | Containers on Linux | `packages`, `verify`, `configure`, `start` | `packages`, and `configure` while it restarts containers |
 | Containers on Windows | `windows_features`, `restart`, `artifact wsl`, `artifact podman`, `artifact image`, `verify`, `machine`, `configure`, `start` | `restart` until a person restarts, `machine` about 40 seconds, `configure` 15 to 23 seconds |
 | Containers on macOS | `artifact podman`, `artifact image`, `verify`, `machine`, `configure`, `start` | `machine` |

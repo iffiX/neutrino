@@ -16,7 +16,7 @@ are the same on every system.
 | Listens on | `127.0.0.1` alone, at the configured port | the same | the same |
 | Runs as | the system account `git` the module makes | the hidden account `neutrino_gitea`, made with `sysadminctl` the way the file share makes its accounts, with the full name `Neutrino Gitea`, the shell `/usr/bin/false` and the data directory as its home, and read back before it counts | LocalSystem, `RUN_USER` being `<computer name>$` as Gitea's page prescribes |
 | Service | `neutrino_gitea.service`, disabled at **Stop** and enabled at **Start** | the LaunchDaemon `com.neutrino.gitea` with `UserName`, its output in `/Library/Logs/Neutrino/agent/gitea.log`, disabled with `launchctl disable` at **Stop** and enabled at **Start** | the service `neutrino_gitea`, made with `sc.exe`, started at boot and again after a failure; its start type `disabled` at **Stop** and `auto` at **Start** |
-| Git | the distribution's `git`, which the entry's `packages` names and the system's package manager installs before the binary | the command line tools' or Xcode's own `git`, else Homebrew's, never `/usr/bin/git` | Git for Windows, found on the machine's `Path` as the service reads it, else under `%ProgramFiles%\Git\cmd` |
+| Git | the distribution's `git`, which the entry's `packages` names and the system's package manager installs before the binary | the command line tools' or Xcode's own `git`, else Homebrew's, never `/usr/bin/git`; with none, the install's step `command_line_tools` installs Apple's Command Line Tools | the module's own MinGit, unpacked in `gitea\git\` under the state root |
 | SSH | Gitea's own SSH server, on `127.0.0.1` alone | the same | the same |
 
 **Gitea listens on loopback alone.** `app.ini` names `HTTP_ADDR =
@@ -52,11 +52,18 @@ and ssh do not resolve one on every system, and the forward listens on
 `127.0.0.1` alone. Gitea makes its own SSH host key in its data directory,
 and a person adds their SSH keys in Gitea itself.
 
-**Git is the machine's.** The module installs none on macOS and Windows: an
-install or an apply there that finds no usable `git` is refused
-`gitea_git_missing`, and `app.ini` names the one found in `[git] PATH`. On a
-Mac without the developer tools `/usr/bin/git` is a stub that opens a dialog
-on the screen, so it is never run and never named.
+**Gitea brings its git on macOS and Windows.** `app.ini` names the git
+Gitea runs in `[git] PATH`, and no `PATH` of the machine's changes.
+
+| Rule | Reason |
+| --- | --- |
+| On Windows the manifest names Git for Windows' MinGit beside the binary, the zip `MinGit-<version>-64-bit.zip` from Git for Windows' GitHub release, one artifact for the one architecture the module runs on, its digest the one GitHub gives the asset. It unpacks into `gitea\git\` under the state root, and `[git] PATH` names its `cmd\git.exe`. | MinGit is the build Git for Windows publishes for programs that run git themselves. A git of the module's own is the same on every machine, and Gitea alone runs it. |
+| The MinGit artifact comes before the binary, and keeps its own digest for every version of Gitea ([../module_install.md](../module_install.md), "Module versions"). | The binary's step finds git in place, and a version switch moves the binary alone. |
+| On Windows `app.ini` names `SCRIPT_TYPE = sh` in `[repository]`. | MinGit holds `sh` and no `bash`, and Gitea writes its hooks for the shell it names. |
+| A Windows Gitea whose MinGit is missing owes its install, which runs again at the next **Install** or **Start** ([../../agent.md](../../agent.md), "The steps"). | A Gitea installed before the module carried MinGit gets it at the next press. |
+| On macOS an install that finds no usable `git` runs the step `command_line_tools` before the binary's: it installs Apple's Command Line Tools with `softwareupdate`, as Homebrew's installer does, under the step lock `package_manager`. The step is in the plan only while no `git` is found. | A Mac without the developer tools has no git, and the Command Line Tools are Apple's own package of it. In the lab `softwareupdate` took about 7 minutes. |
+| `gitea_git_missing` is the failure of that step: no `git` found after it ran. An apply on macOS that finds no `git` owes the install, as on Windows. | The step is the one way the module gets git on a Mac. |
+| On a Mac without the developer tools `/usr/bin/git` is a stub that opens a dialog on the screen, so it is never run and never named. | A dialog on the screen of a machine nobody watches waits forever. |
 
 **What a report reads.** `gitea --version` runs once per program file.
 `gitea admin user list --admin` runs with it, after a `configure`, after the

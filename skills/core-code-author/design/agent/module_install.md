@@ -117,7 +117,7 @@ software it holds. Where each class lands on each system is
 
 | Class | Kinds | What the agent does with it | Used today by |
 | --- | --- | --- | --- |
-| archive (压缩包) | `tar_gz`, `zip` | unpacks it into the module's directory and seals it | VS Code, code-server, Codeg's server, SiYuan on Linux, Codex, Claude Code, and the Node.js of CloudCLI and Codeg |
+| archive (压缩包) | `tar_gz`, `zip` | unpacks it into the module's directory and seals it | VS Code, code-server, Codeg's server, SiYuan on Linux, Codex, Claude Code, the Node.js of CloudCLI and Codeg, and Gitea's MinGit on Windows |
 | installer (安装包) | `msi`, `pkg` | keeps it in the module's directory and has the system's installer install it | Containers: Podman and WSL on Windows, Podman on macOS |
 | disk image (磁盘映像) | `dmg`, `nsis` | copies the program out of it into the module's directory and seals it; nothing in it runs | SiYuan on macOS and Windows |
 | machine image (虚拟机映像) | `tar_zst`, `raw_zst` | keeps it in the module's directory, and Podman builds its machine from it | Containers on Windows and macOS |
@@ -177,6 +177,7 @@ Codeg's npm packages carries Claude Code, runs that copy.
 | Codeg's archives | the hub's cache | Codeg's GitHub release, the one address that serves them |
 | Claude Code's and Codex's tarballs | the hub's cache | the `npm` set: registry.npmjs.org, npmmirror and Tencent's mirror ([modules/claude_code.md](modules/claude_code.md), [modules/codex.md](modules/codex.md)) |
 | SiYuan's desktop builds | the hub's cache | SiYuan's GitHub release, then the publisher's own `https://release.liuyun.io/siyuan/{file}` ([modules/siyuan.md](modules/siyuan.md)) |
+| Gitea's MinGit on Windows | the hub's cache | Git for Windows' GitHub release, then npmmirror's copy ([modules/gitea.md](modules/gitea.md)) |
 | VS Code's CLI | the hub's cache | Microsoft's address alone, a list of one |
 | Podman, its machine image and WSL | the hub's cache | each publisher's GitHub release |
 | cc-switch | the hub's cache | its publisher's GitHub release, then `{release}` |
@@ -424,7 +425,7 @@ version list can be read.
 | --- | --- |
 | `params.releases` is how the hub lists the publisher's versions: a list of feeds, each `{kind, sources}` and the keys of its kind. The hub reads them once a day with the method of "Choosing a source", and keeps what it read in `module_releases.json` under its state root ([../files.md](../files.md)). | A daily read follows the publisher, and a read that fails leaves the last list and the tested version. |
 | The first feed lists the versions: the tags its template matches, each read as a dotted number, newest first. A tag that is no dotted number, such as a nightly build's, is not listed. | One feed decides what a version is. |
-| A version's artifacts are the tested ones with `{version}` filled in, and each takes its digest from the feed whose release holds its file. An artifact whose `file` and `sources` hold no `{version}` keeps its own digest for every version, as WSL's msi and Node.js do. | A runtime pinned once serves every version of the program. |
+| A version's artifacts are the tested ones with `{version}` filled in, and each takes its digest from the feed whose release holds its file. An artifact whose `file` and `sources` hold no `{version}` keeps its own digest for every version, as WSL's msi, Node.js and Gitea's MinGit do. | A runtime pinned once serves every version of the program. |
 | A version is listed for a platform only when every artifact of that platform's entry is found in it. | Podman publishes no 6.x package for an Intel Mac, so that entry lists 5.x alone. |
 | A version newer than the tested one reads untested. | Neutrino has run the tested version and no newer one. |
 | `config/devices/<id>/modules.json` holds each machine's chosen `version` per module, and empty follows the tested one. | The choice is per machine, as `want` is. |

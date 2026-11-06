@@ -1578,10 +1578,12 @@ the cache recognises by the ELF, Mach-O or PE header and the agent opens
 `{is_running, port, ssh_listen_port, url, version, admins}`, `ssh_listen_port`
 being the loopback port the agent took for Gitea's own SSH server. The server
 listens on `127.0.0.1` alone, so its `web` and `ssh` entries are reached
-through the agent's `connect` stream ("The connect stream"). On macOS and Windows an install
-and an apply refuse `gitea_git_missing` while the machine has no usable
-`git`, and an install on macOS refuses `user_create_failed {user, detail}`
-when the system will not make the server's account.
+through the agent's `connect` stream ("The connect stream"). On Windows the
+recipe also names Git for Windows' MinGit, a `zip` before the binary, which
+Gitea runs as its git. On macOS an install that finds no usable `git` runs
+the step `command_line_tools` first, which fails `gitea_git_missing` when no
+`git` is found after it, and an install refuses `user_create_failed {user,
+detail}` when the system will not make the server's account.
 
 The `podman` module runs the declared containers on Linux, Windows and
 macOS ([agent/modules/containers.md](agent/modules/containers.md)). Its

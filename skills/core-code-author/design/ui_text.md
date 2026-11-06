@@ -506,6 +506,7 @@ sentences.
 | `ui.modules.step.windows_features` | Turn on Windows features | 打开 Windows 功能 |
 | `ui.modules.step.restart` | Wait for the restart | 等待重启 |
 | `ui.modules.step.machine` | Set up the Podman machine | 准备 Podman 虚拟机 |
+| `ui.modules.step.command_line_tools` | Install Apple's Command Line Tools | 安装 Apple 命令行工具 |
 | `ui.modules.step.first_start` | First start | 首次启动 |
 | `ui.modules.step.update_check` | Read the update setting | 读取更新设置 |
 | `ui.modules.step.replica_set` | Set up the database | 初始化数据库 |
@@ -529,6 +530,8 @@ which takes no step of its own:
 | `ui.modules.step.artifact.podman.image` | Download the machine image | 下载虚拟机映像 |
 | `ui.modules.step.artifact.cloudcli.node`, `ui.modules.step.artifact.codeg.node` | Install Node.js | 安装 Node.js |
 | `ui.modules.step.artifact.codeg.server` | Install the Codeg server | 安装 Codeg 服务端 |
+| `ui.modules.step.artifact.gitea.git` | Install Git | 安装 Git |
+| `ui.modules.step.artifact.gitea.gitea` | Install Gitea | 安装 Gitea |
 | `ui.modules.step.pull.ayakaleaf.app` | Pull the Ayakaleaf image | 拉取 Ayakaleaf 镜像 |
 | `ui.modules.step.pull.ayakaleaf.mongo` | Pull the MongoDB image | 拉取 MongoDB 镜像 |
 | `ui.modules.step.pull.ayakaleaf.redis` | Pull the Redis image | 拉取 Redis 镜像 |
