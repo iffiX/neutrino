@@ -3,7 +3,8 @@
 What these pin: while ``LanmanServer`` is stopped no read asks the server for
 a share or a session, since Windows starts a stopped server of Manual start
 type for such a read; while it runs the reads ask, and an apply that serves
-reads whatever the server is. A share whose name a share of the person's
+reads whatever the server is. The sweep is a call of its own, and reads the
+server's shares on the same terms. A share whose name a share of the person's
 has is left off with ``share_name_taken`` and every other share is made.
 """
 
@@ -55,10 +56,17 @@ APPLY = {
         "shares": [{"name": "new", "path": "C:\\new", "accounts": []}],
         "retired_rule_name": "fence",
         "share_owner": "Everyone",
-        "is_sweep": True,
-        "user_prefix": "neutrino-",
         "is_served": False,
         "server_dependents": [],
+    },
+}
+SWEEP = {
+    "op": "share_sweep",
+    "args": {
+        "marker": "neutrino",
+        "user_prefix": "neutrino-",
+        "is_served": False,
+        "earlier_accounts": [],
     },
 }
 WITHDRAW = {
@@ -104,7 +112,6 @@ TAKEN = {
             }
             for name in ("TAKEN", "free")
         ],
-        "is_sweep": False,
         "is_served": True,
     },
 }
@@ -165,10 +172,25 @@ def test_an_apply_that_serves_nothing_asks_a_stopped_server_nothing(tmp_path):
 
 
 def test_an_apply_that_serves_nothing_asks_a_running_server(tmp_path):
+    """The apply asks for its own shares by name; the listing is the sweep's."""
     answer, reads = asked_of(tmp_path, APPLY, server="Running")
 
     assert answer["ok"] is True
-    assert reads == ["share ", "share new", "share old"]
+    assert reads == ["share new", "share old"]
+
+
+def test_a_sweep_that_serves_nothing_asks_a_stopped_server_nothing(tmp_path):
+    answer, reads = asked_of(tmp_path, SWEEP, server="Stopped")
+
+    assert answer["ok"] is True
+    assert reads == []
+
+
+def test_a_sweep_lists_a_running_server_s_shares(tmp_path):
+    answer, reads = asked_of(tmp_path, SWEEP, server="Running")
+
+    assert answer["ok"] is True
+    assert reads == ["share "]
 
 
 def test_a_withdrawal_asks_a_stopped_server_nothing(tmp_path):
