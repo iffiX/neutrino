@@ -185,7 +185,7 @@ Codeg's npm packages carries Claude Code, runs that copy.
 | a container image | the agent, for Podman to pull | each image reference the artifact names, the publisher's registry first |
 | CloudCLI's npm package | the agent, for npm to install | the `npm` set |
 | the packages a container's own tools fetch | the agent, into the container's environment | each set the module lists: Hermes WebUI's `pypi` |
-| the TeX packages Ayakaleaf's first start adds | the agent, for `tlmgr` in the app's container | the `ctan` set, its fastest source on `tlmgr`'s command line ([modules/ayakaleaf.md](modules/ayakaleaf.md), "The first start") |
+| the TeX packages Ayakaleaf's first start adds | the agent, for `tlmgr` in the app's container | the `ctan` set, its first ranked source on `tlmgr`'s command line ([modules/ayakaleaf.md](modules/ayakaleaf.md), "The first start") |
 | better-sqlite3's prebuilt binary | the agent, for prebuild-install to fetch | its GitHub releases, then npmmirror's copy ([modules/cloudcli.md](modules/cloudcli.md)) |
 | a module's version list | the hub, once a day | the publisher's API ("Module versions") |
 | the hub's own update | the hub | the release sites ([../architecture.md](../architecture.md), "The hub updates itself outside its own process") |
@@ -211,6 +211,7 @@ ecosystem's packages, such as PyPI's, for the whole system.
   },
   "npm": {
     "probe": "/npm/-/npm-10.9.2.tgz",
+    "latency_probes": ["/wrappy", "/once", "/inherits"],
     "sources": ["https://registry.npmjs.org", "https://registry.npmmirror.com", "https://mirrors.cloud.tencent.com/npm"],
     "variables": ["npm_config_registry", "YARN_NPM_REGISTRY_SERVER", "BUN_CONFIG_REGISTRY"]
   },
@@ -230,6 +231,7 @@ ecosystem's packages, such as PyPI's, for the whole system.
 | Key | Holds |
 | --- | --- |
 | `probe` | the path of the file a probe reads under each source ("The file a probe reads") |
+| `latency_probes` | optional: the paths of the small documents whose mean time to the first byte is a source's latency ("Choosing a source"); without it the latency is the probe's own first byte |
 | `sources` | the addresses, the publisher's first |
 | `variables` | the environment variables the ecosystem's tools read the address from: pip and uv for `pypi`; npm, pnpm and Yarn 1 (`npm_config_registry`), Yarn 2 and later, and Bun for `npm`; the Hugging Face libraries for `huggingface`; none for `ctan`, since `tlmgr` reads its repository from its command line |
 
@@ -238,13 +240,13 @@ ecosystem's packages, such as PyPI's, for the whole system.
 | Each ecosystem has one set, and every download from it names the set: an artifact by `source_set`, a `container` entry by `source_sets`. | Two lists for one ecosystem drift apart, and a mirror added to one reaches half the modules. |
 | An artifact that names a set probes as its kind says: CloudCLI's npm artifact names `npm` and probes its own package's document, and Claude Code's and Codex's tarballs, of kind `tar_gz`, probe the tarball itself as any `hub` artifact does. | The package being installed is the document or the file that has to be there. |
 | A `container` entry lists the sets its containers use in `source_sets`, and the hub copies the list into each hub container of the module. | The tools inside a container fetch from the network at their start, and the container's environment is where they read the address. |
-| Before the agent writes a hub container's environment file, it probes each set the container lists and writes every variable of the set, with the fastest source, into the container's environment. | Which source is fastest depends on the machine's own network. |
-| An environment value `{<set>}`, such as `{pypi}`, is the fastest source of that set, for a variable the set does not list. The set is one the module lists. | A tool that reads a variable of its own gets the same choice. |
+| Before the agent writes a hub container's environment file, it probes each set the container lists and writes every variable of the set, with the first ranked source, into the container's environment. | Which source is fastest depends on the machine's own network. |
+| An environment value `{<set>}`, such as `{pypi}`, is the first ranked source of that set, for a variable the set does not list. The set is one the module lists. | A tool that reads a variable of its own gets the same choice. |
 | An apply whose one change to a container's environment file is a set's value keeps the file as it is. | The value is in the container's environment, so a new value restarts the container, and a source ranked first today is no reason to restart a running page. |
 | The hub sends the sets the machine's recipes name in the state's `source_sets` section, and the agent probes them; nothing remembers a past result. | Only the machine measures its own network, and a network changes. |
 | The loader rejects a `source_set`, a `source_sets` item or a placeholder that names a set the file does not define, and a placeholder that names a set its module does not list. | A wrong name fails the suite, and the agent resolves only the sets the state sends. |
 | A set exists for an ecosystem a module fetches from. Go's module proxy, crates.io, conda channels and Ollama's library have none. | A set no module names is a list nobody keeps true. |
-| A set with no `variables` is ranked when a module's hook asks for it, and the hook gives the fastest source to its tool on the tool's command line: Ayakaleaf's `tlmgr --repository`. | A tool that reads no variable for its address takes it where it reads it. |
+| A set with no `variables` is ranked when a module's hook asks for it, and the hook gives the first ranked source to its tool on the tool's command line: Ayakaleaf's `tlmgr --repository`. | A tool that reads no variable for its address takes it where it reads it. |
 | The `ctan` set's first source is CTAN's own redirector, then the MIT mirror and the mirrors at Tsinghua, USTC, Aliyun, Tencent, SJTU and Nanjing. Its sources can hold snapshots of TeX Live a day apart, and `tlmgr` checks every package it installs against the signed package database of the one source it reads. | In the lab the eight sources served two `texlive.tlpdb.sha512` a day apart, so no digest names the same bytes on every source, and the signature makes each source safe alone. |
 
 better-sqlite3's prebuilt binary host serves that one package alone, so it
@@ -260,25 +262,27 @@ One method chooses among the sources of every download:
 | Every source is probed at once, and a probe waits at most 5 seconds for an answer. | 5 seconds bounds the wait on a source that never answers. |
 | A probe reads 100 KB to 1 MiB of a real file. It asks for the file's first 1 MiB with a Range request, and the read stops 5 seconds after its first byte, the speed taken over what arrived. | A smaller read times the first packets: over CTAN's eight sources 144 B gave 5 and 6 different winners in two runs of 10, and 1 MiB gave 3, the two fastest of a 16 MiB read among them. The time limit bounds a slow line: eight sources sharing 200 KB/s end in 6 seconds, and 1 MiB from each takes 42. |
 | A probe checks no digest, except an npm registry's. | The download, the pull or the tool checks the bytes it takes, and a probe's file is often another file. |
-| The sources that answered are ranked by the probe's speed, measured from its first byte to its last, and the download starts on the fastest. Two speeds within a tenth of each other go to the earlier first byte. | Speed decides a large download, and the first byte decides between two equal ones. |
+| Each source that answered gets two measures: its speed, from the probe's first byte to its last, and its latency, the time from the request to the probe's first byte. For a set that names `latency_probes`, the `npm` set, the latency is the mean time to the first byte of one request for each of those small documents, made one after another. | A large download waits on speed, and an install of many small files, such as npm's about 2000 fetches, waits on every answer. One small request answers by luck where a few seldom do. |
+| Each measure is scored against the best source's: the speed score is the source's speed over the best speed, and the latency score the best latency over the source's latency. The total is half the one and half the other, and the source with the highest total ranks first; the download, the pull or the tool starts on it. The same rule ranks every list: a set's sources, npm registries, an image's registries, an npm setting's hosts and a `hub` artifact's sources. | iffi's design. In R168 one CloudCLI upgrade took 13.9 minutes on Tencent's npm mirror, which won on one document's speed and answers every request slowly; in R65 the same install took 1870 s there against 95 s on registry.npmjs.org. |
 | While a download has at least 30 seconds left at its speed now, the fetcher measures the other sources every 30 seconds. Each measure is a 1 MiB Range request at the current offset, to every source that has not failed. | A short download ends before a change pays back; 1 MiB per source every 30 seconds costs a few percent of the transfer. |
-| A source whose measure is at least 1.5 times the current source's speed over the last 10 seconds takes over. The download resumes there by a Range request at the current offset, and the next measure comes 30 seconds later. | A short probe measures low against a running transfer, and a smaller gap changes source on noise. |
+| A source takes over when its total is at least 1.5 times the current source's, the totals scored over each measured source's speed and first byte and over the current source's speed in the last 10 seconds and the latency of its last probe or measure. The download resumes there by a Range request at the current offset, and the next measure comes 30 seconds later. | A short probe measures low against a running transfer, and a smaller gap changes source on noise. |
+| An install that a tool runs, npm, pip in a container or `tlmgr`, keeps the source it started on until it ends; the next ranked source is tried only by a new install after one fails. | Each of its thousands of requests goes to the source it was told, and a change in the middle would leave half the files from each. |
 | A source fails when it sends no byte for 20 seconds, answers with an error, or serves a file whose digest differs; the download resumes on the next ranked source by a Range request. A source that did not answer the probe in time has not failed, and the next measure asks it again. | The bytes are the same on every source, and a source slow to answer once can be the fastest later. |
 | A source that answers a Range request with the whole file serves a download from its start alone, and is never moved to while a download runs. | It cannot resume at an offset. |
 | The digest is checked when the last byte arrives. A mismatch drops that source and fetches the file again from the next one. | A source serving other bytes is wrong for this file alone. |
 | When every source fails, the download fails `download_failed {file, sources}`, each source as `{source, reason, detail}`, `reason` being `unreachable`, `timeout`, `stalled`, `digest_mismatch`, `http_<status>` or `pull_failed`, and `detail` the tool's own last line where one exists. | A person reading the failure sees each address and why it failed. |
 | Nothing remembers a past result: each download probes again. | A network changes, and a stored ranking outlives the network it measured. |
-| Every ranking the agent makes writes one line to the agent's log: what it ranked, each source with its speed and the time to its first byte or with its failure's reason, and the source chosen, such as `source set pypi: https://pypi.org/simple 2.1 MB/s first byte 180 ms, https://mirrors.aliyun.com/pypi/simple timeout; chose https://pypi.org/simple`. | A slow install then shows in the log which source it used and what the others measured. |
+| Every ranking the agent makes writes one line to the agent's log: what it ranked, each source with its speed, its latency and its total, or with its failure's reason, and the source chosen, such as `source set pypi: https://pypi.org/simple 2.1 MB/s latency 180 ms total 1.00, https://mirrors.aliyun.com/pypi/simple timeout; chose https://pypi.org/simple`. | A slow install then shows in the log which source it used and what the others measured. |
 
 What is probed differs by what the source serves:
 
 | Source | The probe | What follows |
 | --- | --- | --- |
 | a file | a Range request for its first 1 MiB | the download, with the measures and the moves |
-| a container image | a Range request for the first 1 MiB of its largest layer, which the registry's manifest for the image's digest and the manifest of its first Linux image name | Podman pulls `<source>@<digest>` from the fastest; a pull that fails goes on to the next source. A source whose probe got no answer is pulled from after the ranked ones, in the artifact's order, and only a pull's own failure is listed in `download_failed` |
-| an npm registry | a GET of the package's whole document, whose integrity it checks | npm runs with the fastest as `--registry`; an install that fails runs again with the next |
-| a source set a container lists | a Range request for the first 1 MiB of the set's `probe` file under each source | every variable of the set names the fastest in the container's environment; the container's tools read it, and nothing moves later |
-| a host an npm setting names | a Range request for the first 1 MiB of the setting's `hosts_probe` file under each host | the setting names the fastest host; an install that fails on a native module runs again with the next |
+| a container image | a Range request for the first 1 MiB of its largest layer, which the registry's manifest for the image's digest and the manifest of its first Linux image name | Podman pulls `<source>@<digest>` from the first ranked; a pull that fails goes on to the next source. A source whose probe got no answer is pulled from after the ranked ones, in the artifact's order, and only a pull's own failure is listed in `download_failed` |
+| an npm registry | a GET of the package's whole document, whose integrity it checks, then one GET of each of the `npm` set's `latency_probes` | npm runs with the first ranked as `--registry`; an install that fails runs again with the next |
+| a source set a container lists | a Range request for the first 1 MiB of the set's `probe` file under each source | every variable of the set names the first ranked in the container's environment; the container's tools read it, and nothing moves later |
+| a host an npm setting names | a Range request for the first 1 MiB of the setting's `hosts_probe` file under each host | the setting names the first ranked host; an install that fails on a native module runs again with the next |
 | a version list or `latest.json` | a GET | the fastest valid answer is read |
 
 An image's probe can fail where its pull works, and Podman checks the
@@ -302,6 +306,7 @@ Each list names its probe file once, in the data file that holds the list.
 | --- | --- | --- | --- |
 | `pypi` | `/numpy/` | 1.3 to 2.4 MB | An index page is the one kind of file all four sources serve under `/simple`: pypi.org keeps the packages on another host. This page grows with each release. |
 | `npm` | `/npm/-/npm-10.9.2.tgz` | 2.7 MB | A published version's tarball does not change. |
+| `npm`'s `latency_probes` | `/wrappy`, `/once`, `/inherits` | 7 to 16 KB each | Each is the document of a small package that changes seldom, and every npm registry serves it at that path. |
 | `huggingface` | `/openai-community/gpt2/resolve/607a30d783dfa663caf39e06633721c8d4cfcd7e/tokenizer.json` | 1.4 MB | A file at a commit does not change. | <!-- scan: allow -->
 | `ctan` | `/systems/texlive/tlnet/tlpkg/texlive.tlpdb.xz` | 2.8 MB | The bytes change each day and the path does not: `tlmgr` reads this package database from the repository first. |
 | better-sqlite3's hosts | `/v12.6.2/better-sqlite3-v12.6.2-node-v127-linux-x64.tar.gz` | 1.1 MB | A release's file does not change. |
