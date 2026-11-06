@@ -61,6 +61,7 @@ def test_the_linux_layout_names_the_git_account_and_the_work_root():
     assert "WORK_PATH = /var/lib/gitea\n" in rendered
     assert "[git]" not in rendered
     assert "[windows]" not in rendered
+    assert "SCRIPT_TYPE" not in rendered
 
 
 def test_gitea_s_own_ssh_server_listens_on_loopback_and_clones_name_the_forward():
@@ -85,8 +86,9 @@ def test_a_windows_layout_names_localsystem_its_paths_its_git_and_its_service():
     layout = GiteaLayout(
         run_user="NMXWIN$",
         work_path="C:/ProgramData/Neutrino/agent/state/gitea_data",
-        git_path="C:/Program Files/Git/cmd/git.exe",
+        git_path="C:/ProgramData/Neutrino/agent/state/gitea/git/cmd/git.exe",
         windows_service_name="neutrino_gitea",
+        script_type="sh",
     )
 
     rendered = GiteaConfigRenderer(
@@ -99,8 +101,11 @@ def test_a_windows_layout_names_localsystem_its_paths_its_git_and_its_service():
     assert f"PATH = {data}/data/gitea.db\n" in rendered
     assert f"ROOT_PATH = {data}/log\n" in rendered
     assert "START_SSH_SERVER = true\n" in rendered
+    assert (
+        f"[repository]\nROOT = {data}/data/gitea_repositories\nSCRIPT_TYPE = sh\n"
+    ) in rendered
     assert rendered.endswith(
-        "\n[git]\nPATH = C:/Program Files/Git/cmd/git.exe\n"
+        "\n[git]\nPATH = C:/ProgramData/Neutrino/agent/state/gitea/git/cmd/git.exe\n"
         "\n[windows]\nSERVICE_NAME = neutrino_gitea\n"
     )
 

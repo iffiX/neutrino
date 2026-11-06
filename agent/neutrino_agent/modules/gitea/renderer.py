@@ -35,12 +35,15 @@ class GiteaLayout:
         git_path: The git it runs; empty leaves git to ``PATH``.
         windows_service_name: The Windows service it runs as; empty
             elsewhere.
+        script_type: The shell Gitea writes its hooks for; empty leaves
+            Gitea's own, ``bash``.
     """
 
     run_user: str = GITEA_USER
     work_path: str = GITEA_DIR
     git_path: str = ""
     windows_service_name: str = ""
+    script_type: str = ""
 
 
 class GiteaConfigRenderer:
@@ -80,6 +83,9 @@ class GiteaConfigRenderer:
         layout = self._layout
         work = layout.work_path
         ssh_port = config.ssh_port or self._ssh_listen_port
+        script_type = (
+            f"SCRIPT_TYPE = {layout.script_type}\n" if layout.script_type else ""
+        )
         extra = ""
         if layout.git_path:
             extra += f"\n[git]\nPATH = {layout.git_path}\n"
@@ -115,7 +121,7 @@ PATH = {work}/data/gitea.db
 
 [repository]
 ROOT = {work}/data/gitea_repositories
-
+{script_type}
 [security]
 INSTALL_LOCK = true
 SECRET_KEY = {secrets.get("SECRET_KEY", "")}

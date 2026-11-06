@@ -9,7 +9,9 @@ the git's directory first on its ``PATH``; an apply that starts, keeps or
 restarts the job, enabled before it loads; a stop that disables the job
 and waits until launchd lets go; the account made by its own step, never by
 the install; the CLI run as
-the account; and an uninstall that keeps the data and the account.
+the account; Apple's Command Line Tools installed with ``softwareupdate`` at
+the newest label it lists; and an uninstall that keeps the data and the
+account.
 """
 
 import os
@@ -377,6 +379,76 @@ def test_an_uninstall_keeps_the_data_and_the_account(applier, tools, binary, tmp
     assert tools.ran("dscl", ".", "-delete") == []
     assert tools.ran("sysadminctl", "-deleteUser") == []
     assert applier.is_active() is False
+
+
+LISTED = """Software Update Tool
+
+Finding available software
+Software Update found the following new or updated software:
+* Label: Command Line Tools for Xcode-16.2
+\tTitle: Command Line Tools for Xcode, Version: 16.2, Size: 739253KiB, Recommended: YES,
+* Label: Command Line Tools for Xcode-16.4
+\tTitle: Command Line Tools for Xcode, Version: 16.4, Size: 751044KiB, Recommended: YES,
+* Label: macOS Sequoia 15.7-24G222
+\tTitle: macOS Sequoia 15.7, Version: 15.7, Size: 9GiB, Recommended: YES, Action: restart,
+"""
+
+
+def test_the_newest_command_line_tools_label_is_chosen():
+    from neutrino_agent.modules.gitea.darwin_applier import command_line_tools_label
+
+    assert command_line_tools_label(LISTED) == "Command Line Tools for Xcode-16.4"
+    assert command_line_tools_label(
+        "   * Command Line Tools (macOS Mojave version 10.14) for Xcode-10.3\n"
+    ) == ("Command Line Tools (macOS Mojave version 10.14) for Xcode-10.3")
+    assert command_line_tools_label("No new software available.\n") == ""
+
+
+def test_the_command_line_tools_are_installed_by_softwareupdate(
+    applier, tools, tmp_path, monkeypatch
+):
+    placeholder = tmp_path / "in-progress"
+    monkeypatch.setattr(
+        "neutrino_agent.modules.gitea.darwin_applier.GITEA_DARWIN_CLT_PLACEHOLDER",
+        str(placeholder),
+    )
+    seen: list = []
+    original = tools.__call__
+
+    def answering(command, **kwargs):
+        if command[:2] == ["softwareupdate", "--list"]:
+            seen.append(placeholder.exists())
+            tools.calls.append(list(command))
+            return CommandResult(list(command), 0, LISTED, "")
+        return original(command, **kwargs)
+
+    applier._run = answering
+    lines: list = []
+
+    applier.install_git(log=lines.append)
+
+    assert seen == [True]
+    assert tools.ran("softwareupdate", "--install") == [
+        ["softwareupdate", "--install", "Command Line Tools for Xcode-16.4"]
+    ]
+    assert not placeholder.exists()
+    assert lines == ["gitea: installing Command Line Tools for Xcode-16.4"]
+
+
+def test_no_command_line_tools_listed_is_gitea_git_missing(
+    applier, tools, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(
+        "neutrino_agent.modules.gitea.darwin_applier.GITEA_DARWIN_CLT_PLACEHOLDER",
+        str(tmp_path / "in-progress"),
+    )
+
+    with pytest.raises(ModuleApplyError) as refused:
+        applier.install_git(log=lambda line: None)
+
+    assert refused.value.code == "gitea_git_missing"
+    assert tools.ran("softwareupdate", "--install") == []
+    assert not (tmp_path / "in-progress").exists()
 
 
 def test_the_port_and_the_root_url_are_read_from_the_installed_app_ini(applier):

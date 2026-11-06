@@ -1,9 +1,12 @@
 """The git server as a module: binary, configuration, verbs, details.
 
 The binary is a hub-cached release that comes down a package stream. On
-Linux git comes from the distribution; on macOS and Windows it is the
-machine's own, and an install or an apply refuses ``gitea_git_missing``
-while there is none. What makes the binary this hub's git server, the
+Linux git comes from the distribution; on Windows it is the module's own
+MinGit, an archive beside the binary; on macOS it is the machine's, and an
+install with none first installs Apple's Command Line Tools in a step of
+its own, ``command_line_tools``. A Gitea on macOS or Windows with no git
+owes its install, and an install or an apply with none refuses
+``gitea_git_missing``. What makes the binary this hub's git server, the
 rendered ``app.ini`` and the first administrator, is applied here through
 the system's applier: a systemd unit on Linux, a LaunchDaemon of a hidden
 account on macOS, a LocalSystem service on Windows. Gitea's own SSH server
@@ -26,7 +29,10 @@ import subprocess
 import time
 
 from neutrino_agent.constants import (
+    AGENT_ARTIFACT_KIND_BINARY,
+    AGENT_MODULE_STATE_INSTALL_FAILED,
     AGENT_STEP_ACCOUNT,
+    AGENT_STEP_ARTIFACT,
     AGENT_STEP_CONFIGURE,
     AGENT_STEP_UNINSTALL,
     AGENT_WANT_STOPPED,
@@ -60,6 +66,7 @@ from neutrino_agent.modules.gitea.constants import (
     GITEA_SSH_BASE_PORT,
     GITEA_START_POLL_S,
     GITEA_START_WAIT_S,
+    GITEA_STEP_COMMAND_LINE_TOOLS,
     GITEA_SURVEY_TTL_S,
     GITEA_UNIT,
     GITEA_USER,
@@ -74,7 +81,10 @@ from neutrino_agent.modules.shared.loopback_port import (
 from neutrino_agent.modules.shared.loopback_port import is_port_free, pick_port
 from neutrino_agent.modules.shared.package import program_stamp
 from neutrino_agent.modules.shared.record_store import InstanceRecordStore
-from neutrino_agent.modules.shared.step_locks import SYSTEM_ACCOUNTS_LOCKS
+from neutrino_agent.modules.shared.step_locks import (
+    PACKAGE_MANAGER_LOCKS,
+    SYSTEM_ACCOUNTS_LOCKS,
+)
 from neutrino_agent.modules.shared.subprocess_run import (
     command_detail,
     unit_state,
@@ -90,6 +100,7 @@ class GiteaLinuxApplier:
     """
 
     is_git_required = False
+    has_git_step = False
     account = GITEA_USER
 
     def __init__(self, *, platform=None):
@@ -292,23 +303,69 @@ class GiteaModuleRunner(ModuleRunner):
         return os.path.isfile(self._applier.binary_path)
 
     def install_artifact(self, recipe: dict, artifact: dict, path: str) -> None:
-        """Put the release binary the hub handed down in place, with its user and its unit.
+        """Put one artifact the hub handed down in place: the release binary with its unit, MinGit as an archive.
 
         Args:
             recipe: The module's recipe.
-            artifact: The ``binary`` artifact.
-            path: The release binary on local disk.
+            artifact: The ``binary`` artifact, or Windows' MinGit ``zip``.
+            path: The file on local disk.
 
         Raises:
             ModuleApplyError: ``gitea_git_missing`` on macOS or Windows with
                 no git; ``user_create_failed`` when macOS will not make the
-                server's account.
+                server's account; ``install_failed`` for an archive that
+                cannot be unpacked.
             subprocess.CalledProcessError: If a setup step refuses.
             OSError: If a file cannot be written.
         """
+        if str(artifact.get("kind", "") or "") != AGENT_ARTIFACT_KIND_BINARY:
+            super().install_artifact(recipe, artifact, path)
+            return
         self._git_path()
         self._applier.install(path)
         self._survey = None
+
+    def is_install_owed(self, recipe: dict) -> bool:
+        """Whether a Gitea on macOS or Windows has no git, which its install brings.
+
+        Args:
+            recipe: The module's recipe.
+
+        Returns:
+            True where the system needs a git of the module's and none is
+            found.
+        """
+        return self._applier.is_git_required and not self._applier.find_git()
+
+    def install_steps(self, recipe: dict, steps: list) -> list:
+        """The install's steps, with ``command_line_tools`` before the first artifact on a Mac with no git.
+
+        Args:
+            recipe: The module's recipe.
+            steps: The steps the method plans.
+
+        Returns:
+            The steps; on macOS with no git found the Command Line Tools
+            step first, under ``package_manager``.
+        """
+        if not self._applier.has_git_step or self._applier.find_git():
+            return steps
+        step = ModuleStep(
+            name=GITEA_STEP_COMMAND_LINE_TOOLS,
+            run=self._run_git_step,
+            locks=PACKAGE_MANAGER_LOCKS,
+            failed_state=AGENT_MODULE_STATE_INSTALL_FAILED,
+            error_code=GITEA_CODE_GIT_MISSING,
+        )
+        at = next(
+            (
+                index
+                for index, held in enumerate(steps)
+                if held.name == AGENT_STEP_ARTIFACT
+            ),
+            0,
+        )
+        return [*steps[:at], step, *steps[at:]]
 
     def binary_path(self, recipe: dict, artifact: dict) -> str:
         """Where the release binary is kept, which a version switch replaces.
@@ -565,6 +622,17 @@ class GiteaModuleRunner(ModuleRunner):
     def _run_apply_stopped(self, config: dict, context) -> None:
         """The ``configure`` step under ``stopped``."""
         self.apply_stopped(config)
+
+    def _run_git_step(self, context) -> None:
+        """The ``command_line_tools`` step: the system's git installed, then looked for.
+
+        Raises:
+            ModuleApplyError: ``gitea_git_missing`` when no git is found
+                after it.
+        """
+        self._applier.install_git(log=self._log)
+        if not self._applier.find_git():
+            raise ModuleApplyError(GITEA_CODE_GIT_MISSING)
 
     def _run_account(self, context) -> None:
         """The ``account`` step: the server's account made when it is missing, and its directories."""

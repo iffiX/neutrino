@@ -668,6 +668,139 @@ def test_the_git_found_is_named_in_app_ini_with_gitea_s_own_ssh(tmp_path):
     assert applier.installed == ["/tmp/gitea"]
 
 
+class WindowsPlatform(AgentPlatform):
+    os_name = "windows"
+
+
+MINGIT = {
+    "name": "git",
+    "kind": "zip",
+    "directory": "git",
+    "digest": "sha256:" + "e3" * 32,
+}
+
+
+def test_the_mingit_zip_is_unpacked_as_an_archive_and_the_binary_placed(
+    tmp_path, monkeypatch
+):
+    applier = SystemApplier(tmp_path)
+    runner = GiteaModuleRunner(
+        platform=WindowsPlatform(), log=lambda m: None, applier=applier
+    )
+    unpacked: list = []
+
+    def unpack(self, recipe, artifact, path):
+        unpacked.append(artifact["name"])
+        applier.git = "C:\\state\\gitea\\git\\cmd\\git.exe"
+
+    monkeypatch.setattr(runner_module.ModuleRunner, "install_artifact", unpack)
+
+    runner.install_artifact({}, MINGIT, "/tmp/mingit.zip")
+    runner.install_artifact({}, BINARY, "/tmp/gitea.exe")
+
+    assert unpacked == ["git"]
+    assert applier.installed == ["/tmp/gitea.exe"]
+
+
+@pytest.mark.parametrize("git, is_owed", [("", True), ("/x/git", False)])
+def test_a_system_gitea_with_no_git_owes_its_install(tmp_path, git, is_owed):
+    runner = GiteaModuleRunner(
+        platform=WindowsPlatform(),
+        log=lambda m: None,
+        applier=SystemApplier(tmp_path, git=git),
+    )
+
+    assert runner.is_install_owed({}) is is_owed
+
+
+def test_a_linux_gitea_owes_no_install_for_git(runner):
+    assert runner.is_install_owed({}) is False
+
+
+def install_plan() -> list:
+    return [
+        ModuleStep(name="artifact", params={"name": "gitea"}, run=lambda c: None),
+        ModuleStep(name="verify", run=lambda c: None),
+    ]
+
+
+class MacApplier(SystemApplier):
+    """The macOS applier: the Command Line Tools step brings git."""
+
+    has_git_step = True
+
+    def __init__(self, tmp_path, git="", brought=""):
+        super().__init__(tmp_path, git=git)
+        self.brought = brought
+        self.git_steps = 0
+
+    def install_git(self, *, log):
+        self.git_steps += 1
+        self.git = self.brought
+
+
+def test_a_mac_with_no_git_installs_the_command_line_tools_before_the_binary(
+    tmp_path,
+):
+    applier = MacApplier(
+        tmp_path, brought="/Library/Developer/CommandLineTools/usr/bin/git"
+    )
+    runner = GiteaModuleRunner(
+        platform=MacPlatform(), log=lambda m: None, applier=applier
+    )
+
+    steps = runner.install_steps({}, install_plan())
+
+    assert [step.name for step in steps] == ["command_line_tools", "artifact", "verify"]
+    assert steps[0].locks == (("package_manager", "alone"),)
+    assert steps[0].failed_state == "install_failed"
+    steps[0].run(None)
+    assert applier.git_steps == 1
+
+
+def test_a_mac_with_git_plans_no_command_line_tools(tmp_path):
+    runner = GiteaModuleRunner(
+        platform=MacPlatform(),
+        log=lambda m: None,
+        applier=MacApplier(tmp_path, git="/opt/homebrew/bin/git"),
+    )
+
+    assert [step.name for step in runner.install_steps({}, install_plan())] == [
+        "artifact",
+        "verify",
+    ]
+
+
+def test_the_command_line_tools_step_with_no_git_after_it_is_gitea_git_missing(
+    tmp_path,
+):
+    runner = GiteaModuleRunner(
+        platform=MacPlatform(), log=lambda m: None, applier=MacApplier(tmp_path)
+    )
+    step, *_rest = runner.install_steps({}, install_plan())
+
+    with pytest.raises(ModuleApplyError) as refused:
+        step.run(None)
+
+    assert refused.value.code == "gitea_git_missing"
+
+
+@pytest.mark.parametrize("os_name", ["linux", "windows"])
+def test_no_other_system_plans_the_command_line_tools(os_name, tmp_path):
+    class Platform(AgentPlatform):
+        pass
+
+    Platform.os_name = os_name
+    platform = Platform()
+    platform.agent_var_dir = lambda: str(tmp_path)
+    runner = GiteaModuleRunner(platform=platform, log=lambda m: None)
+
+    assert [step.name for step in runner.install_steps({}, install_plan())] == [
+        "artifact",
+        "verify",
+    ]
+
+
 def test_the_journal_on_macos_and_windows_is_the_servers_own_log(tmp_path):
     applier = SystemApplier(tmp_path, git="/opt/homebrew/bin/git")
     applier.log.write_text(

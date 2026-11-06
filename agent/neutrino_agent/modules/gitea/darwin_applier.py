@@ -11,10 +11,12 @@ before it counts, since ``sysadminctl`` can refuse and still exit 0. The
 LaunchDaemon ``com.neutrino.gitea`` runs the server as that account. The
 gitea CLI runs as the account too, since Gitea refuses root. Git is the one
 the developer tools, Xcode or Homebrew put on the machine, looked for by
-its own path; ``/usr/bin/git`` is never run.
+its own path; ``/usr/bin/git`` is never run. A Mac with none gets Apple's
+Command Line Tools from ``softwareupdate``, as Homebrew's installer gets
+them.
 
-Not pure: writes under ``/Library``, drives ``sysadminctl``, ``dscl`` and
-launchd.
+Not pure: writes under ``/Library``, drives ``sysadminctl``, ``dscl``,
+``softwareupdate`` and launchd.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -40,16 +42,21 @@ from neutrino_agent.modules.gitea.applier import (
 )
 from neutrino_agent.modules.gitea.constants import (
     GITEA_BINARY_DIR_NAME,
+    GITEA_CODE_GIT_MISSING,
     GITEA_CONF_PARTS,
     GITEA_DARWIN_ACCOUNT,
     GITEA_DARWIN_ACCOUNT_FULL_NAME,
     GITEA_DARWIN_ACCOUNT_KEYS,
+    GITEA_DARWIN_CLT_PLACEHOLDER,
+    GITEA_DARWIN_CLT_WORDS,
     GITEA_DARWIN_GIT_PATHS,
     GITEA_DARWIN_LABEL,
     GITEA_DARWIN_LAUNCHD_DIR,
     GITEA_DARWIN_OUTPUT_PATH,
     GITEA_DARWIN_PATH,
     GITEA_DARWIN_SHELL,
+    GITEA_DARWIN_SOFTWAREUPDATE_INSTALL_TIMEOUT_S,
+    GITEA_DARWIN_SOFTWAREUPDATE_LIST_TIMEOUT_S,
     GITEA_DARWIN_UNLOAD_POLL_S,
     GITEA_DARWIN_UNLOAD_TIMEOUT_S,
     GITEA_DATA_DIR_NAME,
@@ -109,6 +116,33 @@ def render_plist(*, binary: str, conf: str, data_dir: str, git_dir: str) -> byte
     )
 
 
+def command_line_tools_label(listed: str) -> str:
+    """The newest Command Line Tools label ``softwareupdate --list`` names. Pure.
+
+    Args:
+        listed: What ``softwareupdate --list`` printed.
+
+    Returns:
+        The label, the one whose numbers sort last; empty when it names none.
+    """
+    labels = []
+    for line in listed.splitlines():
+        head, star, rest = line.partition("*")
+        if not star or head.strip():
+            continue
+        label = rest.strip()
+        if label.startswith("Label:"):
+            label = label[len("Label:") :].strip()
+        if GITEA_DARWIN_CLT_WORDS in label:
+            labels.append(label)
+    return max(labels, key=_label_numbers) if labels else ""
+
+
+def _label_numbers(label: str) -> tuple:
+    """A label's numbers in order, as ``sort -V`` compares them."""
+    return tuple(int(number) for number in re.findall(r"\d+", label))
+
+
 def _account_entry(account: str) -> tuple:
     """One account's uid and gid.
 
@@ -148,6 +182,7 @@ class GiteaDarwinApplier:
     """
 
     is_git_required = True
+    has_git_step = True
     account = GITEA_DARWIN_ACCOUNT
 
     def __init__(
@@ -212,6 +247,42 @@ class GiteaDarwinApplier:
             if self._is_executable(path):
                 return path
         return ""
+
+    def install_git(self, *, log) -> None:
+        """Install Apple's Command Line Tools with ``softwareupdate``.
+
+        The placeholder file makes ``softwareupdate`` list the tools, and
+        the newest label it lists is installed.
+
+        Args:
+            log: Called with the line naming the label installed.
+
+        Raises:
+            ModuleApplyError: ``gitea_git_missing`` when the listing names
+                no Command Line Tools.
+            subprocess.CalledProcessError: When ``softwareupdate`` refuses
+                the install.
+            OSError: When the placeholder cannot be written.
+        """
+        with open(GITEA_DARWIN_CLT_PLACEHOLDER, "a", encoding="utf-8"):
+            pass
+        try:
+            listed = self._run(
+                ["softwareupdate", "--list"],
+                is_checked=False,
+                timeout_s=GITEA_DARWIN_SOFTWAREUPDATE_LIST_TIMEOUT_S,
+            )
+            label = command_line_tools_label(listed.stdout + listed.stderr)
+            if not label:
+                raise ModuleApplyError(GITEA_CODE_GIT_MISSING)
+            log(f"gitea: installing {label}")
+            self._run(
+                ["softwareupdate", "--install", label],
+                timeout_s=GITEA_DARWIN_SOFTWAREUPDATE_INSTALL_TIMEOUT_S,
+            )
+        finally:
+            with contextlib.suppress(OSError):
+                os.unlink(GITEA_DARWIN_CLT_PLACEHOLDER)
 
     def layout(self, git_path: str) -> GiteaLayout:
         """Where the server runs on this Mac.

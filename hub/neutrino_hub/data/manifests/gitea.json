@@ -1,5 +1,5 @@
 {
-  "_comment": "The git server: the release binary its publisher builds, the same version for every system. On Linux the system's package manager installs git beside it; on macOS and Windows the module installs no git and refuses gitea_git_missing until the machine has one. The Windows build is the one that runs git, not the gogit build. Every digest is the one dl.gitea.com publishes in the release's .sha256 file, and dl.gitea.com and the GitHub release serve the same files.",
+  "_comment": "The git server: the release binary its publisher builds, the same version for every system. On Linux the system's package manager installs git beside it. On Windows the entry names Git for Windows' MinGit first, its zip for programs that run git themselves, pinned for every version of Gitea, its digest the one GitHub gives the release asset, and npmmirror serves the same file; Gitea runs it and no PATH names it. On macOS the agent installs Apple's Command Line Tools when the Mac has no git. The Windows build is the one that runs git, not the gogit build. Every binary's digest is the one dl.gitea.com publishes in the release's .sha256 file, and dl.gitea.com and the GitHub release serve the same files.",
   "name": "gitea",
   "title": "Gitea",
   "description": "A private git server with its own web UI",
@@ -110,6 +110,14 @@
           "version": "1.27.3",
           "releases": [{"kind": "github", "sources": ["https://api.github.com"], "repository": "go-gitea/gitea", "tag": "v{version}"}],
           "artifacts": [
+            {
+              "name": "git",
+              "kind": "zip",
+              "directory": "git",
+              "file": "MinGit-2.56.0.4-64-bit.zip",
+              "digest": "sha256:e3bf78351fe777fba47ddee5950082f8a98bb0f02604fdc7ba3ee2cb68ffa877", "_digest_scan": "scan: allow",
+              "sources": ["https://github.com/git-for-windows/git/releases/download/v2.56.0.windows.4/{file}", "https://registry.npmmirror.com/-/binary/git-for-windows/v2.56.0.windows.4/{file}"], "_sources_scan": "scan: allow"
+            },
             {
               "name": "gitea",
               "kind": "binary",

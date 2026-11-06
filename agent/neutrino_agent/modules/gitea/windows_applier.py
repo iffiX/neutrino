@@ -6,8 +6,9 @@ state root's own grants keep to SYSTEM and the administrators. The service
 ``neutrino_gitea`` runs the server as LocalSystem, made with ``sc.exe`` as
 Gitea's own page for a Windows service describes, so ``RUN_USER`` is the
 name LocalSystem goes by, ``<computer name>$``. The agent is LocalSystem
-too, so it runs the gitea CLI itself. Git is Git for Windows, found on the
-machine's ``Path`` as the service reads it, not on the installing account's.
+too, so it runs the gitea CLI itself. Git is the module's own MinGit,
+unpacked under the module's directory and named in ``app.ini`` alone, and
+Gitea writes its hooks for MinGit's ``sh``.
 
 Not pure: writes under ``%ProgramData%``, drives ``sc.exe``.
 """
@@ -36,8 +37,8 @@ from neutrino_agent.modules.gitea.constants import (
     GITEA_LOG_PARTS,
     GITEA_VERSION_PREFIX,
     GITEA_WINDOWS_DISPLAY_NAME,
-    GITEA_WINDOWS_ENVIRONMENT_KEY,
-    GITEA_WINDOWS_GIT_FALLBACK,
+    GITEA_WINDOWS_GIT_PARTS,
+    GITEA_WINDOWS_SCRIPT_TYPE,
     GITEA_WINDOWS_SERVICE,
     GITEA_WINDOWS_STOP_POLL_S,
     GITEA_WINDOWS_REMOVE_RETRY_S,
@@ -49,11 +50,6 @@ from neutrino_agent.modules.shared.log_tail import file_tail
 from neutrino_agent.modules.shared.package import place_binary
 from neutrino_agent.modules.shared.subprocess_run import run as run_command
 from neutrino_agent.modules.shared.account_service import write_if_changed
-
-try:
-    import winreg
-except ImportError:  # Only Windows has the registry.
-    winreg = None
 
 # What ``sc.exe`` exits with for a service that does not exist, and for a
 # start of one that already runs.
@@ -67,24 +63,6 @@ SC_FAILURE_ACTIONS = (
     "actions=",
     "restart/5000/restart/5000/restart/5000",
 )
-
-
-def machine_path() -> str:
-    """The machine's own ``Path``, as a service started at boot reads it.
-
-    Returns:
-        The value with nothing expanded; empty when it cannot be read.
-    """
-    if winreg is None:
-        return ""
-    try:
-        with winreg.OpenKey(
-            winreg.HKEY_LOCAL_MACHINE, GITEA_WINDOWS_ENVIRONMENT_KEY
-        ) as key:
-            value, _kind = winreg.QueryValueEx(key, "Path")
-    except OSError:
-        return ""
-    return str(value or "")
 
 
 def run_user() -> str:
@@ -110,6 +88,7 @@ class GiteaWindowsApplier:
     """
 
     is_git_required = True
+    has_git_step = False
     account = ""
 
     def __init__(
@@ -117,9 +96,7 @@ class GiteaWindowsApplier:
         *,
         state_dir: str,
         run=None,
-        read_machine_path=None,
         is_file=None,
-        expand=ntpath.expandvars,
         join=ntpath.join,
         user: "str | None" = None,
         sleep=time.sleep,
@@ -129,11 +106,8 @@ class GiteaWindowsApplier:
             state_dir: The agent's state root.
             run: Runs one command as :func:`subprocess_run.run` does; None
                 runs it.
-            read_machine_path: Returns the machine's ``Path``; None reads the
-                registry.
             is_file: Called with a path; whether a file is there. None asks
                 the file system.
-            expand: Expands ``%NAME%`` in a path.
             join: Joins path parts, Windows' way unless told otherwise.
             user: The name the server runs as; None reads it from the
                 agent's own environment.
@@ -145,30 +119,19 @@ class GiteaWindowsApplier:
         self.binary_path = join(self.module_dir, "gitea.exe")
         self.conf_path = join(self.data_dir, *GITEA_CONF_PARTS)
         self._run = run if run is not None else run_command
-        self._read_machine_path = (
-            read_machine_path if read_machine_path is not None else machine_path
-        )
         self._is_file = is_file if is_file is not None else os.path.isfile
-        self._expand = expand
         self._user = user
         self._sleep = sleep
 
     def find_git(self) -> str:
-        """Git for Windows, as the service will find it.
+        """The module's own MinGit's git.
 
         Returns:
-            The first ``git.exe`` on the machine's ``Path``, else the one
-            under ``%ProgramFiles%\\Git\\cmd``; empty when there is none.
+            ``git\\cmd\\git.exe`` under the module's directory; empty
+            while the MinGit artifact is not unpacked there.
         """
-        for entry in self._read_machine_path().split(";"):
-            entry = self._expand(entry.strip().strip('"'))
-            if not entry:
-                continue
-            candidate = ntpath.join(entry, "git.exe")
-            if self._is_file(candidate):
-                return candidate
-        fallback = self._expand(GITEA_WINDOWS_GIT_FALLBACK)
-        return fallback if self._is_file(fallback) else ""
+        path = self._join(self.module_dir, *GITEA_WINDOWS_GIT_PARTS)
+        return path if self._is_file(path) else ""
 
     def layout(self, git_path: str) -> GiteaLayout:
         """Where the server runs on this machine.
@@ -178,13 +141,15 @@ class GiteaWindowsApplier:
 
         Returns:
             LocalSystem's name, the data directory and that git with ``/``
-            between the parts, and the service's name.
+            between the parts, the service's name, and MinGit's ``sh`` for
+            the hooks.
         """
         return GiteaLayout(
             run_user=self._user if self._user is not None else run_user(),
             work_path=self.data_dir.replace("\\", "/"),
             git_path=git_path.replace("\\", "/"),
             windows_service_name=GITEA_WINDOWS_SERVICE,
+            script_type=GITEA_WINDOWS_SCRIPT_TYPE,
         )
 
     def install(self, binary_path: str) -> None:
@@ -236,7 +201,7 @@ class GiteaWindowsApplier:
         return False
 
     def uninstall(self) -> None:
-        """Stop and delete the service, the binary and ``app.ini``.
+        """Stop and delete the service, the binary, MinGit and ``app.ini``.
 
         The data directory stays.
         """

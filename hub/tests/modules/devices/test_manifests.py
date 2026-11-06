@@ -39,6 +39,11 @@ from neutrino_hub.modules.devices.manifests import (
 )
 
 GITEA_VERSION = "1.27.3"
+# Git for Windows' MinGit for 64-bit Windows, which Gitea runs as its git on
+# Windows: the release, the file, and the digest GitHub gives the asset.
+MINGIT_RELEASE = "v2.56.0.windows.4"
+MINGIT_FILE = "MinGit-2.56.0.4-64-bit.zip"
+MINGIT_DIGEST = "sha256:e3bf78351fe777fba47ddee5950082f8a98bb0f02604fdc7ba3ee2cb68ffa877"  # scan: allow
 # The checksums dl.gitea.com publishes beside each release binary, in its
 # own .sha256 files. Each platform key to the file's name after the version,
 # and its digest.
@@ -578,7 +583,7 @@ def test_gitea_pins_the_release_binary_and_its_published_digest_per_machine():
                 "tag": "v{version}",
             }
         ]
-        (artifact,) = entry_artifacts(manifest, entry)
+        *_mingit, artifact = entry_artifacts(manifest, entry)
         assert artifact["kind"] == "binary" and "directory" not in artifact
         assert artifact["digest"] == f"sha256:{digest}"
         file = f"gitea-{GITEA_VERSION}-{asset}"
@@ -597,6 +602,34 @@ def test_gitea_pins_the_release_binary_and_its_published_digest_per_machine():
     assert entry_params(manifest["platforms"]["darwin-arm64"])["verify"] == (
         '"/Library/Application Support/Neutrino/agent/state/gitea/gitea" --version'
     )
+
+
+def test_gitea_on_windows_brings_mingit_before_its_binary():
+    manifest = load_module_manifests()["gitea"]
+
+    for key, entry in manifest["platforms"].items():
+        names = [artifact["name"] for artifact in entry_artifacts(manifest, entry)]
+        assert names == (["git", "gitea"] if key == "windows-amd64" else ["gitea"])
+    mingit, _binary = entry_artifacts(manifest, manifest["platforms"]["windows-amd64"])
+    assert mingit == {
+        "name": "git",
+        "kind": "zip",
+        "directory": "git",
+        "file": MINGIT_FILE,
+        "digest": MINGIT_DIGEST,
+        "sources": [
+            "https://github.com/git-for-windows/git/releases/download/"
+            f"{MINGIT_RELEASE}/{{file}}",
+            "https://registry.npmmirror.com/-/binary/git-for-windows/"
+            f"{MINGIT_RELEASE}/{{file}}",
+        ],
+    }
+    assert artifact_sources(mingit, "28.0.0") == [
+        "https://github.com/git-for-windows/git/releases/download/"
+        f"{MINGIT_RELEASE}/{MINGIT_FILE}",
+        "https://registry.npmmirror.com/-/binary/git-for-windows/"
+        f"{MINGIT_RELEASE}/{MINGIT_FILE}",
+    ]
 
 
 def test_the_modules_whose_data_moves_forward_only_are_flagged():

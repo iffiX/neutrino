@@ -428,7 +428,7 @@ VSCODE_ENTRY = {
 }
 VSCODE_MANIFEST = {"name": "vs", "platforms": {"linux": VSCODE_ENTRY}}
 # The artifacts that keep their own digest for every version of their module.
-PINNED_ARTIFACTS = ("node", "wsl", "mongo", "redis")
+PINNED_ARTIFACTS = ("node", "wsl", "mongo", "redis", "git")
 
 
 class FakeDocuments:

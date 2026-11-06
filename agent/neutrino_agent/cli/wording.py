@@ -161,8 +161,8 @@ CLI_CODE_WORDS = {
     "samba_domain_member": "Samba on this machine is a domain member, which the module's local users cannot sign in to",
     "user_name_taken": "an account named {user} exists that this module did not make",
     "gitea_git_missing": (
-        "Gitea needs git on this machine: the developer tools or Homebrew's "
-        "git on a Mac, Git for Windows on Windows"
+        "Gitea found no git after Apple's Command Line Tools were installed: "
+        "install the developer tools or Homebrew's git"
     ),
     "user_create_failed": "the system would not make the account {user}: {detail}",
     "user_record_unusable": (

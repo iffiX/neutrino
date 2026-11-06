@@ -1,9 +1,9 @@
 """The git server on Windows, with ``sc.exe``, the registry and the file
 system faked.
 
-What these pin: Git for Windows found on the machine's ``Path`` as the
-service reads it, and under ``%ProgramFiles%\\Git\\cmd`` when the ``Path``
-names none; the layout's ``RUN_USER``, forward slashes and service name; the
+What these pin: the module's own MinGit as the one git, never a git on the
+machine's ``Path``; the layout's ``RUN_USER``, forward slashes, service name
+and ``sh`` as the hooks' shell; the
 service made with ``sc.exe`` as LocalSystem, started at boot and again after
 a failure, its binary path quoted; a running server stopped before its
 binary is replaced; an apply that starts, keeps or restarts it, its start
@@ -79,45 +79,42 @@ def windows_files(files: set):
     return lambda path: path in files
 
 
-def make(sc, tmp_path, *, machine_path="", files=None, state=STATE):
+def make(sc, tmp_path, *, files=None, state=STATE):
     return GiteaWindowsApplier(
         state_dir=state,
         run=sc,
-        read_machine_path=lambda: machine_path,
         is_file=windows_files(files or set()),
-        expand=lambda text: text.replace("%ProgramFiles%", "C:\\Program Files"),
         join=ntpath.join if state == STATE else os.path.join,
         user="NMXWIN$",
         sleep=lambda seconds: None,
     )
 
 
-def test_git_is_found_on_the_machines_path_as_the_service_reads_it(sc, tmp_path):
-    applier = make(
-        sc,
-        tmp_path,
-        machine_path="C:\\Windows\\system32;%ProgramFiles%\\Git\\cmd;C:\\Tools",
-        files={"C:\\Program Files\\Git\\cmd\\git.exe", "C:\\Tools\\git.exe"},
-    )
-
-    assert applier.find_git() == "C:\\Program Files\\Git\\cmd\\git.exe"
+OWN_GIT = STATE + "\\gitea\\git\\cmd\\git.exe"
 
 
-def test_git_is_looked_for_where_git_for_windows_installs_when_the_path_has_none(
-    sc, tmp_path
-):
-    fallback = "C:\\Program Files\\Git\\cmd\\git.exe"
-    assert make(sc, tmp_path, files={fallback}).find_git() == fallback
-    assert make(sc, tmp_path).find_git() == ""
+def test_git_is_the_module_s_own_mingit(sc, tmp_path):
+    applier = make(sc, tmp_path, files={OWN_GIT})
+
+    assert applier.find_git() == OWN_GIT
+
+
+def test_a_git_of_the_machine_s_is_never_taken(sc, tmp_path):
+    machine_git = "C:\\Program Files\\Git\\cmd\\git.exe"
+
+    assert make(sc, tmp_path, files={machine_git}).find_git() == ""
 
 
 def test_the_layout_runs_as_localsystem_with_forward_slashes(sc, tmp_path):
-    layout = make(sc, tmp_path).layout("C:\\Program Files\\Git\\cmd\\git.exe")
+    layout = make(sc, tmp_path).layout(OWN_GIT)
 
     assert layout.run_user == "NMXWIN$"
     assert layout.work_path == "C:/ProgramData/Neutrino/agent/state/gitea_data"
-    assert layout.git_path == "C:/Program Files/Git/cmd/git.exe"
+    assert layout.git_path == (
+        "C:/ProgramData/Neutrino/agent/state/gitea/git/cmd/git.exe"
+    )
     assert layout.windows_service_name == "neutrino_gitea"
+    assert layout.script_type == "sh"
 
 
 @pytest.fixture

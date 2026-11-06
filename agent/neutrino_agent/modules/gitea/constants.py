@@ -47,8 +47,12 @@ GITEA_FAILURE_LINES = 50
 GITEA_FAILURE_LEVELS = (" [E] ", " [F] ")
 
 # The refusal of an install or an apply on macOS or Windows while the
-# machine has no git the server can run.
+# machine has no git the server can run: on macOS the failure of the step
+# that installs Apple's Command Line Tools.
 GITEA_CODE_GIT_MISSING = "gitea_git_missing"
+# The macOS install's step that installs Apple's Command Line Tools while the
+# Mac has no git.
+GITEA_STEP_COMMAND_LINE_TOOLS = "command_line_tools"
 
 # macOS and Windows: the binary in the module's own directory under the
 # state root, and the server's data, app.ini included, in a directory of
@@ -90,15 +94,22 @@ GITEA_DARWIN_ACCOUNT_KEYS = (
 # How long a booted-out job is waited for to leave launchd.
 GITEA_DARWIN_UNLOAD_TIMEOUT_S = 30
 GITEA_DARWIN_UNLOAD_POLL_S = 0.5
+# The file whose presence makes softwareupdate list the Command Line Tools,
+# the words their labels hold, and how long the listing and the install may
+# take.
+GITEA_DARWIN_CLT_PLACEHOLDER = (
+    "/tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress"
+)
+GITEA_DARWIN_CLT_WORDS = "Command Line Tools"
+GITEA_DARWIN_SOFTWAREUPDATE_LIST_TIMEOUT_S = 600
+GITEA_DARWIN_SOFTWAREUPDATE_INSTALL_TIMEOUT_S = 3600
 
-# Windows: the service, and where Git for Windows is looked for when the
-# machine's Path names none.
+# Windows: the service; the module's own MinGit's git under the module's
+# directory; and the shell Gitea writes its hooks for, the one MinGit holds.
 GITEA_WINDOWS_SERVICE = "neutrino_gitea"
 GITEA_WINDOWS_DISPLAY_NAME = "Neutrino Gitea"
-GITEA_WINDOWS_ENVIRONMENT_KEY = (
-    "SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment"
-)
-GITEA_WINDOWS_GIT_FALLBACK = "%ProgramFiles%\\Git\\cmd\\git.exe"
+GITEA_WINDOWS_GIT_PARTS = ("git", "cmd", "git.exe")
+GITEA_WINDOWS_SCRIPT_TYPE = "sh"
 # How long a service is waited for to stop.
 GITEA_WINDOWS_STOP_TIMEOUT_S = 30
 GITEA_WINDOWS_STOP_POLL_S = 0.5
