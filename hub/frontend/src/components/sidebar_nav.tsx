@@ -22,7 +22,7 @@ import "./sidebar_nav.css";
  * Two groups. The hub group is the hub's own pages; the machine group under
  * it holds one entry per managed machine, its status dot pulsing green while
  * the machine is online and grey with a faint `offline` otherwise, each a
- * link to its machine page.
+ * link to its machine page. The machine list scrolls in its own box.
  */
 
 /** The paths whose entry is lit only at the path itself, not below it. */
@@ -55,7 +55,7 @@ export function SidebarNav({ onLogout }: SidebarNavProps) {
       </div>
 
       <div className="sidebar_items">
-        <div className="sidebar_group">
+        <div className="sidebar_group sidebar_group--hub">
           <div className="sidebar_group_label">{t("ui.shell.group_hub")}</div>
           {NAV_ITEMS.map((item) => (
             <NavLink
@@ -73,13 +73,15 @@ export function SidebarNav({ onLogout }: SidebarNavProps) {
           ))}
         </div>
         {machines.length > 0 && (
-          <div className="sidebar_group">
+          <div className="sidebar_group sidebar_group--machines">
             <div className="sidebar_group_label">
               {t("ui.shell.group_agent")}
             </div>
-            {machines.map((machine) => (
-              <MachineEntry key={machine.id} machine={machine} />
-            ))}
+            <div className="sidebar_machines">
+              {machines.map((machine) => (
+                <MachineEntry key={machine.id} machine={machine} />
+              ))}
+            </div>
           </div>
         )}
       </div>
