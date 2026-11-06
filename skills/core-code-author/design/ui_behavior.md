@@ -1366,6 +1366,19 @@ nothing, as `node_card.tsx` does where a draft and a list that writes meet
 | While the gateway serves no name, the picker is disabled, with no line under it. | A pick needs a name the gateway serves, and the probe line of Activity, above it on the page, already says why there is none. |
 | The bar's warning, `ui.ai.access_apply_warning`, shows while the pick is unapplied and the gateway view's `has_ayakaleaf_on_default` is true, and the bar has no warning otherwise. | A new default model restarts an Ayakaleaf app whose tab names no model of its own, and no other reader of the default model restarts. |
 
+## The setup page
+
+The web setup page asks the questions of `nhub setup` and then lists its
+steps as they run. Every word on it is a catalog word in the language its
+first screen set ([ui_text.md](ui_text.md), "Localization").
+
+| Rule | Reason |
+| --- | --- |
+| The welcome screen's title is `ui.brand.hub`, 微子·中枢 in Chinese. | The product's name has its own word in each language ([ui_text.md](ui_text.md), "Names that are fixed"). |
+| The review names the mode by `ui.setup.mode_<mode>`, the word its mode screen showed. | The mode's key, such as `server`, is the configuration's word. |
+| A step's row holds its name, `ui.setup.step_<id>`, and its dot. The note a step reports stays in the terminal and in the setup log. | A note is the terminal's English or a program's own output, such as xray's version line, and the dot already shows how the step ended. |
+| Under 480 px the review's names take their own width, and the values the rest. | A name column of 190 px left the values a few characters at 360 px. |
+
 ## The hub's faces
 
 The panel draws the hub's wolf from `images/icons/neutrino_hub/`, as an SVG in
