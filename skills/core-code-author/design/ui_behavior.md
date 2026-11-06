@@ -530,7 +530,10 @@ every column, and a card each in a narrower box ("Tables"). Every machine on
 it was added as an agent, so the page and its sidebar entry in the hub group
 take the agent's name. The sidebar's machine group below the hub group is
 headed with the same word and lists each machine on its own, a link to its
-machine page; the hub group's entry opens this table of all of them. A panel
+machine page; the hub group's entry opens this table of all of them. The
+machine list scrolls in its own space under its heading, and the hub group
+and **Sign out** stay in place: with 9 machines at 1280 px the whole rail
+scrolled, and the last machine took the hub group out of sight. A panel
 address `/devices` from 0.5 answers with the panel's redirect to `/agents`.
 
 A row holds the icon, a button that opens a small picker of the device icons
