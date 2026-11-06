@@ -2444,7 +2444,7 @@ def test_the_machine_gets_the_hub_containers_whose_images_its_store_holds(
     monkeypatch.setattr(
         machine_runner_module,
         "fastest_sources",
-        lambda names, sets: (
+        lambda names, sets, log=None: (
             {"pypi": "https://p.example"},
             {"pypi": ["PIP_INDEX_URL"]},
         ),
@@ -2485,7 +2485,7 @@ def test_a_render_after_a_boot_that_reserved_a_page_port_publishes_a_new_port(
         machine_runner_module, "ensure_network", lambda name, *, podman: False
     )
     monkeypatch.setattr(
-        machine_runner_module, "fastest_sources", lambda names, sets: ({}, {})
+        machine_runner_module, "fastest_sources", lambda names, sets, log=None: ({}, {})
     )
     rendered = PodmanConfig.from_dict(HUB_CONFIG)
 
@@ -2529,7 +2529,7 @@ def test_a_module_s_containers_are_applied_once_the_root_script_wrote_them(
         machine_runner_module, "ensure_network", lambda name, *, podman: False
     )
     monkeypatch.setattr(
-        machine_runner_module, "fastest_sources", lambda names, sets: ({}, {})
+        machine_runner_module, "fastest_sources", lambda names, sets, log=None: ({}, {})
     )
     rig.runner._page_ports._pick = lambda taken: 40999
     rig.keep_image()

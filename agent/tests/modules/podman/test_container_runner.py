@@ -416,7 +416,12 @@ def test_an_install_pulls_each_missing_image_by_digest_from_the_fastest_source(s
 
     pulls = [call for call in podman.calls if call[1] == "pull"]
     assert pulls == [["/usr/bin/podman", "pull", "ghcr.nju.edu.cn/acme/webui@" + WEB]]
-    assert lines == ["demo: pulling ghcr.nju.edu.cn/acme/webui@" + WEB]
+    assert lines == [
+        "demo: image webui: ghcr.io/acme/webui 0 KB/s first byte 0 ms, "
+        "ghcr.nju.edu.cn/acme/webui 0 KB/s first byte 0 ms; "
+        "chose ghcr.nju.edu.cn/acme/webui",
+        "demo: pulling ghcr.nju.edu.cn/acme/webui@" + WEB,
+    ]
 
 
 def test_a_pull_is_handed_to_the_platform_to_end_with_the_agent(store):

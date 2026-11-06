@@ -569,7 +569,11 @@ class ContainerModuleRunner(ModuleRunner):
         """
         digest = image["digest"]
         chosen = source_fetch.rank_images(
-            image["sources"], digest, probe_one=self._probe_one
+            image["sources"],
+            digest,
+            probe_one=self._probe_one,
+            log=self._log,
+            name=f"{self.name}: image {image.get('name', '')}",
         )
         failures = []
         for source in chosen:

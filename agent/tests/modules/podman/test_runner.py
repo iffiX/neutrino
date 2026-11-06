@@ -246,7 +246,9 @@ def system(monkeypatch):
     monkeypatch.setattr(runner_module, "network_gateway", lambda name: "10.88.0.1")
     monkeypatch.setattr(runner_module, "ensure_network", lambda name: False)
     monkeypatch.setattr(runner_module, "image_references", lambda: set())
-    monkeypatch.setattr(runner_module, "fastest_sources", lambda names, sets: ({}, {}))
+    monkeypatch.setattr(
+        runner_module, "fastest_sources", lambda names, sets, log=None: ({}, {})
+    )
     return held
 
 
@@ -1096,7 +1098,7 @@ def hub_runner(runner, monkeypatch):
     monkeypatch.setattr(
         runner_module,
         "fastest_sources",
-        lambda names, sets: (
+        lambda names, sets, log=None: (
             {name: sets[name]["sources"][0] for name in names if name in sets},
             {name: sets[name]["variables"] for name in names if name in sets},
         ),

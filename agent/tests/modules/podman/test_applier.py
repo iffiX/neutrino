@@ -1074,6 +1074,31 @@ def test_each_set_names_its_fastest_source_and_its_variables():
     assert variables == {"pypi": ["PIP_INDEX_URL", "UV_DEFAULT_INDEX"]}
 
 
+def test_each_set_s_ranking_writes_its_line_to_the_log():
+    def probe_one(url, *, source=""):
+        speed = 2_097_152.0 if "tuna" in source else 1024.0
+        return SourceProbe(
+            source=source, is_answered=True, speed=speed, first_byte_s=0.05
+        )
+
+    lines: list = []
+    sets = {
+        "pypi": {
+            "probe": "/pip/",
+            "sources": ["https://pypi.org/simple", "https://pypi.tuna.example/simple"],
+            "variables": ["PIP_INDEX_URL"],
+        }
+    }
+
+    fastest_sources(["pypi"], sets, probe_one=probe_one, log=lines.append)
+
+    assert lines == [
+        "source set pypi: https://pypi.org/simple 1 KB/s first byte 50 ms, "
+        "https://pypi.tuna.example/simple 2.0 MB/s first byte 50 ms; "
+        "chose https://pypi.tuna.example/simple"
+    ]
+
+
 def test_a_set_with_no_variables_is_left_unprobed():
     probed: list = []
 

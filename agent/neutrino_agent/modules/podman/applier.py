@@ -341,7 +341,9 @@ def ready_hub_containers(config: PodmanConfig, references: set) -> tuple:
     return ready, {container.name: images[container.name] for container in ready}
 
 
-def fastest_sources(names, source_sets: dict, *, probe_one=source_fetch.probe) -> tuple:
+def fastest_sources(
+    names, source_sets: dict, *, probe_one=source_fetch.probe, log=None
+) -> tuple:
     """Each named source set's fastest source, and its variables.
 
     Args:
@@ -349,6 +351,7 @@ def fastest_sources(names, source_sets: dict, *, probe_one=source_fetch.probe) -
         source_sets: The state's ``source_sets`` section, ``{name: {probe,
             sources, variables}}``.
         probe_one: Called with ``url, source=``; returns a probe.
+        log: Called with each ranking's one line; None writes none.
 
     Returns:
         ``(sources, variables)``, each by set name, for every named set the
@@ -368,6 +371,8 @@ def fastest_sources(names, source_sets: dict, *, probe_one=source_fetch.probe) -
             [str(source) for source in held["sources"]],
             probe_path=str(held.get("probe", "") or "/"),
             probe_one=probe_one,
+            log=log,
+            name=f"source set {name}",
         )
         sources[name] = order[0]
         variables[name] = [str(variable) for variable in held.get("variables") or []]

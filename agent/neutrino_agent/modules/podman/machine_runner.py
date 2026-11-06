@@ -2059,7 +2059,9 @@ class PodmanMachineModuleRunner(ModuleRunner):
             set_names += [
                 name for name in container.source_sets if name not in set_names
             ]
-        sources, variables = fastest_sources(set_names, self._source_sets)
+        sources, variables = fastest_sources(
+            set_names, self._source_sets, log=self._log
+        )
         context = PodmanRenderContext(
             images=images, page_ports=page_ports, sources=sources, variables=variables
         )

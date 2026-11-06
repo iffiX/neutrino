@@ -12,7 +12,9 @@ its last, and two speeds within a tenth of each other go to the earlier
 first byte. A source that did not answer in time is not ranked: an image's,
 a set's and a host's are tried after the ranked ones, and an npm registry's
 is not, since its probe checks the package's integrity. Nothing is
-remembered: each ranking probes again.
+remembered: each ranking probes again. Each ranking writes one line to the
+log it is handed: what it ranked, each source's speed and first byte or its
+failure's reason, and the source chosen.
 
 Not pure: opens connections.
 """
@@ -60,6 +62,9 @@ DETAIL_CHARS = 200
 # A registry that wants a token answers 401 with this challenge.
 BEARER_CHALLENGE_PATTERN = re.compile(r'(\w+)="([^"]*)"')
 HTTP_UNAUTHORIZED = 401
+# The units a log line gives a speed in.
+KIB_BYTES = 1024
+MIB_BYTES = 1024 * 1024
 # The system of an image a manifest list names; an attestation names "unknown".
 IMAGE_SYSTEM = "linux"
 
@@ -250,6 +255,30 @@ def ranked(probes: list) -> list:
     )
 
 
+def ranking_line(name: str, probes: list, chosen: str) -> str:
+    """The one log line of a ranking. Pure.
+
+    Args:
+        name: What was ranked, such as ``source set pypi``.
+        probes: Each source's probe, in the sources' order.
+        chosen: The source chosen; empty for none.
+
+    Returns:
+        ``<name>: <source> <speed> first byte <ms> ms, <source> <reason>;
+        chose <source>``.
+    """
+    parts = []
+    for found in probes:
+        if found.is_answered:
+            parts.append(
+                f"{found.source} {_speed_words(found.speed)} first byte "
+                f"{round(found.first_byte_s * 1000)} ms"
+            )
+        else:
+            parts.append(f"{found.source} {found.reason or REASON_UNREACHABLE}")
+    return f"{name}: {', '.join(parts)}; chose {chosen or 'none'}"
+
+
 def registry_document(registry: str, package: str) -> str:
     """The address of a package's document on an npm registry. Pure.
 
@@ -265,7 +294,14 @@ def registry_document(registry: str, package: str) -> str:
 
 
 def rank_registries(
-    registries: list, *, package: str, version: str, integrity: str, probe_one=probe
+    registries: list,
+    *,
+    package: str,
+    version: str,
+    integrity: str,
+    probe_one=probe,
+    log=None,
+    name: str = "",
 ) -> tuple:
     """Rank npm registries by speed, keeping those whose integrity is the pinned one.
 
@@ -276,6 +312,8 @@ def rank_registries(
         integrity: The artifact's digest, npm's ``integrity``.
         probe_one: Called with ``url, source=, is_document=``; returns a
             :class:`SourceProbe`.
+        log: Called with the ranking's one line; None writes none.
+        name: What the line says was ranked; empty names the package.
 
     Returns:
         ``(chosen, failures)``: the registries that answered with the
@@ -297,6 +335,14 @@ def rank_registries(
                 :DETAIL_CHARS
             ]
     chosen = [found.source for found in ranked(probes)]
+    if log is not None:
+        log(
+            ranking_line(
+                name or f"npm registries of {package}@{version}",
+                probes,
+                chosen[0] if chosen else "",
+            )
+        )
     return chosen, [found.failure() for found in probes if not found.is_answered]
 
 
@@ -313,7 +359,9 @@ def set_document(source: str, probe_path: str) -> str:
     return source.rstrip("/") + "/" + probe_path.lstrip("/")
 
 
-def rank_set(sources: list, *, probe_path: str, probe_one=probe) -> list:
+def rank_set(
+    sources: list, *, probe_path: str, probe_one=probe, log=None, name: str = ""
+) -> list:
     """Rank the sources of one source set, or the hosts of one npm setting, by speed.
 
     Args:
@@ -321,6 +369,8 @@ def rank_set(sources: list, *, probe_path: str, probe_one=probe) -> list:
         probe_path: The path probed under each source.
         probe_one: Called with ``url, source=``; returns a
             :class:`SourceProbe`.
+        log: Called with the ranking's one line; None writes none.
+        name: What the line says was ranked; empty names the probed path.
 
     Returns:
         The sources that answered, fastest first, then those that did not,
@@ -331,7 +381,10 @@ def rank_set(sources: list, *, probe_path: str, probe_one=probe) -> list:
         probe_one=probe_one,
     )
     order = [found.source for found in ranked(probes)]
-    return order + [source for source in sources if source not in order]
+    order += [source for source in sources if source not in order]
+    if log is not None:
+        log(ranking_line(name or f"sources of {probe_path}", probes, order[0]))
+    return order
 
 
 def manifest_document(source: str, digest: str) -> str:
@@ -414,17 +467,21 @@ def probe_image(source: str, digest: str, *, probe_one=probe) -> SourceProbe:
     return probe_one(layer_document(source, layer), source=source, headers=token)
 
 
-def rank_images(sources: list, digest: str, *, probe_one=probe) -> list:
+def rank_images(
+    sources: list, digest: str, *, probe_one=probe, log=None, name: str = ""
+) -> list:
     """Rank the registries that serve one image by the speed of its largest layer.
 
     Podman checks the digest of every pull, so a source whose probe got
-    no answer is still tried. A list of one is not probed.
+    no answer is still tried. A list of one is not probed and logs nothing.
 
     Args:
         sources: The image's references with no tag, the publisher's first.
         digest: The image's digest.
         probe_one: Called as :func:`probe_image` calls it; returns a
             :class:`SourceProbe`.
+        log: Called with the ranking's one line; None writes none.
+        name: What the line says was ranked; empty names the image's digest.
 
     Returns:
         The sources to pull from in order: those that answered, fastest
@@ -446,7 +503,10 @@ def rank_images(sources: list, digest: str, *, probe_one=probe) -> list:
     for thread in threads:
         thread.join()
     order = [found.source for found in ranked(probes)]
-    return order + [source for source in sources if source not in order]
+    order += [source for source in sources if source not in order]
+    if log is not None:
+        log(ranking_line(name or f"registries of {digest}", probes, order[0]))
+    return order
 
 
 def _bearer_token(challenge: str, *, source: str, probe_one) -> str:
@@ -527,6 +587,13 @@ def _integrity_of(body: bytes, version: str) -> str:
     dist = entry.get("dist") if isinstance(entry, dict) else None
     integrity = dist.get("integrity") if isinstance(dist, dict) else None
     return integrity if isinstance(integrity, str) else ""
+
+
+def _speed_words(speed: float) -> str:
+    """A probe's speed as the log line says it: MB/s from 1 MiB/s, KB/s below."""
+    if speed >= MIB_BYTES:
+        return f"{speed / MIB_BYTES:.1f} MB/s"
+    return f"{round(speed / KIB_BYTES)} KB/s"
 
 
 def _compare(first: SourceProbe, second: SourceProbe) -> int:

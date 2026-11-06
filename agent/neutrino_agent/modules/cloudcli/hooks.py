@@ -1242,6 +1242,8 @@ class CloudcliHooks(InstanceHooks):
             version=self._version,
             integrity=str(self._npm.get("digest", "") or ""),
             probe_one=self._probe,
+            log=self._log,
+            name=f"{self.name}: npm registries of {named}",
         )
         if not chosen:
             raise ModuleApplyError(
@@ -1255,6 +1257,8 @@ class CloudcliHooks(InstanceHooks):
                 [str(host) for host in hosts],
                 probe_path=str(paths.get(name, "") or "/"),
                 probe_one=self._probe,
+                log=self._log,
+                name=f"{self.name}: hosts of {name}",
             )
             for name, hosts in (held.items() if isinstance(held, dict) else ())
             if isinstance(hosts, list) and hosts

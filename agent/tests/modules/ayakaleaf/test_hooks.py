@@ -334,6 +334,15 @@ def test_the_first_start_runs_the_three_steps_in_order_and_keeps_each(box, app):
     assert box.hooks.is_installing() is False
 
 
+def test_the_tex_step_logs_its_ranking_of_the_ctan_set(box):
+    ready(box)
+
+    ranking = [line for line in box.lines if "source set ctan:" in line]
+    assert len(ranking) == 1
+    assert ranking[0].startswith("ayakaleaf: source set ctan: ")
+    assert ranking[0].endswith("; chose https://fast.example/CTAN")
+
+
 def test_the_tex_step_checks_its_files_with_kpsewhich_after_tlmgr(box):
     ready(box)
 

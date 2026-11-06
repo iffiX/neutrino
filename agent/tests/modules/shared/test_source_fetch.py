@@ -601,3 +601,107 @@ def test_a_set_is_probed_at_its_path_under_each_source_fastest_first(sources):
     assert set_document("https://pypi.org/simple", "/pip/") == (
         "https://pypi.org/simple/pip/"
     )
+
+
+# --- each ranking's one line in the agent's log ---
+
+
+def fixed_probe(answers: dict):
+    """A probe answering each source from a table: a speed and a first byte,
+    or a reason."""
+
+    def probe_one(url, *, source="", headers=None, is_document=False):
+        speed, first_byte_s, reason = answers[source]
+        if reason:
+            return SourceProbe(source=source, reason=reason)
+        return SourceProbe(
+            source=source,
+            is_answered=True,
+            speed=speed,
+            first_byte_s=first_byte_s,
+            body=IMAGE_MANIFEST if "/" in source and "." in source else b"",
+        )
+
+    return probe_one
+
+
+def test_a_set_s_ranking_logs_each_source_and_the_one_chosen():
+    lines: list = []
+    probe_one = fixed_probe(
+        {
+            "https://pypi.org/simple": (2_200_000.0, 0.18, ""),
+            "https://mirrors.aliyun.com/pypi/simple": (0.0, 0.0, "timeout"),
+            "https://pypi.tuna.tsinghua.edu.cn/simple": (300_000.0, 0.04, ""),
+        }
+    )
+
+    rank_set(
+        [
+            "https://pypi.org/simple",
+            "https://pypi.tuna.tsinghua.edu.cn/simple",
+            "https://mirrors.aliyun.com/pypi/simple",
+        ],
+        probe_path="/numpy/",
+        probe_one=probe_one,
+        log=lines.append,
+        name="source set pypi",
+    )
+
+    assert lines == [
+        "source set pypi: https://pypi.org/simple 2.1 MB/s first byte 180 ms, "
+        "https://pypi.tuna.tsinghua.edu.cn/simple 293 KB/s first byte 40 ms, "
+        "https://mirrors.aliyun.com/pypi/simple timeout; "
+        "chose https://pypi.org/simple"
+    ]
+
+
+def test_a_registries_ranking_logs_the_mismatch_and_none_chosen():
+    lines: list = []
+
+    def probe_one(url, *, source="", headers=None, is_document=False):
+        return SourceProbe(
+            source=source,
+            is_answered=True,
+            speed=1_000_000.0,
+            first_byte_s=0.1,
+            body=document("sha512-other"),
+        )
+
+    chosen, _failures = rank_registries(
+        ["https://registry.npmjs.org"],
+        package=PACKAGE,
+        version=VERSION,
+        integrity=INTEGRITY,
+        probe_one=probe_one,
+        log=lines.append,
+        name="npm registries",
+    )
+
+    assert chosen == []
+    assert lines == [
+        "npm registries: https://registry.npmjs.org digest_mismatch; chose none"
+    ]
+
+
+def test_an_image_ranking_logs_one_line_and_a_list_of_one_none():
+    lines: list = []
+    probe_one = fixed_probe(
+        {
+            "ghcr.io/acme/demo": (1_500_000.0, 0.2, ""),
+            "docker.io/acme/demo": (0.0, 0.0, "http_503"),
+        }
+    )
+
+    rank_images(
+        ["docker.io/acme/demo", "ghcr.io/acme/demo"],
+        DIGEST,
+        probe_one=probe_one,
+        log=lines.append,
+        name="image demo",
+    )
+    rank_images(["docker.io/acme/demo"], DIGEST, log=lines.append, name="alone")
+
+    assert lines == [
+        "image demo: docker.io/acme/demo http_503, "
+        "ghcr.io/acme/demo 1.4 MB/s first byte 200 ms; chose ghcr.io/acme/demo"
+    ]

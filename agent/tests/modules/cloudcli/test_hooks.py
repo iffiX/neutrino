@@ -1067,6 +1067,26 @@ def test_the_fastest_registry_naming_the_integrity_is_used_with_the_fastest_host
     assert f"https://h-fast{HOST_FILE}" in probe.asked
 
 
+def test_the_rankings_of_the_registries_and_the_hosts_write_their_lines(tmp_path):
+    probe = Probe(speeds={"https://fast.example": 10.0, "https://h-fast": 10.0})
+    held = recipe(registries=("https://fast.example",), hosts=("https://h-fast",))
+    hooks, _machine, entry = attempted(tmp_path, held, probe, {})
+    lines: list = []
+    hooks._log = lines.append
+
+    hooks.prepare(CONFIG, CONFIG.instances[0], entry)
+
+    rankings = [line for line in lines if "; chose " in line]
+    assert len(rankings) == 2
+    assert rankings[0].startswith(
+        "cloudcli: npm registries of @cloudcli-ai/cloudcli@1.37.3: "
+        "https://fast.example "
+    )
+    assert rankings[0].endswith("; chose https://fast.example")
+    assert rankings[1].startswith(f"cloudcli: hosts of {HOST_SETTING}: ")
+    assert rankings[1].endswith("; chose https://h-fast")
+
+
 def test_a_failed_install_runs_again_on_the_next_registry_and_host(tmp_path):
     probe = Probe(speeds={"https://a.example": 10.0, "https://b.example": 1.0})
     held = recipe(registries=("https://b.example", "https://a.example"), hosts=(HOST,))
