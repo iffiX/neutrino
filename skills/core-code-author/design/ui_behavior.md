@@ -556,7 +556,8 @@ SSH 添加), the install dialog with **Host**, **Port**, **User name**,
 **Credential**, **SSH key** and **Sudo password**. That dialog's button creates
 the machine's row, named by its host until it reports, and starts the install
 ([protocol.md](protocol.md), `POST /api/hub/device/add`). An install that
-ends without the machine joining takes that row away again. Wake-on-LAN stays
+ends without the machine joining takes that row away again, and after a
+failed install the dialog's button adds the machine again. Wake-on-LAN stays
 on this page: it is a packet on the network and needs no agent
 ([protocol.md](protocol.md), `POST /api/hub/device/wake`). The words are
 [ui_text.md](ui_text.md), "The Agents page's words".
