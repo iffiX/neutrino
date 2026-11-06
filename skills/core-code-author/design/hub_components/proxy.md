@@ -211,7 +211,10 @@ measured a second time in the same round before it counts.
 
 With no candidate and `is_direct_fallback_enabled` on, the hub overrides the
 balancer with `direct`. With no candidate and the fallback off, the override
-stands where it is.
+stands where it is, except an override at `direct`: it moves to the first
+enabled node xray carries, so the traffic sent to the proxy fails. Measured on
+the lab hub: the fallback turned off while every exit was down left `direct`
+pinned, and the hub's own requests kept leaving through the uplink.
 
 `/var/lib/neutrino/hub/xray_node_health.json` holds the samples, so a panel
 restart and an xray restart both keep them. After an apply restarts xray, the
