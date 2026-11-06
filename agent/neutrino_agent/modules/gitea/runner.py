@@ -380,8 +380,8 @@ class GiteaModuleRunner(ModuleRunner):
         return self._applier.binary_path
 
     def uninstall(self, recipe: dict) -> None:
-        """Take the service, the binary and the configuration off; keep the
-        data and the account.
+        """Take the service, the binary and the configuration off, and the
+        account on macOS; keep the data.
 
         Args:
             recipe: The module's recipe.

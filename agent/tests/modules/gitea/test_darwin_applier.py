@@ -10,8 +10,8 @@ restarts the job, enabled before it loads; a stop that disables the job
 and waits until launchd lets go; the account made by its own step, never by
 the install; the CLI run as
 the account; Apple's Command Line Tools installed with ``softwareupdate`` at
-the newest label it lists; and an uninstall that keeps the data and the
-account.
+the newest label it lists; and an uninstall that keeps the data and deletes
+the account with ``dscl`` after the job and ``app.ini``.
 """
 
 import os
@@ -361,7 +361,9 @@ def test_the_cli_runs_as_the_servers_account(applier, tools, binary):
     assert environment["HOME"] == cwd == applier.data_dir
 
 
-def test_an_uninstall_keeps_the_data_and_the_account(applier, tools, binary, tmp_path):
+def test_an_uninstall_keeps_the_data_and_deletes_the_account(
+    applier, tools, binary, tmp_path
+):
     tools.has_account = True
     applier.install(binary)
     applier.apply("x\n", git_path="/opt/homebrew/bin/git")
@@ -376,9 +378,23 @@ def test_an_uninstall_keeps_the_data_and_the_account(applier, tools, binary, tmp
         tmp_path / "state" / "gitea_data" / "custom" / "conf" / "app.ini"
     ).exists()
     assert repository.is_dir()
-    assert tools.ran("dscl", ".", "-delete") == []
+    assert tools.ran("dscl", ".", "-delete") == [
+        ["dscl", ".", "-delete", "/Users/neutrino_gitea"]
+    ]
     assert tools.ran("sysadminctl", "-deleteUser") == []
+    deleted = tools.calls.index(["dscl", ".", "-delete", "/Users/neutrino_gitea"])
+    assert deleted > tools.calls.index(
+        ["launchctl", "bootout", "system/com.neutrino.gitea"]
+    )
     assert applier.is_active() is False
+
+
+def test_an_uninstall_with_no_account_deletes_none(applier, tools, binary):
+    applier.install(binary)
+
+    applier.uninstall()
+
+    assert tools.ran("dscl", ".", "-delete") == []
 
 
 LISTED = """Software Update Tool

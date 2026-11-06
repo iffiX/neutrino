@@ -13,7 +13,8 @@ gitea CLI runs as the account too, since Gitea refuses root. Git is the one
 the developer tools, Xcode or Homebrew put on the machine, looked for by
 its own path; ``/usr/bin/git`` is never run. A Mac with none gets Apple's
 Command Line Tools from ``softwareupdate``, as Homebrew's installer gets
-them.
+them. An uninstall deletes the account with ``dscl`` and leaves its home,
+the data directory.
 
 Not pure: writes under ``/Library``, drives ``sysadminctl``, ``dscl``,
 ``softwareupdate`` and launchd.
@@ -346,9 +347,9 @@ class GiteaDarwinApplier:
         return is_given
 
     def uninstall(self) -> None:
-        """Unload and delete the LaunchDaemon, the binary and ``app.ini``.
+        """Unload and delete the LaunchDaemon, the binary, ``app.ini`` and the account.
 
-        The data directory and the account stay.
+        The data directory, the account's home, stays.
         """
         self._unload()
         with contextlib.suppress(OSError):
@@ -356,6 +357,11 @@ class GiteaDarwinApplier:
         with contextlib.suppress(OSError, ModuleApplyError):
             self._files().remove(self.conf_path)
         shutil.rmtree(self.module_dir, ignore_errors=True)
+        if self._has_record():
+            self._run(
+                ["dscl", ".", "-delete", f"/Users/{GITEA_DARWIN_ACCOUNT}"],
+                is_checked=False,
+            )
 
     def apply(self, rendered: str, *, git_path: str, is_started: bool = True) -> str:
         """Install ``app.ini`` and the LaunchDaemon, and run the server on them.
@@ -565,6 +571,13 @@ class GiteaDarwinApplier:
             ["dscl", ".", "-create", f"/Users/{GITEA_DARWIN_ACCOUNT}", "IsHidden", "1"]
         )
         return self._lookup(GITEA_DARWIN_ACCOUNT)
+
+    def _has_record(self) -> bool:
+        """Whether the account's record exists, usable or not."""
+        return self._run(
+            ["dscl", ".", "-read", f"/Users/{GITEA_DARWIN_ACCOUNT}"],
+            is_checked=False,
+        ).is_success
 
     def _is_usable(self) -> bool:
         """Whether the account's record holds every key a process needs."""
