@@ -481,8 +481,9 @@ function Set-NeutrinoShare {
 
 # Deletes every share whose description starts with the marker, every
 # account whose name starts with the prefix, and each account of 0.5 the
-# record lists whose description is the marker, with its entry in the
-# sign-in screen's hidden list and its sessions on the server; answers the
+# record lists whose description is the marker, with its sessions on the
+# server and its entry in the sign-in screen's hidden list, and every entry
+# of that list under the prefix; answers the
 # folders of the shares and the SIDs of the accounts, whose entries the
 # agent then takes off those folders. Without is_served the shares and the
 # sessions are read only while the server runs.
@@ -523,6 +524,11 @@ function Clear-NeutrinoShare {
         Remove-LocalUser -SID $user.SID | Out-Null
         Remove-ItemProperty -Path $hidden -Name $user.Name -ErrorAction SilentlyContinue
         $notes += "swept account $($user.Name)"
+    }
+    foreach ($name in @((Get-Item -Path $hidden -ErrorAction SilentlyContinue).Property)) {
+        if ("$name".StartsWith($Request.user_prefix)) {
+            Remove-ItemProperty -Path $hidden -Name $name -ErrorAction SilentlyContinue
+        }
     }
     return @{notes = $notes; paths = $paths; sids = $sids}
 }

@@ -199,6 +199,16 @@ def test_the_file_share_sweep_removes_an_account_of_the_prefix_or_of_0_5_alone()
     assert "Remove-LocalUser" not in body("share_apply")
 
 
+def test_the_file_share_sweep_takes_every_hidden_entry_under_the_prefix():
+    """The R167 lab machine kept the hidden entries of accounts an earlier
+    round deleted, ``neutrino-lab`` and ``neutrino-lab2``."""
+    sweep = body("share_sweep")
+    hidden = sweep[sweep.index("(Get-Item -Path $hidden") :]
+
+    assert '"$name".StartsWith($Request.user_prefix)' in hidden
+    assert "Remove-ItemProperty -Path $hidden -Name $name" in hidden
+
+
 def test_the_file_share_sweep_closes_a_deleted_account_s_sessions_first():
     """On the R167 lab machine a sweep under live mounts left each session
     holding the deleted account's token, and its reads were denied on the
