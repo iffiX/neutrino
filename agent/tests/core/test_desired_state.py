@@ -2514,6 +2514,48 @@ def test_an_ask_while_the_module_s_task_runs_is_one_more_plan_after_it(tmp_path)
     assert ["configure", "start"] in plans
 
 
+def test_an_ask_any_configure_answers_changes_nothing_while_the_task_runs(tmp_path):
+    """The file share's first read of its folders asks for a task while the
+    task a new state made is in its ``configure``; that ``configure`` runs
+    once, as the R166 Windows machine's first enable did not."""
+    gate = threading.Event()
+    applies: list = []
+    runners = {"samba": FakeRunner()}
+    held, engine = applier(runners, tmp_path=tmp_path)
+
+    def configure(context):
+        applies.append(1)
+        gate.wait(SETTLE_S)
+
+    def gated_configure(name, entry, want):
+        steps = FakeEngine.configure_steps(engine, name, entry, want)
+        steps[0] = ModuleStep(name="configure", run=configure)
+        return steps
+
+    engine.configure_steps = gated_configure
+    held.apply(state(samba="running"))
+    assert wait_until(lambda: len(applies) == 1)
+
+    task = held.ask_configure("samba", is_answered_by_task=True)
+    gate.set()
+    assert held.settle("", SETTLE_S)
+
+    assert task is not None and task.ended.is_set()
+    assert applies == [1]
+
+
+def test_an_ask_any_configure_answers_makes_a_task_when_none_runs(tmp_path):
+    runners = {"samba": FakeRunner()}
+    held, _ = applier(runners, tmp_path=tmp_path)
+    run(held, state(samba="running"))
+
+    task = held.ask_configure("samba", is_answered_by_task=True)
+    assert held.settle("", SETTLE_S)
+
+    assert task is not None and task.ended.is_set()
+    assert runners["samba"].applied == [{"n": "samba"}] * 2
+
+
 def test_a_containers_row_nothing_read_yet_is_read_before_it_is_judged(tmp_path):
     """Right after the agent starts, Containers' row is empty until its first
     read; a container module's wait reads it then, and goes on."""

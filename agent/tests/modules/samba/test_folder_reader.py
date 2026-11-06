@@ -200,17 +200,34 @@ def test_an_apply_takes_each_share_that_cannot_be_served_out_with_its_code():
 
 
 def test_the_first_report_of_a_run_asks_for_one_task_and_reads_nothing():
+    """The first ask is one a running task's ``configure`` answers, so a
+    task the state just made runs its ``configure`` once."""
     folders = Folders()
     reader = SambaFolderReader(read=folders, clock=Clock())
     reader.take_config(SECTION)
     asked: list = []
 
-    reader.check(lambda: asked.append(1))
+    reader.check(lambda **kwargs: asked.append(kwargs))
     first_reads = list(folders.reads)
-    reader.check(lambda: asked.append(1))
+    reader.check(lambda **kwargs: asked.append(kwargs))
 
-    assert asked == [1]
+    assert asked == [{"is_answered_by_task": True}]
     assert first_reads == []
+
+
+def test_a_folder_that_changed_asks_for_a_task_a_running_task_plans_again_for():
+    folders = Folders()
+    clock = Clock()
+    reader = SambaFolderReader(read=folders, clock=clock)
+    reader.take_config(SECTION)
+    reader.served(SambaConfig.from_dict(SECTION))
+    asked: list = []
+
+    folders.found = {"/srv/media": "missing"}
+    clock.now += 31
+    reader.check(lambda **kwargs: asked.append(kwargs))
+
+    assert asked == [{}]
 
 
 def test_the_report_reads_each_folder_of_the_state_once_per_half_minute():

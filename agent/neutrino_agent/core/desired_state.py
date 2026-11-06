@@ -900,17 +900,20 @@ class DesiredStateApplier:
             task.wait_for_newer(REQUIRED_READ_LOOK_S)
             self._engine.refresh_one(module)
 
-    def ask_configure(self, name: str):
+    def ask_configure(self, name: str, *, is_answered_by_task: bool = False):
         """Ask for a configure task of one module, from its entry in the latest state.
 
         A running task of the module takes the ask as a newer entry and
         plans again once its running step ends; two asks while it runs make
-        one more plan. With no task running, a task is made whatever hash
-        was last tried. An ask before the latest state names the module is
-        kept for the next state, which makes the task.
+        one more plan. An ask that any ``configure`` answers changes nothing
+        while a task runs. With no task running, a task is made whatever
+        hash was last tried. An ask before the latest state names the module
+        is kept for the next state, which makes the task.
 
         Args:
             name: The module.
+            is_answered_by_task: Whether the running task's own
+                ``configure`` reads what the ask is for.
 
         Returns:
             The task that answers the ask; None when the latest state names
@@ -925,7 +928,8 @@ class DesiredStateApplier:
             entry_hash = self._hashes.get(name, "")
             task = self._tasks.get(name)
             if task is not None and task.is_running:
-                task.offer(entry, entry_hash)
+                if not is_answered_by_task:
+                    task.offer(entry, entry_hash)
             else:
                 task = made = self._new_task(name, entry, entry_hash)
         if made is not None:

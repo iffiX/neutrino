@@ -199,13 +199,19 @@ class ModuleRunner:
         """Take what asks the agent for a configure task of this module.
 
         Args:
-            asker: Called with no argument; asks for a configure task from
-                the module's entry in the latest state.
+            asker: Called with no argument, or with ``is_answered_by_task``
+                true; asks for a configure task from the module's entry in
+                the latest state.
         """
         self._configure_asker = asker
 
-    def ask_configure(self) -> bool:
+    def ask_configure(self, *, is_answered_by_task: bool = False) -> bool:
         """Ask the agent for a configure task of this module, outside the state's own tasks.
+
+        Args:
+            is_answered_by_task: Whether a running task's own ``configure``
+                reads what the ask is for, so the ask changes nothing while
+                one runs.
 
         Returns:
             Whether something took the ask.
@@ -213,7 +219,10 @@ class ModuleRunner:
         asker = self._configure_asker
         if asker is None:
             return False
-        asker()
+        if is_answered_by_task:
+            asker(is_answered_by_task=True)
+        else:
+            asker()
         return True
 
     def step_locks(self, step: str) -> tuple:

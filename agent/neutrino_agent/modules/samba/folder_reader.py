@@ -8,7 +8,8 @@ root's place reads as a link. On Windows the applier opens the folder by
 handle. :class:`SambaFolderReader` takes the shares that cannot be served out
 of a configuration at an apply, and at the report asks for a configure task
 when a folder reads otherwise than the last apply read it, and once at the
-first report of a run, before any apply read the folders.
+first report of a run, before any apply read the folders, an ask a running
+task's ``configure`` answers.
 
 Not pure: reads folders, as an account where the folder is in its place.
 """
@@ -204,10 +205,12 @@ class SambaFolderReader:
         back, a link put in its place or one taken away, calls ``ask`` once
         for each change. A folder the reading account cannot reach calls
         nothing. Before any apply of this run, the first check calls ``ask``
-        once, whatever the folders read.
+        once, whatever the folders read, with ``is_answered_by_task`` true:
+        a running task's ``configure`` reads every folder anyway.
 
         Args:
-            ask: Asks for a configure task of the module.
+            ask: Asks for a configure task of the module, as
+                :meth:`ModuleRunner.ask_configure` does.
         """
         with self._lock:
             named = list(self._named)
@@ -215,7 +218,7 @@ class SambaFolderReader:
             if is_first:
                 self._applied = {}
         if is_first:
-            ask()
+            ask(is_answered_by_task=True)
             return
         for share in named:
             found = self._kept(share.path)
