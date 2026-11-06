@@ -623,6 +623,7 @@ account and the shell program it set before.
 | `ui.remote_desktop_module.switch_hint` | Whether this machine runs the agent's RustDesk for this hub's clients. Turning it on stops every other RustDesk host on the machine; turning it off puts back what was there. | 是否让这个系统运行被控端自带的 RustDesk，供这台中枢的客户端连接。打开时会停掉系统上其它的 RustDesk 主机，关闭时还原原来的。 |
 | `ui.remote_desktop_module.apply` | Apply remote desktop | 应用远程桌面 |
 | `ui.remote_desktop_module.apply_hint` | Starts or stops sharing this desktop now. | 立即开始或停止共享这个桌面。 |
+| `ui.remote_desktop.shared_by`, the RustDesk card's line before the viewer count, shown only while the report names an account; with nobody at the screen the line is the count alone | Shared by {account}. | 由 {account} 共享。 |
 | `code.shell_program_unusable` | {path} is not a program this machine can run. | {path} 不是这个系统能运行的程序。 |
 | `code.rdp_takeover_failed` | Remote desktop could not start at {step}: {detail} | 远程桌面在 {step} 这一步没能启动：{detail} |
 | `code.rdp_restore_failed` | Remote desktop could not put back the machine's RustDesk at {step}: {detail} | 远程桌面在 {step} 这一步没能还原系统原来的 RustDesk：{detail} |
