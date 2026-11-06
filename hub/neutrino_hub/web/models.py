@@ -2808,6 +2808,10 @@ class PodmanContainerStateView(BaseModel):
     # The module its label neutrino.module names; empty for any other.
     module: str = ""
     host_bindings: list[PodmanHostBindingView] = Field(default_factory=list)
+    # image_pull_failed or container_start_failed {name, image} for a
+    # container whose start systemd refused and which does not run.
+    code: str = ""
+    params: dict = Field(default_factory=dict)
 
 
 class PodmanHubImageView(BaseModel):

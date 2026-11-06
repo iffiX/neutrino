@@ -285,6 +285,40 @@ def test_the_view_holds_what_the_machine_detected_on_each_port(box):
     assert payload["containers"][0]["services"] == []
 
 
+def test_the_view_holds_the_code_of_a_container_whose_start_failed(box):
+    """In the lab a declared container whose image did not exist read only
+    as not created yet, with systemd's words on the whole module."""
+    client, runtime = box
+    runtime.report(
+        DEVICE,
+        "podman",
+        "running",
+        is_active=True,
+        containers=[
+            {
+                "name": "ghost",
+                "image": "",
+                "status": "not created yet",
+                "is_running": False,
+                "source": "declared",
+                "code": "image_pull_failed",
+                "params": {"name": "ghost", "image": "docker.io/library/none:9"},
+            },
+            {"name": "web", "image": "nginx", "status": "Up", "is_running": True},
+        ],
+    )
+
+    payload = client.get(BASE, params={"device_id": DEVICE}).json()
+
+    by_name = {state["name"]: state for state in payload["running"]}
+    assert by_name["ghost"]["code"] == "image_pull_failed"
+    assert by_name["ghost"]["params"] == {
+        "name": "ghost",
+        "image": "docker.io/library/none:9",
+    }
+    assert (by_name["web"]["code"], by_name["web"]["params"]) == ("", {})
+
+
 def test_saving_mirrors_keeps_the_containers(box):
     client, runtime = box
 
