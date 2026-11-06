@@ -117,11 +117,13 @@ root:
 ## A machine that joins another hub
 
 A machine that runs Ayakaleaf and joins another hub keeps the module's
-papers and data. The new hub imports none of the module's containers, and
-they stop at its first apply of Containers. The module's install on the new
-hub starts them again on the same volumes ([containers.md](containers.md),
-"Hub containers"). The new hub generates the module's secrets and its
-password at that install, as at every first install.
+papers and data. Its containers stop when it leaves the earlier hub, and the
+new hub imports none of them. The module reads `stopped` on the new hub,
+from the recipe the agent kept ([../module_install.md](../module_install.md),
+"From container images"), and its **Start** there starts the containers
+again on the same volumes ([containers.md](containers.md), "Hub
+containers"). The new hub generates the module's secrets and its password
+at that **Start**, as at every first install.
 
 | Rule | Reason |
 | --- | --- |

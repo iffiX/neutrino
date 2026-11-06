@@ -1340,7 +1340,9 @@ module's `want` and its configuration; **Install** and **Uninstall** on an
 `failed` one does.
 
 The agent has a runner for a `container` module only once a state names
-it, so a `container` module that a machine's report leaves out reads
+it or once it keeps the module's recipe from an earlier state, as after the
+machine left its hub ([agent/module_install.md](agent/module_install.md),
+"From container images"). A `container` module that a machine's report leaves out reads
 `absent` on every surface once that machine has reported, while its `want` is
 empty or `absent`. Under any other `want` it reads as a module that has not
 reported: an agent that just started reports before it reads the module's row,
@@ -1400,7 +1402,7 @@ state is pushed and the published list recomposed in the same step; a later
 report on the same session takes over no module an earlier one carried.
 
 A module with no `want` that the machine reports `installed`, `stopped` or
-`running`, one with no import such as the file share, VS Code,
+`running`, one with no import such as the file share, the container modules, VS Code,
 code-server, CloudCLI, Codeg and SiYuan, or one whose import found nothing, is the person's from their first press: its
 **Start** is live. An apply of a configuration (`POST
 /api/agent/module/<name>/set` and the like) starts nothing, and writes no
