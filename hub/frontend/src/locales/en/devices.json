@@ -204,7 +204,7 @@
   "ui.devices.empty_hint": "Add a machine by link or over SSH.",
   "ui.devices.enrollment_hint": "Install the agent there, then run `nagent join <link>` as root or as an administrator. It works for {minutes} minutes.",
   "ui.devices.forget": "Forget",
-  "ui.devices.forget_body": "The machine leaves this hub, and its agent needs a new link to join again.",
+  "ui.devices.forget_body": "The machine leaves this hub, and its modules stop. Its agent needs a new link to join again.",
   "ui.devices.forget_title": "Forget {name}",
   "ui.devices.generate_link": "Generate link",
   "ui.devices.header_address": "Address",

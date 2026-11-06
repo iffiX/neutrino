@@ -204,7 +204,7 @@
   "ui.devices.empty_hint": "用链接或 SSH 添加一个系统。",
   "ui.devices.enrollment_hint": "先在那个系统上安装被控端，然后以 root 或管理员身份运行 `nagent join <link>`。链接 {minutes} 分钟内有效。",
   "ui.devices.forget": "忘记",
-  "ui.devices.forget_body": "这个系统离开这台中枢，它的被控端要用新链接才能重新加入。",
+  "ui.devices.forget_body": "这个系统离开这台中枢，它的模块停止运行。它的被控端要用新链接才能重新加入。",
   "ui.devices.forget_title": "忘记 {name}",
   "ui.devices.generate_link": "生成链接",
   "ui.devices.header_address": "地址",
