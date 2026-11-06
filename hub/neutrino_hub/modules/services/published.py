@@ -399,10 +399,13 @@ class PublishedServiceCache:
         and Ayakaleaf only while the device reports the module running, and an SSH server
         instance while the module enables its account. Gitea listens on the
         device's loopback alone, so its health is the device's word that
-        the server runs.
+        the server runs. Each container of Containers is listed by its own
+        state, whatever state the module reads.
         """
         if not isinstance(status, dict):
             return None
+        if name == "podman":
+            return self._hosted_containers(key, status)
         if status.get("state") not in CHANNEL_MODULE_CONFIGURED_WANTS:
             return None
         if name == DEVICE_SSH_SERVER_MODULE:
@@ -450,41 +453,50 @@ class PublishedServiceCache:
             }
         if name in account_program_names():
             return {"instances": self._running_instances(key, name, details)}
-        if name == "podman":
-            declared = {
-                str(container.get("name", "")): container.get("services") or []
-                for container in self._desired_states.read(key, "podman").get(
-                    "containers"
-                )
-                or []
-                if isinstance(container, dict)
-            }
-            containers = []
-            for container in details.get("containers") or []:
-                if not isinstance(container, dict) or not container.get("name"):
-                    continue
-                # A container module's page is its own entry, behind its
-                # forwarder; its containers' ports give none.
-                if container.get("module"):
-                    continue
-                container_name = str(container["name"])
-                containers.append(
-                    {
-                        "name": container_name,
-                        "image": str(container.get("image", "")),
-                        "is_running": bool(container.get("is_running")),
-                        "source": (
-                            SERVICES_SOURCE_DECLARED
-                            if container_name in declared
-                            else SERVICES_SOURCE_MANUAL
-                        ),
-                        "bindings": container_bindings(
-                            container, declared.get(container_name, [])
-                        ),
-                    }
-                )
-            return {"containers": containers}
         return None
+
+    def _hosted_containers(self, key: str, status: dict) -> "dict | None":
+        """Containers' containers as last reported, each by its own state,
+        while the hub asks the module to run or to stop."""
+        if (
+            self._desired_states.want_of(key, "podman")
+            not in CHANNEL_MODULE_CONFIGURED_WANTS
+        ):
+            return None
+        details = (
+            status.get("details") if isinstance(status.get("details"), dict) else {}
+        )
+        declared = {
+            str(container.get("name", "")): container.get("services") or []
+            for container in self._desired_states.read(key, "podman").get("containers")
+            or []
+            if isinstance(container, dict)
+        }
+        containers = []
+        for container in details.get("containers") or []:
+            if not isinstance(container, dict) or not container.get("name"):
+                continue
+            # A container module's page is its own entry, behind its
+            # forwarder; its containers' ports give none.
+            if container.get("module"):
+                continue
+            container_name = str(container["name"])
+            containers.append(
+                {
+                    "name": container_name,
+                    "image": str(container.get("image", "")),
+                    "is_running": bool(container.get("is_running")),
+                    "source": (
+                        SERVICES_SOURCE_DECLARED
+                        if container_name in declared
+                        else SERVICES_SOURCE_MANUAL
+                    ),
+                    "bindings": container_bindings(
+                        container, declared.get(container_name, [])
+                    ),
+                }
+            )
+        return {"containers": containers}
 
     def _hosted_ssh_server(self, key: str, status: dict) -> "dict | None":
         """The SSH server's instances the module enables, as last reported,
