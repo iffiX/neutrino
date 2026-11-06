@@ -391,16 +391,16 @@ def _login_view(
 
 @router.get("/token", response_model=TokenListView)
 def list_tokens() -> TokenListView:
-    """Read every stored token with how many providers and nodes use it.
+    """Read every stored token with the providers and the nodes that use it.
 
     Returns:
         The tokens, newest first, values withheld.
     """
     provider_counts = _provider_counts()
-    node_counts = _node_counts()
+    node_names = _node_names()
     return TokenListView(
         tokens=[
-            _token_view(record, provider_counts, node_counts)
+            _token_view(record, provider_counts, node_names)
             for record in SecretVault().list_records(kind=TOKEN_KIND)
         ]
     )
@@ -437,7 +437,7 @@ def create_token(request: TokenCreate) -> TokenView:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"code": "token_refused", "params": {"detail": str(error)}},
         ) from error
-    return _token_view(record, _provider_counts(), _node_counts())
+    return _token_view(record, _provider_counts(), _node_names())
 
 
 @router.post("/token/remove")
@@ -484,9 +484,9 @@ def _provider_counts() -> dict[str, int]:
     return counts
 
 
-def _node_counts() -> dict[str, int]:
-    counts = edition.hook("secret_node_counts")
-    return counts() if counts is not None else {}
+def _node_names() -> dict[str, list[str]]:
+    names = edition.hook("secret_node_names")
+    return names() if names is not None else {}
 
 
 def _clear_token_on_providers(token_id: str) -> int:
@@ -507,14 +507,16 @@ def _clear_token_on_nodes(token_id: str) -> int:
 def _token_view(
     record: SecretRecord,
     provider_counts: dict[str, int],
-    node_counts: dict[str, int],
+    node_names: dict[str, list[str]],
 ) -> TokenView:
+    names = node_names.get(record.id, [])
     return TokenView(
         id=record.id,
         name=record.name,
         created_at=record.created_at,
         provider_count=provider_counts.get(record.id, 0),
-        node_count=node_counts.get(record.id, 0),
+        node_count=len(names),
+        node_names=names,
     )
 
 

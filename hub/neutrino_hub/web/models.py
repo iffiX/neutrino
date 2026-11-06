@@ -653,6 +653,8 @@ class TokenView(BaseModel):
     created_at: str = ""
     provider_count: int = 0
     node_count: int = 0
+    # The names of the exit nodes it keys, in the node list's order.
+    node_names: list[str] = Field(default_factory=list)
 
 
 class TokenListView(BaseModel):

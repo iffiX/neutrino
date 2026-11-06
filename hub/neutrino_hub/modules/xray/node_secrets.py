@@ -83,11 +83,12 @@ def delete_node_secret(node: XrayNodeConfig, vault: SecretVault | None = None) -
         pass
 
 
-def node_secret_counts() -> dict[str, int]:
-    """How many nodes name each vault secret.
+def node_secret_names() -> dict[str, list[str]]:
+    """The nodes that name each vault secret.
 
     Returns:
-        Secret id to the number of nodes naming it; empty before setup.
+        Secret id to the names of the nodes naming it, in the list's order,
+        a node with no name by its id; empty before setup.
 
     Raises:
         ValueError: When the node list is not valid JSON.
@@ -96,11 +97,11 @@ def node_secret_counts() -> dict[str, int]:
         node_list = XrayNodeList.from_dict(read_config(XRAY_NODES_FILE))
     except FileNotFoundError:
         return {}
-    counts: dict[str, int] = {}
+    names: dict[str, list[str]] = {}
     for node in node_list.nodes:
         if node.secret_id:
-            counts[node.secret_id] = counts.get(node.secret_id, 0) + 1
-    return counts
+            names.setdefault(node.secret_id, []).append(node.name or node.id)
+    return names
 
 
 def clear_node_secret(secret_id: str) -> int:

@@ -381,6 +381,7 @@ def test_deleting_a_token_disables_the_nodes_it_keyed(client, tmp_path):
 
     listed = client.get("/api/hub/credential/token").json()["tokens"]
     assert listed[0]["node_count"] == 1
+    assert listed[0]["node_names"] == ["Tokyo"]
     assert listed[0]["provider_count"] == 0
 
     response = client.post(

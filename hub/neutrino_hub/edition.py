@@ -127,10 +127,10 @@ EDITION_HOOKS = {
     "exit_tag_filter": (
         (_PROXY, "neutrino_hub.web.routers.hub.proxy_node:is_exit_tag"),
     ),
-    # The vault's secrets the exit nodes name: how many name each, and
+    # The vault's secrets the exit nodes name: the nodes naming each, and
     # taking one off every node.
-    "secret_node_counts": (
-        (_PROXY, "neutrino_hub.modules.xray.node_secrets:node_secret_counts"),
+    "secret_node_names": (
+        (_PROXY, "neutrino_hub.modules.xray.node_secrets:node_secret_names"),
     ),
     "secret_node_clear": (
         (_PROXY, "neutrino_hub.modules.xray.node_secrets:clear_node_secret"),
