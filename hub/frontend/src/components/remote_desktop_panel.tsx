@@ -227,7 +227,9 @@ function RustdeskCard({ rdp, onResetSeatPassword }: RustdeskCardProps) {
       {isShared && rdp !== null && (
         <>
           <span className="muted">
-            {t("ui.remote_desktop.shared_by", { account: rdp.account })}{" "}
+            {rdp.account !== "" && (
+              <>{t("ui.remote_desktop.shared_by", { account: rdp.account })} </>
+            )}
             {viewerWords(rdp.connected_count)}
           </span>
           <span className="field_hint">
