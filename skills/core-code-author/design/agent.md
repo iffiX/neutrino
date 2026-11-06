@@ -412,6 +412,13 @@ plans once more at the next step boundary. An ask made before a state names
 the module is kept for the next state. One place applies a module, its
 task, and a forwarder changes nothing but the record.
 
+An ask that any `configure` answers, as the File share's first read of its
+folders in a run ([agent/modules/file_share.md](agent/modules/file_share.md),
+"A share's folder"), changes nothing while a task of the module runs: that
+task's `configure` reads what the ask is for. On the R166 Windows machine
+the File share's first ask reached the task the state had just made after
+its `configure` began, and the task ran `configure` twice.
+
 ### A newer entry while a task runs
 
 | Rule | Reason |

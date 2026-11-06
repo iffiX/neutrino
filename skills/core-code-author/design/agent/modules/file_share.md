@@ -70,7 +70,8 @@ The module's shares live in a file of the module's own,
 marker and whose last line is a `[global]` header. `smb.conf` is the
 person's, whoever wrote it, an earlier version of this module included: a
 file an earlier version rendered whole, its first line the marker, is the
-person's file now, left as it is. While the module serves at least one share
+person's file now, less the shares 0.5 rendered in it ("What 0.5 made").
+While the module serves at least one share
 of its own it adds one line to `smb.conf`, `include =
 /etc/samba/neutrino.conf`, right after the `[global]` header, or first in a
 file with no such header, once, and changes nothing else in it, not its
@@ -102,33 +103,9 @@ SMB, the module's users never make one, the printer shares and `[homes]`
 serve nothing to a user with no home and no login shell, and `map to guest
 = bad user` reaches no share whose `valid users` names one user.
 
-What a hub of 0.5 had the module make, its shares and its Samba logins, is
-the person's own after the upgrade: the hub's move of the 0.5 files drops
-them from `samba.json`, so the hub neither carries nor manages them, and
-the machine goes on serving them as they are, to the logins they had. A
-0.5 share named after an account then leaves that account's share off
-with `share_name_taken {name}`, as any share of the person's does, until
-the person renames or removes it. The ports a hub of 0.5 kept for VS Code,
-code-server and CloudCLI are not carried either; the agent takes fresh
-ones ([../../protocol.md](../../protocol.md), "The account layer in the
-state").
-
-Everything named `neutrino-` is the module's. At the first apply after the
-module is installed or adopted, the apply before the configured mark is
-written, the module deletes every `neutrino-*` SMB user and Unix account it
-finds on the machine, with its Samba credential, and every share of its
-own, its file and its users' files on Linux, then makes the wanted ones
-anew from the configuration; later applies manage them as usual. On Windows
-the same apply deletes every share whose description carries the module's
-marker and every account whose name carries the prefix, and on macOS every
-share point under the `neutrino_` prefix and every account whose name carries
-the prefix. A module the hub took over is adopted at the person's first
-press on it: its task under `is_taken_over` checks the configuration and
-writes no configured mark, so the first apply is that press's `configure`,
-on every system ([../../agent.md](../../agent.md), "The steps").
-
-An uninstall on Linux deletes every `neutrino-*` SMB user the sweep would,
-before the packages go.
+The ports a hub of 0.5 kept for VS Code, code-server and CloudCLI are not
+carried; the agent takes fresh ones ([../../protocol.md](../../protocol.md),
+"The account layer in the state").
 
 The module makes each SMB user it lacks with `useradd --system
 --no-create-home --shell <nologin> --comment "neutrino file share"` and sets
@@ -233,7 +210,13 @@ inheritance is broken with its entries kept, so the owner, SYSTEM and
 Administrators stay, and the module's users are removed from it, so
 OpenSSH's permission check on the account's own `~/.ssh` files passes.
 Each apply reads these folders' access lists through the PowerShell host
-first and changes a folder only for an entry that differs. Every change
+once the accounts are made, by the SID each account's name holds then, and
+changes a folder only for an entry that differs. An entry whose SID no
+longer belongs to the module's account of that name counts for no account,
+so the grant to the account the name holds now is set. On the R166 Windows
+machine the lists read before the accounts were made again named the old
+SIDs, the grants were left as they stood, and every Home share was denied.
+Every change
 walks the whole tree under the folder as Windows carries an inherited
 entry down, and a home folder holds the account's whole profile: granting
 it again at every apply held `system_accounts` for 40 to 150 seconds. An account's grant replaces its
@@ -243,6 +226,46 @@ read, so the `.ssh` folder needs nothing. On macOS each account takes the
 same entry as its SMB user, since a file the SMB user writes has the SMB
 user as its owner. Removing a folder share, or an account from it, takes the
 module's grant to that user off the folder on both systems.
+
+## The sweep
+
+Everything whose name starts with `neutrino` is the module's, on every
+system. At the module's first apply, the first `configure` that writes after
+the module is installed, adopted or upgraded from 0.5, the module sweeps: it
+deletes every share and every account of the module's, those of 0.5 among
+them ("What 0.5 made"), then makes the wanted ones anew from the
+configuration. Later applies manage them as usual.
+
+| System | What the sweep deletes |
+| --- | --- |
+| Linux | every `neutrino-*` SMB user and Unix account, with its Samba credential; the module's file and its users' files; the shares 0.5 rendered in `smb.conf` and their users |
+| Windows | every share whose description starts with the module's marker, every account whose name carries the prefix or whose description is the marker, and each deleted account's entries on the folders of those shares, of the shares the record lists and of the configuration's shares |
+| macOS | every share point under the `neutrino_` prefix, every account whose name carries the prefix or whose full name is the module's, and the entries the module gives each such account and its machine account on the same folders, taken off before the account goes |
+
+| Rule | Reason |
+| --- | --- |
+| The module's record under the state root stores `is_swept` as soon as the sweep has ended, before the apply makes anything, and an apply whose record stores it sweeps nothing. An apply with no record, or with a record of 0.5, sweeps. An uninstall deletes the mark. | A task plans again when a newer entry reaches it at a step boundary, and runs its `configure` again. The configured mark is written only when the task ends: on the R166 Windows machine the second `configure` of the first enable swept the accounts the first had made and made them again with new SIDs, and every Home share was denied. |
+| A module the hub took over is adopted at the person's first press on it: its task under `is_taken_over` checks the configuration and writes no record, so the first apply is that press's `configure`, on every system ([../../agent.md](../../agent.md), "The steps"). | A join changes nothing on the machine. |
+| An uninstall deletes on every system everything the sweep would, the entries on the folders with the accounts, on Linux before the packages go. | Nothing whose name starts with `neutrino` stays after the module. On the R166 Mac the SMB account `neutrino-lab` stayed after an uninstall. |
+
+## What 0.5 made
+
+What a module of 0.5 made, its shares and its Samba logins, is swept at
+the first apply after the upgrade, on every system. The shares' folders and
+their files stay. The hub's move of the 0.5 files drops the shares from
+`samba.json`, and a Home share or a folder share the person sets up again is
+one of the module's own.
+
+| System | What 0.5 made, as the sweep tells it |
+| --- | --- |
+| Linux | 0.5 rendered the whole `smb.conf`, its first line `# Generated by neutrino. Do not edit; change it on the hub instead.` In such a file each share section whose lines are the lines 0.5 rendered for it is deleted, and every other byte stays, the file's mode, owner and link with them. Each user such a section names in `valid users`, and each Samba user in the group `sambashare` where it names the group, loses its Samba credential. Its Unix account goes too when 0.5 made it: a login shell that never signs in and no home folder on the machine. |
+| Windows | every share whose description starts with the marker, and every account whose description is the marker |
+| macOS | every share point under `neutrino_`, and every account whose full name is the module's words alone |
+
+| Rule | Reason |
+| --- | --- |
+| A share 0.5 rendered is told by its lines, and a section the person changed or added by hand stays with its users. | The person's own shares and users stay as they are, in whatever file they are written. |
+| A user that 0.5 did not make keeps its account and loses only the credential 0.5 gave it. | 0.5 gave a Samba credential to an account the person already had. |
 
 ## A share's folder
 
@@ -258,7 +281,7 @@ touches an account's files as that account").
 | A share whose folder does not exist is left off the server on every system, and the agent makes no folder: none as the account, none as root and none as SYSTEM. | The folder's place, its owner and its mode are the person's to choose. A folder the agent made sat in a place another account could change, and a mistyped path made a folder nobody asked for. |
 | A share the machine cannot serve is left off the server with a code of its own, and every other share is served, on every system: a folder the apply reads as missing, `share_path_missing {name, path}`; one it reads as a link, `share_path_link {name, path}`; a share whose name a share of the person's has, `share_name_taken {name}`; and on Windows and macOS a share the SMB server refuses, `share_not_served {name, detail}` with the server's words. The module row reads the first share left off in the configuration's order, after `share_users_unknown {shares}` when that holds. | On the R146 Mac `sharing -a` refused a share whose folder was a link, and its error ended the whole apply, every other share left off with it; a share of the person's under a module share's name ended the apply the same way on every system. |
 | A share whose folder goes away after it was added stays in the hub's configuration: a folder share stays in `samba.json`, and a Home share's account stays enabled. The apply leaves it off the server and the module row reads `share_path_missing {name, path}`. The person takes a share out with the folder share's **Remove** or by unchecking the account, as for any other share. | A folder can be gone for a while, a disk not mounted or a folder moved and moved back, and whether its share goes is the person's choice. |
-| The agent reads the folder of each share the state names again at its report, at most every 30 seconds, the way the `folder` verb reads it. A read that finds a folder otherwise than the last apply read it, gone, back, a link put in its place or one taken away, asks for a configure task of the module's own, once for each change, with no press. A folder the reading account cannot reach asks for nothing. The first report after the agent starts asks for one such task whatever the folders read, since the agent keeps neither what the last apply read nor the shares it left off. That apply reads each folder again: a real folder is served, and a link stays off with `share_path_link {name, path}`. | The read at the apply is the routes' own, so a folder made again at the path is served only when it would be added, and a link planted there stays off. A folder can come back while the agent is down, as a disk mounted at boot, and a share left off before a restart would stay off with no code on the row. |
+| The agent reads the folder of each share the state names again at its report, at most every 30 seconds, the way the `folder` verb reads it. A read that finds a folder otherwise than the last apply read it, gone, back, a link put in its place or one taken away, asks for a configure task of the module's own, once for each change, with no press. A folder the reading account cannot reach asks for nothing. The first report after the agent starts asks for one such task whatever the folders read, since the agent keeps neither what the last apply read nor the shares it left off, and the ask changes nothing while a task of the module runs, whose `configure` reads every folder anyway ([../../agent.md](../../agent.md), "From a state to tasks"). That apply reads each folder again: a real folder is served, and a link stays off with `share_path_link {name, path}`. | The read at the apply is the routes' own, so a folder made again at the path is served only when it would be added, and a link planted there stays off. A folder can come back while the agent is down, as a disk mounted at boot, and a share left off before a restart would stay off with no code on the row. |
 | On macOS whoever owns the folder's place sets and takes off its access entries: the account that owns the first level of the path an account owns, through the step-down; else root, each level of the path being root's and none a link or a folder others may write. A path through a link or such a folder is left alone with a note, and its share is left off as a link. | As the account, a link it planted reaches only what it reaches itself; in root's place no account can plant one. |
 | On Windows SYSTEM sets the grants itself, the one change to an account's folder the agent does not make as the account ([../../agent.md](../../agent.md), "Acting for an account"). Each folder, a share's and the `.ssh` folder under it, is opened by handle with the reparse point opened and never followed; a folder that is a junction or a link, or whose final path is not the path asked because a folder above it is a junction, is refused, left ungranted with a note. The access list is read and set on that handle, the account's entries folded in as `icacls /grant:r` and `/remove:g` fold them, and the `.ssh` folder's inherited entries made its own and protected as `/inheritance:d` does. | A grant by path follows a junction, so `icacls` on a folder whose path an account changed granted the share's user a folder of the account's choosing. The handle holds the folder that was checked, so a junction planted after the check changes nothing. Logging on as each account to set the grants would ask SYSTEM to hold every account's login for a folder the account cannot grant anyway: the entries name the share's SMB user. |
 | A grant set on a share's folder reaches what the folder holds as Windows carries an inherited entry down, and Windows carries none through a junction inside the folder. | On the R144 lab machine an account's junction inside its Home share's folder led to a folder of SYSTEM's; after the agent granted the share's folder again, that folder's access list read as before, with no entry of the share's user. |
@@ -277,11 +300,8 @@ decide, and its first apply makes the machine match them. On Linux that
 apply writes the module's file, adds the include line when it is missing,
 and sets each SMB user's password from `passwords`. On Windows and macOS,
 when the module's record under the state root was kept, the shares and
-accounts it lists are the module's again. When the record is gone, an
-account its marker names is the module's again, and a share left under the
-name of an enabled account or a folder share is not, so the apply leaves
-the module's share of that name off with `share_name_taken {name}` until
-the person removes that share.
+accounts it lists are the module's again. When the record is gone, the
+first apply sweeps ("The sweep") and makes the shares and accounts anew.
 
 Its journal on Windows reads the SMB server's latest events from
 `Microsoft-Windows-SMBServer/Operational`, and on macOS what the unified
