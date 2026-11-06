@@ -11,9 +11,11 @@ is found by the script; the task's description carries a digest that moves
 when what it runs, its login or a file it reads changes; every write and a
 forget remove the rules an older build opened; a stop takes the instance's
 process tree before the task stops and ends it after; a start first ends
-what is left of the instance; an instance whose service names a port runs
-only while a process of its tree listens on it, any other while its task
-runs; a task Windows cannot sign in reads ``credential_invalid``; a
+what is left of the instance and registers a task that does not run again
+with its login; an instance whose service names a port runs only while a
+process of its tree listens on it, any other while its task runs; an
+enabled task that does not run is owed a start; a task Windows cannot sign
+in reads ``credential_invalid``; a
 remove unregisters the task and deletes what it ran from; and every write
 holds the account's batch logon right before the task is read, and a
 remove releases it after the task is unregistered. Every request the host
@@ -429,9 +431,46 @@ def test_a_start_first_ends_what_is_left_of_the_instance(module_dir):
         "entries",
         "task_stop",
         ("end", []),
+        "task_write",
         "task_start",
     ]
     assert timeline.host.args_of("task_start") == [{"task": "neutrino_demo_hanha"}]
+
+
+def test_a_start_of_a_task_that_does_not_run_registers_it_again_with_its_login(
+    module_dir,
+):
+    """After a reboot that turned virtualization-based security off, Windows
+    refused the login the task kept, at boot and at every start, until the
+    task was registered again."""
+    held = {"is_present": True, "state": "Ready", "description": "neutrino:0123"}
+    host = RecordingHost({"task_read": held})
+    service = service_with(module_dir)
+
+    account_service.start(service, machine_with(module_dir, host), is_restart=False)
+
+    log = module_dir + "\\hanha.log"
+    assert host.ops()[-2:] == ["task_write", "task_start"]
+    assert host.args_of("task_write") == [
+        {
+            "task": "neutrino_demo_hanha",
+            "description": "neutrino:0123",
+            "program": "cmd.exe",
+            "arguments": f'/s /c "{module_dir}\\demo.exe --port 8000 >> {log} 2>&1"',
+            "account": "hanha",
+            "password": "pw",  # scan: allow
+        }
+    ]
+
+
+def test_a_start_of_a_missing_task_registers_nothing(module_dir):
+    host = RecordingHost({"task_read": {"is_present": False}})
+
+    account_service.start(
+        service_with(module_dir), machine_with(module_dir, host), is_restart=False
+    )
+
+    assert "task_write" not in host.ops()
 
 
 def test_a_running_task_is_not_started_again(module_dir):
@@ -501,10 +540,35 @@ def test_the_states_read_each_task_its_listener_and_its_last_result(module_dir):
     states = account_service.states(services, machine_with(module_dir, host, table))
 
     assert states == {
-        "hanha": {"is_running": True, "code": "credential_invalid"},
-        "bob": {"is_running": True, "code": ""},
+        "hanha": {
+            "is_running": True,
+            "code": "credential_invalid",
+            "is_start_owed": False,
+        },
+        "bob": {"is_running": True, "code": "", "is_start_owed": False},
     }
     assert host.calls == [("task_states", {"prefix": "neutrino_demo_"})]
+
+
+@pytest.mark.parametrize(
+    "task_state,is_start_owed",
+    [("Ready", True), ("Running", False), ("Disabled", False), (None, False)],
+)
+def test_a_task_set_to_start_that_does_not_run_is_owed_a_start(
+    module_dir, task_state, is_start_owed
+):
+    tasks = []
+    if task_state is not None:
+        tasks.append(
+            {"name": "neutrino_demo_hanha", "state": task_state, "last_result": 0}
+        )
+    host = RecordingHost({"task_states": {"tasks": tasks}})
+
+    states = account_service.states(
+        [service_with(module_dir)], machine_with(module_dir, host)
+    )
+
+    assert states["hanha"]["is_start_owed"] is is_start_owed
 
 
 @pytest.mark.parametrize(

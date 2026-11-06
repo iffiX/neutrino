@@ -511,6 +511,9 @@ class InstancesModuleRunner(ModuleRunner):
         self._lock = threading.Lock()
         self._forwarders: dict = {}
         self._is_resumed = False
+        # Whether a reading since the agent started looked for an instance
+        # owed a start.
+        self._is_start_checked = False
         self._is_stopped = False
         self._applied: "dict | None" = None
         self._applied_at = 0.0
@@ -1258,6 +1261,7 @@ class InstancesModuleRunner(ModuleRunner):
                 applied = read
                 with self._lock:
                     self._applied, self._applied_at = applied, self._clock()
+                self._ask_owed_start(read)
         with self._lock:
             forwarders = dict(self._forwarders)
         states = []
@@ -1282,6 +1286,24 @@ class InstancesModuleRunner(ModuleRunner):
             state.update(self._hooks.details_extra(record))
             states.append(state)
         return states
+
+    def _ask_owed_start(self, read: dict) -> None:
+        """Ask for one configure task when the first reading since the agent started finds an instance owed a start.
+
+        Args:
+            read: The account service layer's reading, by account.
+        """
+        with self._lock:
+            if self._is_start_checked:
+                return
+            self._is_start_checked = True
+        owed = sorted(
+            account for account, seen in read.items() if seen.get("is_start_owed")
+        )
+        if not owed:
+            return
+        self._log(f"{self.name}: {', '.join(owed)} did not start; a start follows")
+        self.ask_configure()
 
     def _resume(self) -> None:
         """Start the forwarders the records name, once, after the agent starts."""

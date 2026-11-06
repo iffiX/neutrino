@@ -26,8 +26,9 @@ journal is the units' or the log files', the module's own log first
 where the hooks name one and nothing of a service whose output is
 discarded, a log not written yet read as empty, the refusal last; an artifact lands under its directory in
 the module's and the hooks tidy after it, a bad directory or archive being
-``install_failed``; an uninstall deletes the module directory; and a record
-changed by the hooks asks for a configure task.
+``install_failed``; an uninstall deletes the module directory; a record
+changed by the hooks asks for a configure task; and the first reading after
+the agent starts asks for one when an instance is owed a start.
 """
 
 import dataclasses
@@ -823,6 +824,65 @@ def test_on_every_system_a_stopped_forwarder_stays_down_until_the_start(
     again.apply(CONFIG)
     (forwarder,) = FakeForwarder.made
     assert forwarder.is_started and forwarder.record["port"] == 8443
+
+
+class OwedAccountLayer(FakeAccountLayer):
+    """Windows' account layer after a reboot whose tasks did not start."""
+
+    def __init__(self, owed):
+        super().__init__()
+        self.owed = set(owed)
+
+    def states(self, services, machine):
+        return {
+            service.account: {
+                "is_running": service.account in self.running,
+                "is_start_owed": (
+                    service.account in self.owed and service.account not in self.running
+                ),
+            }
+            for service in services
+        }
+
+
+def rebooted_runner(tmp_path, monkeypatch, owed):
+    """A Windows runner that applied once, then an agent started again after a
+    reboot that left every instance down."""
+    layer = OwedAccountLayer(owed)
+    monkeypatch.setattr(instances_module, "account_service", layer)
+    the_machine = ServiceMachine(
+        os_name="windows",
+        module_dir=str(tmp_path / "state" / "demo"),
+        record_dir=str(tmp_path / "state" / "demo"),
+        lookup_account=lookup,
+        run=lambda command, **fields: CommandResult(list(command), 0, "", ""),
+    )
+    the_platform = Platform(os_name="windows", root=str(tmp_path))
+    make_runner(the_machine, the_platform).apply(CONFIG)
+    layer.running.clear()
+    return make_runner(the_machine, the_platform)
+
+
+def test_an_instance_owed_a_start_asks_once_for_a_configure_task(tmp_path, monkeypatch):
+    """Windows did not start the SSH server's tasks at a boot after a change
+    of its features, and the module read stopped until a person acted."""
+    again = rebooted_runner(tmp_path, monkeypatch, owed={"ann"})
+    asks = asking(again)
+
+    assert again.is_active() is False
+    again._forget_states()
+    assert again.is_active() is False
+
+    assert asks == ["demo"]
+
+
+def test_an_instance_owed_no_start_asks_for_nothing(tmp_path, monkeypatch):
+    again = rebooted_runner(tmp_path, monkeypatch, owed=set())
+    asks = asking(again)
+
+    assert again.is_active() is False
+
+    assert asks == []
 
 
 @pytest.mark.parametrize(

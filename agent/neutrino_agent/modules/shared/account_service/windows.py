@@ -51,6 +51,7 @@ from neutrino_agent.modules.shared.account_service.constants import (
     ACCOUNT_SERVICE_WINDOWS_SCRIPT_DIR_NAME,
     ACCOUNT_SERVICE_WINDOWS_SCRIPT_SUFFIX,
     ACCOUNT_SERVICE_WINDOWS_SHELL,
+    ACCOUNT_SERVICE_WINDOWS_TASK_READY,
     ACCOUNT_SERVICE_WINDOWS_TASK_RUNNING,
 )
 from neutrino_agent.modules.shared.windows_acl import grant_account_alone
@@ -301,29 +302,26 @@ def write(service, machine) -> bool:
     if not held.get("is_present") or held.get("description") != description:
         if held.get("is_present"):
             stop_task_tree(task, output_mark(service, machine), machine)
-        machine.powershell.call(
-            "task_write",
-            {
-                "task": task,
-                "description": description,
-                "program": ACCOUNT_SERVICE_WINDOWS_SHELL,
-                "arguments": arguments,
-                "account": service.account,
-                "password": service.password,
-            },
-        )
+        _register(service, machine, description)
         is_registered = True
     machine.powershell.call("rules_forget", {"prefix": rule_prefix(service.name)})
     return is_registered
 
 
 def start(service, machine, *, is_restart: bool) -> None:
-    """Enable and start the task unless it runs, ending what is left of the instance first."""
+    """Enable and start the task unless it runs, ending what is left of the instance first.
+
+    The task is registered again with the login first, under the
+    description it carries: Windows refuses the login a task keeps once
+    virtualization-based security changed at a reboot.
+    """
     task = task_name(service.name, service.account)
     held = machine.powershell.call("task_read", {"task": task})
     if held.get("state") == ACCOUNT_SERVICE_WINDOWS_TASK_RUNNING:
         return
     stop_task_tree(task, output_mark(service, machine), machine)
+    if held.get("is_present"):
+        _register(service, machine, str(held.get("description", "") or ""))
     machine.powershell.call("task_start", {"task": task})
 
 
@@ -358,10 +356,12 @@ def remove(service, machine) -> None:
 
 
 def states(services: list, machine) -> dict:
-    """Whether each instance runs, and whether its task can sign in.
+    """Whether each instance runs, whether its task can sign in, and whether it is owed a start.
 
     An instance whose service names a port runs while its process tree
-    listens on it; any other runs while its task does.
+    listens on it; any other runs while its task does. An instance whose
+    task is enabled and reads ``Ready`` while it does not run is owed a
+    start.
     """
     if not services:
         return {}
@@ -395,6 +395,11 @@ def states(services: list, machine) -> dict:
             "is_running": is_running,
             "code": (
                 "credential_invalid" if result in ACCOUNT_SERVICE_LOGON_FAILURES else ""
+            ),
+            "is_start_owed": (
+                entry is not None
+                and not is_running
+                and str(entry.get("state", "")) == ACCOUNT_SERVICE_WINDOWS_TASK_READY
             ),
         }
     return held
@@ -485,6 +490,27 @@ def _is_listening(mark: str, port: int, entries: list, machine) -> bool:
             if mark in machine.processes.command_line(member):
                 return True
     return False
+
+
+def _register(service, machine, description: str) -> None:
+    """Register one instance's task under the account's login with the description given.
+
+    Raises:
+        ModuleApplyError: ``credential_invalid`` when Windows refuses the
+            account's login.
+        OSError: When the PowerShell host fails.
+    """
+    machine.powershell.call(
+        "task_write",
+        {
+            "task": task_name(service.name, service.account),
+            "description": description,
+            "program": ACCOUNT_SERVICE_WINDOWS_SHELL,
+            "arguments": arguments_of(service, machine),
+            "account": service.account,
+            "password": service.password,
+        },
+    )
 
 
 def _is_scripted(service) -> bool:
