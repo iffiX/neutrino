@@ -377,6 +377,7 @@
   "code.transport_apply_failed": "The transport could not be started: {detail}",
   "code.transport_key_missing": "The hub's connection port is not ready yet; make the link again in a moment.",
   "code.version_locked": "The version of {module} follows the system or the agent and cannot be chosen.",
+  "code.version_older_than_run": "{module} has run {newest_run} on this machine and moved its data forward, so it cannot install the older {version}.",
   "code.version_switch_failed": "Version {version} did not start, so the previous version runs again: {detail}",
   "code.version_unknown": "Version {version} is not listed for this machine.",
   "code.share_account_not_enabled": "{account} is not enabled for this machine's file share.",

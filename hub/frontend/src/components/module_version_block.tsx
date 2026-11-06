@@ -6,13 +6,8 @@ import { Spinner } from "./spinner";
 import { apiPath, apiPost, describeError } from "../api_client";
 import { t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
-import { useConfirm } from "../use_confirm";
 import { HUB_EVENT_CONFIG, HUB_EVENT_DEVICE_REPORT } from "../use_hub_events";
-import type {
-  ModuleVersionEntry,
-  ModuleVersionSetRequest,
-  ModuleVersionView,
-} from "../api_types";
+import type { ModuleVersionSetRequest, ModuleVersionView } from "../api_types";
 
 import "./module_version_block.css";
 
@@ -24,9 +19,10 @@ import "./module_version_block.css";
  *
  * A locked version, a module whose version follows the system or its image,
  * shows the same line with Update dead and the dialog holding its one
- * version, which cannot be pressed. A version older than the one installed,
- * on a module that moves its data forward, asks first. A failed row with no
- * version reported shows no line, Update dead and the dialog.
+ * version, which cannot be pressed. On a module that moves its data forward,
+ * a version older than the newest run cannot be pressed, nor Follow the
+ * tested version while the tested one is such a version. A failed row with
+ * no version reported shows no line, Update dead and the dialog.
  */
 
 const VERSION_PATH = "/agent/module/version";
@@ -61,7 +57,6 @@ export function ModuleVersionBlock({
       ],
     },
   );
-  const confirm = useConfirm();
   const [isPicking, setIsPicking] = useState(false);
   const [busyVersion, setBusyVersion] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -78,6 +73,9 @@ export function ModuleVersionBlock({
     isReported && view.newest !== "" && view.newest !== view.installed;
   const canUpdate = canPress && isNewer && !view.is_locked;
   const canPick = canPress;
+  const isTestedOlderThanRun = view.versions.some(
+    (entry) => entry.is_tested && entry.is_older_than_run,
+  );
 
   const choose = async (version: string) => {
     setBusyVersion(version);
@@ -97,25 +95,6 @@ export function ModuleVersionBlock({
     } finally {
       setBusyVersion(null);
     }
-  };
-
-  const pick = (entry: ModuleVersionEntry) => {
-    if (view.is_data_forward_only && isOlder(view, entry.version)) {
-      confirm.ask({
-        title: t("ui.modules.downgrade_title", {
-          module: title,
-          version: entry.version,
-        }),
-        body: t("ui.modules.downgrade_body", {
-          module: title,
-          version: entry.version,
-        }),
-        confirmLabel: t("ui.modules.install_version_confirm"),
-        onConfirm: () => void choose(entry.version),
-      });
-      return;
-    }
-    void choose(entry.version);
   };
 
   return (
@@ -178,7 +157,7 @@ export function ModuleVersionBlock({
               <button
                 type="button"
                 className="module_version_row"
-                disabled={busyVersion !== null}
+                disabled={busyVersion !== null || isTestedOlderThanRun}
                 onClick={() => void choose(FOLLOW_TESTED)}
               >
                 <span>{t("ui.modules.version_follow_tested")}</span>
@@ -190,10 +169,12 @@ export function ModuleVersionBlock({
                 key={entry.version}
                 type="button"
                 className="module_version_row"
-                disabled={view.is_locked || busyVersion !== null}
-                onClick={() => {
-                  pick(entry);
-                }}
+                disabled={
+                  view.is_locked ||
+                  entry.is_older_than_run ||
+                  busyVersion !== null
+                }
+                onClick={() => void choose(entry.version)}
               >
                 <span className="mono">{entry.version}</span>
                 {entry.is_tested && (
@@ -213,20 +194,8 @@ export function ModuleVersionBlock({
               </button>
             ))}
           </div>
-          {confirm.modal}
         </DialogFrame>
       )}
     </div>
   );
-}
-
-/** Whether a listed version comes after the installed one, newest first. */
-function isOlder(view: ModuleVersionView, version: string): boolean {
-  const installedAt = view.versions.findIndex(
-    (entry) => entry.version === view.installed,
-  );
-  const versionAt = view.versions.findIndex(
-    (entry) => entry.version === version,
-  );
-  return installedAt >= 0 && versionAt > installedAt;
 }

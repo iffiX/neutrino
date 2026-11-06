@@ -1212,8 +1212,9 @@ function ModuleListRow({ row, isOn, onSelect }: ModuleListRowProps) {
   );
 }
 
-/** The two chips left of a tab's state: the source of the module's software
- * on this machine, and the module's kind, each the word the hub sends. */
+/** The chips left of a tab's state: the source of the module's software on
+ * this machine and the module's kind, each the word the hub sends, then
+ * Upgrade only on a module whose data moves forward only. */
 function ModuleChips({ row }: { row: DeviceModuleView }) {
   const sourceKey = SOURCE_KEYS[row.source];
   const kindKey = KIND_KEYS[row.kind];
@@ -1221,6 +1222,9 @@ function ModuleChips({ row }: { row: DeviceModuleView }) {
     <>
       {sourceKey !== undefined && <span className="badge">{t(sourceKey)}</span>}
       {kindKey !== undefined && <span className="badge">{t(kindKey)}</span>}
+      {row.is_data_forward_only && (
+        <span className="badge">{t("ui.modules.forward_only")}</span>
+      )}
     </>
   );
 }

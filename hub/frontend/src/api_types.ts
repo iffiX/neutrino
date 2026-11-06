@@ -1252,6 +1252,8 @@ export interface DeviceModuleView {
   /** The kind chip's word: `service`, or `program` for a command line
    * program. */
   kind: string;
+  /** Whether the module's data moves forward only: the upgrade only chip. */
+  is_data_forward_only: boolean;
   /** absent, installed, stopped or running; empty when the hub asks nothing. */
   want: string;
   state: string;
@@ -1353,6 +1355,9 @@ export interface ModuleVersionEntry {
   is_tested: boolean;
   /** Newer than the tested one. */
   is_untested: boolean;
+  /** Older than the newest version run, on a module whose data moves
+   * forward only: shown and not pressable. */
+  is_older_than_run: boolean;
 }
 
 /** A module's versions on one machine. */
@@ -1367,6 +1372,8 @@ export interface ModuleVersionView {
   /** Newest first. */
   versions: ModuleVersionEntry[];
   is_data_forward_only: boolean;
+  /** The newest version the module has run at; empty for none. */
+  newest_run: string;
   /** When the feeds were last read. */
   read_at: string;
 }
