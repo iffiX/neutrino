@@ -141,7 +141,12 @@ go; the data directory stays, so an install afterwards serves the same
 repositories and accounts. On macOS the account `neutrino_gitea` goes too,
 deleted with `dscl . -delete` after the job, which leaves its home, the
 data directory, in place; the next install makes the account again and its
-`account` step hands the data to it. On Linux the account `git` stays: its
+`account` step hands the data to it. macOS 15 refuses that deletion with
+`eDSPermissionError` to a process without Full Disk Access, the agent's
+LaunchDaemon among them, and to `sysadminctl -deleteUser` as well: the
+account then stays, hidden, with no shell and a password nobody holds,
+and the uninstall writes the system's line into the module's log and goes
+on. On Linux the account `git` stays: its
 name is not Neutrino's, and it can be the person's own. On Windows and
 macOS its journal reads the end of its own log, `log/gitea.log` under its
 data directory. Removing the agent
