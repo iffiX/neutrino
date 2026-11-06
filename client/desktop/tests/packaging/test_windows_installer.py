@@ -1033,6 +1033,34 @@ def test_the_last_step_starts_every_accounts_relaunch_task_as_system(source):
     assert scheduled["RelaunchClients"].get("Condition") == 'NOT REMOVE~="ALL"'
 
 
+def test_a_removal_deletes_every_firewall_rule_of_a_program_in_the_install_folder(
+    source,
+):
+    """easytier-core makes an inbound and an outbound rule for itself when
+    it brings its device up; an upgrade's removal keeps them."""
+    actions, scheduled = actions_and_scheduling(
+        source, ("SetForgetFirewallRules", "ForgetFirewallRules")
+    )
+
+    command = actions["SetForgetFirewallRules"].get("Value")
+    assert command.startswith(
+        '"[System64Folder]WindowsPowerShell\\v1.0\\powershell.exe" -NoProfile'
+    )
+    assert (
+        "Get-NetFirewallApplicationFilter | "
+        "Where-Object Program -like '[INSTALLFOLDER]*' | "
+        "Get-NetFirewallRule | Remove-NetFirewallRule" in command
+    )
+    assert "{" not in command
+    assert actions["ForgetFirewallRules"].get("DllEntry") == "WixQuietExec"
+    assert actions["ForgetFirewallRules"].get("Impersonate") == "no"
+    assert actions["ForgetFirewallRules"].get("Return") == "ignore"
+    assert scheduled["ForgetFirewallRules"].get("After") == "RemoveFiles"
+    assert scheduled["ForgetFirewallRules"].get("Condition") == (
+        'REMOVE~="ALL" AND NOT UPGRADINGPRODUCTCODE'
+    )
+
+
 def test_a_removal_deletes_every_relaunch_task_but_an_upgrades_removal_keeps_them(
     source,
 ):

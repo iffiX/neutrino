@@ -66,7 +66,9 @@ import tempfile
 import urllib.request
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "client" / "desktop" / "packaging"))
+sys.path.insert(
+    0, str(Path(__file__).resolve().parents[2] / "client" / "desktop" / "packaging")
+)
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "client" / "desktop"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "packaging"))
 import bundled  # noqa: E402
@@ -269,6 +271,18 @@ FORGET_RELAUNCH_COMMAND = (
     'Unregister-ScheduledTask -Confirm:$false"'
 )
 FORGET_RELAUNCH_CONDITION = 'REMOVE~="ALL" AND NOT UPGRADINGPRODUCTCODE'
+
+# A removal deletes, as SYSTEM, every firewall rule whose program is under
+# the install folder, whatever its name. easytier-core makes an inbound and
+# an outbound rule for itself when it brings its device up. The command has
+# no brace and no bracket but the folder's. The installer reads both in a
+# formatted value.
+FORGET_FIREWALL_COMMAND = (
+    '"[System64Folder]WindowsPowerShell\\v1.0\\powershell.exe" -NoProfile '
+    '-NonInteractive -Command "Get-NetFirewallApplicationFilter | '
+    "Where-Object Program -like '[INSTALLFOLDER]*' | "
+    'Get-NetFirewallRule | Remove-NetFirewallRule"'
+)
 
 # When the configuration goes. Unticking the box clears the property, and a
 # silent removal may set it to anything; what it is never equal to then is
@@ -510,6 +524,18 @@ WIX_BODY = r"""
                   Impersonate="no"
                   Return="ignore" />
 
+    <!-- On a removal, the firewall rules of the programs it carried. -->
+    <CustomAction Id="SetForgetFirewallRules"
+                  Property="ForgetFirewallRules"
+                  Value="@FORGET_FIREWALL_COMMAND@"
+                  Execute="immediate" />
+    <CustomAction Id="ForgetFirewallRules"
+                  DllEntry="WixQuietExec"
+                  BinaryRef="@UTIL_LIBRARY@"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+
     <InstallExecuteSequence>
       <!-- After costing, which resolves [INSTALLFOLDER], and before the
            extension's own close, which it schedules on InstallInitialize. -->
@@ -544,6 +570,12 @@ WIX_BODY = r"""
               Before="ForgetRelaunches"
               Condition="@FORGET_RELAUNCH@" />
       <Custom Action="ForgetRelaunches"
+              After="RemoveFiles"
+              Condition="@FORGET_RELAUNCH@" />
+      <Custom Action="SetForgetFirewallRules"
+              Before="ForgetFirewallRules"
+              Condition="@FORGET_RELAUNCH@" />
+      <Custom Action="ForgetFirewallRules"
               After="RemoveFiles"
               Condition="@FORGET_RELAUNCH@" />
     </InstallExecuteSequence>
@@ -801,6 +833,7 @@ def _wix_source(staged: dict, version: str, publisher: str, machine: str) -> str
             "RELAUNCH_COMMAND": RELAUNCH_COMMAND,
             "RELAUNCH": RELAUNCH_CONDITION,
             "FORGET_RELAUNCH_COMMAND": FORGET_RELAUNCH_COMMAND,
+            "FORGET_FIREWALL_COMMAND": FORGET_FIREWALL_COMMAND,
             "FORGET_RELAUNCH": FORGET_RELAUNCH_CONDITION,
             "REMOVE_CONFIG_COMMAND": REMOVE_CONFIG_COMMAND,
             "SECURE_DATA_COMMAND": SECURE_DATA_COMMAND,
@@ -1109,7 +1142,9 @@ def _check_tools(is_stage_only: bool) -> None:
         SystemExit: When this is not Windows, or WiX is missing.
     """
     if sys.platform != "win32":
-        raise SystemExit(f"{Path(__file__).name} runs on Windows; this is {sys.platform}")
+        raise SystemExit(
+            f"{Path(__file__).name} runs on Windows; this is {sys.platform}"
+        )
     if not is_stage_only and shutil.which("wix") is None:
         raise SystemExit(
             "WiX 6 is needed and wix is not on the path: "
