@@ -217,6 +217,17 @@ def test_the_file_share_sweep_takes_an_account_by_its_marker_never_its_start_alo
     assert "$is_ours = $is_marked -and ($is_named -or" in users
 
 
+def test_the_file_share_apply_closes_the_sessions_of_a_name_it_makes_again():
+    """An account deleted by hand left its sessions holding its old token."""
+    apply = body("share_apply")
+    made = apply[apply.index("foreach ($u in @($Request.users))") :]
+    closed = made.index("Close-SmbSession -SessionId $session.SessionId -Force")
+
+    assert closed < made.index("New-LocalUser -Name $u")
+    assert 'EndsWith("\\$u")' in made
+    assert "if ($is_readable) { Get-SmbSession" in made
+
+
 def test_the_file_share_apply_answers_each_account_s_sid():
     apply = body("share_apply")
 

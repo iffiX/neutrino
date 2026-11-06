@@ -402,6 +402,12 @@ function Set-NeutrinoShare {
     }
     foreach ($u in @($Request.users)) {
         if (-not (Get-LocalUser -Name $u -ErrorAction SilentlyContinue)) {
+            # A session of an account of this name deleted by hand keeps its old token.
+            foreach ($session in @(if ($is_readable) { Get-SmbSession -ErrorAction SilentlyContinue })) {
+                if ("$($session.ClientUserName)".EndsWith("\$u")) {
+                    Close-SmbSession -SessionId $session.SessionId -Force | Out-Null
+                }
+            }
             New-LocalUser -Name $u -NoPassword -Disabled -AccountNeverExpires `
                 -UserMayNotChangePassword -Description $Request.marker | Out-Null
             Set-LocalUser -Name $u -PasswordNeverExpires $true | Out-Null
