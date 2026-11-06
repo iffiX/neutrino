@@ -294,9 +294,11 @@ The hub's fetcher is `utils/source_fetch.py`, and it does all of this. The
 agent's is `modules/shared/source_fetch.py`, standard library only: it
 probes and ranks, since the agent downloads no file itself and hands the
 chosen source to Podman, to npm or to a container's environment.
-`install.sh` and `install.ps1` hold a small one each: they probe, start on
-the fastest, and move on a stall, with no measures while a file downloads.
-Their probe has 5 seconds for the answer and the bytes together.
+`install.sh` and `install.ps1` hold a small one each: they probe, rank the
+sites that answered by the same total, the speed score and the latency
+score half each, the latency being the probe's time to its first byte,
+start on the first, and move on a stall, with no measures while a file
+downloads. Their probe has 5 seconds for the answer and the bytes together.
 
 ## The file a probe reads
 

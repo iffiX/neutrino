@@ -440,10 +440,12 @@ A script reads the system and the architecture (`uname -s` and `uname -m`,
 the Arch package). It reads the latest tag from `latest.json` on the release
 sites unless `NEUTRINO_VERSION` names one, then fetches `SHA256SUMS` and its
 edition's package into a temporary directory and checks the package against
-it. It probes every site, starts on the fastest and moves to the next on a
-stall, with no measures while a file downloads
-([../design/agent/module_install.md](../design/agent/module_install.md),
-"Choosing a source"). A mismatch, a system and architecture no package is
+it. It probes every site, ranks the sites that answered by the one score
+every source has, half the speed score and half the latency score, starts
+on the first and moves to the next on a stall, with no measures while a file
+downloads ([../design/agent/module_install.md](../design/agent/module_install.md),
+"Choosing a source"). The latest tag is the first valid `latest.json` answer,
+as a version list's is. A mismatch, a system and architecture no package is
 published for, or no site serving the file stops the script with one
 sentence, which names each site and why it failed.
 
