@@ -1170,6 +1170,44 @@ def test_a_refused_script_fails_the_apply_with_systemds_words(rig):
     )
 
 
+def test_a_container_the_script_names_failed_fails_alone(rig, _reads):
+    """In the lab a declared container whose image did not exist failed the
+    whole apply with systemd's words while the other container ran."""
+    rig.keep_image()
+    config = {
+        **CONFIG,
+        "containers": [*CONTAINERS, {"name": "ghost", "image": "acme/ghost:9"}],
+    }
+    rig.world.shell_answers = [
+        (0, "changed: /etc/systemd/system/ghost.service\nfailed: ghost\n")
+    ]
+
+    rig.runner.apply(config)
+    details = rig.runner.details({})
+
+    by_name = {state["name"]: state for state in details["containers"]}
+    assert by_name["ghost"]["code"] == "image_pull_failed"
+    assert by_name["ghost"]["params"] == {
+        "name": "ghost",
+        "image": "docker.io/acme/ghost:9",
+    }
+    assert by_name["web"]["code"] == ""
+    asked = [command for command in _reads if "exists" in command]
+    assert asked[0][-3:] == ["image", "exists", "docker.io/acme/ghost:9"]
+    assert asked[0][1] == "--url"
+    assert any("ghost did not start" in line for line in rig.lines)
+
+
+def test_the_script_names_each_refused_unit_and_exits_0():
+    script = PodmanMachineScriptRenderer(
+        config=PodmanConfig.from_dict(CONFIG), os_name="darwin"
+    ).render()
+
+    assert 'systemctl restart "$name.service" || echo "failed: $name"' in script
+    assert 'systemctl start "$name.service" || echo "failed: $name"' in script
+    assert "status=1" not in script
+
+
 # --- waiting for the machine ---
 
 
@@ -1559,6 +1597,33 @@ def test_a_container_nobody_knows_and_an_unknown_action_are_refused(rig):
     assert rig.runner.command("control", {"name": "Bad Name", "action": "start"})[
         "code"
     ] == ("container_name_invalid")
+
+
+def test_a_declared_container_s_refused_start_closes_with_its_code(rig):
+    rig.keep_image()
+    rig.runner.apply(CONFIG)
+    rig.world.shell_answers = [(1, "Job for web.service failed.\n")]
+
+    outcome = rig.runner.command("control", {"name": "web", "action": "start"})
+
+    assert outcome["code"] == "image_pull_failed"
+    assert outcome["params"] == {"name": "web", "image": "docker.io/library/nginx"}
+
+
+def test_a_hub_container_s_refused_start_names_the_first_one_down(rig):
+    rig.keep_image()
+    rig.runner.apply(CONFIG)
+    rig.runner._config = PodmanConfig.from_dict(HUB_CONFIG)
+    rig.world.shell_answers = [(1, "Job for neutrino_late.service failed.\n")]
+
+    found = refusal(
+        lambda: rig.runner.drive_hub_containers(
+            ["neutrino_demo", "neutrino_late"], "start"
+        )
+    )
+
+    assert found.code == "image_pull_failed"
+    assert found.params["name"] == "neutrino_demo"
 
 
 def test_a_containers_journal_is_read_in_the_machine(rig):

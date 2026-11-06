@@ -230,6 +230,14 @@ CLI_CODE_WORDS = {
         "then start this module again"
     ),
     "page_silent": "the page at port {port} does not respond; check what else listens on that port",
+    "image_pull_failed": (
+        "the image {image} of {name} could not be pulled; check its tag and the "
+        "registry mirrors"
+    ),
+    "container_start_failed": (
+        "the container {name} did not start from {image}; its journal names "
+        "the reason"
+    ),
     "waiting_for_lock": "waiting for {lock}, held by {module}",
     "waiting_for_package_manager": (
         "waiting for the system's package manager, held by {holder}"

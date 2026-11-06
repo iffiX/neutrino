@@ -116,19 +116,23 @@ class FakeUnitApplier:
     stops = 0
     driven: list = []
     removed: list = []
+    failed: list = []
+    drive_error = None
 
     def apply(self, rendered, environments, *, autostart_names, source_keys=None):
         assert sorted(environments) == [
             name[: -len(".service")] + ".env" for name in sorted(rendered)
         ]
         FakeUnitApplier.applied.append((sorted(rendered), autostart_names))
-        return "containers: web"
+        return "containers: web", list(FakeUnitApplier.failed)
 
     def stop_all(self):
         FakeUnitApplier.stops += 1
 
     def drive(self, names, action):
         FakeUnitApplier.driven.append((list(names), action))
+        if FakeUnitApplier.drive_error is not None:
+            raise FakeUnitApplier.drive_error
 
     def remove(self, names):
         FakeUnitApplier.removed.append(list(names))
@@ -147,10 +151,13 @@ class FakeRegistries:
 
 
 class FakeReader:
+    failures: list = []
+
     def __init__(self, *, probe=None):
         self.probe = probe
 
-    def survey(self, *, declared_names, hub_names=None):
+    def survey(self, *, declared_names, hub_names=None, failures=None):
+        FakeReader.failures.append(dict(failures or {}))
         return [
             PodmanContainerState(
                 "web",
@@ -207,6 +214,9 @@ class FakeRenderer:
     def source_keys(self):
         return {}
 
+    def images(self):
+        return {name: f"docker.io/library/{name}:1" for name in self._names()}
+
 
 class FakeSystem:
     """Records every command the runner itself runs; podman's and systemd's answers are canned."""
@@ -246,6 +256,9 @@ def runner(monkeypatch, system, tmp_path):
     FakeUnitApplier.stops = 0
     FakeUnitApplier.driven = []
     FakeUnitApplier.removed = []
+    FakeUnitApplier.failed = []
+    FakeUnitApplier.drive_error = None
+    FakeReader.failures = []
     FakeRenderer.seen = []
     FakeRegistries.written = []
     FakeController.calls = []
@@ -260,7 +273,14 @@ def runner(monkeypatch, system, tmp_path):
     monkeypatch.setattr(runner_module, "unit_state", lambda unit: "active")
     monkeypatch.setattr(runner_module, "journal_lines", lambda name, lines: ["a", "b"])
     monkeypatch.setattr(runner_module, "PodmanUnitRenderer", FakeRenderer)
+    monkeypatch.setattr(runner_module, "start_failure", fake_start_failure)
     return PodmanModuleRunner(platform=AgentPlatform(), log=lambda m: None)
+
+
+def fake_start_failure(name, image, *, podman=("/usr/bin/podman",)):
+    """A pull failure for every image named ``ghost``, a start failure for any other."""
+    code = "image_pull_failed" if "ghost" in image else "container_start_failed"
+    return {"code": code, "params": {"name": name, "image": image}}
 
 
 def test_validate_refuses_typed(runner):
@@ -750,6 +770,7 @@ def test_a_declaration_is_surveyed_while_its_start_still_waits(runner, monkeypat
 
     def start(self, rendered, environments, *, autostart_names, source_keys=None):
         seen.append(runner.details({})["containers"])
+        return "containers: web", []
 
     monkeypatch.setattr(FakeUnitApplier, "apply", start)
 
@@ -784,6 +805,80 @@ def test_control_drives_a_known_container_and_refuses_an_unknown(runner):
     assert ghost["code"] == "container_unknown"
     assert verb["code"] == "verb_unknown"
     assert verb["params"] == {"module": "podman", "verb": "rm"}
+
+
+def test_a_container_systemd_refuses_to_start_fails_alone(runner):
+    """In the lab a declared container whose image did not exist failed the
+    whole apply with systemd's words, and Containers read failed."""
+    lines: list = []
+    runner._log = lines.append
+    FakeUnitApplier.failed = ["web"]
+
+    runner.apply(CONFIG)
+    runner.details({})
+
+    assert FakeReader.failures[-1] == {
+        "web": {
+            "code": "container_start_failed",
+            "params": {"name": "web", "image": "docker.io/library/web:1"},
+        }
+    }
+    assert any("web did not start" in line for line in lines)
+
+
+def test_a_failure_goes_once_the_container_runs_and_at_the_next_apply(runner):
+    FakeUnitApplier.failed = ["web"]
+    runner.apply(CONFIG)
+
+    runner.details({})
+    runner.details({})
+
+    assert FakeReader.failures[-1] == {}
+    FakeUnitApplier.failed = []
+    runner._failures = {"web": {"code": "x", "params": {}}}
+    runner.apply(CONFIG)
+    runner.details({})
+    assert FakeReader.failures[-1] == {}
+
+
+def test_a_refused_start_of_a_declared_container_closes_with_its_code(runner):
+    runner.apply(CONFIG)
+    FakeController.error = subprocess.CalledProcessError(
+        1, ["systemctl"], stderr="Job for web.service failed"
+    )
+
+    outcome = runner.command("control", {"name": "web", "action": "start"})
+
+    assert outcome["code"] == "container_start_failed"
+    assert outcome["params"] == {"name": "web", "image": "docker.io/library/web:1"}
+
+
+def test_a_refused_start_of_a_hub_container_names_its_first_one_down(
+    runner, monkeypatch
+):
+    FakeUnitApplier.drive_error = subprocess.CalledProcessError(
+        1, ["systemctl"], stderr="Job for neutrino_demo_db.service failed"
+    )
+    monkeypatch.setattr(
+        runner_module,
+        "unit_state",
+        lambda unit: "failed" if unit == "neutrino_demo_db.service" else "active",
+    )
+
+    with pytest.raises(ModuleApplyError) as refused:
+        runner.drive_hub_containers(["neutrino_demo", "neutrino_demo_db"], "start")
+
+    assert refused.value.code == "container_start_failed"
+    assert refused.value.params["name"] == "neutrino_demo_db"
+
+
+def test_a_refused_stop_of_hub_containers_keeps_systemd_s_words(runner):
+    FakeUnitApplier.drive_error = subprocess.CalledProcessError(
+        1, ["systemctl"], stderr="stop failed"
+    )
+
+    with pytest.raises(subprocess.CalledProcessError):
+        runner.drive_hub_containers(["neutrino_demo"], "stop")
 
 
 def test_a_verb_the_module_does_not_have_is_refused(runner):
@@ -860,6 +955,8 @@ def test_the_details_read_what_podman_itself_says_of_each_container(
         "host_bindings": [
             {"address": "", "port": 8080, "protocol": "tcp", "detected": "http"}
         ],
+        "code": "",
+        "params": {},
     }
     assert FakeProbe.asked == [[(("0a1b", "1791761649", "", 8080), "127.0.0.1", 8080)]]
     assert by_name["adhoc"]["is_running"] is False

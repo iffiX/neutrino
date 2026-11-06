@@ -21,6 +21,7 @@ from neutrino_agent.modules.podman.applier import (
     network_gateway,
     owner_of,
     ready_hub_containers,
+    start_failure,
     stored_reference,
 )
 from neutrino_agent.modules.podman.config import PORT_MAPPING_PATTERN, PodmanConfig
@@ -116,7 +117,7 @@ def test_apply_writes_changed_files_drops_stale_ones_and_restarts(commands, dirs
     (dirs.units / "hand.service").write_text("[Service]\nmine\n")
     units, envs = files("keep", "web")
 
-    note = dirs.applier().apply(units, envs, autostart_names=["web"])
+    note, _ = dirs.applier().apply(units, envs, autostart_names=["web"])
 
     assert "web.service" in note and "web.env" in note and "-old.service" in note
     assert not (dirs.units / "old.service").exists()
@@ -165,7 +166,7 @@ def test_a_changed_environment_alone_restarts_its_container(
     commands.calls.clear()
     monkeypatch.setattr(applier_module, "unit_state", lambda unit: "active")
 
-    note = applier.apply(units, {"web.env": env("A=2")}, autostart_names=[])
+    note, _ = applier.apply(units, {"web.env": env("A=2")}, autostart_names=[])
 
     assert note == "containers: web.env"
     assert ["systemctl", "restart", "web.service"] in commands.calls
@@ -282,7 +283,7 @@ def test_an_earlier_build_s_quadlet_files_are_stopped_and_removed_first(
     )
     units, envs = files("web", "tool")
 
-    note = dirs.applier().apply(units, envs, autostart_names=["web"])
+    note, _ = dirs.applier().apply(units, envs, autostart_names=["web"])
 
     assert not (dirs.quadlets[0] / "web.container").exists()
     assert not (dirs.quadlets[1] / "tool.container").exists()
@@ -296,6 +297,96 @@ def test_an_earlier_build_s_quadlet_files_are_stopped_and_removed_first(
     assert ["systemctl", "stop", "mine.service"] not in calls
     assert calls.index(["systemctl", "start", "tool.service"]) > reload_at
     assert ["systemctl", "start", "gone.service"] not in calls
+
+
+def refused_unit(commands, unit: str):
+    """The fake commands, with every start and restart of one unit refused as systemd refuses it."""
+
+    def refusing(command, **kwargs):
+        if command[:2] in (["systemctl", "start"], ["systemctl", "restart"]) and (
+            command[-1] == unit
+        ):
+            commands.calls.append(list(command))
+            raise subprocess.CalledProcessError(
+                1, list(command), stderr=f"Job for {unit} failed"
+            )
+        return commands(command, **kwargs)
+
+    return refusing
+
+
+def test_a_container_systemd_refuses_to_start_fails_alone(commands, dirs, monkeypatch):
+    """In the lab a declared container whose image did not exist failed the
+    whole apply with systemd's words while the other container ran."""
+    monkeypatch.setattr(applier_module, "run", refused_unit(commands, "ghost.service"))
+    units, envs = files("ghost", "web", "tool")
+    applier = dirs.applier()
+
+    note, failed = applier.apply(units, envs, autostart_names=["ghost", "web", "tool"])
+
+    assert failed == ["ghost"]
+    assert "web.service" in note
+    assert ["systemctl", "restart", "ghost.service"] in commands.calls
+    assert ["systemctl", "restart", "web.service"] in commands.calls
+    assert ["systemctl", "restart", "tool.service"] in commands.calls
+    commands.calls.clear()
+
+    note, failed = applier.apply(units, envs, autostart_names=["ghost", "web", "tool"])
+
+    assert failed == ["ghost"]
+    assert note == "containers unchanged"
+    assert ["systemctl", "start", "ghost.service"] in commands.calls
+    assert ["systemctl", "start", "web.service"] in commands.calls
+
+
+def test_a_started_container_fails_nothing(commands, dirs):
+    assert dirs.applier().apply(*files("web"), autostart_names=["web"])[1] == []
+
+
+def test_a_refused_start_reads_as_a_pull_while_the_store_holds_no_image(commands):
+    commands.answers[("/usr/bin/podman", "image")] = (1, "")
+
+    assert start_failure("ghost", "docker.io/library/none:9") == {
+        "code": "image_pull_failed",
+        "params": {"name": "ghost", "image": "docker.io/library/none:9"},
+    }
+    assert commands.calls == [
+        ["/usr/bin/podman", "image", "exists", "docker.io/library/none:9"]
+    ]
+
+
+def test_a_refused_start_with_the_image_in_the_store_reads_as_a_start(commands):
+    failure = start_failure("web", "docker.io/traefik/whoami:latest", podman=("pm",))
+
+    assert failure == {
+        "code": "container_start_failed",
+        "params": {"name": "web", "image": "docker.io/traefik/whoami:latest"},
+    }
+    assert commands.calls == [
+        ["pm", "image", "exists", "docker.io/traefik/whoami:latest"]
+    ]
+
+
+def test_a_container_that_does_not_run_carries_its_failure(commands):
+    commands.answers[("/usr/bin/podman", "ps")] = (
+        0,
+        '[{"Names": ["web"], "Image": "nginx", "Status": "Up", "State": "running"}]',
+    )
+    failures = {
+        "ghost": {"code": "image_pull_failed", "params": {"name": "ghost"}},
+        "web": {"code": "container_start_failed", "params": {"name": "web"}},
+    }
+
+    states = PodmanStatusReader().survey(
+        declared_names=["ghost", "web", "tool"], failures=failures
+    )
+
+    by_name = {state.name: state for state in states}
+    assert by_name["ghost"].code == "image_pull_failed"
+    assert by_name["ghost"].params == {"name": "ghost"}
+    assert by_name["web"].code == ""
+    assert by_name["web"].params == {}
+    assert by_name["tool"].code == ""
 
 
 def test_remove_all_stops_disables_and_deletes_every_generated_file(commands, dirs):
@@ -978,7 +1069,7 @@ def test_a_file_whose_only_change_is_a_source_set_value_is_kept(commands, dirs):
     )
     commands.calls.clear()
 
-    note = applier.apply(
+    note, _ = applier.apply(
         units,
         {"neutrino_demo.env": env("PIP_INDEX_URL=https://mirror.example/simple")},
         autostart_names=["neutrino_demo"],

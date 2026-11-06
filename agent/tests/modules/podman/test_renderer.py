@@ -654,12 +654,16 @@ def test_an_empty_configuration_takes_every_generated_file_away(tmp_path):
     ]
 
 
-def test_a_refused_restart_fails_the_script_with_systemds_words(tmp_path):
+def test_a_refused_restart_names_its_container_and_the_script_goes_on(tmp_path):
+    """In the lab one container whose image did not exist failed the whole
+    apply with systemd's words."""
     shell = MachineShell(tmp_path)
 
     done, _calls = shell.run(machine_config(), refused="web.service")
 
-    assert done.returncode == 1
+    assert done.returncode == 0, done.stderr
+    assert "failed: web" in done.stdout.splitlines()
+    assert "failed: batch" not in done.stdout
     assert "Job for web.service failed." in done.stderr
 
 

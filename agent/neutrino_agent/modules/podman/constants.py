@@ -155,6 +155,9 @@ PODMAN_MACHINE_INFO_TTL_S = 5.0
 PODMAN_MACHINE_DETAIL_CHARS = 500
 # What the root script prints before each file it changed.
 PODMAN_MACHINE_CHANGED_PREFIX = "changed: "
+# What the root script prints before each container whose unit systemd
+# refused to start.
+PODMAN_MACHINE_FAILED_PREFIX = "failed: "
 # Bytes in a GiB, for the memory ``podman info`` reports.
 PODMAN_GIB = 1024**3
 
@@ -263,6 +266,12 @@ PODMAN_ANONYMOUS_VOLUME_PATTERN = r"[0-9a-f]{64}"
 PODMAN_SOURCE_HUB = "hub"
 PODMAN_SOURCE_DECLARED = "declared"
 PODMAN_SOURCE_MANUAL = "manual"
+
+# The code of a container whose start systemd refused: no image under the
+# reference its unit runs in the store, or one there.
+PODMAN_CODE_IMAGE_PULL_FAILED = "image_pull_failed"
+PODMAN_CODE_CONTAINER_START_FAILED = "container_start_failed"
+
 # Where Podman's CNI backend keeps a network, and the cniVersion the
 # plugins of Podman 3.4 read.
 PODMAN_CNI_DIR = "/etc/cni/net.d"

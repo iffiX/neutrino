@@ -30,6 +30,8 @@ from neutrino_agent.modules.podman.constants import (
     PODMAN_CNI_DIR,
     PODMAN_CNI_SUFFIX,
     PODMAN_CNI_VERSION,
+    PODMAN_CODE_CONTAINER_START_FAILED,
+    PODMAN_CODE_IMAGE_PULL_FAILED,
     PODMAN_NETWORK_FILE_DIRS,
     PODMAN_CONTAINER_ACTIONS,
     PODMAN_ENV_DIR,
@@ -87,6 +89,10 @@ class PodmanContainerState:
             ``tcp`` or ``udp``, the address empty for every address, and
             ``detected`` ``http``, ``https`` or ``tcp`` once the service
             probe found it on a running container's TCP port, else empty.
+        code: ``image_pull_failed`` or ``container_start_failed`` for a
+            container whose start systemd refused and which does not run;
+            empty otherwise.
+        params: The code's ``{name, image}``; empty with no code.
     """
 
     name: str
@@ -101,6 +107,8 @@ class PodmanContainerState:
     environment: list = field(default_factory=list)
     has_unit: bool = False
     host_bindings: list = field(default_factory=list)
+    code: str = ""
+    params: dict = field(default_factory=dict)
 
 
 def podman_version(*, podman: tuple = (PODMAN_BINARY,)) -> str:
@@ -363,6 +371,35 @@ def fastest_sources(names, source_sets: dict, *, probe_one=source_fetch.probe) -
     return sources, variables
 
 
+def start_failure(name: str, image: str, *, podman: tuple = (PODMAN_BINARY,)) -> dict:
+    """Why systemd refused to start one container.
+
+    Args:
+        name: The container's name.
+        image: The reference its unit runs.
+        podman: The podman command: the program and the options before
+            its verb.
+
+    Returns:
+        ``{"code", "params"}``: ``image_pull_failed`` while the store holds
+        no image under the reference, else ``container_start_failed``, each
+        with ``{name, image}``.
+    """
+    try:
+        result = run(
+            [*podman, "image", "exists", image], is_checked=False, timeout_s=30
+        )
+        is_stored = result.is_success
+    except (OSError, subprocess.SubprocessError):
+        is_stored = False
+    code = (
+        PODMAN_CODE_CONTAINER_START_FAILED
+        if is_stored
+        else PODMAN_CODE_IMAGE_PULL_FAILED
+    )
+    return {"code": code, "params": {"name": name, "image": image}}
+
+
 class PodmanUnitApplier:
     """Installs rendered container units and environment files, and reconciles systemd with them."""
 
@@ -397,7 +434,7 @@ class PodmanUnitApplier:
         *,
         autostart_names: list,
         source_keys: "dict | None" = None,
-    ) -> str:
+    ) -> tuple:
         """Write the rendered files, drop stale ones, recreate what changed,
         and start what starts with the box.
 
@@ -420,10 +457,13 @@ class PodmanUnitApplier:
                 in; None or a name it does not hold has none.
 
         Returns:
-            A short summary of what changed.
+            ``(note, failed)``: a short summary of what changed, and the
+            containers whose start or restart systemd refused, each left
+            out while the rest start.
 
         Raises:
-            subprocess.CalledProcessError: If systemd refuses a unit.
+            subprocess.CalledProcessError: If systemd refuses to enable,
+                disable or reload a unit.
             OSError: When a file cannot be written.
         """
         names = [file_name[: -len(PODMAN_UNIT_SUFFIX)] for file_name in rendered]
@@ -469,20 +509,21 @@ class PodmanUnitApplier:
             verb = "enable" if name in autostart_names else "disable"
             run(["systemctl", verb, "--no-reload", name + PODMAN_UNIT_SUFFIX])
         run(["systemctl", "daemon-reload"])
+        failed = []
         for name in names:
             unit = name + PODMAN_UNIT_SUFFIX
             if name in changed_names:
                 if name in autostart_names or unit_state(unit) == "active":
-                    run(["systemctl", "restart", unit], timeout_s=900)
+                    _drive_one(unit, "restart", name, failed)
             elif name in autostart_names and unit_state(unit) != "active":
-                run(["systemctl", "start", unit], timeout_s=900)
+                _drive_one(unit, "start", name, failed)
         for name in was_active:
             unit = name + PODMAN_UNIT_SUFFIX
-            if unit_state(unit) != "active":
-                run(["systemctl", "start", unit], timeout_s=900)
+            if name not in failed and unit_state(unit) != "active":
+                _drive_one(unit, "start", name, failed)
         if not notes:
-            return "containers unchanged"
-        return f"containers: {', '.join(sorted(notes))}"
+            return "containers unchanged", failed
+        return f"containers: {', '.join(sorted(notes))}", failed
 
     def drive(self, names: list, action: str) -> None:
         """Start, stop or restart the units of some containers, each that has a file, with one ``systemctl`` call.
@@ -658,13 +699,22 @@ class PodmanStatusReader:
         self._host_volume = host_volume
         self._probe = probe
 
-    def survey(self, *, declared_names: list, hub_names: "dict | None" = None) -> list:
+    def survey(
+        self,
+        *,
+        declared_names: list,
+        hub_names: "dict | None" = None,
+        failures: "dict | None" = None,
+    ) -> list:
         """List every container, running or not, each with its owner.
 
         Args:
             declared_names: The names the hub declares.
             hub_names: The hub containers' names by module, as the last
                 apply rendered them; None names none.
+            failures: ``{code, params}`` by the name of each container whose
+                start systemd refused; a container among them that does not
+                run carries its code. None names none.
 
         Returns:
             One :class:`PodmanContainerState` per container podman knows,
@@ -747,6 +797,11 @@ class PodmanStatusReader:
                     module=module,
                 )
             )
+        for state in states:
+            failure = (failures or {}).get(state.name)
+            if failure and not state.is_running:
+                state.code = str(failure.get("code", ""))
+                state.params = dict(failure.get("params") or {})
         states.sort(key=_by_source)
         return states
 
@@ -1017,6 +1072,14 @@ def _probe_address(address: str) -> str:
     except ValueError:
         return PODMAN_PROBE_ADDRESS
     return address
+
+
+def _drive_one(unit: str, action: str, name: str, failed: list) -> None:
+    """Start or restart one container's unit, adding its name to ``failed`` when systemd refuses."""
+    try:
+        run(["systemctl", action, unit], timeout_s=900)
+    except subprocess.SubprocessError:
+        failed.append(name)
 
 
 def _read(path: str) -> "str | None":

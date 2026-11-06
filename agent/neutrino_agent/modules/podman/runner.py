@@ -51,6 +51,7 @@ from neutrino_agent.modules.podman.applier import (
     network_gateway,
     podman_version,
     ready_hub_containers,
+    start_failure,
 )
 from neutrino_agent.modules.podman.config import (
     CONTAINER_NAME_PATTERN,
@@ -59,6 +60,7 @@ from neutrino_agent.modules.podman.config import (
 from neutrino_agent.modules.podman.constants import (
     PODMAN_API_UNIT,
     PODMAN_BINARY,
+    PODMAN_CODE_IMAGE_PULL_FAILED,
     PODMAN_COMMAND_CONTROL,
     PODMAN_COMMAND_JOURNAL,
     PODMAN_CONTAINER_ACTIONS,
@@ -68,7 +70,9 @@ from neutrino_agent.modules.podman.constants import (
     PODMAN_RECORD_ACCOUNT,
     PODMAN_RECORD_FIELDS,
     PODMAN_RUNTIME,
+    PODMAN_SOURCE_MANUAL,
     PODMAN_UNIT,
+    PODMAN_UNIT_SUFFIX,
 )
 from neutrino_agent.modules.podman.found_units import PodmanFoundUnits
 from neutrino_agent.modules.podman.package_mark import PodmanPackageMark
@@ -134,6 +138,10 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
         self._written: "PodmanConfig | None" = None
         self._wanted: "PodmanConfig | None" = None
         self._source_sets: dict = {}
+        # The containers whose start systemd refused, ``{code, params}`` by name.
+        self._failures: dict = {}
+        # The reference each container's unit runs, by name, from the last apply.
+        self._images: dict = {}
         self._probe = PodmanServiceProbe()
         var_dir = platform.agent_var_dir()
         self._module_dir = os.path.join(var_dir, self.name)
@@ -413,13 +421,20 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
             ``{"containers", "mirrors", "version", "is_active"}``, each
             container ``{"name", "image", "status", "is_running", "source",
             "module", "host_ports", "ports", "volumes", "environment",
-            "has_unit", "host_bindings"}``, each binding with what the
-            service probe detected on it.
+            "has_unit", "host_bindings", "code", "params"}``, each binding
+            with what the service probe detected on it, and ``code`` the
+            failure of a container whose start systemd refused and which
+            does not run.
         """
         config = self._config or PodmanConfig()
         states = PodmanStatusReader(probe=self._probe).survey(
-            declared_names=self._declared_names(), hub_names=self.hub_names()
+            declared_names=self._declared_names(),
+            hub_names=self.hub_names(),
+            failures=dict(self._failures),
         )
+        for state in states:
+            if state.is_running:
+                self._failures.pop(state.name, None)
         return {
             "containers": [vars(state) for state in states],
             "mirrors": list(config.mirrors),
@@ -437,7 +452,9 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
             on_line: Called with each output line.
 
         Returns:
-            ``{"exit_code", "code", "params", "output"}``.
+            ``{"exit_code", "code", "params", "output"}``; a declared or hub
+            container's start or restart that systemd refuses closes with
+            ``image_pull_failed`` or ``container_start_failed {name, image}``.
         """
         # A journal that names no container is the module's own.
         if verb not in (PODMAN_COMMAND_CONTROL, PODMAN_COMMAND_JOURNAL) or (
@@ -467,9 +484,13 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
         try:
             PodmanContainerController().control(name, action, source=state.source)
         except (OSError, subprocess.SubprocessError) as error:
+            if action != "stop" and state.source != PODMAN_SOURCE_MANUAL:
+                failure = self._note_failure(name)
+                return command_outcome(1, failure["code"], failure["params"])
             return command_outcome(
                 1, "command_failed", {"detail": command_detail(error)[:500]}
             )
+        self._failures.pop(name, None)
         return command_outcome(0, output=f"{action} {name}\n")
 
     # --- what a container module asks of the engine ---
@@ -547,9 +568,32 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
 
         Raises:
             ValueError: For an action outside those.
-            subprocess.CalledProcessError: If systemd refuses a unit.
+            ModuleApplyError: ``image_pull_failed`` or
+                ``container_start_failed {name, image}`` when systemd refuses
+                a start or a restart, for the first container whose unit is
+                not active, a pull failure first.
+            subprocess.CalledProcessError: If systemd refuses a stop.
         """
-        PodmanUnitApplier().drive(names, action)
+        try:
+            PodmanUnitApplier().drive(names, action)
+        except subprocess.CalledProcessError:
+            down = [
+                name
+                for name in names
+                if unit_state(name + PODMAN_UNIT_SUFFIX) != "active"
+            ]
+            if action == "stop" or not down:
+                raise
+            failures = [self._note_failure(name) for name in down]
+            failure = next(
+                (
+                    held
+                    for held in failures
+                    if held["code"] == PODMAN_CODE_IMAGE_PULL_FAILED
+                ),
+                failures[0],
+            )
+            raise ModuleApplyError(failure["code"], failure["params"]) from None
 
     def drop_hub_containers(self, module: str) -> None:
         """Stop and delete the units of one module's hub containers, and forget them.
@@ -648,7 +692,8 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
             )
             rendered, context = self._rendered_config(parsed)
             renderer = PodmanUnitRenderer(config=rendered, context=context)
-            note = PodmanUnitApplier().apply(
+            self._images = renderer.images()
+            note, failed = PodmanUnitApplier().apply(
                 renderer.render(),
                 renderer.environment_files(),
                 autostart_names=[
@@ -665,12 +710,29 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
             raise ModuleApplyError(
                 "apply_failed", {"detail": command_detail(error)[:500]}
             )
+        self._failures = {}
+        for name in failed:
+            self._note_failure(name)
         line = f"podman: {note}; {mirror_note}"
         if refused:
             line += "; left out " + ", ".join(name for name, _ in refused)
         self._log(line)
         if refused:
             raise refused[0][1]
+
+    def _note_failure(self, name: str) -> dict:
+        """Keep and log why systemd refused to start one container.
+
+        Returns:
+            ``{code, params}``, as :func:`start_failure` reads it.
+        """
+        image = self._images.get(name) or PodmanUnitRenderer(
+            config=self._wanted or self._config or PodmanConfig()
+        ).images().get(name, "")
+        failure = start_failure(name, image)
+        self._failures[name] = failure
+        self._log(f"podman: {name} did not start: {failure['code']} {image}")
+        return failure
 
     def _rendered_config(self, parsed: PodmanConfig) -> tuple:
         """The configuration this apply renders, and what its files name.

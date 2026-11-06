@@ -58,6 +58,7 @@ from neutrino_agent.modules.podman.applier import (
     podman_version,
     read_image_references,
     ready_hub_containers,
+    start_failure,
 )
 from neutrino_agent.modules.podman.config import (
     CONTAINER_NAME_PATTERN,
@@ -65,6 +66,7 @@ from neutrino_agent.modules.podman.config import (
     PodmanMachineSettings,
 )
 from neutrino_agent.modules.podman.constants import (
+    PODMAN_CODE_IMAGE_PULL_FAILED,
     PODMAN_COMMAND_CONTROL,
     PODMAN_COMMAND_JOURNAL,
     PODMAN_COMMAND_MACHINE_READ,
@@ -77,6 +79,7 @@ from neutrino_agent.modules.podman.constants import (
     PODMAN_MACHINE_DEFAULT_DISK_GIB,
     PODMAN_MACHINE_DEFAULT_MEMORY_MAX_GIB,
     PODMAN_MACHINE_DETAIL_CHARS,
+    PODMAN_MACHINE_FAILED_PREFIX,
     PODMAN_MACHINE_FALLBACK_MEMORY_GIB,
     PODMAN_MACHINE_IMAGE_ARTIFACT,
     PODMAN_MACHINE_INFO_TTL_S,
@@ -98,6 +101,7 @@ from neutrino_agent.modules.podman.page_ports import PodmanPagePortStore
 from neutrino_agent.modules.podman.renderer import (
     PodmanMachineScriptRenderer,
     PodmanRenderContext,
+    PodmanUnitRenderer,
     machine_control_script,
     machine_drive_script,
     machine_drop_script,
@@ -429,6 +433,10 @@ class PodmanMachineModuleRunner(ModuleRunner):
         self._written: "PodmanConfig | None" = None
         self._wanted: "PodmanConfig | None" = None
         self._source_sets: dict = {}
+        # The containers whose start systemd refused, ``{code, params}`` by name.
+        self._failures: dict = {}
+        # The reference each container's unit runs, by name, from the last apply.
+        self._images: dict = {}
         self._page_ports = PodmanPagePortStore(
             directory=platform.agent_var_dir(), log=self._log
         )
@@ -879,9 +887,10 @@ class PodmanMachineModuleRunner(ModuleRunner):
         Returns:
             ``{"containers", "mirrors", "version", "is_active", "machine",
             "has_package_mark"}``, each container as on Linux with its
-            addresses empty and its folders written as the computer names
-            them, ``machine`` ``{"account", "is_running", "cpus",
-            "memory_gib", "disk_gib", "default_memory_gib"}``, the last the
+            addresses empty, its folders written as the computer names
+            them and the code of a start systemd refused, ``machine``
+            ``{"account", "is_running", "cpus", "memory_gib", "disk_gib",
+            "default_memory_gib"}``, the last the
             memory a 0 in the Run settings gives on this computer, and
             ``has_package_mark`` false on a person's Podman.
         """
@@ -922,7 +931,12 @@ class PodmanMachineModuleRunner(ModuleRunner):
                 to_host_source, os_name=self._platform.os_name
             ),
             probe=self._probe,
-        ).survey(declared_names=names, hub_names=hub_names)
+        ).survey(
+            declared_names=names, hub_names=hub_names, failures=dict(self._failures)
+        )
+        for state in states:
+            if state.is_running:
+                self._failures.pop(state.name, None)
         host = info.get("host") if isinstance(info.get("host"), dict) else {}
         details["containers"] = [vars(state) for state in states]
         details["is_active"] = True
@@ -1107,17 +1121,27 @@ class PodmanMachineModuleRunner(ModuleRunner):
 
         Raises:
             ValueError: For an action outside those.
-            ModuleApplyError: ``command_failed`` with systemd's words when it
-                refuses, the machine's own code when it cannot be reached.
+            ModuleApplyError: ``image_pull_failed`` or
+                ``container_start_failed {name, image}`` when systemd refuses
+                a start or a restart, for the first container that does not
+                run, a pull failure first; ``command_failed`` with systemd's
+                words when it refuses a stop; the machine's own code when it
+                cannot be reached.
         """
         record = self._record()
         if not record or not names:
             return
-        done = self._machine_of_record(record).shell(
-            machine_drive_script(names, action)
-        )
+        machine = self._machine_of_record(record)
+        done = machine.shell(machine_drive_script(names, action))
         if done.returncode != 0:
             said = f"{done.stdout or ''}{done.stderr or ''}".strip()
+            failure = (
+                self._first_failure(machine, record, names)
+                if action != "stop"
+                else None
+            )
+            if failure is not None:
+                raise ModuleApplyError(failure["code"], failure["params"])
             raise ModuleApplyError(
                 "command_failed", {"detail": said[-PODMAN_MACHINE_DETAIL_CHARS:]}
             )
@@ -1349,6 +1373,9 @@ class PodmanMachineModuleRunner(ModuleRunner):
                 {"detail": command_detail(error)[:PODMAN_MACHINE_DETAIL_CHARS]},
             ) from error
         self._config = rendered
+        self._images = PodmanUnitRenderer(
+            config=rendered, machine_os_name=self._platform.os_name, context=context
+        ).images()
         self._write_record(settings, self._disk_now(machine, record), rendered)
         script = PodmanMachineScriptRenderer(
             config=rendered, os_name=self._platform.os_name, context=context
@@ -1371,6 +1398,12 @@ class PodmanMachineModuleRunner(ModuleRunner):
             if changed
             else "podman: containers unchanged"
         )
+        self._failures = {}
+        for line in output.splitlines():
+            if line.startswith(PODMAN_MACHINE_FAILED_PREFIX):
+                self._note_failure(
+                    machine, line[len(PODMAN_MACHINE_FAILED_PREFIX) :].strip()
+                )
         self._refuse_left_out(refused)
 
     def _record(self) -> dict:
@@ -1641,7 +1674,9 @@ class PodmanMachineModuleRunner(ModuleRunner):
         """Start, stop or restart one container through its rightful owner.
 
         A declared container goes through systemd in the machine; one a
-        person started by hand through the read's command.
+        person started by hand through the read's command. A declared
+        container's start or restart that systemd refuses closes with its
+        failure's code.
         """
         names = self._declared_names(record)
         hub_names = self.hub_names()
@@ -1658,6 +1693,9 @@ class PodmanMachineModuleRunner(ModuleRunner):
         try:
             if state.source != PODMAN_SOURCE_MANUAL:
                 done = machine.shell(machine_control_script(name, action))
+                if done.returncode != 0 and action != "stop":
+                    failure = self._note_failure(machine, name)
+                    return command_outcome(1, failure["code"], failure["params"])
                 if done.returncode != 0:
                     said = f"{done.stdout or ''}{done.stderr or ''}".strip()
                     return command_outcome(
@@ -1665,6 +1703,7 @@ class PodmanMachineModuleRunner(ModuleRunner):
                         "command_failed",
                         {"detail": said[-PODMAN_MACHINE_DETAIL_CHARS:]},
                     )
+                self._failures.pop(name, None)
             else:
                 machine.control(name, action)
         except ModuleApplyError as error:
@@ -1676,6 +1715,59 @@ class PodmanMachineModuleRunner(ModuleRunner):
                 {"detail": command_detail(error)[:PODMAN_MACHINE_DETAIL_CHARS]},
             )
         return command_outcome(0, output=f"{action} {name}\n")
+
+    def _note_failure(self, machine: PodmanMachine, name: str) -> dict:
+        """Keep and log why systemd refused to start one container in the machine.
+
+        Returns:
+            ``{code, params}``, as :func:`start_failure` reads it through the
+            read's command.
+        """
+        image = self._images.get(name) or PodmanUnitRenderer(
+            config=self._wanted or self._config or PodmanConfig(),
+            machine_os_name=self._platform.os_name,
+        ).images().get(name, "")
+        command = self._read(machine)[0]
+        failure = start_failure(name, image, podman=command or (self._system.binary,))
+        self._failures[name] = failure
+        self._log(f"podman: {name} did not start: {failure['code']} {image}")
+        return failure
+
+    def _first_failure(
+        self, machine: PodmanMachine, record: dict, names: list
+    ) -> "dict | None":
+        """The failure of the first of some containers that does not run, a pull failure first.
+
+        Returns:
+            ``{code, params}``; None when the machine does not answer or
+            every one of them runs.
+        """
+        hub_names = self.hub_names()
+        command, info = self._read(machine)
+        if info is None:
+            return None
+        declared = self._declared_names(record)
+        running = {
+            state.name
+            for state in PodmanStatusReader(
+                podman=command,
+                has_unit=frozenset(_unit_names(declared, hub_names)).__contains__,
+            ).survey(declared_names=declared, hub_names=hub_names)
+            if state.is_running
+        }
+        failures = [
+            self._note_failure(machine, name) for name in names if name not in running
+        ]
+        if not failures:
+            return None
+        return next(
+            (
+                failure
+                for failure in failures
+                if failure["code"] == PODMAN_CODE_IMAGE_PULL_FAILED
+            ),
+            failures[0],
+        )
 
     def _retire(self, record: dict) -> None:
         """Remove one account's keeper, stop its machine and forget its record.

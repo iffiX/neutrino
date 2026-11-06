@@ -66,7 +66,6 @@ marker={marker}
 restart=''
 changed=''
 start=''
-status=0
 put() {{
     printf '%s' "$2" | base64 -d > "$1.new" || exit 1
     chmod "$3" "$1.new" || exit 1
@@ -141,7 +140,7 @@ fi
 
 # A changed container that is not started at boot is restarted only while
 # it runs, and an unchanged one started at boot is started when it does not
-# run, as on Linux.
+# run, as on Linux. A unit systemd refuses is named on a failed line.
 _MACHINE_SCRIPT_TAIL = """systemctl daemon-reload || exit 1
 for name in $changed; do
     if systemctl is-active --quiet "$name.service"; then
@@ -149,14 +148,14 @@ for name in $changed; do
     fi
 done
 for name in $restart; do
-    systemctl restart "$name.service" || status=1
+    systemctl restart "$name.service" || echo "failed: $name"
 done
 for name in $start; do
     if ! systemctl is-active --quiet "$name.service"; then
-        systemctl start "$name.service" || status=1
+        systemctl start "$name.service" || echo "failed: $name"
     fi
 done
-exit "$status"
+exit 0
 """
 
 # Stops the named containers and removes their generated files.
@@ -501,6 +500,10 @@ class PodmanUnitRenderer:
             for held in self._rendered()
         }
 
+    def images(self) -> dict:
+        """The reference each container's unit runs, by the container's name."""
+        return {held.container.name: held.image for held in self._rendered()}
+
     def source_keys(self) -> dict:
         """The variables a source set fills in, by the container whose file holds them.
 
@@ -700,8 +703,10 @@ class PodmanMachineScriptRenderer:
     and disables the units, reloads systemd, restarts each changed
     container that starts at boot or runs, and starts each unchanged one
     that starts at boot and does not run. It prints one ``changed: <file>``
-    line per change, ``-<file>`` for a removal, and exits non-zero when
-    systemd refuses.
+    line per change, ``-<file>`` for a removal, and one ``failed: <name>``
+    line per container whose start systemd refuses; it exits non-zero when
+    a file cannot be written or systemd refuses to enable, disable or
+    reload a unit.
     """
 
     def __init__(
