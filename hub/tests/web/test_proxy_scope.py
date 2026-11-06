@@ -37,6 +37,18 @@ DEAD_EXITS_WORDS = {
     },
 }
 
+# The strip's exit half once every exit is down, as ui_text.md has it.
+EXIT_DOWN_WORDS = {
+    "en": {
+        "state.exit_down_cut": "exit down, cut off",
+        "state.exit_down_direct": "exit down, going direct",
+    },
+    "zh-CN": {
+        "state.exit_down_cut": "出口不通，已断开",
+        "state.exit_down_direct": "出口不通，走直连",
+    },
+}
+
 # The two tproxy statements the renderer can emit, told apart the way the
 # scope reader tells them apart: the hub's own diversion hairpins through
 # loopback, the LAN's does not.
@@ -333,17 +345,66 @@ def test_outside_linux_the_overlay_switch_alone_takes_the_machine(
     assert runtime.proxy_scope() == scope
 
 
+def flat_source(name: str) -> str:
+    """One frontend file with its whitespace folded to single spaces."""
+    return " ".join((FRONTEND_SRC_DIR / name).read_text(encoding="utf-8").split())
+
+
 @pytest.mark.feature("proxy")
 def test_the_notice_shows_for_every_scope_that_takes_traffic():
-    notice = (FRONTEND_SRC_DIR / "components/dead_exits_notice.tsx").read_text(
-        encoding="utf-8"
-    )
+    notice = flat_source("components/dead_exits_notice.tsx")
+    strip = flat_source("proxy_status.ts")
+
+    assert "if (!isEveryExitDown(latestFrame)) { return null; }" in notice
     assert (
-        'latestFrame.proxy_scope !== "off" && latestFrame.proxy_scope !== "unused";'
-    ) in notice
-    strip = (FRONTEND_SRC_DIR / "proxy_status.ts").read_text(encoding="utf-8")
+        'const isScoped = frame.proxy_scope !== "off" && '
+        'frame.proxy_scope !== "unused";'
+    ) in strip
     for word in ("lan", "overlay", "hub"):
         assert f'{word}: "state.{word}",' in strip
+
+
+@pytest.mark.feature("proxy")
+def test_the_strip_turns_warn_in_the_frame_the_notice_shows():
+    """The chip and the notice read one rule off the same frame."""
+    strip = flat_source("proxy_status.ts")
+
+    assert (
+        "if (isEveryExitDown(frame) || frame.exit_tag === DIRECT_EXIT_TAG) {"
+    ) in strip
+    assert (
+        'const down = t( frame.exit_tag === DIRECT_EXIT_TAG ? "state.exit_down_direct" '
+        ': "state.exit_down_cut", );'
+    ) in strip
+    assert (
+        'return { scope, exit: down, label: `${scope} → ${down}`, tone: "dead" };'
+        in (strip)
+    )
+
+
+@pytest.mark.feature("proxy")
+def test_a_down_exit_wears_the_warn_tone_on_the_strip_and_the_proxy_page():
+    style = flat_source("components/top_bar.css")
+    page = flat_source("pages/proxy_page.tsx")
+
+    assert ".top_bar_chip--direct, .top_bar_chip--dead { border-color:" in style
+    assert 'dead: "badge--warn",' in page
+    assert (
+        '<span className={`badge ${proxy.tone === "dead" ? "badge--warn" : '
+        '"badge--accent"}`} > {proxy.exit} </span>'
+    ) in page
+
+
+@pytest.mark.feature("proxy")
+@pytest.mark.parametrize("language", sorted(EXIT_DOWN_WORDS))
+def test_the_strip_s_down_words_in_both_languages(language):
+    catalog = json.loads(
+        (FRONTEND_SRC_DIR / "locales" / language / "network.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    for key, words in EXIT_DOWN_WORDS[language].items():
+        assert catalog[key] == words
 
 
 @pytest.mark.feature("proxy")

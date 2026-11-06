@@ -85,9 +85,9 @@
   }
 }
 
-/* The proxy is switched off. Not an error and not an exit — the traffic is
-   going out unproxied, on purpose, and the strip says which. */
-.top_bar_chip--direct {
+/* The proxy is switched off, or every exit is down. */
+.top_bar_chip--direct,
+.top_bar_chip--dead {
   border-color: color-mix(in srgb, var(--color-warn) 45%, transparent);
   background: var(--color-warn-wash);
   color: var(--color-warn);

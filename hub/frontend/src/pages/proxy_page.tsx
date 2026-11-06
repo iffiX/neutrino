@@ -61,6 +61,7 @@ const BADGE_TONES: Record<ProxyTone, string> = {
   proxy: "badge--accent",
   direct: "badge--warn",
   offline: "badge--error",
+  dead: "badge--warn",
 };
 
 /** The route group's fields, as the form holds them. */
@@ -205,7 +206,11 @@ export function ProxyPage() {
             {proxy.scope}
           </span>
           {proxy.exit !== "" && (
-            <span className="badge badge--accent">{proxy.exit}</span>
+            <span
+              className={`badge ${proxy.tone === "dead" ? "badge--warn" : "badge--accent"}`}
+            >
+              {proxy.exit}
+            </span>
           )}
         </div>
       </div>

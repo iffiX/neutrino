@@ -18,6 +18,8 @@
   "state.link_down": "link down",
   "state.link_up": "link up",
   "state.never": "never",
+  "state.exit_down_cut": "exit down, cut off",
+  "state.exit_down_direct": "exit down, going direct",
   "state.no_exit": "no exit",
   "state.no_ipv4_address": "no IPv4 address",
   "state.no_ipv6_address": "no IPv6 address",

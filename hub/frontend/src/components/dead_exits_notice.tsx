@@ -1,5 +1,6 @@
 import { Icon } from "./icon";
 import { t, useLanguage } from "../i18n";
+import { isEveryExitDown } from "../proxy_status";
 import { useLiveStats } from "../use_live_stats";
 
 /**
@@ -27,15 +28,7 @@ export function DeadExitsNotice({ isFallingBack }: DeadExitsNoticeProps) {
   if (latestFrame === null) {
     return null;
   }
-  const isScoped =
-    latestFrame.proxy_scope !== "off" && latestFrame.proxy_scope !== "unused";
-  // Every node is measured, switched off included, so the switched-off ones
-  // have to come out first: a box whose one enabled node is fine is not a box
-  // with no exit.
-  const probes = latestFrame.nodes.filter((probe) => probe.is_enabled);
-  const isEveryExitDead =
-    probes.length > 0 && probes.every((probe) => !probe.is_alive);
-  if (!isScoped || !isEveryExitDead) {
+  if (!isEveryExitDown(latestFrame)) {
     return null;
   }
   return (

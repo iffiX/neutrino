@@ -18,6 +18,8 @@
   "state.link_down": "链路断开",
   "state.link_up": "链路正常",
   "state.never": "从未",
+  "state.exit_down_cut": "出口不通，已断开",
+  "state.exit_down_direct": "出口不通，走直连",
   "state.no_exit": "无出口",
   "state.no_ipv4_address": "无 IPv4 地址",
   "state.no_ipv6_address": "无 IPv6 地址",

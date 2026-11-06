@@ -19,7 +19,7 @@ import type { StatsFrame } from "./api_types";
  * name for the chip to read.
  */
 
-export type ProxyTone = "direct" | "proxy" | "offline";
+export type ProxyTone = "direct" | "proxy" | "offline" | "dead";
 
 export interface ProxyStatus {
   /** The scope half: whose traffic is being taken, or why none is. */
@@ -40,6 +40,26 @@ const SCOPE_JOINER = "+";
 
 /** The `exit_tag` of a hub falling back to direct. */
 export const DIRECT_EXIT_TAG = "direct";
+
+/**
+ * Whether a scope takes traffic and every enabled exit node is down.
+ *
+ * Args:
+ *   frame: The newest stats frame.
+ *
+ * Returns:
+ *   True while traffic sent to the proxy has no node to leave through.
+ */
+export function isEveryExitDown(frame: StatsFrame): boolean {
+  const isScoped =
+    frame.proxy_scope !== "off" && frame.proxy_scope !== "unused";
+  // Every node is measured, switched off included, so the switched-off ones
+  // come out first.
+  const probes = frame.nodes.filter((probe) => probe.is_enabled);
+  return (
+    isScoped && probes.length > 0 && probes.every((probe) => !probe.is_alive)
+  );
+}
 
 /**
  * Describe the current scope and exit.
@@ -78,6 +98,14 @@ export function describeProxy(frame: StatsFrame | null): ProxyStatus {
       label: `${scope} → ${noExit}`,
       tone: "offline",
     };
+  }
+  if (isEveryExitDown(frame) || frame.exit_tag === DIRECT_EXIT_TAG) {
+    const down = t(
+      frame.exit_tag === DIRECT_EXIT_TAG
+        ? "state.exit_down_direct"
+        : "state.exit_down_cut",
+    );
+    return { scope, exit: down, label: `${scope} → ${down}`, tone: "dead" };
   }
   const exit =
     frame.exit_name || (nodeIdFromTag(frame.exit_tag) ?? frame.exit_tag);
