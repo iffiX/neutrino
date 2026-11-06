@@ -87,7 +87,7 @@ final class ShareSessionsTests: XCTestCase {
                                 "title": .string("lab"), "source": .string("module"),
                                 "payload": .object([
                                     "protocol": .string("smb"), "host": .string("10.0.0.5"), "share": .string("lab"),
-                                    "users": .array([.string("neutrino-\(account)")]), "account": .string(account),
+                                    "users": .array([.string("neutrino_\(account)")]), "account": .string(account),
                                 ]),
                             ])))))
         }
