@@ -336,8 +336,8 @@ mark is removed once the agent has joined, and at once on a machine the
 hub's cache holds no agent package for. A reboot or a failure that cuts
 the install or the join short leaves it, and every later start installs the
 package again, which a package manager that already holds it passes over,
-and joins the agent. The panel's journal and `/var/log/neutrino/hub/setup.log`
-hold each try.
+and joins the agent. The panel's journal holds each try, and
+`/var/log/neutrino/hub/setup.log` the last one.
 
 | Rule | Reason |
 | --- | --- |
