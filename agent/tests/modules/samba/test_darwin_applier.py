@@ -880,6 +880,9 @@ def test_a_sweep_the_system_refuses_says_so_with_the_tools_words(applier, tools)
         "did not sweep account neutrino-old: refused",
         "swept account neutrino-gone",
     ]
+    # The R167 Mac refused every deletion to a daemon with eDSPermissionError.
+    assert tools.ran("pwpolicy", "-u", "neutrino-old", "-disableuser") != []
+    assert tools.ran("pwpolicy", "-u", "neutrino-gone") == []
 
 
 def test_a_folder_share_with_no_account_has_no_point_and_its_folder_loses_the_entries(

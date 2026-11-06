@@ -240,6 +240,9 @@ class SambaDarwinApplier:
         Returns:
             One note per point and per account: ``swept`` when the tool
             removed it, else ``did not sweep`` with the tool's last line.
+            An account the system will not delete is disabled: macOS deletes
+            a local account only for a program a person let administer the
+            computer, and asks no daemon.
 
         Raises:
             OSError: When a command cannot run.
@@ -266,6 +269,8 @@ class SambaDarwinApplier:
                 ["dscl", ".", "-delete", f"/Users/{name}"], is_checked=False
             )
             notes.append(_sweep_note("account", name, deleted))
+            if not deleted.is_success:
+                self._run(["pwpolicy", "-u", name, "-disableuser"], is_checked=False)
         return notes
 
     def apply(
