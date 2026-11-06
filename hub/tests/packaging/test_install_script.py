@@ -687,6 +687,23 @@ def test_the_fastest_site_serves_the_package(stand_ins):
     assert f"Downloaded {name} from {stand_ins.second.host}" in result.stdout
 
 
+def test_a_site_quick_to_answer_outscores_a_faster_one_slow_to_answer(stand_ins):
+    """Half the speed score and half the latency score: the faster site's
+    first byte comes 0.5 s late, the slower one's at once."""
+    name = "neutrino-hub_9.9.9_amd64.deb"
+    _publish(stand_ins.served, name, os.urandom(1536 * 1024))
+    stand_ins.first.first_byte_delay_s = 0.5
+    stand_ins.first.chunk_delay_s = 0.01
+    stand_ins.second.chunk_delay_s = 0.03
+
+    result, _asked = stand_ins()
+
+    assert result.returncode == 0, result.stderr
+    assert stand_ins.first.downloads(name) == []
+    assert stand_ins.second.downloads(name) == [""]
+    assert f"Downloaded {name} from {stand_ins.second.host}" in result.stdout
+
+
 def test_a_stalled_download_resumes_on_the_next_site_where_it_stopped(stand_ins):
     name = "neutrino-hub_9.9.9_amd64.deb"
     data = os.urandom(3 * 1024 * 1024)

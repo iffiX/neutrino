@@ -33,6 +33,9 @@ for directory in (SHARED_PACKAGING_DIR, BUILD_SCRIPTS_DIR, PACKAGING_DIR):
 # hangs up. curl reads a stall from its speed over the last five seconds, so
 # the hold outlasts that.
 SITE_CHUNK_BYTES = 64 * 1024
+# What a site serving other bytes turns each byte into, at once, so its
+# answer comes as soon as a right site's.
+WRONG_BYTES = bytes(byte ^ 0xFF for byte in range(256))
 SITE_HOLD_S = 15
 SITE_FILE_PATH = re.compile(r"^/download/([^/]+)/([^/]+)$")
 SITE_RANGE = re.compile(r"^bytes=(\d+)-(\d*)$")
@@ -47,7 +50,8 @@ class ReleaseSite:
     otherwise is set on it: ``is_missing`` answers 404 for every file,
     ``is_wrong`` serves other bytes of the same length for every file but
     ``SHA256SUMS``, ``is_hanging`` answers nothing,
-    ``is_rangeless`` ignores a Range request, ``chunk_delay_s`` sleeps after
+    ``is_rangeless`` ignores a Range request, ``first_byte_delay_s`` sleeps
+    before a file's answer, ``chunk_delay_s`` sleeps after
     each chunk, ``latest_text`` is served as ``latest.json`` after
     ``latest_delay_s``, and ``stall_at`` holds a download from the start
     once that many bytes are out.
@@ -60,6 +64,7 @@ class ReleaseSite:
         self.is_wrong = False
         self.is_hanging = False
         self.is_rangeless = False
+        self.first_byte_delay_s = 0.0
         self.chunk_delay_s = 0.0
         self.latest_text = None
         self.latest_delay_s = 0.0
@@ -134,8 +139,9 @@ class _ReleaseSiteHandler(BaseHTTPRequestHandler):
             self.send_error(404)
             return
         data = path.read_bytes()
+        time.sleep(site.first_byte_delay_s)
         if site.is_wrong and path.name != "SHA256SUMS":
-            data = bytes(byte ^ 0xFF for byte in data)
+            data = data.translate(WRONG_BYTES)
         start, end = 0, len(data) - 1
         ranged = SITE_RANGE.match(asked) if asked and not site.is_rangeless else None
         if ranged:

@@ -335,6 +335,22 @@ def test_the_fastest_site_serves_the_package(run):
     assert f"Downloaded {MSI} from {run.second.host}" in run.said
 
 
+def test_a_site_quick_to_answer_outscores_a_faster_one_slow_to_answer(run):
+    """Half the speed score and half the latency score: the faster site's
+    first byte comes 0.5 s late, the slower one's at once."""
+    _publish(run.served, MSI, os.urandom(1536 * 1024))
+    run.first.first_byte_delay_s = 0.5
+    run.first.chunk_delay_s = 0.01
+    run.second.chunk_delay_s = 0.03
+
+    outcome, _asked = run()
+
+    assert outcome == "ok"
+    assert run.first.downloads(MSI) == []
+    assert run.second.downloads(MSI) == [""]
+    assert f"Downloaded {MSI} from {run.second.host}" in run.said
+
+
 def test_a_stalled_download_resumes_on_the_next_site_where_it_stopped(run):
     _publish(run.served, MSI, os.urandom(3 * 1024 * 1024))
     run.first.stall_at = 2 * 1024 * 1024

@@ -210,12 +210,12 @@ function Get-NeutrinoLatestTag {
     }
 }
 
-# The sites serving one file, fastest first: every site probed at once for
-# the file's first bytes, each for at most the probe's wait. A site that
-# answered is ranked by its speed from the first byte to the last, two
-# speeds within a tenth of each other going to the earlier first byte; a
-# site that sent nothing in time comes after them; a site that failed is
-# left out, and its reason added to the list given.
+# The sites serving one file, best first: every site probed at once for the
+# file's first bytes, each for at most the probe's wait. A site that answered
+# is ranked by its total: half its speed, from the first byte to the last,
+# over the best speed, and half the best latency over its latency, the time
+# to the first byte. A site that sent nothing in time comes after them; a
+# site that failed is left out, and its reason added to the list given.
 function Get-NeutrinoSiteOrder {
     param([string]$Name, [string]$Tag, [System.Collections.Generic.List[string]]$Reasons)
     $client = Get-NeutrinoHttpClient
@@ -286,16 +286,22 @@ function Get-NeutrinoSiteOrder {
             } else {
                 $last = if ($probe.Last -ge 0) { $probe.Last } else { $clock.ElapsedMilliseconds }
                 $span = [math]::Max($last - $probe.First, 1)
-                $answered += [pscustomobject]@{ Base = $probe.Base; Speed = $probe.Size / $span; First = $probe.First }
+                $answered += [pscustomobject]@{ Base = $probe.Base; Speed = $probe.Size / $span; Latency = [math]::Max($probe.First, 1); Total = 0.0 }
+            }
+        }
+        if ($answered.Count -gt 0) {
+            $bestSpeed = ($answered | Measure-Object -Property Speed -Maximum).Maximum
+            $bestLatency = ($answered | Measure-Object -Property Latency -Minimum).Minimum
+            foreach ($site in $answered) {
+                $speedScore = if ($bestSpeed -gt 0) { $site.Speed / $bestSpeed } else { 1.0 }
+                $site.Total = 0.5 * $speedScore + 0.5 * $bestLatency / $site.Latency
             }
         }
         for ($i = 1; $i -lt $answered.Count; $i++) {
             for ($j = $i; $j -gt 0; $j--) {
                 $current = $answered[$j]
                 $before = $answered[$j - 1]
-                $isFaster = $current.Speed -gt $before.Speed * 1.1
-                $isTie = -not $isFaster -and $before.Speed -le $current.Speed * 1.1
-                if (-not ($isFaster -or ($isTie -and $current.First -lt $before.First))) { break }
+                if (-not ($current.Total -gt $before.Total)) { break }
                 $answered[$j] = $before
                 $answered[$j - 1] = $current
             }

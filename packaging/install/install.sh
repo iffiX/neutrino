@@ -449,12 +449,12 @@ latest_tag() {
     echo "$read_tag"
 }
 
-# The sites serving one file, fastest first: every site probed at once for
-# the file's first PROBE_BYTES, each for at most PROBE_WAIT_S. A site that
-# answered is ranked by its speed from the first byte to the last, two
-# speeds within a tenth of each other going to the earlier first byte; a
-# site that did not answer in time comes after them; a site that failed is
-# left out, and its reason added to $work/reasons.
+# The sites serving one file, best first: every site probed at once for the
+# file's first PROBE_BYTES, each for at most PROBE_WAIT_S. A site that
+# answered is ranked by its total: half its speed, from the first byte to the
+# last, over the best speed, and half the best latency over its latency, the
+# time to the first byte. A site that did not answer in time comes after
+# them; a site that failed is left out, and its reason added to $work/reasons.
 rank_sites() {
     probe_dir="$work/probes"
     rm -rf "$probe_dir"
@@ -500,22 +500,25 @@ rank_sites() {
         echo "$probe_size $probe_start $probe_total $probe_base" >>"$probe_dir/answered"
     done
     awk '
-        function before(a, b) {
-            if (speed[a] > speed[b] * 1.1) return 1
-            if (speed[b] > speed[a] * 1.1) return 0
-            return start[a] < start[b]
-        }
         {
             span = $3 - $2
             if (span < 0.001) span = 0.001
             speed[NR] = $1 / span
-            start[NR] = $2
+            latency[NR] = $2
+            if (latency[NR] < 0.001) latency[NR] = 0.001
             base[NR] = $4
             order[NR] = NR
+            if (speed[NR] > best_speed) best_speed = speed[NR]
+            if (NR == 1 || latency[NR] < best_latency) best_latency = latency[NR]
         }
         END {
+            for (i = 1; i <= NR; i++) {
+                speed_score = 1
+                if (best_speed > 0) speed_score = speed[i] / best_speed
+                total[i] = 0.5 * speed_score + 0.5 * best_latency / latency[i]
+            }
             for (i = 2; i <= NR; i++) {
-                for (j = i; j > 1 && before(order[j], order[j - 1]); j--) {
+                for (j = i; j > 1 && total[order[j]] > total[order[j - 1]]; j--) {
                     kept = order[j]
                     order[j] = order[j - 1]
                     order[j - 1] = kept
