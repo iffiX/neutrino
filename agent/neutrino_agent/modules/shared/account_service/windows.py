@@ -312,8 +312,9 @@ def start(service, machine, *, is_restart: bool) -> None:
     """Enable and start the task unless it runs, ending what is left of the instance first.
 
     The task is registered again with the login first, under the
-    description it carries: Windows refuses the login a task keeps once
-    virtualization-based security changed at a reboot.
+    description it carries: Windows can refuse the login a task keeps at
+    a boot, as after a reboot that turned virtualization-based security
+    off.
     """
     task = task_name(service.name, service.account)
     held = machine.powershell.call("task_read", {"task": task})
