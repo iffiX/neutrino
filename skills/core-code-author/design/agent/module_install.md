@@ -19,7 +19,7 @@ is the module's identity, the same on every platform:
 | `title` | the name every surface shows |
 | `description` | one line on what the module does |
 | `publisher` | who publishes the software, such as `coder/code-server` or `Microsoft` |
-| `is_data_forward_only` | true when the software migrates its data forward and never back, as Gitea does; absent is false ("Module versions") |
+| `is_data_forward_only` | true when the software migrates its data forward and never back, as Gitea does: the module then installs no version older than the newest it has run on the machine; absent is false, and every listed version installs, older ones too ("Module versions") |
 | `uninstall_data` | `{is_deleted, text}`: what an uninstall does to the module's data, the line the uninstall dialog shows ([../ui_behavior.md](../ui_behavior.md), "The machine page"); `is_deleted` is true when the data goes with the module, and `text` is the line in each language of the panel, keyed `en` and `zh-CN` |
 | `memory_mib` | optional, and only on a module whose entries name the `container` method: the memory in MiB its containers run in without swapping from their first start, a whole number above 0; on Windows and macOS the hub sums it over the container modules of a machine against the Podman machine's memory ([modules/containers.md](modules/containers.md), "Memory for the container modules") |
 | `web_share` | `{guest_login}`, present for every module with a page and absent for a module without one: `guest_login` is how an App share's visitor is signed in, `app` for the app's own login page, `guest_account` for one account of the app per share, which the forwarder signs every visitor of that share in as, and `run_account` for the account the app runs as, which the visitor is signed in as, the way the owner's clients are ([module_template.md](module_template.md), "The run") |
@@ -100,6 +100,7 @@ in [../ui_text.md](../ui_text.md), "The machine page's words".
 | `agent` reads Built-in, `builtin` and `system` read System, `hub` reads Upstream, and `container` reads Container. A command line program reads Upstream, as every `hub` module does. The hub derives the word and the module row carries it as `source`. | The method of the machine's entry is what the hub knows of who places the software. A command line program always runs the module's copy ([../agent.md](../agent.md), "Parallel, never take over"). |
 | A Samba or a Podman that was on a Linux machine before its module reads System, as the one the module installed does. | The system's package manager updates and removes a package whoever installed it. |
 | The kind chip reads Service (服务) for a module with **Start** and **Stop**, and Program (普通程序) for one with neither. Codex and Claude Code read Program; every other module reads Service, the carried ones too, though their tab holds no **Start**, since the agent runs them. The module row carries the kind as `kind`. | A person reads from the kind whether the software runs by itself until stopped, or only when a person runs it, as a command line program does. |
+| A module whose manifest says `is_data_forward_only` shows a third chip after the kind chip, Upgrade only (只能升级). The module row carries the flag as `is_data_forward_only`. | A person reads before opening the version dialog that the module goes to no older version. |
 
 ## Artifacts
 
@@ -431,7 +432,20 @@ version list can be read.
 | Containers on a person's Podman on Windows and macOS has one version, the one `podman --version` prints, locked as a `system` entry's is ([modules/containers.md](modules/containers.md), "A person's Podman and the module's"). | The module installs no other version over a person's Podman. |
 | A `container` version is a tag, which the `oci` feed resolves to the image's digest. | A digest pins the bytes, and the person chooses a tag. |
 | In a `container` entry that names `releases`, the image whose `sources` name the `oci` feed's repository takes each version's digest from the feed, and every other image keeps its own digest for every version. | Ayakaleaf's MongoDB and Redis stay the same beside every version of its app, as WSL's msi and Node.js stay beside every version of their programs ([modules/ayakaleaf.md](modules/ayakaleaf.md)). |
-| A module whose manifest says `is_data_forward_only` asks before it installs a version older than the one installed ([../ui_behavior.md](../ui_behavior.md), "The machine page"). | Gitea migrates its database forward at its first start, and an older Gitea cannot read it. |
+| A module whose manifest says `is_data_forward_only` installs no version older than the newest it has run on the machine. The version dialog shows each such version greyed out, and **Follow the tested version** too while the tested version is older ([../ui_behavior.md](../ui_behavior.md), "The machine page"); `version/set` refuses one 409 `version_older_than_run {module, version, newest_run}` ([../protocol.md](../protocol.md), "`/api/agent/module`"). | Such software migrates its data at its first start on a newer version, and an older version cannot read the data then. In the lab Gitea 1.27.3 to 1.27.2 failed, and 28.0.0 back to the tested 1.27.3 failed, while 1.27.3 to 28.0.0 worked. |
+| The newest run is the newest version at which the agent ran the module's `configure` step under `running`. The agent notes the recipe's version before the step runs, keeps it root-only in `newest_run/<module>` under the state root, and reports it on every row of the module as `newest_run`. A note stays whatever the start does after it. | The data moves forward at the new version's first start, before that start can fail, so a failed upgrade has moved it already. |
+| An uninstall that keeps the data keeps the note, and one that removes the data removes it: a `hub` entry's `uninstall.is_data_kept` decides, and a `container` entry removes it. | The note describes the data, so the two go together. |
+| The hub takes the newer of the row's `newest_run` and, on a row reading `running`, its installed version. | A version that runs has run, and an agent of an earlier build noted none. |
+| A module without the flag installs any listed version, older ones too. | Its software reads the data every version wrote, or holds none. |
+
+| Module | `is_data_forward_only` | Why |
+| --- | --- | --- |
+| Gitea | true | It migrates its database at its first start on a new version ([modules/gitea.md](modules/gitea.md)). |
+| Ayakaleaf | true | The app runs its migrations at its first start on a new version, and its publisher supports no downgrade ([modules/ayakaleaf.md](modules/ayakaleaf.md)). |
+| Codeg | true | Its server runs sea-orm-migration at its start, which refuses a database holding a migration the binary does not know, so an older Codeg does not start on data a newer one migrated. |
+| CloudCLI | true | Its server migrates its database at each start: it merges `session_names` into `sessions` and drops `workspace_original_paths`, so an older version finds the tables it reads gone. |
+| SiYuan | absent | Its kernel logs a downgrade at its start and goes on. |
+| Hermes WebUI | absent | Its one version is locked. |
 
 | Feed `kind` | Its keys | The versions | A version's digest |
 | --- | --- | --- | --- |

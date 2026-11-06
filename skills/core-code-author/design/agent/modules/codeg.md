@@ -100,7 +100,10 @@ module").
 write a root-owned unpack, says so, and offers the release page. Another
 version is installed from the module's tab, and a new tested version in
 `codeg.json` reaches every machine that chose none at the next apply
-([module_install.md](../module_install.md), "Module versions").
+([module_install.md](../module_install.md), "Module versions"). The
+manifest names `is_data_forward_only`: the server runs sea-orm-migration at
+its start, which refuses a database holding a migration the binary does not
+know, so an older Codeg does not start on data a newer one migrated.
 
 **Its agents are ACP adapters.** Codeg installs each coding agent itself,
 with `npm install --global` and `--registry https://registry.npmjs.org` on

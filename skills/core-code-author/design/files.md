@@ -235,6 +235,8 @@ overrides both, which is what makes a second instance testable. Details of the f
                             until a task of it ends, root only
         uninstalled/        the mark that a builtin module or a person's Samba
                             was uninstalled, root only
+        newest_run/         the newest version each module ran at, kept
+                            while its data stays, root only
         packages/           the module packages the hub sent
         vscode/             the VS Code CLI, read and run by every account
         code_server/        code-server's release, its own Node.js inside

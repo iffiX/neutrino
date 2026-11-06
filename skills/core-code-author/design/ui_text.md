@@ -392,6 +392,7 @@ where they fit.
 | `ui.modules.tabs_title` | Module configuration | 模块配置 |
 | `ui.modules.source_agent`, `ui.modules.source_system`, `ui.modules.source_upstream`, `ui.modules.source_container`, the source chip of a module's tab | Built-in, System, Upstream, Container | 自带、系统、外部源、容器 |
 | `ui.modules.kind_service`, `ui.modules.kind_program`, the kind chip of a module's tab | Service, Program | 服务、普通程序 |
+| `ui.modules.forward_only`, the chip of a module whose data moves forward only | Upgrade only | 只能升级 |
 | `ui.modules.log_title` | Log · last 200 lines | 日志 · 最后 200 行 |
 | `ui.modules.config_title` | Configuration | 配置 |
 | `ui.modules.enabled_accounts` | Enabled accounts | 启用的账户 |
@@ -441,15 +442,14 @@ where they fit.
 | `ui.modules.version_tested` | tested | 已测试 |
 | `ui.modules.version_untested` | untested | 未测试 |
 | `ui.modules.version_follow_tested` | Follow the tested version | 跟随已测试的版本 |
-| `ui.modules.downgrade_title` | Install {module} {version}? | 安装 {module} {version}？ |
-| `ui.modules.downgrade_body` | {module} moves its data forward when it starts on a newer version, and {version} is older than the one installed, so it can fail to read that data. | {module} 换到新版本启动时会把数据往前迁移，{version} 比装着的版本旧，可能读不了这些数据。 |
 | `code.download_failed` | No source served {file}: {sources} | 没有来源能提供 {file}：{sources} |
 | `code.version_switch_failed` | Version {version} did not start, so the previous version runs again: {detail} | 版本 {version} 没能启动，已换回原来的版本：{detail} |
 | `code.version_unknown` | Version {version} is not listed for this machine. | 这个系统没有版本 {version}。 |
 | `code.version_locked` | The version of {module} follows the system or the agent and cannot be chosen. | {module} 的版本跟随系统或被控端，不能选择。 |
+| `code.version_older_than_run` | {module} has run {newest_run} on this machine and moved its data forward, so it cannot install the older {version}. | {module} 在这个系统上运行过 {newest_run}，数据已经往前迁移，不能安装更旧的 {version}。 |
 | `ui.modules.stopped_hint`, the hint of every apply bar of a module's panel while its module's `want` is not `running`, and under the file share's folder shares. The panels of the modules the agent carries keep their own hint | The module is stopped; these settings take effect at the next Start. | 模块已停止，这些设置在下次启动时生效。 |
 
-A module tab's two chips take one word each. What each word says, and which
+A module tab's chips take one word each. What each word says, and which
 install method reads as which source, is
 [agent/module_install.md](agent/module_install.md), "The source chip and the
 kind chip":

@@ -879,7 +879,7 @@ row the module's icon (`images/icons/modules/<module>.svg`, the generic glyph
 for a module without one) and its title, and under it **+ Add module**, a
 bordered button as wide as the list; on the right the picked module's tab.
 A tab reads, top to bottom: its state line, which holds the module's title,
-its two chips and its state; `ui.modules.log_title` and the
+its chips and its state; `ui.modules.log_title` and the
 log box; `ui.modules.config_title` and the module's panel, which **Configure**
 opens and **Hide configuration** closes; and the buttons **Install**,
 **Start**, **Stop**, **Uninstall** and **Configure** at the bottom, aligned
@@ -889,7 +889,7 @@ panel and writes no `want`, after the first import of Gitea or Containers, and
 the module stays as it is until its **Start** ([protocol.md](protocol.md), "The
 modules section, one entry per module").
 
-The two chips are plain `badge`s between the title and the state, the
+The chips are plain `badge`s between the title and the state, the
 source chip first; what each means and which install method reads as which
 source is [agent/module_install.md](agent/module_install.md), "The source chip
 and the kind chip", and their words [ui_text.md](ui_text.md), "The machine
@@ -899,6 +899,7 @@ page's words":
 | --- | --- |
 | source | the row's `source`, the word the hub derives from the install method of the module's entry for the machine's platform; a word outside the four shows no chip |
 | kind | the row's `kind`: Program on Codex and Claude Code, Service on every other module |
+| upgrade only | `ui.modules.forward_only` on a row whose `is_data_forward_only` is true, after the kind chip; none on any other row |
 
 In a window 880 px wide or narrower, or one no wider than it is tall, the
 split is one column. The module list is then one row above the picked
@@ -1198,7 +1199,7 @@ shows:
 | The version line | `ui.modules.version_installed` with the version the machine reports, then `ui.modules.version_newest` with the newest listed version when the two differ |
 | **Update** (`ui.modules.update`) | a bordered `button` beside the line, live while the newest version differs from the one installed and the module is installed and not in transit; it sends `POST /api/agent/module/version/set` with the newest version |
 | **Install another version…** (`ui.modules.install_version`) | a bordered `button` beside it, live under the same conditions; it opens a dialog listing the versions newest first, the tested one marked `ui.modules.version_tested` and each newer one `ui.modules.version_untested`, with **Follow the tested version** (`ui.modules.version_follow_tested`) at the top; a press on a row sends `version/set` with that version, or empty for the top row, and closes the dialog |
-| A version older than the one installed | on a module whose manifest says `is_data_forward_only`, the press asks through `useConfirm` first (`ui.modules.downgrade_title`, `ui.modules.downgrade_body`) |
+| A version older than the newest run | on a module whose manifest says `is_data_forward_only`, each row the view marks `is_older_than_run` is shown and cannot be pressed, and so is **Follow the tested version** while the tested row is marked; a press on any other row asks nothing ([agent/module_install.md](agent/module_install.md), "Module versions") |
 | A locked version | a module of the `builtin` or `system` method, a `container` module whose manifest names no `releases`, and Containers on a person's Podman, whose one version is the one Podman prints ([agent/modules/containers.md](agent/modules/containers.md), "A person's Podman and the module's"), shows the same line and buttons: **Update** disabled, and **Install another version…** opening the dialog with its one version as a row that cannot be pressed and no **Follow the tested version** row |
 
 There is no switch that updates a module by itself. A `version_switch_failed`

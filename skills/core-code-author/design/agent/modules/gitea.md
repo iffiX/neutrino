@@ -73,11 +73,12 @@ serve the same files. The Windows build is the one that runs `git`, as on
 Linux; the `gogit` build is not used. The hub's cache fetches it and sends
 it down `package {module: gitea, artifact, digest}`.
 
-**An older version asks first.** Gitea migrates its database forward at its
-first start on a new version, and an older Gitea cannot read it. The
-manifest therefore names `is_data_forward_only`, and the machine page asks
-before it installs a version older than the one installed
-([module_install.md](../module_install.md), "Module versions").
+**Gitea only upgrades.** Gitea migrates its database forward at its first
+start on a new version, and an older Gitea cannot read it: in the lab
+1.27.3 to 1.27.2 and 28.0.0 to 1.27.3 failed. The manifest names
+`is_data_forward_only`, so the module installs no version older than the
+newest it has run on the machine ([module_install.md](../module_install.md),
+"Module versions").
 
 **The accounts are made through the gitea CLI as the server's own account**:
 `runuser -u git` on Linux, a process with the account's uid, gid, home and

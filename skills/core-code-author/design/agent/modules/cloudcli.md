@@ -4,7 +4,10 @@ The `cloudcli` module runs CloudCLI, the npm package `@cloudcli-ai/cloudcli`
 tested at 1.37.3 (AGPL-3.0), once per enabled account: a web page for AI coding
 sessions. The module's version is the package's version, which the `npm`
 feed lists ([module_install.md](../module_install.md), "Module
-versions"). It is a program run as a person's account
+versions"), and the manifest names `is_data_forward_only`: the server
+migrates its database at each start, merging `session_names` into
+`sessions` and dropping `workspace_original_paths`, so an older version
+finds the tables it reads gone. It is a program run as a person's account
 ([module_template.md](../module_template.md)): `agent/neutrino_agent/modules/cloudcli/`
 holds `config.py`, `constants.py` and `hooks.py`, and `modules/shared/` does
 the rest. Its configuration is `{instances: [{account, web_password,
