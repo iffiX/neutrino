@@ -81,7 +81,7 @@ HUB_RECIPE = {
 
 WANTED = {"fakedesk": {"want": "installed", "config": {}, "install": HUB_RECIPE}}
 
-ROW_FIELDS = {"state", "is_active", "code", "params", "details", "task"}
+ROW_FIELDS = {"state", "is_active", "code", "params", "details", "task", "newest_run"}
 # A task's row as the applier publishes it.
 TASK_ROW = {
     "steps": [{"name": "packages", "params": {}}, {"name": "verify", "params": {}}],
@@ -161,6 +161,9 @@ def bare_engine(*, runner=None, verified=None, tmp_path=None):
         else "/nowhere/container_recipes"
     )
     engine._kept_recipes = {}
+    engine._newest_run_dir = (
+        str(tmp_path / "newest_run") if tmp_path else "/nowhere/newest_run"
+    )
     engine._platform_tuple = {"os": "linux", "family": "debian", "arch": "amd64"}
     engine._lines = threading.local()
     engine._task_rows = {}
@@ -3090,6 +3093,82 @@ def test_an_install_keeps_the_version_and_an_uninstall_forgets_it(tmp_path):
 
     assert kept == {"version": "1.0", "digests": {"app": "sha256:" + DIGEST}}
     assert engine.installed_version("fakedesk") == {}
+
+
+def hub_entry(version, *, want="running", is_data_kept=True) -> dict:
+    """The fakedesk entry at one version, its data kept or not at uninstall."""
+    recipe = json.loads(json.dumps(HUB_RECIPE))
+    recipe["params"]["version"] = version
+    recipe["params"]["uninstall"]["is_data_kept"] = is_data_kept
+    return {"want": want, "config": {}, "install": recipe}
+
+
+def configure(engine, name, entry, want) -> dict:
+    """One module's configure steps under a want, run as its task runs them."""
+    return run_task(engine, name, engine.configure_steps(name, entry, want))
+
+
+def test_a_configure_under_running_notes_the_version_before_it_runs(tmp_path):
+    seen: list = []
+    runner = HubRunner()
+    engine = bare_engine(runner=runner, verified=[True], tmp_path=tmp_path)
+    runner.apply = lambda config: seen.append(engine.newest_run("fakedesk"))
+
+    configure(engine, "fakedesk", hub_entry("2.0"), "running")
+
+    assert seen == ["2.0"]
+    path = tmp_path / "newest_run" / "fakedesk"
+    assert path.read_text(encoding="utf-8") == "2.0"
+    assert oct(path.stat().st_mode & 0o777) == oct(0o600)
+
+
+def test_the_newest_run_stays_after_a_start_that_fails_and_an_older_version(
+    tmp_path,
+):
+    runner = HubRunner()
+    engine = bare_engine(runner=runner, verified=[True], tmp_path=tmp_path)
+
+    def refuse(config):
+        raise ModuleApplyError("apply_failed", {"detail": "no listen"})
+
+    runner.apply = refuse
+    failed = configure(engine, "fakedesk", hub_entry("28.0.0"), "running")
+    runner.apply = lambda config: None
+    configure(engine, "fakedesk", hub_entry("1.27.3"), "running")
+
+    assert failed["code"] == "apply_failed"
+    assert engine.newest_run("fakedesk") == "28.0.0"
+
+
+def test_a_configure_under_stopped_notes_no_run(tmp_path):
+    engine = bare_engine(verified=[True], tmp_path=tmp_path)
+
+    configure(engine, "fakedesk", hub_entry("2.0"), "stopped")
+
+    assert engine.newest_run("fakedesk") == ""
+
+
+def test_every_row_of_a_module_carries_its_newest_run(tmp_path):
+    engine = bare_engine(verified=[True], tmp_path=tmp_path)
+    engine._wanted = {"fakedesk": hub_entry("2.0")}
+
+    configure(engine, "fakedesk", hub_entry("2.0"), "running")
+
+    assert engine.report()["fakedesk"]["newest_run"] == "2.0"
+
+
+@pytest.mark.parametrize("is_data_kept, kept", [(True, "2.0"), (False, "")])
+def test_an_uninstall_keeps_the_newest_run_while_the_data_stays(
+    tmp_path, is_data_kept, kept
+):
+    engine = bare_engine(verified=[True, False], tmp_path=tmp_path)
+    entry = hub_entry("2.0", is_data_kept=is_data_kept)
+    configure(engine, "fakedesk", entry, "running")
+    engine._wanted = {"fakedesk": dict(entry, want="absent")}
+
+    uninstall(engine, "fakedesk")
+
+    assert engine.newest_run("fakedesk") == kept
 
 
 def test_every_module_runner_the_engine_builds_is_in_the_apply_order(tmp_path):

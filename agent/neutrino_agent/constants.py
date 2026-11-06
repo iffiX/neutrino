@@ -484,6 +484,10 @@ AGENT_UNINSTALLED_DIR_NAME = "uninstalled"
 # root-only ``<module>.json`` each, until its uninstall took; beside the
 # configured marks.
 AGENT_CONTAINER_RECIPES_DIR_NAME = "container_recipes"
+# Where the newest version each module ran at is kept, one root-only file per
+# module holding the version, from a configure under ``running`` while the
+# module's data stays; beside the configured marks.
+AGENT_NEWEST_RUN_DIR_NAME = "newest_run"
 # Where a package coming down a stream lands until its digest is checked.
 # A module's package is deleted once its install ran; the agent's own
 # outlives the process that received it, and the agent the install put

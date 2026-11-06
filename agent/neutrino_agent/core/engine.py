@@ -78,11 +78,13 @@ from neutrino_agent.constants import (
     AGENT_STEP_VERIFY,
     AGENT_STEP_WAIT_MODULE,
     AGENT_TAKEN_OVER_KEY,
+    AGENT_NEWEST_RUN_DIR_NAME,
     AGENT_UNINSTALLED_DIR_NAME,
     AGENT_VERSIONS_DIR_NAME,
     AGENT_WANT_RUNNING,
     AGENT_WANT_STOPPED,
 )
+from neutrino_agent.core.version import parse_version
 from neutrino_agent.exceptions import ModuleApplyError, PlatformUnsupportedError
 from neutrino_agent.modules.ayakaleaf.constants import AYAKALEAF_NAME
 from neutrino_agent.modules.ayakaleaf.hooks import AyakaleafHooks
@@ -311,6 +313,9 @@ class ModuleEngine(ReconcileWorker):
         # Module name to the recipe kept for it, for each container module a
         # state named present, until its uninstall took.
         self._kept_recipes: dict = {}
+        self._newest_run_dir = os.path.join(
+            os.path.dirname(self._configured_dir), AGENT_NEWEST_RUN_DIR_NAME
+        )
         self._platform_tuple = platform_tuple()
         # The line sink of the task running on each thread.
         self._lines = threading.local()
@@ -897,6 +902,18 @@ class ModuleEngine(ReconcileWorker):
         )
         if want != AGENT_WANT_RUNNING:
             return planned
+        version = str(params_of(recipe).get("version", "") or "")
+        planned = [
+            (
+                dataclasses.replace(
+                    step,
+                    run=functools.partial(self._run_noted, name, version, step.run),
+                )
+                if step.name == AGENT_STEP_CONFIGURE
+                else step
+            )
+            for step in planned
+        ]
         return self._wait_module_steps(recipe, AGENT_MODULE_STATE_FAILED) + planned
 
     def check_steps(self, name: str, entry: dict) -> list:
@@ -979,6 +996,26 @@ class ModuleEngine(ReconcileWorker):
             "version": held["version"],
             "digests": dict(digests) if isinstance(digests, dict) else {},
         }
+
+    def newest_run(self, name: str) -> str:
+        """The newest version one module ran at on this machine, as the agent noted it.
+
+        Args:
+            name: The module name.
+
+        Returns:
+            The version; empty before a note.
+        """
+        if not _is_plain(name):
+            return ""
+        try:
+            with open(
+                os.path.join(self._newest_run_dir, name), "r", encoding="utf-8"
+            ) as stream:
+                held = stream.read(64).strip()
+        except OSError:
+            return ""
+        return held if parse_version(held) is not None else ""
 
     def take_version_switch(self, name: str, entry: dict) -> bool:
         """Whether an installed ``hub`` module is to be switched to the version its recipe names.
@@ -1338,6 +1375,42 @@ class ModuleEngine(ReconcileWorker):
     def _recipe_path(self, name: str) -> str:
         return os.path.join(self._container_recipes_dir, name + FAILURE_SUFFIX)
 
+    def _run_noted(self, name: str, version: str, run, context) -> None:
+        """Note the version as run, then run the ``configure`` step."""
+        self._note_run(name, version)
+        run(context)
+
+    def _note_run(self, name: str, version: str) -> None:
+        """Keep a version as one module's newest run, unless a newer one is kept."""
+        parsed = parse_version(version)
+        if not _is_plain(name) or parsed is None:
+            return
+        held = parse_version(self.newest_run(name))
+        if held is not None and held >= parsed:
+            return
+        try:
+            os.makedirs(self._newest_run_dir, mode=0o700, exist_ok=True)
+            handle, temporary = tempfile.mkstemp(
+                dir=self._newest_run_dir, prefix=".run_"
+            )
+            try:
+                with os.fdopen(handle, "w", encoding="utf-8") as stream:
+                    stream.write(version)
+                os.chmod(temporary, 0o600)
+                os.replace(temporary, os.path.join(self._newest_run_dir, name))
+            except BaseException:
+                with contextlib.suppress(OSError):
+                    os.unlink(temporary)
+                raise
+        except OSError as error:
+            self._log(f"{name}: could not note its newest run: {error}")
+
+    def _forget_newest_run(self, name: str) -> None:
+        """Delete one module's newest run."""
+        if _is_plain(name):
+            with contextlib.suppress(OSError):
+                os.unlink(os.path.join(self._newest_run_dir, name))
+
     def _forget_version(self, name: str) -> None:
         """Delete one module's kept version."""
         if _is_plain(name):
@@ -1390,6 +1463,8 @@ class ModuleEngine(ReconcileWorker):
             return {"code": "uninstall_unconfirmed", "params": {}}
         self._forget_version(name)
         self._forget_recipe(name)
+        if removal.get("is_data_kept") is not True:
+            self._forget_newest_run(name)
         return {}
 
     def _keep_uninstalled_mark(self, name: str) -> None:
@@ -1537,8 +1612,10 @@ class ModuleEngine(ReconcileWorker):
             name: The module name.
             status: What a read found.
         """
+        newest_run = self.newest_run(name)
         with self._lock:
             status = _with_task(status, self._task_rows.get(name))
+            status["newest_run"] = newest_run
             is_news = self._statuses.get(name) != status
             self._statuses[name] = status
         if is_news and self._on_change is not None:
