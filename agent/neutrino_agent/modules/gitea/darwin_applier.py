@@ -352,10 +352,16 @@ class GiteaDarwinApplier:
         self._prepare_data(uid, gid)
         return is_given
 
-    def uninstall(self) -> None:
+    def uninstall(self) -> str:
         """Unload and delete the LaunchDaemon, the binary, ``app.ini`` and the account.
 
-        The data directory, the account's home, stays.
+        The data directory, the account's home, stays. macOS 15 refuses the
+        account's deletion to a process without Full Disk Access, and the
+        account then stays.
+
+        Returns:
+            Empty, or the line naming the account that stays with the
+            system's refusal.
         """
         self._unload()
         with contextlib.suppress(OSError):
@@ -363,11 +369,15 @@ class GiteaDarwinApplier:
         with contextlib.suppress(OSError, ModuleApplyError):
             self._files().remove(self.conf_path)
         shutil.rmtree(self.module_dir, ignore_errors=True)
-        if self._has_record():
-            self._run(
-                ["dscl", ".", "-delete", f"/Users/{GITEA_DARWIN_ACCOUNT}"],
-                is_checked=False,
-            )
+        if not self._has_record():
+            return ""
+        deleted = self._run(
+            ["dscl", ".", "-delete", f"/Users/{GITEA_DARWIN_ACCOUNT}"],
+            is_checked=False,
+        )
+        if deleted.is_success:
+            return ""
+        return f"the account {GITEA_DARWIN_ACCOUNT} stays: {tool_line(deleted)}"
 
     def apply(self, rendered: str, *, git_path: str, is_started: bool = True) -> str:
         """Install ``app.ini`` and the LaunchDaemon, and run the server on them.

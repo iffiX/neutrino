@@ -381,12 +381,15 @@ class GiteaModuleRunner(ModuleRunner):
 
     def uninstall(self, recipe: dict) -> None:
         """Take the service, the binary and the configuration off, and the
-        account on macOS; keep the data.
+        account on macOS; keep the data. An account macOS will not delete
+        stays, with a line in the log.
 
         Args:
             recipe: The module's recipe.
         """
-        self._applier.uninstall()
+        note = self._applier.uninstall()
+        if note:
+            self._log(f"gitea: {note}")
 
     def validate(self, config: dict) -> None:
         """Parse, check and render a configuration.

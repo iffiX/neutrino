@@ -370,8 +370,9 @@ def test_an_uninstall_keeps_the_data_and_deletes_the_account(
     repository = tmp_path / "state" / "gitea_data" / "data" / "gitea_repositories"
     repository.mkdir()
 
-    applier.uninstall()
+    note = applier.uninstall()
 
+    assert note == ""
     assert not (tmp_path / "state" / "gitea").exists()
     assert not (tmp_path / "LaunchDaemons" / "com.neutrino.gitea.plist").exists()
     assert not (
@@ -387,6 +388,35 @@ def test_an_uninstall_keeps_the_data_and_deletes_the_account(
         ["launchctl", "bootout", "system/com.neutrino.gitea"]
     )
     assert applier.is_active() is False
+
+
+def test_an_account_macos_will_not_delete_stays_with_the_system_s_line(
+    applier, tools, binary
+):
+    tools.has_account = True
+    original = tools.__call__
+
+    def refusing(command, **kwargs):
+        if command[:3] == ["dscl", ".", "-delete"]:
+            tools.calls.append(list(command))
+            return CommandResult(
+                list(command),
+                40,
+                "",
+                "<main> delete status: eDSPermissionError\n"
+                "<dscl_cmd> DS Error: -14120 (eDSPermissionError)\n",
+            )
+        return original(command, **kwargs)
+
+    applier._run = refusing
+    applier.install(binary)
+
+    note = applier.uninstall()
+
+    assert note == (
+        "the account neutrino_gitea stays: "
+        "<dscl_cmd> DS Error: -14120 (eDSPermissionError)"
+    )
 
 
 def test_an_uninstall_with_no_account_deletes_none(applier, tools, binary):

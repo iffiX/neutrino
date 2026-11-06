@@ -801,6 +801,19 @@ def test_no_other_system_plans_the_command_line_tools(os_name, tmp_path):
     ]
 
 
+def test_an_uninstall_logs_what_the_system_applier_leaves(tmp_path):
+    applier = SystemApplier(tmp_path, git="/opt/homebrew/bin/git")
+    applier.uninstall = lambda: "the account neutrino_gitea stays: refused"
+    lines: list = []
+    runner = GiteaModuleRunner(
+        platform=MacPlatform(), log=lines.append, applier=applier
+    )
+
+    runner.uninstall({})
+
+    assert lines == ["gitea: the account neutrino_gitea stays: refused"]
+
+
 def test_the_journal_on_macos_and_windows_is_the_servers_own_log(tmp_path):
     applier = SystemApplier(tmp_path, git="/opt/homebrew/bin/git")
     applier.log.write_text(
