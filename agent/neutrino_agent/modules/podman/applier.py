@@ -371,6 +371,7 @@ def fastest_sources(
             [str(source) for source in held["sources"]],
             probe_path=str(held.get("probe", "") or "/"),
             probe_one=probe_one,
+            latency_paths=held.get("latency_probes") or (),
             log=log,
             name=f"source set {name}",
         )

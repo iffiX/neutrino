@@ -6,15 +6,17 @@ image from, and the source of a source set a container's tools read. Every
 source is probed at once, and a probe waits at most
 ``AGENT_SOURCE_PROBE_TIMEOUT_S`` for an answer. A probe reads a real file:
 its first ``AGENT_SOURCE_PROBE_BYTES``, for as long again as it waited, and
-an npm registry's probe reads the package's whole document. The sources that
-answered are ranked by the probe's speed, measured from its first byte to
-its last, and two speeds within a tenth of each other go to the earlier
-first byte. A source that did not answer in time is not ranked: an image's,
+an npm registry's probe reads the package's whole document. Each source that
+answered has a speed, from the probe's first byte to its last, and a
+latency, the time to the probe's first byte or the mean time to the first
+byte of a few small documents a set names. Each is scored against the best
+source's, and the sources rank by a total of half the speed score and half
+the latency score. A source that did not answer in time is not ranked: an image's,
 a set's and a host's are tried after the ranked ones, and an npm registry's
 is not, since its probe checks the package's integrity. Nothing is
 remembered: each ranking probes again. Each ranking writes one line to the
-log it is handed: what it ranked, each source's speed and first byte or its
-failure's reason, and the source chosen.
+log it is handed: what it ranked, each source's speed, latency and total or
+its failure's reason, and the source chosen.
 
 Not pure: opens connections.
 """
@@ -44,9 +46,11 @@ from neutrino_agent.constants import (
     AGENT_SOURCE_DOCUMENT_LIMIT_BYTES,
     AGENT_SOURCE_HEADERS,
     AGENT_SOURCE_MANIFEST_ACCEPT,
-    AGENT_SOURCE_NEAR_TIE,
+    AGENT_SOURCE_LATENCY_FLOOR_S,
+    AGENT_SOURCE_LATENCY_WEIGHT,
     AGENT_SOURCE_PROBE_BYTES,
     AGENT_SOURCE_PROBE_TIMEOUT_S,
+    AGENT_SOURCE_SPEED_WEIGHT,
 )
 
 # The reasons a source fails, as ``download_failed`` names them.
@@ -78,6 +82,9 @@ class SourceProbe:
         is_answered: Whether it answered in time; an HTTP error counts only
             where the probe takes one.
         first_byte_s: Seconds from the request to the first byte.
+        latency_s: The latency the source is scored on: its first byte, or
+            the mean first byte of a set's small documents.
+        score: Its total against the other sources of one ranking.
         speed: Bytes per second from the first byte to the last.
         status: The HTTP status; 0 when none came.
         body: What it answered, up to the probe's limit.
@@ -90,6 +97,8 @@ class SourceProbe:
     source: str
     is_answered: bool = False
     first_byte_s: float = 0.0
+    latency_s: float = 0.0
+    score: float = 0.0
     speed: float = 0.0
     status: int = 0
     body: bytes = b""
@@ -208,6 +217,7 @@ def probe(
     found.body = body
     found.is_answered = True
     found.first_byte_s = first_at - started
+    found.latency_s = found.first_byte_s
     found.speed = len(found.body) / max(last_at - first_at, 1e-6)
     return found
 
@@ -240,19 +250,84 @@ def probe_all(urls: list, *, probe_one=probe) -> list:
 
 
 def ranked(probes: list) -> list:
-    """The probes that answered, fastest first.
+    """The probes that answered, the highest total first, each with its ``score``.
+
+    The speed score is the speed over the best speed, the latency score the
+    best latency over the latency, and the total is half the one and half
+    the other.
 
     Args:
         probes: The probes.
 
     Returns:
-        The answered probes by speed, two speeds within a tenth of each
-        other ordered by the earlier first byte.
+        The answered probes by total; two equal totals keep their order.
     """
-    return sorted(
-        (found for found in probes if found.is_answered),
-        key=functools.cmp_to_key(_compare),
-    )
+    answered = [found for found in probes if found.is_answered]
+    if not answered:
+        return []
+    best_speed = max(found.speed for found in answered)
+    best_latency = min(_latency_of(found) for found in answered)
+    for found in answered:
+        speed_score = found.speed / best_speed if best_speed > 0 else 1.0
+        found.score = (
+            AGENT_SOURCE_SPEED_WEIGHT * speed_score
+            + AGENT_SOURCE_LATENCY_WEIGHT * best_latency / _latency_of(found)
+        )
+    return sorted(answered, key=_minus_score)
+
+
+def latency_of(found: SourceProbe) -> float:
+    """One probe's latency: the one scored for it, else its first byte. Pure.
+
+    Args:
+        found: The probe.
+
+    Returns:
+        Seconds.
+    """
+    return found.latency_s or found.first_byte_s
+
+
+def measure_latency(
+    probes: list, latency_paths, *, document_of, probe_one=probe
+) -> None:
+    """Score each answered source's latency on a few small documents instead of its probe.
+
+    Each source's requests go one after another, every source at once, and
+    a request that does not answer counts as the probe's whole wait.
+
+    Args:
+        probes: The probes, whose answered ones take the mean as ``latency_s``.
+        latency_paths: The small documents' paths; none leaves each probe's
+            own first byte.
+        document_of: Called with ``(source, path)``; the document's address.
+        probe_one: Called with ``url, source=, is_document=``; returns a
+            :class:`SourceProbe`.
+    """
+    paths = [str(path) for path in latency_paths or ()]
+    answered = [found for found in probes if found.is_answered]
+    if not paths or not answered:
+        return
+
+    def measure(found: SourceProbe) -> None:
+        waits = []
+        for path in paths:
+            small = probe_one(
+                document_of(found.source, path), source=found.source, is_document=True
+            )
+            waits.append(
+                latency_of(small) if small.is_answered else AGENT_SOURCE_PROBE_TIMEOUT_S
+            )
+        found.latency_s = sum(waits) / len(waits)
+
+    threads = [
+        threading.Thread(target=measure, args=(found,), daemon=True)
+        for found in answered
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
 
 
 def ranking_line(name: str, probes: list, chosen: str) -> str:
@@ -264,15 +339,15 @@ def ranking_line(name: str, probes: list, chosen: str) -> str:
         chosen: The source chosen; empty for none.
 
     Returns:
-        ``<name>: <source> <speed> first byte <ms> ms, <source> <reason>;
-        chose <source>``.
+        ``<name>: <source> <speed> latency <ms> ms total <score>, <source>
+        <reason>; chose <source>``.
     """
     parts = []
     for found in probes:
         if found.is_answered:
             parts.append(
-                f"{found.source} {_speed_words(found.speed)} first byte "
-                f"{round(found.first_byte_s * 1000)} ms"
+                f"{found.source} {_speed_words(found.speed)} latency "
+                f"{round(latency_of(found) * 1000)} ms total {found.score:.2f}"
             )
         else:
             parts.append(f"{found.source} {found.reason or REASON_UNREACHABLE}")
@@ -300,6 +375,7 @@ def rank_registries(
     version: str,
     integrity: str,
     probe_one=probe,
+    latency_paths=(),
     log=None,
     name: str = "",
 ) -> tuple:
@@ -312,6 +388,8 @@ def rank_registries(
         integrity: The artifact's digest, npm's ``integrity``.
         probe_one: Called with ``url, source=, is_document=``; returns a
             :class:`SourceProbe`.
+        latency_paths: The ``npm`` set's ``latency_probes``, whose mean first
+            byte is each registry's latency; none takes the document's own.
         log: Called with the ranking's one line; None writes none.
         name: What the line says was ranked; empty names the package.
 
@@ -334,6 +412,9 @@ def rank_registries(
             found.detail = f"the registry names {named or 'no integrity'}"[
                 :DETAIL_CHARS
             ]
+    measure_latency(
+        probes, latency_paths, document_of=set_document, probe_one=probe_one
+    )
     chosen = [found.source for found in ranked(probes)]
     if log is not None:
         log(
@@ -360,7 +441,13 @@ def set_document(source: str, probe_path: str) -> str:
 
 
 def rank_set(
-    sources: list, *, probe_path: str, probe_one=probe, log=None, name: str = ""
+    sources: list,
+    *,
+    probe_path: str,
+    probe_one=probe,
+    latency_paths=(),
+    log=None,
+    name: str = "",
 ) -> list:
     """Rank the sources of one source set, or the hosts of one npm setting, by speed.
 
@@ -369,6 +456,8 @@ def rank_set(
         probe_path: The path probed under each source.
         probe_one: Called with ``url, source=``; returns a
             :class:`SourceProbe`.
+        latency_paths: The set's ``latency_probes``, whose mean first byte
+            is each source's latency; none takes the probe's own.
         log: Called with the ranking's one line; None writes none.
         name: What the line says was ranked; empty names the probed path.
 
@@ -379,6 +468,9 @@ def rank_set(
     probes = probe_all(
         [(source, set_document(source, probe_path)) for source in sources],
         probe_one=probe_one,
+    )
+    measure_latency(
+        probes, latency_paths, document_of=set_document, probe_one=probe_one
     )
     order = [found.source for found in ranked(probes)]
     order += [source for source in sources if source not in order]
@@ -596,14 +688,11 @@ def _speed_words(speed: float) -> str:
     return f"{round(speed / KIB_BYTES)} KB/s"
 
 
-def _compare(first: SourceProbe, second: SourceProbe) -> int:
-    """The ranking's order of two answered probes."""
-    fastest = max(first.speed, second.speed)
-    if (
-        fastest <= 0
-        or abs(first.speed - second.speed) <= AGENT_SOURCE_NEAR_TIE * fastest
-    ):
-        return (first.first_byte_s > second.first_byte_s) - (
-            first.first_byte_s < second.first_byte_s
-        )
-    return -1 if first.speed > second.speed else 1
+def _latency_of(found: SourceProbe) -> float:
+    """The latency a score divides by, never below the floor."""
+    return max(latency_of(found), AGENT_SOURCE_LATENCY_FLOOR_S)
+
+
+def _minus_score(found: SourceProbe) -> float:
+    """The sort key that puts the highest total first."""
+    return -found.score

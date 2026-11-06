@@ -1208,6 +1208,7 @@ class AyakaleafHooks(ContainerHooks, GuestAccountHooks):
             sources,
             probe_path=str(held.get("probe", "") or "/"),
             probe_one=self._probe_one,
+            latency_paths=held.get("latency_probes") or (),
             log=self._log,
             name=f"{self._name}: source set {AYAKALEAF_TEX_SET}",
         )

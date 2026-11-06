@@ -1093,10 +1093,31 @@ def test_each_set_s_ranking_writes_its_line_to_the_log():
     fastest_sources(["pypi"], sets, probe_one=probe_one, log=lines.append)
 
     assert lines == [
-        "source set pypi: https://pypi.org/simple 1 KB/s first byte 50 ms, "
-        "https://pypi.tuna.example/simple 2.0 MB/s first byte 50 ms; "
+        "source set pypi: https://pypi.org/simple 1 KB/s latency 50 ms total 0.50, "
+        "https://pypi.tuna.example/simple 2.0 MB/s latency 50 ms total 1.00; "
         "chose https://pypi.tuna.example/simple"
     ]
+
+
+def test_a_set_s_latency_probes_score_its_sources():
+    asked: list = []
+
+    def probe_one(url, *, source="", is_document=False):
+        asked.append(url)
+        return SourceProbe(source=source, is_answered=True, speed=1.0)
+
+    sets = {
+        "npm": {
+            "probe": "/npm/-/npm-10.9.2.tgz",
+            "latency_probes": ["/wrappy"],
+            "sources": ["https://registry.npmjs.org"],
+            "variables": ["npm_config_registry"],
+        }
+    }
+
+    fastest_sources(["npm"], sets, probe_one=probe_one)
+
+    assert "https://registry.npmjs.org/wrappy" in asked
 
 
 def test_a_set_with_no_variables_is_left_unprobed():

@@ -1267,6 +1267,8 @@ class CloudcliHooks(InstanceHooks):
             version=self._version,
             integrity=str(self._npm.get("digest", "") or ""),
             probe_one=self._probe,
+            latency_paths=(held.get("latency_probes") if isinstance(held, dict) else ())
+            or (),
             log=self._log,
             name=f"{self.name}: npm registries of {named}",
         )

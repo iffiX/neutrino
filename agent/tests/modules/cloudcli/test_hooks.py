@@ -1118,6 +1118,18 @@ def test_the_rankings_of_the_registries_and_the_hosts_write_their_lines(tmp_path
     assert rankings[1].endswith("; chose https://h-fast")
 
 
+def test_the_registries_are_scored_on_the_npm_set_s_small_documents(tmp_path):
+    probe = Probe(speeds={"https://fast.example": 10.0, "https://h-fast": 10.0})
+    held = recipe(registries=("https://fast.example",), hosts=("https://h-fast",))
+    held.sets["npm"]["latency_probes"] = ["/wrappy", "/once"]
+    hooks, _machine, entry = attempted(tmp_path, held, probe, {})
+
+    hooks.prepare(CONFIG, CONFIG.instances[0], entry)
+
+    assert "https://fast.example/wrappy" in probe.asked
+    assert "https://fast.example/once" in probe.asked
+
+
 def test_a_failed_install_runs_again_on_the_next_registry_and_host(tmp_path):
     probe = Probe(speeds={"https://a.example": 10.0, "https://b.example": 1.0})
     held = recipe(registries=("https://b.example", "https://a.example"), hosts=(HOST,))

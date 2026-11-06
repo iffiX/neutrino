@@ -6,7 +6,7 @@ connection ``unreachable`` and a source that does not answer in time
 ``timeout``; a file's probe asks for and reads at most 1 MiB and stops 5
 seconds after its first byte, and a document is read whole; a token stays
 with the registry across a redirect; the ranking puts the fastest first and
-gives two speeds within a tenth of each other to the earlier first byte; a
+ranks by a total of half the speed score and half the latency score; a
 registry is ranked only while it names the pinned integrity, the others
 listed with their reason; an image is timed on its largest layer, and a list
 of one is not probed; the hosts of an npm setting rank as a set does, with
@@ -249,21 +249,27 @@ def test_a_token_stays_with_the_address_asked_across_a_redirect(sources):
 # --- the ranking ---
 
 
-def test_the_fastest_comes_first_and_a_near_tie_goes_to_the_earlier_first_byte():
+def test_the_highest_total_of_half_speed_and_half_latency_comes_first():
+    """The fastest source that answers slowly loses to a quicker one."""
     probes = [
-        SourceProbe(source="slow", is_answered=True, speed=10.0, first_byte_s=0.01),
-        SourceProbe(source="tie_late", is_answered=True, speed=95.0, first_byte_s=0.3),
-        SourceProbe(source="fast", is_answered=True, speed=100.0, first_byte_s=0.5),
-        SourceProbe(source="tie_early", is_answered=True, speed=91.0, first_byte_s=0.1),
+        SourceProbe(source="fast_slow", is_answered=True, speed=10.0, latency_s=1.2),
+        SourceProbe(source="balanced", is_answered=True, speed=4.0, latency_s=0.3),
+        SourceProbe(source="slow", is_answered=True, speed=1.0, latency_s=0.6),
         SourceProbe(source="silent", reason="timeout"),
     ]
 
-    assert [found.source for found in ranked(probes)] == [
-        "tie_early",
-        "tie_late",
-        "fast",
-        "slow",
-    ]
+    order = ranked(probes)
+
+    assert [found.source for found in order] == ["balanced", "fast_slow", "slow"]
+    assert [round(found.score, 3) for found in order] == [0.7, 0.625, 0.3]
+
+
+def test_a_probe_s_latency_is_its_first_byte(sources):
+    served = sources(body=b"x" * 200_000)
+
+    found = probe(served.url, source=served.url)
+
+    assert found.latency_s == found.first_byte_s > 0
 
 
 def test_a_registry_document_names_the_package_with_its_slash_escaped():
@@ -648,8 +654,8 @@ def test_a_set_s_ranking_logs_each_source_and_the_one_chosen():
     )
 
     assert lines == [
-        "source set pypi: https://pypi.org/simple 2.1 MB/s first byte 180 ms, "
-        "https://pypi.tuna.tsinghua.edu.cn/simple 293 KB/s first byte 40 ms, "
+        "source set pypi: https://pypi.org/simple 2.1 MB/s latency 180 ms total 0.61, "
+        "https://pypi.tuna.tsinghua.edu.cn/simple 293 KB/s latency 40 ms total 0.57, "
         "https://mirrors.aliyun.com/pypi/simple timeout; "
         "chose https://pypi.org/simple"
     ]
@@ -683,6 +689,93 @@ def test_a_registries_ranking_logs_the_mismatch_and_none_chosen():
     ]
 
 
+class Registries:
+    """npm registries: each serves the package document at a speed, and its
+    small documents after a latency."""
+
+    def __init__(self, table: dict):
+        self.table = table
+        self.asked: list = []
+
+    def __call__(self, url, *, source="", headers=None, is_document=False):
+        self.asked.append(url)
+        speed, document_latency, small_latency = self.table[source]
+        if url.endswith("@cloudcli-ai%2Fcloudcli"):
+            return SourceProbe(
+                source=source,
+                is_answered=True,
+                speed=speed,
+                first_byte_s=document_latency,
+                latency_s=document_latency,
+                body=document(),
+            )
+        return SourceProbe(
+            source=source,
+            is_answered=True,
+            speed=50_000.0,
+            first_byte_s=small_latency,
+            latency_s=small_latency,
+            body=b"{}",
+        )
+
+
+def test_a_registry_that_answers_small_documents_slowly_loses_to_npmjs():
+    """R65 and R168: Tencent's mirror wins one document's speed and answers
+    every small request slowly."""
+    lines: list = []
+    probe_one = Registries(
+        {
+            "https://registry.npmjs.org": (1_000_000.0, 0.30, 0.25),
+            "https://mirrors.cloud.tencent.com/npm": (2_000_000.0, 0.30, 1.25),
+        }
+    )
+
+    chosen, _failures = rank_registries(
+        ["https://mirrors.cloud.tencent.com/npm", "https://registry.npmjs.org"],
+        package=PACKAGE,
+        version=VERSION,
+        integrity=INTEGRITY,
+        probe_one=probe_one,
+        latency_paths=["/wrappy", "/once", "/inherits"],
+        log=lines.append,
+        name="npm registries",
+    )
+
+    assert chosen == [
+        "https://registry.npmjs.org",
+        "https://mirrors.cloud.tencent.com/npm",
+    ]
+    assert "https://mirrors.cloud.tencent.com/npm/wrappy" in probe_one.asked
+    assert lines == [
+        "npm registries: https://mirrors.cloud.tencent.com/npm 1.9 MB/s latency "
+        "1250 ms total 0.60, https://registry.npmjs.org 977 KB/s latency 250 ms "
+        "total 0.75; chose https://registry.npmjs.org"
+    ]
+
+
+def test_a_set_with_latency_paths_scores_their_mean_first_byte():
+    def probe_one(url, *, source="", headers=None, is_document=False):
+        latency = {"/a": 0.2, "/b": 0.4}.get(url.rsplit("/simple", 1)[-1], 0.1)
+        if "slow" in source:
+            latency *= 4
+        return SourceProbe(
+            source=source,
+            is_answered=True,
+            speed=1_000_000.0,
+            first_byte_s=0.1,
+            latency_s=latency,
+        )
+
+    order = rank_set(
+        ["https://slow.example/simple", "https://quick.example/simple"],
+        probe_path="/numpy/",
+        latency_paths=["/a", "/b"],
+        probe_one=probe_one,
+    )
+
+    assert order == ["https://quick.example/simple", "https://slow.example/simple"]
+
+
 def test_an_image_ranking_logs_one_line_and_a_list_of_one_none():
     lines: list = []
     probe_one = fixed_probe(
@@ -703,5 +796,5 @@ def test_an_image_ranking_logs_one_line_and_a_list_of_one_none():
 
     assert lines == [
         "image demo: docker.io/acme/demo http_503, "
-        "ghcr.io/acme/demo 1.4 MB/s first byte 200 ms; chose ghcr.io/acme/demo"
+        "ghcr.io/acme/demo 1.4 MB/s latency 200 ms total 1.00; chose ghcr.io/acme/demo"
     ]

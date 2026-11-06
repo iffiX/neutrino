@@ -614,13 +614,16 @@ AGENT_DIGEST_SHA256_PREFIX = "sha256:"
 # An npm tarball's digest is npm's integrity: this prefix and the SHA-512 of
 # its bytes in base64.
 AGENT_DIGEST_SHA512_PREFIX = "sha512-"
-# The probe of a source: how long it waits for an answer, how much of a
-# file and of a document it reads, and the share of a speed within which two
-# sources go to the earlier first byte.
+# The probe of a source: how long it waits for an answer, and how much of a
+# file and of a document it reads.
 AGENT_SOURCE_PROBE_TIMEOUT_S = 5.0
 AGENT_SOURCE_PROBE_BYTES = 1024 * 1024
 AGENT_SOURCE_DOCUMENT_LIMIT_BYTES = 4 * 1024 * 1024
-AGENT_SOURCE_NEAR_TIE = 0.1
+# A source's total: the share its speed score and its latency score each
+# weigh, and the shortest latency a score divides by.
+AGENT_SOURCE_SPEED_WEIGHT = 0.5
+AGENT_SOURCE_LATENCY_WEIGHT = 0.5
+AGENT_SOURCE_LATENCY_FLOOR_S = 0.001
 AGENT_SOURCE_HEADERS = {"User-Agent": "neutrino-agent"}
 # An image's source: the manifest kinds a registry may answer the request
 # for a digest with, the host docker.io's registry answers on, and the
