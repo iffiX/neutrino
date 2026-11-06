@@ -241,8 +241,9 @@ the backdrop cancel.
 
 **The body states the concrete consequence, cascades included.** A delete that
 clears references says how many and whose: `2 devices lose this key and will
-need a new one`. `credentials_page.tsx` composes these from the reference counts
-the API returns.
+need a new one`. A token's delete names each exit node it keys:
+`Node exit166 loses this token and is disabled.` `credentials_page.tsx`
+composes these from the reference counts and the node names the API returns.
 
 The confirming button is `button--primary` and wears the action's verb; the red
 is spent on the button that opened the dialog, not on the one that closes it.

@@ -310,6 +310,9 @@ keys are in `locales/<language>/devices.json` beside the page's other `ui.creden
 | `ui.credentials.rotate_ssh_body` | The machine stops accepting the old key. Clients fetch the new one by themselves; a copy of the old key elsewhere stops working. | 这个系统不再接受旧密钥。客户端会自己取新密钥；别处留着的旧密钥副本随即失效。 |
 | `ui.credentials.generated_empty` | No generated secrets yet | 还没有中枢生成的密钥 |
 | `code.generated_credential_unknown` | The machine no longer has this secret. | 这个系统已没有这个密钥。 |
+| `ui.credentials.token_delete_node_one`, a token's delete dialog for one node | Node {name} loses this token and is disabled. | 节点 {name} 会失去这个令牌并被停用。 |
+| `ui.credentials.token_delete_nodes`, the same for several, `{names}` joined by `ui.credentials.name_separator` | Nodes {names} lose this token and are disabled. | 节点 {names} 会失去这个令牌并被停用。 |
+| `ui.credentials.name_separator` | `, ` | 、 |
 
 ## The App share page's words
 
