@@ -1037,7 +1037,7 @@ and platform, which change between releases.
 | `modules` | `{name: {want, config, install, retry_mark, is_taken_over}}` | `{name: {state, is_active, version, code, params, details, task, newest_run}}`, `newest_run` the newest version the module has run at on the machine, empty before the agent noted one ([agent/module_install.md](agent/module_install.md), "Module versions") | | |
 | `desktop` | `{seat_password}` | `{is_shared, origin, account, share_id, port, attention, connected_count}`, `origin` `switch` or `command` (a share an old `nagent rdp start` record keeps running), empty while nothing is shared | | |
 | `ai_tools` | `{is_enabled, is_forwarded, gateway_port, base_url, api_key, accounts: [{account, password, tool_configs}], cc_switch_version, cc_switch_artifact, retry_mark}` | `{accounts: [{account, state, code, params, has_records}]}` | | |
-| `source_sets` | `{name: {probe, sources, variables}}`: each source set a recipe of the state names, as `data/source_sets.json` defines it | | | |
+| `source_sets` | `{name: {probe, sources, variables, latency_probes}}`: each source set a recipe of the state names, as `data/source_sets.json` defines it, `latency_probes` present where the set names them; the field is added and keeps `PROTOCOL` | | | |
 | `services` | | | `[{id, type, title, payload, is_healthy, source, description, description_code, description_params, device_id, device_name, is_own_machine, app_id, name, local_port}]`, the last three on `web`, `port` and `ssh` entries alone | |
 | `apps` | | | `[{id, title, source, device_id, device_name, local_name}]`: the apps the `web`, `port` and `ssh` entries belong to ("Apps") | |
 | `is_disabled` | | | bool | |
