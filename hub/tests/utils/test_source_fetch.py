@@ -22,6 +22,7 @@ from neutrino_hub.utils.source_fetch import (
     SourceProbe,
     file_hex,
     hex_of,
+    move_target,
     rank_probes,
 )
 
@@ -153,13 +154,33 @@ def fetch(tmp_path, sources, **overrides):
     return download, lines
 
 
-def test_rank_puts_the_faster_source_first_and_breaks_a_near_tie_by_first_byte():
+def test_rank_puts_the_highest_total_of_half_speed_and_half_latency_first():
     slow = SourceProbe(source="slow", is_answered=True, speed=100.0, first_byte_s=0.1)
     fast = SourceProbe(source="fast", is_answered=True, speed=300.0, first_byte_s=0.5)
     early = SourceProbe(source="early", is_answered=True, speed=295.0, first_byte_s=0.2)
     late = SourceProbe(source="late", is_answered=False, reason="timeout")
+
     ranked = rank_probes([slow, fast, late, early])
-    assert [probe.source for probe in ranked] == ["early", "fast", "slow"]
+
+    assert [probe.source for probe in ranked] == ["early", "slow", "fast"]
+    assert [round(probe.score, 3) for probe in ranked] == [0.742, 0.667, 0.6]
+
+
+@pytest.mark.parametrize(
+    "speed, first_byte_s, moved",
+    [(2.0, 0.1, ""), (3.0, 0.1, "other"), (3.0, 1.0, "")],
+)
+def test_a_measured_source_takes_over_at_one_and_a_half_times_the_total(
+    speed, first_byte_s, moved
+):
+    current = SourceProbe(
+        source="current", is_answered=True, speed=1.0, first_byte_s=0.1
+    )
+    other = SourceProbe(
+        source="other", is_answered=True, speed=speed, first_byte_s=first_byte_s
+    )
+
+    assert move_target(current, [other], 1.5) == moved
 
 
 def test_the_download_starts_on_the_fastest_source(tmp_path, serve):

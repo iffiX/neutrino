@@ -35,6 +35,7 @@ def test_the_shipped_file_holds_the_four_sets_of_the_standard():
         },
         "npm": {
             "probe": "/npm/-/npm-10.9.2.tgz",
+            "latency_probes": ["/wrappy", "/once", "/inherits"],
             "sources": [
                 "https://registry.npmjs.org",
                 "https://registry.npmmirror.com",
@@ -84,6 +85,9 @@ GOOD = {"probe": "/x", "sources": ["https://a.example"], "variables": ["X_URL"]}
         {"pypi": {**GOOD, "sources": ["http://a.example"]}},
         {"pypi": {**GOOD, "variables": "X_URL"}},
         {"pypi": {**GOOD, "variables": ["NOT A NAME"]}},
+        {"pypi": {**GOOD, "latency_probes": "/x"}},
+        {"pypi": {**GOOD, "latency_probes": []}},
+        {"pypi": {**GOOD, "latency_probes": ["x"]}},
         [],
     ],
 )
@@ -94,6 +98,16 @@ def test_the_loader_refuses_a_file_outside_the_shape(monkeypatch, tmp_path, held
 
     with pytest.raises(ValueError):
         load_source_sets()
+
+
+def test_a_set_may_name_the_small_documents_its_latency_is_read_on(
+    monkeypatch, tmp_path
+):
+    path = tmp_path / "source_sets.json"
+    path.write_text(json.dumps({"npm": {**GOOD, "latency_probes": ["/a", "/b"]}}))
+    monkeypatch.setattr(source_sets_module, "SOURCE_SETS_PATH", path)
+
+    assert load_source_sets()["npm"]["latency_probes"] == ["/a", "/b"]
 
 
 def test_a_set_whose_tool_takes_its_source_on_its_command_line_names_no_variable(

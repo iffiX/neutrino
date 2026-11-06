@@ -159,16 +159,19 @@ UTILS_CONFIG_DIR = resolve_config_dir()
 # (design/agent/module_install.md, "Choosing a source"): a probe asks each
 # source for this much of the file and waits this long for an answer; the
 # sources are measured again this often while a download has at least that
-# long left; one this many times faster than the current source over the
-# window takes over; a source silent this long fails; two speeds within this
-# share of each other go to the earlier first byte.
+# long left; one whose total is this many times the current source's takes
+# over, the current source's speed taken over the window; a source silent
+# this long fails. A source's total weighs its speed score and its latency
+# score by these shares, a latency never below the floor.
 UTILS_FETCH_PROBE_BYTES = 1024 * 1024
 UTILS_FETCH_PROBE_TIMEOUT_S = 5.0
 UTILS_FETCH_MEASURE_INTERVAL_S = 30.0
 UTILS_FETCH_MOVE_FACTOR = 1.5
 UTILS_FETCH_SPEED_WINDOW_S = 10.0
 UTILS_FETCH_STALL_S = 20.0
-UTILS_FETCH_NEAR_TIE = 0.1
+UTILS_FETCH_SPEED_WEIGHT = 0.5
+UTILS_FETCH_LATENCY_WEIGHT = 0.5
+UTILS_FETCH_LATENCY_FLOOR_S = 0.001
 UTILS_FETCH_CHUNK_BYTES = 64 * 1024
 # How much of a file's start is kept for the check of what kind of file it is.
 UTILS_FETCH_HEAD_BYTES = 512

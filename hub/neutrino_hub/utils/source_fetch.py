@@ -1,11 +1,12 @@
 """Fetching a file or a document from every address that serves the same bytes.
 
 Every download the hub makes names a list of sources and the digest of what
-they serve, so every source is equal and the fastest one serves. A file's
+they serve, so every source is equal and the best one serves. A file's
 download probes every source at once with a Range request for its first
-bytes, ranks the ones that answered by speed, starts on the fastest, measures
-the others again at the current offset while enough of the download is left,
-moves to one that is clearly faster, resumes on the next source when one
+bytes, ranks the ones that answered by a total of half the speed score and
+half the latency score, starts on the first, measures the others again at
+the current offset while enough of the download is left, moves to one whose
+total is clearly higher, resumes on the next source when one
 stalls or fails, and checks the digest when the last byte arrives. A
 document, a version list or a ``latest.json``, is read from every source at
 once and the first valid answer wins. Nothing remembers a past result.
@@ -41,13 +42,15 @@ from neutrino_hub.utils.constants import (
     UTILS_FETCH_DOCUMENT_LIMIT_BYTES,
     UTILS_FETCH_HEAD_BYTES,
     UTILS_FETCH_HEADERS,
+    UTILS_FETCH_LATENCY_FLOOR_S,
+    UTILS_FETCH_LATENCY_WEIGHT,
     UTILS_FETCH_MEASURE_INTERVAL_S,
     UTILS_FETCH_MOVE_FACTOR,
-    UTILS_FETCH_NEAR_TIE,
     UTILS_FETCH_PROBE_BYTES,
     UTILS_FETCH_PROBE_TIMEOUT_S,
     UTILS_FETCH_PROGRESS_INTERVAL_S,
     UTILS_FETCH_PROGRESS_PERCENT_STEP,
+    UTILS_FETCH_SPEED_WEIGHT,
     UTILS_FETCH_SPEED_WINDOW_S,
     UTILS_FETCH_STALL_S,
 )
@@ -137,6 +140,7 @@ class SourceProbe:
         reason: Why it failed, empty when it did not; ``timeout`` for a
             source that did not answer in time, which has not failed.
         detail: The error's own words.
+        score: Its total against the other sources of one ranking.
     """
 
     source: str
@@ -149,6 +153,7 @@ class SourceProbe:
     is_complete: bool = False
     reason: str = ""
     detail: str = ""
+    score: float = 0.0
 
     @property
     def is_failed(self) -> bool:
@@ -245,24 +250,35 @@ def file_hex(path: Path, digest: str) -> str:
     return hashed.hexdigest()
 
 
-def is_near(one: float, other: float) -> bool:
-    """Whether two speeds are within a tenth of each other.
+def score_probes(probes: list) -> list:
+    """Each answered probe with its total, the highest first.
+
+    The speed score is the speed over the best speed, the latency score the
+    best first byte over the probe's, and the total is half the one and half
+    the other.
 
     Args:
-        one: A speed.
-        other: Another.
+        probes: The probes, answered or not.
 
     Returns:
-        True when the gap is at most :data:`UTILS_FETCH_NEAR_TIE` of the
-        larger.
+        The answered probes by total; two equal totals keep their order.
     """
-    return abs(one - other) <= UTILS_FETCH_NEAR_TIE * max(one, other)
+    answered = [probe for probe in probes if probe.is_answered]
+    if not answered:
+        return []
+    best_speed = max(probe.speed for probe in answered)
+    best_latency = min(_latency(probe) for probe in answered)
+    for probe in answered:
+        speed_score = probe.speed / best_speed if best_speed > 0 else 1.0
+        probe.score = (
+            UTILS_FETCH_SPEED_WEIGHT * speed_score
+            + UTILS_FETCH_LATENCY_WEIGHT * best_latency / _latency(probe)
+        )
+    return sorted(answered, key=_minus_score)
 
 
 def rank_probes(probes: list) -> list:
-    """The sources that answered, fastest first.
-
-    Two speeds within a tenth of each other go to the earlier first byte.
+    """The sources that answered, the highest total of half speed and half latency first.
 
     Args:
         probes: The probes, answered or not.
@@ -270,8 +286,27 @@ def rank_probes(probes: list) -> list:
     Returns:
         The answered probes in rank order.
     """
-    answered = [probe for probe in probes if probe.is_answered]
-    return sorted(answered, key=functools.cmp_to_key(_compare))
+    return score_probes(probes)
+
+
+def move_target(current: SourceProbe, measured: list, factor: float) -> str:
+    """The measured source that takes over a running download, empty for none.
+
+    Args:
+        current: The current source: its speed over the last window and the
+            first byte of its last probe or measure.
+        measured: The answered, resumable measures of the other sources.
+        factor: How many times the current source's total a source's must be.
+
+    Returns:
+        The source whose total is the highest and at least ``factor`` times
+        the current source's; empty when none is.
+    """
+    if not measured:
+        return ""
+    score_probes([current, *measured])
+    best = max(measured, key=_score_of)
+    return best.source if best.score >= factor * current.score else ""
 
 
 def failure_entry(source: str, reason: str, detail: str = "") -> dict:
@@ -300,13 +335,19 @@ def http_reason(status: int) -> str:
     return REASON_HTTP.format(status=status)
 
 
-def _compare(one: SourceProbe, other: SourceProbe) -> int:
-    """Which of two answered probes ranks first."""
-    if is_near(one.speed, other.speed):
-        return (one.first_byte_s > other.first_byte_s) - (
-            one.first_byte_s < other.first_byte_s
-        )
-    return -1 if one.speed > other.speed else 1
+def _latency(probe: SourceProbe) -> float:
+    """The first byte a score divides by, never below the floor."""
+    return max(probe.first_byte_s, UTILS_FETCH_LATENCY_FLOOR_S)
+
+
+def _minus_score(probe: SourceProbe) -> float:
+    """The sort key that puts the highest total first."""
+    return -probe.score
+
+
+def _score_of(probe: SourceProbe) -> float:
+    """A probe's total, for picking the highest."""
+    return probe.score
 
 
 def _open_url(request: urllib.request.Request, timeout: float):
@@ -368,6 +409,8 @@ class _Download:
     whole_only: set = field(default_factory=set)
     size: int = 0
     offset: int = 0
+    # Each source's first byte at its last probe or measure.
+    latencies: dict = field(default_factory=dict)
 
 
 class SourceFetcher:
@@ -463,6 +506,7 @@ class SourceFetcher:
                 state.whole_only.add(probe.source)
         ranked = rank_probes(probes)
         state.order = [probe.source for probe in ranked] + late
+        state.latencies.update({probe.source: probe.first_byte_s for probe in ranked})
         handle, name = tempfile.mkstemp(prefix=PARTIAL_PREFIX, dir=directory)
         path = Path(name)
         try:
@@ -864,7 +908,7 @@ class SourceFetcher:
                 else:
                     next_measure_at = now + self._measure_interval_s
             if measure is not None and measure.is_done():
-                faster = self._faster(measure.results(), speed, state)
+                faster = self._faster(measure.results(), speed, state, source)
                 measure = None
                 next_measure_at = self._clock() + self._measure_interval_s
                 if faster:
@@ -896,14 +940,17 @@ class SourceFetcher:
             and source not in state.failures
         ]
 
-    def _faster(self, probes: list, speed: float, state: _Download) -> str:
-        """The measured source that takes over, empty when none is fast enough.
+    def _faster(
+        self, probes: list, speed: float, state: _Download, current: str
+    ) -> str:
+        """The measured source that takes over, empty when none is clearly better.
 
         A measure that answered with an error fails its source; one that
-        answered the Range with the whole file is never moved to.
+        answered the Range with the whole file is never moved to. The
+        totals compare each measure's speed and first byte with the current
+        source's speed over the window and its last first byte.
         """
-        best = ""
-        best_speed = 0.0
+        measured = []
         for probe in probes:
             if probe.is_failed:
                 state.failures[probe.source] = failure_entry(
@@ -915,11 +962,15 @@ class SourceFetcher:
             if not probe.is_resumable:
                 state.whole_only.add(probe.source)
                 continue
-            if probe.speed > best_speed:
-                best, best_speed = probe.source, probe.speed
-        if best and best_speed >= self._move_factor * speed:
-            return best
-        return ""
+            state.latencies[probe.source] = probe.first_byte_s
+            measured.append(probe)
+        running = SourceProbe(
+            source=current,
+            is_answered=True,
+            speed=speed,
+            first_byte_s=state.latencies.get(current, 0.0),
+        )
+        return move_target(running, measured, self._move_factor)
 
 
 class _Measure:

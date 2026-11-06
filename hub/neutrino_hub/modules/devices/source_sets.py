@@ -1,11 +1,12 @@
 """Reading the source sets, and the ones a machine's state carries.
 
 ``data/source_sets.json`` defines each software ecosystem's one list of
-sources by its name: ``{probe, sources, variables}``. A download from an
+sources by its name: ``{probe, sources, variables}``, and ``latency_probes``
+where a set names the small documents its sources' latency is read on. A download from an
 ecosystem names its set, an artifact by ``source_set`` and a ``container``
 entry by ``source_sets``, and the state carries in its ``source_sets``
 section each set its recipes name, which the agent probes. An environment
-value ``{<set>}`` in a hub container is that set's fastest source. The
+value ``{<set>}`` in a hub container is that set's first ranked source. The
 loader refuses a file outside that shape, so a wrong file fails the suite.
 """
 
@@ -21,6 +22,8 @@ from neutrino_hub.utils.json_file import strip_comments
 
 SOURCE_SETS_PATH = UTILS_DATA_DIR / "source_sets.json"
 SET_KEYS = {"probe", "sources", "variables"}
+# The key a set may add: the small documents its sources' latency is read on.
+SET_OPTIONAL_KEYS = {"latency_probes"}
 # A placeholder in an environment value: ``{<set>}``.
 PLACEHOLDER_PATTERN = re.compile(r"\{([a-z][a-z0-9_]*)\}")
 
@@ -29,12 +32,14 @@ def load_source_sets() -> dict:
     """Read every source set, by name.
 
     Returns:
-        Set name to ``{probe, sources, variables}``, comment keys removed.
+        Set name to ``{probe, sources, variables}``, with
+        ``latency_probes`` where the set names them, comment keys removed.
 
     Raises:
         ValueError: For a file that is not an object of sets, a set name
             not of the form ``[a-z][a-z0-9_]*``, a set whose keys are not
-            ``probe``, ``sources`` and ``variables``, a probe that is not a
+            ``probe``, ``sources`` and ``variables`` and at most
+            ``latency_probes``, latency probes that are no list of paths, a probe that is not a
             path, a source that is not an https address, variables that are
             not a list, or a variable that is not an environment name; an
             empty list names a set whose tool takes its source on its
@@ -102,8 +107,23 @@ def _check_set(name, entry) -> None:
         DEVICE_SOURCE_SET_NAME_PATTERN, name
     ):
         raise ValueError(f"source sets: {name!r} is no set name")
-    if not isinstance(entry, dict) or set(entry) != SET_KEYS:
-        raise ValueError(f"source set {name}: must name probe, sources and variables")
+    if not isinstance(entry, dict) or not (
+        SET_KEYS <= set(entry) <= SET_KEYS | SET_OPTIONAL_KEYS
+    ):
+        raise ValueError(
+            f"source set {name}: must name probe, sources and variables, "
+            "and may name latency_probes"
+        )
+    if "latency_probes" in entry:
+        paths = entry["latency_probes"]
+        if (
+            not isinstance(paths, list)
+            or not paths
+            or not all(isinstance(path, str) and path.startswith("/") for path in paths)
+        ):
+            raise ValueError(
+                f"source set {name}: latency_probes must be a list of paths"
+            )
     probe = entry["probe"]
     if not isinstance(probe, str) or not probe.startswith("/"):
         raise ValueError(f"source set {name}: probe must be a path, not {probe!r}")
