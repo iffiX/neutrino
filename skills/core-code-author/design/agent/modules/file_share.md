@@ -239,7 +239,7 @@ configuration. Later applies manage them as usual.
 | System | What the sweep deletes |
 | --- | --- |
 | Linux | every `neutrino-*` SMB user and Unix account, with its Samba credential; the module's file and its users' files; the shares 0.5 rendered in `smb.conf` and their users |
-| Windows | every share whose description starts with the module's marker, every account whose name carries the prefix, the accounts of 0.5, each such account's sessions on the server, closed before the account goes, and each deleted account's entries on the folders of those shares, of the shares the record lists and of the configuration's shares, taken off by its SID once the account is gone |
+| Windows | every share whose description starts with the module's marker, every account whose name carries the prefix, the accounts of 0.5, each such account's sessions on the server, closed before the account goes, every entry under the prefix in the sign-in screen's hidden list, and each deleted account's entries on the folders of those shares, of the shares the record lists and of the configuration's shares, taken off by its SID once the account is gone |
 | macOS | every share point under the `neutrino_` prefix, every account whose name carries the prefix, the accounts of 0.5, and the entries the module gives each such account and its machine account on the same folders, taken off before the account goes |
 
 | Rule | Reason |
