@@ -267,6 +267,7 @@ One method chooses among the sources of every download:
 | The digest is checked when the last byte arrives. A mismatch drops that source and fetches the file again from the next one. | A source serving other bytes is wrong for this file alone. |
 | When every source fails, the download fails `download_failed {file, sources}`, each source as `{source, reason, detail}`, `reason` being `unreachable`, `timeout`, `stalled`, `digest_mismatch`, `http_<status>` or `pull_failed`, and `detail` the tool's own last line where one exists. | A person reading the failure sees each address and why it failed. |
 | Nothing remembers a past result: each download probes again. | A network changes, and a stored ranking outlives the network it measured. |
+| Every ranking the agent makes writes one line to the agent's log: what it ranked, each source with its speed and the time to its first byte or with its failure's reason, and the source chosen, such as `source set pypi: https://pypi.org/simple 2.1 MB/s first byte 180 ms, https://mirrors.aliyun.com/pypi/simple timeout; chose https://pypi.org/simple`. | A slow install then shows in the log which source it used and what the others measured. |
 
 What is probed differs by what the source serves:
 
