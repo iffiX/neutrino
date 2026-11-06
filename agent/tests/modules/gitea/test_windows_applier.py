@@ -19,10 +19,11 @@ import shutil
 
 import pytest
 
-from neutrino_agent.modules.gitea import windows_applier as windows_applier_module
 from neutrino_agent.modules.gitea.constants import GITEA_WINDOWS_REMOVE_TRIES
 from neutrino_agent.modules.gitea.windows_applier import GiteaWindowsApplier
+from neutrino_agent.modules.shared import unpacked_tree as unpacked_tree_module
 from neutrino_agent.modules.shared.subprocess_run import CommandResult
+from neutrino_agent.modules.shared.unpacked_tree import seal_tree
 
 STATE = "C:\\ProgramData\\Neutrino\\agent\\state"
 
@@ -260,6 +261,21 @@ def test_an_uninstall_deletes_the_service_and_keeps_the_data(sc, tmp_path, state
     assert repository.is_dir()
 
 
+def test_an_uninstall_deletes_the_sealed_mingit_unpack(sc, tmp_path, state):
+    binary = tmp_path / "downloaded.exe"
+    binary.write_bytes(b"MZ")
+    applier = make(sc, tmp_path, state=state)
+    applier.install(str(binary))
+    cmd = tmp_path / "state" / "gitea" / "git" / "cmd"
+    cmd.mkdir(parents=True)
+    (cmd / "git.exe").write_bytes(b"MZ")
+    seal_tree(str(tmp_path / "state" / "gitea" / "git"))
+
+    applier.uninstall()
+
+    assert not (tmp_path / "state" / "gitea").exists()
+
+
 def held_binary(monkeypatch, *, turns: int) -> dict:
     """``rmtree`` that leaves the tree for some turns, as Windows does with a program file."""
     calls = {"turns": 0}
@@ -270,7 +286,7 @@ def held_binary(monkeypatch, *, turns: int) -> dict:
         if calls["turns"] > turns:
             real_rmtree(path, ignore_errors=ignore_errors)
 
-    monkeypatch.setattr(windows_applier_module.shutil, "rmtree", rmtree)
+    monkeypatch.setattr(unpacked_tree_module.shutil, "rmtree", rmtree)
     return calls
 
 

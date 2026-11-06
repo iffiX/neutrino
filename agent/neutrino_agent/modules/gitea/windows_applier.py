@@ -20,7 +20,6 @@ from __future__ import annotations
 import contextlib
 import ntpath
 import os
-import shutil
 import subprocess
 import time
 
@@ -49,6 +48,7 @@ from neutrino_agent.modules.gitea.renderer import GiteaLayout
 from neutrino_agent.modules.shared.log_tail import file_tail
 from neutrino_agent.modules.shared.package import place_binary
 from neutrino_agent.modules.shared.subprocess_run import run as run_command
+from neutrino_agent.modules.shared.unpacked_tree import remove_tree
 from neutrino_agent.modules.shared.account_service import write_if_changed
 
 # What ``sc.exe`` exits with for a service that does not exist, and for a
@@ -400,9 +400,9 @@ class GiteaWindowsApplier:
         )
 
     def _remove_module_dir(self) -> None:
-        """Delete the module's directory, trying again while a file of it stays."""
+        """Delete the module's directory, MinGit's sealed unpack with it, trying again while a file of it stays."""
         for _turn in range(GITEA_WINDOWS_REMOVE_TRIES):
-            shutil.rmtree(self.module_dir, ignore_errors=True)
+            remove_tree(self.module_dir)
             if not os.path.exists(self.module_dir):
                 return
             self._sleep(GITEA_WINDOWS_REMOVE_RETRY_S)
