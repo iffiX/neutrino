@@ -57,6 +57,7 @@ are the same on Linux, Windows and macOS.
 | `nclient gui` refused a hold exits with no window, no tray icon and no message. Every other `nclient` command of another account prints the one line `client_held`, naming the holder's account, and exits 1. | A second window that can do nothing is noise; a terminal is where a person asks why. |
 | Where no daemon answers, as in a checkout, the resident starts and holds nothing. | A checkout runs no daemon, and a client that cannot start is worse than two. |
 | An installer, which runs elevated as whichever administrator started it, asks the one running client to quit for an upgrade, whoever's account it belongs to; the client registers its return as its own account and comes back in its own session ("A client upgraded while it runs comes back"). | An upgrade replaces the files of the one client that runs, whoever installs it. |
+| The client's control socket or pipe admits its own account to every request, elevated or not. An elevated caller of another account, root on Linux and macOS, may only ask it to quit, and is refused `control_quit_only` for anything else; a caller of another account that is not elevated is refused `control_peer_refused`. | Elevation does not change the account: an administrator's SSH session on Windows runs elevated as that same person. The installer runs as whichever administrator started it. |
 
 ## A client upgraded while it runs comes back
 
@@ -69,9 +70,9 @@ On Windows the installer asks the one running client to quit for an
 upgrade, whichever account it belongs to ("One client per machine"). It asks
 the EasyTier daemon which client holds the machine and opens that account's
 control pipe, which admits the administrators besides its own account. The
-installer runs elevated, and the client takes that one request and no other
-from an elevated caller; a caller that is neither its own account nor
-elevated is refused. The client registers, as its own account, the task
+installer runs elevated, and the client takes from an elevated caller of
+another account that one request and no other ("One client per machine").
+The client registers, as its own account, the task
 `NeutrinoClientRelaunch_<account>`: no trigger, the limited run level, run
 only while the account is signed in, starting `nclientw.exe gui --hidden`.
 The installer's last step, as SYSTEM, starts every such task, and the client
