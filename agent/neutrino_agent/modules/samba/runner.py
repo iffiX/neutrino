@@ -1082,6 +1082,7 @@ class SambaNativeServerRunner(ModuleRunner):
         refusal = None
         server_refused: list = []
         sids: dict = {}
+        made: list = []
         try:
             if is_served or self.is_active():
                 record = self._keep_found_server(record)
@@ -1091,6 +1092,7 @@ class SambaNativeServerRunner(ModuleRunner):
                 is_served=is_served,
                 refused=server_refused,
                 sids=sids,
+                made=made,
             )
         except ModuleApplyError as error:
             if error.code not in SAMBA_ACCOUNT_REFUSALS:
@@ -1107,7 +1109,12 @@ class SambaNativeServerRunner(ModuleRunner):
         accounts += [name for name in parsed.users if name not in accounts]
         refused = refusal.params.get("user", "") if refusal is not None else ""
         try:
-            passwords = self._set_passwords(parsed, record["passwords"], refused)
+            held = {
+                name: digest
+                for name, digest in record["passwords"].items()
+                if name not in made
+            }
+            passwords = self._set_passwords(parsed, held, refused)
         except (OSError, subprocess.SubprocessError) as error:
             raise ModuleApplyError(
                 "apply_failed", {"detail": command_detail(error)[:500]}

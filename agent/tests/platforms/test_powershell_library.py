@@ -228,6 +228,13 @@ def test_the_file_share_apply_closes_the_sessions_of_a_name_it_makes_again():
     assert "if ($is_readable) { Get-SmbSession" in made
 
 
+def test_the_file_share_apply_answers_the_accounts_it_made():
+    apply = body("share_apply")
+
+    assert "$accounts_made += $u" in apply
+    assert "made = $accounts_made}" in apply
+
+
 def test_the_file_share_apply_answers_each_account_s_sid():
     apply = body("share_apply")
 

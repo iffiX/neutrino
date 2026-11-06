@@ -355,6 +355,7 @@ function Set-NeutrinoShare {
     }
     $computer = $env:COMPUTERNAME
     $notes = @()
+    $accounts_made = @()
     # A read of a stopped server of Manual start type starts it.
     $is_readable = $Request.is_served -or ((Get-Service -Name LanmanServer).Status -eq 'Running')
     # A share the server refuses, or whose name a share of the person's has,
@@ -412,6 +413,7 @@ function Set-NeutrinoShare {
                 -UserMayNotChangePassword -Description $Request.marker | Out-Null
             Set-LocalUser -Name $u -PasswordNeverExpires $true | Out-Null
             $notes += "created account $u"
+            $accounts_made += $u
         }
         New-ItemProperty -Path $hidden -Name $u -Value 0 -PropertyType DWord -Force | Out-Null
     }
@@ -490,7 +492,7 @@ function Set-NeutrinoShare {
             $sids[$u] = "$($held.SID.Value)"
         }
     }
-    return @{notes = $notes; refused = $refused; sids = $sids}
+    return @{notes = $notes; refused = $refused; sids = $sids; made = $accounts_made}
 }
 
 # Deletes every share whose description starts with the marker, and every

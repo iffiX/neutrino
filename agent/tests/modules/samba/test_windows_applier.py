@@ -730,6 +730,15 @@ def test_a_recorded_sid_the_account_no_longer_holds_comes_off_the_folders():
     assert request["owned_accounts"] == ["ann", "bob", "eve"]
 
 
+def test_the_accounts_the_host_made_reach_the_runner():
+    host = RecordingHost({"share_apply": {"notes": [], "made": ["ann"]}})
+    made: list = []
+
+    applier_with(host, denied=[]).apply(CONFIG, {}, made=made)
+
+    assert made == ["ann"]
+
+
 def test_a_sweep_that_deletes_no_account_changes_no_folder():
     host = RecordingHost(
         {"share_sweep": {"notes": [], "paths": ["D:\\old"], "sids": []}}

@@ -839,6 +839,15 @@ def test_the_sweep_deletes_the_modules_points_and_accounts_0_5_s_among_them(
     ]
 
 
+def test_the_accounts_an_apply_makes_reach_the_runner(applier, tools):
+    tools.users["bob"] = account("neutrino file share bob")
+    made: list = []
+
+    applier.apply(CONFIG, {"accounts": ["bob"]}, made=made)
+
+    assert made == ["ann"]
+
+
 def test_the_sweep_keeps_the_gitea_account_and_takes_the_old_and_new_names(
     applier, tools
 ):

@@ -284,6 +284,7 @@ class SambaDarwinApplier:
         is_served: bool = True,
         refused: "list | None" = None,
         sids: "dict | None" = None,
+        made: "list | None" = None,
     ) -> list:
         """Make the server serve the configuration, and nothing else of ours.
 
@@ -309,6 +310,8 @@ class SambaDarwinApplier:
                 nowhere.
             sids: Unused here: macOS names an account in an entry by
                 its own identifier, and the record keeps no SID.
+            made: Takes the name of each account the apply made, a first
+                time or again; None keeps them nowhere.
 
         Returns:
             What changed, one note each.
@@ -347,7 +350,9 @@ class SambaDarwinApplier:
                 )
         if is_served:
             notes += self._serve()
-        account_notes, refusals = self._converge_accounts(config, owned_accounts)
+        account_notes, refusals = self._converge_accounts(
+            config, owned_accounts, made=made
+        )
         notes += account_notes
         refused_users = {refusal.params["user"] for refusal in refusals}
         notes += self._converge_shares(
@@ -576,11 +581,14 @@ class SambaDarwinApplier:
         os.unlink(self._rules_path)
         return ["removed the fence"]
 
-    def _converge_accounts(self, config: SambaConfig, owned: list) -> tuple:
+    def _converge_accounts(
+        self, config: SambaConfig, owned: list, *, made: "list | None" = None
+    ) -> tuple:
         """Make every configured account, hidden and in the SMB group.
 
         An account the system will not make is passed over so the others
-        are still made.
+        are still made. Each account made, a first time or again, is added
+        to ``made`` when one is given.
 
         Returns:
             ``(notes, refusals)``: what changed, and one
@@ -598,6 +606,8 @@ class SambaDarwinApplier:
                 continue
             if note:
                 notes.append(note)
+                if made is not None:
+                    made.append(name)
         for name in owned:
             if name not in config.users:
                 self._run(["pwpolicy", "-u", name, "-disableuser"], is_checked=False)

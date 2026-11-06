@@ -309,6 +309,7 @@ class SambaWindowsApplier:
         is_served: bool = True,
         refused: "list | None" = None,
         sids: "dict | None" = None,
+        made: "list | None" = None,
     ) -> list:
         """Make the server serve the configuration, and nothing else of ours.
 
@@ -342,6 +343,8 @@ class SambaWindowsApplier:
                 keeps them nowhere. A SID the record's ``sids`` lists that
                 its account no longer holds is taken off every folder of the
                 module's shares first.
+            made: Takes the name of each account the host made, a first time
+                or again after it was deleted; None keeps them nowhere.
 
         Returns:
             What changed, one note each.
@@ -399,6 +402,8 @@ class SambaWindowsApplier:
             self._revoke_sids(path, stale, notes)
         if sids is not None:
             sids.update(held_sids)
+        if made is not None:
+            made.extend(str(name) for name in _listed(answer.get("made")))
         access = self._read_access(
             left
             + [

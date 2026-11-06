@@ -1844,6 +1844,8 @@ class FakeNativeApplier:
         self.calls: list = []
         self.sweeps: list = []
         self.earlier_accounts: list = []
+        # The accounts an apply makes again, as after one was deleted by hand.
+        self.remade: list = []
         self.served: list = []
         self.status = {"is_present": True, "is_running": True, "shares": []}
         self.reads = 0
@@ -1884,9 +1886,13 @@ class FakeNativeApplier:
         self.earlier_accounts.append(list(earlier_accounts))
         return ["swept account neutrino_old"]
 
-    def apply(self, config, record, *, is_served=True, refused=None, sids=None):
+    def apply(
+        self, config, record, *, is_served=True, refused=None, sids=None, made=None
+    ):
         self.calls.append(("apply", config.to_dict(), record))
         self.served.append(is_served)
+        if made is not None:
+            made.extend(self.remade)
         if sids is not None:
             sids.update({name: f"S-{name}" for name in config.users})
         if self.error is not None:
@@ -2648,6 +2654,16 @@ def test_a_password_is_set_again_only_when_the_hubs_differs(native):
         ("set_password", "neutrino_ann", "pw2"),
     ]
     assert "pw2" not in open(native._record_path).read()
+
+
+def test_an_account_the_apply_makes_again_takes_its_password_whatever_was_set(native):
+    """On the R168 lab machine ``neutrino_ann`` deleted by hand was made
+    again disabled, with no password, while the record kept the digest."""
+    native.apply(WINDOWS_CONFIG)
+    native.applier.remade = ["neutrino_ann"]
+    native.apply(WINDOWS_CONFIG)
+
+    assert password_calls(native) == [("set_password", "neutrino_ann", "pw")] * 2
 
 
 def test_a_dropped_user_leaves_the_digests_and_comes_back_with_its_password(native):
