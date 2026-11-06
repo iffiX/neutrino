@@ -14,6 +14,8 @@ const RESERVED_TAGS = new Set(["direct", "block", "blocked", "dns", "dns-out"]);
 
 export interface ActiveExit {
   tag: string;
+  /** The node's name, or the tag where no node names it. */
+  name: string;
   uplinkBytes: number;
   downlinkBytes: number;
   totalBytes: number;
@@ -69,6 +71,7 @@ export function computeActiveExits(
     const probe = probes.get(outbound.tag);
     exits.push({
       tag: outbound.tag,
+      name: probe?.name || outbound.tag,
       uplinkBytes,
       downlinkBytes,
       totalBytes,

@@ -144,6 +144,8 @@ export interface OutboundTraffic {
 
 export interface NodeProbe {
   tag: string;
+  /** The node's name, empty for a node with none. */
+  name: string;
   is_alive: boolean;
   is_enabled: boolean;
   is_selected: boolean;

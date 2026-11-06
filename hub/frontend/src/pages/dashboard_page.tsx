@@ -492,7 +492,7 @@ export function DashboardPage() {
                           isLarge
                         />
                         <div>
-                          <div className="dashboard_exit_tag">{exit.tag}</div>
+                          <div className="dashboard_exit_tag">{exit.name}</div>
                           <div className="dashboard_exit_meta">
                             <span className="dashboard_exit_latency">
                               {formatLatency(exit.delayMs)}
