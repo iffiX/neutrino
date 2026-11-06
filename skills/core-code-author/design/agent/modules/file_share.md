@@ -248,6 +248,7 @@ configuration. Later applies manage them as usual.
 | A module the hub took over is adopted at the person's first press on it: its task under `is_taken_over` checks the configuration and writes no record, so the first apply is that press's `configure`, on every system ([../../agent.md](../../agent.md), "The steps"). | A join changes nothing on the machine. |
 | An uninstall deletes on every system everything the sweep would, the entries on the folders with the accounts, on Linux before the packages go. | Nothing whose name starts with `neutrino` stays after the module. On the R166 Mac the SMB account `neutrino-lab` stayed after an uninstall. |
 | On Windows a session of an account the sweep deletes is closed first. A client's mount signs in again as the account made anew. | A session keeps the token of the account it signed in as: on the R167 lab machine a sweep under live mounts left each Home share denied on its folder, granted to the new SID, until the session ended. |
+| On macOS an account the system will not delete stays disabled, hidden, with no shell and no home, its share points and entries taken off, and the sweep's note carries the tool's words, `eDSPermissionError`. The next sweep tries again. | macOS 15 deletes a local account only for a program a person allowed to administer the computer, and asks no daemon: on the R167 lab Mac `dscl` and `sysadminctl` refused the agent, root over SSH and an administrator's password alike, and the same `dscl` took once Terminal was allowed. |
 
 ## What 0.5 made
 
