@@ -432,6 +432,30 @@ def test_every_node_down_holds_the_exit_when_the_fallback_is_off(tmp_path):
     assert box.api.set_calls == []
 
 
+def test_a_direct_exit_moves_to_a_node_once_the_fallback_is_off(tmp_path):
+    """The fallback turned off while every node is down: the traffic fails
+    instead of leaving through the uplink."""
+    box = _Box(
+        tmp_path,
+        probe=_StubProbe(
+            {
+                "node_a": [measured("node_a", None)],
+                "node_b": [measured("node_b", None)],
+            }
+        ),
+        api=_StubApi(),
+        routing={"is_direct_fallback_enabled": False},
+    )
+    box.seed("node_a", 40)
+    box.seed("node_b", 40)
+    box.pin(XRAY_DIRECT_TAG, held_s=10)
+
+    status = box.controller.refresh()
+
+    assert status.exit_tag == "node_a"
+    assert box.api.set_calls == ["node_a"]
+
+
 def test_a_round_that_found_the_uplink_down_records_nothing(tmp_path):
     """A node cannot be blamed for a WAN that is not there, and a window full
     of that blame would take days of good measurements to clear."""

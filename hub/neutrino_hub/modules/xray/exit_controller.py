@@ -455,6 +455,12 @@ class XrayExitController:
             return current
         if self._routing_of().get("is_direct_fallback_enabled", False):
             return XRAY_DIRECT_TAG
+        if current == XRAY_DIRECT_TAG:
+            # A direct pin the fallback left moves to a node, where the
+            # traffic sent to the proxy fails.
+            for node in node_list.enabled_nodes:
+                if node.tag in resident:
+                    return node.tag
         return current
 
     def _best_of(self, candidates, *, current: str, now: datetime) -> str:
