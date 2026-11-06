@@ -347,6 +347,8 @@ class FakeShareHost:
 class FakeRunner:
     """A runner that records the verbs it is asked, and refuses on cue."""
 
+    is_service = True
+
     def __init__(self, *, failure=None, journal=None, wait=None):
         self.failure = failure
         self.journal = journal if journal is not None else []
@@ -2551,3 +2553,111 @@ def test_a_program_plans_as_a_hub_module_with_no_find(tmp_path):
     assert plans_of(engine, "claude_code") == [["packages", "configure", "start"]]
     assert [name for name, _ in engine.installs] == ["claude_code"]
     assert not hasattr(engine, "find_steps")
+
+
+# --- leaving a hub ---
+
+
+class FakeProgramRunner(FakeRunner):
+    """A command line program's runner, or another that runs no service."""
+
+    is_service = False
+
+
+def kept(held, document) -> None:
+    """Keep one state as the hub sent it, with no task made for it."""
+    held._store.write(document)
+
+
+def test_a_leave_stops_each_module_the_kept_state_wants_running(tmp_path):
+    """The machine left its hub: what the hub ran is stopped and stays
+    installed, with the kept state's configuration."""
+    runners = {"samba": FakeRunner(), "gitea": FakeRunner(), "podman": FakeRunner()}
+    held, engine = applier(runners, tmp_path=tmp_path)
+    document = state(samba="running", gitea="running", podman="stopped")
+    kept(held, document)
+
+    held.stop_modules()
+    assert held.settle("", SETTLE_S)
+
+    assert plans_of(engine, "samba") == [["configure", "stop"]]
+    assert plans_of(engine, "gitea") == [["configure", "stop"]]
+    assert "podman" not in engine.published
+    assert runners["samba"].applied == [{"n": "samba"}]
+    assert runners["samba"].stops == runners["gitea"].stops == 1
+    assert engine.installs == engine.uninstalls == []
+    assert engine.configured == {"samba", "gitea"}
+    assert held.latest() == document
+
+
+def test_a_leave_installs_and_switches_nothing_and_leaves_a_missing_module(tmp_path):
+    """No hub is there to send an artifact."""
+    runners = {"samba": FakeRunner(), "gitea": FakeRunner()}
+    engine = FakeEngine(runners, absent=("samba",))
+    engine.switching.add("gitea")
+    held, _ = applier(runners, engine=engine, tmp_path=tmp_path)
+    kept(held, state(samba="running", gitea="running"))
+
+    held.stop_modules()
+    assert held.settle("", SETTLE_S)
+
+    assert engine.installs == engine.switches == []
+    assert runners["samba"].stops == 0
+    assert plans_of(engine, "samba") == []
+    assert plans_of(engine, "gitea") == [["configure", "stop"]]
+
+
+def test_a_leave_leaves_what_runs_no_service_and_what_the_hub_took_over(tmp_path):
+    runners = {
+        "terminal": FakeProgramRunner(),
+        "codex": FakeProgramRunner(),
+        "podman": FakeRunner(),
+        "gitea": FakeRunner(),
+    }
+    held, engine = applier(runners, tmp_path=tmp_path)
+    kept(
+        held,
+        taken_over(
+            state(
+                terminal="running", codex="running", podman="running", gitea="running"
+            ),
+            "podman",
+        ),
+    )
+
+    held.stop_modules()
+    assert held.settle("", SETTLE_S)
+
+    assert set(engine.published) == {"gitea"}
+    assert runners["terminal"].stops == runners["codex"].stops == 0
+    assert runners["podman"].stops == 0
+    assert runners["podman"].checked == []
+
+
+def test_a_leave_with_no_kept_state_makes_no_task(tmp_path):
+    runners = {"samba": FakeRunner()}
+    held, engine = applier(runners, tmp_path=tmp_path)
+
+    held.stop_modules()
+    assert held.settle("", SETTLE_S)
+
+    assert engine.states == []
+    assert engine.published == {}
+
+
+def test_a_leave_stops_containers_with_the_container_modules_on_it(tmp_path):
+    """Containers' stop stops every hub container; the container module's
+    runner takes the kept recipe."""
+    runners = {"podman": FakeRunner(), "demo": FakeRunner()}
+    held, engine = applier(runners, tmp_path=tmp_path)
+    document = container_state(demo="running")
+    kept(held, document)
+
+    held.stop_modules()
+    assert held.settle("", SETTLE_S)
+
+    (taken,) = engine.states
+    assert taken["demo"]["install"] == document["modules"]["demo"]["install"]
+    assert taken["demo"]["want"] == "stopped"
+    assert runners["podman"].stops == 1
+    assert runners["demo"].required_stops == 1

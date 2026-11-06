@@ -296,6 +296,8 @@ class ProgramHooks:
 class ProgramsModuleRunner(ModuleRunner):
     """Makes a command line program the first copy on each enabled account's ``PATH``."""
 
+    is_service = False
+
     def __init__(
         self,
         *,

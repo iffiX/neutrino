@@ -63,6 +63,7 @@ from neutrino_agent import AGENT_BUILT_AT, AGENT_VERSION
 from neutrino_agent.constants import (
     AGENT_CONTAINERS_MODULE,
     AGENT_DESIRED_STATE_PATH,
+    AGENT_LEAVING_KEY,
     AGENT_METHOD_CONTAINER,
     AGENT_MODULE_INSTALL_RECHECK_S,
     AGENT_PRESENT_WANTS,
@@ -460,6 +461,42 @@ class DesiredStateApplier:
             self._tried = tried
             self._forget_applied()
 
+    def stop_modules(self) -> None:
+        """Stop each module the kept state wants ``running``, once the machine left its hub.
+
+        Each such entry goes to the worker under ``stopped`` with the
+        leave's mark, its recipe and its configuration as the hub sent
+        them. A module whose runner runs no service and one the hub took
+        over are left out. The kept state stays as the hub sent it.
+        """
+        held = self._store.read()
+        modules = held.get("modules")
+        stopping = {}
+        for name, entry in (modules if isinstance(modules, dict) else {}).items():
+            if not isinstance(entry, dict):
+                continue
+            if str(entry.get("want", "") or "") != AGENT_WANT_RUNNING:
+                continue
+            if entry.get(AGENT_TAKEN_OVER_KEY) is True:
+                continue
+            runner = self._runners.get(name)
+            if runner is not None and not runner.is_service:
+                continue
+            stopping[name] = {
+                **entry,
+                "want": AGENT_WANT_STOPPED,
+                AGENT_LEAVING_KEY: True,
+            }
+        if not stopping:
+            return
+        document = {"modules": stopping}
+        source_sets = held.get(SOURCE_SETS_SECTION)
+        if isinstance(source_sets, dict):
+            document[SOURCE_SETS_SECTION] = source_sets
+        with self._lock:
+            self._pending = document
+        self._wakeup.set()
+
     def latest(self) -> dict:
         """The last state taken from the hub, as it was kept.
 
@@ -571,7 +608,9 @@ class DesiredStateApplier:
         that carries ``is_taken_over`` plans no install and no version
         switch, whatever the machine shows, and under ``stopped`` and
         ``running`` one ``configure`` step that checks the configuration
-        and writes nothing.
+        and writes nothing. An entry of the stop that follows a leave plans
+        no install and no version switch either, and the configure steps
+        only for a module the presence check finds.
 
         Args:
             task: The task.
@@ -605,6 +644,12 @@ class DesiredStateApplier:
             if want not in CONFIGURING_WANTS:
                 return PLAN_CONFIGURE, []
             return PLAN_CONFIGURE, self._engine.check_steps(name, entry)
+        if entry.get(AGENT_LEAVING_KEY) is True:
+            if want not in CONFIGURING_WANTS or not self._engine.is_installed(
+                name, entry
+            ):
+                return PLAN_CONFIGURE, []
+            return PLAN_CONFIGURE, self._engine.configure_steps(name, entry, want)
         kind = PLAN_CONFIGURE
         steps = []
         if (

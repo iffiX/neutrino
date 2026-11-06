@@ -136,6 +136,9 @@ AGENT_PRESENT_WANTS = (AGENT_WANT_INSTALLED, AGENT_WANT_STOPPED, AGENT_WANT_RUNN
 # The key of a module's entry that is true while the hub took the module over
 # and no press has touched it since: its task plans no install.
 AGENT_TAKEN_OVER_KEY = "is_taken_over"
+# The key the agent puts on each entry of the stop it hands itself once the
+# machine left its hub: its task plans no install and no version switch.
+AGENT_LEAVING_KEY = "is_leaving"
 # What the agent reports a module to be, one closed table on every surface:
 # five steady states, three in transit, and two shared by every failure.
 AGENT_MODULE_STATE_ABSENT = "absent"

@@ -28,6 +28,7 @@ class RemoteDesktopModuleRunner(ModuleRunner):
 
     runner = REMOTE_DESKTOP_RUNNER
     name = REMOTE_DESKTOP_NAME
+    is_service = False
 
     def __init__(self, *, platform, log=print, publish=None):
         """

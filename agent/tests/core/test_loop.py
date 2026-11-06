@@ -772,6 +772,69 @@ def test_binding_unknown_unbinds_switches_back_cuts_the_share_and_undials(
     assert agent.run_once() == IDLE_POLL_INTERVAL_S
 
 
+class RecordedStops:
+    """The applier's stop of the modules, as leaving a hub reaches it."""
+
+    def __init__(self):
+        self.is_bound_at_stop: list = []
+
+    def stop_modules(self):
+        self.is_bound_at_stop.append(enrollment_module.is_bound())
+
+
+def test_binding_unknown_stops_the_modules_the_hub_wanted_running_once(
+    fake, config_path, monkeypatch
+):
+    agent = live(agent_on(fake, config=config_path), fake)
+    agent._rdp = RecordedDesktop()
+    stops = RecordedStops()
+    monkeypatch.setattr(agent._desired, "stop_modules", stops.stop_modules)
+
+    fake.send_frame({"type": "refused", "code": "binding_unknown", "params": {}})
+    until(lambda: not agent.is_online())
+    agent.run_once()
+    agent.run_once()
+
+    assert stops.is_bound_at_stop == [False]
+
+
+@pytest.mark.parametrize("change", ["removed", "written_over"])
+def test_a_binding_another_process_ended_stops_the_modules_once(
+    fake, config_path, monkeypatch, change
+):
+    """``nagent leave`` and ``nagent join`` write the file from a process of
+    their own; the service stops the modules at its next turn."""
+    agent = live(agent_on(fake, config=config_path), fake)
+    stops = RecordedStops()
+    monkeypatch.setattr(agent._desired, "stop_modules", stops.stop_modules)
+
+    if change == "removed":
+        config_path.unlink()
+    else:
+        binding = json.loads(config_path.read_text())
+        config_path.write_text(json.dumps({**binding, "id": "dev-2"}))
+    agent.run_once()
+    agent.run_once()
+
+    assert len(stops.is_bound_at_stop) == 1
+
+
+def test_a_first_binding_and_the_same_binding_written_again_stop_nothing(
+    fake, config_path, monkeypatch
+):
+    agent = agent_on(fake, config=config_path, is_bound=False)
+    stops = RecordedStops()
+    monkeypatch.setattr(agent._desired, "stop_modules", stops.stop_modules)
+    agent.run_once()
+
+    bind(config_path)
+    agent.run_once()
+    bind(config_path, url=OVERLAY_URL)
+    agent.run_once()
+
+    assert stops.is_bound_at_stop == []
+
+
 def test_replaced_dials_no_more_until_a_new_binding(fake, config_path):
     agent = live(agent_on(fake, config=config_path), fake)
 

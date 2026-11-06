@@ -51,6 +51,7 @@ class TerminalModuleRunner(ModuleRunner):
 
     runner = TERMINAL_RUNNER
     name = TERMINAL_NAME
+    is_service = False
 
     def __init__(self, *, platform, log=print, publish=None, state_path: str = ""):
         """

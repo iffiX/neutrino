@@ -339,6 +339,9 @@ class Agent:
         # Set once the process is asked to stop; the loop ends at its next turn.
         self._is_stop_asked = threading.Event()
         self._load_connection()
+        # The hub and the row the loop's last turn found bound, empty when
+        # unbound; a turn that finds another stops the modules.
+        self._turn_binding = _binding_identity(self._binding)
 
     # --- what the control channel reads ---
 
@@ -514,6 +517,7 @@ class Agent:
             transport cannot start, and a short poll otherwise.
         """
         self._adopt_external_binding()
+        self._stop_modules_of_left_hub()
         self._note_hub_key_missing()
         if not self._is_bound_and_wanted():
             self._undial()
@@ -1367,6 +1371,22 @@ class Agent:
             else:
                 self._operator = None
 
+    def _stop_modules_of_left_hub(self) -> None:
+        """Stop the modules the hub wanted running, once its binding is gone or replaced.
+
+        ``binding_unknown``, a leave and a join each end a binding, and
+        ``nagent join`` and ``nagent leave`` write the file from a process
+        of their own, so the loop's turn is where every one of them shows.
+        """
+        with self._lock:
+            held = _binding_identity(self._binding)
+            is_left = bool(self._turn_binding) and held != self._turn_binding
+            self._turn_binding = held
+        if not is_left:
+            return
+        self._log("left the hub: stopping the modules it wanted running")
+        self._desired.stop_modules()
+
     def _adopt_external_binding(self) -> None:
         """Pick up a binding another process wrote.
 
@@ -1554,6 +1574,13 @@ class Agent:
         self._desired.locks.release(
             PACKAGE_MANAGER_LOCKS, AGENT_LOCK_SELF_UPDATE_HOLDER
         )
+
+
+def _binding_identity(binding: dict) -> str:
+    """The hub and the row a binding names, as ``<hub key>/<id>``; empty for none."""
+    if not binding:
+        return ""
+    return f"{binding.get('hub_key', '')}/{binding.get('id', '')}"
 
 
 def _framed(lines: queue.Queue):

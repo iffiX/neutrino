@@ -105,10 +105,12 @@ class ModuleRunner:
     Attributes:
         runner: The name a recipe's ``runner`` chooses this runner by.
         name: The module's name on the wire.
+        is_service: Whether the module runs a service a **Stop** takes down.
     """
 
     runner = ""
     name = ""
+    is_service = True
 
     def __init__(self, *, platform, log=print, publish=None):
         """
