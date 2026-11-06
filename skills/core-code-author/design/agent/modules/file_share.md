@@ -16,7 +16,7 @@ page"):
 | Folder share (文件夹共享) | a share the person names, at a folder chosen on the machine, open to the enabled accounts the person checks for it |
 
 Every account logs in to either kind with its one SMB user,
-`neutrino-<account>`, and the password the hub generates
+`neutrino_<account>`, and the password the hub generates
 ([agent.md](../../agent.md), "The file share's accounts"), so a client
 mounts a share with the user and the password the `service` frame hands it
 and asks the person nothing. The module keeps no user list of its own. A
@@ -52,11 +52,12 @@ module's.
 | A reboot | `smbd` and `nmbd` start or stay off as the module's last **Start** or **Stop** left them | the same |
 
 What is the module's on a person's Samba is its include line, its own file, its
-folder and Home shares and its `neutrino-<account>` SMB accounts.
+folder and Home shares and its `neutrino_<account>` SMB accounts.
 
 | Rule | Reason |
 | --- | --- |
-| Every account the module creates, changes or removes starts with `neutrino-`, and it never reads as its own, changes or removes any other, on any system, but for the accounts 0.5 made, which the first apply after the upgrade deletes ("What 0.5 made"). A configuration whose `users` names another is refused `user_name_invalid {user}`, and the module passes over any other name its record lists. | The person's accounts are theirs, whatever a comment, a description or an older record says of them. |
+| Every account the module creates or changes is named `neutrino_<account>`, and it never reads as its own, changes or removes any other, on any system, but for the accounts an earlier build or 0.5 made, which the sweep deletes ("The sweep", "What 0.5 made"). A configuration whose `users` names another is refused `user_name_invalid {user}`, and the module passes over any other name its record lists. | The person's accounts are theirs, whatever a comment, a description or an older record says of them. |
+| An account is the module's by its mark, the comment `neutrino file share` on Linux, the marker description on Windows and the module's full name on macOS, together with its name, never by the `neutrino_` start of the name alone. | The hub's `neutrino_transport` on Linux and the Gitea module's `neutrino_gitea` on macOS start the same way. |
 | A person's Samba reads `running` after a **Start** while `smbd` runs, and `stopped` after a **Stop**, a `smbd` the person starts by hand afterwards among it, from the module's own mark, `is_served` in the record, and the unit. Before the first `configure` there is no mark, and the module reads the unit, so adoption takes `running` or `stopped` from what the person runs. A Samba the module installed reads its unit. | A `smbd` the person starts by hand serves the person's shares and none of the module's, since a **Stop** took those off. |
 | The module's first **Start** on a person's Samba keeps what `smbd` and `nmbd` were, each enabled and active or neither, as `found_units` in the record. A **Stop** on a row that reads running, on a machine with no such record, keeps it first, in its `configure` before the mark `is_served` turns false; on such a machine a **Stop** on a row that does not read running leaves `smbd` and `nmbd` as they are and keeps nothing. An uninstall puts both back from it and deletes it. On a machine with no such record an uninstall leaves them as they are. | The module takes the person's service over while it is installed ([agent.md](../../agent.md), "One session, everything on it"), and gives it back as it found it. A join adopts a Samba whose `smbd` does not run `stopped` and changes nothing on the machine, and its stop would disable the units the person enabled for the next boot. The rule is the one Windows and macOS keep ("Windows and macOS"). |
 | An account or a share added later starts nothing, and adding or removing the last share moves no unit: a running `smbd` reloads. While it runs, the person's own shares answer too. | **Start** turned `smbd` on already, share or no share. |
@@ -110,7 +111,7 @@ carried; the agent takes fresh ones ([../../protocol.md](../../protocol.md),
 The module makes each SMB user it lacks with `useradd --system
 --no-create-home --shell <nologin> --comment "neutrino file share"` and sets
 its Samba password from `passwords`, never a Unix password. The account's
-Home share is rendered with `valid users = neutrino-<account>` and `force
+Home share is rendered with `valid users = neutrino_<account>` and `force
 user = <account>`, so every file is written as the account and with its
 primary group. A folder share admits the SMB users of its accounts and
 carries no `force user` of its own: it carries `include =
@@ -189,8 +190,8 @@ On Windows and macOS the module drives the system's own SMB server.
 | After a **Stop** on Windows the server serves nothing, and port 445 stays open until the next reboot. | The `srv2` and `srvnet` drivers stay running under the System process, and stopping them by hand does not close the port. |
 
 The module changes only the shares and accounts it made, the ones its record under the
-state root lists and its marker names, each account's name starting with
-`neutrino-`, and fences nothing: it writes no
+state root lists and its marker names, each account named
+`neutrino_<account>`, and fences nothing: it writes no
 firewall rule on Windows and no pf anchor on macOS, and the first apply
 after an upgrade removes the `neutrino_smb_fence` rule and the
 `com.apple/neutrino_smb` anchor an earlier version left. The record is
@@ -216,6 +217,12 @@ longer belongs to the module's account of that name counts for no account,
 so the grant to the account the name holds now is set. On the R166 Windows
 machine the lists read before the accounts were made again named the old
 SIDs, the grants were left as they stood, and every Home share was denied.
+The record keeps the SID of each account it lists, as the apply read it. At
+each apply a recorded SID that no longer belongs to the account of that
+name, an account deleted by hand or made again, is taken off every folder
+of the module's shares by handle, and the record then keeps the current SID.
+A grant whose SID the record does not list is never touched: an account
+deleted by hand otherwise left its grant on the folder as an unknown SID.
 Every change
 walks the whole tree under the folder as Windows carries an inherited
 entry down, and a home folder holds the account's whole profile: granting
@@ -238,13 +245,13 @@ configuration. Later applies manage them as usual.
 
 | System | What the sweep deletes |
 | --- | --- |
-| Linux | every `neutrino-*` SMB user and Unix account, with its Samba credential; the module's file and its users' files; the shares 0.5 rendered in `smb.conf` and their users |
-| Windows | every share whose description starts with the module's marker, every account whose name carries the prefix, the accounts of 0.5, each such account's sessions on the server, closed before the account goes, every entry under the prefix in the sign-in screen's hidden list, and each deleted account's entries on the folders of those shares, of the shares the record lists and of the configuration's shares, taken off by its SID once the account is gone |
-| macOS | every share point under the `neutrino_` prefix, every account whose name carries the prefix, the accounts of 0.5, and the entries the module gives each such account and its machine account on the same folders, taken off before the account goes |
+| Linux | every SMB user and Unix account named `neutrino_<account>` or, as earlier builds named them, `neutrino-<account>` whose comment is `neutrino file share`, with its Samba credential, and the credential of such a name with no account; the module's file and its users' files; the shares 0.5 rendered in `smb.conf` and their users |
+| Windows | every share whose description starts with the module's marker, every account named `neutrino_<account>` or `neutrino-<account>` whose description is the marker, the accounts of 0.5, each such account's sessions on the server, closed before the account goes, its entry in the sign-in screen's hidden list and every entry there under either start whose account is gone, and each deleted account's entries on the folders of those shares, of the shares the record lists and of the configuration's shares, taken off by its SID once the account is gone |
+| macOS | every share point under the `neutrino_` prefix, every account named `neutrino_<account>` or `neutrino-<account>` whose full name is the module's, the accounts of 0.5, and the entries the module gives each such account and its machine account on the same folders, taken off before the account goes |
 
 | Rule | Reason |
 | --- | --- |
-| The module's record under the state root stores `is_swept` as soon as the sweep has ended, before the apply makes anything, and an apply whose record stores it sweeps nothing. An apply with no record, or with a record of 0.5, sweeps. An uninstall deletes the mark. | A task plans again when a newer entry reaches it at a step boundary, and runs its `configure` again. The configured mark is written only when the task ends: on the R166 Windows machine the second `configure` of the first enable swept the accounts the first had made and made them again with new SIDs, and every Home share was denied. |
+| The module's record under the state root stores `is_swept` as soon as the sweep has ended, before the apply makes anything, and an apply whose record stores it sweeps nothing. An apply with no record, with a record of 0.5, or with a record that lists an account named `neutrino-<account>`, sweeps. An uninstall deletes the mark. | A task plans again when a newer entry reaches it at a step boundary, and runs its `configure` again. The configured mark is written only when the task ends: on the R166 Windows machine the second `configure` of the first enable swept the accounts the first had made and made them again with new SIDs, and every Home share was denied. |
 | A module the hub took over is adopted at the person's first press on it: its task under `is_taken_over` checks the configuration and writes no record, so the first apply is that press's `configure`, on every system ([../../agent.md](../../agent.md), "The steps"). | A join changes nothing on the machine. |
 | An uninstall deletes on every system everything the sweep would, the entries on the folders with the accounts, on Linux before the packages go. | Nothing whose name starts with `neutrino` stays after the module. On the R166 Mac the SMB account `neutrino-lab` stayed after an uninstall. |
 | On Windows a session of an account the sweep deletes is closed first. A client's mount signs in again as the account made anew. | A session keeps the token of the account it signed in as: on the R167 lab machine a sweep under live mounts left each Home share denied on its folder, granted to the new SID, until the session ended. |

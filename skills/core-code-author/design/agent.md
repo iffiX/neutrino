@@ -385,7 +385,7 @@ account carries it as a parameter.
 | --- | --- |
 | A module has at most one task at a time. The `ai_tools` section is one task of its own, under the same rules, and reports through its own section. | Two tasks on one module would fight over the same files and units. |
 | A task's plan comes from the `want` and what the machine shows, by the table of "One session, everything on it": `absent` plans the uninstall when the software is there or the last install failed; a present `want` plans the install when the software is missing, the last install failed, or, under `installed` or `running`, the runner lacks a part its install adds, as Containers' machine image on Windows and macOS ([modules/containers.md](agent/modules/containers.md), "What the install puts on the computer") and its `runc` on Linux ([modules/containers.md](agent/modules/containers.md), "Linux"), the version switch when a `hub` module's kept version differs from its recipe's, then the configure steps under `stopped` and `running`, then `start` or `stop`. | The decision is the same for every module, and only the work is cut into steps. A part the install adds comes at the press that needs it: a join adopts a person's Podman `stopped` and fetches and installs nothing. |
-| A task whose entry carries `is_taken_over` plans no install and no version switch, whatever the machine shows, the install a runner owes among them. Under `stopped` and `running` its plan is one step, `configure`, which runs the module's `validate`, the check the hub asks before it stores a configuration ([protocol.md](protocol.md), "The verbs on a `command` stream"), and writes nothing, whatever the `want`: no file, no unit, no account, no record of the module's and no `systemctl`. No `wait_module`, `account`, `start` or `stop` step follows it, and the task runs no package manager and fetches no artifact. The task writes no configured mark, and while the mark stands the module reads `running` or `stopped` by its unit, as a configured module does. The person's first press on the module ends the mark ([protocol.md](protocol.md), "The sections"), and the next plan takes the install the row above owes and the `configure` that writes, the module's first apply. The rule holds for every module the hub takes over, Containers, the file share and Gitea alike, and the module's state and the software it runs are read and reported as the machine shows them meanwhile. | A join changes nothing on the machine. On the lab's Ubuntu 22.04 a person's running Podman was taken over `running`: its task installed `runc` at the join with no press, and its `configure` wrote a unit and an environment file for a container the person had started by hand. The first apply is where a module starts from what it made before, as the file share's sweep of its `neutrino-` accounts. |
+| A task whose entry carries `is_taken_over` plans no install and no version switch, whatever the machine shows, the install a runner owes among them. Under `stopped` and `running` its plan is one step, `configure`, which runs the module's `validate`, the check the hub asks before it stores a configuration ([protocol.md](protocol.md), "The verbs on a `command` stream"), and writes nothing, whatever the `want`: no file, no unit, no account, no record of the module's and no `systemctl`. No `wait_module`, `account`, `start` or `stop` step follows it, and the task runs no package manager and fetches no artifact. The task writes no configured mark, and while the mark stands the module reads `running` or `stopped` by its unit, as a configured module does. The person's first press on the module ends the mark ([protocol.md](protocol.md), "The sections"), and the next plan takes the install the row above owes and the `configure` that writes, the module's first apply. The rule holds for every module the hub takes over, Containers, the file share and Gitea alike, and the module's state and the software it runs are read and reported as the machine shows them meanwhile. | A join changes nothing on the machine. On the lab's Ubuntu 22.04 a person's running Podman was taken over `running`: its task installed `runc` at the join with no press, and its `configure` wrote a unit and an environment file for a container the person had started by hand. The first apply is where a module starts from what it made before, as the file share's sweep of its accounts. |
 | A command line program's plan under `running` is a `hub` module's: the install or the version switch of the module's copy, then `configure` and one `account` step per enabled account, which puts the module's copy first on the account's `PATH` and reads which copy the account's shell runs ("Parallel, never take over"). | Every enabled account runs the module's copy, and only a step that runs as the account sees which copy its shell finds. |
 | Each task runs on a thread of its own from its first step, and any number of tasks run at once. | The steps of two modules then wait only for what they share ("Step locks"), and the long steps wait on the network or inside a container. |
 | A task is not kept on disk. After a restart the next state plans each module again from what the machine shows. | Every step is safe to run again (below), so a record of the task would only be survival machinery ([../kill_on_sight.md](../kill_on_sight.md)). |
@@ -653,8 +653,11 @@ no server configuration of theirs is rewritten, no share or account of theirs
 is removed or renamed, no firewall rule is put in front of anything, and
 nothing of theirs is copied into the hub's configuration. What the agent
 made is told from the rest by a mark of its own, the marker line of a file,
-the `neutrino-` start of a file share account's name, the record under its
+a file share account's comment, description or full name, the record under its
 state root, and only a thing that carries the mark is ever changed or removed.
+A name that starts with `neutrino_` is no mark alone: the hub's
+`neutrino_transport` and the Gitea module's `neutrino_gitea` start the same
+way.
 
 | Rule | Reason |
 | --- | --- |
@@ -819,15 +822,19 @@ instance for each.
 
 ### The file share's accounts
 
-The SMB user of an enabled account is `neutrino-<account>` on every system,
+The SMB user of an enabled account is `neutrino_<account>` on every system,
 an account of the module's own and never the person's, so nobody changes its
-password by habit.
+password by habit. Every account Neutrino makes joins its words with an
+underscore. An account an earlier build made as `neutrino-<account>` is old,
+and the file share's sweep deletes it at the first apply and makes it again
+under the new name ([modules/file_share.md](agent/modules/file_share.md),
+"The sweep").
 
 | System | The SMB user of an enabled account | Its password |
 | --- | --- | --- |
-| Linux | `neutrino-<account>`, a system account the module makes with no home and no login shell, its comment `neutrino file share`; the account's share is served with `valid users = neutrino-<account>` and `force user = <account>`, so every file is written as the account, with the account's primary group; the account itself must exist ([modules/file_share.md](agent/modules/file_share.md)) | generated by the hub, set with `smbpasswd` |
-| Windows | `neutrino-<account>`, cut to 20 characters, a local account the module makes as it makes its accounts today, hidden from the sign-in screen and denied logon ([modules/file_share.md](agent/modules/file_share.md)); two accounts that cut to one name are refused `user_name_taken {user}` | generated by the hub |
-| macOS | `neutrino-<account>`, a hidden account the module makes the same way | generated by the hub |
+| Linux | `neutrino_<account>`, a system account the module makes with no home and no login shell, its comment `neutrino file share`; the account's share is served with `valid users = neutrino_<account>` and `force user = <account>`, so every file is written as the account, with the account's primary group; the account itself must exist ([modules/file_share.md](agent/modules/file_share.md)) | generated by the hub, set with `smbpasswd` |
+| Windows | `neutrino_<account>`, cut to 20 characters, a local account the module makes as it makes its accounts today, hidden from the sign-in screen and denied logon ([modules/file_share.md](agent/modules/file_share.md)); two accounts that cut to one name are refused `user_name_taken {user}` | generated by the hub |
+| macOS | `neutrino_<account>`, a hidden account the module makes the same way | generated by the hub |
 
 The hub generates each password, 24 random bytes in base64url, the first
 time the account is enabled, and keeps it sealed under the vault's data key
