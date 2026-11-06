@@ -99,6 +99,13 @@ version, is read as the account, since the prefix is in the account's home
 ([../../privilege.md](../../privilege.md), "The agent touches an account's
 files as that account").
 
+**The module reports the version npm installed.** The `npm {account}` step
+keeps the recipe's version in the instance's record once the prefix holds a
+whole install of it, and `details` names the oldest version the records
+hold, so the machine page shows the version line and **Update** compares
+against it ([module_install.md](../module_install.md), "Module versions").
+A report reads the records alone and no account's file.
+
 **The service's environment is written from scratch**: `HOST=127.0.0.1`,
 `SERVER_PORT` (CloudCLI's own name for its port), `CLAUDE_CLI_PATH` ("Claude
 sessions run the Agent SDK's Claude Code") and `PATH`. Nothing is

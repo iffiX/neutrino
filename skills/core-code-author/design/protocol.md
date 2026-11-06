@@ -1496,7 +1496,9 @@ two artifacts: the Node.js archive `data/manifests/cloudcli.json` pins for
 the platform, which the agent opens `package {module: cloudcli, artifact,
 digest}` for, and the npm package, of kind `npm`, with the `npm` set as
 its `source_set`, the host lists of its npm settings as `hosts` and the path a
-probe reads on them as `hosts_probe`. An install that
+probe reads on them as `hosts_probe`. `details` is `{version, instances:
+[{account, port, is_running, code}]}`, `version` the oldest version an
+instance's record keeps, the one the `npm {account}` step installed. An install that
 fails reports the step: `download_failed {file, sources}`,
 `cloudcli_npm_install_failed {account, detail}`,
 `cloudcli_native_module_failed {account, module, detail}` or
