@@ -68,7 +68,7 @@
   "code.file_exists": "那里已经有同名的东西了。",
   "code.gateway_settings_refused": "AI 网关不接受这些设置：{detail}",
   "code.gateway_unreachable": "AI 网关没有应答。",
-  "code.gitea_git_missing": "Gitea 需要这个系统上有 git。在 Mac 上装好开发者工具或 Homebrew 的 git，在 Windows 上装好 Git for Windows，再安装一次 Gitea。",
+  "code.gitea_git_missing": "安装 Apple 命令行工具后 Gitea 仍找不到 git。装好开发者工具或 Homebrew 的 git，再安装一次 Gitea。",
   "code.health_gate_failed": "新版本没有在限定时间内应答。",
   "code.hello_invalid": "非法握手：这台中枢读不懂对方的协议。",
   "code.hub_name_required": "中枢需要一个名称。",
