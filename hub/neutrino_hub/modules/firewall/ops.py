@@ -274,7 +274,8 @@ def reload_firewall() -> None:
 
 
 def hand_back_firewall() -> list:
-    """Take away everything the hub opened in the system firewall.
+    """Take away everything the hub opened in the system firewall, and the
+    record of the last pass.
 
     Returns:
         One line per rule, program, anchor or firewalld zone changed.
@@ -288,6 +289,8 @@ def hand_back_firewall() -> list:
         notes = FirewallFirewalldApplier().remove()
         FIREWALL_FIREWALLD_RECORD_PATH.unlink(missing_ok=True)
         return notes
+    # Without the record, the next start writes every rule.
+    FIREWALL_NETWORKS_PATH.unlink(missing_ok=True)
     if hub_os() == PLATFORM_OS_WINDOWS:
         return FirewallWindowsApplier().remove()
     applier = FirewallDarwinApplier()

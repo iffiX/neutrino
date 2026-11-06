@@ -259,6 +259,21 @@ def test_a_reset_takes_everything_away(elsewhere, recorder):
         assert handed == []
 
 
+def test_a_reset_drops_the_networks_record_so_a_reinstall_writes_the_rules(
+    elsewhere, recorder, monkeypatch
+):
+    """A Windows hub removed and installed again over its kept state found
+    the record unchanged and wrote no rule: the panel answered no other
+    machine."""
+    monkeypatch.setattr(ops, "read_config", lambda name: {})
+    ops.converge_firewall(EXPOSURE)
+    assert ops.is_network_set_moved() is False
+
+    ops.hand_back_firewall()
+
+    assert ops.is_network_set_moved() is True
+
+
 # --- Direct ---
 
 
