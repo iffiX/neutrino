@@ -1179,7 +1179,10 @@ requires it ends it as well. The hub keeps it in the module's entry of
 agent plans no install and no version switch for the module, the install a
 runner owes among them, so it runs no package manager and fetches no
 artifact for it; it reads and reports the module as the machine shows it
-([agent.md](agent.md), "The steps"). The field is added and keeps
+([agent.md](agent.md), "The steps"). The hub also sends it, writing nothing
+to `modules.json`, on a module it holds because the newest run's version is
+not listed ([agent/module_install.md](agent/module_install.md), "Module
+versions"). The field is added and keeps
 `PROTOCOL`: an agent of an earlier build ignores it, as it ignores any
 unknown field, and plans as before.
 
@@ -1294,7 +1297,10 @@ while the switch is off and none of its RustDesk processes runs, and
 {path}`.
 
 `install` is the recipe the hub resolves from `data/manifests/<module>.json`
-for the machine's platform and the version the machine chose: `{runner,
+for the machine's platform and the version the machine chose, or the
+machine's newest run where the chosen version is older on a module whose
+manifest says `is_data_forward_only`
+([agent/module_install.md](agent/module_install.md), "Module versions"): `{runner,
 method, params, requires}`, `requires` present where the entry names it
 ([agent/module_install.md](agent/module_install.md), "The manifest"). The hub sends it with the state, and the agent has no manifest
 logic of its own. `params` is the method's: a `system` entry's `packages`,
