@@ -163,7 +163,8 @@ class LinuxPlatform(ClientPlatform):
             connection: The accepted socket.
 
         Returns:
-            ``{"account", "uid", "is_same_user"}``.
+            ``{"account", "uid", "is_same_user", "is_elevated"}``, root being
+            the elevated caller.
         """
         data = connection.getsockopt(
             socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize("3i")
@@ -173,7 +174,12 @@ class LinuxPlatform(ClientPlatform):
             account = pwd.getpwuid(uid).pw_name if pwd is not None else str(uid)
         except KeyError:
             account = str(uid)
-        return {"account": account, "uid": uid, "is_same_user": uid == os.getuid()}
+        return {
+            "account": account,
+            "uid": uid,
+            "is_same_user": uid == os.getuid(),
+            "is_elevated": uid == 0,
+        }
 
     def daemon_peer(self, connection) -> dict:
         """A daemon socket's peer, from the kernel's ``SO_PEERCRED``.

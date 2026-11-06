@@ -95,7 +95,12 @@ def test_the_same_uid_is_the_same_user(monkeypatch):
 
     identity = LinuxPlatform().read_peer_identity(connection)
 
-    assert identity == {"account": "alice", "uid": os.getuid(), "is_same_user": True}
+    assert identity == {
+        "account": "alice",
+        "uid": os.getuid(),
+        "is_same_user": True,
+        "is_elevated": False,
+    }
 
 
 def test_another_uid_is_not_the_same_user(monkeypatch):
@@ -118,7 +123,23 @@ def test_a_uid_that_names_no_account_still_answers(monkeypatch):
 
     identity = LinuxPlatform().read_peer_identity(connection)
 
-    assert identity == {"account": "4242", "uid": 4242, "is_same_user": False}
+    assert identity == {
+        "account": "4242",
+        "uid": 4242,
+        "is_same_user": False,
+        "is_elevated": False,
+    }
+
+
+def test_root_is_an_elevated_caller(monkeypatch):
+    entry = PwdEntry("root", 0, "/bin/bash", "/root")
+    monkeypatch.setattr(linux_module.pwd, "getpwuid", lambda uid: entry)
+    connection = FakePeerConnection(struct.pack("3i", 42, 0, 0))
+
+    identity = LinuxPlatform().read_peer_identity(connection)
+
+    assert identity["is_elevated"] is True
+    assert identity["account"] == "root"
 
 
 def test_attach_rides_pkexec_and_the_helper_with_the_credentials_file(

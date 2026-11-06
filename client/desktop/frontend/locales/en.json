@@ -21,6 +21,7 @@
   "code.connect_limit": "This client has too many connections open through the hub ({limit})",
   "code.control_channel_closed": "The client stopped answering; open it again",
   "code.control_peer_refused": "The running client belongs to another account",
+  "code.control_quit_only": "The running client belongs to another account; an administrator of another account may only ask it to quit",
   "code.control_socket_unavailable": "The client cannot start in this session",
   "code.control_unavailable": "The hub is busy and did not answer; try again.",
   "code.crashed": "The last request failed on this machine",

@@ -1,8 +1,10 @@
 """One control server, one transport, one route table.
 
 The control socket, a Unix socket on Linux and a named pipe on Windows,
-authenticates every request by the kernel's peer credentials. Only the
-person the resident runs as is answered; any other peer is refused with
+authenticates every request by the kernel's peer credentials. The person
+the resident runs as is answered, elevated or not. An elevated caller of
+another account may only ask it to quit, and is refused with
+``control_quit_only`` for anything else; any other peer is refused with
 ``control_peer_refused``. What a request may do is then the route table's,
 shared with the window's in-process channel.
 
@@ -252,9 +254,9 @@ class _ControlRequestHandler(BaseHTTPRequestHandler):
     def _is_admitted(self, method: str) -> bool:
         """Whether the peer may make this request.
 
-        The person this resident runs as may make any; an elevated caller of
-        any account, as an installer runs, may only ask it to quit. A refusal
-        is sent before False is returned.
+        The person this resident runs as may make any, elevated or not; an
+        elevated caller of another account, as an installer runs, may only
+        ask it to quit. A refusal is sent before False is returned.
 
         Args:
             method: The HTTP method.
@@ -268,14 +270,13 @@ class _ControlRequestHandler(BaseHTTPRequestHandler):
             "POST",
             CLIENT_CONTROL_ELEVATED_ROUTE,
         )
+        if identity.is_same_user or (identity.is_elevated and is_quit):
+            return True
         if identity.is_elevated:
-            is_admitted = is_quit
+            self._send_json({"code": "control_quit_only"}, status=403)
         else:
-            is_admitted = identity.is_same_user
-        if not is_admitted:
             self._send_json({"code": "control_peer_refused"}, status=403)
-            return False
-        return True
+        return False
 
     def _read_body(self) -> dict:
         length = int(self.headers.get("Content-Length", 0) or 0)

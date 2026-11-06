@@ -1,7 +1,8 @@
 """The control channel end to end: one route table, one person answered.
 
-The socket answers only the peer the kernel says is this person; any other
-account is refused, never guessed. The socket is 0600, a live socket is not
+The socket answers every request of the account the kernel says is this
+person, elevated or not; an elevated caller of another account may only ask
+the client to quit, and any other account is refused, never guessed. The socket is 0600, a live socket is not
 stolen, and a handler exception answers typed without dropping the wire.
 """
 
@@ -312,15 +313,29 @@ def test_a_refused_attach_is_an_ordinary_answer(control):
     assert (status, reply["code"], connection) == (404, "unknown_terminal", None)
 
 
-@pytest.mark.parametrize("peer", [SAME_USER, OTHER_USER])
-def test_an_elevated_caller_of_any_account_may_only_ask_the_client_to_quit(
-    control, monkeypatch, peer
+def test_the_clients_own_account_elevated_is_answered_on_every_route(control):
+    """R168, Windows: an administrator's SSH session runs elevated as the
+    client's own account, and `nclient hub join` was refused."""
+    server, resident, platform = control
+    platform.peer = dict(SAME_USER, is_elevated=True)
+
+    status, state = over_socket(server, "GET", "/api/state")
+    assert (status, state["hostname"]) == (200, "box")
+    status, _ = over_socket(
+        server, "POST", "/api/services/port", {"id": "svc_tcp", "is_enabled": True}
+    )
+
+    assert status == 200
+    assert resident.service_calls == [("port", {"id": "svc_tcp", "is_enabled": True})]
+
+
+def test_an_elevated_caller_of_another_account_may_only_ask_the_client_to_quit(
+    control, monkeypatch
 ):
     """An installer runs elevated, as whichever administrator started it, and
-    asks the one running client to quit for an upgrade; an elevated caller
-    gets nothing else."""
+    asks the one running client to quit for an upgrade."""
     server, resident, platform = control
-    platform.peer = dict(peer, is_elevated=True)
+    platform.peer = dict(OTHER_USER, is_elevated=True)
     monkeypatch.setattr(routes, "QUIT_ANSWER_GRACE_S", 0)
     monkeypatch.setattr(routes, "end_process", lambda: None)
 
@@ -333,7 +348,7 @@ def test_an_elevated_caller_of_any_account_may_only_ask_the_client_to_quit(
         ("GET", "/api/quit", None),
     ):
         status, reply = over_socket(server, method, path, body)
-        assert (status, reply["code"]) == (403, "control_peer_refused"), path
+        assert (status, reply["code"]) == (403, "control_quit_only"), path
     assert resident.service_calls == []
     assert resident.disconnected == []
     assert resident.shows == 0

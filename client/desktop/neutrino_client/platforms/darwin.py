@@ -215,7 +215,8 @@ class DarwinPlatform(ClientPlatform):
             connection: The accepted socket.
 
         Returns:
-            ``{"account", "uid", "is_same_user"}``.
+            ``{"account", "uid", "is_same_user", "is_elevated"}``, root being
+            the elevated caller.
         """
         data = connection.getsockopt(SOL_LOCAL, LOCAL_PEERCRED, XUCRED_SIZE)
         _version, uid = struct.unpack_from(XUCRED_FORMAT, data)
@@ -223,7 +224,12 @@ class DarwinPlatform(ClientPlatform):
             account = pwd.getpwuid(uid).pw_name if pwd is not None else str(uid)
         except KeyError:
             account = str(uid)
-        return {"account": account, "uid": uid, "is_same_user": uid == os.getuid()}
+        return {
+            "account": account,
+            "uid": uid,
+            "is_same_user": uid == os.getuid(),
+            "is_elevated": uid == 0,
+        }
 
     def daemon_peer(self, connection) -> dict:
         """A daemon socket's peer, from ``LOCAL_PEERCRED`` and ``LOCAL_PEERPID``.

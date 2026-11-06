@@ -153,6 +153,10 @@ CLIENT_CODE_WORDS = {
             "and mount again"
         ),
         "control_peer_refused": "the running client belongs to another account",
+        "control_quit_only": (
+            "the running client belongs to another account; an administrator "
+            "of another account may only ask it to quit"
+        ),
         "control_socket_unavailable": (
             "this session has no place for the client's socket"
         ),
@@ -340,6 +344,7 @@ CLIENT_CODE_WORDS = {
         "mount_tooling_missing": "这台电脑上缺少挂载工具",
         "pkexec_missing": "这台电脑没有 pkexec，挂载要经过它；请安装 pkexec 后再挂载",
         "control_peer_refused": "正在运行的客户端属于另一个账户",
+        "control_quit_only": "正在运行的客户端属于另一个账户；另一个账户的管理员只能让它退出",
         "control_socket_unavailable": "客户端在这个会话里启动不了",
         "control_channel_closed": "客户端不再应答，请重新打开它",
         "client_internal": "客户端遇到意外错误，请查看它的日志",

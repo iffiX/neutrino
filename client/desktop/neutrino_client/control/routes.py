@@ -268,6 +268,7 @@ def refusal_status(code: str) -> int:
         return 409
     if code in (
         "control_peer_refused",
+        "control_quit_only",
         "fs_refused",
         "client_disabled",
         "overlay_not_authorized",

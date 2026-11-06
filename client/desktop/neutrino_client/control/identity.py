@@ -2,8 +2,8 @@
 
 An identity comes from the control connection's kernel peer credentials,
 read through the platform contract; nothing a request carries can name a
-different caller. The resident answers only the person it runs as, and an
-elevated caller of any account only to ask it to quit.
+different caller. The resident answers the person it runs as, elevated or
+not, and an elevated caller of another account only to ask it to quit.
 """
 
 
@@ -20,7 +20,7 @@ class ControlIdentity:
             is_same_user: Whether the caller is the account the resident
                 runs as.
             is_elevated: Whether the caller runs elevated, as an installer
-                does; False where the platform does not tell.
+                does: an elevated token on Windows, root on Linux and macOS.
         """
         self.account = account
         self.uid = uid

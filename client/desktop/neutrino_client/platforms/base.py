@@ -341,9 +341,9 @@ class ClientPlatform:
             connection: The accepted socket.
 
         Returns:
-            ``{"account", "uid", "is_same_user"}``, and ``is_elevated`` where
-            the platform tells an elevated caller of the same account apart;
-            ``uid`` is -1 where the platform reports names, not uids.
+            ``{"account", "uid", "is_same_user", "is_elevated"}``: an
+            elevated token on Windows, root on Linux and macOS; ``uid`` is
+            -1 where the platform reports names, not uids.
 
         Raises:
             PlatformUnsupportedError: When the platform cannot read peers.

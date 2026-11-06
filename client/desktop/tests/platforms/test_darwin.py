@@ -92,7 +92,12 @@ def test_the_same_uid_is_the_same_user(monkeypatch):
 
     identity = DarwinPlatform().read_peer_identity(connection)
 
-    assert identity == {"account": "alice", "uid": os.getuid(), "is_same_user": True}
+    assert identity == {
+        "account": "alice",
+        "uid": os.getuid(),
+        "is_same_user": True,
+        "is_elevated": False,
+    }
     assert connection.asked == [(0, darwin_module.LOCAL_PEERCRED, 76)]
 
 
@@ -107,6 +112,17 @@ def test_another_uid_is_not_the_same_user(monkeypatch):
     assert identity["account"] == "bob"
 
 
+def test_root_is_an_elevated_caller(monkeypatch):
+    entry = PwdEntry("root", 0, "/bin/sh", "/var/root")
+    monkeypatch.setattr(darwin_module.pwd, "getpwuid", lambda uid: entry)
+    connection = FakePeerConnection(xucred(0))
+
+    identity = DarwinPlatform().read_peer_identity(connection)
+
+    assert identity["is_elevated"] is True
+    assert identity["account"] == "root"
+
+
 def test_a_uid_that_names_no_account_still_answers(monkeypatch):
     def unknown(uid):
         raise KeyError(uid)
@@ -116,7 +132,12 @@ def test_a_uid_that_names_no_account_still_answers(monkeypatch):
 
     identity = DarwinPlatform().read_peer_identity(connection)
 
-    assert identity == {"account": "4242", "uid": 4242, "is_same_user": False}
+    assert identity == {
+        "account": "4242",
+        "uid": 4242,
+        "is_same_user": False,
+        "is_elevated": False,
+    }
 
 
 def test_the_language_is_the_first_the_account_prefers(monkeypatch):
