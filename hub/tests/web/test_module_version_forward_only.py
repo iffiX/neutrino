@@ -44,6 +44,16 @@ def test_a_version_older_than_the_newest_run_cannot_be_pressed():
     assert "onClick={() => void choose(entry.version)}" in block
 
 
+def test_a_row_that_cannot_be_pressed_is_greyed_out():
+    path = FRONTEND_SRC_DIR / "components" / "module_version_block.css"
+    css = " ".join(path.read_text(encoding="utf-8").split())
+
+    assert (
+        ".module_version_row:disabled { color: var(--color-text-faint); "
+        "cursor: default; }"
+    ) in css
+
+
 def test_follow_the_tested_version_is_dead_while_the_tested_one_is_older():
     block = source("module_version_block.tsx")
 

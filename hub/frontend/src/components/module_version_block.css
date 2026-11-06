@@ -50,6 +50,7 @@
 }
 
 .module_version_row:disabled {
+  color: var(--color-text-faint);
   cursor: default;
 }
 
