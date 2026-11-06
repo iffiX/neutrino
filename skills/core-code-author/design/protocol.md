@@ -1479,8 +1479,8 @@ opens `package {module: vscode, artifact, digest}` for it and unpacks the
 one `code` or `code.exe` inside it: to `/var/lib/neutrino/agent/vscode` on Linux, and to
 `vscode` under the root the `hub_packages` capability names on Windows
 (`%ProgramData%\Neutrino`) and macOS (`/Library/Application
-Support/Neutrino`). `details` is `{instances: [{account, port, url,
-is_running, code}]}`, `port` the one the agent took, the url without its
+Support/Neutrino`). `details` is `{version, instances: [{account, port, url,
+is_running, code}]}`, `version` the one the CLI prints, `port` the one the agent took, the url without its
 token, and `code` `credential_invalid` for a Windows task that cannot sign
 its account in. An apply refuses `account_invalid`, `account_duplicate`,
 `token_missing` and, on Windows, `credential_missing`, all naming the
