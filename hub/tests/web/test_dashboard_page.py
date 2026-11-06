@@ -41,3 +41,22 @@ def test_a_day_s_hour_label_spans_its_six_cells():
         "`span ${Math.min(step, series.length - index)}`, }} > "
         "{formatBucketLabel(point.bucket, range)} </span> ) : null, )}"
     ) in grid
+
+
+def css_rule(style: str, selector: str) -> str:
+    """The body of one CSS rule."""
+    return style.split(f"{selector} {{", 1)[1].split("}", 1)[0]
+
+
+def test_a_tile_s_value_and_detail_shrink_with_the_tile_on_one_line():
+    style = flat("pages/dashboard_page.css")
+
+    assert "container-type: inline-size;" in css_rule(
+        style, ".dashboard_tiles .stat_tile"
+    )
+    value = css_rule(style, ".dashboard_tiles .stat_tile_value")
+    assert "font-size: min(21px, 18cqi);" in value
+    assert "white-space: nowrap;" in value
+    detail = css_rule(style, ".dashboard_tiles .stat_tile_detail")
+    assert "font-size: min(10px, 9cqi);" in detail
+    assert "white-space: nowrap;" in detail

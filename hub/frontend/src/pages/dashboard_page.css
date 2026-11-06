@@ -164,13 +164,20 @@
 }
 
 /* The header tiles read a fifth smaller than the shared tile sizes, so nine
-   of them sit on one 16:9 row without shouting. */
+   of them sit on one 16:9 row without shouting. The value and the detail
+   stay on one line and shrink with a narrow tile. 18cqi fits a rate of 9
+   characters, and 9cqi an address of 18. */
+.dashboard_tiles .stat_tile {
+  container-type: inline-size;
+}
+
 .dashboard_tiles .stat_tile_label {
   font-size: 9px;
 }
 
 .dashboard_tiles .stat_tile_value {
-  font-size: 21px;
+  font-size: min(21px, 18cqi);
+  white-space: nowrap;
 }
 
 .dashboard_tiles .stat_tile_unit {
@@ -178,5 +185,6 @@
 }
 
 .dashboard_tiles .stat_tile_detail {
-  font-size: 10px;
+  font-size: min(10px, 9cqi);
+  white-space: nowrap;
 }
