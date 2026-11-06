@@ -29,8 +29,9 @@ uninstall keeping the machine; a configure under ``stopped`` keeping the
 configuration and starting nothing; with no record, Stop stopping and
 disabling the keeper of the configured account and an uninstall removing
 it with its plist and its log; one line for a machine retired, stopped or
-not stopped, and none where no machine exists; and a restarted agent reading
-on from the record.
+not stopped, and none where no machine exists; a restarted agent reading
+on from the record; and its first read asking for one configure task when
+the keeper is owed a start, never for a machine Stop stopped.
 """
 
 import functools
@@ -65,6 +66,7 @@ from neutrino_agent.modules.podman.renderer import (
     machine_stop_script,
 )
 from neutrino_agent.modules.podman.windows_applier import PodmanWindowsApplier
+from neutrino_agent.modules.shared import account_service as account_service_module
 from neutrino_agent.modules.shared.account_service import (
     AccountEntry,
     ServiceMachine,
@@ -1706,6 +1708,74 @@ def test_start_after_a_stop_brings_the_keeper_and_the_machine_back(rig):
     assert "com.neutrino.podman.me" in rig.launchctl.loaded
     assert "me" in rig.world.running
     assert rig.runner.is_active()
+
+
+class KeeperReading:
+    """The account service layer's reading of the keeper, set by a test."""
+
+    def __init__(self, monkeypatch, *, is_start_owed):
+        self.is_start_owed = is_start_owed
+        self.asked: list = []
+        monkeypatch.setattr(account_service_module, "states", self.states)
+
+    def states(self, services, machine):
+        self.asked.append([service.account for service in services])
+        return {
+            service.account: {"is_running": False, "is_start_owed": self.is_start_owed}
+            for service in services
+        }
+
+
+def rebooted(rig):
+    """The rig's runner applied once, then an agent started again after a boot
+    the keeper did not start at."""
+    rig.keep_image()
+    rig.runner.apply(CONFIG)
+    rig.world.running.discard("me")
+    rig.world.is_answering = False
+    again = rig.make_runner()
+    asks: list = []
+    again.bind_configure_asker(functools.partial(asks.append, "podman"))
+    return again, asks
+
+
+def test_a_keeper_owed_a_start_asks_once_for_a_configure_task(rig, monkeypatch):
+    """Windows refused the login of the account tasks at a boot, and the
+    keeper is the one program that starts the machine."""
+    reading = KeeperReading(monkeypatch, is_start_owed=True)
+    again, asks = rebooted(rig)
+
+    assert not again.is_active()
+    assert not again.is_active()
+
+    assert asks == ["podman"]
+    assert reading.asked == [["me"]]
+    assert "podman: the keeper of me did not start; a start follows" in rig.lines
+
+
+def test_a_keeper_owed_no_start_asks_for_nothing(rig, monkeypatch):
+    KeeperReading(monkeypatch, is_start_owed=False)
+    again, asks = rebooted(rig)
+
+    assert not again.is_active()
+
+    assert asks == []
+
+
+def test_a_machine_stop_stopped_asks_for_nothing_after_a_restart(rig, monkeypatch):
+    reading = KeeperReading(monkeypatch, is_start_owed=True)
+    rig.keep_image()
+    rig.runner.apply(CONFIG)
+    rig.runner.stop()
+    rig.world.is_answering = False
+    again = rig.make_runner()
+    asks: list = []
+    again.bind_configure_asker(functools.partial(asks.append, "podman"))
+
+    assert not again.is_active()
+
+    assert asks == []
+    assert reading.asked == []
 
 
 def unanswered_machine(rig):

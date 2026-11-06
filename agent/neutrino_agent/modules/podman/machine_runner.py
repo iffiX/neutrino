@@ -444,6 +444,9 @@ class PodmanMachineModuleRunner(ModuleRunner):
         # The last reading of the machine: ``(at, account, command, info)``,
         # ``info`` None when the machine did not answer.
         self._reading: "tuple | None" = None
+        # Whether a read since the agent started looked for a keeper owed a
+        # start.
+        self._is_start_checked = False
         # The computer's memory in GiB, read at the first report; 0 until
         # it is read.
         self._host_memory_gib = 0
@@ -848,12 +851,43 @@ class PodmanMachineModuleRunner(ModuleRunner):
         return {}
 
     def is_active(self) -> bool:
-        """Whether the machine answers the read."""
+        """Whether the machine answers the read.
+
+        The first read since the agent started asks for one configure task
+        when the keeper is owed a start.
+        """
         record = self._record()
         if not record:
             return False
+        self._ask_owed_start(record)
         _command, info = self._read(self._machine_of_record(record))
         return info is not None
+
+    def _ask_owed_start(self, record: dict) -> None:
+        """Ask for one configure task when the first read since the agent started finds the keeper owed a start.
+
+        A machine Stop stopped owes no start.
+
+        Args:
+            record: The last apply's record.
+        """
+        with self._lock:
+            if self._is_start_checked:
+                return
+            self._is_start_checked = True
+        if record.get("is_stopped"):
+            return
+        account = str(record.get("account", "") or "")
+        keeper = self._keeper_of(account, str(record.get("password", "") or ""))
+        try:
+            read = account_service.states([keeper], self._service_machine)
+        except (ModuleApplyError, OSError, PlatformUnsupportedError) as error:
+            self._log(f"podman: the keeper of {account} was not read: {error}")
+            return
+        if not (read.get(account) or {}).get("is_start_owed"):
+            return
+        self._log(f"podman: the keeper of {account} did not start; a start follows")
+        self.ask_configure()
 
     def read_command(self) -> tuple:
         """The read's command, which a container's shell runs ``exec -it`` through.
