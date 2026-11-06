@@ -95,6 +95,36 @@ class WindowsFolderAccess:
                 path, [self._entry(name, win32.REVOKE_ACCESS, 0) for name in accounts]
             )
 
+    def revoke_sids(self, path: str, sids: list) -> None:
+        """Take every allow entry of these SIDs off a folder, an account that is gone among them.
+
+        Args:
+            path: The folder.
+            sids: The SIDs, as text.
+
+        Raises:
+            OSError: ``ELOOP`` for a folder that is a reparse point or is
+                reached through one; any other when Windows refuses or a SID
+                does not read.
+        """
+        if not sids:
+            return
+        libraries = self._bound()
+        held = []
+        try:
+            entries = []
+            for text in sids:
+                sid = _sid(text, libraries.advapi32)
+                held.append(sid)
+                entry = self._entry("", win32.REVOKE_ACCESS, 0)
+                entry.Trustee.TrusteeForm = win32.TRUSTEE_IS_SID
+                entry.Trustee.ptstrName = sid.value
+                entries.append(entry)
+            self._set_entries(path, entries)
+        finally:
+            for sid in held:
+                libraries.kernel32.LocalFree(sid)
+
     def leave_to(self, path: str, account: str, right: str) -> None:
         """Leave a folder to one account, SYSTEM and the administrators, nothing inherited.
 
@@ -322,7 +352,7 @@ class WindowsFolderAccess:
 
 
 def _sid(text: str, advapi32):
-    """A well-known SID from its text, to be freed with ``LocalFree``.
+    """A SID from its text, to be freed with ``LocalFree``.
 
     Raises:
         OSError: When Windows cannot read it.

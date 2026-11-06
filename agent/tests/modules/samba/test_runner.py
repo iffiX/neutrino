@@ -129,6 +129,11 @@ class FakeApplier:
     starts = 0
     removals = 0
     withdrawals = 0
+    earlier_sweeps = 0
+    # What the shares of 0.5 in smb.conf are, as :meth:`sweep_earlier` gives them.
+    earlier: list = []
+    earlier_users: list = []
+    earlier_kept: set = set()
     served: list = []
     user_files: dict = {}
     # Whether the unit is active as the applier reads it.
@@ -158,6 +163,14 @@ class FakeApplier:
 
     def remove(self):
         FakeApplier.removals += 1
+
+    def sweep_earlier(self):
+        FakeApplier.earlier_sweeps += 1
+        return (
+            list(FakeApplier.earlier),
+            list(FakeApplier.earlier_users),
+            set(FakeApplier.earlier_kept),
+        )
 
     def withdraw(self):
         FakeApplier.withdrawals += 1
@@ -240,10 +253,15 @@ class FakeUsers:
     converged: list = []
     made: list = []
     sweeps = 0
+    earlier: list = []
 
     def sweep(self):
         FakeUsers.sweeps += 1
         return ["swept the account neutrino-old"]
+
+    def sweep_earlier(self, named, *, kept=frozenset()):
+        FakeUsers.earlier.append((list(named), set(kept)))
+        return [f"swept the 0.5 credential of {name}" for name in named]
 
     def check_accounts(self, accounts):
         for name in accounts:
@@ -276,11 +294,16 @@ def runner(monkeypatch, tmp_path):
     FakeApplier.starts = 0
     FakeApplier.removals = 0
     FakeApplier.withdrawals = 0
+    FakeApplier.earlier_sweeps = 0
+    FakeApplier.earlier = []
+    FakeApplier.earlier_users = []
+    FakeApplier.earlier_kept = set()
     FakeApplier.served = []
     FakeApplier.is_unit_active = True
     FakeUsers.converged = []
     FakeUsers.made = []
     FakeUsers.sweeps = 0
+    FakeUsers.earlier = []
     FakeReader.persons = ({}, [])
     FakeSelinux.value = "off"
     FakeSelinux.changes = []
@@ -289,6 +312,7 @@ def runner(monkeypatch, tmp_path):
     FakeUnits.calls = []
     (tmp_path / "configured").mkdir()
     (tmp_path / "configured" / "samba").write_text("")
+    (tmp_path / "samba.json").write_text('{"is_swept": true}')
     monkeypatch.setattr(runner_module, "SambaConfigApplier", FakeApplier)
     monkeypatch.setattr(runner_module, "read_posix_folder", FakeApplier.read_folder)
     monkeypatch.setattr(runner_module, "SambaUserManager", FakeUsers)
@@ -1041,7 +1065,7 @@ def test_an_install_that_finds_samba_runs_no_package_manager_and_records_nothing
     packaged.install(RECIPE)
 
     assert packaged._platform.installed == []
-    assert not packaged.record_path.exists()
+    assert runner_module._read_record(str(packaged.record_path)) == {"is_swept": True}
     assert packaged.is_software_kept() is True
     assert FakeUnits.calls == []
 
@@ -1147,7 +1171,7 @@ def test_a_failed_install_that_leaves_no_samba_records_nothing(packaged, monkeyp
     with pytest.raises(OSError):
         packaged.install(RECIPE)
 
-    assert not packaged.record_path.exists()
+    assert runner_module._read_record(str(packaged.record_path)) == {"is_swept": True}
 
 
 def test_a_failed_install_that_left_samba_stays_the_modules_and_runs_again(
@@ -1189,7 +1213,7 @@ def test_an_uninstall_with_no_samba_on_the_machine_leaves_no_uninstalled_mark(
 def test_a_first_apply_under_stopped_on_a_person_s_samba_withdraws_once(
     runner, tmp_path
 ):
-    (tmp_path / "configured" / "samba").unlink()
+    (tmp_path / "samba.json").unlink()
 
     runner.apply_stopped(CONFIG)
 
@@ -1819,6 +1843,7 @@ class FakeNativeApplier:
         self.refusing: dict = {}
         self.calls: list = []
         self.sweeps: list = []
+        self.earlier_accounts: list = []
         self.served: list = []
         self.status = {"is_present": True, "is_running": True, "shares": []}
         self.reads = 0
@@ -1854,9 +1879,13 @@ class FakeNativeApplier:
         self.reads += 1
         return dict(self.status)
 
-    def apply(self, config, record, *, is_sweep=False, is_served=True, refused=None):
+    def sweep(self, folders, *, is_served, earlier_accounts=()):
+        self.sweeps.append((list(folders), is_served, len(self.calls)))
+        self.earlier_accounts.append(list(earlier_accounts))
+        return ["swept account neutrino-old"]
+
+    def apply(self, config, record, *, is_served=True, refused=None):
         self.calls.append(("apply", config.to_dict(), record))
-        self.sweeps.append(is_sweep)
         self.served.append(is_served)
         if self.error is not None:
             raise self.error
@@ -1923,6 +1952,7 @@ class Clock:
 def native(tmp_path):
     (tmp_path / "configured").mkdir()
     (tmp_path / "configured" / "samba").write_text("")
+    (tmp_path / "samba_native.json").write_text('{"is_swept": true}')
     platform = NativeServerPlatform(tmp_path)
     clock = Clock()
     held = SambaNativeServerRunner(platform=platform, log=lambda m: None, clock=clock)
@@ -2078,6 +2108,7 @@ def test_an_apply_keeps_what_it_made_in_the_record(native):
         "accounts": ["neutrino-ann"],
         "passwords": {"neutrino-ann": password_digest("pw")},
         "is_served": True,
+        "is_swept": True,
         "found_server": FOUND_SERVER,
     }
     assert native.is_active() is True
@@ -2168,6 +2199,7 @@ def test_stopping_withdraws_the_shares_and_the_row_reads_stopped(native):
                 "accounts": ["neutrino-ann"],
                 "passwords": {"neutrino-ann": password_digest("pw")},
                 "is_served": True,
+                "is_swept": True,
                 "found_server": FOUND_SERVER,
             },
             False,
@@ -2179,6 +2211,7 @@ def test_stopping_withdraws_the_shares_and_the_row_reads_stopped(native):
         "accounts": ["neutrino-ann"],
         "passwords": {"neutrino-ann": password_digest("pw")},
         "is_served": False,
+        "is_swept": True,
         "found_server": FOUND_SERVER,
     }
     assert native.is_active() is False
@@ -2223,7 +2256,7 @@ EMPTY_NATIVE_CONFIG = {"shares": [], "users": [], "passwords": {}}
 
 
 def test_a_server_on_with_no_mark_reads_running(native):
-    assert not os.path.exists(native._record_path)
+    os.unlink(native._record_path)
 
     assert native.is_active() is True
     assert native.details({})["is_active"] is True
@@ -2475,6 +2508,7 @@ def test_a_native_configure_under_stopped_serves_no_share_and_reads_stopped(nati
         "accounts": ["neutrino-ann"],
         "passwords": {"neutrino-ann": password_digest("pw2")},
         "is_served": False,
+        "is_swept": True,
         "found_server": FOUND_SERVER,
     }
     assert native.is_active() is False
@@ -2582,7 +2616,16 @@ def test_the_file_share_uninstalls_to_absent_and_installs_again_on_the_system_s_
     run_steps(restarted.configure_steps("samba", running, "running"))
     restarted.mark_configured("samba")
     assert row_of(restarted)["state"] == "running"
-    assert platform.applier.sweeps == [True, True]
+    # The first configure, the uninstall and the first configure after the
+    # install again each sweep, the uninstall on the folder the record kept.
+    folder = running["config"]["shares"][0]["path"]
+    assert [
+        (folders, is_served) for folders, is_served, _ in platform.applier.sweeps
+    ] == [
+        ([folder], True),
+        ([folder], False),
+        ([folder], True),
+    ]
 
 
 def password_calls(native) -> list:
@@ -2791,34 +2834,121 @@ def test_a_configuration_with_no_served_share_plans_an_unserved_smb_conf(runner)
     assert runner.notice()["params"] == {"shares": "carried"}
 
 
-def test_the_first_apply_sweeps_the_modules_users_and_files_and_a_later_one_does_not(
-    runner, tmp_path
-):
+def test_a_fresh_machine_s_task_that_configures_twice_sweeps_once(runner, tmp_path):
+    """The R166 Windows machine's first enable ran ``configure`` twice in one
+    task, the configured mark not yet written, and the second swept again."""
     (tmp_path / "configured" / "samba").unlink()
+    (tmp_path / "samba.json").unlink()
 
     runner.apply(CONFIG)
-    (tmp_path / "configured" / "samba").write_text("")
     runner.apply(CONFIG)
 
     assert FakeUsers.sweeps == 1
+    assert FakeApplier.earlier_sweeps == 1
     assert FakeApplier.removals == 1
     assert FakeUsers.made == [["neutrino-ann"], ["neutrino-ann"]]
     assert FakeUsers.converged == [{}, {"neutrino-ann": password_digest("generated")}]
+    assert runner_module._read_record(str(runner.record_path))["is_swept"] is True
 
 
-def test_the_native_first_apply_sweeps_and_starts_from_an_empty_record(
+def test_the_first_apply_after_0_5_takes_its_shares_and_logins_away_first(
+    runner, tmp_path
+):
+    """A 0.5 share named like an account would leave the account's Home
+    share off as the person's, so the 0.5 shares go before the person's
+    shares are read."""
+    (tmp_path / "samba.json").unlink()
+    FakeApplier.earlier = ["swept the 0.5 share olddocs"]
+    FakeApplier.earlier_users = ["smbold", "alice"]
+    FakeApplier.earlier_kept = {"handuser"}
+    order: list = []
+    plan = FakeApplier.plan
+    sweep_earlier = FakeApplier.sweep_earlier
+
+    def planned(self, *, is_served):
+        order.append("plan")
+        return plan(self, is_served=is_served)
+
+    def swept(self):
+        order.append("sweep_earlier")
+        return sweep_earlier(self)
+
+    FakeApplier.plan = planned
+    FakeApplier.sweep_earlier = swept
+    try:
+        runner.apply(CONFIG)
+        runner.apply(CONFIG)
+    finally:
+        FakeApplier.plan = plan
+        FakeApplier.sweep_earlier = sweep_earlier
+
+    assert order[0] == "sweep_earlier" and order.count("sweep_earlier") == 1
+    assert FakeUsers.earlier == [(["smbold", "alice"], {"handuser"})]
+
+
+def test_an_uninstall_sweeps_0_5_s_logins_too_and_forgets_the_mark(packaged):
+    FakeApplier.earlier_users = ["smbold"]
+
+    packaged.uninstall(RECIPE)
+
+    assert FakeUsers.sweeps == 1
+    assert FakeUsers.earlier == [(["smbold"], set())]
+    assert "is_swept" not in runner_module._read_record(str(packaged.record_path))
+
+
+def test_a_fresh_native_machine_s_task_that_configures_twice_sweeps_once(
     native, tmp_path
 ):
-    native.apply(WINDOWS_CONFIG)
     (tmp_path / "configured" / "samba").unlink()
+    os.unlink(native._record_path)
 
     native.apply(WINDOWS_CONFIG)
+    native.apply(WINDOWS_CONFIG)
 
-    assert native.applier.sweeps == [False, True]
+    assert [folders for folders, _, _ in native.applier.sweeps] == [["D:\\share"]]
     first, second = [call for call in native.applier.calls if call[0] == "apply"]
     assert first[2]["accounts"] == []
-    assert second[2]["accounts"] == [] and second[2]["shares"] == {"share": "D:\\share"}
-    assert record_of(native)["accounts"] == ["neutrino-ann"]
+    assert second[2]["accounts"] == ["neutrino-ann"]
+    assert record_of(native)["is_swept"] is True
+
+
+def test_a_native_record_of_0_5_is_swept_with_its_folders_and_starts_empty(native):
+    """A record of 0.5 lists its shares and accounts and has no mark."""
+    with open(native._record_path, "w", encoding="utf-8") as stream:
+        json.dump(
+            {
+                "shares": {"docs": "C:\\shares\\docs"},
+                "accounts": ["labsmb", "neutrino-old"],
+                "passworded": ["labsmb"],
+                "is_served": True,
+            },
+            stream,
+        )
+
+    native.apply(WINDOWS_CONFIG)
+
+    assert [
+        (folders, is_served) for folders, is_served, _ in native.applier.sweeps
+    ] == [(["C:\\shares\\docs", "D:\\share"], True)]
+    assert native.applier.earlier_accounts == [["labsmb"]]
+    (apply_call,) = [call for call in native.applier.calls if call[0] == "apply"]
+    assert apply_call[2]["accounts"] == []
+    assert apply_call[2]["shares"] == {"share": "D:\\share"}
+
+
+def test_a_native_uninstall_sweeps_the_folders_the_record_kept_and_forgets_the_mark(
+    native,
+):
+    native.apply(WINDOWS_CONFIG)
+    native.stop()
+    native.remove_configuration()
+
+    native.uninstall({})
+
+    folders, is_served, at = native.applier.sweeps[-1]
+    assert (folders, is_served) == (["D:\\share"], False)
+    assert native.applier.calls[at - 1][0] == "put_back_server"
+    assert record_of(native) == {"shares": {}, "accounts": [], "passwords": {}}
 
 
 def test_a_native_share_with_no_user_is_named_on_the_row_and_left_out_of_the_record(

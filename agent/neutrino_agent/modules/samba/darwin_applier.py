@@ -216,12 +216,63 @@ class SambaDarwinApplier:
         except (OSError, subprocess.SubprocessError):
             return {"is_present": False, "is_running": False}
 
+    def sweep(
+        self, folders: list, *, is_served: bool, earlier_accounts: "list | tuple" = ()
+    ) -> list:
+        """Delete every share point and account of the module's, the entries it gave the accounts first.
+
+        A share point is the module's when its record name has the module's
+        prefix; an account when its name has the prefix, or when a record of
+        0.5 lists it and its full name is the module's words alone. The
+        entries the module
+        gives each such account and its machine account come off the
+        folders of those share points and of ``folders`` before the account
+        goes.
+
+        Args:
+            folders: The folders of the shares the record lists and the
+                configuration serves.
+            is_served: Unused here: ``sharing`` lists the share points
+                whether smbd runs or not.
+            earlier_accounts: The accounts without the prefix a record of
+                0.5 lists.
+
+        Returns:
+            One note per point and per account: ``swept`` when the tool
+            removed it, else ``did not sweep`` with the tool's last line.
+
+        Raises:
+            OSError: When a command cannot run.
+        """
+        points = [
+            point
+            for point in self._share_points()
+            if point["record"].startswith(SAMBA_DARWIN_SHARE_PREFIX)
+        ]
+        names = self._module_accounts(earlier_accounts)
+        held = names + [smb_user_account(name) for name in names]
+        paths: list = []
+        for path in [point["path"] for point in points] + list(folders):
+            if path and path not in paths:
+                paths.append(path)
+        for path in paths:
+            self._take_back(path, [name for name in held if name])
+        notes = []
+        for point in points:
+            removed = self._run(["sharing", "-r", point["record"]], is_checked=False)
+            notes.append(_sweep_note("share", point["smb_name"], removed))
+        for name in names:
+            deleted = self._run(
+                ["dscl", ".", "-delete", f"/Users/{name}"], is_checked=False
+            )
+            notes.append(_sweep_note("account", name, deleted))
+        return notes
+
     def apply(
         self,
         config: SambaConfig,
         record: dict,
         *,
-        is_sweep: bool = False,
         is_served: bool = True,
         refused: "list | None" = None,
     ) -> list:
@@ -263,11 +314,6 @@ class SambaDarwinApplier:
         owned_shares = dict(record.get("shares") or {})
         owned_accounts = list(record.get("accounts") or [])
         points = self._share_points()
-        swept = []
-        if is_sweep:
-            swept = self._sweep(points)
-            owned_shares, owned_accounts = {}, []
-            points = self._share_points()
         taken = []
         for share in config.served_shares():
             held = [point for point in points if point["smb_name"] == share.name]
@@ -281,7 +327,7 @@ class SambaDarwinApplier:
                 continue
             if not is_module_full_name(self._full_name(name)):
                 raise ModuleApplyError("user_name_taken", {"user": name})
-        notes = swept + self._remove_fence()
+        notes = self._remove_fence()
         for name in taken:
             notes.append(f"left share {name} off the server: share_name_taken")
             if refused is not None:
@@ -307,29 +353,18 @@ class SambaDarwinApplier:
             raise refusals[0]
         return notes
 
-    def _sweep(self, points: list) -> list:
-        """Delete every share point of the module's prefix and every account of its name prefix.
-
-        Returns:
-            One note per point and per account: ``swept`` when the tool
-            removed it, else ``did not sweep`` with the tool's last line.
-        """
-        notes = []
-        for point in points:
-            if point["record"].startswith(SAMBA_DARWIN_SHARE_PREFIX):
-                removed = self._run(
-                    ["sharing", "-r", point["record"]], is_checked=False
-                )
-                notes.append(_sweep_note("share", point["smb_name"], removed))
+    def _module_accounts(self, earlier: "list | tuple") -> list:
+        """Every account whose name has the module's prefix, and each of ``earlier`` whose full name is the module's words alone."""
         listing = self._read(["dscl", ".", "-list", "/Users", "RealName"])
+        names = []
         for line in listing.splitlines():
-            name = line.partition(" ")[0]
-            if name.startswith(SAMBA_LINUX_USER_PREFIX):
-                deleted = self._run(
-                    ["dscl", ".", "-delete", f"/Users/{name}"], is_checked=False
-                )
-                notes.append(_sweep_note("account", name, deleted))
-        return notes
+            name, _, full_name = line.strip().partition(" ")
+            is_earlier = name in earlier and (
+                full_name.strip() == SAMBA_DARWIN_ACCOUNT_NAME
+            )
+            if name.startswith(SAMBA_LINUX_USER_PREFIX) or is_earlier:
+                names.append(name)
+        return names
 
     def withdraw(self, record: dict, *, is_removed: bool) -> None:
         """Take the module's share points off the server.

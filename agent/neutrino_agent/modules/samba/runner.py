@@ -46,7 +46,6 @@ import threading
 import time
 
 from neutrino_agent.constants import (
-    AGENT_CONFIGURED_DIR_NAME,
     AGENT_STEP_CONFIGURE,
     AGENT_STEP_UNINSTALL,
     AGENT_WANT_STOPPED,
@@ -354,6 +353,18 @@ class SambaModuleRunner(SystemPackageModuleRunner):
         record = _read_record(self._record_path)
         is_ours = record.get("is_package_ours") is True
         is_withdrawn = not is_ours and not is_started
+        changes = []
+        if record.get("is_swept") is not True:
+            try:
+                changes += self._sweep()
+                if not is_withdrawn:
+                    applier.remove()
+            except (OSError, subprocess.SubprocessError) as error:
+                raise ModuleApplyError(
+                    "apply_failed", {"detail": command_detail(error)[:500]}
+                )
+            record = dict(record, is_swept=True, passwords={})
+            write_record(self._record_path, record)
         if is_withdrawn and self.is_active():
             self._keep_found_units(record)
         if not is_withdrawn:
@@ -365,12 +376,6 @@ class SambaModuleRunner(SystemPackageModuleRunner):
         is_serving = bool(parsed.served_shares())
         was_conf_missing = not conf_digest()
         try:
-            changes = []
-            if self._is_first_apply():
-                changes += users.sweep()
-                if not is_withdrawn:
-                    applier.remove()
-                held = {}
             changes += users.converge_accounts(parsed)
             if is_withdrawn:
                 note = applier.withdraw()
@@ -554,9 +559,10 @@ class SambaModuleRunner(SystemPackageModuleRunner):
             InstallError: If the uninstall refuses.
             PlatformUnsupportedError: If this platform removes nothing.
         """
-        swept = SambaUserManager().sweep()
+        swept = self._sweep()
         if swept:
             self._log("samba: " + "; ".join(swept))
+        self._forget_sweep()
         if not is_package_ours(self._record_path):
             self._put_units_back()
             self._remove_written_conf()
@@ -574,6 +580,17 @@ class SambaModuleRunner(SystemPackageModuleRunner):
             return
         if digest == conf_digest():
             remove_conf()
+        if record:
+            write_record(self._record_path, record)
+            return
+        with contextlib.suppress(OSError):
+            os.unlink(self._record_path)
+
+    def _forget_sweep(self) -> None:
+        """Drop the mark that the module swept, so its next first apply sweeps again."""
+        record = _read_record(self._record_path)
+        if record.pop("is_swept", None) is None:
+            return
         if record:
             write_record(self._record_path, record)
             return
@@ -639,11 +656,20 @@ class SambaModuleRunner(SystemPackageModuleRunner):
             )
         return is_turned
 
-    def _is_first_apply(self) -> bool:
-        """Whether no apply of the hub's configuration has succeeded here yet."""
-        return not os.path.exists(
-            os.path.join(self._var_dir, AGENT_CONFIGURED_DIR_NAME, self.name)
-        )
+    def _sweep(self) -> list:
+        """Delete every ``neutrino-`` SMB user, and the shares and users of 0.5.
+
+        Returns:
+            One note per share, credential and account removed.
+
+        Raises:
+            OSError: When ``smb.conf`` cannot be written.
+            subprocess.CalledProcessError: If Samba or ``userdel`` refuses.
+        """
+        users = SambaUserManager()
+        notes = users.sweep()
+        earlier, named, kept = SambaConfigApplier(unit=self._unit).sweep_earlier()
+        return notes + earlier + users.sweep_earlier(named, kept=kept)
 
     def _check_persons(self, parsed: SambaConfig) -> tuple:
         """Refuse what the person's own ``[global]`` makes impossible, and leave out each share whose name a share of the person's has.
@@ -880,27 +906,39 @@ class SambaNativeServerRunner(ModuleRunner):
         """
 
     def uninstall(self, recipe: dict) -> None:
-        """Remove nothing, and put the server back as the record found it. A record with none leaves it as it is.
+        """Remove no software: put the server back as the record found it, then delete every share and account of the module's.
 
-        The record's mark goes, so the row reads the server again.
+        A record with no server found leaves the server as it is. The sweep
+        takes the accounts' entries off the folders of the shares the
+        record lists. The record's marks go, so the row reads the server
+        again and the next first apply sweeps.
 
         Args:
             recipe: The module's recipe.
 
         Raises:
-            OSError: When the server will not go back.
+            OSError: When the server will not go back or the sweep fails.
         """
         record = self._read_record()
         record.pop("is_served", None)
+        record.pop("is_swept", None)
         found = record.pop("found_server", None)
-        if found is not None:
-            try:
+        try:
+            if found is not None:
                 self._applier.put_back_server(
                     found, record.pop("server_dependents", [])
                 )
-            finally:
                 self._forget_status()
-        self._write_record(record)
+            swept = self._applier.sweep(
+                list(record["shares"].values()),
+                is_served=False,
+                earlier_accounts=self._earlier_accounts(),
+            )
+        finally:
+            self._forget_status()
+        if swept:
+            self._log("samba: " + "; ".join(swept))
+        self._write_record(dict(record, shares={}, accounts=[], passwords={}))
 
     def validate(self, config: dict) -> None:
         """Parse and check a configuration for this system.
@@ -960,9 +998,10 @@ class SambaNativeServerRunner(ModuleRunner):
 
         The record lists the configured shares before the server is
         touched, so a share made by an apply that then failed is still the
-        module's to change. The first apply after an install or an adoption
-        sweeps every share and account the module's marker names and starts
-        from an empty record.
+        module's to change. An apply whose record has no ``is_swept`` mark,
+        the first after an install, an adoption or an upgrade from 0.5,
+        sweeps every share and account of the module's and starts from an
+        empty record that stores the mark.
 
         Args:
             config: The desired configuration.
@@ -997,13 +1036,25 @@ class SambaNativeServerRunner(ModuleRunner):
         whole.validate(os_name=self._platform.os_name)
         parsed, unserved = self._folders.served(whole)
         record = self._read_record()
-        is_sweep = not os.path.exists(
-            os.path.join(
-                self._platform.agent_var_dir(), AGENT_CONFIGURED_DIR_NAME, self.name
-            )
-        )
-        if is_sweep:
-            record = dict(record, shares={}, accounts=[], passwords={})
+        swept: list = []
+        if record.get("is_swept") is not True:
+            folders = list(record["shares"].values()) + [
+                share.path for share in whole.served_shares()
+            ]
+            try:
+                swept = self._applier.sweep(
+                    folders,
+                    is_served=is_served,
+                    earlier_accounts=self._earlier_accounts(),
+                )
+            except (OSError, subprocess.SubprocessError) as error:
+                raise ModuleApplyError(
+                    "apply_failed", {"detail": command_detail(error)[:500]}
+                )
+            finally:
+                self._forget_status()
+            record = dict(record, shares={}, accounts=[], passwords={}, is_swept=True)
+            self._write_record(record)
         served = parsed.served_shares()
         shares = dict(record["shares"])
         shares.update({share.name: share.path for share in served})
@@ -1014,10 +1065,9 @@ class SambaNativeServerRunner(ModuleRunner):
         try:
             if is_served or self.is_active():
                 record = self._keep_found_server(record)
-            notes = self._applier.apply(
+            notes = swept + self._applier.apply(
                 parsed,
                 record,
-                is_sweep=is_sweep,
                 is_served=is_served,
                 refused=server_refused,
             )
@@ -1048,6 +1098,7 @@ class SambaNativeServerRunner(ModuleRunner):
             "accounts": accounts,
             "passwords": passwords,
             "is_served": is_served,
+            "is_swept": True,
         }
         if "found_server" in record:
             written["found_server"] = record["found_server"]
@@ -1170,7 +1221,7 @@ class SambaNativeServerRunner(ModuleRunner):
         return written
 
     def remove_configuration(self) -> None:
-        """Take the shares away and disable the accounts.
+        """Take the shares away and disable the accounts; the record keeps each share's folder for the uninstall's sweep.
 
         Raises:
             OSError: When the server will not let them go.
@@ -1184,7 +1235,7 @@ class SambaNativeServerRunner(ModuleRunner):
             self._applier.withdraw(record, is_removed=True)
         finally:
             self._forget_status()
-        self._write_record(dict(record, shares={}, passwords={}, is_served=False))
+        self._write_record(dict(record, passwords={}, is_served=False))
 
     def is_active(self) -> bool:
         """Whether the module serves.
@@ -1257,7 +1308,7 @@ class SambaNativeServerRunner(ModuleRunner):
             self._status = None
 
     def _read_record(self) -> dict:
-        """The record, ``{"shares", "accounts", "passwords"}``, and ``is_served``, ``found_server`` and ``server_dependents`` where it stores them.
+        """The record, ``{"shares", "accounts", "passwords"}``, and ``is_served``, ``is_swept``, ``found_server`` and ``server_dependents`` where it stores them.
 
         ``shares`` lists the folder of each share the module configured, on
         the server or not. ``accounts`` leaves out a name without the
@@ -1275,6 +1326,8 @@ class SambaNativeServerRunner(ModuleRunner):
         kept = {}
         if "is_served" in held:
             kept["is_served"] = bool(held["is_served"])
+        if held.get("is_swept") is True:
+            kept["is_swept"] = True
         if isinstance(held.get("found_server"), dict):
             kept["found_server"] = dict(held["found_server"])
         if isinstance(held.get("server_dependents"), list):
@@ -1293,6 +1346,21 @@ class SambaNativeServerRunner(ModuleRunner):
                 else {}
             ),
         }
+
+    def _earlier_accounts(self) -> list:
+        """The accounts without the module's prefix the record lists, which a module of 0.5 made."""
+        with self._record_lock:
+            try:
+                with open(self._record_path, "r", encoding="utf-8") as stream:
+                    held = json.load(stream)
+            except (OSError, ValueError):
+                return []
+        listed = held.get("accounts") if isinstance(held, dict) else None
+        return [
+            str(name)
+            for name in (listed if isinstance(listed, list) else [])
+            if not str(name).startswith(SAMBA_LINUX_USER_PREFIX)
+        ]
 
     def _write_record(self, record: dict) -> None:
         """Keep the record, root-only, whole or not at all."""

@@ -15,8 +15,10 @@ making no point and taking the module's off; folders granted with
 pf anchor an earlier version kept emptied and its file deleted at the first
 apply that finds the file; a foreign account name refused before anything
 is touched, and a share a foreign point names left off while the rest are
-made; the first apply's sweep noting each
-point and account the tool refused with its words; and the status read from launchctl,
+made; the sweep deleting the module's points and accounts, 0.5's by their
+full name, each account's entries taken off the folders before it goes,
+and noting each point and account the tool refused with its words; and
+the status read from launchctl,
 the share list and lsof, a password counted only once the record says one
 was set.
 """
@@ -803,25 +805,61 @@ def test_a_password_for_a_bare_record_macos_keeps_is_refused_with_its_words(
     assert tools.ran("dscl", ".", "-passwd") == []
 
 
-def test_the_first_apply_sweeps_the_modules_points_and_accounts_and_no_other(
+def test_the_sweep_deletes_the_modules_points_and_accounts_0_5_s_among_them(
     applier, tools
 ):
     tools.answers[("sharing", "-l")] = share_list(
-        ("neutrino_old", "/srv/old", "old", False)
+        ("neutrino_old", "/srv/old", "old", False),
+        ("photos", "/srv/photos", "p", False),
     )
     tools.answers[("dscl", ".", "-list")] = (
-        "neutrino-old  neutrino file share\nbob  Bob Example\n_smb  SMB Server\n"
-        "anna  neutrino file share anna\ncid  neutrino file share\n"
+        "neutrino-old  neutrino file share neutrino-old\nbob  Bob Example\n"
+        "_smb  SMB Server\ncid  neutrino file share\n"
+        "dan  neutrino file share\neve  Eve Example\n"
     )
-    tools.users["neutrino-old"] = account("neutrino file share")
+    tools.users["neutrino-old"] = account("neutrino file share neutrino-old")
+    tools.users["cid"] = account("neutrino file share")
 
-    notes = applier.apply(CONFIG, {}, is_sweep=True)
+    notes = applier.sweep(
+        ["/Users/old"], is_served=True, earlier_accounts=["cid", "eve"]
+    )
 
     assert ["sharing", "-r", "neutrino_old"] in tools.calls
-    assert ["dscl", ".", "-delete", "/Users/neutrino-old"] in tools.calls
-    for name in ("bob", "anna", "cid"):
+    assert ["sharing", "-r", "photos"] not in tools.calls
+    for name in ("neutrino-old", "cid"):
+        assert ["dscl", ".", "-delete", f"/Users/{name}"] in tools.calls
+    # A full name its owner can change, or a record of 0.5 alone, makes no
+    # account the module's.
+    for name in ("bob", "_smb", "dan", "eve"):
         assert ["dscl", ".", "-delete", f"/Users/{name}"] not in tools.calls
-    assert notes[:2] == ["swept share old", "swept account neutrino-old"]
+    assert notes == [
+        "swept share old",
+        "swept account neutrino-old",
+        "swept account cid",
+    ]
+
+
+def test_the_sweep_takes_the_entries_off_before_the_accounts_go(applier, tools):
+    tools.answers[("sharing", "-l")] = share_list(
+        ("neutrino_old", "/srv/old", "old", False)
+    )
+    tools.answers[("dscl", ".", "-list")] = "neutrino-ann  neutrino file share\n"
+    tools.users["neutrino-ann"] = account("neutrino file share")
+
+    applier.sweep(["/Users/ann"], is_served=False)
+
+    deleted = tools.calls.index(["dscl", ".", "-delete", "/Users/neutrino-ann"])
+    taken = [
+        (index, call[3], call[2].split(" ")[0])
+        for index, call in enumerate(tools.calls)
+        if call[:2] == ["chmod", "-a"]
+    ]
+    assert {(path, who) for _, path, who in taken} == {
+        (path, f"user:{name}")
+        for path in ("/srv/old", "/Users/ann")
+        for name in ("neutrino-ann", "ann")
+    }
+    assert all(index < deleted for index, _, _ in taken)
 
 
 def test_a_sweep_the_system_refuses_says_so_with_the_tools_words(applier, tools):
@@ -835,9 +873,9 @@ def test_a_sweep_the_system_refuses_says_so_with_the_tools_words(applier, tools)
     tools.failing.add(("sharing", "-r", "neutrino_old"))
     tools.failing.add(("dscl", ".", "-delete", "/Users/neutrino-old"))
 
-    notes = applier.apply(CONFIG, {}, is_sweep=True)
+    notes = applier.sweep([], is_served=True)
 
-    assert notes[:3] == [
+    assert notes == [
         "did not sweep share old: refused",
         "did not sweep account neutrino-old: refused",
         "swept account neutrino-gone",

@@ -58,6 +58,7 @@ HOST_CHANGES = {
     "rules_forget",
     "share_apply",
     "share_withdraw",
+    "share_sweep",
     "share_server_stop",
     "share_server_set",
     "share_password",

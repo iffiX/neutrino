@@ -357,20 +357,6 @@ function Set-NeutrinoShare {
     $notes = @()
     # A read of a stopped server of Manual start type starts it.
     $is_readable = $Request.is_served -or ((Get-Service -Name LanmanServer).Status -eq 'Running')
-    if ($Request.is_sweep) {
-        foreach ($share in @(if ($is_readable) { Get-SmbShare -ErrorAction SilentlyContinue })) {
-            if ("$($share.Description)".StartsWith($Request.marker)) {
-                Remove-SmbShare -Name $share.Name -Force | Out-Null
-                $notes += "swept share $($share.Name)"
-            }
-        }
-        foreach ($user in @(Get-LocalUser -ErrorAction SilentlyContinue)) {
-            if ("$($user.Name)".StartsWith($Request.user_prefix)) {
-                Remove-LocalUser -Name $user.Name | Out-Null
-                $notes += "swept account $($user.Name)"
-            }
-        }
-    }
     # A share the server refuses, or whose name a share of the person's has,
     # is left off, and every other one is served.
     $refused = @()
@@ -491,6 +477,47 @@ function Set-NeutrinoShare {
         }
     }
     return @{notes = $notes; refused = $refused}
+}
+
+# Deletes every share whose description starts with the marker, every
+# account whose name starts with the prefix, and each account of 0.5 the
+# record lists whose description is the marker, with its entry in the
+# sign-in screen's hidden list; answers the folders of the shares and the
+# SIDs of the accounts, whose entries the agent then takes off those
+# folders. Without is_served the shares are read only while the server runs.
+function Clear-NeutrinoShare {
+    [CmdletBinding(SupportsShouldProcess = $true)]
+    [OutputType([hashtable])]
+    param($Request)
+    if (-not $PSCmdlet.ShouldProcess('the file share')) {
+        return @{notes = @(); paths = @(); sids = @()}
+    }
+    $notes = @()
+    $paths = @()
+    $sids = @()
+    # A read of a stopped server of Manual start type starts it.
+    $is_readable = $Request.is_served -or ((Get-Service -Name LanmanServer).Status -eq 'Running')
+    foreach ($share in @(if ($is_readable) { Get-SmbShare -ErrorAction SilentlyContinue })) {
+        if ("$($share.Description)".StartsWith($Request.marker)) {
+            $paths += "$($share.Path)"
+            Remove-SmbShare -Name $share.Name -Force | Out-Null
+            $notes += "swept share $($share.Name)"
+        }
+    }
+    $hidden = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon\SpecialAccounts\UserList'
+    foreach ($user in @(Get-LocalUser -ErrorAction SilentlyContinue)) {
+        $is_earlier = (@($Request.earlier_accounts) -contains "$($user.Name)") -and
+            ("$($user.Description)" -eq $Request.marker)
+        $is_ours = "$($user.Name)".StartsWith($Request.user_prefix) -or $is_earlier
+        if (-not $is_ours) {
+            continue
+        }
+        $sids += "$($user.SID.Value)"
+        Remove-LocalUser -SID $user.SID | Out-Null
+        Remove-ItemProperty -Path $hidden -Name $user.Name -ErrorAction SilentlyContinue
+        $notes += "swept account $($user.Name)"
+    }
+    return @{notes = $notes; paths = $paths; sids = $sids}
 }
 
 # Takes down the marked shares the record lists; with is_removed also
@@ -646,6 +673,7 @@ $NeutrinoOperations = @{
     'folder_access' = 'Get-NeutrinoFolderAccess'
     'share_apply' = 'Set-NeutrinoShare'
     'share_withdraw' = 'Remove-NeutrinoShare'
+    'share_sweep' = 'Clear-NeutrinoShare'
     'share_server_read' = 'Get-NeutrinoShareServer'
     'share_server_stop' = 'Stop-NeutrinoShareServer'
     'share_server_set' = 'Set-NeutrinoShareServer'

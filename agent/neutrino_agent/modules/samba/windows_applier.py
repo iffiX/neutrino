@@ -5,7 +5,9 @@ JSON object and answering one, so a password never appears on a command
 line. The module changes only the shares and accounts it made: a share
 whose description starts with the marker and that the module's record
 lists, an account the record lists. Accounts are local, in no group, hidden
-from the sign-in screen and denied the console and RDP. A share's folder
+from the sign-in screen and denied the console and RDP. The first apply
+sweeps every share and account of the module's, the accounts' entries on
+the folders with them. A share's folder
 is never made; one that is a junction or is reached through one stays off
 the server with a note, and each share's folder is granted to its accounts, and the account's ``.ssh`` folder under it taken
 back from them, so OpenSSH goes on reading the account's own files. SYSTEM
@@ -14,8 +16,8 @@ as the account: each folder is opened by handle with no reparse point
 followed, and its access list is read and set on that handle
 (:class:`WindowsFolderAccess`). A folder that is a junction, or is reached
 through one, is left ungranted with a note. The host reads
-each folder's access list first, and a folder is changed only for an
-entry that differs. The module fences nothing: the block rule an earlier
+each folder's access list once it has made the accounts, by the SIDs their
+names hold then, and a folder is changed only for an entry that differs. The module fences nothing: the block rule an earlier
 version made goes at the first apply that finds it.
 
 Not pure: drives the PowerShell host, sets access lists and calls the
@@ -247,12 +249,69 @@ class SambaWindowsApplier:
             ],
         }
 
+    def sweep(
+        self, folders: list, *, is_served: bool, earlier_accounts: "list | tuple" = ()
+    ) -> list:
+        """Delete every share and account of the module's, and take the accounts' entries off the folders.
+
+        A share is the module's when its description starts with the
+        marker; an account when its name starts with the prefix, or when a
+        record of 0.5 lists it and its description is the marker. Each
+        deleted account's entries come off
+        the folders of the deleted shares and of ``folders``, by its SID,
+        once the account is gone. A folder that is not there is passed
+        over, and one that cannot be changed is left with a note.
+
+        Args:
+            folders: The folders of the shares the record lists and the
+                configuration serves.
+            is_served: Whether the apply serves, so the server's shares
+                are read; otherwise they are read only while it runs.
+            earlier_accounts: The accounts without the prefix a record of
+                0.5 lists.
+
+        Returns:
+            What changed, one note each.
+
+        Raises:
+            OSError: When the host fails.
+            ModuleApplyError: When the host refuses.
+        """
+        answer = self._powershell.call(
+            "share_sweep",
+            {
+                "marker": SAMBA_WINDOWS_MARKER,
+                "user_prefix": SAMBA_LINUX_USER_PREFIX,
+                "is_served": is_served,
+                "earlier_accounts": list(earlier_accounts),
+            },
+        )
+        notes = [str(note) for note in _listed(answer.get("notes"))]
+        sids = [str(sid) for sid in _listed(answer.get("sids")) if sid]
+        if not sids:
+            return notes
+        paths: list = []
+        for path in [str(path) for path in _listed(answer.get("paths"))] + list(
+            folders
+        ):
+            if path and not any(_is_same_folder(path, held) for held in paths):
+                paths.append(path)
+        for path in paths:
+            try:
+                self._folders.revoke_sids(path, sids)
+            except OSError as error:
+                if error.errno in (errno.ENOENT, errno.ENOTDIR) or isinstance(
+                    error, (FileNotFoundError, NotADirectoryError)
+                ):
+                    continue
+                notes.append(f"left {path} as it was: {error}")
+        return notes
+
     def apply(
         self,
         config: SambaConfig,
         record: dict,
         *,
-        is_sweep: bool = False,
         is_served: bool = True,
         refused: "list | None" = None,
     ) -> list:
@@ -265,12 +324,12 @@ class SambaWindowsApplier:
         Once the host has converged the server, each share's folder is
         granted to its accounts and taken from the module's others, and
         the ``.ssh`` folder under it is taken from them all. Each folder's
-        access list is read before the host converges the server, and
-        a folder is changed only for an entry that differs from it. A
-        share whose folder does not open by handle through no reparse
-        point is left off the server with a note, and a folder that is a
-        reparse point or is reached through one is left ungranted with a
-        note. No folder is made.
+        access list is read once the host has made the accounts, by the
+        SID each account's name holds then, and a folder is changed only
+        for an entry that differs from it. A share whose folder does not
+        open by handle through no reparse point is left off the server with
+        a note, and a folder that is a reparse point or is reached through
+        one is left ungranted with a note. No folder is made.
 
         Args:
             config: The validated configuration.
@@ -307,15 +366,6 @@ class SambaWindowsApplier:
         ]
         grants = folder_grants(served)
         left = _paths_left(owned_shares, grants)
-        access = self._read_access(
-            left
-            + [
-                folder
-                for path in grants
-                for folder in (path, os.path.join(path, SAMBA_WINDOWS_SSH_DIR_NAME))
-            ],
-            known_accounts,
-        )
         answer = self._powershell.call(
             "share_apply",
             {
@@ -330,11 +380,18 @@ class SambaWindowsApplier:
                 "shares": [_share_request(share) for share in served],
                 "retired_rule_name": SAMBA_WINDOWS_FENCE_RULE,
                 "share_owner": SAMBA_WINDOWS_SHARE_OWNER,
-                "is_sweep": is_sweep,
-                "user_prefix": SAMBA_LINUX_USER_PREFIX,
                 "is_served": is_served,
                 "server_dependents": list(record.get("server_dependents") or []),
             },
+        )
+        access = self._read_access(
+            left
+            + [
+                folder
+                for path in grants
+                for folder in (path, os.path.join(path, SAMBA_WINDOWS_SSH_DIR_NAME))
+            ],
+            known_accounts,
         )
         for path in left:
             self._settle(

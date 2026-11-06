@@ -3,7 +3,7 @@
 What these pin: the request an apply sends the host names only what the
 module made, each share's right, the accounts to retire and the block rule
 an earlier version made for the host to delete; the folders' access lists
-are read before the host converges the server; each share's folder is
+are read once the host has made the accounts; each share's folder is
 then granted to its accounts and taken from the module's others on a
 handle, only where the list differs, a grant replacing the account's own
 rules and a grant Windows refuses failing the apply; a folder that is a
@@ -18,8 +18,9 @@ still grants the folders; a refusal stops before any folder or policy; a
 share the host left off is named by its code, ``share_name_taken`` for a
 name the person's share has and ``share_not_served`` else; the
 withdrawal, the server's log and a password are one request each, the
-password in the request alone;
-and the status reading is shaped the way the Linux module reports.
+password in the request alone; the sweep asks the host to delete the
+module's shares and accounts and takes the deleted accounts' SIDs off the
+folders; and the status reading is shaped the way the Linux module reports.
 """
 
 import ctypes
@@ -71,6 +72,7 @@ class Icacls:
         self.checked: list = []
         self._refused = set(refused)
         self.junctions = set(junctions)
+        self.missing: set = set()
 
     def _change(self, argv):
         if argv[0] in self.junctions:
@@ -85,6 +87,12 @@ class Icacls:
     def revoke(self, path, accounts):
         for name in accounts:
             self._change([path, "/remove:g", name])
+
+    def revoke_sids(self, path, sids):
+        if path in self.missing:
+            raise FileNotFoundError(errno.ENOENT, f"{path} is not there")
+        for sid in sids:
+            self._change([path, "/remove:g", f"*{sid}"])
 
     def keep_own(self, path):
         self._change([path, "/inheritance:d"])
@@ -164,19 +172,6 @@ def test_an_apply_names_only_what_the_module_made():
     assert notes == ["created share media"]
     assert host.calls == [
         (
-            "folder_access",
-            {
-                "paths": [
-                    "D:\\old",
-                    "D:\\media",
-                    os.path.join("D:\\media", ".ssh"),
-                    "D:\\docs",
-                    os.path.join("D:\\docs", ".ssh"),
-                ],
-                "accounts": ["eve", "ann", "bob"],
-            },
-        ),
-        (
             "share_apply",
             {
                 "marker": "neutrino:",
@@ -203,10 +198,21 @@ def test_an_apply_names_only_what_the_module_made():
                 ],
                 "retired_rule_name": "neutrino_smb_fence",
                 "share_owner": "BUILTIN\\Administrators",
-                "is_sweep": False,
-                "user_prefix": "neutrino-",
                 "is_served": True,
                 "server_dependents": [],
+            },
+        ),
+        (
+            "folder_access",
+            {
+                "paths": [
+                    "D:\\old",
+                    "D:\\media",
+                    os.path.join("D:\\media", ".ssh"),
+                    "D:\\docs",
+                    os.path.join("D:\\docs", ".ssh"),
+                ],
+                "accounts": ["eve", "ann", "bob"],
             },
         ),
     ]
@@ -260,7 +266,7 @@ def test_an_apply_whose_folders_hold_their_grants_runs_no_icacls(tmp_path):
         config, {"shares": {"ann": str(tmp_path)}, "accounts": ["ann", "bob"]}
     )
 
-    assert host.ops() == ["folder_access", "share_apply"]
+    assert host.ops() == ["share_apply", "folder_access"]
     assert icacls.calls == []
     assert denied == ["ann", "bob"]
 
@@ -649,17 +655,72 @@ def test_an_apply_under_stopped_takes_every_share_off_and_grants_the_folders():
     assert denied == ["ann", "bob"]
 
 
-def test_the_first_apply_asks_the_host_to_sweep_shares_by_marker_and_accounts_by_prefix():
-    host = RecordingHost({"share_apply": {"notes": ["swept share old"]}})
+def test_the_sweep_deletes_by_marker_and_prefix_and_takes_the_sids_off_the_folders():
+    host = RecordingHost(
+        {
+            "share_sweep": {
+                "notes": ["swept share old", "swept account neutrino-ann"],
+                "paths": ["D:\\old", "D:\\media"],
+                "sids": ["S-1-5-21-1-2-3-1017"],
+            }
+        }
+    )
+    icacls = Icacls()
+    icacls.missing = {"D:\\gone"}
 
-    notes = applier_with(host, denied=[]).apply(CONFIG, {}, is_sweep=True)
-    applier_with(host, denied=[]).apply(CONFIG, {})
+    notes = applier_with(host, run=icacls, denied=[]).sweep(
+        ["d:\\media\\", "D:\\gone", "D:\\docs"],
+        is_served=True,
+        earlier_accounts=["labsmb"],
+    )
 
-    first, second = [call for call in host.calls if call[0] == "share_apply"]
-    assert first[1]["is_sweep"] is True
-    assert first[1]["user_prefix"] == "neutrino-"
-    assert second[1]["is_sweep"] is False
-    assert notes == ["swept share old"]
+    assert host.calls == [
+        (
+            "share_sweep",
+            {
+                "marker": "neutrino:",
+                "user_prefix": "neutrino-",
+                "is_served": True,
+                "earlier_accounts": ["labsmb"],
+            },
+        )
+    ]
+    assert icacls.calls == [
+        ["icacls.exe", "D:\\old", "/remove:g", "*S-1-5-21-1-2-3-1017"],
+        ["icacls.exe", "D:\\media", "/remove:g", "*S-1-5-21-1-2-3-1017"],
+        ["icacls.exe", "D:\\docs", "/remove:g", "*S-1-5-21-1-2-3-1017"],
+    ]
+    assert notes == ["swept share old", "swept account neutrino-ann"]
+
+
+def test_a_sweep_that_deletes_no_account_changes_no_folder():
+    host = RecordingHost(
+        {"share_sweep": {"notes": [], "paths": ["D:\\old"], "sids": []}}
+    )
+    icacls = Icacls()
+
+    assert applier_with(host, run=icacls).sweep(["D:\\media"], is_served=False) == []
+    assert icacls.calls == []
+
+
+def test_a_folder_granted_to_an_old_sid_of_the_account_is_granted_again():
+    """On the R166 Windows machine a second sweep made each account again
+    with a new SID; the lists read before the host made them named the old
+    SID under the account's name, and no grant was set."""
+    host = RecordingHost()
+
+    def access(args):
+        is_made = "share_apply" in host.ops()
+        held = {} if is_made else {"ann": "(OI)(CI)M", "bob": "(OI)(CI)M"}
+        return folders_holding({"D:\\media": held, "D:\\docs": {}})(args)
+
+    host.answers["folder_access"] = access
+    icacls = Icacls()
+
+    applier_with(host, run=icacls, denied=[]).apply(CONFIG, {})
+
+    assert ["icacls.exe", "D:\\media", "/grant:r", "ann:(OI)(CI)M"] in icacls.calls
+    assert ["icacls.exe", "D:\\media", "/grant:r", "bob:(OI)(CI)M"] in icacls.calls
 
 
 def test_a_folder_share_with_no_account_stays_off_and_its_folder_loses_the_grants():

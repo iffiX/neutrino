@@ -184,13 +184,19 @@ def test_the_file_share_leaves_a_foreign_share_name_off_and_never_grants_everyon
     assert apply.index("share_name_taken") < apply.index("Start-Service")
 
 
-def test_the_file_share_sweep_removes_only_an_account_of_the_prefix():
-    apply = body("share_apply")
-    sweep = apply[apply.index("Get-LocalUser -ErrorAction") :]
-    sweep = sweep[: sweep.index("Remove-LocalUser")]
+def test_the_file_share_sweep_removes_an_account_of_the_prefix_or_of_0_5_alone():
+    """A description an administrator gave a person's account makes it the
+    module's only when a record of 0.5 lists it too."""
+    sweep = body("share_sweep")
+    users = sweep[sweep.index("Get-LocalUser -ErrorAction") :]
+    users = users[: users.index("Remove-LocalUser")]
 
-    assert '"$($user.Name)".StartsWith($Request.user_prefix)' in sweep
-    assert "Description" not in sweep
+    assert '"$($user.Name)".StartsWith($Request.user_prefix)' in users
+    assert (
+        '(@($Request.earlier_accounts) -contains "$($user.Name)") -and\n'
+        '            ("$($user.Description)" -eq $Request.marker)'
+    ) in users
+    assert "Remove-LocalUser" not in body("share_apply")
 
 
 def test_the_file_share_under_stopped_starts_no_server_and_makes_no_share():
