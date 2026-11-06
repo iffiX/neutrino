@@ -78,7 +78,9 @@ The installer's last step, as SYSTEM, starts every such task, and the client
 deletes its own task when it starts. An account that is not signed in, as
 under an install from ssh or a management tool with nobody at the desktop,
 does not run its task, and the install does not fail. A removal deletes
-every such task.
+every such task, and every firewall rule whose program is under the client's
+install folder, whatever the rule's name: easytier-core makes an inbound and
+an outbound rule for itself when it brings its device up.
 
 ## The layout
 

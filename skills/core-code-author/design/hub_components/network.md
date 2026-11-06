@@ -360,6 +360,15 @@ render. An uninstall removes it with the rest. macOS opens nothing before
 setup: the pf anchor exists from setup's firewall step on, and the
 application firewall is off on a fresh macOS.
 
+An uninstall on Windows, and every `nhub reset` there, also removes every
+rule whose program is under the hub's install folder,
+`C:\Program Files\Neutrino\hub`, whatever the rule's name. easytier-core
+makes an inbound and an outbound rule for itself when it brings its device
+up, and Windows makes a rule for a program a person allowed at its prompt.
+The reset on Windows and macOS also deletes the record of the last pass,
+`generated/firewall_networks.json`, so a hub installed again over its kept
+state writes every rule at its first check.
+
 An overlay's peer port is open there while its engine runs, whatever its
 chip, as on Linux. A routing pass there looks up no `xray` account, sets no sysctl, adds no
 `ip rule` and loads no nftables table. It still writes
