@@ -330,6 +330,7 @@ walk theirs. A new code and its wording are one change.
 | `share_name_invalid`, `share_account_not_enabled`, `folder_share_unknown` | `{name}`, `{account}`, `{name}` | the folder share routes: a name outside the form a folder share's name takes, an account the file share does not enable, and a name no folder share of the machine has | added |
 | `key_missing` | `{account}` | the SSH server's apply, an instance with no authorized key | added |
 | `containers_not_applied` | none | the `code` of a `failed` container module row, its start while the last apply of Containers did not write the module's containers as the state names them ([agent/modules/containers.md](agent/modules/containers.md), "A refused declared container") | added |
+| `image_pull_failed`, `container_start_failed` | `{name, image}` | the `code` of a container in Containers' `details`, one whose start systemd refused while Podman's store holds no image under the reference its unit runs, or holds one; the `control` verb's close of such a start; and the `code` of a `failed` container module row whose start systemd refused ([agent/modules/containers.md](agent/modules/containers.md), "A container that does not start") | added |
 | `state_not_settled` | `{module}` | a module verb that acts, refused while that module's task runs on past 30 seconds ([agent.md](agent.md), "A retry is the same press again") | params added |
 | `waiting_for_lock` | `{lock, module}` | the `code` of a `queued` row and a task's `wait`: a step that waits for the step lock `lock`, which the task of `module` holds, `agent` for the self-update ([agent.md](agent.md), "Step locks") | added |
 | `waiting_for_package_manager` | `{holder}` | a task's `wait`, and the `code` of an `installing` row: the package helper waiting for the system's own lock, `holder` the process the system names, empty when it names none | added |
@@ -790,7 +791,7 @@ to pick one.
 | `GET /api/agent/module/hermes_webui` | `?device_id=` | `HermesWebuiDeviceView`: `port`, the forwarder's port as the machine reports it, and `state`, `version` and `details` as last reported |
 | `GET /api/agent/module/ayakaleaf` | `?device_id=` | `AyakaleafDeviceView`: `port`, the forwarder's port as the machine reports it; `model`, the stored one, empty for the default model; `models`, the names the gateway serves, for the picker; `is_gateway_serving`; and `state`, `version` and `details` as last reported |
 | `POST /api/agent/module/ayakaleaf/set` | `{device_id, model}`, `model` empty for the default model | stores `model` in `config/devices/<id>/ayakaleaf.json` and pushes the state, whose new environment restarts the app; `AyakaleafDeviceView`; 409 `agent_offline` |
-| `GET /api/agent/module/podman` | `?device_id=` | `PodmanDeviceView`: the declared `containers`, each with its `services`; `hub_containers`, the hub containers the modules compose, read only; the `mirrors`; `running`, each container as last reported with its `module`, its `source`, its `host_bindings` and their `detected`, `source` being `hub`, `declared` or `manual` by the owner rule of [agent/modules/containers.md](agent/modules/containers.md), "Hub containers"; and on Windows and macOS `machine`, the stored Run settings, the machine as last reported (`details.machine`), the machine's available accounts, and `memory_need` as the module list carries it |
+| `GET /api/agent/module/podman` | `?device_id=` | `PodmanDeviceView`: the declared `containers`, each with its `services`; `hub_containers`, the hub containers the modules compose, read only; the `mirrors`; `running`, each container as last reported with its `module`, its `source`, its `host_bindings` and their `detected`, and its `code` and `params`, `source` being `hub`, `declared` or `manual` by the owner rule of [agent/modules/containers.md](agent/modules/containers.md), "Hub containers"; and on Windows and macOS `machine`, the stored Run settings, the machine as last reported (`details.machine`), the machine's available accounts, and `memory_need` as the module list carries it |
 | `POST /api/agent/module/podman/import` | `{device_id}` | |
 | `POST /api/agent/module/podman/container/set` | `{device_id, containers}` | replaces the declared containers, each with its `services`; 400 `container_name_reserved {name}` for a new name that starts with `neutrino_`; the agent's own refusals as 400, `service_invalid {name, port}`, `service_protocol_none {port}`, on Windows and macOS `volume_not_shared {name, volume}` and on Windows `udp_not_forwarded {name, port}` among them |
 | `POST /api/agent/module/podman/machine/set` | `{device_id, account, cpus, memory_gib, disk_gib}`, `account` an available account, whose login a Windows machine signs in with | stores the Run settings as `machine` in `config/devices/<id>/podman.json` and pushes the state, Containers absent or not, and writes no `want` except as "The modules section, one entry per module" says; `PodmanDeviceView`; 400 `unsupported_platform` for a Linux machine, `account_unknown {account}` for an account that is not available, `credential_missing {account}` for a Windows account with no login, `machine_disk_invalid {disk_gib}` for a Windows machine with a disk limit of 0, then the agent's own refusals (`machine_account_missing`, `machine_cpus_invalid {cpus, max}`, `machine_memory_invalid {memory_gib, max}`, `machine_disk_shrink {disk_gib, current_gib}`); 409 `agent_offline` |
@@ -1423,7 +1424,7 @@ the whole file back.
 | Module | What `details` reports, and what import reads |
 | --- | --- |
 | Samba | `testparm -s` parsed into the global section and each share, the `neutrino-` names of `pdbedit -L` into the user list; nothing is imported, since the shares follow the enabled accounts and the folder shares |
-| Podman | `podman ps -a --format json` and `podman inspect`: each container's image, ports, volumes, environment (empty for a hub container), whether a unit exists, and `module`, the value of its label `neutrino.module` or empty; its `host_bindings`, read from `ps`'s `Ports`, which Podman 3.4 writes as `hostPort` and `hostIP` and later versions as `host_port` and `host_ip`, one `{address, port, protocol, detected}` per published host port, `protocol` being `tcp` or `udp`, `address` empty for every address, and `detected` `http`, `https` or `tcp` as the agent's probe found on a running TCP binding, empty on UDP and before the probe; the registry mirrors; the import leaves out a container whose image is empty or contains a space ([agent/modules/containers.md](agent/modules/containers.md), "A refused declared container"), gives every port the service `auto`, and on Windows and macOS its Run settings name the reported machine's account, with its disk's size now as the disk limit and 0 CPUs and memory |
+| Podman | `podman ps -a --format json` and `podman inspect`: each container's image, ports, volumes, environment (empty for a hub container), whether a unit exists, and `module`, the value of its label `neutrino.module` or empty; its `host_bindings`, read from `ps`'s `Ports`, which Podman 3.4 writes as `hostPort` and `hostIP` and later versions as `host_port` and `host_ip`, one `{address, port, protocol, detected}` per published host port, `protocol` being `tcp` or `udp`, `address` empty for every address, and `detected` `http`, `https` or `tcp` as the agent's probe found on a running TCP binding, empty on UDP and before the probe; `code` and `params`, `image_pull_failed {name, image}` or `container_start_failed {name, image}` for a container whose start systemd refused and which does not run, empty `code` otherwise; the registry mirrors; the import leaves out a container whose image is empty or contains a space ([agent/modules/containers.md](agent/modules/containers.md), "A refused declared container"), gives every port the service `auto`, and on Windows and macOS its Run settings name the reported machine's account, with its disk's size now as the disk limit and 0 CPUs and memory |
 | Gitea | the hub's own instance; a hand-installed one reports as running on its port and is not imported |
 | VS Code | each server's account, port, url and whether it runs; nothing is imported |
 | code-server | each instance's account, port and whether it runs; nothing is imported |
@@ -1640,10 +1641,15 @@ published on UDP. An install ends
 `windows_feature_failed {feature, exit_code}` or `podman_install_failed
 {artifact, exit_code}`; the machine's own steps fail with
 `machine_image_missing`, `machine_init_failed {detail}`,
-`machine_set_failed {detail}` and `machine_unreachable {detail}`. `machine`,
+`machine_set_failed {detail}` and `machine_unreachable {detail}`. A
+container whose start systemd refuses fails alone: the apply goes on, and
+the report gives that container `image_pull_failed {name, image}` or
+`container_start_failed {name, image}` as its `code`
+([agent/modules/containers.md](agent/modules/containers.md), "A container
+that does not start"). `machine`,
 its `default_memory_gib`, `services`, `detected`, `hub_containers`, each
-reported container's `module` and the code on an `installing` row are added
-fields and keep `PROTOCOL`. The recipe's shape, `{runner, method, params, requires}`, and each
+reported container's `module`, `code` and `params` and the code on an
+`installing` row are added fields and keep `PROTOCOL`. The recipe's shape, `{runner, method, params, requires}`, and each
 module's `version` in the report come with 0.6.0, which no released agent
 read before, and keep `PROTOCOL` 4 ("Versioning").
 
@@ -1792,7 +1798,8 @@ entry of a declared app is never probed, so its health stays empty. Only
 keeps its actions ([client.md](client.md), "The button rule"). A Gitea entry
 is healthy while its machine reports the server running, and the hub dials
 nothing on the machine to judge it. A container's entry, `web` or `port` on
-either protocol, is healthy while the container runs, and a container's TCP
+either protocol, is healthy while the container runs, whatever state
+Containers reads, and a container's TCP
 binding is a `web` entry or a `port` entry, never both
 ([agent/modules/containers.md](agent/modules/containers.md), "Services of
 a container"). An `ssh` entry is healthy while its machine reports the

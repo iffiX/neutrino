@@ -1303,6 +1303,12 @@ a hub container, and `ui.containers.source_declared` or
 `ui.containers.source_manual` in the secondary tone for a declared one or one
 a person started by hand. No other badge names the owner, and wherever a
 container a person started by hand is named to a person, it reads manual.
+A row whose container the view gives a `code`, one whose start systemd
+refused, has its dot in the `error` tone and the code's words under it in
+the error tone, `code.image_pull_failed` or `code.container_start_failed`;
+the module's state, its other rows and the apply bar stay as the report
+makes them ([agent/modules/containers.md](agent/modules/containers.md), "A
+container that does not start").
 
 The container editor has a **Services** row under its three lists,
 **Ports**, **Volumes** and **Environment**, on every system: one line per

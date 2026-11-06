@@ -759,6 +759,8 @@ the agent's `cli/wording.py` words the same codes in English.
 | `code.container_hub_owned` | {name} is run by a module of the hub; change it in that module's tab. | {name} 由中枢的模块运行，要改就到那个模块的标签页里改。 |
 | `code.containers_not_applied` | Containers did not apply the containers of this module; fix the error on the Containers tab, then press Start here. | 容器模块没能应用这个模块的容器；请先处理“容器”标签页上的错误，再在这里按“启动”。 |
 | `code.page_silent` | The page at port {port} does not respond. Check what else listens on that port. | 端口 {port} 上的页面没有响应。请检查这个端口上还有什么程序在监听。 |
+| `code.image_pull_failed` | The image {image} of {name} could not be pulled. Check its tag and the registry mirrors. | 容器 {name} 的镜像 {image} 拉取失败。请检查镜像标签和镜像源。 |
+| `code.container_start_failed` | The container {name} did not start from {image}. Its journal names the reason. | 容器 {name} 没能用镜像 {image} 启动，原因见它的日志。 |
 
 ## The Services page's health words
 
