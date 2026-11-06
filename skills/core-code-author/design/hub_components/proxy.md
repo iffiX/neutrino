@@ -191,6 +191,29 @@ succeeded in the same round. When both fail, the round reports the uplink as
 unreachable and records nothing. The reference URL answers without the proxy,
 so it names a different host from the probe URL.
 
+### A failed dial
+
+A failed dial to the pinned exit starts a measurement of that exit at once,
+between two rounds. xray writes a failed dial only at log level `info`, as one
+line that names the address it dialed:
+
+```
+[Info] [1602768036] app/proxyman/outbound: app/proxyman/outbound: failed to process outbound traffic > proxy/shadowsocks: failed to find an available destination > common/retry: [dial tcp 192.168.122.167:5800: connect: connection refused] > common/retry: all retry attempts failed
+```
+
+| Rule | Reason |
+| --- | --- |
+| xray logs at `info`. On Linux `nhub run --only-xray` runs xray as its child and writes on every line xray writes, except the lines of `info` and `debug`. A failed dial is the one `info` line it keeps, at most once in ten seconds for each address. | At `warning`, xray 26.3.27 wrote nothing when a dial to a dead exit failed. At `info` it writes four or five lines for every connection, which the journal would keep. |
+| Outside Linux the child's log file takes every line xray writes, and the hub's one service rotates it. | The file is bounded at four files of 8 MiB. |
+| The panel follows that log: `journalctl -f` of the xray unit on Linux, the child's log file elsewhere. | |
+| A failed dial to the pinned exit's address and port starts one measurement of that exit while its latest sample succeeded and no such measurement runs. A node named by a host name matches on its port alone. The measurement is a Test of that node, its second measurement included. | A failed dial is a hint: one refused connection says nothing about the exit, and once the exit is marked failed a failed dial adds nothing. |
+| Only the measurement marks the exit failed. A failed dial whose measurement succeeds changes nothing. | |
+| The round every `balancer.probe_interval_s` seconds stays as it is. | It measures every node and brings a failed exit back. |
+
+Measured on the lab hub: with the exit's xray stopped, the hub's own traffic
+stopped at once, and the status strip turned warn 63 seconds later, at the
+next round.
+
 ### The score and the switch
 
 Each node holds its last twenty samples, none older than an hour. They give a
@@ -296,7 +319,7 @@ address resolved nothing until the daemon restarted.
 | every exit node down, direct fallback on | that traffic leaves through the uplink; dnsmasq asks `direct_dns` after xray does not answer |
 | every enabled exit node down while the scope reads `lan`, `overlay`, `hub` or several | the **Dashboard** and the **Proxy** page show `ui.proxy.dead_exits`, or `ui.proxy.dead_exits_fallback` while traffic falls back; a scope reading `off` or `unused` sends nothing to the exits and shows no notice |
 | the frame that first shows every enabled exit node down, or the `direct` exit pinned, while a scope takes traffic | the status strip's proxy chip and the **Proxy** page's badges turn warn and read `<scope> → state.exit_down_cut` while the fallback is off, `<scope> → state.exit_down_direct` while traffic falls back |
-| the exit node goes down | the hub measures the failure twice, then overrides the balancer with the next node by score |
+| the exit node goes down | the first failed dial through it starts a measurement at once ("A failed dial"); the hub measures the failure twice, then overrides the balancer with the next node by score |
 | a node other than the exit goes down | the hub records the failure and drops that node from the candidates |
 | the panel process stops | the override xray holds stays in place; a restart of xray drops it and `roundRobin` takes over |
 | a node whose newest measurement failed at the last apply | the rendered balancer's selector leaves it out, unless every node failed, which keeps them all; this matters only between an xray restart and the hub's next override |
