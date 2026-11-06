@@ -239,7 +239,7 @@ configuration. Later applies manage them as usual.
 | System | What the sweep deletes |
 | --- | --- |
 | Linux | every `neutrino-*` SMB user and Unix account, with its Samba credential; the module's file and its users' files; the shares 0.5 rendered in `smb.conf` and their users |
-| Windows | every share whose description starts with the module's marker, every account whose name carries the prefix, the accounts of 0.5, and each deleted account's entries on the folders of those shares, of the shares the record lists and of the configuration's shares, taken off by its SID once the account is gone |
+| Windows | every share whose description starts with the module's marker, every account whose name carries the prefix, the accounts of 0.5, each such account's sessions on the server, closed before the account goes, and each deleted account's entries on the folders of those shares, of the shares the record lists and of the configuration's shares, taken off by its SID once the account is gone |
 | macOS | every share point under the `neutrino_` prefix, every account whose name carries the prefix, the accounts of 0.5, and the entries the module gives each such account and its machine account on the same folders, taken off before the account goes |
 
 | Rule | Reason |
@@ -247,6 +247,7 @@ configuration. Later applies manage them as usual.
 | The module's record under the state root stores `is_swept` as soon as the sweep has ended, before the apply makes anything, and an apply whose record stores it sweeps nothing. An apply with no record, or with a record of 0.5, sweeps. An uninstall deletes the mark. | A task plans again when a newer entry reaches it at a step boundary, and runs its `configure` again. The configured mark is written only when the task ends: on the R166 Windows machine the second `configure` of the first enable swept the accounts the first had made and made them again with new SIDs, and every Home share was denied. |
 | A module the hub took over is adopted at the person's first press on it: its task under `is_taken_over` checks the configuration and writes no record, so the first apply is that press's `configure`, on every system ([../../agent.md](../../agent.md), "The steps"). | A join changes nothing on the machine. |
 | An uninstall deletes on every system everything the sweep would, the entries on the folders with the accounts, on Linux before the packages go. | Nothing whose name starts with `neutrino` stays after the module. On the R166 Mac the SMB account `neutrino-lab` stayed after an uninstall. |
+| On Windows a session of an account the sweep deletes is closed first. A client's mount signs in again as the account made anew. | A session keeps the token of the account it signed in as: on the R167 lab machine a sweep under live mounts left each Home share denied on its folder, granted to the new SID, until the session ended. |
 
 ## What 0.5 made
 
