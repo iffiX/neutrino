@@ -909,6 +909,7 @@ def test_software_that_is_not_there_is_absent_whatever_the_mark(tmp_path):
         "params": {},
         "details": {},
         "task": None,
+        "newest_run": "",
     }
     assert runner.detail_reads == 0
 
@@ -1637,6 +1638,7 @@ def test_a_task_s_row_carries_its_steps_and_its_transient_state(tmp_path):
         "params": {"lock": "package_manager", "module": "gitea"},
         "details": {},
         "task": TASK_ROW,
+        "newest_run": "",
     }
     # A configure task leaves the state the machine shows, with the task beside it.
     assert observed["state"] == "installed"
@@ -1722,6 +1724,7 @@ def test_a_module_this_agent_has_no_runner_for_is_reported_unsupported():
         "params": {},
         "details": {},
         "task": None,
+        "newest_run": "",
     }
 
 
