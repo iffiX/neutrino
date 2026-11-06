@@ -135,6 +135,17 @@ and the record's SSH port stay as they are, and the server neither starts
 nor stops. The person's first press writes them
 ([../../agent.md](../../agent.md), "The steps").
 
+**The machine keeps Gitea's secrets.** The hub generates `SECRET_KEY`,
+`INTERNAL_TOKEN`, `JWT_SECRET` and `LFS_JWT_SECRET` once per device row and
+hands them down in the module's configuration; the installed `app.ini`
+holds the values Gitea runs with.
+
+| Rule | Reason |
+| --- | --- |
+| A render of `app.ini` keeps each of the four that the installed file holds with a value, and takes the state's value only for one the file holds none of, as at a first install. The agent reads the file as it reads its port: root on Linux, the account on macOS, SYSTEM on Windows. | Gitea encrypts each account's two-factor secret and each mirror's credentials with `SECRET_KEY`, and under another key it cannot read them. A machine that joins again after **Forget** gets a new row, on the same hub or another, and the hub generates new values for it ([../../agent.md](../../agent.md), "Leaving a hub, and joining again"). |
+| The agent keeps the values; the hub does not adopt them from the machine, and no report carries them. | Adopting them would put Gitea's keys in a report, which the hub holds in memory and hands to the panel's routes; kept on the machine, they never leave it. The hub uses the four for nothing but the state, so the copy it holds and the machine's may differ. |
+| An uninstall removes `app.ini` with the secrets in it. | The uninstall removes what the module added and keeps the data ("Uninstall takes what the module added"); an install after it on the same row gets the row's values again. |
+
 **Uninstall takes what the module added and keeps the data**: the unit,
 the LaunchDaemon or the service, the binary, MinGit on Windows and `app.ini`
 go; the data directory stays, so an install afterwards serves the same
