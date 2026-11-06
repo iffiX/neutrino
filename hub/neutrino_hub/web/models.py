@@ -132,6 +132,7 @@ class NodeProbeView(BaseModel):
     """The latest measurement of one node."""
 
     tag: str
+    name: str = ""
     is_alive: bool
     is_enabled: bool = True
     is_selected: bool = False

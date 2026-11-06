@@ -281,6 +281,7 @@ def test_each_cycle_hands_on_what_the_nodes_panel_draws(uplink):
                 (11, 22),
                 NodeProbeView(
                     tag="node_hk1",
+                    name="Hong Kong",
                     is_alive=False,
                     is_enabled=True,
                     is_selected=True,
@@ -309,6 +310,7 @@ def test_a_measured_node_reaches_the_frame_with_what_it_measured(uplink):
     assert pushed.nodes == [
         NodeProbeView(
             tag="node_hk1",
+            name="Hong Kong",
             is_alive=True,
             is_enabled=True,
             is_selected=True,
@@ -317,6 +319,18 @@ def test_a_measured_node_reaches_the_frame_with_what_it_measured(uplink):
             probed_at=PINNED_AT.isoformat(),
             success_rate=1.0,
         )
+    ]
+
+
+@pytest.mark.feature("proxy")
+def test_each_node_s_probe_carries_the_node_s_name(uplink):
+    """The dashboard's active exits read a node by its name, never its tag."""
+    del uplink
+
+    pushed = PanelStatsCollector(runtime=StubRuntime()).collect()
+
+    assert [(probe.tag, probe.name) for probe in pushed.nodes] == [
+        ("node_hk1", "Hong Kong")
     ]
 
 

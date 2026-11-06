@@ -470,6 +470,7 @@ def _node_probe_views(node_list, healths: dict, exit_tag: str) -> list:
         views.append(
             NodeProbeView(
                 tag=node.tag,
+                name=node.name,
                 is_alive=health.is_alive,
                 is_enabled=node.is_enabled,
                 is_selected=node.tag == exit_tag,
