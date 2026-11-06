@@ -68,9 +68,6 @@ const SCREEN_REVIEW = SCREEN_TITLES.length - 1;
 const IS_PROXY_CARRIED = hasFeature("proxy");
 const SCREEN_COUNT = SCREEN_TITLES.length - (IS_PROXY_CARRIED ? 0 : 1);
 
-/** The product's own name, which is the same in every language. */
-const SETUP_BRAND_NAME = "Neutrino Hub";
-
 /** How often the running screen asks how far the steps have got. */
 const POLL_INTERVAL_MS = 700;
 /** How long the finished screen is left up before it hands over. */
@@ -342,7 +339,7 @@ export function SetupPage({ token, context }: SetupPageProps) {
     return (
       <SetupFrame>
         <div className="setup_welcome">
-          <h1 className="setup_welcome_title">{SETUP_BRAND_NAME}</h1>
+          <h1 className="setup_welcome_title">{t("ui.brand.hub")}</h1>
           <p className="setup_welcome_line">{t("ui.setup.welcome_line")}</p>
           <button
             type="button"
@@ -719,7 +716,7 @@ export function SetupPage({ token, context }: SetupPageProps) {
           <dl className="setup_review">
             <Row
               name={t("ui.setup.review_shape")}
-              value={mode.replace(/_/g, " ")}
+              value={t(`ui.setup.mode_${mode}`)}
             />
             <Row
               name={t("ui.setup.review_language")}
@@ -978,7 +975,6 @@ function SetupRunning({
             <span className="setup_step_name">
               {t(`ui.setup.step_${step.id}`, step.params)}
             </span>
-            <span className="setup_step_note">{step.note}</span>
           </li>
         ))}
       </ol>

@@ -522,6 +522,12 @@
   font-family: var(--font-mono);
 }
 
+@media (max-width: 479px) {
+  .setup_review {
+    grid-template-columns: max-content minmax(0, 1fr);
+  }
+}
+
 .setup_actions {
   display: flex;
   gap: var(--space-3);
@@ -542,9 +548,7 @@
 
 .setup_step {
   display: grid;
-  /* The step's name keeps its line where the width allows; the note takes
-     what is left and wraps. */
-  grid-template-columns: 14px minmax(min-content, max-content) minmax(0, 1fr);
+  grid-template-columns: 14px minmax(0, 1fr);
   gap: var(--space-3);
   align-items: center;
   font-size: 13px;
@@ -569,17 +573,6 @@
 
 .setup_step--failed .setup_step_mark {
   background: var(--color-error);
-}
-
-/* Right-aligned even when it wraps. The notes read as a column down the right
-   edge, and a long one — the seven unit files, the whole xray version line —
-   otherwise breaks that column by starting flush left across two lines. */
-.setup_step_note {
-  color: var(--color-text-faint);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  text-align: right;
-  overflow-wrap: anywhere;
 }
 
 .setup_handover {
