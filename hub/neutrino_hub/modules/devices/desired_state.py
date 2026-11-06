@@ -192,7 +192,7 @@ def smb_user(account: str, platform: dict) -> str:
         platform: The tuple the agent reported.
 
     Returns:
-        ``neutrino-<account>``, cut to 20 characters on Windows.
+        ``neutrino_<account>``, cut to 20 characters on Windows.
     """
     user = f"{DEVICE_SAMBA_USER_PREFIX}{account}"
     if platform.get("os") in DEVICE_SAMBA_USER_CUT_OS:

@@ -352,13 +352,13 @@ def test_a_folder_share_has_an_entry_per_account_each_logging_in_as_it():
                 "host": HOST,
                 "samba": {
                     "is_healthy": True,
-                    "shares": [{"name": "ann", "user": "neutrino-ann"}],
+                    "shares": [{"name": "ann", "user": "neutrino_ann"}],
                     "folder_shares": [
                         {
                             "name": "lab",
                             "accounts": [
-                                {"account": "ann", "user": "neutrino-ann"},
-                                {"account": "bob", "user": "neutrino-bob"},
+                                {"account": "ann", "user": "neutrino_ann"},
+                                {"account": "bob", "user": "neutrino_bob"},
                             ],
                         },
                         {"name": "nobody", "accounts": []},
@@ -383,7 +383,7 @@ def test_a_folder_share_has_an_entry_per_account_each_logging_in_as_it():
         "protocol": "smb",
         "host": HOST,
         "share": "lab",
-        "users": ["neutrino-bob"],
+        "users": ["neutrino_bob"],
         "account": "bob",
     }
     assert file_row_id(bob) == f"samba_folder_{DEVICE}_lab"
@@ -401,7 +401,7 @@ def test_the_ai_rdp_and_a_machines_file_entries_belong_to_no_app():
                 "host": HOST,
                 "samba": {
                     "is_healthy": True,
-                    "shares": [{"name": "ann", "user": "neutrino-ann"}],
+                    "shares": [{"name": "ann", "user": "neutrino_ann"}],
                 },
             }
         ],
@@ -421,7 +421,7 @@ def test_the_ai_rdp_and_a_machines_file_entries_belong_to_no_app():
     entries = by_id(held.render())
     assert set(entries) == {"ai", f"samba_{DEVICE}_ann", f"rdp_{DEVICE}"}
     assert all(entry["app_id"] == "" for entry in entries.values())
-    assert entries[f"samba_{DEVICE}_ann"]["payload"]["users"] == ["neutrino-ann"]
+    assert entries[f"samba_{DEVICE}_ann"]["payload"]["users"] == ["neutrino_ann"]
     assert held.apps() == []
     catalog = catalog_entries(list(entries.values()))
     assert set(catalog[0]) == {

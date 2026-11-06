@@ -323,8 +323,8 @@ def test_a_shares_material_is_the_login_of_the_account_it_logs_in_as(config_dir)
     of a folder share as the account its payload names."""
     runtime = FakeRuntime(
         entries=(
-            samba_entry("samba_dev_ann", "ann", "neutrino-ann", ""),
-            samba_entry("samba_folder_dev_lab_bob", "lab", "neutrino-bob", "bob"),
+            samba_entry("samba_dev_ann", "ann", "neutrino_ann", ""),
+            samba_entry("samba_folder_dev_lab_bob", "lab", "neutrino_bob", "bob"),
         )
     )
     runtime.desired_states = SambaDesiredStates()
@@ -332,11 +332,11 @@ def test_a_shares_material_is_the_login_of_the_account_it_logs_in_as(config_dir)
 
     assert service_material(runtime, client_id, "samba_dev_ann") == (
         "",
-        {"user": "neutrino-ann", "password": "pw-ann"},
+        {"user": "neutrino_ann", "password": "pw-ann"},
     )
     assert service_material(runtime, client_id, "samba_folder_dev_lab_bob") == (
         "",
-        {"user": "neutrino-bob", "password": "pw-bob"},
+        {"user": "neutrino_bob", "password": "pw-bob"},
     )
 
 

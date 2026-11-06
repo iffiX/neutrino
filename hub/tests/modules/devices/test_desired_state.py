@@ -266,7 +266,7 @@ def test_the_file_share_is_one_share_one_user_and_one_password_per_account(unloc
             "path": "/home/ann",
             "comment": "",
             "is_read_only": False,
-            "valid_users": ["neutrino-ann"],
+            "valid_users": ["neutrino_ann"],
             "force_user": "ann",
         },
         {
@@ -274,13 +274,13 @@ def test_the_file_share_is_one_share_one_user_and_one_password_per_account(unloc
             "path": "/srv/b",
             "comment": "",
             "is_read_only": False,
-            "valid_users": ["neutrino-bob"],
+            "valid_users": ["neutrino_bob"],
             "force_user": "bob",
         },
     ]
-    assert config["users"] == ["neutrino-ann", "neutrino-bob"]
-    assert set(config["passwords"]) == {"neutrino-ann", "neutrino-bob"}
-    assert config["passwords"]["neutrino-ann"] == store.account_secret(
+    assert config["users"] == ["neutrino_ann", "neutrino_bob"]
+    assert set(config["passwords"]) == {"neutrino_ann", "neutrino_bob"}
+    assert config["passwords"]["neutrino_ann"] == store.account_secret(
         DEVICE, "samba", "ann", "password_sealed"
     )
 
@@ -293,10 +293,10 @@ def test_a_windows_share_user_is_neutrino_and_the_account_cut_to_twenty(unlocked
 
     desired, _ = store.compose(DEVICE, WINDOWS)
 
-    assert smb_user("averyveryverylongaccountname", WINDOWS) == "neutrino-averyveryve"
-    assert desired["modules"]["samba"]["config"]["users"] == ["neutrino-averyveryve"]
+    assert smb_user("averyveryverylongaccountname", WINDOWS) == "neutrino_averyveryve"
+    assert desired["modules"]["samba"]["config"]["users"] == ["neutrino_averyveryve"]
     assert smb_user("averyveryverylongaccountname", PLATFORM) == (
-        "neutrino-averyveryverylongaccountname"
+        "neutrino_averyveryverylongaccountname"
     )
 
 
@@ -321,9 +321,9 @@ def test_an_enabled_account_with_no_share_path_and_no_reported_home_is_left_out(
     config = desired["modules"]["samba"]["config"]
     assert [share["name"] for share in config["shares"]] == ["bob"]
     assert config["shares"][0]["path"] == "C:\\Users\\bob"
-    assert config["users"] == ["neutrino-bob"]
-    assert list(config["passwords"]) == ["neutrino-bob"]
-    assert smb_user("ann", PLATFORM) == "neutrino-ann"
+    assert config["users"] == ["neutrino_bob"]
+    assert list(config["passwords"]) == ["neutrino_bob"]
+    assert smb_user("ann", PLATFORM) == "neutrino_ann"
 
 
 def test_a_folder_share_admits_its_accounts_users_with_no_forced_account(unlocked):
@@ -349,7 +349,7 @@ def test_a_folder_share_admits_its_accounts_users_with_no_forced_account(unlocke
         "path": "/srv/lab",
         "comment": "",
         "is_read_only": False,
-        "valid_users": ["neutrino-ann", "neutrino-bob"],
+        "valid_users": ["neutrino_ann", "neutrino_bob"],
     }
     assert shares[3]["valid_users"] == []
 

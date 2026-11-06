@@ -92,7 +92,7 @@ def test_an_add_stores_the_share_with_its_accounts_in_the_file_shares_order(
         "path": "/srv/lab",
         "comment": "",
         "is_read_only": False,
-        "valid_users": ["neutrino-bob", "neutrino-alice"],
+        "valid_users": ["neutrino_bob", "neutrino_alice"],
     }
     assert runtime.desired_states.want_of(DEVICE, "samba") == ""
     assert [push[0] for push in runtime.agent_sessions.pushes] == [DEVICE]

@@ -317,11 +317,11 @@ DEVICE_ACCOUNT_DATA_DIRS = {
 }
 DEVICE_ACCOUNT_DATA_DIR_DEFAULT_OS = "linux"
 # The file share's SMB user of an enabled account (agent.md, "The file
-# share's accounts"): ``neutrino-<account>`` on every system, cut to 20
+# share's accounts"): ``neutrino_<account>`` on every system, cut to 20
 # characters on Windows; its generated password, 24 random bytes in
 # base64url, sealed in samba.json under this key.
 DEVICE_SAMBA_MODULE = "samba"
-DEVICE_SAMBA_USER_PREFIX = "neutrino-"
+DEVICE_SAMBA_USER_PREFIX = "neutrino_"
 DEVICE_SAMBA_USER_CHARS_MAX = 20
 DEVICE_SAMBA_USER_CUT_OS = ("windows",)
 # The folder shares in samba.json, each ``{name, path, accounts}``, the

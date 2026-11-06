@@ -255,7 +255,7 @@ def test_a_restart_keeps_the_file_share_of_an_adopted_machine(config_box, adopte
     assert store.read(device_id, "samba") == written
     section = samba_section(store, device_id)
     assert [share["name"] for share in section["shares"]] == ["lab", "probe"]
-    assert section["users"] == ["neutrino-lab"]
+    assert section["users"] == ["neutrino_lab"]
 
 
 def test_a_restart_moves_a_0_5_file_share_once_and_the_next_keeps_what_follows(
@@ -289,4 +289,4 @@ def test_a_restart_moves_a_0_5_file_share_once_and_the_next_keeps_what_follows(
     config_box.create_app()
 
     assert store.read(device_id, "samba") == written
-    assert samba_section(store, device_id)["users"] == ["neutrino-lab"]
+    assert samba_section(store, device_id)["users"] == ["neutrino_lab"]

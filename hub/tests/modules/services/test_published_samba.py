@@ -47,10 +47,10 @@ def test_a_folder_share_lists_its_enabled_accounts_each_with_its_smb_user():
     samba = hosted(["ann", "averyveryverylongaccountname"], stored)
 
     assert samba["shares"] == [
-        {"name": "ann", "user": "neutrino-ann"},
-        {"name": "averyveryverylongaccountname", "user": "neutrino-averyveryve"},
+        {"name": "ann", "user": "neutrino_ann"},
+        {"name": "averyveryverylongaccountname", "user": "neutrino_averyveryve"},
     ]
     assert samba["folder_shares"] == [
-        {"name": "lab", "accounts": [{"account": "ann", "user": "neutrino-ann"}]},
+        {"name": "lab", "accounts": [{"account": "ann", "user": "neutrino_ann"}]},
         {"name": "empty", "accounts": []},
     ]
