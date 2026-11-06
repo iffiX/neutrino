@@ -31,6 +31,7 @@ import urllib.parse
 from datetime import datetime, timezone
 
 from neutrino_hub.exceptions import DownloadFailedError
+from neutrino_hub.modules.channel.constants import CHANNEL_MODULE_STATE_RUNNING
 from neutrino_hub.modules.devices.constants import (
     DEVICE_ARTIFACT_KIND_NPM,
     DEVICE_METHOD_AGENT,
@@ -347,6 +348,77 @@ def is_persons_package(details: dict) -> bool:
         on a person's Podman; False with no such field, an earlier agent's.
     """
     return details.get("has_package_mark") is False
+
+
+def reported_newest_run(row: dict) -> str:
+    """The newest version a module has run at, as one report row of it says.
+
+    Args:
+        row: The module's row in the machine's last report.
+
+    Returns:
+        The newer of the row's ``newest_run`` and, on a row reading
+        ``running``, the version it reports; empty while neither names one.
+    """
+    row = row if isinstance(row, dict) else {}
+    details = row.get("details")
+    details = details if isinstance(details, dict) else {}
+    found = [str(row.get("newest_run") or "")]
+    if str(row.get("state") or "") == CHANNEL_MODULE_STATE_RUNNING:
+        found.append(str(row.get("version") or details.get("version") or ""))
+    found = [version for version in found if version]
+    return max(found, key=version_parts) if found else ""
+
+
+def is_version_listed(releases, module: str, platform: dict, version: str) -> bool:
+    """Whether the feeds list one version of a module for a platform.
+
+    Args:
+        releases: The feeds as last read; None lists nothing.
+        module: The module.
+        platform: The tuple the machine reported.
+        version: The version.
+
+    Returns:
+        True when the feeds give a recipe of that version.
+    """
+    return (
+        releases is not None and releases.recipe(module, platform, version) is not None
+    )
+
+
+def floored_version(
+    manifest: dict, chosen: str, tested: str, newest_run: str, is_listed
+) -> tuple:
+    """The version a machine's state names for a module, never older than its newest run.
+
+    Args:
+        manifest: The module's manifest.
+        chosen: The machine's choice in ``modules.json``; empty follows the
+            tested version.
+        tested: The tested version of the machine's platform entry.
+        newest_run: The newest version the module has run at; empty for none.
+        is_listed: Called with a version; whether the feeds list it for the
+            machine's platform.
+
+    Returns:
+        ``(version, is_held)``: the version to send, empty for the tested
+        one, the newest run's in place of an older one on a module whose
+        manifest says ``is_data_forward_only``; and whether the module is
+        held, its newest run listed nowhere.
+    """
+    target = chosen or tested
+    if manifest.get("is_data_forward_only") is not True:
+        return chosen, False
+    if not newest_run or not target:
+        return chosen, False
+    if version_parts(target) >= version_parts(newest_run):
+        return chosen, False
+    if newest_run == tested:
+        return "", False
+    if is_listed(newest_run):
+        return newest_run, False
+    return chosen, True
 
 
 def persons_versions(installed: str, tested: str) -> list:

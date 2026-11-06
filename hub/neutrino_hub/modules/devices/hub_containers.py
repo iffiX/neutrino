@@ -13,6 +13,7 @@ refused, so the suite fails on it.
 Pure apart from reading the manifests and the source sets.
 """
 
+import functools
 import re
 from dataclasses import dataclass
 
@@ -32,6 +33,10 @@ from neutrino_hub.modules.devices.manifests import (
     load_module_manifests,
     manifest_methods,
     resolve_platform_entry,
+)
+from neutrino_hub.modules.devices.module_releases import (
+    floored_version,
+    is_version_listed,
 )
 from neutrino_hub.modules.devices.source_sets import load_source_sets, placeholders_in
 
@@ -131,6 +136,7 @@ def compose_hub_containers(
     models: "list | tuple" = (),
     releases=None,
     wanted: "dict | None" = None,
+    newest_runs: "dict | None" = None,
 ) -> list:
     """The ``hub_containers`` the Containers module's state carries for one machine.
 
@@ -145,6 +151,11 @@ def compose_hub_containers(
             None takes every image's tested digest.
         wanted: The modules ``modules.json`` names, as the state's one
             read gave them; None reads the file.
+        newest_runs: Module to the newest version it has run at on the
+            machine; None is none. A module whose data moves forward only
+            takes the images of its newest run where its chosen or tested
+            version is older, and one whose newest run the feeds do not
+            list is held: its containers are left out.
 
     Returns:
         ``{module, name, image: {digest, sources}, ports, volumes,
@@ -176,10 +187,19 @@ def compose_hub_containers(
         params = entry_params(entry)
         containers = tuple(compose(request))
         check_composition(module, containers, params)
+        version, is_held = floored_version(
+            manifests[module],
+            str(wants[module].get("version", "") or ""),
+            str(params.get("version", "") or ""),
+            str((newest_runs or {}).get(module, "") or ""),
+            functools.partial(is_version_listed, releases, module, platform),
+        )
+        if is_held:
+            continue
         artifacts = {
             artifact["name"]: artifact
             for artifact in _chosen_artifacts(
-                module, params, wants[module], platform, releases
+                module, params, version, platform, releases
             )
         }
         is_running = wants[module]["want"] == CHANNEL_MODULE_STATE_RUNNING
@@ -211,10 +231,9 @@ def compose_hub_containers(
 
 
 def _chosen_artifacts(
-    module: str, params: dict, want: dict, platform: dict, releases
+    module: str, params: dict, version: str, platform: dict, releases
 ) -> list:
-    """The image artifacts of the version a machine chose, the tested ones while it chose none."""
-    version = str(want.get("version", "") or "")
+    """The image artifacts of the version the state names, the tested ones for none."""
     if version and releases is not None:
         recipe = releases.recipe(module, platform, version)
         if recipe:

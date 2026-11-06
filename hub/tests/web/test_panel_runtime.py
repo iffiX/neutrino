@@ -357,6 +357,7 @@ def test_the_hubs_own_device_is_composed_as_the_hub_machine(monkeypatch):
     panel = object.__new__(PanelRuntime)
     panel.desired_states = ComposingStates()
     panel.device_platform = {}
+    panel.device_modules = {}
     panel.device_address = {}
     panel.device_account_details = {}
     panel.device_hostname = {}
@@ -375,6 +376,38 @@ def test_the_hubs_own_device_is_composed_as_the_hub_machine(monkeypatch):
     assert composed["own"]["is_hub_machine"] is True
     assert composed["other"]["is_hub_machine"] is False
     assert composed["gone"]["is_hub_machine"] is False
+
+
+def test_each_device_s_state_is_composed_with_its_reported_newest_runs(monkeypatch):
+    """A failed upgrade's note counts, and a running row's version counts."""
+    panel = object.__new__(PanelRuntime)
+    panel.desired_states = ComposingStates()
+    panel.device_platform = {}
+    panel.device_modules = {}
+    panel.device_address = {}
+    panel.device_account_details = {}
+    panel.device_hostname = {}
+    panel.module_releases = None
+    panel.device_modules = {
+        "other": {
+            "gitea": {"state": "failed", "newest_run": "28.0.0"},
+            "ayakaleaf": {"state": "running", "details": {"version": "6.3.2"}},
+            "siyuan": {"state": "stopped", "details": {"version": "3.6.0"}},
+        }
+    }
+    devices = OwnMachineDevices()
+    monkeypatch.setattr(runtime_module, "DeviceRegistry", lambda: devices)
+    monkeypatch.setattr(runtime_module, "DeviceRetryMarks", NoRetryMarks)
+    monkeypatch.setattr(runtime_module, "machine_id", lambda: "hub-machine")
+    monkeypatch.setattr(runtime_module, "channel_urls", lambda runtime: [])
+    monkeypatch.setattr(runtime_module, "own_agent_urls", lambda runtime: [])
+
+    panel.desired_state_for("other")
+
+    assert panel.desired_states.composed["other"]["newest_runs"] == {
+        "gitea": "28.0.0",
+        "ayakaleaf": "6.3.2",
+    }
 
 
 def gateway_reader(monkeypatch, tmp_path, answers: list) -> PanelRuntime:
@@ -407,6 +440,7 @@ def gateway_reader(monkeypatch, tmp_path, answers: list) -> PanelRuntime:
     panel.desired_states = store
     panel.served_models = cliproxyapi_ops.CliproxyApiServedModelCache()
     panel.device_platform = {"other": LINUX}
+    panel.device_modules = {}
     panel.device_address = {}
     panel.device_account_details = {}
     panel.device_hostname = {}
@@ -434,6 +468,7 @@ def test_a_state_composed_during_a_press_carries_the_want_with_its_mark(
     panel = object.__new__(PanelRuntime)
     panel.desired_states = store
     panel.device_platform = {"other": LINUX}
+    panel.device_modules = {}
     panel.device_address = {}
     panel.device_account_details = {}
     panel.device_hostname = {}

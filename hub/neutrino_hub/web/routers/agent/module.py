@@ -69,6 +69,7 @@ from neutrino_hub.modules.devices.module_releases import (
     is_locked,
     is_persons_package,
     persons_versions,
+    reported_newest_run,
 )
 from neutrino_hub.modules.clients.ai_keys import (
     apply_keys,
@@ -556,13 +557,7 @@ def _newest_run(runtime: PanelRuntime, key: str, module: str, manifest: dict) ->
         The newer of the row's ``newest_run`` and, on a row reading
         ``running``, its installed version; empty while neither names one.
     """
-    reported = module_status(runtime, key, module, manifest=manifest)
-    row = runtime.device_modules.get(key, {}).get(module) or {}
-    found = [str(row.get("newest_run") or "")]
-    if reported["state"] == CHANNEL_MODULE_STATE_RUNNING:
-        found.append(reported["version"])
-    found = [version for version in found if version]
-    return max(found, key=version_parts) if found else ""
+    return reported_newest_run(runtime.device_modules.get(key, {}).get(module) or {})
 
 
 def is_older_than_run(manifest: dict, version: str, newest_run: str) -> bool:

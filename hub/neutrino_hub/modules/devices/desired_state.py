@@ -33,6 +33,7 @@ config lock, re-reading inside it.
 """
 
 import base64
+import functools
 import hashlib
 import hmac
 import json
@@ -119,6 +120,10 @@ from neutrino_hub.modules.devices.folder_shares import (
     with_accounts_only,
 )
 from neutrino_hub.modules.devices.hub_containers import compose_hub_containers
+from neutrino_hub.modules.devices.module_releases import (
+    floored_version,
+    is_version_listed,
+)
 from neutrino_hub.modules.devices.source_sets import state_source_sets
 from neutrino_hub.modules.devices.ssh_account_keys import (
     fingerprint_of,
@@ -1418,6 +1423,7 @@ class DesiredStateStore:
         releases: "ModuleReleaseStore | None" = None,
         manifests: "dict | None" = None,
         wanted: "dict | None" = None,
+        newest_runs: "dict | None" = None,
     ) -> dict:
         """One module's configuration as the agent receives it.
 
@@ -1449,6 +1455,9 @@ class DesiredStateStore:
             wanted: The modules ``modules.json`` names, as the state's one
                 read gave them, which the Containers module's hub
                 containers start by; None reads the file.
+            newest_runs: Module to the newest version it has run at on the
+                machine, which no hub container's image goes below; None
+                is none.
 
         Returns:
             The configuration: an account-layer module as
@@ -1502,6 +1511,7 @@ class DesiredStateStore:
                 models=ai_models,
                 releases=releases,
                 wanted=wanted,
+                newest_runs=newest_runs,
             )
         elif name == DEVICE_HERMES_WEBUI_MODULE:
             app_id = f"{SERVICES_HERMES_WEBUI_ID}_{key}"
@@ -1537,12 +1547,17 @@ class DesiredStateStore:
         account_details: "dict | None" = None,
         machine_slug: str = SERVICES_MACHINE_SLUG_FALLBACK,
         releases: "ModuleReleaseStore | None" = None,
+        newest_runs: "dict | None" = None,
     ) -> tuple:
         """One device's whole desired state and its hash.
 
         Every module ``modules.json`` names and has not settled is sent with
         its ``want``, the recipe of the version the machine chose, and
-        ``is_taken_over`` while the takeover mark stands; one it
+        ``is_taken_over`` while the takeover mark stands. On a module whose
+        data moves forward only, a chosen or tested version older than the
+        module's newest run gives way to the newest run's recipe, and a
+        newest run the feeds do not list holds the module with
+        ``is_taken_over``, ``modules.json`` unchanged. One it
         does not name, and one the machine has already settled, is left out,
         so the agent leaves it as it is. The three modules the agent
         carries, ``terminal``, ``remote_desktop`` and ``ssh_server``, are
@@ -1569,6 +1584,8 @@ class DesiredStateStore:
             machine_slug: The slug of the machine's name, for local names.
             releases: The publishers' feeds as last read; None sends every
                 module its tested recipe.
+            newest_runs: Module to the newest version it has run at on the
+                machine, as its last report says; None is none.
 
         Returns:
             ``(desired, hash)``, the document being
@@ -1589,14 +1606,22 @@ class DesiredStateStore:
             "releases": releases,
             "manifests": load_module_manifests(),
             "wanted": wanted,
+            "newest_runs": dict(newest_runs or {}),
         }
         modules = {}
         for name, entry in wanted.items():
             if entry["is_settled"] or name in DEVICE_AGENT_MODULES:
                 continue
             recipe = dict((resolved.get(name) or {}).get("recipe") or {})
-            if entry["version"] and releases is not None and recipe:
-                chosen = releases.recipe(name, platform, entry["version"])
+            version, is_held = floored_version(
+                shared["manifests"].get(name) or {},
+                entry["version"],
+                str((recipe.get("params") or {}).get("version", "") or ""),
+                shared["newest_runs"].get(name, ""),
+                functools.partial(is_version_listed, releases, name, platform),
+            )
+            if version and releases is not None and recipe:
+                chosen = releases.recipe(name, platform, version)
                 recipe = chosen if chosen else recipe
             modules[name] = {
                 "want": entry["want"],
@@ -1607,7 +1632,7 @@ class DesiredStateStore:
             }
             if marks.get(name):
                 modules[name][DEVICE_RETRY_MARK_KEY] = marks[name]
-            if entry.get(DEVICE_TAKEN_OVER_KEY):
+            if entry.get(DEVICE_TAKEN_OVER_KEY) or is_held:
                 modules[name][DEVICE_TAKEN_OVER_KEY] = True
         for name in DEVICE_AGENT_MODULES:
             modules[name] = {

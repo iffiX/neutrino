@@ -47,7 +47,10 @@ from neutrino_hub.modules.devices.desired_state import (
     DesiredStateStore,
     machine_apps,
 )
-from neutrino_hub.modules.devices.module_releases import ModuleReleaseStore
+from neutrino_hub.modules.devices.module_releases import (
+    ModuleReleaseStore,
+    reported_newest_run,
+)
 from neutrino_hub.modules.devices.retry_marks import DeviceRetryMarks
 from neutrino_hub.modules.services.apps import app_slugs, machine_slugs
 from neutrino_hub.modules.services.constants import SERVICES_MACHINE_SLUG_FALLBACK
@@ -258,7 +261,7 @@ class PanelRuntime:
         # kept; the agent installs them by the recipe its state carries.
         self.agent_modules = AgentModuleCache(
             named_modules=self.desired_states.named_modules,
-            named_versions=self.desired_states.named_versions,
+            named_versions=self.named_versions,
             releases=self.module_releases,
         )
         self.is_config_dirty = False
@@ -927,8 +930,37 @@ class PanelRuntime:
             account_details=self.account_details(key),
             machine_slug=self.machine_slug(key),
             releases=self.module_releases,
+            newest_runs=self.newest_runs(key),
         )
         return state_hash, desired
+
+    def newest_runs(self, key: str) -> dict:
+        """Module to the newest version it has run at on one device, as its last report says.
+
+        Args:
+            key: The device.
+
+        Returns:
+            Each module whose row names one, to that version.
+        """
+        found = {}
+        for name, row in dict(self.device_modules.get(key, {})).items():
+            version = reported_newest_run(row)
+            if version:
+                found[name] = version
+        return found
+
+    def named_versions(self) -> dict:
+        """Module to the versions some machine chose or has run, whose files the cache keeps.
+
+        Returns:
+            Module name to a set of versions.
+        """
+        versions = self.desired_states.named_versions()
+        for key in list(self.device_modules):
+            for name, version in self.newest_runs(key).items():
+                versions.setdefault(name, set()).add(version)
+        return versions
 
     def account_details(self, key: str) -> dict:
         """Account to ``{home, shell}`` as the device last reported them."""
@@ -966,6 +998,7 @@ class PanelRuntime:
             app_slug_of=app_slugs(machine_apps(self.desired_states, key)),
             ai_models=self._gateway_models_for(key),
             releases=self.module_releases,
+            newest_runs=self.newest_runs(key),
         )
 
     def _gateway_models_for(self, key: str, *, wanted: "dict | None" = None) -> list:
