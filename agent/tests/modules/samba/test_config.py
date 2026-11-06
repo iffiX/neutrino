@@ -2,7 +2,7 @@
 
 What these pin beside the shapes: the passwords map reads and round-trips;
 share names are the machine's account names, dots and up to 80 characters
-allowed; a user name is the module's ``neutrino-`` account, a space allowed
+allowed; a user name is the module's ``neutrino_`` account, a space allowed
 on Windows and macOS; a share's forced user is a unix name; two users
 of one name are ``user_name_duplicate`` on Linux and ``user_name_taken`` on
 Windows and macOS.
@@ -17,7 +17,7 @@ from neutrino_agent.modules.samba.config import SambaConfig
 def config_with(**overrides) -> SambaConfig:
     data = {
         "shares": [{"name": "share", "path": "/srv/share", "valid_users": []}],
-        "users": ["neutrino-ann"],
+        "users": ["neutrino_ann"],
     }
     data.update(overrides)
     return SambaConfig.from_dict(data)
@@ -81,10 +81,10 @@ def test_a_relative_share_path_is_refused():
     "name",
     [
         "-dash",
-        "neutrino-a b",
-        "neutrino-root\n",
-        "neutrino-" + "x" * 24,
-        "neutrino-a:b",
+        "neutrino_a b",
+        "neutrino_root\n",
+        "neutrino_" + "x" * 24,
+        "neutrino_a:b",
     ],
 )
 def test_a_user_name_that_is_not_a_unix_name_is_refused(name):
@@ -95,8 +95,10 @@ def test_a_user_name_that_is_not_a_unix_name_is_refused(name):
 
 
 @pytest.mark.parametrize("os_name", ["linux", "windows", "darwin"])
-@pytest.mark.parametrize("name", ["ann", "root", "Neutrino-ann", "neutrino_ann"])
+@pytest.mark.parametrize("name", ["ann", "root", "Neutrino_ann", "neutrino-ann"])
 def test_a_user_without_the_prefix_is_refused_on_every_system(name, os_name):
+    """``neutrino-ann`` is the name an earlier build gave; the hub names
+    ``neutrino_ann``."""
     shares = [{"name": "share", "path": "D:\\s" if os_name == "windows" else "/s"}]
 
     with pytest.raises(ModuleApplyError) as refused:
@@ -164,13 +166,13 @@ def test_a_windows_share_path_without_a_drive_is_refused(path):
 
 def test_a_windows_account_name_is_at_most_twenty_characters():
     shares = [{"name": "share", "path": "D:\\share"}]
-    config_with(shares=shares, users=["neutrino-" + "a" * 11]).validate(
+    config_with(shares=shares, users=["neutrino_" + "a" * 11]).validate(
         os_name="windows"
     )
-    config_with(users=["neutrino-" + "a" * 12]).validate(os_name="darwin")
+    config_with(users=["neutrino_" + "a" * 12]).validate(os_name="darwin")
 
     with pytest.raises(ModuleApplyError) as refused:
-        config_with(shares=shares, users=["neutrino-" + "a" * 12]).validate(
+        config_with(shares=shares, users=["neutrino_" + "a" * 12]).validate(
             os_name="windows"
         )
 
@@ -188,14 +190,14 @@ def test_the_passwords_read_and_round_trip():
 def test_an_account_with_a_dot_is_a_share_and_a_user():
     config_with(
         shares=[{"name": "first.last", "path": "/home/first.last"}],
-        users=["neutrino-first.last"],
+        users=["neutrino_first.last"],
     ).validate()
 
 
 def test_a_native_account_may_hold_a_space():
     shares = [{"name": "John Smith", "path": "C:\\Users\\John Smith"}]
 
-    config_with(shares=shares, users=["neutrino-John Smith"]).validate(
+    config_with(shares=shares, users=["neutrino_John Smith"]).validate(
         os_name="windows"
     )
 
@@ -206,14 +208,14 @@ def test_a_native_account_may_hold_a_space():
 )
 def test_two_users_of_one_name_are_refused(os_name, code):
     shares = [{"name": "share", "path": "D:\\s" if os_name == "windows" else "/s"}]
-    users = ["neutrino-ann", "neutrino-ann"]
+    users = ["neutrino_ann", "neutrino_ann"]
 
     with pytest.raises(ModuleApplyError) as refused:
         config_with(shares=shares, users=users).validate(os_name=os_name)
 
     assert (refused.value.code, refused.value.params) == (
         code,
-        {"user": "neutrino-ann"},
+        {"user": "neutrino_ann"},
     )
 
 
@@ -221,11 +223,11 @@ def test_served_shares_are_the_ones_that_admit_a_user():
     config = SambaConfig.from_dict(
         {
             "shares": [
-                {"name": "a", "path": "/a", "valid_users": ["neutrino-u"]},
+                {"name": "a", "path": "/a", "valid_users": ["neutrino_u"]},
                 {"name": "b", "path": "/b"},
                 {"name": "c", "path": "/c", "valid_users": []},
             ],
-            "users": ["neutrino-u"],
+            "users": ["neutrino_u"],
         }
     )
 

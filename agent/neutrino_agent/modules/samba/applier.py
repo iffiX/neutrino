@@ -7,10 +7,10 @@ reading what the server is doing right now. ``smb.conf`` itself stays the
 person's, a whole file an earlier version
 rendered included: the module adds that line once after the ``[global]``
 header and takes it out at uninstall. At its first apply after an install
-or an adoption the module sweeps every ``neutrino-`` user and credential
-from the machine and makes the wanted ones anew.
+or an adoption the module sweeps every user of its own from the machine,
+told by its comment, and its credential, and makes the wanted ones anew.
 
-Each SMB user is a system account of the module's own, ``neutrino-`` and
+Each SMB user is a system account of the module's own, ``neutrino_`` and
 the person's account, made with no home and no login shell; its share writes
 every file as the person's account. Its Samba password is set from the one
 the hub generated whenever it differs from the one the module set last. A
@@ -48,7 +48,7 @@ from neutrino_agent.modules.samba.constants import (
     SAMBA_GLOBAL_HEADER,
     SAMBA_LINUX_NOLOGIN_SHELLS,
     SAMBA_LINUX_USER_COMMENT,
-    SAMBA_LINUX_USER_PREFIX,
+    SAMBA_USER_PREFIXES,
     SAMBA_MINIMAL_CONF,
     SAMBA_MODULE_CONF_PATH,
     SAMBA_SELINUX_ACTIVE_MODES,
@@ -681,7 +681,7 @@ class SambaUserManager:
             kept[name] = digest
             changes.append(f"set the password of {name}")
         for name in held:
-            if name in config.users or not name.startswith(SAMBA_LINUX_USER_PREFIX):
+            if name in config.users or not name.startswith(SAMBA_USER_PREFIXES):
                 continue
             if name in credentialed:
                 run(["smbpasswd", "-x", name])
@@ -691,7 +691,13 @@ class SambaUserManager:
         return changes, kept
 
     def sweep(self) -> list:
-        """Delete every ``neutrino-`` SMB user of the machine, credential and account.
+        """Delete every SMB user of the module's, credential and account.
+
+        A user is the module's when its name starts ``neutrino_``, or
+        ``neutrino-`` as earlier builds named it, and its account's comment
+        is the module's; a credential of such a name with no account goes
+        too. ``neutrino_transport`` and any other account without the
+        comment stay.
 
         Returns:
             One note per credential and per account removed.
@@ -701,9 +707,12 @@ class SambaUserManager:
         """
         notes = []
         for name in self.credentialed_users():
-            if name.startswith(SAMBA_LINUX_USER_PREFIX):
-                run(["smbpasswd", "-x", name])
-                notes.append(f"swept the credential of {name}")
+            if not name.startswith(SAMBA_USER_PREFIXES):
+                continue
+            if self._account_exists(name) and not self._is_module_account(name):
+                continue
+            run(["smbpasswd", "-x", name])
+            notes.append(f"swept the credential of {name}")
         for name in self._module_accounts():
             run(["userdel", name])
             notes.append(f"swept the account {name}")
@@ -717,8 +726,8 @@ class SambaUserManager:
         Each user named, and each member of the group 0.5 put its users in
         where a share named the group, loses its Samba credential; its
         account goes too when 0.5 made it (:meth:`_is_earlier_account`). A
-        ``neutrino-`` name, a user ``kept`` names and any other group are
-        passed over.
+        name with either of the module's starts, a user ``kept`` names and
+        any other group are passed over.
 
         Args:
             named: The words of the swept shares' ``valid users`` lines.
@@ -740,7 +749,7 @@ class SambaUserManager:
         credentialed = self._credentialed_users()
         notes = []
         for name in dict.fromkeys(names):
-            if name.startswith(SAMBA_LINUX_USER_PREFIX) or name in kept:
+            if name.startswith(SAMBA_USER_PREFIXES) or name in kept:
                 continue
             if name in credentialed:
                 run(["smbpasswd", "-x", name])
@@ -824,14 +833,20 @@ class SambaUserManager:
         return set(self.credentialed_users())
 
     def _module_accounts(self) -> list:
+        """Every account with either of the module's starts and the module's comment."""
         result = run(["getent", "passwd"], is_checked=False)
         if not result.is_success:
             return []
-        return [
-            line.split(":", 1)[0]
-            for line in result.stdout.splitlines()
-            if line.startswith(SAMBA_LINUX_USER_PREFIX)
-        ]
+        names = []
+        for line in result.stdout.splitlines():
+            fields = line.split(":")
+            if (
+                fields[0].startswith(SAMBA_USER_PREFIXES)
+                and len(fields) > 4
+                and fields[4] == SAMBA_LINUX_USER_COMMENT
+            ):
+                names.append(fields[0])
+        return names
 
 
 class SambaConfigApplier:

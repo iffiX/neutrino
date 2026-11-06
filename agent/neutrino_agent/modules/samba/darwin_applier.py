@@ -43,7 +43,7 @@ from neutrino_agent.modules.samba.constants import (
     SAMBA_DARWIN_PF_ANCHOR,
     SAMBA_DARWIN_SERVER_LOG_COMMAND,
     SAMBA_DARWIN_SHARE_PREFIX,
-    SAMBA_LINUX_USER_PREFIX,
+    SAMBA_USER_PREFIXES,
     SAMBA_DARWIN_SHELL,
     SAMBA_DARWIN_SMBD_PLIST,
     SAMBA_DARWIN_SMBD_LABEL,
@@ -222,8 +222,11 @@ class SambaDarwinApplier:
         """Delete every share point and account of the module's, the entries it gave the accounts first.
 
         A share point is the module's when its record name has the module's
-        prefix; an account when its name has the prefix, or when a record of
-        0.5 lists it and its full name is the module's words alone. The
+        prefix; an account when its full name is the module's and its name
+        starts ``neutrino_`` or, as earlier builds named it, ``neutrino-``,
+        or when a record of 0.5 lists it and its full name is the module's
+        words alone. ``neutrino_gitea`` and any other account without the
+        full name stay. The
         entries the module
         gives each such account and its machine account come off the
         folders of those share points and of ``folders`` before the account
@@ -280,6 +283,7 @@ class SambaDarwinApplier:
         *,
         is_served: bool = True,
         refused: "list | None" = None,
+        sids: "dict | None" = None,
     ) -> list:
         """Make the server serve the configuration, and nothing else of ours.
 
@@ -303,6 +307,8 @@ class SambaDarwinApplier:
                 {name, detail}`` for each share point ``sharing`` refuses,
                 each left off while the others are made; None keeps them
                 nowhere.
+            sids: Unused here: macOS names an account in an entry by
+                its own identifier, and the record keeps no SID.
 
         Returns:
             What changed, one note each.
@@ -359,15 +365,17 @@ class SambaDarwinApplier:
         return notes
 
     def _module_accounts(self, earlier: "list | tuple") -> list:
-        """Every account whose name has the module's prefix, and each of ``earlier`` whose full name is the module's words alone."""
+        """Every account of either of the module's starts whose full name is the module's, and each of ``earlier`` whose full name is the module's words alone."""
         listing = self._read(["dscl", ".", "-list", "/Users", "RealName"])
         names = []
         for line in listing.splitlines():
             name, _, full_name = line.strip().partition(" ")
-            is_earlier = name in earlier and (
-                full_name.strip() == SAMBA_DARWIN_ACCOUNT_NAME
+            full_name = full_name.strip()
+            is_named = name.startswith(SAMBA_USER_PREFIXES) and is_module_full_name(
+                full_name
             )
-            if name.startswith(SAMBA_LINUX_USER_PREFIX) or is_earlier:
+            is_earlier = name in earlier and full_name == SAMBA_DARWIN_ACCOUNT_NAME
+            if is_named or is_earlier:
                 names.append(name)
         return names
 
@@ -910,14 +918,16 @@ def smb_user_account(user: str) -> str:
     """The machine account one of the module's SMB users stands for.
 
     Args:
-        user: The SMB user, ``neutrino-<account>``.
+        user: The SMB user, ``neutrino_<account>``, or ``neutrino-<account>``
+            as earlier builds named it.
 
     Returns:
-        The account; empty for a user without the module's prefix.
+        The account; empty for a user without either of the module's starts.
     """
-    if not user.startswith(SAMBA_LINUX_USER_PREFIX):
-        return ""
-    return user[len(SAMBA_LINUX_USER_PREFIX) :]
+    for prefix in SAMBA_USER_PREFIXES:
+        if user.startswith(prefix):
+            return user[len(prefix) :]
+    return ""
 
 
 def _kept_point(held: list, share) -> "dict | None":

@@ -23,12 +23,12 @@ from neutrino_agent.modules.samba.constants import SAMBA_LINUX_USER_PREFIX
 
 # Share names appear as section headers in smb.conf and on every client's
 # network browser, and are the names of the machine's accounts; user names
-# are the module's own accounts, ``neutrino-`` and the person's account.
+# are the module's own accounts, ``neutrino_`` and the person's account.
 # Both are kept to charsets that cannot smuggle syntax into either place.
 # \\Z rather than $, which would also match just before a trailing newline.
 SHARE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9._ -]{0,79}\Z")
 USER_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]{0,31}\$?\Z")
-# A Windows or macOS account the module makes: ``neutrino-`` and the person's
+# A Windows or macOS account the module makes: ``neutrino_`` and the person's
 # account, whose name may hold a space on Windows.
 NATIVE_USER_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_. -]{0,31}\Z")
 

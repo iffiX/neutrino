@@ -173,12 +173,12 @@ class Folders:
 
 SECTION = {
     "shares": [
-        {"name": "ann", "path": "/home/ann", "valid_users": ["neutrino-ann"]},
-        {"name": "media", "path": "/srv/media", "valid_users": ["neutrino-ann"]},
-        {"name": "lab", "path": "/srv/lab", "valid_users": ["neutrino-ann"]},
+        {"name": "ann", "path": "/home/ann", "valid_users": ["neutrino_ann"]},
+        {"name": "media", "path": "/srv/media", "valid_users": ["neutrino_ann"]},
+        {"name": "lab", "path": "/srv/lab", "valid_users": ["neutrino_ann"]},
         {"name": "nobody", "path": "/srv/nobody", "valid_users": []},
     ],
-    "users": ["neutrino-ann"],
+    "users": ["neutrino_ann"],
 }
 
 

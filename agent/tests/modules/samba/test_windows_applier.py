@@ -659,7 +659,7 @@ def test_the_sweep_deletes_by_marker_and_prefix_and_takes_the_sids_off_the_folde
     host = RecordingHost(
         {
             "share_sweep": {
-                "notes": ["swept share old", "swept account neutrino-ann"],
+                "notes": ["swept share old", "swept account neutrino_ann"],
                 "paths": ["D:\\old", "D:\\media"],
                 "sids": ["S-1-5-21-1-2-3-1017"],
             }
@@ -679,7 +679,7 @@ def test_the_sweep_deletes_by_marker_and_prefix_and_takes_the_sids_off_the_folde
             "share_sweep",
             {
                 "marker": "neutrino:",
-                "user_prefix": "neutrino-",
+                "user_prefixes": ["neutrino_", "neutrino-"],
                 "is_served": True,
                 "earlier_accounts": ["labsmb"],
             },
@@ -690,7 +690,44 @@ def test_the_sweep_deletes_by_marker_and_prefix_and_takes_the_sids_off_the_folde
         ["icacls.exe", "D:\\media", "/remove:g", "*S-1-5-21-1-2-3-1017"],
         ["icacls.exe", "D:\\docs", "/remove:g", "*S-1-5-21-1-2-3-1017"],
     ]
-    assert notes == ["swept share old", "swept account neutrino-ann"]
+    assert notes == ["swept share old", "swept account neutrino_ann"]
+
+
+def test_a_recorded_sid_the_account_no_longer_holds_comes_off_the_folders():
+    """An account deleted by hand, or made again, left its grant on the
+    folder as an unknown SID; a SID the record does not list stays."""
+    host = RecordingHost(
+        {
+            "share_apply": {
+                "notes": [],
+                "sids": {"ann": "S-1-5-21-9-ann-new", "bob": "S-1-5-21-9-bob"},
+            },
+            "folder_access": folders_holding({"D:\\media": {}, "D:\\docs": {}}),
+        }
+    )
+    icacls = Icacls()
+    sids: dict = {}
+    record = {
+        "shares": {"media": "D:\\media", "old": "D:\\old"},
+        "accounts": ["ann", "bob", "eve"],
+        "sids": {
+            "ann": "S-1-5-21-9-ann-old",
+            "bob": "S-1-5-21-9-bob",
+            "eve": "S-1-5-21-9-eve",
+        },
+    }
+
+    applier_with(host, run=icacls, denied=[]).apply(CONFIG, record, sids=sids)
+
+    revoked = [call for call in icacls.calls if call[3].startswith("*")]
+    assert revoked == [
+        ["icacls.exe", folder, "/remove:g", f"*S-1-5-21-9-{name}"]
+        for folder in ("D:\\old", "D:\\media", "D:\\docs")
+        for name in ("ann-old", "eve")
+    ]
+    assert sids == {"ann": "S-1-5-21-9-ann-new", "bob": "S-1-5-21-9-bob"}
+    (request,) = host.args_of("share_apply")
+    assert request["owned_accounts"] == ["ann", "bob", "eve"]
 
 
 def test_a_sweep_that_deletes_no_account_changes_no_folder():

@@ -16,7 +16,7 @@ takes the module's shares off a running server with one reload and nothing else 
 the unit; an apply starts no unit; a start starts the unit, on
 the stock file where the machine has no ``smb.conf``; a unit reads as enabled and active or as nothing, a start enables and starts it, a stop stops and disables
 it, and a put back makes it as it was found; the
-sweep takes every ``neutrino-`` user and
+sweep takes every ``neutrino_`` user and
 credential off the machine; the person's own
 ``[global]`` refuses the settings that stop the module's shares, and each
 served share a share of the person's names is taken, without case; each user's Samba password is set from the hub's map
@@ -326,27 +326,52 @@ def test_an_earlier_versions_whole_file_is_the_persons_and_only_gets_the_line(bo
     assert (tmp_path / "etc/backup.conf").exists()
 
 
-def test_the_sweep_takes_every_neutrino_user_and_credential_and_no_other(box):
+def test_the_sweep_takes_the_file_share_s_users_by_their_mark_and_keeps_the_transport(
+    box,
+):
+    """``neutrino_transport`` starts as the file share's users do and has no
+    comment of the module's."""
     commands, _ = box
-    commands.answers[("pdbedit", "-L")] = (0, "neutrino-ann:1001:\nbob:1002:\n")
-    commands.answers[("getent", "passwd")] = (
+    commands.answers[("pdbedit", "-L")] = (
         0,
-        "root:x:0:0:root:/root:/bin/bash\n"
-        "neutrino-ann:x:997:997:neutrino file share:/home/neutrino-ann:/usr/sbin/nologin\n"
-        "neutrino-old:x:996:996:neutrino file share:/nonexistent:/usr/sbin/nologin\n"
-        "bob:x:1002:1002::/home/bob:/bin/bash\n",
+        "neutrino_ann:1001:\nneutrino-old:996:\nneutrino_gone:1003:\n"
+        "neutrino_transport:995:\nbob:1002:\n",
+    )
+    passwd = {
+        "neutrino_ann": "neutrino_ann:x:997:997:neutrino file share:/:/usr/sbin/nologin",
+        "neutrino-old": "neutrino-old:x:996:996:neutrino file share:/:/usr/sbin/nologin",
+        "neutrino_transport": "neutrino_transport:x:995:995::/home/neutrino_transport:/usr/sbin/nologin",
+        "bob": "bob:x:1002:1002::/home/bob:/bin/bash",
+    }
+    commands.answers[("getent", "passwd")] = (
+        lambda command: (
+            (0, "\n".join(passwd.values()) + "\n")
+            if len(command) == 2
+            else ((0, passwd[command[2]] + "\n") if command[2] in passwd else (2, ""))
+        ),
+        "",
+    )
+
+    commands.answers[("id", "-u")] = (
+        lambda command: (0, "") if command[2] in passwd else (1, ""),
+        "",
     )
 
     notes = SambaUserManager().sweep()
 
-    assert commands.ran("smbpasswd") == [(["smbpasswd", "-x", "neutrino-ann"], None)]
+    assert commands.ran("smbpasswd") == [
+        (["smbpasswd", "-x", name], None)
+        for name in ("neutrino_ann", "neutrino-old", "neutrino_gone")
+    ]
     assert commands.ran("userdel") == [
-        (["userdel", "neutrino-ann"], None),
+        (["userdel", "neutrino_ann"], None),
         (["userdel", "neutrino-old"], None),
     ]
     assert notes == [
-        "swept the credential of neutrino-ann",
-        "swept the account neutrino-ann",
+        "swept the credential of neutrino_ann",
+        "swept the credential of neutrino-old",
+        "swept the credential of neutrino_gone",
+        "swept the account neutrino_ann",
         "swept the account neutrino-old",
     ]
 
@@ -715,12 +740,12 @@ def test_each_served_share_a_share_of_the_persons_names_is_taken_without_case():
     config = SambaConfig.from_dict(
         {
             "shares": [
-                {"name": "media", "path": "/m", "valid_users": ["neutrino-ann"]},
-                {"name": "Ann", "path": "/a", "valid_users": ["neutrino-ann"]},
+                {"name": "media", "path": "/m", "valid_users": ["neutrino_ann"]},
+                {"name": "Ann", "path": "/a", "valid_users": ["neutrino_ann"]},
                 {"name": "docs", "path": "/d", "valid_users": []},
-                {"name": "lab", "path": "/l", "valid_users": ["neutrino-ann"]},
+                {"name": "lab", "path": "/l", "valid_users": ["neutrino_ann"]},
             ],
-            "users": ["neutrino-ann"],
+            "users": ["neutrino_ann"],
         }
     )
     persons = [
@@ -967,22 +992,22 @@ def test_a_dropped_user_the_module_set_loses_its_credential_and_no_other(box):
     commands, _ = box
     commands.answers[("pdbedit", "-L")] = (
         0,
-        "neutrino-ann:1000:\nneutrino-old:1001:\nown:1002:\n",
+        "neutrino_ann:1000:\nneutrino_old:1001:\nown:1002:\n",
     )
 
     changes, kept = SambaUserManager().converge(
-        users_config({"neutrino-ann": "pw"}),
+        users_config({"neutrino_ann": "pw"}),
         {
-            "neutrino-ann": password_digest("pw"),
-            "neutrino-old": password_digest("x"),
+            "neutrino_ann": password_digest("pw"),
+            "neutrino_old": password_digest("x"),
         },
     )
 
     assert commands.ran("smbpasswd", "-x") == [
-        (["smbpasswd", "-x", "neutrino-old"], None)
+        (["smbpasswd", "-x", "neutrino_old"], None)
     ]
-    assert kept == {"neutrino-ann": password_digest("pw")}
-    assert changes == ["retired neutrino-old"]
+    assert kept == {"neutrino_ann": password_digest("pw")}
+    assert changes == ["retired neutrino_old"]
 
 
 def test_a_recorded_name_without_the_prefix_keeps_its_credential_and_its_account(box):
@@ -1011,27 +1036,27 @@ def test_a_dropped_user_the_module_made_is_deleted_and_a_persons_is_not(box):
     commands, _ = box
     commands.answers[("pdbedit", "-L")] = (
         0,
-        "neutrino-ann:1000:\nneutrino-old:1001:\nneutrino-own:1002:\n",
+        "neutrino_ann:1000:\nneutrino_old:1001:\nneutrino_own:1002:\n",
     )
     commands.answers[("getent", "passwd")] = (
         lambda command: (
             (0, f"{command[2]}:x:999:999:neutrino file share:/:/usr/sbin/nologin\n")
-            if command[2] == "neutrino-old"
+            if command[2] == "neutrino_old"
             else (0, f"{command[2]}:x:1002:1002:A Person:/home/own:/bin/bash\n")
         ),
         "",
     )
 
     SambaUserManager().converge(
-        users_config({"neutrino-ann": "pw"}),
+        users_config({"neutrino_ann": "pw"}),
         {
-            "neutrino-ann": password_digest("pw"),
-            "neutrino-old": password_digest("x"),
-            "neutrino-own": password_digest("y"),
+            "neutrino_ann": password_digest("pw"),
+            "neutrino_old": password_digest("x"),
+            "neutrino_own": password_digest("y"),
         },
     )
 
-    assert commands.ran("userdel") == [(["userdel", "neutrino-old"], None)]
+    assert commands.ran("userdel") == [(["userdel", "neutrino_old"], None)]
 
 
 def test_a_configured_user_the_machine_lacks_is_made_with_no_home_or_shell(
@@ -1039,7 +1064,7 @@ def test_a_configured_user_the_machine_lacks_is_made_with_no_home_or_shell(
 ):
     commands, _ = box
     commands.answers[("id", "-u")] = (
-        lambda command: (0, "") if command[2] == "neutrino-ann" else (1, ""),
+        lambda command: (0, "") if command[2] == "neutrino_ann" else (1, ""),
         "",
     )
     monkeypatch.setattr(
@@ -1047,7 +1072,7 @@ def test_a_configured_user_the_machine_lacks_is_made_with_no_home_or_shell(
     )
 
     changes = SambaUserManager().converge_accounts(
-        users_config({"neutrino-ann": "pw", "neutrino-bob": "pw"})
+        users_config({"neutrino_ann": "pw", "neutrino_bob": "pw"})
     )
 
     assert commands.ran("useradd") == [
@@ -1060,12 +1085,12 @@ def test_a_configured_user_the_machine_lacks_is_made_with_no_home_or_shell(
                 "/sbin/nologin",
                 "--comment",
                 "neutrino file share",
-                "neutrino-bob",
+                "neutrino_bob",
             ],
             None,
         )
     ]
-    assert changes == ["made the user neutrino-bob"]
+    assert changes == ["made the user neutrino_bob"]
 
 
 def test_an_account_a_share_writes_as_that_is_no_account_is_unknown(box):
@@ -1400,7 +1425,7 @@ def test_the_0_5_users_lose_their_credential_and_only_0_5_s_accounts_go(box):
     commands.answers[("getent", "group")] = (0, "sambashare:x:122:smbold,carl\n")
     commands.answers[("pdbedit", "-L")] = (
         0,
-        "smbold:1002:\nalice:1001:\ncarl:1004:\nhanduser:1003:\nneutrino-x:997:\n",
+        "smbold:1002:\nalice:1001:\ncarl:1004:\nhanduser:1003:\nneutrino_x:997:\n",
     )
 
     notes = SambaUserManager().sweep_earlier(
@@ -1409,7 +1434,7 @@ def test_the_0_5_users_lose_their_credential_and_only_0_5_s_accounts_go(box):
             "alice",
             "@sambashare",
             "@staff",
-            "neutrino-x",
+            "neutrino_x",
             "handuser",
             "nobody",
             "sys",

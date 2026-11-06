@@ -298,7 +298,7 @@ def test_an_apply_under_stopped_starts_no_smbd_and_takes_every_point_off(
 def test_an_apply_under_stopped_takes_the_grants_off_a_folder_no_share_names(
     applier, tools
 ):
-    record = {"shares": {"old": "/Volumes/data/old"}, "accounts": ["neutrino-eve"]}
+    record = {"shares": {"old": "/Volumes/data/old"}, "accounts": ["neutrino_eve"]}
 
     applier.apply(CONFIG, record, is_served=False)
 
@@ -308,7 +308,7 @@ def test_an_apply_under_stopped_takes_the_grants_off_a_folder_no_share_names(
         if command[-1] == "/Volumes/data/old"
     ]
     assert {command[2].split(" ")[0] for command in taken} >= {
-        "user:neutrino-eve",
+        "user:neutrino_eve",
         "user:eve",
     }
 
@@ -813,11 +813,11 @@ def test_the_sweep_deletes_the_modules_points_and_accounts_0_5_s_among_them(
         ("photos", "/srv/photos", "p", False),
     )
     tools.answers[("dscl", ".", "-list")] = (
-        "neutrino-old  neutrino file share neutrino-old\nbob  Bob Example\n"
+        "neutrino_old  neutrino file share neutrino_old\nbob  Bob Example\n"
         "_smb  SMB Server\ncid  neutrino file share\n"
         "dan  neutrino file share\neve  Eve Example\n"
     )
-    tools.users["neutrino-old"] = account("neutrino file share neutrino-old")
+    tools.users["neutrino_old"] = account("neutrino file share neutrino_old")
     tools.users["cid"] = account("neutrino file share")
 
     notes = applier.sweep(
@@ -826,7 +826,7 @@ def test_the_sweep_deletes_the_modules_points_and_accounts_0_5_s_among_them(
 
     assert ["sharing", "-r", "neutrino_old"] in tools.calls
     assert ["sharing", "-r", "photos"] not in tools.calls
-    for name in ("neutrino-old", "cid"):
+    for name in ("neutrino_old", "cid"):
         assert ["dscl", ".", "-delete", f"/Users/{name}"] in tools.calls
     # A full name its owner can change, or a record of 0.5 alone, makes no
     # account the module's.
@@ -834,21 +834,40 @@ def test_the_sweep_deletes_the_modules_points_and_accounts_0_5_s_among_them(
         assert ["dscl", ".", "-delete", f"/Users/{name}"] not in tools.calls
     assert notes == [
         "swept share old",
-        "swept account neutrino-old",
+        "swept account neutrino_old",
         "swept account cid",
     ]
+
+
+def test_the_sweep_keeps_the_gitea_account_and_takes_the_old_and_new_names(
+    applier, tools
+):
+    """The Gitea module's ``neutrino_gitea`` starts as the file share's
+    accounts do; its full name is not the module's."""
+    tools.answers[("sharing", "-l")] = share_list()
+    tools.answers[("dscl", ".", "-list")] = (
+        "neutrino_gitea  Neutrino Gitea\n"
+        "neutrino_ann  neutrino file share neutrino_ann\n"
+        "neutrino-old  neutrino file share neutrino-old\n"
+        "neutrino_mine  Mine Example\n"
+    )
+
+    applier.sweep([], is_served=True)
+
+    deleted = [call[3] for call in tools.ran("dscl", ".", "-delete")]
+    assert deleted == ["/Users/neutrino_ann", "/Users/neutrino-old"]
 
 
 def test_the_sweep_takes_the_entries_off_before_the_accounts_go(applier, tools):
     tools.answers[("sharing", "-l")] = share_list(
         ("neutrino_old", "/srv/old", "old", False)
     )
-    tools.answers[("dscl", ".", "-list")] = "neutrino-ann  neutrino file share\n"
-    tools.users["neutrino-ann"] = account("neutrino file share")
+    tools.answers[("dscl", ".", "-list")] = "neutrino_ann  neutrino file share\n"
+    tools.users["neutrino_ann"] = account("neutrino file share")
 
     applier.sweep(["/Users/ann"], is_served=False)
 
-    deleted = tools.calls.index(["dscl", ".", "-delete", "/Users/neutrino-ann"])
+    deleted = tools.calls.index(["dscl", ".", "-delete", "/Users/neutrino_ann"])
     taken = [
         (index, call[3], call[2].split(" ")[0])
         for index, call in enumerate(tools.calls)
@@ -857,7 +876,7 @@ def test_the_sweep_takes_the_entries_off_before_the_accounts_go(applier, tools):
     assert {(path, who) for _, path, who in taken} == {
         (path, f"user:{name}")
         for path in ("/srv/old", "/Users/ann")
-        for name in ("neutrino-ann", "ann")
+        for name in ("neutrino_ann", "ann")
     }
     assert all(index < deleted for index, _, _ in taken)
 
@@ -867,22 +886,22 @@ def test_a_sweep_the_system_refuses_says_so_with_the_tools_words(applier, tools)
         ("neutrino_old", "/srv/old", "old", False)
     )
     tools.answers[("dscl", ".", "-list")] = (
-        "neutrino-old  neutrino file share\nneutrino-gone  neutrino file share\n"
+        "neutrino_old  neutrino file share\nneutrino_gone  neutrino file share\n"
     )
-    tools.users["neutrino-gone"] = account("neutrino file share")
+    tools.users["neutrino_gone"] = account("neutrino file share")
     tools.failing.add(("sharing", "-r", "neutrino_old"))
-    tools.failing.add(("dscl", ".", "-delete", "/Users/neutrino-old"))
+    tools.failing.add(("dscl", ".", "-delete", "/Users/neutrino_old"))
 
     notes = applier.sweep([], is_served=True)
 
     assert notes == [
         "did not sweep share old: refused",
-        "did not sweep account neutrino-old: refused",
-        "swept account neutrino-gone",
+        "did not sweep account neutrino_old: refused",
+        "swept account neutrino_gone",
     ]
     # The R167 Mac refused every deletion to a daemon with eDSPermissionError.
-    assert tools.ran("pwpolicy", "-u", "neutrino-old", "-disableuser") != []
-    assert tools.ran("pwpolicy", "-u", "neutrino-gone") == []
+    assert tools.ran("pwpolicy", "-u", "neutrino_old", "-disableuser") != []
+    assert tools.ran("pwpolicy", "-u", "neutrino_gone") == []
 
 
 def test_a_folder_share_with_no_account_has_no_point_and_its_folder_loses_the_entries(
@@ -946,33 +965,33 @@ def test_the_account_of_each_smb_user_takes_the_users_entry(applier, tools):
                 {
                     "name": "ann",
                     "path": "/Users/ann",
-                    "valid_users": ["neutrino-ann"],
+                    "valid_users": ["neutrino_ann"],
                     "force_user": "ann",
                 },
                 {
                     "name": "lab",
                     "path": "/Volumes/data/lab",
-                    "valid_users": ["neutrino-ann", "neutrino-bob"],
+                    "valid_users": ["neutrino_ann", "neutrino_bob"],
                 },
             ],
-            "users": ["neutrino-ann", "neutrino-bob"],
+            "users": ["neutrino_ann", "neutrino_bob"],
         }
     )
-    for name in ("neutrino-ann", "neutrino-bob"):
+    for name in ("neutrino_ann", "neutrino_bob"):
         tools.users[name] = account(f"neutrino file share {name}")
 
-    applier.apply(config, {"shares": {}, "accounts": ["neutrino-ann", "neutrino-bob"]})
+    applier.apply(config, {"shares": {}, "accounts": ["neutrino_ann", "neutrino_bob"]})
 
     granted = [
         (call[-1], call[2].split()[0], "write" in call[2])
         for call in tools.ran("chmod", "+a")
     ]
     assert granted == [
-        ("/Users/ann", "user:neutrino-ann", True),
+        ("/Users/ann", "user:neutrino_ann", True),
         ("/Users/ann", "user:ann", True),
-        ("/Volumes/data/lab", "user:neutrino-ann", True),
+        ("/Volumes/data/lab", "user:neutrino_ann", True),
         ("/Volumes/data/lab", "user:ann", True),
-        ("/Volumes/data/lab", "user:neutrino-bob", True),
+        ("/Volumes/data/lab", "user:neutrino_bob", True),
         ("/Volumes/data/lab", "user:bob", True),
     ]
 
@@ -980,11 +999,11 @@ def test_the_account_of_each_smb_user_takes_the_users_entry(applier, tools):
 def test_a_share_no_longer_served_takes_the_entries_of_the_user_and_its_account(
     applier, tools
 ):
-    tools.users["neutrino-ann"] = account("neutrino file share neutrino-ann")
+    tools.users["neutrino_ann"] = account("neutrino file share neutrino_ann")
 
     applier.apply(
-        SambaConfig.from_dict({"shares": [], "users": ["neutrino-ann"]}),
-        {"shares": {"lab": "/Volumes/data/lab"}, "accounts": ["neutrino-ann"]},
+        SambaConfig.from_dict({"shares": [], "users": ["neutrino_ann"]}),
+        {"shares": {"lab": "/Volumes/data/lab"}, "accounts": ["neutrino_ann"]},
     )
 
     taken = {
@@ -992,7 +1011,7 @@ def test_a_share_no_longer_served_takes_the_entries_of_the_user_and_its_account(
         for call in tools.ran("chmod", "-a")
         if call[-1] == "/Volumes/data/lab"
     }
-    assert taken == {"user:neutrino-ann", "user:ann"}
+    assert taken == {"user:neutrino_ann", "user:ann"}
 
 
 # --- a folder in an account's place ---

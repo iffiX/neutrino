@@ -43,7 +43,7 @@ from neutrino_agent.modules.samba.constants import (
     SAMBA_SHARE_NAME_TAKEN_CODE,
     SAMBA_SHARE_REFUSED_CODE,
     SAMBA_WINDOWS_DENIED_RIGHTS,
-    SAMBA_LINUX_USER_PREFIX,
+    SAMBA_USER_PREFIXES,
     SAMBA_WINDOWS_FENCE_RULE,
     SAMBA_WINDOWS_FOLDER_CHANGE,
     SAMBA_WINDOWS_FOLDER_READ,
@@ -255,8 +255,9 @@ class SambaWindowsApplier:
         """Delete every share and account of the module's, and take the accounts' entries off the folders.
 
         A share is the module's when its description starts with the
-        marker; an account when its name starts with the prefix, or when a
-        record of 0.5 lists it and its description is the marker. Each
+        marker; an account when its description is the marker and its name
+        starts ``neutrino_`` or, as earlier builds named it, ``neutrino-``,
+        or a record lists it. Each
         deleted account's entries come off
         the folders of the deleted shares and of ``folders``, by its SID,
         once the account is gone. A folder that is not there is passed
@@ -281,7 +282,7 @@ class SambaWindowsApplier:
             "share_sweep",
             {
                 "marker": SAMBA_WINDOWS_MARKER,
-                "user_prefix": SAMBA_LINUX_USER_PREFIX,
+                "user_prefixes": list(SAMBA_USER_PREFIXES),
                 "is_served": is_served,
                 "earlier_accounts": list(earlier_accounts),
             },
@@ -297,14 +298,7 @@ class SambaWindowsApplier:
             if path and not any(_is_same_folder(path, held) for held in paths):
                 paths.append(path)
         for path in paths:
-            try:
-                self._folders.revoke_sids(path, sids)
-            except OSError as error:
-                if error.errno in (errno.ENOENT, errno.ENOTDIR) or isinstance(
-                    error, (FileNotFoundError, NotADirectoryError)
-                ):
-                    continue
-                notes.append(f"left {path} as it was: {error}")
+            self._revoke_sids(path, sids, notes)
         return notes
 
     def apply(
@@ -314,6 +308,7 @@ class SambaWindowsApplier:
         *,
         is_served: bool = True,
         refused: "list | None" = None,
+        sids: "dict | None" = None,
     ) -> list:
         """Make the server serve the configuration, and nothing else of ours.
 
@@ -342,6 +337,11 @@ class SambaWindowsApplier:
                 ``share_not_served {name, detail}`` for each share the host
                 could not make or change, each left off while the others are
                 served; None keeps them nowhere.
+            sids: Takes the SID each account of the record's and of the
+                configuration's holds once the host converged them; None
+                keeps them nowhere. A SID the record's ``sids`` lists that
+                its account no longer holds is taken off every folder of the
+                module's shares first.
 
         Returns:
             What changed, one note each.
@@ -384,6 +384,21 @@ class SambaWindowsApplier:
                 "server_dependents": list(record.get("server_dependents") or []),
             },
         )
+        answered = answer.get("sids")
+        held_sids = (
+            {str(name): str(sid) for name, sid in answered.items()}
+            if isinstance(answered, dict)
+            else {}
+        )
+        stale = [
+            sid
+            for name, sid in dict(record.get("sids") or {}).items()
+            if isinstance(answered, dict) and sid and held_sids.get(name) != sid
+        ]
+        for path in left + list(grants):
+            self._revoke_sids(path, stale, notes)
+        if sids is not None:
+            sids.update(held_sids)
         access = self._read_access(
             left
             + [
@@ -420,6 +435,19 @@ class SambaWindowsApplier:
             if refused is not None:
                 refused.append({"code": code, "params": params})
         return [str(note) for note in _listed(answer.get("notes"))] + notes
+
+    def _revoke_sids(self, path: str, sids: list, notes: list) -> None:
+        """Take these SIDs' entries off one folder; one that is not there is passed over, one that cannot be changed noted."""
+        if not sids:
+            return
+        try:
+            self._folders.revoke_sids(path, sids)
+        except OSError as error:
+            if error.errno in (errno.ENOENT, errno.ENOTDIR) or isinstance(
+                error, (FileNotFoundError, NotADirectoryError)
+            ):
+                return
+            notes.append(f"left {path} as it was: {error}")
 
     def read_folder(self, path: str) -> str:
         """What a share's folder is, opened by handle with no reparse point followed. Nothing is made.

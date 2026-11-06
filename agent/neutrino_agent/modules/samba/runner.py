@@ -71,6 +71,7 @@ from neutrino_agent.modules.samba.constants import (
     SAMBA_ACCOUNT_REFUSALS,
     SAMBA_BINARY_NAME,
     SAMBA_COMMAND_FOLDER,
+    SAMBA_EARLIER_USER_PREFIX,
     SAMBA_LINUX_USER_PREFIX,
     SAMBA_NATIVE_RECORD_NAME,
     SAMBA_NATIVE_STATUS_TTL_S,
@@ -354,7 +355,7 @@ class SambaModuleRunner(SystemPackageModuleRunner):
         is_ours = record.get("is_package_ours") is True
         is_withdrawn = not is_ours and not is_started
         changes = []
-        if record.get("is_swept") is not True:
+        if is_sweep_owed(record, list(read_digests(self._record_path))):
             try:
                 changes += self._sweep()
                 if not is_withdrawn:
@@ -545,7 +546,7 @@ class SambaModuleRunner(SystemPackageModuleRunner):
                 self._forget_package()
 
     def uninstall(self, recipe: dict) -> None:
-        """Delete every ``neutrino-`` SMB user, then take the packages off a Samba the module installed.
+        """Delete every SMB user of the module's, then take the packages off a Samba the module installed.
 
         A person's Samba keeps its packages, and its units go back as the
         record found them. On either Samba an ``smb.conf`` the module made goes
@@ -657,7 +658,7 @@ class SambaModuleRunner(SystemPackageModuleRunner):
         return is_turned
 
     def _sweep(self) -> list:
-        """Delete every ``neutrino-`` SMB user, and the shares and users of 0.5.
+        """Delete every SMB user of the module's, and the shares and users of 0.5.
 
         Returns:
             One note per share, credential and account removed.
@@ -751,6 +752,22 @@ class SambaModuleRunner(SystemPackageModuleRunner):
             "sessions": reader.sessions(),
             "disk_usage": reader.disk_usage(config),
         }
+
+
+def is_sweep_owed(record: dict, names: list) -> bool:
+    """Whether the next apply sweeps: no sweep since the install, or a name an earlier build gave. Pure.
+
+    Args:
+        record: The module's record.
+        names: The account names the record lists, as stored.
+
+    Returns:
+        True when the record stores no ``is_swept`` mark, or lists an
+        account named ``neutrino-<account>``.
+    """
+    if record.get("is_swept") is not True:
+        return True
+    return any(str(name).startswith(SAMBA_EARLIER_USER_PREFIX) for name in names)
 
 
 def read_digests(path: str) -> dict:
@@ -938,7 +955,7 @@ class SambaNativeServerRunner(ModuleRunner):
             self._forget_status()
         if swept:
             self._log("samba: " + "; ".join(swept))
-        self._write_record(dict(record, shares={}, accounts=[], passwords={}))
+        self._write_record(dict(record, shares={}, accounts=[], passwords={}, sids={}))
 
     def validate(self, config: dict) -> None:
         """Parse and check a configuration for this system.
@@ -1037,7 +1054,7 @@ class SambaNativeServerRunner(ModuleRunner):
         parsed, unserved = self._folders.served(whole)
         record = self._read_record()
         swept: list = []
-        if record.get("is_swept") is not True:
+        if is_sweep_owed(record, self._earlier_accounts()):
             folders = list(record["shares"].values()) + [
                 share.path for share in whole.served_shares()
             ]
@@ -1053,7 +1070,9 @@ class SambaNativeServerRunner(ModuleRunner):
                 )
             finally:
                 self._forget_status()
-            record = dict(record, shares={}, accounts=[], passwords={}, is_swept=True)
+            record = dict(
+                record, shares={}, accounts=[], passwords={}, sids={}, is_swept=True
+            )
             self._write_record(record)
         served = parsed.served_shares()
         shares = dict(record["shares"])
@@ -1062,6 +1081,7 @@ class SambaNativeServerRunner(ModuleRunner):
         record = dict(record, shares=shares)
         refusal = None
         server_refused: list = []
+        sids: dict = {}
         try:
             if is_served or self.is_active():
                 record = self._keep_found_server(record)
@@ -1070,6 +1090,7 @@ class SambaNativeServerRunner(ModuleRunner):
                 record,
                 is_served=is_served,
                 refused=server_refused,
+                sids=sids,
             )
         except ModuleApplyError as error:
             if error.code not in SAMBA_ACCOUNT_REFUSALS:
@@ -1099,6 +1120,7 @@ class SambaNativeServerRunner(ModuleRunner):
             "passwords": passwords,
             "is_served": is_served,
             "is_swept": True,
+            "sids": sids,
         }
         if "found_server" in record:
             written["found_server"] = record["found_server"]
@@ -1308,7 +1330,7 @@ class SambaNativeServerRunner(ModuleRunner):
             self._status = None
 
     def _read_record(self) -> dict:
-        """The record, ``{"shares", "accounts", "passwords"}``, and ``is_served``, ``is_swept``, ``found_server`` and ``server_dependents`` where it stores them.
+        """The record, ``{"shares", "accounts", "passwords"}``, and ``is_served``, ``is_swept``, ``sids``, ``found_server`` and ``server_dependents`` where it stores them.
 
         ``shares`` lists the folder of each share the module configured, on
         the server or not. ``accounts`` leaves out a name without the
@@ -1328,6 +1350,8 @@ class SambaNativeServerRunner(ModuleRunner):
             kept["is_served"] = bool(held["is_served"])
         if held.get("is_swept") is True:
             kept["is_swept"] = True
+        if isinstance(held.get("sids"), dict):
+            kept["sids"] = {str(name): str(sid) for name, sid in held["sids"].items()}
         if isinstance(held.get("found_server"), dict):
             kept["found_server"] = dict(held["found_server"])
         if isinstance(held.get("server_dependents"), list):
@@ -1348,7 +1372,7 @@ class SambaNativeServerRunner(ModuleRunner):
         }
 
     def _earlier_accounts(self) -> list:
-        """The accounts without the module's prefix the record lists, which a module of 0.5 made."""
+        """The accounts without the module's start the record lists: a 0.5 module's, and an earlier build's ``neutrino-<account>``."""
         with self._record_lock:
             try:
                 with open(self._record_path, "r", encoding="utf-8") as stream:

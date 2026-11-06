@@ -476,14 +476,23 @@ function Set-NeutrinoShare {
             $refused += @{name = $s.name; detail = "$($_.Exception.Message)"}
         }
     }
-    return @{notes = $notes; refused = $refused}
+    # The SID each account of the record's and of the configuration's holds now.
+    $sids = @{}
+    foreach ($u in @($Request.users) + @($Request.owned_accounts)) {
+        $held = Get-LocalUser -Name $u -ErrorAction SilentlyContinue
+        if ($held) {
+            $sids[$u] = "$($held.SID.Value)"
+        }
+    }
+    return @{notes = $notes; refused = $refused; sids = $sids}
 }
 
-# Deletes every share whose description starts with the marker, every
-# account whose name starts with the prefix, and each account of 0.5 the
-# record lists whose description is the marker, with its sessions on the
-# server and its entry in the sign-in screen's hidden list, and every entry
-# of that list under the prefix; answers the
+# Deletes every share whose description starts with the marker, and every
+# account whose description is the marker and whose name starts with one of
+# the prefixes or the record lists, never an account by its name's start
+# alone, with its sessions on the server and its entry in the sign-in
+# screen's hidden list, and every entry of that list under a prefix whose
+# account is gone; answers the
 # folders of the shares and the SIDs of the accounts, whose entries the
 # agent then takes off those folders. Without is_served the shares and the
 # sessions are read only while the server runs.
@@ -508,9 +517,9 @@ function Clear-NeutrinoShare {
     }
     $hidden = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon\SpecialAccounts\UserList'
     foreach ($user in @(Get-LocalUser -ErrorAction SilentlyContinue)) {
-        $is_earlier = (@($Request.earlier_accounts) -contains "$($user.Name)") -and
-            ("$($user.Description)" -eq $Request.marker)
-        $is_ours = "$($user.Name)".StartsWith($Request.user_prefix) -or $is_earlier
+        $is_marked = "$($user.Description)" -eq $Request.marker
+        $is_named = @($Request.user_prefixes | Where-Object { "$($user.Name)".StartsWith($_) }).Count -gt 0
+        $is_ours = $is_marked -and ($is_named -or (@($Request.earlier_accounts) -contains "$($user.Name)"))
         if (-not $is_ours) {
             continue
         }
@@ -526,7 +535,8 @@ function Clear-NeutrinoShare {
         $notes += "swept account $($user.Name)"
     }
     foreach ($name in @((Get-Item -Path $hidden -ErrorAction SilentlyContinue).Property)) {
-        if ("$name".StartsWith($Request.user_prefix)) {
+        $is_named = @($Request.user_prefixes | Where-Object { "$name".StartsWith($_) }).Count -gt 0
+        if ($is_named -and -not (Get-LocalUser -Name $name -ErrorAction SilentlyContinue)) {
             Remove-ItemProperty -Path $hidden -Name $name -ErrorAction SilentlyContinue
         }
     }

@@ -130,7 +130,7 @@ def folders(**facts) -> tuple:
 def test_a_folder_is_opened_with_its_reparse_point_never_followed():
     access, kernel32, _ = folders()
 
-    access.grant("C:\\Users\\ann", "neutrino-ann", "(OI)(CI)M")
+    access.grant("C:\\Users\\ann", "neutrino_ann", "(OI)(CI)M")
 
     ((path, rights, flags),) = kernel32.opened
     assert path == "C:\\Users\\ann"
@@ -146,7 +146,7 @@ def test_a_folder_that_is_a_junction_is_refused_and_its_handle_closed():
     )
 
     with pytest.raises(OSError) as refused:
-        access.grant("C:\\Users\\ann\\share", "neutrino-ann", "(OI)(CI)M")
+        access.grant("C:\\Users\\ann\\share", "neutrino_ann", "(OI)(CI)M")
 
     assert refused.value.errno == errno.ELOOP
     assert kernel32.closed == [HANDLE]
@@ -157,7 +157,7 @@ def test_a_folder_reached_through_a_junction_above_it_is_refused():
     access, kernel32, advapi32 = folders(final="C:\\Windows\\System32")
 
     with pytest.raises(OSError) as refused:
-        access.revoke("C:\\Users\\ann\\link\\System32", ["neutrino-ann"])
+        access.revoke("C:\\Users\\ann\\link\\System32", ["neutrino_ann"])
 
     assert refused.value.errno == errno.ELOOP
     assert "C:\\Windows\\System32" in str(refused.value)
@@ -168,7 +168,7 @@ def test_a_folder_reached_through_a_junction_above_it_is_refused():
 def test_a_final_path_of_another_case_is_the_same_folder():
     access, _, advapi32 = folders(final="c:\\users\\ANN")
 
-    access.grant("C:\\Users\\ann", "neutrino-ann", "(OI)(CI)RX")
+    access.grant("C:\\Users\\ann", "neutrino_ann", "(OI)(CI)RX")
 
     assert len(advapi32.set) == 1
 
@@ -176,7 +176,7 @@ def test_a_final_path_of_another_case_is_the_same_folder():
 def test_a_grant_folds_one_inherited_entry_and_sets_it_on_the_same_handle():
     access, _, advapi32 = folders()
 
-    access.grant("D:\\media", "neutrino-ann", "(OI)(CI)M")
+    access.grant("D:\\media", "neutrino_ann", "(OI)(CI)M")
 
     assert advapi32.folded == [
         (
@@ -184,7 +184,7 @@ def test_a_grant_folds_one_inherited_entry_and_sets_it_on_the_same_handle():
             win32.SET_ACCESS,
             win32.SUB_CONTAINERS_AND_OBJECTS_INHERIT,
             win32.TRUSTEE_IS_NAME,
-            "neutrino-ann",
+            "neutrino_ann",
         )
     ]
     assert advapi32.set == [
@@ -195,12 +195,12 @@ def test_a_grant_folds_one_inherited_entry_and_sets_it_on_the_same_handle():
 def test_a_revoke_folds_one_entry_per_account():
     access, _, advapi32 = folders()
 
-    access.revoke("D:\\media", ["neutrino-ann", "neutrino-bob"])
+    access.revoke("D:\\media", ["neutrino_ann", "neutrino_bob"])
     access.revoke("D:\\media", [])
 
     assert [entry[1:] for entry in advapi32.folded] == [
-        (win32.REVOKE_ACCESS, 0, win32.TRUSTEE_IS_NAME, "neutrino-ann"),
-        (win32.REVOKE_ACCESS, 0, win32.TRUSTEE_IS_NAME, "neutrino-bob"),
+        (win32.REVOKE_ACCESS, 0, win32.TRUSTEE_IS_NAME, "neutrino_ann"),
+        (win32.REVOKE_ACCESS, 0, win32.TRUSTEE_IS_NAME, "neutrino_bob"),
     ]
     assert len(advapi32.set) == 1
 

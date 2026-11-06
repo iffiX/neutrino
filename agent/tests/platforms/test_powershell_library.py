@@ -184,29 +184,44 @@ def test_the_file_share_leaves_a_foreign_share_name_off_and_never_grants_everyon
     assert apply.index("share_name_taken") < apply.index("Start-Service")
 
 
-def test_the_file_share_sweep_removes_an_account_of_the_prefix_or_of_0_5_alone():
+def test_the_file_share_sweep_takes_an_account_of_0_5_by_the_record_and_the_marker():
     """A description an administrator gave a person's account makes it the
-    module's only when a record of 0.5 lists it too."""
+    module's only when a record lists it too."""
     sweep = body("share_sweep")
     users = sweep[sweep.index("Get-LocalUser -ErrorAction") :]
     users = users[: users.index("Remove-LocalUser")]
 
-    assert '"$($user.Name)".StartsWith($Request.user_prefix)' in users
-    assert (
-        '(@($Request.earlier_accounts) -contains "$($user.Name)") -and\n'
-        '            ("$($user.Description)" -eq $Request.marker)'
-    ) in users
+    assert '(@($Request.earlier_accounts) -contains "$($user.Name)")' in users
     assert "Remove-LocalUser" not in body("share_apply")
 
 
-def test_the_file_share_sweep_takes_every_hidden_entry_under_the_prefix():
+def test_the_file_share_sweep_takes_a_hidden_entry_under_a_prefix_whose_account_is_gone():
     """The R167 lab machine kept the hidden entries of accounts an earlier
-    round deleted, ``neutrino-lab`` and ``neutrino-lab2``."""
+    round deleted, ``neutrino-lab`` and ``neutrino-lab2``; a live
+    ``neutrino_transport`` keeps its own."""
     sweep = body("share_sweep")
     hidden = sweep[sweep.index("(Get-Item -Path $hidden") :]
 
-    assert '"$name".StartsWith($Request.user_prefix)' in hidden
+    assert '"$name".StartsWith($_)' in hidden
+    assert "-not (Get-LocalUser -Name $name -ErrorAction SilentlyContinue)" in hidden
     assert "Remove-ItemProperty -Path $hidden -Name $name" in hidden
+
+
+def test_the_file_share_sweep_takes_an_account_by_its_marker_never_its_start_alone():
+    """``neutrino_transport`` starts as the file share's accounts do."""
+    sweep = body("share_sweep")
+    users = sweep[sweep.index("Get-LocalUser -ErrorAction") :]
+    users = users[: users.index("Remove-LocalUser")]
+
+    assert '$is_marked = "$($user.Description)" -eq $Request.marker' in users
+    assert "$is_ours = $is_marked -and ($is_named -or" in users
+
+
+def test_the_file_share_apply_answers_each_account_s_sid():
+    apply = body("share_apply")
+
+    assert '$sids[$u] = "$($held.SID.Value)"' in apply
+    assert "sids = $sids" in apply
 
 
 def test_the_file_share_sweep_closes_a_deleted_account_s_sessions_first():
