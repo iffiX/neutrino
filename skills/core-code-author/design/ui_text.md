@@ -791,6 +791,8 @@ A UDP port record is in neither number of the page's badge, `{healthy} of
 | --- | --- | --- |
 | `ui.proxy.dead_exits` | Every enabled exit node is unreachable. Traffic sent to the proxy (the LAN's names included) fails until one answers. | 所有启用的出口节点都不可达。在有节点应答之前，送往代理的流量都会失败，局域网的域名解析也一样。 |
 | `ui.proxy.dead_exits_fallback` | Every enabled exit node is unreachable, so traffic sent to the proxy is leaving through the WAN instead, under this machine's own address. | 所有启用的出口节点都不可达，送往代理的流量正改从 WAN 出去，用的是这个系统自己的地址。 |
+| `state.exit_down_cut`, the strip's exit half while the fallback is off | exit down, cut off | 出口不通，已断开 |
+| `state.exit_down_direct`, the strip's exit half while traffic falls back | exit down, going direct | 出口不通，走直连 |
 
 ## Direct's words
 
