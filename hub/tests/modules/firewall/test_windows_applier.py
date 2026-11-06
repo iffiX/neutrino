@@ -9,13 +9,15 @@ out included. An alias Windows has no adapter by yet is waited for a bounded
 number of runs, then left out with a note; a rule Windows refuses leaves the
 others applied and is answered by name; the next pass scopes a rule left
 narrowed or disabled again. The setup wizard's rule is one no purpose
-names once setup's pass runs.
+names once setup's pass runs. A removal also takes away every rule whose
+program is under the hub's folder, whatever its name.
 """
 
 import pytest
 
 from neutrino_hub.modules.firewall.constants import (
     FIREWALL_WINDOWS_CHANGE_SCRIPT,
+    FIREWALL_WINDOWS_PROGRAM_REMOVE_SCRIPT,
     FIREWALL_WINDOWS_READ_SCRIPT,
     FIREWALL_WINDOWS_RETRY_COUNT,
     FIREWALL_WINDOWS_RETRY_WAIT_S,
@@ -32,6 +34,7 @@ RULES = [
 ]
 # How Windows reads the same remote addresses back.
 READ_BACK = ["192.168.1.0/255.255.255.0", "2001:db8:1::/64"]
+HUB_FOLDER = "C:\\Program Files\\Neutrino\\hub"
 
 
 def held(*entries, remote=READ_BACK, interfaces=("Any",), is_enabled=True) -> dict:
@@ -271,11 +274,52 @@ def test_a_removal_takes_every_rule_of_the_hubs_away():
     ]
 
 
-def test_a_removal_with_nothing_held_runs_nothing_more():
+def test_a_removal_with_nothing_held_runs_only_the_program_rules_removal():
     powershell = FakePowerShell({FIREWALL_WINDOWS_READ_SCRIPT: {"rules": []}})
 
     assert FirewallWindowsApplier(powershell=powershell).remove() == []
-    assert len(powershell.runs) == 1
+    assert [script for script, _ in powershell.runs] == [
+        FIREWALL_WINDOWS_READ_SCRIPT,
+        FIREWALL_WINDOWS_PROGRAM_REMOVE_SCRIPT,
+    ]
+
+
+def test_a_removal_takes_every_rule_of_a_program_under_the_hubs_folder_away():
+    """easytier-core makes an inbound and an outbound rule for itself."""
+    made = [
+        f"EasyTier {HUB_FOLDER}\\bin\\easytier-core.exe (Inbound)",
+        f"EasyTier {HUB_FOLDER}\\bin\\easytier-core.exe (Outbound)",
+        "nhub.exe",
+    ]
+    powershell = FakePowerShell(
+        {
+            FIREWALL_WINDOWS_READ_SCRIPT: held(("neutrino_hub_agent", "TCP", "8443")),
+            FIREWALL_WINDOWS_PROGRAM_REMOVE_SCRIPT: {"removed": made},
+        }
+    )
+
+    notes = FirewallWindowsApplier(
+        powershell=powershell, program_folder=HUB_FOLDER
+    ).remove()
+
+    assert notes == [
+        "firewall closed neutrino_hub_agent",
+        *(f"firewall closed {name}" for name in made),
+    ]
+    assert powershell.runs[2] == (
+        FIREWALL_WINDOWS_PROGRAM_REMOVE_SCRIPT,
+        {"folder": HUB_FOLDER},
+    )
+
+
+def test_the_program_rules_removal_matches_the_folder_whatever_the_case():
+    script = FIREWALL_WINDOWS_PROGRAM_REMOVE_SCRIPT
+
+    assert "Get-NetFirewallApplicationFilter" in script
+    assert "ExpandEnvironmentVariables" in script
+    assert "OrdinalIgnoreCase" in script
+    assert "TrimEnd('\\') + '\\'" in script
+    assert "Remove-NetFirewallRule" in script
 
 
 def test_powershell_that_cannot_run_is_an_os_error():

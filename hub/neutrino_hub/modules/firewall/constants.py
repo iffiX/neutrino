@@ -103,6 +103,26 @@ foreach ($rule in @($d.create)) {
 @{changed = $true; dropped = @($dropped); failed = @($failed)} |
   ConvertTo-Json -Compress -Depth 4
 """
+# Removes every rule whose program is under the folder the document names,
+# whatever the rule's name, the program's path compared without case and
+# with its environment variables expanded. Answers the display names
+# removed.
+FIREWALL_WINDOWS_PROGRAM_REMOVE_SCRIPT = """
+$prefix = ([string]$d.folder).TrimEnd('\\') + '\\'
+$removed = [System.Collections.ArrayList]::new()
+foreach ($filter in @(Get-NetFirewallApplicationFilter -ErrorAction SilentlyContinue)) {
+  $program = [Environment]::ExpandEnvironmentVariables([string]$filter.Program)
+  if (-not $program.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) {
+    continue
+  }
+  foreach ($rule in @($filter | Get-NetFirewallRule -ErrorAction SilentlyContinue)) {
+    if (-not $rule) { continue }
+    $rule | Remove-NetFirewallRule -ErrorAction SilentlyContinue
+    [void]$removed.Add([string]$rule.DisplayName)
+  }
+}
+@{removed = @($removed)} | ConvertTo-Json -Compress -Depth 3
+"""
 # What Windows reads back for a filter that names nothing.
 FIREWALL_WINDOWS_ANY = "any"
 # How many times one pass runs the change while an alias is left out or a

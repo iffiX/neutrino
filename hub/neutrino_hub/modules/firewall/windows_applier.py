@@ -8,7 +8,10 @@ sender when it names none, and is scoped with ``-InterfaceAlias`` to the
 interfaces it names that Windows has an adapter by. While an alias is left
 out or a rule is refused, the change runs again after a wait, a bounded
 number of times; one refused rule leaves the others applied. A pass that
-finds every rule as it should be changes nothing.
+finds every rule as it should be changes nothing. A removal also takes away
+every rule whose program is under the hub's install folder, whatever its
+name. easytier-core makes an inbound and an outbound rule for itself when it
+brings its device up.
 
 Not pure: runs PowerShell.
 """
@@ -24,9 +27,11 @@ from neutrino_hub.modules.firewall.constants import (
     FIREWALL_WINDOWS_RETRY_COUNT,
     FIREWALL_WINDOWS_RETRY_WAIT_S,
     FIREWALL_WINDOWS_DESCRIPTION,
+    FIREWALL_WINDOWS_PROGRAM_REMOVE_SCRIPT,
     FIREWALL_WINDOWS_READ_SCRIPT,
 )
 from neutrino_hub.system.powershell_run import listed, run_powershell
+from neutrino_hub.utils.constants import UTILS_STATIC_ROOT
 
 
 def _document(rule) -> dict:
@@ -124,7 +129,7 @@ def _refusal(rule, error) -> dict:
 class FirewallWindowsApplier:
     """Drives the hub's own rules in Windows Firewall."""
 
-    def __init__(self, *, powershell=None, sleep=None):
+    def __init__(self, *, powershell=None, sleep=None, program_folder=None):
         """
         Args:
             powershell: Runs one script with a document, as
@@ -132,9 +137,12 @@ class FirewallWindowsApplier:
                 does; None is that function.
             sleep: Waits a number of seconds between two runs of the
                 change; None is :func:`time.sleep`.
+            program_folder: The folder whose programs' rules a removal takes
+                away; None is the hub's install folder.
         """
         self._powershell = powershell if powershell is not None else run_powershell
         self._sleep = sleep if sleep is not None else time.sleep
+        self._program_folder = str(program_folder or UTILS_STATIC_ROOT)
 
     def apply(self, rules: list) -> tuple:
         """Make the hub's rules exactly these.
@@ -200,7 +208,8 @@ class FirewallWindowsApplier:
         return notes, refused
 
     def remove(self) -> list:
-        """Take every rule of the hub's away.
+        """Take every rule of the hub's away, and every rule of a program
+        under the hub's install folder.
 
         Returns:
             One line per rule removed.
@@ -209,10 +218,13 @@ class FirewallWindowsApplier:
             OSError: When PowerShell cannot run or a cmdlet refuses.
         """
         held = sorted(self._held())
-        if not held:
-            return []
-        self._change(create=[], update=[], remove=held)
-        return [f"firewall closed {name}" for name in held]
+        if held:
+            self._change(create=[], update=[], remove=held)
+        answer = self._powershell(
+            FIREWALL_WINDOWS_PROGRAM_REMOVE_SCRIPT, {"folder": self._program_folder}
+        )
+        removed = [str(name) for name in listed(answer.get("removed"))]
+        return [f"firewall closed {name}" for name in [*held, *removed]]
 
     def _held(self) -> dict:
         """The hub's rules as Windows holds them, shaped as :func:`_held_shape`."""
