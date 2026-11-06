@@ -304,7 +304,7 @@ def test_the_files_addresses_are_kept_and_one_of_another_shape_is_dropped(tmp_pa
                     "198.19.255.7": {  # scan: allow
                         "hub_id": "h1",
                         "machine": "d1",
-                        "user": "neutrino-bob",
+                        "user": "neutrino_bob",
                     },
                 }
             }
@@ -317,7 +317,7 @@ def test_the_files_addresses_are_kept_and_one_of_another_shape_is_dropped(tmp_pa
         "198.19.255.7": {  # scan: allow
             "hub_id": "h1",
             "machine": "d1",
-            "user": "neutrino-bob",
+            "user": "neutrino_bob",
         },
     }
 

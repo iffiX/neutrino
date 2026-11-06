@@ -64,7 +64,7 @@ SWEEP = {
     "op": "share_sweep",
     "args": {
         "marker": "neutrino",
-        "user_prefix": "neutrino-",
+        "user_prefixes": ["neutrino_", "neutrino-"],
         "is_served": False,
         "earlier_accounts": [],
     },

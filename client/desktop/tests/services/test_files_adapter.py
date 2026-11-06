@@ -32,7 +32,7 @@ FIRST = "198.19.255.2"  # scan: allow
 SECOND = "198.19.255.3"  # scan: allow
 LAST = "198.19.255.253"  # scan: allow
 ADAPTER = "198.19.255.1"  # scan: allow
-ANN = "neutrino-ann"
+ANN = "neutrino_ann"
 SHARE_ENTRY = {
     "hub_id": "h1",
     "id": "samba:media",
@@ -580,8 +580,8 @@ def test_a_share_nobody_publishes_is_one_line_until_it_comes_back(plan, connecto
 
     said = [line for line in lines if "publishes no share" in line]
     assert said == [
-        "files endpoint: h1 publishes no share on d1 for neutrino-ann",
-        "files endpoint: h1 publishes no share on d1 for neutrino-ann (5 times in all)",
+        "files endpoint: h1 publishes no share on d1 for neutrino_ann",
+        "files endpoint: h1 publishes no share on d1 for neutrino_ann (5 times in all)",
     ]
 
 
@@ -589,11 +589,11 @@ def test_two_users_of_one_machine_take_two_addresses(store, plan):
     """Windows connects to one server as one user at a time, so each account
     of a folder share is a server of its own."""
     ann = plan.address_for("h1", "d1", ANN)
-    bob = plan.address_for("h1", "d1", "neutrino-bob")
+    bob = plan.address_for("h1", "d1", "neutrino_bob")
 
     assert (ann, bob) == (FIRST, SECOND)
     assert plan.address_for("h1", "d1", ANN) == FIRST
-    assert plan.target_of(SECOND) == ("h1", "d1", "neutrino-bob")
+    assert plan.target_of(SECOND) == ("h1", "d1", "neutrino_bob")
 
 
 def test_each_address_reaches_the_entry_of_its_user(plan, connector):
@@ -607,7 +607,7 @@ def test_each_address_reaches_the_entry_of_its_user(plan, connector):
     other = {
         **SHARE_ENTRY,
         "id": "samba_folder_d1_lab_bob",
-        "payload": {"share": "lab", "users": ["neutrino-bob"], "account": "bob"},
+        "payload": {"share": "lab", "users": ["neutrino_bob"], "account": "bob"},
     }
     endpoint = FilesSocksEndpoint(
         plan=plan,
@@ -618,7 +618,7 @@ def test_each_address_reaches_the_entry_of_its_user(plan, connector):
     endpoint.start()
     try:
         plan.address_for("h1", "d1", ANN)
-        plan.address_for("h1", "d1", "neutrino-bob")
+        plan.address_for("h1", "d1", "neutrino_bob")
         assert connect(socks_client(endpoint), FIRST, 445)[:2] == b"\x05\x00"
         assert connect(socks_client(endpoint), SECOND, 445)[:2] == b"\x05\x00"
     finally:
