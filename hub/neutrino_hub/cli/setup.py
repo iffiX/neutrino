@@ -72,6 +72,7 @@ from neutrino_hub.modules.devices.agent_package import (
     AGENT_PACKAGE_FAMILY_OF_PLATFORM,
     AgentPackageCache,
 )
+from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.modules.easytier.constants import (
     EASYTIER_CLI_PATH,
     EASYTIER_CORE_PATH,
@@ -86,7 +87,11 @@ from neutrino_hub.modules.frp.constants import (
 from neutrino_hub.modules.netbird.constants import NETBIRD_BINARY_PATH
 from neutrino_hub.modules.overlay.config import enabled_providers
 from neutrino_hub.modules.overlay.ops import OverlaySwitcher
-from neutrino_hub.system.machine import distribution_family, machine_architecture
+from neutrino_hub.system.machine import (
+    distribution_family,
+    machine_architecture,
+    machine_id,
+)
 from neutrino_hub.system.installation import (
     is_packaged,
     project_root,
@@ -375,18 +380,62 @@ def finish_local_agent() -> None:
     """Install this machine's agent and join it, when the first run left it to the panel.
 
     Runs in the panel's process, once it serves, and only when the service's
-    run left the mark; the mark is removed either way.
+    run left the mark. The mark is removed once the agent has joined, or
+    when this hub carries no agent for this machine. A reboot or a failure
+    leaves it for the next start.
     """
     if not WEB_SETUP_LOCAL_AGENT_PATH.is_file():
         return
     reporter = InstallReporter(
         total_step_count=1, is_color_enabled=False, log_path=UTILS_SETUP_LOG_PATH
     )
-    try:
-        _wait_for_panel()
-        _install_local_agent("", reporter, link_of=_minted_link)
-    finally:
+    _wait_for_panel()
+    if _install_local_agent("", reporter, link_of=_minted_link):
         WEB_SETUP_LOCAL_AGENT_PATH.unlink(missing_ok=True)
+
+
+def join_local_agent_again(follow) -> None:
+    """Join this machine's agent again onto its row, when the row's binding no longer works.
+
+    Runs in the panel's process once it serves, after the agent's follow
+    started. The row of this machine that holds a token and no static key
+    was joined by an agent of 0.5. The join waits while the follow's script
+    runs, and runs once the agent is at the version of the hub's package; an
+    agent at another version is joined at a later start.
+
+    Args:
+        follow: The follow of this machine's agent, a
+            :class:`neutrino_hub.modules.hub_update.local_agent.HubLocalAgentInstaller`.
+    """
+    if is_dev_root_set() or not is_local_agent_installed():
+        return
+    device = DeviceRegistry().find_by_machine_id(machine_id())
+    if device is None or not device.client.token_sha256 or device.client.public_key:
+        return
+    reporter = InstallReporter(
+        total_step_count=1, is_color_enabled=False, log_path=UTILS_SETUP_LOG_PATH
+    )
+    reporter.start("Joining this machine's agent again", code=SETUP_STEP_LOCAL_AGENT)
+    follow.wait()
+    if not follow.is_current():
+        reporter.failed(
+            "the agent is not at the hub's version; the panel's next start joins it"
+        )
+        return
+    _wait_for_panel()
+    link, note = _minted_link(device_id=device.id)
+    if not link:
+        reporter.failed(note)
+        return
+    try:
+        run(
+            [hub_platform().agent_command(), "join", link, "--yes"],
+            timeout_s=SETUP_AGENT_JOIN_TIMEOUT_S,
+        )
+    except (subprocess.SubprocessError, OSError) as error:
+        reporter.failed(command_failure_text(error))
+        return
+    reporter.done("joined")
 
 
 def rejoin_local_agent() -> None:
@@ -1065,7 +1114,7 @@ def _joined_devices() -> list:
     ]
 
 
-def _install_local_agent(password: str, reporter, *, link_of=None) -> None:
+def _install_local_agent(password: str, reporter, *, link_of=None) -> bool:
     """Put this machine's own agent on it, and join it to this hub.
 
     The hub hosts no module itself: what a device runs, it runs through an
@@ -1083,10 +1132,14 @@ def _install_local_agent(password: str, reporter, *, link_of=None) -> None:
         reporter: Where the step is reported.
         link_of: Returns the link and a note in place of asking the panel
             with the password; None asks the panel.
+
+    Returns:
+        True when the agent joined, under a development root, and when this
+        hub carries no agent for this machine; False when a step failed.
     """
     # A development root installs no packages and runs no units.
     if is_dev_root_set():
-        return
+        return True
     reporter.start("Installing this machine's agent", code=SETUP_STEP_LOCAL_AGENT)
     if is_linux():
         family = SETUP_AGENT_PACKAGE_FAMILIES.get(distribution_family(), "")
@@ -1096,7 +1149,7 @@ def _install_local_agent(password: str, reporter, *, link_of=None) -> None:
     cache = AgentPackageCache()
     if not family or not cache.serves(family=family, architecture=architecture):
         reporter.failed("this hub carries no agent for this machine")
-        return
+        return True
     # The package depends on the libraries its remote desktop host draws
     # with, which a headless board installs for the first time here.
     reporter.note(
@@ -1116,7 +1169,7 @@ def _install_local_agent(password: str, reporter, *, link_of=None) -> None:
         link, note = link_of() if link_of else _enrollment_link(password)
         if not link:
             reporter.failed(note)
-            return
+            return False
         run(
             [hub_platform().agent_command(), "join", link, "--yes"],
             timeout_s=SETUP_AGENT_JOIN_TIMEOUT_S,
@@ -1128,8 +1181,9 @@ def _install_local_agent(password: str, reporter, *, link_of=None) -> None:
         RuntimeError,
     ) as error:
         reporter.failed(command_failure_text(error))
-        return
+        return False
     reporter.done("installed and joined")
+    return True
 
 
 def _write_panel_settings(

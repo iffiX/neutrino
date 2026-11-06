@@ -10,6 +10,7 @@ for is said out loud instead of failing the run.
 
 import hashlib
 import json
+import subprocess
 
 import pytest
 
@@ -119,6 +120,49 @@ def test_a_machine_this_hub_has_no_agent_for_is_said_and_the_run_goes_on(
     assert manager.installed == []
     assert commands == []
     assert reporter.failures
+
+
+def test_an_agent_installed_and_joined_is_done(box):
+    assert setup._install_local_agent("panel-password", FakeReporter()) is True
+
+
+def test_a_machine_this_hub_has_no_agent_for_is_done_for_good(box, monkeypatch):
+    monkeypatch.setattr(setup, "AgentPackageCache", lambda: FakeCache(is_served=False))
+
+    assert setup._install_local_agent("panel-password", FakeReporter()) is True
+
+
+def test_an_install_a_reboot_ended_is_not_done(box, monkeypatch):
+    """Rocky 9, 2026-11-05: a reboot 45 s after setup ended dnf with
+    SIGTERM, and the hub had no agent of its own through three reboots."""
+    manager, commands = box
+
+    def ended(path):
+        raise subprocess.CalledProcessError(-15, ["dnf", "install", path])
+
+    monkeypatch.setattr(manager, "install_file", ended)
+    reporter = FakeReporter()
+
+    assert setup._install_local_agent("panel-password", reporter) is False
+    assert commands == []
+    assert reporter.failures
+
+
+def test_a_join_that_failed_is_not_done(box, monkeypatch):
+    def refused(command, **kwargs):
+        raise subprocess.CalledProcessError(1, command)
+
+    monkeypatch.setattr(setup, "run", refused)
+
+    assert setup._install_local_agent("panel-password", FakeReporter()) is False
+
+
+def test_a_panel_that_hands_out_no_link_is_not_done(box, monkeypatch):
+    monkeypatch.setattr(
+        setup, "_enrollment_link", lambda password: ("", "the panel did not answer")
+    )
+
+    assert setup._install_local_agent("panel-password", FakeReporter()) is False
 
 
 def test_a_family_with_no_agent_build_is_not_asked_for_one(box, monkeypatch):

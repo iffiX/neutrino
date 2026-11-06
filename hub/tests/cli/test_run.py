@@ -614,7 +614,42 @@ class FakeLocalAgent:
         return self.answer
 
 
-def test_the_local_agents_install_is_a_line_of_the_panels_log(monkeypatch, capsys):
+@pytest.fixture
+def joined_again(monkeypatch):
+    """Every follow the panel's start hands to the join, in order."""
+    from neutrino_hub.cli import setup
+
+    handed: list = []
+    monkeypatch.setattr(setup, "join_local_agent_again", handed.append)
+    return handed
+
+
+def test_the_follow_hands_the_agent_to_the_join_again(monkeypatch, joined_again):
+    from neutrino_hub.modules.hub_update import local_agent
+
+    monkeypatch.setattr(local_agent, "HubLocalAgentInstaller", FakeLocalAgent)
+    FakeLocalAgent.answer = ""
+
+    run._follow_local_agent()
+
+    assert len(joined_again) == 1
+    assert isinstance(joined_again[0], FakeLocalAgent)
+
+
+def test_a_follow_that_cannot_start_joins_nothing(monkeypatch, joined_again):
+    from neutrino_hub.modules.hub_update import local_agent
+
+    monkeypatch.setattr(local_agent, "HubLocalAgentInstaller", FakeLocalAgent)
+    FakeLocalAgent.answer = OSError("systemd-run: not found")
+
+    run._follow_local_agent()
+
+    assert joined_again == []
+
+
+def test_the_local_agents_install_is_a_line_of_the_panels_log(
+    monkeypatch, capsys, joined_again
+):
     from neutrino_hub.modules.hub_update import local_agent
 
     monkeypatch.setattr(local_agent, "HubLocalAgentInstaller", FakeLocalAgent)
@@ -630,7 +665,7 @@ def test_the_local_agents_install_is_a_line_of_the_panels_log(monkeypatch, capsy
 
 
 def test_a_local_agent_install_that_cannot_start_is_said_and_the_panel_serves(
-    monkeypatch, capsys
+    monkeypatch, capsys, joined_again
 ):
     from neutrino_hub.modules.hub_update import local_agent
 

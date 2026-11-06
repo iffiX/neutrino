@@ -564,7 +564,8 @@ def _stop_samplers() -> None:
 def _finish_first_run() -> None:
     """Install this machine's agent beside the panel, when the first run left
     it, or join it again, when a restore left it; otherwise bring it to the
-    version of the hub's package."""
+    version of the hub's package and join it again when its row's binding no
+    longer works."""
     from neutrino_hub.web.constants import (
         WEB_RESTORE_LOCAL_AGENT_PATH,
         WEB_SETUP_LOCAL_AGENT_PATH,
@@ -590,11 +591,14 @@ def _finish_first_run() -> None:
 
 def _follow_local_agent() -> None:
     """Start the install of this machine's agent at the hub package's version,
-    when the agent is at another version."""
+    when the agent is at another version, then join the agent again when its
+    row's binding no longer works."""
+    from neutrino_hub.cli import setup
     from neutrino_hub.modules.hub_update.local_agent import HubLocalAgentInstaller
 
+    follow = HubLocalAgentInstaller()
     try:
-        note = HubLocalAgentInstaller().follow()
+        note = follow.follow()
     except (OSError, subprocess.SubprocessError, ValueError) as error:
         print(
             f"error: the local agent stays at its version "
@@ -604,6 +608,7 @@ def _follow_local_agent() -> None:
         return
     if note:
         print(f"  local agent: {note}")
+    setup.join_local_agent_again(follow)
 
 
 def _panel_config(host: str, port: int, **tls) -> uvicorn.Config:

@@ -226,6 +226,80 @@ def test_a_script_already_running_is_left_to_run(tmp_path):
     assert not (tmp_path / "hub_update" / "local_agent.sh").exists()
 
 
+class FakeClock:
+    """A monotonic clock each sleep moves forward."""
+
+    def __init__(self):
+        self.now = 100.0
+        self.sleeps = []
+
+    def __call__(self):
+        return self.now
+
+    def sleep(self, seconds):
+        self.sleeps.append(seconds)
+        self.now += seconds
+
+
+def test_the_wait_ends_when_the_script_ends(tmp_path):
+    states = iter(["active", "activating", "inactive"])
+    clock = FakeClock()
+    installer = HubLocalAgentInstaller(
+        directory=tmp_path,
+        family="debian",
+        hub_version=HUB,
+        agent_command=str(tmp_path / "nagent"),
+        package_of=lambda: str(DEB),
+        run_command=FakeRunner(HUB),
+        job_state_of=lambda: next(states),
+        clock=clock,
+        sleep=clock.sleep,
+    )
+
+    installer.wait()
+
+    assert clock.sleeps == [1, 1]
+
+
+def test_the_wait_ends_at_its_limit(tmp_path):
+    clock = FakeClock()
+    installer = HubLocalAgentInstaller(
+        directory=tmp_path,
+        family="debian",
+        hub_version=HUB,
+        agent_command=str(tmp_path / "nagent"),
+        package_of=lambda: str(DEB),
+        run_command=FakeRunner(HUB),
+        job_state_of=lambda: "active",
+        clock=clock,
+        sleep=clock.sleep,
+    )
+
+    installer.wait(wait_s=10)
+
+    assert sum(clock.sleeps) == 10
+
+
+def test_an_agent_at_the_packages_version_is_current(tmp_path):
+    installer, _, _ = follower(tmp_path, version=HUB)
+
+    assert installer.is_current() is True
+
+
+def test_an_agent_of_05_is_not_current(tmp_path):
+    installer, _, _ = follower(tmp_path)
+
+    assert installer.is_current() is False
+
+
+def test_an_agent_at_a_pinned_packages_version_is_current(tmp_path):
+    installer, _, _ = follower(
+        tmp_path, package="/pinned/neutrino-agent_0.5.2_amd64.deb"
+    )
+
+    assert installer.is_current() is True
+
+
 def test_a_mac_submits_the_script_as_a_launchd_job(tmp_path):
     installer, runner, _ = follower(tmp_path, family="pkg", package=str(PKG))
 

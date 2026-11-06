@@ -10,7 +10,8 @@ script waits while the hub's own update runs, since its health gate can put
 the previous hub back. It ends when the hub moved to another version or the
 agent reached the package's version meanwhile. Otherwise it installs the
 package with the command the hub's update installs with, which waits for the
-lock of the install that started the panel.
+lock of the install that started the panel. The panel can wait while the
+script runs, and read whether the agent then is at the package's version.
 
 Not pure: reads the agent's version, writes the script and starts it.
 """
@@ -20,6 +21,7 @@ import re
 import shlex
 import shutil
 import subprocess
+import time
 from pathlib import Path
 from typing import Callable
 
@@ -34,6 +36,7 @@ from neutrino_hub.modules.hub_update.constants import (
     HUB_UPDATE_DIR_MODE,
     HUB_UPDATE_DIR_NAME,
     HUB_UPDATE_LAUNCH_TIMEOUT_S,
+    HUB_UPDATE_LOCAL_AGENT_JOIN_WAIT_S,
     HUB_UPDATE_LOCAL_AGENT_LOG_NAME,
     HUB_UPDATE_LOCAL_AGENT_PID_NAME,
     HUB_UPDATE_LOCAL_AGENT_POLL_S,
@@ -464,6 +467,8 @@ class HubLocalAgentInstaller:
         run_command: Callable[..., object] = run,
         job_state_of: Callable[[], str] | None = None,
         start_detached: Callable[[list], int] | None = None,
+        clock: Callable[[], float] = time.monotonic,
+        sleep: Callable[[float], None] = time.sleep,
     ):
         """Set up an installer.
 
@@ -484,6 +489,8 @@ class HubLocalAgentInstaller:
             start_detached: How the Windows script is started apart from the
                 service, answering its process id; None starts it with no
                 window and outside the service's job.
+            clock: The monotonic clock a wait is measured with.
+            sleep: Waits a number of seconds between two looks.
         """
         self._directory = directory
         self._family = family
@@ -493,6 +500,8 @@ class HubLocalAgentInstaller:
         self._run = run_command
         self._job_state_of = job_state_of
         self._start_detached = start_detached or start_detached_process
+        self._clock = clock
+        self._sleep = sleep
 
     @property
     def directory(self) -> Path:
@@ -522,7 +531,7 @@ class HubLocalAgentInstaller:
         package = self._package_of()
         if not package:
             return f"agent {installed or 'unknown'}: no agent package for this machine"
-        wanted = package_version(Path(package).name) or self._hub_version
+        wanted = self._wanted(package)
         if installed == wanted:
             return ""
         if self._job_state() in UNIT_ACTIVE_STATES:
@@ -549,6 +558,40 @@ class HubLocalAgentInstaller:
             f"agent {installed or 'unknown'} goes to {wanted}: "
             f"{HUB_UPDATE_LOCAL_AGENT_UNIT} started"
         )
+
+    def wait(
+        self,
+        *,
+        wait_s: float = HUB_UPDATE_LOCAL_AGENT_JOIN_WAIT_S,
+        poll_s: float = HUB_UPDATE_LOCAL_AGENT_POLL_S,
+    ) -> None:
+        """Wait while the script runs, at most ``wait_s``.
+
+        Args:
+            wait_s: The longest wait.
+            poll_s: How often the script's state is read.
+        """
+        deadline = self._clock() + wait_s
+        while self._job_state() in UNIT_ACTIVE_STATES:
+            left = deadline - self._clock()
+            if left <= 0:
+                return
+            self._sleep(min(poll_s, left))
+
+    def is_current(self) -> bool:
+        """Whether this machine's agent is at the version of the hub's package.
+
+        Returns:
+            True when ``nagent --version`` names the package's version, or the
+            hub's own when the cache holds no package for this machine.
+        """
+        command = self._agent_command or hub_platform().agent_command()
+        return self._version_of(command) == self._wanted(self._package_of())
+
+    def _wanted(self, package: str) -> str:
+        """The version a package file names, else the hub's own."""
+        named = package_version(Path(package).name) if package else ""
+        return named or self._hub_version
 
     def _version_of(self, command: str) -> str:
         """The last line the agent's ``--version`` prints, empty when none."""

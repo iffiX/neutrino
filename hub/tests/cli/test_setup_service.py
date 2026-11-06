@@ -6,7 +6,9 @@ that the service serves the wizard behind the kept token, runs the steps
 when the browser answers, exits with the restart status once the box is set
 up, keeps serving after answers it cannot use or a run that failed, and that
 whichever process starts the steps first holds the lock the other is
-refused by.
+refused by. The panel's start installs and joins the machine's own agent
+until it has joined, and joins it again onto its row when that row holds a
+binding of 0.5.
 """
 
 import json
@@ -15,6 +17,7 @@ import threading
 import pytest
 
 from neutrino_hub.cli import setup
+from neutrino_hub.modules.devices.registry import DeviceClientInfo, ManagedDevice
 from neutrino_hub.platforms.base import HubPlatform
 from neutrino_hub.system.constants import SYSTEM_RESTART_EXIT_STATUS
 from neutrino_hub.web.setup_app import SetupLock
@@ -260,13 +263,43 @@ def test_the_panel_installs_the_agent_the_first_run_left_to_it(
     monkeypatch.setattr(
         setup,
         "_install_local_agent",
-        lambda password, reporter, *, link_of: installed.append(link_of),
+        lambda password, reporter, *, link_of: installed.append(link_of) or True,
     )
     monkeypatch.setattr(setup, "UTILS_SETUP_LOG_PATH", setup_files / "setup.log")
 
     setup.finish_local_agent()
 
     assert installed == [setup._minted_link]
+    assert not mark.exists()
+
+
+def test_an_agent_not_joined_leaves_the_mark_for_the_next_start(
+    monkeypatch, setup_files
+):
+    """A reboot during the first install ends it; the next start tries again."""
+    mark = setup_files / "setup_local_agent"
+    mark.parent.mkdir(parents=True, exist_ok=True)
+    mark.touch()
+    tries = []
+    monkeypatch.setattr(setup, "_wait_for_panel", lambda: None)
+    monkeypatch.setattr(
+        setup,
+        "_install_local_agent",
+        lambda password, reporter, *, link_of: tries.append(link_of) and False,
+    )
+    monkeypatch.setattr(setup, "UTILS_SETUP_LOG_PATH", setup_files / "setup.log")
+
+    setup.finish_local_agent()
+    assert mark.exists()
+
+    monkeypatch.setattr(
+        setup,
+        "_install_local_agent",
+        lambda password, reporter, *, link_of: tries.append(link_of) or True,
+    )
+    setup.finish_local_agent()
+
+    assert len(tries) == 2
     assert not mark.exists()
 
 
@@ -425,5 +458,130 @@ def test_with_no_restore_mark_nothing_joins(rejoining):
     _mark, minted, joins = rejoining
 
     setup.rejoin_local_agent()
+
+    assert (minted, joins) == ([], [])
+
+
+class OwnRows:
+    """The stored rows, as the registry finds the hub machine's own."""
+
+    row = None
+
+    def find_by_machine_id(self, machine_id):
+        return self.row if machine_id == "machine-hub" else None
+
+
+class FakeFollow:
+    """The follow of the machine's agent, and whether it ends at the package's version."""
+
+    def __init__(self, *, is_current=True):
+        self.waits = 0
+        self._is_current = is_current
+
+    def wait(self):
+        self.waits += 1
+
+    def is_current(self):
+        return self._is_current
+
+
+def own_row(*, token="t" * 64, public_key=None) -> ManagedDevice:
+    return ManagedDevice(
+        id="dev-hub",
+        name="hub52own",
+        machine_id="machine-hub",
+        client=DeviceClientInfo(token_sha256=token, public_key=public_key),
+    )
+
+
+@pytest.fixture
+def own_agent(monkeypatch, setup_files):
+    """The hub machine's agent installed, the panel answering, every join recorded."""
+    joins: list = []
+    minted: list = []
+    monkeypatch.setattr(setup, "is_dev_root_set", lambda: False)
+    monkeypatch.setattr(setup, "is_local_agent_installed", lambda: True)
+    monkeypatch.setattr(setup, "_wait_for_panel", lambda: None)
+    monkeypatch.setattr(setup, "UTILS_SETUP_LOG_PATH", setup_files / "setup.log")
+    monkeypatch.setattr(setup, "machine_id", lambda: "machine-hub")
+    monkeypatch.setattr(setup, "DeviceRegistry", OwnRows)
+    monkeypatch.setattr(
+        setup,
+        "_minted_link",
+        lambda device_id=None: minted.append(device_id) or ("neutrino://enroll/x", ""),
+    )
+    monkeypatch.setattr(setup, "run", lambda command, **kwargs: joins.append(command))
+    OwnRows.row = None
+    return minted, joins
+
+
+def test_the_row_a_05_agent_joined_is_joined_again_once_the_agent_is_current(
+    own_agent,
+):
+    """A 0.5.2 hub upgraded to 0.6: its own row read hub_key_missing until a
+    person made a link by hand."""
+    minted, joins = own_agent
+    OwnRows.row = own_row()
+    follow = FakeFollow()
+
+    setup.join_local_agent_again(follow)
+
+    assert follow.waits == 1
+    assert minted == ["dev-hub"]
+    assert joins == [
+        [
+            setup.hub_platform().agent_command(),
+            "join",
+            "neutrino://enroll/x",
+            "--yes",
+        ]
+    ]
+
+
+def test_a_row_with_a_static_key_is_left_as_it_is(own_agent):
+    minted, joins = own_agent
+    OwnRows.row = own_row(public_key="a" * 64)
+    follow = FakeFollow()
+
+    setup.join_local_agent_again(follow)
+
+    assert (follow.waits, minted, joins) == (0, [], [])
+
+
+def test_a_row_with_no_binding_is_left_to_the_person(own_agent):
+    """A row a person forgot the binding of joins only by a link they make."""
+    minted, joins = own_agent
+    OwnRows.row = own_row(token=None)
+
+    setup.join_local_agent_again(FakeFollow())
+
+    assert (minted, joins) == ([], [])
+
+
+def test_a_machine_with_no_row_of_its_own_joins_nothing(own_agent):
+    minted, joins = own_agent
+
+    setup.join_local_agent_again(FakeFollow())
+
+    assert (minted, joins) == ([], [])
+
+
+def test_an_agent_left_at_another_version_is_joined_at_a_later_start(own_agent):
+    minted, joins = own_agent
+    OwnRows.row = own_row()
+    follow = FakeFollow(is_current=False)
+
+    setup.join_local_agent_again(follow)
+
+    assert follow.waits == 1
+    assert (minted, joins) == ([], [])
+
+
+def test_a_machine_without_its_agent_joins_nothing_again(own_agent, monkeypatch):
+    minted, joins = own_agent
+    OwnRows.row = own_row()
+    monkeypatch.setattr(setup, "is_local_agent_installed", lambda: False)
+
+    setup.join_local_agent_again(FakeFollow())
 
     assert (minted, joins) == ([], [])

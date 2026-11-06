@@ -86,6 +86,9 @@ HUB_UPDATE_LOCAL_AGENT_LOG_NAME = "local_agent.log"
 # print its version.
 HUB_UPDATE_LOCAL_AGENT_WAIT_S = 30 * 60
 HUB_UPDATE_LOCAL_AGENT_POLL_S = 1
+# How long the panel waits for that script to end before it joins the agent
+# again.
+HUB_UPDATE_LOCAL_AGENT_JOIN_WAIT_S = 45 * 60
 HUB_UPDATE_LOCAL_AGENT_VERSION_TIMEOUT_S = 60
 # The version in an agent package's name, as every family spells it.
 HUB_UPDATE_LOCAL_AGENT_VERSION_NAME = r"^neutrino-agent[_-]([^_-]+)[_-]"
