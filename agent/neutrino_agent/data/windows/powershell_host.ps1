@@ -482,9 +482,10 @@ function Set-NeutrinoShare {
 # Deletes every share whose description starts with the marker, every
 # account whose name starts with the prefix, and each account of 0.5 the
 # record lists whose description is the marker, with its entry in the
-# sign-in screen's hidden list; answers the folders of the shares and the
-# SIDs of the accounts, whose entries the agent then takes off those
-# folders. Without is_served the shares are read only while the server runs.
+# sign-in screen's hidden list and its sessions on the server; answers the
+# folders of the shares and the SIDs of the accounts, whose entries the
+# agent then takes off those folders. Without is_served the shares and the
+# sessions are read only while the server runs.
 function Clear-NeutrinoShare {
     [CmdletBinding(SupportsShouldProcess = $true)]
     [OutputType([hashtable])]
@@ -513,6 +514,12 @@ function Clear-NeutrinoShare {
             continue
         }
         $sids += "$($user.SID.Value)"
+        # A session keeps the token of the account it signed in as.
+        foreach ($session in @(if ($is_readable) { Get-SmbSession -ErrorAction SilentlyContinue })) {
+            if ("$($session.ClientUserName)".EndsWith("\$($user.Name)")) {
+                Close-SmbSession -SessionId $session.SessionId -Force | Out-Null
+            }
+        }
         Remove-LocalUser -SID $user.SID | Out-Null
         Remove-ItemProperty -Path $hidden -Name $user.Name -ErrorAction SilentlyContinue
         $notes += "swept account $($user.Name)"

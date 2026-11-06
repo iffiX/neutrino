@@ -199,6 +199,18 @@ def test_the_file_share_sweep_removes_an_account_of_the_prefix_or_of_0_5_alone()
     assert "Remove-LocalUser" not in body("share_apply")
 
 
+def test_the_file_share_sweep_closes_a_deleted_account_s_sessions_first():
+    """On the R167 lab machine a sweep under live mounts left each session
+    holding the deleted account's token, and its reads were denied on the
+    folder granted to the account made again."""
+    sweep = body("share_sweep")
+    closed = sweep.index("Close-SmbSession -SessionId $session.SessionId -Force")
+
+    assert closed < sweep.index("Remove-LocalUser -SID $user.SID")
+    assert 'EndsWith("\\$($user.Name)")' in sweep
+    assert "if ($is_readable) { Get-SmbSession" in sweep
+
+
 def test_the_file_share_under_stopped_starts_no_server_and_makes_no_share():
     apply = body("share_apply")
     served = apply.index("if ($Request.is_served) {")
