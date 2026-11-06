@@ -40,6 +40,7 @@ from neutrino_agent.modules.gitea.applier import (
     is_handover_owed,
     listen_port_in,
     root_url_in,
+    secrets_in,
 )
 from neutrino_agent.modules.gitea.constants import (
     GITEA_BINARY_DIR_NAME,
@@ -515,6 +516,10 @@ class GiteaDarwinApplier:
     def read_root_url(self) -> str:
         """The root URL the installed ``app.ini`` names, read as the account; empty for none."""
         return root_url_in(self._conf_text())
+
+    def read_secrets(self) -> dict:
+        """The machine secrets the installed ``app.ini`` holds, read as the account, by name."""
+        return secrets_in(self._conf_text())
 
     def _conf_text(self) -> str:
         """``app.ini`` read as the account; empty when it cannot be read."""

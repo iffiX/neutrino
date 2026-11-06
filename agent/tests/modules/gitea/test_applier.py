@@ -419,6 +419,22 @@ def test_the_listen_port_is_read_from_the_installed_app_ini(monkeypatch, tmp_pat
     assert applier_module.read_listen_port() == 0
 
 
+def test_the_secrets_are_read_from_the_installed_app_ini(monkeypatch, tmp_path):
+    conf = tmp_path / "app.ini"
+    monkeypatch.setattr(applier_module, "GITEA_CONF_PATH", str(conf))
+    assert applier_module.read_secrets() == {}
+
+    conf.write_text(
+        "[server]\nHTTP_PORT = 3300\nLFS_JWT_SECRET = kept-lfs\n[security]\nSECRET_KEY = kept-key\nINTERNAL_TOKEN =\n[oauth2]\nJWT_SECRET = kept-jwt\n"
+    )
+
+    assert applier_module.read_secrets() == {
+        "SECRET_KEY": "kept-key",
+        "JWT_SECRET": "kept-jwt",
+        "LFS_JWT_SECRET": "kept-lfs",
+    }
+
+
 def test_the_root_url_is_read_from_the_installed_file(tmp_path):
     path = tmp_path / "app.ini"
     path.write_text("[server]\nHTTP_PORT = 3000\nROOT_URL = http://box:3000/\n")

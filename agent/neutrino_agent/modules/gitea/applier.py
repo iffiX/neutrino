@@ -30,6 +30,7 @@ from neutrino_agent.modules.gitea.constants import (
     GITEA_DIR,
     GITEA_ETC_DIR,
     GITEA_OWN_PARTS,
+    GITEA_SECRET_NAMES,
     GITEA_SYSTEMD_DIR,
     GITEA_UNIT,
     GITEA_UNIT_SOURCE_NAME,
@@ -554,6 +555,39 @@ def root_url_in(text: str) -> str:
         if key.strip() == "ROOT_URL":
             return value.strip()
     return ""
+
+
+def read_secrets(path: str = "") -> dict:
+    """The machine secrets the installed ``app.ini`` holds.
+
+    Args:
+        path: The ``app.ini``; the Linux one when not named.
+
+    Returns:
+        Each of the four secrets the file holds with a value, by name;
+        empty when no readable file holds one.
+    """
+    held = read_regular(path or GITEA_CONF_PATH)
+    return secrets_in((held or b"").decode("utf-8", "replace"))
+
+
+def secrets_in(text: str) -> dict:
+    """The machine secrets an ``app.ini``'s text holds with a value. Pure.
+
+    Args:
+        text: The file's text.
+
+    Returns:
+        ``SECRET_KEY``, ``INTERNAL_TOKEN``, ``JWT_SECRET`` and
+        ``LFS_JWT_SECRET``, each the text gives a value, by name.
+    """
+    found = {}
+    for line in text.splitlines():
+        key, _, value = line.partition("=")
+        key, value = key.strip(), value.strip()
+        if key in GITEA_SECRET_NAMES and value:
+            found[key] = value
+    return found
 
 
 def _unlink(path: str) -> None:

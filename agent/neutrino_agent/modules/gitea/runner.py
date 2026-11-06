@@ -50,6 +50,7 @@ from neutrino_agent.modules.gitea.applier import (
     git_files,
     read_listen_port,
     read_root_url,
+    read_secrets,
 )
 from neutrino_agent.modules.gitea.config import ADMIN_NAME_PATTERN, GiteaConfig
 from neutrino_agent.modules.gitea.constants import (
@@ -185,6 +186,10 @@ class GiteaLinuxApplier:
     def read_root_url(self) -> str:
         """The root URL ``/etc/gitea/app.ini`` names."""
         return read_root_url()
+
+    def read_secrets(self) -> dict:
+        """The machine secrets ``/etc/gitea/app.ini`` holds, by name."""
+        return read_secrets()
 
     def journal_units(self) -> list:
         """The unit, whose journal is the server's log."""
@@ -441,9 +446,16 @@ class GiteaModuleRunner(ModuleRunner):
         self._apply(config, is_started=False)
 
     def _apply(self, config: dict, *, is_started: bool) -> None:
-        """Render and write ``app.ini``. With ``is_started`` false the server is left as it is."""
+        """Render and write ``app.ini``. With ``is_started`` false the server is left as it is.
+
+        Each machine secret the installed ``app.ini`` holds stays; the
+        state's value goes where it holds none.
+        """
         parsed = GiteaConfig.from_dict(config)
         parsed.validate()
+        parsed = dataclasses.replace(
+            parsed, secrets={**parsed.secrets, **self._applier.read_secrets()}
+        )
         git_path = self._git_path()
         rendered = GiteaConfigRenderer(
             config=parsed,

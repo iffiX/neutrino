@@ -8,7 +8,8 @@ LocalSystem, a configure that runs the server waits until it listens and
 fails ``apply_failed`` with its last logged error, else its last output
 line, when it never does, and
 the details name the port the server answers on, from the held
-configuration or the installed ``app.ini``.
+configuration or the installed ``app.ini``, and an apply keeps each machine
+secret the installed ``app.ini`` holds over the state's.
 """
 
 import subprocess
@@ -184,6 +185,32 @@ def test_apply_renders_and_keeps_the_url(runner):
     assert details["url"] == "http://192.168.100.7:3000/"
     assert details["is_running"] is True
     assert details["version"] == "1.27.3"
+
+
+def test_an_apply_keeps_the_secrets_the_installed_app_ini_holds(runner, monkeypatch):
+    """A machine that joined again by a new link: the hub generated new
+    values, and Gitea's two-factor secrets stay readable under the old key."""
+    monkeypatch.setattr(
+        runner_module,
+        "read_secrets",
+        lambda: {"SECRET_KEY": "kept-key", "JWT_SECRET": "kept-jwt"},
+    )
+
+    runner.apply(CONFIG)
+
+    (rendered,) = FakeApplier.applied
+    assert "SECRET_KEY = kept-key\n" in rendered
+    assert "JWT_SECRET = kept-jwt\n" in rendered
+    assert "INTERNAL_TOKEN = it\n" in rendered
+    assert "LFS_JWT_SECRET = lf\n" in rendered
+
+
+def test_a_first_install_takes_the_states_secrets(runner, monkeypatch):
+    monkeypatch.setattr(runner_module, "read_secrets", lambda: {})
+
+    runner.apply(CONFIG)
+
+    assert "SECRET_KEY = sk\n" in FakeApplier.applied[0]
 
 
 def test_a_refused_apply_is_typed(runner):
@@ -452,6 +479,7 @@ class SystemApplier:
         self.installed: list = []
         self.log = tmp_path / "gitea.log"
         self.output = tmp_path / "output.log"
+        self.secrets: dict = {}
 
     def find_git(self):
         return self.git
@@ -483,6 +511,9 @@ class SystemApplier:
 
     def read_root_url(self):
         return ""
+
+    def read_secrets(self):
+        return dict(self.secrets)
 
     def journal_units(self):
         return []
@@ -579,6 +610,24 @@ def test_a_configure_that_runs_the_server_waits_until_it_listens(tmp_path):
 
     assert looks == [CONFIG["listen_port"]] * 4
     assert now[0] == 1.5
+
+
+def test_a_mac_or_windows_apply_keeps_the_secrets_its_app_ini_holds(tmp_path):
+    applier = SystemApplier(tmp_path, git="/opt/homebrew/bin/git")
+    applier.secrets = {"SECRET_KEY": "kept-key"}
+    runner = GiteaModuleRunner(
+        platform=MacPlatform(),
+        log=lambda m: None,
+        applier=applier,
+        record_dir=str(tmp_path / "record"),
+        is_listening=lambda port: True,
+    )
+
+    runner.apply(CONFIG)
+
+    ((rendered, _git),) = applier.applied
+    assert "SECRET_KEY = kept-key\n" in rendered
+    assert "INTERNAL_TOKEN = it\n" in rendered
 
 
 def test_a_server_that_never_listens_fails_the_configure_with_its_last_error(

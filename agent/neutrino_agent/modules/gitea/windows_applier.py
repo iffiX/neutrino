@@ -27,6 +27,7 @@ from neutrino_agent.modules.gitea.applier import (
     GiteaState,
     read_listen_port,
     read_root_url,
+    read_secrets,
 )
 from neutrino_agent.modules.gitea.constants import (
     GITEA_BINARY_DIR_NAME,
@@ -322,6 +323,10 @@ class GiteaWindowsApplier:
     def read_root_url(self) -> str:
         """The root URL the installed ``app.ini`` names, empty for none."""
         return read_root_url(self.conf_path)
+
+    def read_secrets(self) -> dict:
+        """The machine secrets the installed ``app.ini`` holds, by name."""
+        return read_secrets(self.conf_path)
 
     def journal_units(self) -> list:
         """No journal: the service writes its own log file."""

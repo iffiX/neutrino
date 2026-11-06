@@ -330,3 +330,16 @@ def test_the_port_and_the_root_url_are_read_from_the_installed_app_ini(
 
     assert applier.read_listen_port() == 3300
     assert applier.read_root_url() == "http://box:3300/"
+
+
+def test_the_secrets_are_read_from_the_installed_app_ini(sc, tmp_path, state):
+    applier = make(sc, tmp_path, state=state)
+    assert applier.read_secrets() == {}
+    os.makedirs(os.path.dirname(applier.conf_path))
+    with open(applier.conf_path, "w", encoding="utf-8") as stream:
+        stream.write(
+            "[server]\nHTTP_PORT = 3300\nLFS_JWT_SECRET = kept-lfs\n[security]\nSECRET_KEY = kept-key\nINTERNAL_TOKEN =\n[oauth2]\nJWT_SECRET = kept-jwt\n"
+        )
+
+    assert applier.read_secrets()["SECRET_KEY"] == "kept-key"
+    assert "INTERNAL_TOKEN" not in applier.read_secrets()
