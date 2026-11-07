@@ -581,6 +581,35 @@ jobs:
       - run: npm run build
         working-directory: hub/frontend
 
+  # The panel demo the website serves at /demo/: its sample data against the
+  # panel's API types, its build, and its pages in a browser.
+  demo:
+    name: panel demo, types, build, browser
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: hub/frontend/package-lock.json
+
+      - run: npm ci
+        working-directory: hub/frontend
+
+      # `npm run demo:build` runs `tsc -p ../../demo` first.
+      - run: npm run demo:build
+        working-directory: hub/frontend
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - run: pip install playwright==1.63.0 && python -m playwright install --with-deps chromium
+
+      - run: python packaging/ci/check_demo.py demo/dist
+
   # The mainland tree build_sources.py --edition cn writes: the same suite
   # again where the features cn leaves out are not there.
   mainland_tree:
