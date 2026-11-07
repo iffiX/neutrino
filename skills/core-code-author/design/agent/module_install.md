@@ -187,7 +187,7 @@ Codeg's npm packages carries Claude Code, runs that copy.
 | the packages a container's own tools fetch | the agent, into the container's environment | each set the module lists: Hermes WebUI's `pypi` |
 | the TeX packages Ayakaleaf's first start adds | the agent, for `tlmgr` in the app's container | the `ctan` set, its first ranked source on `tlmgr`'s command line ([modules/ayakaleaf.md](modules/ayakaleaf.md), "The first start") |
 | better-sqlite3's prebuilt binary | the agent, for prebuild-install to fetch | its GitHub releases, then npmmirror's copy ([modules/cloudcli.md](modules/cloudcli.md)) |
-| a module's version list | the hub, once a day | the publisher's API ("Module versions") |
+| a module's version list | the hub, once a day, and every hour while a module holds no list | the publisher's API ("Module versions") |
 | the hub's own update | the hub | the release sites ([../architecture.md](../architecture.md), "The hub updates itself outside its own process") |
 | a package an install script installs | the install script | the release sites ([../../agent_work_rule/release.md](../../agent_work_rule/release.md), "Install scripts") |
 
@@ -432,6 +432,7 @@ version list can be read.
 | --- | --- |
 | `params.releases` is how the hub lists the publisher's versions: a list of feeds, each `{kind, sources}` and the keys of its kind. The hub reads them once a day with the method of "Choosing a source", and keeps what it read in `module_releases.json` under its state root ([../files.md](../files.md)). | A daily read follows the publisher, and a read that fails leaves the last list and the tested version. |
 | A feed's read waits up to 30 seconds for data at each wait, where a probe and every other fetch wait 5. | A feed can be a large document: GitHub's release list of Gitea is about 15 MB, and GitHub at times sends nothing for more than 5 seconds. In R170 a new hub's first read of it timed out at 5 seconds, while the same read with a 30 second wait took 6.7, 3.2, 2.2 and 47.6 seconds in four tries. |
+| While a module whose entries name a feed holds no version list, the next read comes an hour after the last, and the reads stay hourly until every such module holds one; then they are daily again. A module whose list is held keeps it through a read that fails. | A new hub that misses one read holds no list, and would offer the tested version alone for a day. |
 | The first feed lists the versions: the tags its template matches, each read as a dotted number, newest first. A tag that is no dotted number, such as a nightly build's, is not listed. | One feed decides what a version is. |
 | A version's artifacts are the tested ones with `{version}` filled in, and each takes its digest from the feed whose release holds its file. An artifact whose `file` and `sources` hold no `{version}` keeps its own digest for every version, as WSL's msi, Node.js and Gitea's MinGit do. | A runtime pinned once serves every version of the program. |
 | A version is listed for a platform only when every artifact of that platform's entry is found in it. | Podman publishes no 6.x package for an Intel Mac, so that entry lists 5.x alone. |
