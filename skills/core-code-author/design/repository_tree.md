@@ -43,6 +43,9 @@ packaging/           Building every package, and driving a built one on a
                      live box or a rented one.
 docs/                The VitePress documentation site. Generated site output
                      is ignored.
+demo/                The panel demo the site serves at /demo/: the fake hub,
+                     its sample data, the page around the panel and the
+                     client page, and its build. Design: demo.md.
 tmp-docs/            The working copy's own notes, memory.md among them, and
                      drafts; gitignored.
 skills/              core-code-author/, this standard: design/ the design
@@ -259,7 +262,9 @@ packaging/
                      built package where it runs and checks it works;
                      publish_cn.py publishes a release and the mainland
                      tree to CNB, the second release site; count_tests.py writes the test counts the
-                     docs build serves for the README's badge.
+                     docs build serves for the README's badge;
+                     check_demo.py opens the built panel demo in a
+                     headless browser.
   install/           install.sh for macOS and Linux and install.ps1 for
                      Windows: the one-command installers a release
                      publishes.
