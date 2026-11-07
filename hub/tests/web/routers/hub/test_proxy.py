@@ -372,6 +372,24 @@ def test_the_part_follows_xray_s_log_for_failed_dials_of_the_exit(
     )
 
 
+@pytest.mark.parametrize(("interface", "index"), [("Ethernet", 12), ("", 0)])
+def test_the_probe_binds_to_the_uplink_xray_s_outbounds_are_bound_to(
+    monkeypatch, interface, index
+):
+    """The same uplink the renderer names in xray's sockopt.interface, by its
+    index; none while no TUN scope is on."""
+    monkeypatch.setattr(proxy_router, "read_config", lambda name: {})
+    monkeypatch.setattr(proxy_router, "egress_interface", lambda routing: interface)
+    monkeypatch.setattr(
+        proxy_router, "interface_index", lambda name: 12 if name == "Ethernet" else 0
+    )
+
+    part = proxy_router.ProxyPanelPart(on_change=None, on_out_of_sync=None)
+
+    assert part.egress_index() == index
+    assert part.node_probe.egress_index_of == part.egress_index
+
+
 # --- A routing.json from an earlier build ---
 
 

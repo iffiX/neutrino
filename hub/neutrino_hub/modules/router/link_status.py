@@ -673,6 +673,28 @@ def system_default_routes() -> list[dict]:
         return []
 
 
+def interface_index(device: str) -> int:
+    """The index macOS or Windows numbers one interface by.
+
+    Args:
+        device: The interface's name on macOS, its alias on Windows, as
+            :func:`system_default_routes` names it.
+
+    Returns:
+        The index; 0 when no interface is named so or it cannot be read.
+    """
+    if hub_os() == PLATFORM_OS_DARWIN:
+        try:
+            return socket.if_nametoindex(device)
+        except OSError:
+            return 0
+    try:
+        found = windows_net.adapters()
+    except OSError:
+        return 0
+    return next((entry["index"] for entry in found if entry["name"] == device), 0)
+
+
 def _system_entries() -> dict[str, dict]:
     """Every interface psutil reports but the proxy's TUN, shaped as ``ip -json addr show`` entries."""
     stats = psutil.net_if_stats()

@@ -5,8 +5,10 @@ config, so they are wire-level identifiers rather than user settings.
 """
 
 import re
+import socket
 
 from neutrino_hub.modules.tun.constants import TUN_SUPERVISED_NAME
+from neutrino_hub.platforms.constants import PLATFORM_OS_DARWIN, PLATFORM_OS_WINDOWS
 from neutrino_hub.utils.constants import (
     UTILS_STATE_ROOT,
     UTILS_GENERATED_DIR,
@@ -187,6 +189,18 @@ XRAY_BALANCER_TAG = "proxy_balance"
 # Mark stamped on every outbound socket so the router's output chain can tell
 # xray's own egress apart from traffic that still needs proxying.
 XRAY_EGRESS_MARK = 255
+# The socket options that bind a probe socket to the uplink outside Linux, by
+# system and address family, as ``(level, option)``.
+XRAY_UPLINK_BIND_OPTIONS = {
+    PLATFORM_OS_WINDOWS: {
+        socket.AF_INET: (socket.IPPROTO_IP, 31),
+        socket.AF_INET6: (socket.IPPROTO_IPV6, 31),
+    },
+    PLATFORM_OS_DARWIN: {
+        socket.AF_INET: (socket.IPPROTO_IP, 25),
+        socket.AF_INET6: (socket.IPPROTO_IPV6, 125),
+    },
+}
 
 # The balancer's strategy. It is never consulted while the hub holds an
 # override, and roundRobin is the one strategy that needs no observatory, so a

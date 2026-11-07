@@ -13,7 +13,9 @@ proxying its own traffic diverts the probe into its own TPROXY socket: the
 handshake completes locally in no time at all, so every node reads alive at
 0 ms whatever the node is doing. The loopback hop to the probe inbound takes no
 mark: the router's output chain returns on the reserved address set, and
-127.0.0.0/8 is in it.
+127.0.0.0/8 is in it. On macOS and Windows a direct socket is bound to the
+uplink xray's outbounds are bound to while a TUN scope is on; the TUN's host
+routes cover one address of a name whose addresses rotate.
 
 A node's name is resolved at the direct resolver, never at the machine's own:
 on a box whose names resolve through the proxy, that resolver is the proxy.
@@ -42,8 +44,11 @@ from neutrino_hub.modules.xray.constants import (
     XRAY_PROBE_PASSWORD,
     XRAY_PROBE_PORT,
     XRAY_PROBE_TIMEOUT_S,
+    XRAY_UPLINK_BIND_OPTIONS,
 )
 from neutrino_hub.modules.xray.node_config import XrayNodeConfig
+from neutrino_hub.platforms.constants import PLATFORM_OS_LINUX, PLATFORM_OS_WINDOWS
+from neutrino_hub.platforms.detect import hub_os
 
 # One plain query for A records, answered by the direct resolver.
 RESOLVE_TIMEOUT_S = 3.0
@@ -73,7 +78,12 @@ STATUS_OK_CEILING = 400
 
 
 def resolve_direct(
-    name: str, *, server: str, port: int = 53, timeout_s: float = RESOLVE_TIMEOUT_S
+    name: str,
+    *,
+    server: str,
+    port: int = 53,
+    timeout_s: float = RESOLVE_TIMEOUT_S,
+    egress_index: int = 0,
 ) -> "str | None":
     """Ask one resolver for a name's IPv4 address, past the proxy.
 
@@ -82,6 +92,8 @@ def resolve_direct(
         server: The resolver's address.
         port: Its port.
         timeout_s: How long to wait for the answer.
+        egress_index: The uplink's interface index the query is bound to on
+            macOS and Windows; 0 binds it to none.
 
     Returns:
         The first A record in the answer, or None when there is none.
@@ -102,7 +114,7 @@ def resolve_direct(
     )
     connection = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
-        _mark_as_egress(connection)
+        _keep_out(connection, socket.AF_INET, egress_index)
         connection.settimeout(timeout_s)
         connection.sendto(query, (server, port))
         while True:
@@ -142,7 +154,13 @@ class XrayNodeMeasurement:
 class XrayNodeProbe:
     """Takes one measurement of one node, and the direct reference beside it."""
 
-    def __init__(self, *, timeout_s: float = XRAY_PROBE_TIMEOUT_S, resolver_of=None):
+    def __init__(
+        self,
+        *,
+        timeout_s: float = XRAY_PROBE_TIMEOUT_S,
+        resolver_of=None,
+        egress_index_of=None,
+    ):
         """
         Args:
             timeout_s: One measurement's patience, start to finish.
@@ -150,9 +168,13 @@ class XrayNodeProbe:
                 the direct resolver a name is looked up at. None resolves
                 nothing: a node named by a hostname then reads unreachable,
                 and one at a literal address is probed as is.
+            egress_index_of: Called with nothing, answers the interface index
+                of the uplink the direct sockets are bound to on macOS and
+                Windows, 0 for none. None binds them to none.
         """
         self._timeout_s = timeout_s
         self._resolver_of = resolver_of
+        self.egress_index_of = egress_index_of
 
     def probe(self, node: XrayNodeConfig, *, url: str) -> XrayNodeMeasurement:
         """Measure one node's front door and one request through it.
@@ -167,7 +189,7 @@ class XrayNodeProbe:
             measurement rather than raising, since every one of them means the
             same thing to the operator.
         """
-        connect_ms = self._connect_ms(node)
+        connect_ms = self._connect_ms(node, egress_index=self._egress_index())
         request_ms, is_xray_reachable = self._request_ms(node.tag, url)
         return XrayNodeMeasurement(
             tag=node.tag,
@@ -191,13 +213,16 @@ class XrayNodeProbe:
             host, port, path, is_tls = _split_url(url)
         except ValueError:
             return None
-        address = self._resolved(host)
+        egress_index = self._egress_index()
+        address = self._resolved(host, egress_index=egress_index)
         if address is None:
             return None
         started_at = time.monotonic()
         deadline = started_at + self._timeout_s
         try:
-            connection = _direct_connection(address, port, timeout_s=self._timeout_s)
+            connection = _direct_connection(
+                address, port, timeout_s=self._timeout_s, egress_index=egress_index
+            )
         except OSError:
             return None
         try:
@@ -217,14 +242,25 @@ class XrayNodeProbe:
             return None
         return int((time.monotonic() - started_at) * 1000)
 
-    def _connect_ms(self, node: XrayNodeConfig) -> "int | None":
+    def _egress_index(self) -> int:
+        """The uplink's interface index the direct sockets are bound to; 0 for none."""
+        if self.egress_index_of is None:
+            return 0
+        try:
+            return int(self.egress_index_of() or 0)
+        except (OSError, ValueError, TypeError, KeyError):
+            return 0
+
+    def _connect_ms(self, node: XrayNodeConfig, *, egress_index: int) -> "int | None":
         """Time a TCP connect to the node's own address and port."""
-        address = self._resolved(node.address)
+        address = self._resolved(node.address, egress_index=egress_index)
         if address is None:
             return None
         started_at = time.monotonic()
         try:
-            with _direct_connection(address, node.port, timeout_s=self._timeout_s):
+            with _direct_connection(
+                address, node.port, timeout_s=self._timeout_s, egress_index=egress_index
+            ):
                 return int((time.monotonic() - started_at) * 1000)
         except OSError:
             return None
@@ -269,7 +305,7 @@ class XrayNodeProbe:
             return None, True
         return int((time.monotonic() - started_at) * 1000), True
 
-    def _resolved(self, name: str) -> "str | None":
+    def _resolved(self, name: str, *, egress_index: int) -> "str | None":
         """The address to connect to, resolved at the direct resolver."""
         if _is_ip_address(name):
             return name
@@ -277,7 +313,9 @@ class XrayNodeProbe:
             return None
         try:
             server, port = self._resolver_of()
-            return resolve_direct(name, server=server, port=int(port))
+            return resolve_direct(
+                name, server=server, port=int(port), egress_index=egress_index
+            )
         except (OSError, ValueError, TypeError):
             return None
 
@@ -589,13 +627,17 @@ def _is_ip_address(address: str) -> bool:
     return True
 
 
-def _direct_connection(address: str, port: int, *, timeout_s: float):
+def _direct_connection(
+    address: str, port: int, *, timeout_s: float, egress_index: int = 0
+):
     """Open a TCP connection that the proxy will not divert.
 
     Args:
         address: The address, resolved.
         port: Its port.
         timeout_s: How long to wait for the connect.
+        egress_index: The uplink's interface index the socket is bound to on
+            macOS and Windows; 0 binds it to none.
 
     Returns:
         The connected socket, for use as a context manager.
@@ -606,7 +648,7 @@ def _direct_connection(address: str, port: int, *, timeout_s: float):
     family = socket.AF_INET6 if ":" in address else socket.AF_INET
     connection = socket.socket(family, socket.SOCK_STREAM)
     try:
-        _mark_as_egress(connection)
+        _keep_out(connection, family, egress_index)
         connection.settimeout(timeout_s)
         connection.connect((address, port))
     except OSError:
@@ -615,18 +657,34 @@ def _direct_connection(address: str, port: int, *, timeout_s: float):
     return connection
 
 
-def _mark_as_egress(connection: socket.socket) -> None:
-    """Stamp the socket so the router's output chain lets it out.
+def _keep_out(connection: socket.socket, family: int, egress_index: int) -> None:
+    """Keep the socket out of the proxy, before it is connected.
 
-    Best effort: the mark needs CAP_NET_ADMIN, which the panel has and a
-    developer running the module by hand may not. Without it the probe still
-    measures something — just the local proxy, when one is in the path — and
-    that is better than refusing to probe at all.
+    On Linux the socket takes the egress mark, which the router's output chain
+    lets out. On macOS and Windows it is bound to the uplink, ``IP_UNICAST_IF``
+    with the index in network byte order for IPv4 on Windows. Best effort:
+    the mark needs CAP_NET_ADMIN, which the panel has and a developer running
+    the module by hand may not.
 
     Args:
-        connection: The socket, before it is connected.
+        connection: The socket.
+        family: Its address family.
+        egress_index: The uplink's interface index; 0 binds nothing outside
+            Linux.
     """
+    system = hub_os()
     try:
-        connection.setsockopt(socket.SOL_SOCKET, socket.SO_MARK, XRAY_EGRESS_MARK)
-    except (OSError, AttributeError):
+        if system == PLATFORM_OS_LINUX:
+            connection.setsockopt(socket.SOL_SOCKET, socket.SO_MARK, XRAY_EGRESS_MARK)
+            return
+        if not egress_index:
+            return
+        level, option = XRAY_UPLINK_BIND_OPTIONS[system][family]
+        value = (
+            struct.pack("!I", egress_index)
+            if system == PLATFORM_OS_WINDOWS and family == socket.AF_INET
+            else egress_index
+        )
+        connection.setsockopt(level, option, value)
+    except (OSError, AttributeError, KeyError):
         return

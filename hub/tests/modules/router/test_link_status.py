@@ -25,6 +25,7 @@ from neutrino_hub.modules.router.link_status import (
     device_addresses,
     device_held_addresses,
     device_ipv6_addresses,
+    interface_index,
     system_default_routes,
 )
 from neutrino_hub.platforms import win32
@@ -147,6 +148,34 @@ def test_windows_reads_its_default_routes_from_iphlpapi(on_windows, monkeypatch)
     ]
     assert RouterLinkStatus().default_gateway() == "192.168.10.1"
     assert RouterLinkStatus().gateway_for("Ethernet Instance 0 3") == "10.10.2.1"
+
+
+def test_windows_names_an_interface_s_index_by_its_alias(on_windows, monkeypatch):
+    """The index the probe binds its sockets to, from the recorded adapters."""
+    monkeypatch.setattr(windows_net, "_READER", FakeIphlpapiTables.recorded())
+
+    assert interface_index("Ethernet Instance 0 3") == 20
+    assert interface_index("Wi-Fi") == 0
+
+
+def test_macos_names_an_interface_s_index_by_its_name(on_darwin, monkeypatch):
+    def index_of(name: str) -> int:
+        if name != "en0":
+            raise OSError(6, "no such interface")
+        return 6
+
+    monkeypatch.setattr(link_status.socket, "if_nametoindex", index_of)
+
+    assert interface_index("en0") == 6
+    assert interface_index("en9") == 0
+
+
+def test_windows_whose_adapters_cannot_be_read_names_no_index(on_windows, monkeypatch):
+    monkeypatch.setattr(
+        windows_net, "_READER", FakeIphlpapiTables(error=OSError(5, "denied"))
+    )
+
+    assert interface_index("Ethernet Instance 0 2") == 0
 
 
 def test_windows_whose_route_table_cannot_be_read_has_no_route(on_windows, monkeypatch):

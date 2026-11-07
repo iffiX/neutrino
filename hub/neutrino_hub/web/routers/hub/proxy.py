@@ -26,7 +26,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from neutrino_hub import HUB_CARRIED_VERSIONS
 from neutrino_hub.modules.router.network_resolvers import resolver_refusal
+from neutrino_hub.modules.router.link_status import interface_index
 from neutrino_hub.modules.router.routes import rendered_network_resolvers
+from neutrino_hub.modules.tun.ops import egress_interface
 from neutrino_hub.modules.xray import geodata
 from neutrino_hub.modules.xray.apply import XrayConfigApplier
 from neutrino_hub.modules.xray.apply_part import XrayApplyComponent
@@ -399,7 +401,9 @@ class ProxyPanelPart:
                 not carry the exits the render names.
         """
         self.stats = XrayStatsClient()
-        self.node_probe = XrayNodeProbe(resolver_of=self.direct_resolver)
+        self.node_probe = XrayNodeProbe(
+            resolver_of=self.direct_resolver, egress_index_of=self.egress_index
+        )
         self.node_health = XrayNodeHealthStore()
         self.exit_controller = XrayExitController(
             probe=self.node_probe,
@@ -463,6 +467,16 @@ class ProxyPanelPart:
             ValueError: If it does not parse as JSON.
         """
         return json.loads(XRAY_CONFIG_PATH.read_text(encoding="utf-8"))
+
+    def egress_index(self) -> int:
+        """The interface index of the uplink xray's outbounds are bound to.
+
+        Returns:
+            The index of :func:`egress_interface`'s interface on macOS and
+            Windows while a TUN scope is on; 0 otherwise.
+        """
+        interface = egress_interface(self.routing())
+        return interface_index(interface) if interface else 0
 
     def direct_resolver(self) -> tuple:
         """The first direct resolver, for the lookups the proxy makes for itself.

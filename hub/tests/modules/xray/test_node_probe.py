@@ -353,7 +353,7 @@ def test_a_name_is_resolved_at_the_direct_resolver_before_the_clock_starts(
     monkeypatch.setattr(node_probe.time, "monotonic", clock)
     asked: list = []
 
-    def slow_lookup(name, *, server, port=53, timeout_s=0):
+    def slow_lookup(name, *, server, port=53, timeout_s=0, egress_index=0):
         asked.append((name, server, port))
         clock.advance(0.5)
         return "203.0.113.10"
@@ -399,3 +399,101 @@ def test_a_dns_answer_yields_its_first_a_record():
         "203.0.113.10"
     )
     assert node_probe._first_a_record(header + question) is None
+
+
+# The options that bind a socket to an interface: Windows' takes the index in
+# network byte order for IPv4.
+WINDOWS_IP_UNICAST_IF = 31
+DARWIN_IP_BOUND_IF = 25
+DARWIN_IPV6_BOUND_IF = 125
+
+
+class _ResolverSocket(_ScriptedSocket):
+    """A UDP socket answering one A record for whatever it is asked."""
+
+    def sendto(self, payload: bytes, address) -> None:
+        self.connected.append(address)
+        self.sent = payload
+
+    def recvfrom(self, count: int):
+        header = self.sent[:2] + struct.pack("!HHHHH", 0x8180, 1, 1, 0, 0)
+        question = self.sent[12:]
+        record = (
+            b"\xc0\x0c" + struct.pack("!HHIH", 1, 1, 60, 4) + bytes([203, 0, 113, 77])
+        )
+        return header + question + record, ("192.168.122.1", 53)
+
+
+@pytest.mark.parametrize(
+    ("system", "option"),
+    [
+        ("windows", (socket.IPPROTO_IP, WINDOWS_IP_UNICAST_IF, struct.pack("!I", 7))),
+        ("darwin", (socket.IPPROTO_IP, DARWIN_IP_BOUND_IF, 7)),
+    ],
+)
+def test_outside_linux_the_reference_is_bound_to_the_uplink(
+    dialer, monkeypatch, system, option
+):
+    """The reference host's addresses rotate and its host route covers one of
+    them, so an unbound fetch could enter the TUN and leave by the exit."""
+    monkeypatch.setattr(node_probe, "hub_os", lambda: system)
+    resolver = _ResolverSocket()
+    uplink = _ScriptedSocket(answer=ANSWER_204)
+    dialer(resolver, uplink)
+
+    reference_ms = XrayNodeProbe(
+        resolver_of=lambda: ("192.168.122.1", 53), egress_index_of=lambda: 7
+    ).probe_reference("http://www.msftconnecttest.com/connecttest.txt")
+
+    assert reference_ms is not None
+    assert resolver.options == [option]
+    assert uplink.options == [option]
+    assert uplink.connected == [("203.0.113.77", 80)]
+
+
+def test_outside_linux_a_node_s_connect_is_bound_and_the_loopback_is_not(
+    dialer, monkeypatch
+):
+    monkeypatch.setattr(node_probe, "hub_os", lambda: "darwin")
+    node_socket = _ScriptedSocket()
+    channel = _ScriptedSocket(answer=SOCKS_GRANTED + ANSWER_204)
+    dialer(node_socket, channel)
+
+    XrayNodeProbe(egress_index_of=lambda: 7).probe(NODE, url=PROBE_URL)
+
+    assert node_socket.options == [(socket.IPPROTO_IP, DARWIN_IP_BOUND_IF, 7)]
+    assert channel.options == []
+
+
+@pytest.mark.parametrize(
+    ("system", "option"),
+    [
+        ("windows", (socket.IPPROTO_IPV6, WINDOWS_IP_UNICAST_IF, 7)),
+        ("darwin", (socket.IPPROTO_IPV6, DARWIN_IPV6_BOUND_IF, 7)),
+    ],
+)
+def test_an_ipv6_address_is_bound_with_the_ipv6_option(
+    dialer, monkeypatch, system, option
+):
+    monkeypatch.setattr(node_probe, "hub_os", lambda: system)
+    uplink = _ScriptedSocket(answer=ANSWER_204)
+    dialer(uplink)
+
+    XrayNodeProbe(egress_index_of=lambda: 7).probe_reference(
+        "http://[2001:db8::9]/connecttest"
+    )
+
+    assert uplink.options == [option]
+
+
+def test_outside_linux_with_no_uplink_known_nothing_is_bound(dialer, monkeypatch):
+    """No TUN scope is on, so nothing would divert the socket."""
+    monkeypatch.setattr(node_probe, "hub_os", lambda: "windows")
+    uplink = _ScriptedSocket(answer=ANSWER_204)
+    dialer(uplink)
+
+    XrayNodeProbe(egress_index_of=lambda: 0).probe_reference(
+        "http://203.0.113.9/connecttest"
+    )
+
+    assert uplink.options == []
