@@ -4,7 +4,11 @@ on:
   pull_request:
     paths:
       - "docs/**"
+      - "demo/**"
+      - "hub/frontend/src/**"
+      - "client/desktop/frontend/**"
       - "packaging/build/build_docs.py"
+      - "packaging/ci/check_demo.py"
       - "packaging/ci/count_tests.py"
       - ".github/workflows/docs.yml"
   push:
@@ -30,7 +34,9 @@ jobs:
         with:
           node-version-file: docs/.nvmrc
           cache: npm
-          cache-dependency-path: docs/package-lock.json
+          cache-dependency-path: |
+            docs/package-lock.json
+            hub/frontend/package-lock.json
       # The READMEs' tests badge reads badges/tests.json from the site.
       - uses: actions/setup-python@v7
         with:
@@ -45,6 +51,12 @@ jobs:
         run: python packaging/ci/count_tests.py . docs/public/badges/tests.json
       - name: Check and build website
         run: python3 ../packaging/build/build_docs.py --install
+      - name: Install the browser the demo check opens
+        working-directory: ${{ github.workspace }}
+        run: pip install playwright==1.63.0 && python -m playwright install --with-deps chromium
+      - name: Check the panel demo in a browser
+        working-directory: ${{ github.workspace }}
+        run: python packaging/ci/check_demo.py docs/.vitepress/dist/demo
       # main is the Pages project's production branch.
       - name: Deploy the website to Cloudflare Pages
         if: >-
