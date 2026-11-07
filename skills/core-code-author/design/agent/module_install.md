@@ -283,7 +283,7 @@ What is probed differs by what the source serves:
 | an npm registry | a GET of the package's whole document, whose integrity it checks, then one GET of each of the `npm` set's `latency_probes` | npm runs with the first ranked as `--registry`; an install that fails runs again with the next |
 | a source set a container lists | a Range request for the first 1 MiB of the set's `probe` file under each source | every variable of the set names the first ranked in the container's environment; the container's tools read it, and nothing moves later |
 | a host an npm setting names | a Range request for the first 1 MiB of the setting's `hosts_probe` file under each host | the setting names the first ranked host; an install that fails on a native module runs again with the next |
-| a version list or `latest.json` | a GET | the fastest valid answer is read |
+| a version list or `latest.json` | a GET, which for a feed's version list waits up to 30 seconds for data at each wait | the fastest valid answer is read |
 
 An image's probe can fail where its pull works, and Podman checks the
 digest of every pull. On Windows the agent's probe verifies against the
@@ -431,6 +431,7 @@ version list can be read.
 | Rule | Reason |
 | --- | --- |
 | `params.releases` is how the hub lists the publisher's versions: a list of feeds, each `{kind, sources}` and the keys of its kind. The hub reads them once a day with the method of "Choosing a source", and keeps what it read in `module_releases.json` under its state root ([../files.md](../files.md)). | A daily read follows the publisher, and a read that fails leaves the last list and the tested version. |
+| A feed's read waits up to 30 seconds for data at each wait, where a probe and every other fetch wait 5. | A feed can be a large document: GitHub's release list of Gitea is about 15 MB, and GitHub at times sends nothing for more than 5 seconds. In R170 a new hub's first read of it timed out at 5 seconds, while the same read with a 30 second wait took 6.7, 3.2, 2.2 and 47.6 seconds in four tries. |
 | The first feed lists the versions: the tags its template matches, each read as a dotted number, newest first. A tag that is no dotted number, such as a nightly build's, is not listed. | One feed decides what a version is. |
 | A version's artifacts are the tested ones with `{version}` filled in, and each takes its digest from the feed whose release holds its file. An artifact whose `file` and `sources` hold no `{version}` keeps its own digest for every version, as WSL's msi, Node.js and Gitea's MinGit do. | A runtime pinned once serves every version of the program. |
 | A version is listed for a platform only when every artifact of that platform's entry is found in it. | Podman publishes no 6.x package for an Intel Mac, so that entry lists 5.x alone. |
