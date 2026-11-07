@@ -707,3 +707,12 @@ def test_a_person_s_package_has_the_one_version_the_machine_reports():
         {"version": "6.1.4", "is_tested": True, "is_untested": False}
     ]
     assert persons_versions("", "6.1.4") == []
+
+
+def test_the_modules_with_a_feed_are_those_with_an_entry_not_locked():
+    from neutrino_hub.modules.devices.module_releases import modules_with_feeds
+
+    named = modules_with_feeds()
+
+    assert {"gitea", "cloudcli", "ayakaleaf"} <= named
+    assert not {"samba", "terminal", "hermes_webui"} & named

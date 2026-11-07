@@ -3,8 +3,10 @@
 What these pin: a panel's first start reads; a start inside a day of the last
 good read reads nothing and waits out what is left of the day; a start a day
 later reads; a start over an empty list or an unreadable time reads whatever
-the time says; a read that failed leaves the wait at a whole day; and the
-feeds are read with a 30 second wait for data.
+the time says; a read that failed leaves the wait at a whole day; a read
+that leaves a module with a feed holding no list reads again in an hour,
+until every such module holds one; and the feeds are read with a 30 second
+wait for data.
 """
 
 from datetime import datetime, timedelta, timezone
@@ -48,17 +50,60 @@ class OneRound:
         pass
 
 
-def panel_start(store, reader) -> list:
+def only_app() -> set:
+    """The modules with a feed, in these tests: app alone."""
+    return {"app"}
+
+
+def app_and_other() -> set:
+    """Two modules with a feed, of which the reads list app alone."""
+    return {"app", "other"}
+
+
+def panel_start(store, reader, *, feed_modules=only_app, stop=None) -> list:
     """One panel's start up to its first long wait, in this thread.
 
     Returns:
         The waits the loop asked for.
     """
-    sampler = PanelReleaseSampler(store=store, fetcher=object())
+    sampler = PanelReleaseSampler(
+        store=store, fetcher=object(), feed_modules=feed_modules
+    )
     sampler._reader = reader
-    sampler._is_stopped = OneRound()
+    sampler._is_stopped = stop if stop is not None else OneRound()
     sampler._loop()
     return sampler._is_stopped.waits
+
+
+class Rounds:
+    """The sampler's stop event, ending the loop at its third wait."""
+
+    def __init__(self):
+        self.waits: list = []
+
+    def wait(self, timeout):
+        self.waits.append(timeout)
+        return len(self.waits) >= 3
+
+    def set(self):
+        pass
+
+
+class FillingReader:
+    """The feeds on a new hub: the first read lists app and misses other,
+    the second lists both."""
+
+    def __init__(self, store):
+        self.store = store
+        self.reads = 0
+
+    def read(self):
+        self.reads += 1
+        listed = dict(LISTED)
+        if self.reads > 1:
+            listed["other"] = LISTED["app"]
+        self.store.replace(listed)
+        return listed
 
 
 def hours_ago(hours: float) -> str:
@@ -138,6 +183,28 @@ def test_a_read_that_fails_leaves_the_list_and_waits_the_whole_interval(store):
 
     assert waits == [0.0, DAY_S]
     assert store.listed_by_key("app", "linux") == LISTED["app"]["linux"]
+
+
+HOUR_S = 60 * 60
+
+
+def test_a_read_that_leaves_a_module_without_a_list_reads_again_in_an_hour(store):
+    reader = FillingReader(store)
+
+    waits = panel_start(store, reader, feed_modules=app_and_other, stop=Rounds())
+
+    assert waits == [0.0, HOUR_S, DAY_S]
+    assert reader.reads == 2
+
+
+def test_a_start_over_a_module_without_a_list_waits_an_hour_from_the_last_read(store):
+    store.replace(LISTED, read_at=hours_ago(2))
+    reader = CountingReader(store)
+
+    waits = panel_start(store, reader, feed_modules=app_and_other)
+
+    assert waits[0] == 0.0
+    assert reader.reads == 1
 
 
 def test_the_feeds_are_read_with_a_thirty_second_wait_for_data(store):

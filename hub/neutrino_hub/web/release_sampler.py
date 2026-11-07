@@ -4,10 +4,11 @@ A publisher's new release is no write anybody makes on the hub, so nothing
 else would list it. This reads every manifest's feeds through the fetcher,
 every ``DEVICE_MODULE_RELEASES_INTERVAL_S``, into the module releases store the
 version routes read (module_install.md, "Module versions"), each read waiting
-``DEVICE_MODULE_RELEASES_WAIT_S`` for data at each wait. A panel's start
-reads only when the store lists no version or its last good read is that old,
-and otherwise waits out what is left of it. A read that fails leaves the last
-list.
+``DEVICE_MODULE_RELEASES_WAIT_S`` for data at each wait. While a module with a
+feed holds no list, the interval is ``DEVICE_MODULE_RELEASES_RETRY_S``. A
+panel's start reads only when the store lists no version or its last good
+read is the interval old, and otherwise waits out what is left of it. A read
+that fails leaves the last list.
 """
 
 import logging
@@ -15,9 +16,13 @@ import threading
 
 from neutrino_hub.modules.devices.constants import (
     DEVICE_MODULE_RELEASES_INTERVAL_S,
+    DEVICE_MODULE_RELEASES_RETRY_S,
     DEVICE_MODULE_RELEASES_WAIT_S,
 )
-from neutrino_hub.modules.devices.module_releases import ModuleReleaseReader
+from neutrino_hub.modules.devices.module_releases import (
+    ModuleReleaseReader,
+    modules_with_feeds,
+)
 from neutrino_hub.utils.source_fetch import SourceFetcher
 
 LOGGER = logging.getLogger(__name__)
@@ -32,6 +37,8 @@ class PanelReleaseSampler:
         store,
         fetcher=None,
         interval_s: float = DEVICE_MODULE_RELEASES_INTERVAL_S,
+        retry_s: float = DEVICE_MODULE_RELEASES_RETRY_S,
+        feed_modules=modules_with_feeds,
     ):
         """
         Args:
@@ -40,6 +47,9 @@ class PanelReleaseSampler:
                 makes one whose document reads wait
                 ``DEVICE_MODULE_RELEASES_WAIT_S`` for data.
             interval_s: Seconds between reads.
+            retry_s: Seconds between reads while a module with a feed holds
+                no list.
+            feed_modules: Returns the modules whose manifests name a feed.
         """
         self._store = store
         self._reader = ModuleReleaseReader(
@@ -51,6 +61,8 @@ class PanelReleaseSampler:
             store=store,
         )
         self._interval_s = interval_s
+        self._retry_s = retry_s
+        self._feed_modules = feed_modules
         self._is_stopped = threading.Event()
         self._thread: "threading.Thread | None" = None
 
@@ -81,7 +93,13 @@ class PanelReleaseSampler:
         return True
 
     def _loop(self) -> None:
-        wait_s = self._store.seconds_until_due(self._interval_s)
+        wait_s = self._store.seconds_until_due(self._interval_now())
         while not self._is_stopped.wait(wait_s):
             self.read_once()
-            wait_s = self._interval_s
+            wait_s = self._interval_now()
+
+    def _interval_now(self) -> float:
+        """The hour while a module with a feed holds no list, else the day."""
+        if self._store.modules_without_list(self._feed_modules()):
+            return self._retry_s
+        return self._interval_s

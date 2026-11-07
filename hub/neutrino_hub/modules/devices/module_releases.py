@@ -337,6 +337,20 @@ def is_locked(manifest: dict, entry: "dict | None") -> bool:
     return not entry_params(entry).get("releases")
 
 
+def modules_with_feeds() -> set:
+    """Every module whose manifest names a feed on some platform.
+
+    Returns:
+        The names of the modules with an entry that is not locked.
+    """
+    return {
+        name
+        for name, manifest in load_module_manifests().items()
+        for entry in (manifest.get("platforms") or {}).values()
+        if not is_locked(manifest, entry)
+    }
+
+
 def is_persons_package(details: dict) -> bool:
     """Whether a machine reports a module's software as the person's.
 
@@ -448,6 +462,23 @@ class ModuleReleaseStore:
     def read_at(self) -> str:
         """When the feeds were last read, in ISO 8601; empty before the first."""
         return str(self._read().get("read_at", "") or "")
+
+    def modules_without_list(self, names) -> set:
+        """The modules among these that hold no version list on any platform.
+
+        Args:
+            names: The module names.
+
+        Returns:
+            Each name with no non-empty list kept.
+        """
+        modules = self._read().get("modules")
+        modules = modules if isinstance(modules, dict) else {}
+        return {
+            name
+            for name in names
+            if not (isinstance(modules.get(name), dict) and any(modules[name].values()))
+        }
 
     def seconds_until_due(self, interval_s: float) -> float:
         """How long until the feeds are to be read again.
