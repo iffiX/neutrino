@@ -64,11 +64,14 @@ engine's first packets may still cross the exit. The local networks
 need no route, since the link's own route is longer than a half. xray's
 `direct` and node outbounds are bound to the uplink with
 `sockopt.interface`, so a connection the split sends direct never enters
-the TUN; on Linux the egress mark does that work. On macOS the hub also adds
+the TUN; on Linux the egress mark does that work. The probe round's own
+sockets that leave past xray are bound to the same uplink: a host route
+covers the one address the hub's lookup returned, and the reference host's
+addresses rotate ("The two measurements"). On macOS the hub also adds
 the uplink's default route scoped to the uplink (`route add -ifscope`): a
 socket bound to an interface is routed by that interface's own routes, and
-without the scoped default a bound outbound has no route to any address the
-halves cover. The device is `utun225`
+without the scoped default a bound outbound or socket has no route to any
+address the halves cover. The device is `utun225`
 on macOS and the adapter `neutrino_tun` on Windows, with a /30 from the
 benchmark range of RFC 2544.
 The routes are the machine's, so with the overlay scope on alone the box's
@@ -190,6 +193,19 @@ The hub records a node's failure against that node when the reference
 succeeded in the same round. When both fail, the round reports the uplink as
 unreachable and records nothing. The reference URL answers without the proxy,
 so it names a different host from the probe URL.
+
+The round's sockets that leave past xray are the reference fetch, the direct
+resolver's query for a name, and the connect to a node's port. On Linux each
+carries the egress mark. On Windows and macOS, while a TUN scope is on, each
+is bound to the uplink xray's outbounds are bound to: `IP_UNICAST_IF` with
+the interface's index in network byte order on Windows, `IP_BOUND_IF` with
+its index on macOS. The reference host can answer a different address on
+each lookup: `www.msftconnecttest.com` sits on a CDN that rotates them. The
+hub's host route covers only the address its own lookup returned, so the
+fetch's own lookup can land on an address with no route, enter the TUN and
+leave by the exit. A route per address cannot follow a name whose addresses
+change, so the socket is bound to the uplink, as the egress mark keeps it out
+on Linux. The host routes stay as they are.
 
 ### A failed dial
 
