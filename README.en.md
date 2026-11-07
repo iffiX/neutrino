@@ -105,19 +105,13 @@ Install the hub on a computer and the app on your phone, then scan once:
 
 1. On the computer you want to reach, install the hub. Search for **Neutrino Hub**, open it, and follow the wizard in your browser.
 
-   [![Windows](https://img.shields.io/badge/Windows-Download-22d3ee?style=for-the-badge&labelColor=0a0e14&color=22d3ee)](https://github.com/iffiX/neutrino/releases/latest)
-   [![macOS](https://img.shields.io/badge/macOS-Download-22d3ee?style=for-the-badge&labelColor=0a0e14&color=22d3ee)](https://github.com/iffiX/neutrino/releases/latest)
-   [![Linux](https://img.shields.io/badge/Linux-Download-22d3ee?style=for-the-badge&labelColor=0a0e14&color=22d3ee)](https://github.com/iffiX/neutrino/releases/latest)
+   [![Download: Windows, macOS, Linux](https://img.shields.io/badge/Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-Download-22d3ee?style=for-the-badge&labelColor=0a0e14&color=22d3ee)](https://github.com/iffiX/neutrino/releases/latest)
 
    <img src="images/web/search_hub.svg" width="100%" alt="Searching for Neutrino Hub and opening it" />
 
 1. On your phone or another computer, install the client. An iPhone needs [self-signing](https://neutrinohub.net/en/access/ios).
 
-   [![Windows](https://img.shields.io/badge/Windows-Download-22d3ee?style=for-the-badge&labelColor=0a0e14&color=22d3ee)](https://github.com/iffiX/neutrino/releases/latest)
-   [![macOS](https://img.shields.io/badge/macOS-Download-22d3ee?style=for-the-badge&labelColor=0a0e14&color=22d3ee)](https://github.com/iffiX/neutrino/releases/latest)
-   [![Linux](https://img.shields.io/badge/Linux-Download-22d3ee?style=for-the-badge&labelColor=0a0e14&color=22d3ee)](https://github.com/iffiX/neutrino/releases/latest)
-   [![Android](https://img.shields.io/badge/Android-Download-22d3ee?style=for-the-badge&labelColor=0a0e14&color=22d3ee)](https://github.com/iffiX/neutrino/releases/latest)
-   [![iPhone](https://img.shields.io/badge/iPhone-Download-22d3ee?style=for-the-badge&labelColor=0a0e14&color=22d3ee)](https://github.com/iffiX/neutrino/releases/latest)
+   [![Download: Windows, macOS, Linux, Android, iPhone](https://img.shields.io/badge/Windows%20%C2%B7%20macOS%20%C2%B7%20Linux%20%C2%B7%20Android%20%C2%B7%20iPhone-Download-22d3ee?style=for-the-badge&labelColor=0a0e14&color=22d3ee)](https://github.com/iffiX/neutrino/releases/latest)
 
    <img src="images/web/client_app.svg" width="100%" alt="The Neutrino client's icon on a desktop" />
 

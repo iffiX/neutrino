@@ -104,19 +104,13 @@
 
 1. 在要远程访问的电脑上安装中枢，安装后搜索 **微子中枢** 并打开，跟着浏览器里的向导走。
 
-   [![Windows](https://img.shields.io/badge/Windows-%E4%B8%8B%E8%BD%BD-22d3ee?style=for-the-badge&labelColor=0a0e14&color=22d3ee)](https://cnb.cool/iffi-X/neutrino/-/releases/latest)
-   [![macOS](https://img.shields.io/badge/macOS-%E4%B8%8B%E8%BD%BD-22d3ee?style=for-the-badge&labelColor=0a0e14&color=22d3ee)](https://cnb.cool/iffi-X/neutrino/-/releases/latest)
-   [![Linux](https://img.shields.io/badge/Linux-%E4%B8%8B%E8%BD%BD-22d3ee?style=for-the-badge&labelColor=0a0e14&color=22d3ee)](https://cnb.cool/iffi-X/neutrino/-/releases/latest)
+   [![下载：Windows、macOS、Linux](https://img.shields.io/badge/Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-%E4%B8%8B%E8%BD%BD-22d3ee?style=for-the-badge&labelColor=0a0e14&color=22d3ee)](https://cnb.cool/iffi-X/neutrino/-/releases/latest)
 
    <img src="images/web/search_hub_zh.svg" width="100%" alt="搜索微子中枢并打开" />
 
 1. 在手机或另一台电脑上安装客户端。iPhone 要[自己签名](https://neutrinohub.net/access/ios)。
 
-   [![Windows](https://img.shields.io/badge/Windows-%E4%B8%8B%E8%BD%BD-22d3ee?style=for-the-badge&labelColor=0a0e14&color=22d3ee)](https://cnb.cool/iffi-X/neutrino/-/releases/latest)
-   [![macOS](https://img.shields.io/badge/macOS-%E4%B8%8B%E8%BD%BD-22d3ee?style=for-the-badge&labelColor=0a0e14&color=22d3ee)](https://cnb.cool/iffi-X/neutrino/-/releases/latest)
-   [![Linux](https://img.shields.io/badge/Linux-%E4%B8%8B%E8%BD%BD-22d3ee?style=for-the-badge&labelColor=0a0e14&color=22d3ee)](https://cnb.cool/iffi-X/neutrino/-/releases/latest)
-   [![Android](https://img.shields.io/badge/Android-%E4%B8%8B%E8%BD%BD-22d3ee?style=for-the-badge&labelColor=0a0e14&color=22d3ee)](https://cnb.cool/iffi-X/neutrino/-/releases/latest)
-   [![iPhone](https://img.shields.io/badge/iPhone-%E4%B8%8B%E8%BD%BD-22d3ee?style=for-the-badge&labelColor=0a0e14&color=22d3ee)](https://cnb.cool/iffi-X/neutrino/-/releases/latest)
+   [![下载：Windows、macOS、Linux、Android、iPhone](https://img.shields.io/badge/Windows%20%C2%B7%20macOS%20%C2%B7%20Linux%20%C2%B7%20Android%20%C2%B7%20iPhone-%E4%B8%8B%E8%BD%BD-22d3ee?style=for-the-badge&labelColor=0a0e14&color=22d3ee)](https://cnb.cool/iffi-X/neutrino/-/releases/latest)
 
    <img src="images/web/client_app_zh.svg" width="100%" alt="桌面上的微子客户端图标" />
 
