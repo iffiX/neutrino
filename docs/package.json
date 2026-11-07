@@ -14,7 +14,7 @@
     "lint": "eslint . --max-warnings 0",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "pages": "python3 check_pages.py",
+    "pages": "python3 check_pages.py && python3 check_pages_en.py",
     "check": "npm run format:check && npm run lint && npm run typecheck && npm run pages"
   },
   "devDependencies": {
