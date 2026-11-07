@@ -6,53 +6,22 @@ SSH 中继是设备经过你自己的 VPS 连接中枢的外部访问方式。�
 
 所有流量都经过这台 VPS。内容已加密，VPS 无法读取。外部网络的访客也能打开分享链接。
 
-你要有一台有公网地址、运行 OpenSSH 的服务器，并且能以 root 登录。有的服务商限制端口转发，所以你要先阅读服务商的条款。中枢不在 VPS 上运行任何命令，下面的命令都要你自己运行。
+你要有一台有公网地址、运行 OpenSSH 的服务器，并且能修改它的 SSH 设置。有的服务商限制端口转发，所以你要先阅读服务商的条款。中枢不在 VPS 上运行任何命令，下面的设置都要你自己完成。
 
 ## 设置 VPS
 
-下面的命令以 root 运行，示例账户是 `relay`，对外端口是 `8443`。如果你要更换端口，每一步都要更换。
+强烈建议你用密钥登录，不要用密码。公网上的服务器只要开着密码登录，就会一直有人尝试猜密码。
 
-1. 创建一个账户。
+下面的示例账户是 `relay`，对外端口是 `8443`。
 
-   ```bash
-   useradd --create-home --shell /usr/sbin/nologin relay
-   ```
-
-1. 如果你用密钥登录，在你自己的电脑上生成一对密钥。
-
-   ```bash
-   ssh-keygen -t ed25519 -N '' -f neutrino-relay
-   ```
-
-1. 回到 VPS，运行下面的命令，把公钥写入 `relay` 账户。`<public-key>` 代表公钥，要换成 `neutrino-relay.pub` 的内容。
-
-   ```bash
-   mkdir -p /home/relay/.ssh
-   echo 'restrict,port-forwarding,permitlisten="8443" <public-key>' >> /home/relay/.ssh/authorized_keys
-   chown -R relay:relay /home/relay/.ssh
-   chmod 700 /home/relay/.ssh
-   chmod 600 /home/relay/.ssh/authorized_keys
-   ```
-
-1. 如果你用密码登录，跳过上面两步，改为给账户设置密码，并打开密码登录。
-
-   ```bash
-   passwd relay
-   printf 'Match User relay\n    PasswordAuthentication yes\n' > /etc/ssh/sshd_config.d/20-neutrino-relay-password.conf
-   ```
-
-1. 让这个端口监听公网地址，再重启 SSH。在 Fedora、RHEL、Arch 上，服务名是 `sshd`。
-
-   ```bash
-   echo 'GatewayPorts clientspecified' > /etc/ssh/sshd_config.d/10-neutrino-relay.conf
-   systemctl restart ssh
-   ```
-
-1. 打开服务商的控制台，放行 TCP `8443`。如果服务器运行着防火墙，也要放行。
+- 创建一个账户，它不需要登录 shell。
+- 生成一对密钥，把公钥加到这个账户的 `authorized_keys`。公钥前面可以加上 `restrict,port-forwarding,permitlisten="8443"`，这样这把密钥只能转发这个端口。
+- 打开 SSH 的设置，把 `GatewayPorts` 设为 `clientspecified`，让这个端口监听公网地址，再重启 SSH。
+- 在服务商的控制台放行 TCP `8443`。如果服务器运行着防火墙，也要放行。
 
 ## 保存登录凭据
 
-1. 在面板左侧栏点 **凭据**。如果你用密钥登录，按 **添加密钥**。填写 **名称**，在 **私钥** 粘贴 `neutrino-relay` 这个文件的全部内容，再按 **保存密钥**。
+1. 在面板左侧栏点 **凭据**。如果你用密钥登录，按 **添加密钥**。填写 **名称**，在 **私钥** 粘贴私钥文件的全部内容，再按 **保存密钥**。
 
    ![凭据页，添加密钥按钮标红](/guide/zh/hub_add_machine_05_credentials.webp "按 添加密钥")
    ![新建密钥的表单，保存密钥按钮标红](/guide/zh/hub_add_machine_06_key_form.webp "填好后按 保存密钥")
@@ -74,7 +43,7 @@ SSH 中继是设备经过你自己的 VPS 连接中枢的外部访问方式。�
 
 1. 等待状态变成 **已连上**，一分钟内会有结果。
 
-   <div class="pic-holder">图：状态显示已连上</div>
+   ![SSH 中继的状态显示已连上](/guide/zh/access_vps_08_connected.webp)
 
 各状态的含义如下。
 
@@ -101,4 +70,4 @@ SSH 中继是设备经过你自己的 VPS 连接中枢的外部访问方式。�
 - **应用设置：** 每次按 **应用 SSH 中继**，通过它连接的客户端都会断开再重新连接。
 - **更换服务器：** 填写新的 **服务器** 再应用。
 - **同一个地址重装了系统：** 先按上面的步骤重新设置 VPS，再按 **忘记主机密钥**，并在弹窗里选择 **忘记**。
-- **不再使用：** 关闭卡片的 **启用**，按 **应用外部访问**。然后删除 VPS 上的 `relay` 账户。再到 `/etc/ssh/sshd_config.d/` 删除两个文件：`10-neutrino-relay.conf`、`20-neutrino-relay-password.conf`。
+- **不再使用：** 关闭卡片的 **启用**，按 **应用外部访问**。然后删除 VPS 上的 `relay` 账户，并改回你为中继修改过的 SSH 设置。

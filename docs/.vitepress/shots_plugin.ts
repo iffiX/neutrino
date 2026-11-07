@@ -7,6 +7,7 @@ type Token = ReturnType<MarkdownIt["parse"]>[number];
 
 const PUBLIC_DIR = resolve(process.cwd(), "public");
 const PORTRAIT_BELOW = 0.8;
+const PHONE_CROP = /_phone\.\w+$/;
 
 interface Shot {
   src: string;
@@ -34,8 +35,10 @@ function readShot(md: MarkdownIt, token: Token): Shot {
 /** Writes a row of pictures with one height, each as wide as its own shape. */
 function renderRow(md: MarkdownIt, shots: Shot[]): string {
   const escape = md.utils.escapeHtml;
-  const isPortrait = (shot: Shot) => shot.width / shot.height < PORTRAIT_BELOW;
+  const isPortrait = (shot: Shot) =>
+    shot.width / shot.height < PORTRAIT_BELOW || PHONE_CROP.test(shot.src);
   const allPortrait = shots.every(isPortrait);
+  const isAlone = shots.length === 1 && !allPortrait;
   const kind = allPortrait
     ? shots.length > 1
       ? " phones"
@@ -47,8 +50,9 @@ function renderRow(md: MarkdownIt, shots: Shot[]): string {
       ? `<figcaption>${number}${escape(shot.caption)}</figcaption>`
       : "";
     const shape = (shot.width / shot.height).toFixed(3);
+    const cap = isAlone ? `;max-width:${shot.width}px` : "";
     return (
-      `<figure style="--r:${shape}">` +
+      `<figure style="--r:${shape}${cap}">` +
       `<img src="${escape(shot.src)}" alt="${escape(shot.alt)}" ` +
       `width="${shot.width}" height="${shot.height}" loading="lazy">${caption}</figure>`
     );
@@ -56,7 +60,10 @@ function renderRow(md: MarkdownIt, shots: Shot[]): string {
   return `<div class="shots${kind}">${figures.join("")}</div>\n`;
 }
 
-/** Turns a paragraph holding only images into a row, as `layout.md` describes. */
+/**
+ * Turns a paragraph holding only images into a row, as `layout.md` describes.
+ * A lone phone picture outside a step moves before the paragraph above it, which then sits to its left.
+ */
 export function shotsPlugin(md: MarkdownIt): void {
   md.core.ruler.after("inline", "doc_shots", (state) => {
     const tokens = state.tokens;
@@ -84,6 +91,15 @@ export function shotsPlugin(md: MarkdownIt): void {
       );
       block.level = tokens[at - 1].level;
       tokens.splice(at - 1, 3, block);
+      const isBesideText =
+        block.level === 0 &&
+        block.content.startsWith('<div class="shots solo-phone">') &&
+        tokens[at - 2]?.type === "paragraph_close" &&
+        tokens[at - 4]?.type === "paragraph_open";
+      if (isBesideText) {
+        tokens.splice(at - 1, 1);
+        tokens.splice(at - 4, 0, block);
+      }
     }
     return true;
   });

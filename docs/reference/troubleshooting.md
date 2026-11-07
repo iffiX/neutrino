@@ -456,7 +456,7 @@ Windows 不接受这个密码，比如密码已修改。在弹窗或者账户表
 
 ### `gitea_git_missing`
 
-Mac 或者 Windows 上没有 git。在 Mac 上安装开发者工具或者 Homebrew 的 git，在 Windows 上安装 Git for Windows，然后再按 **安装**。
+Mac 上安装了 Apple 命令行工具后，Gitea 仍找不到 git。安装开发者工具或者 Homebrew 的 git，再按 **安装**。
 
 ### `terms_not_accepted`
 

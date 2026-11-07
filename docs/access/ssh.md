@@ -51,8 +51,6 @@ Linux 5.15.0-198-generic
 
 使用 VS Code、JetBrains 的远程开发时，主机名填写 `<系统>.nt`。
 
-<div class="pic-holder">图：VS Code 连上这个系统</div>
-
 FileZilla 这类软件不读取 SSH 配置，这时运行 `nclient ssh list` 查询地址，再填写列出的本机地址和端口。
 
 ```text

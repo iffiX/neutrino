@@ -1,5 +1,5 @@
 import { defineConfig, type HeadConfig } from "vitepress";
-import { GITHUB_URL, nav, sidebar } from "./navigation.ts";
+import { GITHUB_URL, nav, navEn, sidebar, sidebarEn } from "./navigation.ts";
 import { shotsPlugin } from "./shots_plugin.ts";
 
 /** Chinese needs a word segmenter; the default tokenizer splits on spaces. */
@@ -147,8 +147,19 @@ export default defineConfig({
       themeConfig: {
         logo: { src: "/logo.png", alt: "Neutrino Hub" },
         siteTitle: "Neutrino Hub",
-        nav: [],
-        sidebar: [],
+        nav: navEn,
+        sidebar: sidebarEn,
+        outline: { level: [2, 3], label: "On this page" },
+        docFooter: { prev: "Previous page", next: "Next page" },
+        sidebarMenuLabel: "Menu",
+        returnToTopLabel: "Return to top",
+        notFound: {
+          code: "404",
+          title: "Page not found",
+          quote: "Start from the home page, or search for what you need.",
+          linkLabel: "Go to the home page",
+          linkText: "Go to the home page",
+        },
         langMenuLabel: "Change language",
         darkModeSwitchLabel: "Appearance",
         lightModeSwitchTitle: "Switch to light mode",

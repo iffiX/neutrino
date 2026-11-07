@@ -36,7 +36,7 @@
 
 1. 在 Windows 上，如果标签提示要重启，按 **立即重启**。这个系统上打开的程序都会关闭，重启后会继续安装。
 
-   <div class="pic-holder">图：Windows 的容器标签，有立即重启</div>
+   ![容器标签显示 Windows 需要重启，立即重启按钮标红](/guide/zh/deploy_containers_18_reboot.webp)
 
 1. 标签变成 **已安装** 后，按 **启动**。标签变成 **运行中** 后，按 **配置**。
 
@@ -55,7 +55,7 @@
 
    ![声明的容器区域，添加容器按钮标红](/guide/zh/deploy_containers_09_add_container.webp)
 
-1. 在 **名称** 里填写名称，只能用小写字母、数字、连字符和下划线。在 **镜像标签** 里填写镜像名和标签，这里填写 `docker.io/traefik/whoami:latest`。Docker Hub 上的镜像可以按 **选择标签** 选择。在 **端口** 的输入框里填写 `8088:80`，前面是系统上的端口，后面是容器里的端口。按旁边的 **添加**。
+1. 在 **名称** 里填写名称，只能用小写字母、数字、连字符和下划线。在 **镜像标签** 里填写镜像名和标签，这里填写 `docker.io/traefik/whoami:latest`。Docker Hub 上的镜像可以按 **选择标签** 选择。在 **端口** 的输入框里填写 `8088:80`，前面是系统上的端口，后面是容器里的端口。按旁边的 **添加**。输入框里填了但没按 **添加** 的内容，按 **应用容器** 时会自动加进去。
 
    ![填好了名称和镜像标签，镜像标签一栏标红](/guide/zh/deploy_containers_10_editor_name.webp "填写名称和镜像")
    ![端口一栏显示 8088:80，标红](/guide/zh/deploy_containers_11_editor_port.webp "填写端口")
@@ -66,6 +66,8 @@
    ![应用容器按钮标红，旁边有黄字提示](/guide/zh/deploy_containers_13_apply.webp "按 应用容器")
 
 1. 下面出现 **已应用。** 时，容器已经运行。这时 **正在运行** 区域多出一行，显示容器的名称、镜像和运行时长。旁边的按钮可以查看 **日志**、打开 **Shell**、**重启** 和 **停止**。
+
+   如果一个容器起不来，只有它显示失败和原因，其他容器照常运行。
 
    ![下面显示已应用](/guide/zh/deploy_containers_14_applying.webp "已应用")
    ![正在运行区域，whoami 这一行标红](/guide/zh/deploy_containers_15_live_row.webp "多了一行")

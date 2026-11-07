@@ -15,15 +15,9 @@ SakuraFrp 是第三方隧道服务。中枢运行 frpc 连接它的节点，节�
 
 1. 打开 [SakuraFrp](https://www.natfrp.com/)，注册一个账号。
 
-   <div class="pic-holder">图：SakuraFrp 的注册页</div>
-
 1. 在网站上完成实名认证，费用是 1 元。
 
-   <div class="pic-holder">图：SakuraFrp 的实名认证页</div>
-
 1. 在网站上复制你的 **访问密钥**。
-
-   <div class="pic-holder">图：网站上的访问密钥，已打码</div>
 
 ## 保存访问密钥
 
@@ -42,23 +36,25 @@ SakuraFrp 是第三方隧道服务。中枢运行 frpc 连接它的节点，节�
 
 1. 保存密钥后，面板会显示 **隧道** 一节。列表为空时，按 **打开 SakuraFrp 控制台**。
 
-   <div class="pic-holder">图：隧道一节，列表空着</div>
+1. 在 SakuraFrp 网站的隧道列表按 **创建隧道**，先选择一个节点。节点不能开启强制访问认证。下图选的是日本 1，你可以选离你常用的地方近的节点。
 
-1. 在 SakuraFrp 的控制台新建隧道。类型选 TCP，本地端口填连接端口，本地 IP 保持默认。然后选择一个没有开启强制访问认证的节点，再保存。
+   ![选择节点的列表，日本 1 标红](/guide/zh/access_sakurafrp_12_node.webp)
 
-   <div class="pic-holder">图：SakuraFrp 新建隧道的表单</div>
+1. 隧道类型选择 **TCP 隧道**。**隧道名** 填写一个名称，比如 `neutrino`，**本地端口** 填写连接端口，**本地 IP** 和 **访问密码** 留空，然后按 **创建**。
+
+   ![填好的创建隧道表单，本地端口和创建按钮标红](/guide/zh/access_sakurafrp_14_form.webp)
 
 1. 回到面板，在 **隧道** 一节按 **刷新**。列表只显示可用的隧道，每行显示隧道名、节点、**地区** 和 **延迟**。
 
-   <div class="pic-holder">图：隧道列表，有一条隧道</div>
+   ![面板的隧道一节，neutrino 这一行标红](/guide/zh/access_sakurafrp_20_tunnels.webp)
 
 1. 选中这条隧道，再按 **应用隧道**。
 
-   <div class="pic-holder">图：选中隧道，应用隧道按钮</div>
+   ![选中了 neutrino，应用隧道按钮标红](/guide/zh/access_sakurafrp_21_apply.webp)
 
 1. 等待状态变成 **已连上**，一分钟内会有结果。
 
-   <div class="pic-holder">图：状态显示已连上</div>
+   ![状态显示已连上，客户端连接地址已打码](/guide/zh/access_sakurafrp_22_connected.webp)
 
 各状态的含义如下。
 

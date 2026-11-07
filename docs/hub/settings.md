@@ -41,11 +41,11 @@
 
 1. 按 **安装** 加版本号的按钮，读完确认框后确认。
 
-   <div class="pic-holder">图：更新一节列出新版本和安装按钮</div>
+   ![更新一节列出新版本 0.6.1，安装 0.6.1 按钮标红](/guide/zh/hub_settings_16_update_found.webp)
 
 1. 面板会重启。回到登录页后重新登录，这一节会显示从哪个版本更新到了哪个版本。
 
-   <div class="pic-holder">图：更新一节显示已更新</div>
+   ![更新一节显示从 0.6.0 更新到了 0.6.1](/guide/zh/hub_settings_17_updated.webp)
 
 如果新版本三分钟内没有应答，中枢会自动恢复旧版本。
 

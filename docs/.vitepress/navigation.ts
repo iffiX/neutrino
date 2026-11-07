@@ -150,3 +150,102 @@ export const sidebar: DefaultTheme.SidebarItem[] = [
     ],
   },
 ];
+
+/** The English words of every nav and sidebar entry, by its Chinese words. */
+const ENGLISH: Record<string, string> = {
+  快速上手: "Quick start",
+  中枢: "Hub",
+  一键部署: "Deploy",
+  到处使用: "Access",
+  任意分享: "Share",
+  参考: "Reference",
+  在线演示: "Live demo",
+  概览: "Overview",
+  "微子·中枢是什么": "What Neutrino Hub is",
+  工作原理: "How it works",
+  安全模型: "Security model",
+  数据和外连: "Data and outbound connections",
+  和其他工具比较: "Comparison with other tools",
+  常见问题: "FAQ",
+  安装中枢: "Install the hub",
+  总览: "Dashboard",
+  "网络形态：服务器、路由器、旁路网关":
+    "Network modes: server, router, side gateway",
+  代理: "Proxy",
+  "AI 网关": "AI gateway",
+  被控端: "Agents",
+  客户端: "Clients",
+  "设置：备份、更新、密码": "Settings: backup, updates, password",
+  "从 0.5 升级": "Upgrade from 0.5",
+  卸载: "Uninstall",
+  在一个系统上安装应用: "Install apps on a system",
+  应用的分类: "App kinds",
+  系统访问: "System access",
+  远程桌面: "Remote desktop",
+  文件共享: "File sharing",
+  终端: "Terminal",
+  写代码: "Coding",
+  "AI 工作流": "AI workflows",
+  论文和笔记: "Papers and notes",
+  思源笔记: "SiYuan",
+  自己的服务: "Your own services",
+  容器: "Containers",
+  加入已有的服务: "Add existing services",
+  访问没有安装被控端的设备: "Devices without an agent",
+  安装客户端: "Install the client",
+  加入中枢: "Join the hub",
+  桌面客户端: "Desktop client",
+  "Android 应用": "Android app",
+  "iOS 应用": "iOS app",
+  "外部访问：选择一种方式": "Access from outside: choose a method",
+  直连: "Direct",
+  "SSH 中继": "SSH relay",
+  客户端高级功能: "Advanced client features",
+  终端命令: "Terminal commands",
+  "SSH 连接": "SSH connections",
+  "让本地 AI 工具操作你的系统": "Let local AI tools work on your systems",
+  应用分享: "App share",
+  "nhub 命令": "nhub commands",
+  "nagent 命令": "nagent commands",
+  "nclient 命令": "nclient commands",
+  支持的平台: "Supported platforms",
+  故障排查: "Troubleshooting",
+  面板菜单对照表: "Panel menu map",
+  术语表: "Glossary",
+};
+
+/** A Chinese entry's English words; names such as Gitea stay as they are. */
+function english(text: string): string {
+  return ENGLISH[text] ?? text;
+}
+
+/** An internal link under /en/; the demo opens in English; outside links stay. */
+function englishLink(link: string): string {
+  if (link === DEMO_URL) {
+    return `${DEMO_URL}?lang=en`;
+  }
+  return link.startsWith("/") ? `/en${link}` : link;
+}
+
+function englishItem<T extends DefaultTheme.SidebarItem>(item: T): T {
+  return {
+    ...item,
+    text: item.text === undefined ? undefined : english(item.text),
+    link: item.link === undefined ? undefined : englishLink(item.link),
+    items: item.items?.map(englishItem),
+  };
+}
+
+export const navEn: DefaultTheme.NavItem[] = nav.map((item) =>
+  "link" in item
+    ? {
+        ...item,
+        text: english(item.text),
+        link:
+          typeof item.link === "string" ? englishLink(item.link) : item.link,
+        activeMatch: item.activeMatch?.replace("^/", "^/en/"),
+      }
+    : item,
+);
+
+export const sidebarEn: DefaultTheme.SidebarItem[] = sidebar.map(englishItem);

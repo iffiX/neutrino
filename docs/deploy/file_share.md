@@ -98,8 +98,6 @@
 | Linux   | 主目录下的 `remote/系统名-共享名`                       |
 | macOS   | 主目录下的 `remote/系统名-共享名`，也列在访达的“位置”里 |
 
-<div class="pic-holder">图：Windows 资源管理器里多一个盘符</div>
-
 在手机上不用挂载，打开 App 的 **文件** 页即可：
 
 - **Android：** 按 **在“文件”中打开**，系统的“文件”应用里会多出一个位置。
@@ -155,7 +153,7 @@ Linux 上的共享只接受本机的连接，其他电脑都要经过客户端�
 
 ![当前连接区域，下面是两个共享的磁盘用量](/guide/zh/deploy_file_share_17_status.webp)
 
-如果你要手动登录，到 **凭据** 页查找这个账户的 **SMB 密码**，用户名是 `neutrino-账户名`。
+如果你要手动登录，到 **凭据** 页查找这个账户的 **SMB 密码**，用户名是 `neutrino_账户名`。
 
 ![凭据页，SMB 密码 · lab 这一行标红](/guide/zh/deploy_file_share_18_credentials.webp)
 

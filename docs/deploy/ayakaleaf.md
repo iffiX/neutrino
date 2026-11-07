@@ -34,7 +34,7 @@ Ayakaleaf 运行在[容器](/deploy/containers)里，每个系统只运行一个
 
 1. 在 Windows 上，如果要重启，这个标签会显示提示，旁边有 **立即重启**。按 **立即重启**，电脑重启后会自动继续安装。
 
-   <div class="pic-holder">图：Ayakaleaf 标签上的立即重启</div>
+   ![Ayakaleaf 标签显示 Windows 需要重启，立即重启按钮标红](/guide/zh/deploy_ayakaleaf_10_reboot.webp)
 
 1. 标签会列出每一步。它要拉取三个镜像，需要几分钟。如果你要放弃，可以按 **取消**。标签变成 **已安装** 后，按 **启动**。
 
@@ -125,9 +125,9 @@ Ayakaleaf 的 Git 同步功能不可用。
 | **应用 Ayakaleaf 设置**       | 标签的 **配置** | 保存设置，Ayakaleaf 会重启，打开的编辑器会重新连接                |
 | **更新**、**安装另一个版本…** | 标签的状态下面  | 更换版本，步骤见[换版本](/deploy/on_a_machine#换版本)             |
 
-换到旧版本时，面板会先弹窗提醒，因为旧版本可能无法读取新版本迁移过的数据。
+Ayakaleaf 只能升级，因为旧版本可能无法读取新版本迁移过的数据。**安装另一个版本…** 的列表里，比当前版本旧的版本是灰色的，不能选。
 
-![换到旧版本时的提醒弹窗，取消按钮标红](/guide/zh/deploy_ayakaleaf_45_downgrade_dialog.webp)
+![版本列表，比当前版本旧的版本是灰色的](/guide/zh/deploy_ayakaleaf_44_version_dialog.webp)
 
 ## 卸载
 

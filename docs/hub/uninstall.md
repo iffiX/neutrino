@@ -59,8 +59,6 @@
 
 在 Windows 上卸载客户端时，勾选 **Keep my configuration**，就能保留加入过的中枢。
 
-<div class="pic-holder">图：Windows 系统设置里的卸载</div>
-
 ## 在 macOS 上卸载
 
 卸载中枢时，先运行 `sudo nhub reset all`，再运行下面的命令。

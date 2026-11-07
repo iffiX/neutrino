@@ -37,18 +37,18 @@
 
 中枢自身发起的连接如下。
 
-| 时机                                        | 连接目标                                                                                                              |
-| ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| 检查和安装更新时                            | GitHub、CNB                                                                                                           |
-| 每天读取一次各应用的版本列表时              | 各应用的发布方，多数是 api.github.com                                                                                 |
-| 安装应用、更换版本，文件先下载到中枢时      | 发布方和镜像：GitHub、nodejs.org、npmmirror、USTC 镜像、微软、dl.gitea.com、release.liuyun.io，每次下载选择最快的来源 |
-| 为另一种系统的被控端获取安装包时            | GitHub、CNB                                                                                                           |
-| **容器** 列出镜像的标签时                   | Docker Hub                                                                                                            |
-| 运行 NetBird、EasyTier、SSH 中继时          | NetBird 的管理服务器；EasyTier 控制台或你填写的引导节点；你的 VPS                                                     |
-| 登录或刷新 SakuraFrp、OpenFrp 时            | api.natfrp.com；api.openfrp.net、access.openfrp.net；列表里的每台服务器（用来测量延迟）                               |
-| 开启 SakuraFrp 或 OpenFrp，并选择一条隧道后 | 这条隧道所在的服务器                                                                                                  |
-| AI 网关转发请求时                           | 你添加的提供方，或订阅账号所属的服务                                                                                  |
-| 开启代理后                                  | 你的出口；参照地址，默认是 www.msftconnecttest.com；按 **更新 geodata** 时连接 GitHub                                 |
+| 时机                                                                       | 连接目标                                                                                                              |
+| -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| 检查和安装更新时                                                           | GitHub、CNB                                                                                                           |
+| 每天读取一次各应用的版本列表时；某个应用还没有版本列表时，一小时后再读一次 | 各应用的发布方，多数是 api.github.com                                                                                 |
+| 安装应用、更换版本，文件先下载到中枢时                                     | 发布方和镜像：GitHub、nodejs.org、npmmirror、USTC 镜像、微软、dl.gitea.com、release.liuyun.io，每次下载选择最快的来源 |
+| 为另一种系统的被控端获取安装包时                                           | GitHub、CNB                                                                                                           |
+| **容器** 列出镜像的标签时                                                  | Docker Hub                                                                                                            |
+| 运行 NetBird、EasyTier、SSH 中继时                                         | NetBird 的管理服务器；EasyTier 控制台或你填写的引导节点；你的 VPS                                                     |
+| 登录或刷新 SakuraFrp、OpenFrp 时                                           | api.natfrp.com；api.openfrp.net、access.openfrp.net；列表里的每台服务器（用来测量延迟）                               |
+| 开启 SakuraFrp 或 OpenFrp，并选择一条隧道后                                | 这条隧道所在的服务器                                                                                                  |
+| AI 网关转发请求时                                                          | 你添加的提供方，或订阅账号所属的服务                                                                                  |
+| 开启代理后                                                                 | 你的出口；参照地址，默认是 www.msftconnecttest.com；按 **更新 geodata** 时连接 GitHub                                 |
 
 ## 不由中枢发起的连接
 

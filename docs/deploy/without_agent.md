@@ -28,15 +28,11 @@
 
 1. 接着按 **Add Resource**，在 **Address** 里粘贴刚才复制的网段。
 
-   <div class="pic-holder">图：Add Resource 的弹窗</div>
-
 1. 再按 **Add Policy**。来源选择客户端所在的分组，目标选择这个资源，协议选择 **All**。客户端的分组显示在控制台 **Setup Keys** 列表的 **Groups** 一栏。
-
-   <div class="pic-holder">图：Add Policy 的弹窗</div>
 
 1. 最后按 **Add Routing Peer**，选择中枢，再按 **Submit**。
 
-   <div class="pic-holder">图：Add Routing Peer 的弹窗</div>
+每一步在 NetBird 控制台里的样子，见 NetBird 官方的 [Networks](https://docs.netbird.io/manage/networks) 说明。
 
 ## EasyTier
 
@@ -48,11 +44,9 @@
 
 1. 按 **新增路由**，填写 **目标网段**，经过的设备选择中枢，再按 **创建路由**。
 
-   <div class="pic-holder">图：新增路由的弹窗</div>
-
 1. 回到面板的 **EasyTier** 卡片，**控制台下发的网络** 的 **子网路由** 一栏会列出这个网段。
 
-   <div class="pic-holder">图：EasyTier 卡片的子网路由一栏</div>
+   ![控制台下发的网络，子网路由一栏的 192.168.1.0/24 标红](/guide/zh/deploy_without_agent_07_easytier_routes.webp)
 
 如果你选择了 **手动引导节点**，就没有控制台。这时在卡片的 **导出的局域网** 里勾选网段，再按 **应用 EasyTier 设置**。
 

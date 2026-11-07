@@ -99,8 +99,6 @@
 ![远程桌面页，连接按钮标红](/guide/zh/access_desktop_13_desktops.webp "按 连接")
 ![这一行显示查看器已打开](/guide/zh/access_desktop_14_viewer_open.webp "显示 查看器已打开")
 
-<div class="pic-holder">图：查看器窗口里的远程桌面</div>
-
 电脑和系统共用剪贴板，查看器的传文件窗口可以互传文件。关闭查看器后连接结束。
 
 如果连接 Mac 时画面全黑或鼠标没有反应，说明那台 Mac 还缺少权限。你要在那台 Mac 上为 RustDesk 打开“屏幕录制”和“辅助功能”。

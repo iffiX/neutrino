@@ -231,6 +231,21 @@
   margin-top: 0;
 }
 
+/* One phone picture outside a step sits to the right of the text around it. */
+.vp-doc > div > .shots.solo-phone {
+  float: right;
+  margin: 4px 0 16px 24px;
+}
+.vp-doc h2,
+.vp-doc h3,
+.vp-doc > div::after {
+  clear: both;
+}
+.vp-doc > div::after {
+  content: "";
+  display: block;
+}
+
 @media (max-width: 640px) {
   .vp-doc ol > li {
     padding-left: 38px;
@@ -250,6 +265,10 @@
   }
   .vp-doc .shots.solo-phone {
     width: 200px;
+  }
+  .vp-doc > div > .shots.solo-phone {
+    float: none;
+    margin: 14px 0 4px;
   }
 }
 

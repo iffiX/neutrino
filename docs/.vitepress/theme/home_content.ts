@@ -405,3 +405,80 @@ export const COMPARE_GROUPS = [
     ],
   },
 ];
+
+/** Every sentence and label of the Chinese page; home_content_en.ts holds the English ones. */
+export const WORDS = {
+  name: "微子·中枢",
+  title: ["一键部署应用，", "走到哪用到哪"],
+  lead: "写代码、写论文、记笔记、远程桌面、传文件。点一下安装到自己电脑上，手机和笔记本随时打开，还能发链接给同学用。",
+  small: "Windows、macOS、Linux 都能安装。开源，免费，MIT 许可证。",
+  quickStart: "快速上手",
+  quickStartLink: "/quick-start",
+  demo: "在线演示",
+  chooseSystem: "选择系统",
+  switchSite: "切换国内版和国际版",
+  copy: "复制",
+  copied: "已复制",
+  download: "下载",
+  guide: "安装说明",
+  qrAlt: "安卓客户端的下载二维码",
+  heroPanelAlt: "面板的总览页",
+  heroPhoneAlt: "手机上的应用列表",
+  deployTitle: "一键部署",
+  deployText:
+    "想用什么，点一下就能安装。不用配环境，不用换系统。容器也一样，Windows、macOS、Linux 同样的办法部署。多个下载源自动选又快又稳的那个。",
+  deployNote:
+    "列表里没有的也能用：你可以自己声明服务，填多个端口和 HTTP 入口。容器暴露的端口会自动添加为应用，全部自动。",
+  storeAlt: "面板上选择要安装的应用",
+  wolfSitAlt: "小狼坐在方块上用电脑",
+  waysTitle: "到处使用",
+  waysText:
+    "手机扫一次码，地铁、高铁、飞机 Wi-Fi、国外都能用电脑上的软件。6 种连接方式，智能路由自动使用最快的一条*。",
+  waysAria: "电脑和手机之间有六种连接方式，走最快的一条",
+  laptopAlt: "笔记本上的 VS Code",
+  waysSeparator: "、",
+  waysNote:
+    "* NetBird 和 EasyTier 要手动选择，其余的自动。iOS 不包含这两种，你要用美区账号安装它们的 App。",
+  shareTitle: "任意分享",
+  shareText:
+    "任何网页应用，点“分享”得到一个链接。同学用浏览器打开就能用，什么都不用安装。到期失效，也能随时收回。",
+  shareDialogAlt: "面板上的分享弹窗",
+  shareYou: "你点分享",
+  wolfTwoAlt: "两只小狼一起坐在桌边",
+  shareBrowserAlt: "同学的浏览器里打开的 Ayakaleaf",
+  shareFriend: "同学打开",
+  points: [
+    {
+      title: "全能",
+      lines: [
+        "应用、桌面、终端、文件、SSH。",
+        "点一下就能安装，客户端里都配好了。",
+      ],
+    },
+    {
+      title: "安全",
+      lines: [
+        '设备和中枢之间全程加密，第三方线路看不到内容。所有应用都受微子<span class="home-nowrap">服务端口</span>严格保护。',
+        "只有你许可的人才能访问。",
+      ],
+    },
+    {
+      title: "自主",
+      lines: [
+        "不用买服务器、域名和专用设备。",
+        "微子不提供公开服务器，",
+        "分享也只连你的中枢。",
+      ],
+    },
+    {
+      title: "免费",
+      lines: [
+        "管理多台电脑，局域网唤醒，",
+        "全球连接，不限用户数，",
+        "不限流量。全部免费。",
+      ],
+    },
+  ],
+  tableNote:
+    "价格和限制来自 2026-10-30 各家页面。第三方服务以它们的带宽和账号规定为准。",
+};

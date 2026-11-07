@@ -90,9 +90,11 @@
 
 如果向导报错或者你打不开向导，查看[安装中枢](/hub/install)和[故障排查](/reference/troubleshooting)。
 
-## 第二步：在 AI 网关里登录 Claude 订阅
+## 第二步：在 AI 网关里添加订阅或 API 密钥
 
-CloudCLI 通过中枢的 AI 网关使用 Claude，所以你不用在电脑上安装 Claude Code。下面用你的 Claude 订阅登录一次，费用由 Anthropic 决定。如果你使用 API 密钥，按 [AI 网关](/hub/ai_gateway) 的“添加 API 密钥”一节添加，再继续第三步。
+CloudCLI 通过中枢的 AI 网关使用模型，所以你不用在电脑上安装 Claude Code。你可以用 Claude 订阅登录，也可以添加一个服务商的 API 密钥，选一种即可。费用由服务商决定。
+
+### 用 Claude 订阅登录
 
 1. 在面板左侧栏点 **AI**，在 **账号** 一栏按 **登录**，再在弹窗里选择 Claude。
 
@@ -104,6 +106,35 @@ CloudCLI 通过中枢的 AI 网关使用 Claude，所以你不用在电脑上安
 1. 登录后，浏览器可能显示页面无法打开，这是正常现象。复制地址栏的内容，粘贴到弹窗的 **地址栏或验证码**，再按 **完成登录**。**账号** 一栏多出一行时，这一步就完成了。
 
    ![使用 Claude 登录的弹窗，有地址和输入框](/guide/zh/hub_ai_gateway_17_sign_in_step.webp "粘贴后按 完成登录")
+
+### 用 API 密钥
+
+下面以 DeepSeek 为例。其他服务商的填法见 [AI 网关](/hub/ai_gateway#添加-api-密钥)。
+
+1. 在面板左侧栏点 **凭据**，在 **令牌** 一栏按 **添加令牌**。在 **名称** 里填写 `deepseek`，在 **值** 里粘贴 DeepSeek 给你的 API 密钥，再按 **保存令牌**。保存后，密钥不再显示。
+
+   ![凭据页，添加令牌按钮标红](/guide/zh/hub_ai_gateway_01_credentials.webp "按 添加令牌")
+   ![新建令牌的表单，保存令牌按钮标红](/guide/zh/hub_ai_gateway_02_token_form.webp "填好后按 保存令牌")
+
+1. 在左侧栏点 **AI**，在 **提供方** 一栏按 **添加提供方**。
+
+   ![AI 页，添加提供方按钮标红](/guide/zh/hub_ai_gateway_03_page.webp)
+
+1. 按下面填写，再按 **保存提供方**。
+
+   - **名称**：`DeepSeek`
+   - **类型**：**OpenAI 兼容 — /chat/completions**
+   - **Base URL**：`https://api.deepseek.com`
+   - **模型别名**：两行，第一行 `deepseek-flash`，第二行 `deepseek-v4-pro`
+   - **API 令牌**：刚才保存的 `deepseek`
+
+   ![API 令牌的选择框展开，刚保存的令牌标红](/guide/zh/hub_ai_gateway_04_provider_token.webp "选择刚保存的令牌")
+   ![填好的提供方表单，保存提供方按钮标红](/guide/zh/hub_ai_gateway_05_provider_form.webp "按 保存提供方")
+
+1. 列表会多出一行。按 **应用提供方**，改动这时才生效。几秒后刷新页面，页面最上面的 **活动** 显示 **正在服务 2 个模型**，这一步就完成了。
+
+   ![提供方列表和黄色提示，应用提供方按钮标红](/guide/zh/hub_ai_gateway_06_provider_list.webp "按 应用提供方")
+   ![活动一栏显示正在服务 2 个模型](/guide/zh/hub_ai_gateway_09_page_serving.webp "显示 正在服务 2 个模型")
 
 ## 第三步：在面板上安装 CloudCLI
 

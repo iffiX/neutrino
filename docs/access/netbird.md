@@ -20,11 +20,11 @@ NetBird 是把你的设备组成一张虚拟网的软件。中枢和设备加入
 
 1. 打开 netbird.io，注册并登录，进入控制台。
 
-   <div class="pic-holder">图：NetBird 控制台首页</div>
+   ![NetBird 控制台的 Peers 页，列着两台设备](/guide/zh/access_netbird_19_console_home.webp)
 
-1. 打开 **Setup Keys**，再按 **Create Key**。
+1. 在左侧栏点 **Settings**，打开 **Setup Keys**，再按 **Create Key**。
 
-   ![NetBird 控制台的 Setup Keys 页，右上角有 Create Key](/guide/zh/access_netbird_20_console_keys.webp)
+   ![NetBird 控制台的 Setup Keys 页，Setup Keys 和 Create Key 标红](/guide/zh/access_netbird_20_console_keys.webp)
 
 1. 填写 **Name**，打开 **Make this key reusable**。**Usage limit** 保持空白，再清空 **Expires in** 里默认的 7，然后按 **Create Setup Key**。
 
@@ -48,7 +48,7 @@ NetBird 是把你的设备组成一张虚拟网的软件。中枢和设备加入
 
 1. 等待面板显示 **已连接**。
 
-   <div class="pic-holder">图：NetBird 设置，已连接</div>
+   ![NetBird 显示已连接，拓扑里连着一台设备](/guide/zh/access_netbird_06_connected.webp)
 
 各状态的含义如下。
 

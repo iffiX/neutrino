@@ -397,6 +397,11 @@
   display: block;
 }
 
+/* English words are longer; the title keeps its two lines. */
+:lang(en) .home h1 {
+  font-size: 42px;
+}
+
 .home-lead {
   margin: 20px 0 0;
   font-size: 18px;
@@ -1016,6 +1021,9 @@
 
   .home h1 {
     font-size: 38px;
+  }
+  :lang(en) .home h1 {
+    font-size: 32px;
   }
 
   .home h2 {

@@ -61,6 +61,8 @@ BANNED_ALWAYS = [
 ]
 # Words a page uses only inside a label quoted from the screen.
 LABEL_ONLY = ["机器"]
+# Screen labels quoted in bold that hold a banned word or mark.
+VENDOR_LABELS = ["**VPN与设备管理**", "**OpenAI 兼容 — /chat/completions**"]
 # Everyday words that stand in for a term, or lines that talk about the page.
 TERMS = [
     "钥匙", "认出", "认不出", "认得", "碰到", "碰得到", "碰不到", "守着", "开头字节", "拿掉", "拿走", "点几下",
@@ -164,7 +166,10 @@ def check_page(relative: str, text: str) -> dict:
         if found != APP_HEADINGS:
             failures.append(f"app headings are {found}, expected {APP_HEADINGS}")
 
-    words = visible("\n".join(rest))
+    quoted = "\n".join(rest)
+    for label in VENDOR_LABELS:
+        quoted = quoted.replace(label, "")
+    words = visible(quoted)
     # A label in bold is spelled as the screen shows it.
     unlabelled = visible(re.sub(r"\*\*[^*]+\*\*", "", "\n".join(rest)))
     for banned in BANNED_ALWAYS:

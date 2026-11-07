@@ -36,7 +36,7 @@ Hermes WebUI 运行在[容器](/deploy/containers)里，每个系统只运行一
 
 1. 在 Windows 上，如果要重启，这个标签会显示提示，旁边有 **立即重启**。按 **立即重启**，电脑重启后会自动继续安装。
 
-   <div class="pic-holder">图：Hermes WebUI 标签上的立即重启</div>
+   ![Hermes WebUI 标签显示 Windows 需要重启，立即重启按钮标红](/guide/zh/deploy_hermes_webui_10_reboot.webp)
 
 1. 标签会列出每一步。它要拉取两个镜像，需要几分钟。标签变成 **已安装** 后，按 **启动**。
 
@@ -57,11 +57,11 @@ Hermes WebUI 运行在[容器](/deploy/containers)里，每个系统只运行一
    ![客户端的应用页，使用按钮标红](/guide/zh/deploy_hermes_webui_40_client_use.webp "按 使用")
    ![这一行有了本机地址，打开按钮标红](/guide/zh/deploy_hermes_webui_41_client_open.webp "按 打开")
 
-1. 浏览器直接进入已登录的页面。在下面的输入框里填写你要问的内容，然后发送。输入框旁边可以选择模型，列表里是 AI 网关正在提供的模型。
+1. 浏览器直接进入已登录的页面。在下面的输入框里填写你要问的内容，然后发送。新对话使用 AI 网关的[默认模型](/hub/ai_gateway#默认模型)。输入框旁边可以换模型，列表里是 AI 网关正在提供的模型。
 
    ![浏览器里的 Hermes WebUI](/guide/zh/deploy_hermes_webui_24_visitor.webp)
 
-<div class="pic-holder">图：Hermes WebUI 里的一次对话</div>
+![Hermes WebUI 里的一次对话，下面的模型是 deepseek-flash](/guide/zh/deploy_hermes_webui_30_chat.webp)
 
 使用完后回到客户端按 **停止**。手机上的操作相同：在 **应用** 页按 **使用**，再按 **打开**。
 
@@ -93,7 +93,7 @@ Hermes 页面里自己生成的分享链接，只有登录过的浏览器才能�
 
 ## 设置
 
-它没有 **配置** 按钮，标签里只有状态、日志和操作按钮。模型在 Hermes 的页面里选择。
+它没有 **配置** 按钮，标签里只有状态、日志和操作按钮。要换模型，在 Hermes 的页面里选择。
 
 Hermes 的页面默认是深色的。如果你要换成浅色，按页面左下角的齿轮，在 **外观** 的 **主题** 里选择 **Light**。
 

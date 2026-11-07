@@ -16,23 +16,11 @@
 
 ## 在 Android 手机上安装
 
-App 不在应用商店里，你要从发布页下载。
+用手机的相机或微信扫码，下载安装。
 
-1. 在手机浏览器里打开发布页，可以选择[国际版](https://github.com/iffiX/neutrino/releases/latest)或[国内版](https://cnb.cool/iffi-X/neutrino/-/releases)。如果你在中国大陆，选择国内版，下载更快。找到名称以 `android.apk` 结尾的文件，点这个文件下载。国内版的文件名以 `android-cn.apk` 结尾。下载完成后，在手机的“文件”或“下载”里打开这个文件。
-
-   ![手机浏览器里的发布页](/guide/zh/access_install_client_01_release_page.webp "下载 apk 文件")
-   ![下载文件夹里的安装包](/guide/zh/access_install_client_02_downloaded.webp "打开这个文件")
-
-1. 第一次安装时，系统提示不允许安装来自此来源的未知应用。这时按 **设置**，打开 **允许来自此来源的应用** 开关，再按手机的返回键。系统显示 **要安装此应用吗？** 时，按 **安装**。看到 **已安装应用。** 后，按 **打开**。
-
-   ![系统的提示，设置按钮标红](/guide/zh/access_install_client_03_blocked.webp "按 设置")
-   ![允许来自此来源的应用这个开关标红](/guide/zh/access_install_client_04_allow_source.webp "打开开关，按返回")
-   ![要安装此应用吗的弹窗，安装按钮标红](/guide/zh/access_install_client_05_install.webp "按 安装")
-   ![已安装应用的弹窗，打开按钮标红](/guide/zh/access_install_client_06_installed.webp "按 打开")
-
-1. **微子** 打开后，**中枢** 页显示 **尚未加入任何中枢**，这时安装完成。以后在手机桌面上找到 **微子** 打开它。
-
-   ![手机上的中枢页，尚未加入](/guide/zh/access_install_client_07_first_open.webp)
+| 国内版                                       | 国际版                                           |
+| -------------------------------------------- | ------------------------------------------------ |
+| ![国内版下载页的二维码](/home/qr_app_cn.svg) | ![国际版下载页的二维码](/home/qr_app_global.svg) |
 
 ## 在 iPhone 上安装
 
@@ -65,8 +53,6 @@ App 不在 App Store，也不在 TestFlight。你要下载 `.ipa` 文件，用�
    :::
 
 1. 脚本请求管理员权限时，授权一次。在 Linux 和 macOS 上，终端会提示你输入这台电脑的登录密码，输入时屏幕上不显示字符，输入后按回车。在 Windows 上会弹出授权框，选择“是”。
-
-   <div class="pic-holder">图：Windows 的授权框</div>
 
 1. 等待脚本运行结束。终端最后显示 `Installed`，下一行提示加入中枢，这时安装完成。
 
