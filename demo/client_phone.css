@@ -1,0 +1,600 @@
+/* The client page at phone width, in the demo only: the bottom bar and the
+   rows of design/client.md, over the desktop window's stylesheet. */
+.wrap {
+  height: 100dvh;
+  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.main {
+  grid-row: 1;
+}
+
+.side {
+  grid-row: 2;
+  border-top: 1px solid var(--color-border);
+  border-right: none;
+  background: var(--color-surface);
+}
+
+.brand,
+.tab_rule {
+  display: none;
+}
+
+#tabs {
+  flex: none;
+  flex-direction: row;
+  gap: 0;
+  overflow: visible;
+  padding: 4px 2px calc(4px + env(safe-area-inset-bottom, 0px));
+}
+
+/* A phone has no AI page. */
+#tabs button.tab:nth-child(3) {
+  display: none;
+}
+
+button.tab {
+  flex: 1 1 0;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 6px 0;
+  background: none;
+  font-size: 11px;
+  text-align: center;
+}
+
+button.tab.on {
+  background: none;
+}
+
+button.tab.on::before {
+  display: none;
+}
+
+.head {
+  gap: 12px;
+  height: 48px;
+  padding: 0 16px;
+}
+
+.head h2 {
+  flex: 1;
+  overflow: hidden;
+  min-width: 0;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+button.head_back {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin-left: -8px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--color-text-muted);
+}
+
+button.head_back[hidden] {
+  display: none;
+}
+
+#content {
+  container-type: size;
+  padding: 16px;
+}
+
+.card {
+  padding: 14px;
+}
+
+/* A card's kind title is the page's title on a phone. */
+.card:not(.modal) > .panel_title {
+  display: none;
+}
+
+/* On a phone a row's actions sit under its body, right-aligned. */
+.feat {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px 10px;
+  align-items: start;
+}
+
+.feat > .dot {
+  margin-top: 7px;
+}
+
+.feat .body {
+  flex: none;
+}
+
+.row_actions {
+  grid-column: 1 / -1;
+  margin-left: 0;
+}
+
+.modal {
+  width: calc(100vw - 32px);
+}
+
+/* The Settings page: the actions at the right. */
+.form_actions {
+  justify-content: flex-end;
+}
+
+.about_key {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+/* The Hubs page and the row that opens the Join page. */
+.hubs_page {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.feat.join_entry {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.feat.join_entry > .dot {
+  display: none;
+}
+
+.feat.join_entry > .icon {
+  color: var(--color-text-muted);
+}
+
+/* The Join page, a camera's frame over the link's field. */
+.join_page {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.join_frame {
+  display: flex;
+  justify-content: center;
+}
+
+.join_camera {
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  max-width: 320px;
+  aspect-ratio: 1;
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  background: #0a0c10;
+}
+
+.join_scene {
+  position: absolute;
+  inset: -6%;
+  animation: join_hand 3.4s ease-in-out infinite alternate;
+}
+
+.join_room {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(
+      50% 42% at 22% 18%,
+      rgb(255 226 170 / 42%),
+      transparent 70%
+    ),
+    radial-gradient(
+      40% 30% at 84% 82%,
+      rgb(120 150 190 / 26%),
+      transparent 72%
+    ),
+    linear-gradient(180deg, #4b4f5a 0%, #2c2f37 56%, #1a1b20 57%, #14151a 100%);
+  filter: blur(4px);
+}
+
+.join_screen {
+  position: absolute;
+  top: 12%;
+  left: 13%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: center;
+  width: 74%;
+  padding: 3% 3% 2%;
+  border: 6px solid #111318;
+  border-radius: 8px;
+  background: #f6f7f9;
+  box-shadow: 0 18px 40px rgb(0 0 0 / 55%);
+  color: #0f172a;
+  transform: perspective(620px) rotateX(5deg) rotateY(-9deg) rotateZ(-2deg)
+    translate(14%, 9%) scale(0.86);
+  animation: join_align 1.5s cubic-bezier(0.3, 0.7, 0.2, 1) forwards;
+}
+
+.join_screen_title {
+  align-self: flex-start;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.join_code {
+  display: block;
+  width: 88%;
+  height: auto;
+  background: #ffffff;
+}
+
+.join_screen_note {
+  color: #5b6675;
+  font-size: 9px;
+}
+
+.join_corners {
+  position: absolute;
+  inset: 15%;
+  transition: inset 0.25s ease;
+}
+
+.join_corners i {
+  position: absolute;
+  width: 34px;
+  height: 34px;
+  border: 0 solid var(--color-accent);
+  transition: border-color 0.15s;
+}
+
+[data-theme="light"] .join_corners i {
+  border-color: #22d3ee;
+}
+
+.join_corners .tl {
+  top: 0;
+  left: 0;
+  border-top-width: 2.5px;
+  border-left-width: 2.5px;
+  border-top-left-radius: 4px;
+}
+
+.join_corners .tr {
+  top: 0;
+  right: 0;
+  border-top-width: 2.5px;
+  border-right-width: 2.5px;
+  border-top-right-radius: 4px;
+}
+
+.join_corners .bl {
+  bottom: 0;
+  left: 0;
+  border-bottom-width: 2.5px;
+  border-left-width: 2.5px;
+  border-bottom-left-radius: 4px;
+}
+
+.join_corners .br {
+  right: 0;
+  bottom: 0;
+  border-right-width: 2.5px;
+  border-bottom-width: 2.5px;
+  border-bottom-right-radius: 4px;
+}
+
+.join_camera.found .join_scene {
+  animation-play-state: paused;
+}
+
+.join_camera.found .join_corners {
+  inset: 13%;
+}
+
+.join_camera.found .join_corners i {
+  border-color: #34d399 !important;
+}
+
+.join_camera.found::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgb(52 211 153 / 14%);
+  animation: join_flash 0.45s ease-out forwards;
+}
+
+@keyframes join_hand {
+  from {
+    transform: translate(-1.4%, 0.8%) rotate(-0.5deg);
+  }
+  to {
+    transform: translate(1.2%, -1%) rotate(0.6deg);
+  }
+}
+
+@keyframes join_align {
+  to {
+    transform: perspective(620px) rotateX(2deg) rotateY(-3deg) rotateZ(-0.6deg)
+      translate(0, 0) scale(1);
+  }
+}
+
+@keyframes join_flash {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+.join_hint {
+  color: var(--color-text-faint);
+  font-size: 12px;
+  text-align: center;
+}
+
+.join_rule {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  color: var(--color-text-faint);
+  font-size: 12px;
+}
+
+.join_rule i {
+  flex: 1;
+  border-top: 1px solid var(--color-border);
+}
+
+/* The Terminals page: the box as tall as the window under the top bar, its
+   status line and its key row under it. */
+.term_page {
+  gap: 12px;
+  height: auto;
+}
+
+.term_pick {
+  padding: 12px 14px;
+}
+
+.term_pick_line {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.term_pick_actions {
+  justify-content: flex-end;
+}
+
+.term_empty {
+  flex: none;
+  padding: 32px 16px;
+}
+
+.term_panel {
+  flex: none;
+  height: max(100cqh, 420px);
+}
+
+body.kb_up .term_panel {
+  height: max(100cqh, 200px);
+}
+
+.term_head {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.term_tab {
+  flex: none;
+}
+
+.term_surface {
+  padding: 8px;
+}
+
+.term_pane .xterm {
+  padding: 2px 0 2px 4px;
+}
+
+.term_pane {
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+}
+
+.term_pane .xterm-viewport::-webkit-scrollbar {
+  width: 3px;
+}
+
+.term_pane .xterm-viewport::-webkit-scrollbar-thumb {
+  border-radius: 2px;
+  background: var(--color-border-strong);
+}
+
+.term_status {
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  padding: 6px 12px;
+}
+
+.term_controls {
+  display: flex;
+  flex: none;
+  gap: 8px;
+}
+
+.term_switches {
+  gap: 10px;
+}
+
+.round_btn {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid
+    color-mix(in srgb, var(--color-border-strong) 60%, transparent);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--color-surface) 60%, transparent);
+  color: var(--color-text);
+}
+
+.round_btn.on {
+  border-color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 14%, transparent);
+  color: var(--color-accent);
+}
+
+.round_btn.danger {
+  border-color: var(--color-error);
+  color: var(--color-error);
+}
+
+.round_btn:disabled {
+  opacity: 0.4;
+  border-color: color-mix(in srgb, var(--color-border-strong) 60%, transparent);
+}
+
+.term_keys {
+  display: flex;
+  flex: none;
+  gap: 4px;
+  overflow-x: auto;
+  padding: 8px;
+  background: var(--color-elevated);
+  scrollbar-width: none;
+}
+
+.term_keys[hidden] {
+  display: none;
+}
+
+.term_keys::-webkit-scrollbar {
+  display: none;
+}
+
+.term_key {
+  flex: none;
+  min-height: 34px;
+  padding: 0 6px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 6px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.term_key:not(:has(> *)) {
+  min-width: 24px;
+}
+
+.term_key.held {
+  border-color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 14%, transparent);
+  color: var(--color-accent);
+}
+
+/* The keyboard: over the bottom bar, the page ending at its top. */
+body.kb_up .wrap {
+  height: calc(100dvh - var(--kb-height, 0px));
+}
+
+body.kb_up .side {
+  display: none;
+}
+
+.kb {
+  position: absolute;
+  z-index: 4;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 4px calc(8px + env(safe-area-inset-bottom, 0px));
+  background: #d2d6dc;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+[data-theme="dark"] .kb {
+  background: #23262c;
+}
+
+body > .kb {
+  position: fixed;
+}
+
+.kb_row {
+  display: flex;
+  gap: 4px;
+  justify-content: center;
+}
+
+.kb_key {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 42px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: #ffffff;
+  box-shadow: 0 1px 0 rgb(0 0 0 / 30%);
+  color: #0f172a;
+  font-family: inherit;
+  font-size: 17px;
+  line-height: 1;
+}
+
+[data-theme="dark"] .kb_key {
+  background: #464b55;
+  color: #f2f4f7;
+}
+
+.kb_key.kb_wide {
+  flex: 1.5 1 0;
+  background: #aeb4bd;
+  font-size: 14px;
+}
+
+[data-theme="dark"] .kb_key.kb_wide {
+  background: #33373f;
+}
+
+.kb_key.on {
+  background: #ffffff;
+}
+
+.kb_key.kb_space {
+  flex: 5 1 0;
+}
+
+.kb_key:active {
+  background: #8d949e;
+}
+
+.kb_low {
+  gap: 4px;
+  padding: 4px 4px 6px;
+}
+
+.kb_low .kb_key {
+  height: 28px;
+  font-size: 14px;
+}

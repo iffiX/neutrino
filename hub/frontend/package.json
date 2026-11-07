@@ -9,7 +9,9 @@
     "preview": "vite preview",
     "lint": "eslint . --max-warnings 0",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "demo:build": "tsc -p ../../demo && vite build -c ../../demo/vite.config.ts",
+    "demo:preview": "vite preview -c ../../demo/vite.config.ts"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.10.0",

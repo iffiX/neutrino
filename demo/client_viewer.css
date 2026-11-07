@@ -1,0 +1,807 @@
+/* The phone's viewer page and the desktop it shows, in the demo only. */
+.rdv {
+  position: fixed;
+  z-index: 40;
+  inset: 0;
+  overflow: hidden;
+  background: #000000;
+  touch-action: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+}
+
+.rdv_stage {
+  position: absolute;
+  top: 0;
+  left: 0;
+  overflow: hidden;
+  transform-origin: 0 0;
+}
+
+.rdv_picture {
+  position: absolute;
+  overflow: hidden;
+}
+
+.rdv_spin {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rdv_buttons {
+  position: absolute;
+  z-index: 3;
+  top: 6px;
+  right: 12px;
+  display: flex;
+  gap: 8px;
+}
+
+.rdv_turn {
+  position: absolute;
+  z-index: 3;
+  bottom: 28px;
+  left: 50%;
+  border-color: rgb(255 255 255 / 45%);
+  background: rgb(255 255 255 / 12%);
+  color: #ffffff;
+  transform: translateX(-50%);
+}
+
+.rdv_turn[hidden] {
+  display: none;
+}
+
+.rdv_keybar {
+  position: absolute;
+  z-index: 3;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  gap: 6px;
+}
+
+.rdv_keybar .term_key {
+  padding: 0 12px;
+  font-size: 13px;
+}
+
+/* A desktop, drawn on a frame of fixed pixels the viewer scales. */
+.ds {
+  --ds-sky-top: #1b1f4b;
+  --ds-sky-mid: #7a3f78;
+  --ds-sky-low: #e8855c;
+  --ds-sun: #ffd9a0;
+  --ds-far: #4a2c63;
+  --ds-mid: #2e1f4a;
+  --ds-near: #17132e;
+  position: absolute;
+  top: 0;
+  left: 0;
+  overflow: hidden;
+  width: 1280px;
+  height: 720px;
+  color: #e7eaf0;
+  font:
+    13px/1.4 ui-sans-serif,
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    "PingFang SC",
+    "Microsoft YaHei",
+    sans-serif;
+  transform-origin: 0 0;
+}
+
+.ds[hidden] {
+  display: none;
+}
+
+.ds[data-wallpaper="dawn"] {
+  --ds-sky-top: #3a6fb0;
+  --ds-sky-mid: #a6c6df;
+  --ds-sky-low: #f6dcc0;
+  --ds-sun: #fff4d6;
+  --ds-far: #5a8097;
+  --ds-mid: #365a6b;
+  --ds-near: #1c3540;
+}
+
+.ds[data-wallpaper="night"] {
+  --ds-sky-top: #050a18;
+  --ds-sky-mid: #0f2a3f;
+  --ds-sky-low: #1f6f78;
+  --ds-sun: #9fe8e0;
+  --ds-far: #123243;
+  --ds-mid: #0b202e;
+  --ds-near: #05101a;
+}
+
+.ds_wallpaper {
+  position: absolute;
+  inset: 0;
+}
+
+.ds_wallpaper svg {
+  display: block;
+}
+
+.ds_windows .ds_wallpaper svg {
+  display: none;
+}
+
+.ds_windows .ds_wallpaper {
+  background:
+    radial-gradient(
+      60% 70% at 62% 55%,
+      #7cc7ff 0%,
+      #2a7fd6 42%,
+      transparent 72%
+    ),
+    radial-gradient(45% 55% at 42% 65%, #0b5bb5 0%, transparent 70%),
+    linear-gradient(135deg, #0a1e4a 0%, #0f3f8a 55%, #1a6cc4 100%);
+}
+
+.ds_cursor {
+  position: absolute;
+  z-index: 100000;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+
+.ds_band {
+  position: absolute;
+  z-index: 5;
+  border: 1px solid #62a0ea;
+  background: rgb(98 160 234 / 22%);
+}
+
+.ds_band[hidden] {
+  display: none;
+}
+
+.ds_topbar {
+  position: absolute;
+  z-index: 8;
+  top: 0;
+  right: 0;
+  left: 0;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  height: 28px;
+  padding: 0 12px;
+  background: rgb(8 8 12 / 86%);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ds_status {
+  display: inline-flex;
+  gap: 10px;
+  justify-self: end;
+  align-items: center;
+}
+
+.ds_dock {
+  position: absolute;
+  z-index: 8;
+  top: 28px;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+  width: 62px;
+  padding-top: 10px;
+  background: rgb(14 12 22 / 72%);
+}
+
+.ds_dock_item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 10px;
+  color: #ffffff;
+}
+
+.ds_dock_files {
+  background: linear-gradient(180deg, #5aa2e8, #2f6fc0);
+}
+
+.ds_dock_code {
+  background: linear-gradient(180deg, #2fa3e6, #0f6cb8);
+}
+
+.ds_dock_term {
+  background: linear-gradient(180deg, #4a4f5c, #23262e);
+}
+
+.ds_dock_browser {
+  background: linear-gradient(180deg, #ef8a3f, #d9532c);
+}
+
+.ds_dock_settings {
+  background: linear-gradient(180deg, #7b8596, #4d5563);
+}
+
+.ds_dock_start {
+  background: none;
+}
+
+.ds_dock_item.is_running::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: -7px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #ffffff;
+  transform: translateY(-50%);
+}
+
+.ds_dock_item.is_front {
+  outline: 2px solid rgb(255 255 255 / 75%);
+}
+
+.ds_taskbar {
+  position: absolute;
+  z-index: 8;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 44px;
+  background: rgb(232 238 246 / 92%);
+  color: #1b2430;
+}
+
+.ds_taskbar_apps {
+  display: flex;
+  gap: 6px;
+}
+
+.ds_taskbar .ds_dock_item {
+  width: 36px;
+  height: 36px;
+  border-radius: 6px;
+}
+
+.ds_taskbar .ds_dock_start {
+  color: #0b5bb5;
+}
+
+.ds_taskbar .ds_dock_item.is_running::before {
+  top: auto;
+  bottom: -3px;
+  left: 50%;
+  width: 14px;
+  height: 3px;
+  border-radius: 2px;
+  background: #0b5bb5;
+  transform: translateX(-50%);
+}
+
+.ds_taskbar .ds_dock_item.is_front {
+  outline: none;
+  background-color: rgb(11 91 181 / 14%);
+}
+
+.ds_taskbar .ds_dock_files,
+.ds_taskbar .ds_dock_code,
+.ds_taskbar .ds_dock_term {
+  background: none;
+  color: #1b2430;
+}
+
+.ds_tray {
+  position: absolute;
+  right: 14px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  font-size: 12px;
+}
+
+.ds_icons {
+  position: absolute;
+  z-index: 1;
+  top: 44px;
+  right: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+}
+
+.ds_windows .ds_icons {
+  top: 18px;
+  right: auto;
+  left: 18px;
+}
+
+.ds_icon {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: center;
+  width: 84px;
+  padding: 6px 2px;
+  border-radius: 6px;
+  color: #ffffff;
+  text-align: center;
+  text-shadow: 0 1px 3px rgb(0 0 0 / 80%);
+}
+
+.ds_icon.is_selected {
+  background: rgb(98 160 234 / 45%);
+}
+
+.ds_window {
+  position: absolute;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid #101115;
+  border-radius: 10px;
+  background: #202228;
+  box-shadow: 0 10px 28px rgb(0 0 0 / 45%);
+}
+
+.ds_window[hidden] {
+  display: none;
+}
+
+.ds_window.is_focused {
+  box-shadow: 0 18px 42px rgb(0 0 0 / 62%);
+}
+
+.ds_window.is_max {
+  border-radius: 0;
+}
+
+.ds_title {
+  position: relative;
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  height: 34px;
+  background: #2b2d34;
+  color: #a7adb8;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.is_focused > .ds_title {
+  background: #383b44;
+  color: #f2f4f7;
+}
+
+.ds_title_word {
+  overflow: hidden;
+  max-width: calc(100% - 120px);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ds_title_buttons {
+  position: absolute;
+  top: 0;
+  right: 6px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  height: 100%;
+}
+
+.ds_title_btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 10%);
+  color: #e7eaf0;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.ds_body {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.ds_grip {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 18px;
+  height: 18px;
+}
+
+.ds_menu {
+  position: absolute;
+  min-width: 170px;
+  padding: 5px;
+  border: 1px solid #101115;
+  border-radius: 8px;
+  background: #2b2d34;
+  box-shadow: 0 12px 30px rgb(0 0 0 / 55%);
+}
+
+.ds_menu_row {
+  padding: 6px 10px;
+  border-radius: 5px;
+}
+
+.ds_menu_row:hover {
+  background: rgb(255 255 255 / 10%);
+}
+
+.ds_scroll {
+  overflow: auto;
+  scrollbar-width: none;
+}
+
+.ds_scroll::-webkit-scrollbar {
+  display: none;
+}
+
+/* The Windows look of the same windows. */
+.ds_windows .ds_window {
+  border-color: #8a93a3;
+  border-radius: 8px;
+  background: #f4f6f9;
+  color: #1b2430;
+}
+
+.ds_windows .ds_title {
+  justify-content: flex-start;
+  padding-left: 12px;
+  background: #e4e8ee;
+  color: #5b6675;
+  font-weight: 500;
+}
+
+.ds_windows .is_focused > .ds_title {
+  background: #dbe7f6;
+  color: #1b2430;
+}
+
+.ds_windows .ds_title_buttons {
+  right: 0;
+  gap: 0;
+}
+
+.ds_windows .ds_title_btn {
+  width: 40px;
+  height: 34px;
+  border-radius: 0;
+  background: none;
+  color: #1b2430;
+}
+
+/* The file manager. */
+.fm_top {
+  display: flex;
+  flex: none;
+  gap: 8px;
+  align-items: center;
+  height: 38px;
+  padding: 0 8px;
+  border-bottom: 1px solid rgb(127 127 127 / 25%);
+}
+
+.fm_btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 26px;
+  border-radius: 6px;
+  background: rgb(127 127 127 / 18%);
+}
+
+.fm_btn.is_off {
+  opacity: 0.4;
+}
+
+.fm_path {
+  flex: 1;
+  padding: 3px 10px;
+  border-radius: 6px;
+  background: rgb(127 127 127 / 14%);
+  font:
+    12px ui-monospace,
+    Menlo,
+    Consolas,
+    monospace;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.fm_main {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.fm_side {
+  flex: none;
+  width: 140px;
+  padding: 8px 6px;
+  border-right: 1px solid rgb(127 127 127 / 25%);
+  background: rgb(127 127 127 / 8%);
+}
+
+.fm_side_row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 5px 8px;
+  border-radius: 6px;
+}
+
+.fm_side_row.is_on {
+  background: rgb(98 160 234 / 32%);
+}
+
+.fm_grid {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-content: flex-start;
+  min-width: 0;
+  padding: 10px;
+}
+
+.fm_item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: center;
+  width: 80px;
+  padding: 6px 2px;
+  border-radius: 6px;
+  text-align: center;
+}
+
+.fm_item.is_selected {
+  background: rgb(98 160 234 / 38%);
+}
+
+.fm_mark_folder {
+  color: #62a0ea;
+  fill: rgb(98 160 234 / 34%);
+}
+
+.fm_mark_file {
+  color: #aab2bf;
+}
+
+.fm_name {
+  overflow: hidden;
+  width: 100%;
+  font-size: 12px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.fm_empty {
+  width: 100%;
+  padding: 40px 0;
+  opacity: 0.6;
+  text-align: center;
+}
+
+.fm_foot {
+  flex: none;
+  height: 22px;
+  padding: 2px 10px;
+  border-top: 1px solid rgb(127 127 127 / 25%);
+  font-size: 11px;
+  opacity: 0.8;
+}
+
+/* The code editor. */
+.ed {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  background: #1e1f24;
+  color: #d6dae2;
+}
+
+.ed_activity {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 14px;
+  align-items: center;
+  width: 42px;
+  padding-top: 12px;
+  background: #2a2c33;
+  color: #8e94a1;
+}
+
+.ed_explorer {
+  flex: none;
+  width: 150px;
+  background: #24262c;
+  font-size: 12px;
+}
+
+.ed_explorer_title {
+  padding: 8px 12px;
+  color: #8e94a1;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.ed_file {
+  padding: 3px 12px;
+}
+
+.ed_file.is_on {
+  background: #33363f;
+  color: #ffffff;
+}
+
+.ed_main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.ed_tabs {
+  display: flex;
+  flex: none;
+  height: 30px;
+  background: #24262c;
+  font-size: 12px;
+}
+
+.ed_tab {
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  border-right: 1px solid #16171b;
+  color: #8e94a1;
+}
+
+.ed_tab.is_on {
+  background: #1e1f24;
+  color: #ffffff;
+}
+
+.ed_scroll {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  padding-bottom: 12px;
+  font:
+    13px/20px ui-monospace,
+    Menlo,
+    Consolas,
+    "DejaVu Sans Mono",
+    monospace;
+}
+
+.ed_lines {
+  position: relative;
+  min-width: max-content;
+}
+
+.ed_line {
+  display: flex;
+  height: 20px;
+  white-space: pre;
+}
+
+.ed_line.is_current {
+  background: rgb(255 255 255 / 5%);
+}
+
+.ed_no {
+  flex: none;
+  width: 44px;
+  padding-right: 12px;
+  color: #6a707c;
+  text-align: right;
+}
+
+.ed_code {
+  flex: 1;
+  min-width: 0;
+}
+
+.ed_caret {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 2px;
+  height: 20px;
+  background: #e7eaf0;
+  animation: ed_blink 1.1s steps(2, jump-none) infinite;
+}
+
+.ed_caret[hidden] {
+  display: none;
+}
+
+@keyframes ed_blink {
+  to {
+    opacity: 0;
+  }
+}
+
+.ed_foot {
+  flex: none;
+  height: 22px;
+  padding: 2px 12px;
+  background: #0f6cb8;
+  color: #ffffff;
+  font-size: 11px;
+  white-space: pre;
+}
+
+.tk_word {
+  color: #c586c0;
+}
+
+.tk_text {
+  color: #ce9178;
+}
+
+.tk_number {
+  color: #b5cea8;
+}
+
+.tk_note {
+  color: #6a9955;
+}
+
+.tk_call {
+  color: #dcdcaa;
+}
+
+.tk_head {
+  color: #569cd6;
+  font-weight: 700;
+}
+
+/* The terminal window: its picture takes no press, the viewer sends them. */
+.ds_term {
+  flex: 1;
+  min-height: 0;
+  padding: 6px 0 0 8px;
+  background: #1b1d23;
+  pointer-events: none;
+}
+
+.ds_term .xterm-viewport {
+  overflow: hidden;
+  background: #1b1d23 !important;
+}

@@ -1,0 +1,15 @@
+{
+  "extends": "../hub/frontend/tsconfig.app.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "typeRoots": ["../hub/frontend/node_modules/@types"],
+    "paths": {
+      "*": [
+        "../hub/frontend/node_modules/@types/*",
+        "../hub/frontend/node_modules/*"
+      ]
+    }
+  },
+  "include": [".", "../hub/frontend/src/vite_env.d.ts"],
+  "exclude": ["dist"]
+}

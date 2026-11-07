@@ -1,0 +1,19 @@
+/* The panel in a half of a wide window, over its own stylesheets. */
+@media (min-width: 641px) and (max-width: 1100px) {
+  .overlay_choices--ways {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .mode_choices {
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  }
+
+  .modules_split {
+    gap: var(--space-4);
+    grid-template-columns: 176px minmax(0, 1fr);
+  }
+
+  .gitea_fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

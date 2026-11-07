@@ -1,0 +1,776 @@
+/* The page around the two frames, on the panel's palettes. */
+:root {
+  --demo-bg: #e8ebf0;
+  --demo-surface: #f6f7f9;
+  --demo-border: #cdd4dc;
+  --demo-border-strong: #b4bfcb;
+  --demo-text: #0f172a;
+  --demo-text-muted: #5b6675;
+  --demo-accent: #0c6a84;
+  --demo-phone-edge: #0f172a;
+  --demo-bar-height: 44px;
+  --demo-phone-width: 390px;
+  --demo-phone-height: 844px;
+  --demo-turned-ratio: calc(844 / 390);
+  color-scheme: light;
+
+  /* The docs site's nav bar. */
+  --demo-nav-text: #3c3c43;
+  --demo-nav-text-muted: #67676c;
+  --demo-nav-brand: #0e7490;
+  --demo-nav-divider: #e2e2e3;
+  --demo-nav-border: #c2c2c4;
+  --demo-nav-soft: rgb(142 150 170 / 14%);
+  --demo-nav-menu: #ffffff;
+  --demo-nav-knob: #ffffff;
+  --demo-nav-icon-languages: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='none' stroke='black' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m5 8l6 6m-7 0l6-6l2-3M2 5h12M7 2h1m14 20l-5-10l-5 10m2-4h6'/%3E%3C/svg%3E");
+  --demo-nav-icon-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='none' stroke='black' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m9 18l6-6l-6-6'/%3E%3C/svg%3E");
+  --demo-nav-icon-sun: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='black' stroke-linecap='round' stroke-linejoin='round' stroke-width='2'%3E%3Ccircle cx='12' cy='12' r='4'/%3E%3Cpath d='M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32l1.41 1.41M2 12h2m16 0h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41'/%3E%3C/g%3E%3C/svg%3E");
+  --demo-nav-icon-moon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='none' stroke='black' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M12 3a6 6 0 0 0 9 9a9 9 0 1 1-9-9'/%3E%3C/svg%3E");
+  --demo-nav-icon-github: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M12 .297c-6.63 0-12 5.373-12 12c0 5.303 3.438 9.8 8.205 11.385c.6.113.82-.258.82-.577c0-.285-.01-1.04-.015-2.04c-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729c1.205.084 1.838 1.236 1.838 1.236c1.07 1.835 2.809 1.305 3.495.998c.108-.776.417-1.305.76-1.605c-2.665-.3-5.466-1.332-5.466-5.93c0-1.31.465-2.38 1.235-3.22c-.135-.303-.54-1.523.105-3.176c0 0 1.005-.322 3.3 1.23c.96-.267 1.98-.399 3-.405c1.02.006 2.04.138 3 .405c2.28-1.552 3.285-1.23 3.285-1.23c.645 1.653.24 2.873.12 3.176c.765.84 1.23 1.91 1.23 3.22c0 4.61-2.805 5.625-5.475 5.92c.42.36.81 1.096.81 2.22c0 1.606-.015 2.896-.015 3.286c0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12'/%3E%3C/svg%3E");
+}
+
+:root[data-theme="dark"] {
+  --demo-bg: #070809;
+  --demo-surface: #0e1013;
+  --demo-border: #1c2026;
+  --demo-border-strong: #2a3038;
+  --demo-text: #e6edf3;
+  --demo-text-muted: #8b96a5;
+  --demo-accent: #22d3ee;
+  --demo-phone-edge: #2a3038;
+  color-scheme: dark;
+
+  --demo-nav-text: #dfdfd6;
+  --demo-nav-text-muted: #98989f;
+  --demo-nav-brand: #67e8f9;
+  --demo-nav-divider: #2e2e32;
+  --demo-nav-border: #3c3f44;
+  --demo-nav-soft: rgb(101 117 133 / 16%);
+  --demo-nav-menu: #202127;
+  --demo-nav-knob: #000000;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--demo-bg);
+  color: var(--demo-text);
+  font:
+    14px/1.5 "Inter",
+    "PingFang SC",
+    "Microsoft YaHei",
+    "Noto Sans CJK SC",
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    sans-serif;
+}
+
+/* Above the viewer page's phone, so the language menu covers it. */
+.demo_bar {
+  position: relative;
+  z-index: 6;
+  display: flex;
+  flex: none;
+  gap: 12px;
+  align-items: center;
+  height: var(--demo-bar-height);
+  padding: 0 16px;
+  border-bottom: 1px solid var(--demo-border);
+  background: var(--demo-surface);
+}
+
+.demo_brand {
+  overflow: hidden;
+  min-width: 0;
+  font-size: 15px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.demo_label {
+  padding: 1px 8px;
+  border: 1px solid var(--demo-border-strong);
+  border-radius: 999px;
+  color: var(--demo-text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* The edition switch, after the install box on the docs site's home page. */
+.demo_edition {
+  position: relative;
+  display: grid;
+  flex: none;
+  grid-template-columns: 1fr 1fr;
+  padding: 2px;
+  border: 1px solid var(--demo-border-strong);
+  border-radius: 999px;
+  background: var(--demo-nav-soft);
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.6;
+  transition: border-color 0.25s;
+}
+
+.demo_edition:hover {
+  border-color: var(--demo-accent);
+}
+
+.demo_edition_thumb {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 2px;
+  width: calc(50% - 2px);
+  border-radius: 999px;
+  background: var(--demo-accent);
+  transition: transform 0.18s ease;
+}
+
+.demo_edition[aria-checked="true"] .demo_edition_thumb {
+  transform: translateX(100%);
+}
+
+.demo_edition_label {
+  position: relative;
+  padding: 0 10px;
+  color: var(--demo-text-muted);
+  font-weight: 500;
+  text-align: center;
+  white-space: nowrap;
+  transition: color 0.18s ease;
+}
+
+.demo_edition[aria-checked="false"] .demo_edition_label--cn,
+.demo_edition[aria-checked="true"] .demo_edition_label--intl {
+  color: var(--demo-surface);
+}
+
+.demo_edition_short {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .demo_edition_thumb,
+  .demo_edition_label,
+  .demo_switch button {
+    transition: none;
+  }
+}
+
+/* The bar's right end, measured from the docs site's nav bar. */
+.demo_corner {
+  display: flex;
+  flex: none;
+  align-items: center;
+  height: 100%;
+  margin-right: -8px;
+  margin-left: auto;
+}
+
+.demo_divider {
+  flex: none;
+  width: 1px;
+  height: 24px;
+  margin: 0 8px;
+  background: var(--demo-nav-divider);
+}
+
+.demo_icon {
+  display: block;
+  width: 1em;
+  height: 1em;
+  background-color: currentColor;
+  mask: var(--demo-icon) no-repeat;
+  mask-size: 100% 100%;
+}
+
+.demo_icon--languages {
+  --demo-icon: var(--demo-nav-icon-languages);
+  font-size: 16px;
+}
+
+.demo_icon--chevron {
+  --demo-icon: var(--demo-nav-icon-chevron);
+  margin-left: 4px;
+  font-size: 14px;
+  transform: rotate(90deg);
+}
+
+.demo_icon--sun {
+  --demo-icon: var(--demo-nav-icon-sun);
+}
+
+.demo_icon--moon {
+  --demo-icon: var(--demo-nav-icon-moon);
+  opacity: 0;
+}
+
+.demo_icon--github {
+  --demo-icon: var(--demo-nav-icon-github);
+  font-size: 20px;
+}
+
+.demo_home {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  padding: 0 12px;
+  color: var(--demo-nav-text);
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: color 0.25s;
+}
+
+.demo_home:hover {
+  color: var(--demo-nav-brand);
+}
+
+.demo_language {
+  position: relative;
+  height: 100%;
+}
+
+.demo_language_button {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  padding: 0 12px;
+  border: none;
+  background: none;
+  color: var(--demo-nav-text);
+  cursor: pointer;
+  transition: color 0.25s;
+}
+
+.demo_language_button:hover {
+  color: var(--demo-nav-text-muted);
+}
+
+.demo_language_menu {
+  position: absolute;
+  top: calc(var(--demo-bar-height) / 2 + 20px);
+  right: 0;
+  overflow-y: auto;
+  min-width: 128px;
+  max-height: calc(100dvh - var(--demo-bar-height));
+  box-sizing: border-box;
+  padding: 12px;
+  border: 1px solid var(--demo-nav-divider);
+  border-radius: 12px;
+  background: var(--demo-nav-menu);
+  box-shadow:
+    0 12px 32px rgb(0 0 0 / 10%),
+    0 2px 6px rgb(0 0 0 / 8%);
+  opacity: 1;
+  visibility: visible;
+  transition:
+    opacity 0.25s,
+    visibility 0.25s;
+}
+
+.demo_language_button[aria-expanded="false"] + .demo_language_menu {
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 0.1s,
+    visibility 0.1s;
+}
+
+.demo_language_menu button {
+  display: block;
+  width: 100%;
+  padding: 0 12px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--demo-nav-text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 32px;
+  text-align: left;
+  white-space: nowrap;
+  transition:
+    background-color 0.25s,
+    color 0.25s;
+}
+
+.demo_language_menu button[aria-current] {
+  font-weight: 700;
+}
+
+.demo_language_menu button:hover {
+  background: var(--demo-nav-soft);
+  color: var(--demo-nav-brand);
+}
+
+.demo_theme {
+  position: relative;
+  flex: none;
+  width: 40px;
+  height: 22px;
+  margin: 0 8px;
+  padding: 0;
+  border: 1px solid var(--demo-nav-border);
+  border-radius: 11px;
+  background: var(--demo-nav-soft);
+  box-sizing: border-box;
+  cursor: pointer;
+  transition: border-color 0.25s;
+}
+
+.demo_theme:hover {
+  border-color: var(--demo-nav-brand);
+}
+
+.demo_theme_knob {
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--demo-nav-knob);
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 4%),
+    0 1px 2px rgb(0 0 0 / 6%);
+  transition: transform 0.25s;
+}
+
+.demo_theme_knob .demo_icon {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 12px;
+  height: 12px;
+  color: var(--demo-nav-text-muted);
+  transition: opacity 0.25s;
+}
+
+:root[data-theme="dark"] .demo_theme_knob {
+  transform: translateX(18px);
+}
+
+:root[data-theme="dark"] .demo_theme_knob .demo_icon {
+  color: var(--demo-nav-text);
+}
+
+:root[data-theme="dark"] .demo_icon--sun {
+  opacity: 0;
+}
+
+:root[data-theme="dark"] .demo_icon--moon {
+  opacity: 1;
+}
+
+.demo_github {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  color: var(--demo-nav-text-muted);
+  transition: color 0.25s;
+}
+
+.demo_github:hover {
+  color: var(--demo-nav-text);
+}
+
+.demo_switch {
+  display: none;
+}
+
+.demo_halves {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.demo_half {
+  position: relative;
+  min-width: 0;
+}
+
+.demo_half--panel {
+  flex: 2 1 0;
+  overflow: clip;
+  border-right: 1px solid var(--demo-border);
+}
+
+/* Absolute, so a frame loading in front of the open one in the DOM stays under it. */
+.demo_half--panel iframe {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+}
+
+.demo_half--client {
+  flex: 1 1 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  box-sizing: border-box;
+}
+
+iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: none;
+}
+
+.demo_phone {
+  overflow: hidden;
+  width: min(var(--demo-phone-width), 100%);
+  height: min(var(--demo-phone-height), 100%);
+  border: 8px solid var(--demo-phone-edge);
+  border-radius: 36px;
+  background: var(--demo-surface);
+  box-sizing: content-box;
+}
+
+/* The viewer page: the phone on its side, over the page. */
+body[data-viewer="on"]::after {
+  content: "";
+  position: fixed;
+  z-index: 4;
+  inset: var(--demo-bar-height) 0 0;
+  background: rgb(15 23 42 / 55%);
+}
+
+body[data-viewer="on"] .demo_phone {
+  position: fixed;
+  z-index: 5;
+  top: calc(50% + var(--demo-bar-height) / 2);
+  left: 50%;
+  width: min(
+    calc(100vw - 72px),
+    1100px,
+    calc((100dvh - var(--demo-bar-height) - 56px) * var(--demo-turned-ratio))
+  );
+  height: auto;
+  aspect-ratio: var(--demo-turned-ratio);
+  background: #000000;
+  transform: translate(-50%, -50%);
+  animation: demo_phone_turn 0.32s ease-out;
+}
+
+@keyframes demo_phone_turn {
+  from {
+    opacity: 0.4;
+    transform: translate(-50%, -50%) rotate(90deg) scale(0.62);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body[data-viewer="on"] .demo_phone {
+    animation: none;
+  }
+}
+
+/* The first screen: the hub's wink, its edge's colours flowing clockwise. */
+.demo_loading {
+  position: fixed;
+  z-index: 20;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  align-items: center;
+  justify-content: center;
+  background: var(--demo-bg);
+  transition: opacity 0.25s ease;
+}
+
+.demo_loading--done {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.demo_loading_icon {
+  position: relative;
+  overflow: hidden;
+  width: 144px;
+  height: 144px;
+  border-radius: 21.85%;
+  background: #000000;
+}
+
+.demo_loading_flow {
+  position: absolute;
+  inset: -25%;
+  background: conic-gradient(#08adfe, #8d61f6, #ef2eb6, #8d61f6, #08adfe);
+  animation: demo_loading_turn 1.2s linear infinite;
+}
+
+.demo_loading_inner {
+  position: absolute;
+  inset: 4%;
+  border-radius: 16%;
+  background: #000000;
+  filter: blur(4px);
+}
+
+.demo_loading_icon img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.demo_loading_name {
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+@keyframes demo_loading_turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .demo_loading_flow {
+    animation: none;
+  }
+}
+
+.demo_notice {
+  position: fixed;
+  z-index: 10;
+  bottom: 28px;
+  left: 50%;
+  width: max-content;
+  max-width: calc(100vw - 48px);
+  box-sizing: border-box;
+  padding: 10px 16px;
+  border-radius: 8px;
+  background: var(--demo-text);
+  color: var(--demo-surface);
+  font-size: 13px;
+  text-align: center;
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+
+.demo_notice[hidden] {
+  display: none;
+}
+
+/* Too narrow for two halves: one side at a time. */
+@media (max-width: 1023px) {
+  .demo_bar {
+    gap: 8px;
+  }
+
+  /* A chip like the edition switch: a round track, the shown side filled. */
+  .demo_switch {
+    display: flex;
+    flex: none;
+    margin-left: auto;
+    padding: 2px;
+    border: 1px solid var(--demo-border-strong);
+    border-radius: 999px;
+    background: var(--demo-nav-soft);
+    transition: border-color 0.25s;
+  }
+
+  .demo_switch:hover {
+    border-color: var(--demo-accent);
+  }
+
+  .demo_switch button {
+    padding: 0 10px;
+    border: none;
+    border-radius: 999px;
+    background: none;
+    color: var(--demo-text-muted);
+    cursor: pointer;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1.6;
+    white-space: nowrap;
+    transition:
+      background-color 0.18s ease,
+      color 0.18s ease;
+  }
+
+  .demo_switch button[aria-selected="true"] {
+    background: var(--demo-accent);
+    color: var(--demo-surface);
+  }
+
+  .demo_corner {
+    margin-left: 0;
+  }
+
+  .demo_half {
+    position: absolute;
+    top: var(--demo-bar-height);
+    right: 0;
+    bottom: 0;
+    left: 0;
+    border-right: none;
+  }
+
+  body[data-side="panel"] .demo_half--client,
+  body[data-side="client"] .demo_half--panel {
+    visibility: hidden;
+  }
+
+  .demo_notice {
+    bottom: 76px;
+  }
+}
+
+/* Too narrow for the sample label. */
+@media (max-width: 840px) {
+  .demo_label {
+    display: none;
+  }
+}
+
+/* Too narrow for the edition's long words. */
+@media (max-width: 740px) {
+  .demo_edition_word {
+    display: none;
+  }
+
+  .demo_edition_short {
+    display: inline;
+  }
+}
+
+/* Too narrow for the docs site's spacing. */
+@media (max-width: 640px) {
+  .demo_bar {
+    gap: 6px;
+    padding: 0 8px;
+  }
+
+  .demo_brand {
+    font-size: 13px;
+  }
+
+  .demo_divider {
+    display: none;
+  }
+
+  .demo_switch button {
+    padding: 0 8px;
+  }
+
+  .demo_corner {
+    margin-right: 0;
+  }
+
+  .demo_home,
+  .demo_language_button {
+    padding: 0 4px;
+  }
+
+  .demo_theme {
+    margin: 0 4px;
+  }
+
+  .demo_github {
+    width: 28px;
+  }
+}
+
+/* A phone's width: every item in the bar at its smallest. */
+@media (max-width: 480px) {
+  .demo_bar {
+    gap: 3px;
+    padding: 0 6px;
+  }
+
+  .demo_edition {
+    font-size: 11px;
+  }
+
+  .demo_edition_label {
+    padding: 0 6px;
+  }
+
+  .demo_switch button {
+    padding: 0 6px;
+    font-size: 11px;
+  }
+
+  .demo_icon--chevron {
+    display: none;
+  }
+
+  .demo_home,
+  .demo_language_button {
+    padding: 0 3px;
+  }
+
+  .demo_theme {
+    margin: 0 2px;
+  }
+
+  .demo_github {
+    width: 24px;
+  }
+}
+
+/* A phone, in either orientation: the client fills the screen with no frame. */
+@media (max-width: 720px), (max-width: 1023px) and (max-height: 500px) {
+  .demo_half--client {
+    padding: 0;
+  }
+
+  .demo_phone {
+    width: 100%;
+    height: 100%;
+    border: none;
+    border-radius: 0;
+  }
+
+  /* The viewer page is immersive: no bar, no frame, the screen as it stands. */
+  body[data-viewer="on"] .demo_bar {
+    display: none;
+  }
+
+  body[data-viewer="on"]::after {
+    display: none;
+  }
+
+  body[data-viewer="on"] .demo_half {
+    top: 0;
+  }
+
+  body[data-viewer="on"] .demo_phone {
+    position: static;
+    width: 100%;
+    height: 100%;
+    aspect-ratio: auto;
+    transform: none;
+    animation: none;
+  }
+}

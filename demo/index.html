@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#f6f7f9" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon_16.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon_32.png" />
+    <title>微子中枢 示例</title>
+  </head>
+  <body data-side="panel">
+    <header class="demo_bar">
+      <strong class="demo_brand" data-word="brand">微子·中枢</strong>
+      <span class="demo_label" data-word="sample_label">示例数据</span>
+      <button
+        type="button"
+        class="demo_edition"
+        id="demo_edition"
+        role="switch"
+        aria-checked="false"
+        aria-label="切换国内版和国际版"
+        data-word-aria="edition_switch"
+      >
+        <span class="demo_edition_thumb"></span>
+        <span class="demo_edition_label demo_edition_label--cn">
+          <span class="demo_edition_word" data-word="edition_cn">国内版</span>
+          <span class="demo_edition_short" data-word="edition_cn_short"
+            >国内</span
+          >
+        </span>
+        <span class="demo_edition_label demo_edition_label--intl">
+          <span class="demo_edition_word" data-word="edition_intl">国际版</span>
+          <span class="demo_edition_short" data-word="edition_intl_short"
+            >国际</span
+          >
+        </span>
+      </button>
+      <div
+        class="demo_switch"
+        role="tablist"
+        aria-label="切换显示"
+        data-word-aria="side_switch"
+      >
+        <button
+          type="button"
+          role="tab"
+          data-show="panel"
+          data-word="side_panel"
+        >
+          面板
+        </button>
+        <button
+          type="button"
+          role="tab"
+          data-show="client"
+          data-word="side_client"
+        >
+          客户端
+        </button>
+      </div>
+      <div class="demo_corner">
+        <a class="demo_home" id="demo_home" href="../" data-word="home">首页</a>
+        <span class="demo_divider"></span>
+        <div class="demo_language" id="demo_language">
+          <button
+            type="button"
+            class="demo_language_button"
+            id="demo_language_button"
+            aria-expanded="false"
+            aria-controls="demo_language_menu"
+            aria-label="切换语言"
+            data-word-aria="language_switch"
+          >
+            <span
+              class="demo_icon demo_icon--languages"
+              aria-hidden="true"
+            ></span>
+            <span
+              class="demo_icon demo_icon--chevron"
+              aria-hidden="true"
+            ></span>
+          </button>
+          <div class="demo_language_menu" id="demo_language_menu">
+            <button type="button" lang="zh-CN" data-language="zh-CN">
+              简体中文
+            </button>
+            <button type="button" lang="en" data-language="en">English</button>
+          </div>
+        </div>
+        <span class="demo_divider"></span>
+        <button
+          type="button"
+          class="demo_theme"
+          id="demo_theme"
+          role="switch"
+          aria-checked="false"
+          aria-label="外观"
+          data-word-aria="theme_switch"
+        >
+          <span class="demo_theme_knob">
+            <span class="demo_icon demo_icon--sun" aria-hidden="true"></span>
+            <span class="demo_icon demo_icon--moon" aria-hidden="true"></span>
+          </span>
+        </button>
+        <span class="demo_divider"></span>
+        <a
+          class="demo_github"
+          href="https://github.com/iffiX/neutrino"
+          target="_blank"
+          rel="noopener"
+          aria-label="GitHub"
+        >
+          <span class="demo_icon demo_icon--github" aria-hidden="true"></span>
+        </a>
+      </div>
+    </header>
+    <main class="demo_halves">
+      <section class="demo_half demo_half--panel" id="panel_half">
+        <iframe title="中枢面板" data-word-title="panel_frame"></iframe>
+      </section>
+      <section class="demo_half demo_half--client">
+        <div class="demo_phone">
+          <iframe
+            id="client_frame"
+            title="客户端"
+            data-word-title="client_frame"
+          ></iframe>
+        </div>
+      </section>
+    </main>
+    <div class="demo_notice" id="demo_notice" role="status" hidden></div>
+    <div
+      class="demo_loading"
+      id="demo_loading"
+      role="status"
+      aria-label="正在打开"
+      data-word-aria="loading"
+    >
+      <div class="demo_loading_icon">
+        <div class="demo_loading_flow"></div>
+        <div class="demo_loading_inner"></div>
+        <img src="./loading_face.svg" alt="" />
+      </div>
+      <strong class="demo_loading_name" data-word="brand">微子·中枢</strong>
+    </div>
+    <script type="module" src="./shell_main.ts"></script>
+  </body>
+</html>
