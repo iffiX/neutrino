@@ -427,6 +427,7 @@ class SourceFetcher:
         speed_window_s: float = UTILS_FETCH_SPEED_WINDOW_S,
         stall_s: float = UTILS_FETCH_STALL_S,
         move_factor: float = UTILS_FETCH_MOVE_FACTOR,
+        document_wait_s: "float | None" = None,
     ):
         """
         Args:
@@ -442,11 +443,16 @@ class SourceFetcher:
             stall_s: How long a source may send no byte before it fails.
             move_factor: How many times faster a measured source must be to
                 take over.
+            document_wait_s: How long a document's read waits for data at
+                each wait; None is ``probe_timeout_s``.
         """
         self._open = opener if opener is not None else _open_url
         self._clock = clock
         self._probe_bytes = probe_bytes
         self._probe_timeout_s = probe_timeout_s
+        self._document_wait_s = (
+            probe_timeout_s if document_wait_s is None else document_wait_s
+        )
         self._measure_interval_s = measure_interval_s
         self._speed_window_s = speed_window_s
         self._stall_s = stall_s
@@ -617,7 +623,7 @@ class SourceFetcher:
                 urllib.request.Request(
                     source, headers={**UTILS_FETCH_HEADERS, **(headers or {})}
                 ),
-                self._probe_timeout_s,
+                self._document_wait_s,
             ) as response:
                 body = response.read(limit + 1)
         except (OSError, http.client.HTTPException) as error:

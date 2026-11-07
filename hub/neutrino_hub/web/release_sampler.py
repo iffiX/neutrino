@@ -3,7 +3,8 @@
 A publisher's new release is no write anybody makes on the hub, so nothing
 else would list it. This reads every manifest's feeds through the fetcher,
 every ``DEVICE_MODULE_RELEASES_INTERVAL_S``, into the module releases store the
-version routes read (module_install.md, "Module versions"). A panel's start
+version routes read (module_install.md, "Module versions"), each read waiting
+``DEVICE_MODULE_RELEASES_WAIT_S`` for data at each wait. A panel's start
 reads only when the store lists no version or its last good read is that old,
 and otherwise waits out what is left of it. A read that fails leaves the last
 list.
@@ -12,7 +13,10 @@ list.
 import logging
 import threading
 
-from neutrino_hub.modules.devices.constants import DEVICE_MODULE_RELEASES_INTERVAL_S
+from neutrino_hub.modules.devices.constants import (
+    DEVICE_MODULE_RELEASES_INTERVAL_S,
+    DEVICE_MODULE_RELEASES_WAIT_S,
+)
 from neutrino_hub.modules.devices.module_releases import ModuleReleaseReader
 from neutrino_hub.utils.source_fetch import SourceFetcher
 
@@ -33,12 +37,18 @@ class PanelReleaseSampler:
         Args:
             store: The :class:`ModuleReleaseStore` the read lands in.
             fetcher: The :class:`SourceFetcher` the feeds are read with; None
-                makes one.
+                makes one whose document reads wait
+                ``DEVICE_MODULE_RELEASES_WAIT_S`` for data.
             interval_s: Seconds between reads.
         """
         self._store = store
         self._reader = ModuleReleaseReader(
-            fetcher=fetcher if fetcher is not None else SourceFetcher(), store=store
+            fetcher=(
+                fetcher
+                if fetcher is not None
+                else SourceFetcher(document_wait_s=DEVICE_MODULE_RELEASES_WAIT_S)
+            ),
+            store=store,
         )
         self._interval_s = interval_s
         self._is_stopped = threading.Event()

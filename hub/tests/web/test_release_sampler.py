@@ -3,7 +3,8 @@
 What these pin: a panel's first start reads; a start inside a day of the last
 good read reads nothing and waits out what is left of the day; a start a day
 later reads; a start over an empty list or an unreadable time reads whatever
-the time says; and a read that failed leaves the wait at a whole day.
+the time says; a read that failed leaves the wait at a whole day; and the
+feeds are read with a 30 second wait for data.
 """
 
 from datetime import datetime, timedelta, timezone
@@ -137,3 +138,10 @@ def test_a_read_that_fails_leaves_the_list_and_waits_the_whole_interval(store):
 
     assert waits == [0.0, DAY_S]
     assert store.listed_by_key("app", "linux") == LISTED["app"]["linux"]
+
+
+def test_the_feeds_are_read_with_a_thirty_second_wait_for_data(store):
+    sampler = PanelReleaseSampler(store=store)
+
+    assert sampler._reader._fetcher._document_wait_s == 30.0
+    assert sampler._reader._fetcher._probe_timeout_s == 5.0

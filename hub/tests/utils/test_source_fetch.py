@@ -343,6 +343,23 @@ def test_a_document_is_the_first_valid_answer(serve):
     assert (document, source) == ("v1.2.3", valid.url)
 
 
+def test_a_document_waits_for_data_as_long_as_the_fetcher_s_document_wait(serve):
+    """A feed's read waits longer than a probe: the source holds its first
+    byte past the probe's wait and inside the document's."""
+    late = serve(body=json.dumps({"tag": "v1.2.3"}).encode(), answer_delay_s=0.8)
+
+    with pytest.raises(DownloadFailedError) as raised:
+        fetcher(probe_timeout_s=0.3).fetch_document(
+            file="releases", sources=[late.url], parse=json.loads
+        )
+    document, _ = fetcher(probe_timeout_s=0.3, document_wait_s=2.0).fetch_document(
+        file="releases", sources=[late.url], parse=json.loads
+    )
+
+    assert raised.value.params["sources"][0]["reason"] == "timeout"
+    assert document == {"tag": "v1.2.3"}
+
+
 def test_a_document_no_source_serves_names_each_source(serve):
     invalid = serve(body=b"not json")
     missing = serve(status=503)
