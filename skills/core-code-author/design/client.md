@@ -113,7 +113,7 @@ A row is the unit every page is made of:
 | Body, line 2 | the state line: the state word as the tables on this page give it, then ` · ` and the action when the state waits for one (a countdown, or a button's name) |
 | Body, line 3 | the mono line: an address, a path, `by <hub>:<device>:<module>` |
 | Body, line 4 | the error line, when the row's last action has a code, removed the moment a new action starts; the faint reason line, when a button is disabled. A hub row's connection never writes this line: its codes are state words on line 2 |
-| Right | the row's actions, in one line; a red-outlined action, when the row has one, is the rightmost |
+| Right | the row's actions, in one line; a red-outlined action, when the row has one, is the rightmost, except **Stop** and **Unmount**, each first in the place of the **Use** or **Mount** it replaces |
 
 On a phone the actions sit under the body on every row of every page,
 right-aligned and in the same order, also where they would fit beside it,
@@ -579,6 +579,27 @@ state, and the row's button is the record's:
 | `failed` with a login refusal on a declared share | press **Save** in the form with a new login | `pending`, mounting with the new login at once | `ui.job.mounting` |
 | `failed` or `detached` | its entry leaves the hub's list, or another record is set to mount at the same place | none | a failed or detached record is dropped, with a declared share's login, and holds no place |
 
+The row's buttons follow the Apps page's order, the record's button in
+**Use**'s place:
+
+| The share | The buttons, left to right |
+| --- | --- |
+| not mounted | **Mount**, **Configure** |
+| mounted | **Unmount**, **Configure**, **Open** |
+
+| Control | Shown | Enabled | Does |
+| --- | --- | --- | --- |
+| **Configure** | always | when no job runs on the row and the hub is neither refreshing nor disabled, the share mounted or not | opens the row's form in place; while the form is open or holds a saved place, the record's button is **Mount**, which mounts the share at that place |
+| **Open** (`ui.app.open`) | while the share is mounted | as **Configure** | shows the place in the system's file manager at once, with no job; a file manager that does not start writes `folder_open_failed {path}` on the row's error line |
+
+**Open** shows the place the mounted row names:
+
+| System | What **Open** shows |
+| --- | --- |
+| Linux | the mount folder, in the desktop's file manager, through `xdg-open` |
+| macOS | the mount folder, in the Finder, through `open` |
+| Windows | the drive letter's root, `<letter>:\`, in File Explorer, through the shell's `ShellExecute` |
+
 **Configure** opens the row's form in place. For a machine's share it holds
 the place alone; for a declared share it also holds a user name (a picker
 over the share's `users`, with typed text accepted) and the password. The
@@ -640,7 +661,8 @@ refusals; `-36` and "Connection failed" are `share_unreachable`; anything
 else is `mount_failed` with the script's words, the password masked; a script that ran out its ten minutes is
 `mount_timed_out`, a `failed` the timer never retries by itself.
 
-A phone has no mount. Its row shows **Open in Files**, which makes the share
+A phone has no mount, and the buttons and **Open** above are the desktop's
+alone. Its row shows **Open in Files**, which makes the share
 a location in the system's Files app through the client's file provider, and
 the iOS app's row opens its share page ("The share page"). A machine's share
 logs in with the hub's login at every open; a declared share's password is
