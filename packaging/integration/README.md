@@ -65,7 +65,8 @@ the folder out that way.
 
 Every lab install goes through the one-command script, pointed at a folder
 that holds the packages, `SHA256SUMS` and the scripts. The release
-workflow's `release_dist` artifact is such a folder, holding both editions;
+workflow's `release_dist` artifact is such a folder for the `intl` edition and
+`release_dist_cn` for the `cn` edition;
 a folder of local builds becomes one with:
 
 ```bash
