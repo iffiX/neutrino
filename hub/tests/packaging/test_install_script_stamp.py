@@ -59,10 +59,10 @@ def test_the_committed_script_is_stamped_on_its_two_lines_alone(relative, editio
     committed = (REPO_ROOT / relative).read_text(encoding="utf-8")
 
     stamped = install_script_stamp.stamped_text(
-        committed, relative, edition=edition, sites=PACKAGING_RELEASE_SITES
+        committed, relative, edition=edition, sites=PACKAGING_RELEASE_SITES[edition]
     )
 
-    sites = install_script_stamp.sites_text(relative, PACKAGING_RELEASE_SITES)
+    sites = install_script_stamp.sites_text(relative, PACKAGING_RELEASE_SITES[edition])
     edition_line = PACKAGING_INSTALL_EDITION_LINES[relative].format(edition=edition)
     sites_line = PACKAGING_INSTALL_SITES_LINES[relative].format(sites=sites)
     changed = [

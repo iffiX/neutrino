@@ -11,12 +11,13 @@ the source of everything the packages carry beside it under
 ``third_party/``, so a release attaches a single file.
 ``neutrino-<version>-cn-source.tar.xz`` is the mainland tree: the same
 commit without the paths ``PACKAGING_CN_LEFT_OUT_PATHS`` lists, ``EDITION``
-naming ``cn`` and both install scripts stamped ``cn`` with the release sites,
-with the source of what the ``cn`` packages carry. Beside the archive go the
-edition's two install scripts as the release publishes them, stamped with
-the edition and the release sites: ``install.sh`` and ``install.ps1``, or
-``install-cn.sh`` and ``install-cn.ps1``. ``--tree`` writes the mainland
-tree unpacked, without ``third_party/``, for a build or a test run from it.
+naming ``cn`` and both install scripts stamped ``cn`` with the cn release
+sites, with the source of what the ``cn`` packages carry. Beside the archive
+go the edition's two install scripts as the release publishes them, stamped
+with the edition and that edition's release sites alone: ``install.sh`` and
+``install.ps1``, or ``install-cn.sh`` and ``install-cn.ps1``. ``--tree``
+writes the mainland tree unpacked, without ``third_party/``, for a build or
+a test run from it.
 
 Not pure: runs git, downloads, writes the archive and the scripts.
 """
@@ -146,7 +147,7 @@ def write_source_archive(output_dir: Path, *, edition: str = "intl") -> None:
         tree = Path(workdir) / root
         unpack_head(tree)
         for script in install_script_stamp.write_release_scripts(
-            tree, output_dir, edition=edition, sites=PACKAGING_RELEASE_SITES
+            tree, output_dir, edition=edition, sites=PACKAGING_RELEASE_SITES[edition]
         ):
             print(f"wrote {script}")
         if edition == "cn":

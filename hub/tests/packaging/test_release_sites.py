@@ -1,13 +1,27 @@
-"""Whether a build stamps the release sites: a release build is asked with
-``--release-sites``, and the steps of the build read it from
-``NEUTRINO_HAS_RELEASE_SITES``."""
+"""The release sites of each edition, and whether a build stamps them: a
+release build is asked with ``--release-sites``, and the steps of the build
+read it from ``NEUTRINO_HAS_RELEASE_SITES`` and stamp the sites of the
+edition ``NEUTRINO_EDITION`` names alone."""
 
 import argparse
 
 import pytest
 
 from shared import release_sites
-from shared.constants import PACKAGING_RELEASE_SITES, PACKAGING_RELEASE_SITES_ENV
+from shared.constants import (
+    PACKAGING_EDITION_ENV,
+    PACKAGING_RELEASE_SITES,
+    PACKAGING_RELEASE_SITES_ENV,
+)
+
+GITHUB = {
+    "files": "https://github.com/iffiX/neutrino/releases/download/{tag}/",
+    "latest": "https://github.com/iffiX/neutrino/releases/latest/download/latest.json",
+}
+CNB = {
+    "files": "https://cnb.cool/iffi-X/neutrino/-/releases/download/{tag}/",
+    "latest": "https://cnb.cool/iffi-X/neutrino/-/git/raw/main/latest.json",
+}
 
 
 @pytest.fixture(autouse=True)
@@ -23,24 +37,23 @@ def test_the_option_is_off_unless_given():
     assert parser.parse_args(["--release-sites"]).has_release_sites is True
 
 
-def test_a_release_build_stamps_every_site():
+@pytest.mark.parametrize(("edition", "site"), [("intl", GITHUB), ("cn", CNB)])
+def test_a_release_build_stamps_its_own_edition_s_site_alone(
+    monkeypatch, edition, site
+):
+    monkeypatch.setenv(PACKAGING_EDITION_ENV, edition)
     release_sites.name_release_sites(True)
 
-    assert release_sites.stamped_sites() == PACKAGING_RELEASE_SITES
+    assert release_sites.stamped_sites() == (site,)
 
 
-def test_any_other_build_stamps_none():
+@pytest.mark.parametrize("edition", ["intl", "cn"])
+def test_any_other_build_stamps_none(monkeypatch, edition):
+    monkeypatch.setenv(PACKAGING_EDITION_ENV, edition)
     release_sites.name_release_sites(False)
 
     assert release_sites.stamped_sites() == ()
 
 
-def test_the_sites_are_github_first_and_cnb_second():
-    assert [site["files"] for site in PACKAGING_RELEASE_SITES] == [
-        "https://github.com/iffiX/neutrino/releases/download/{tag}/",
-        "https://cnb.cool/iffi-X/neutrino/-/releases/download/{tag}/",
-    ]
-    assert [site["latest"] for site in PACKAGING_RELEASE_SITES] == [
-        "https://github.com/iffiX/neutrino/releases/latest/download/latest.json",
-        "https://cnb.cool/iffi-X/neutrino/-/git/raw/main/latest.json",
-    ]
+def test_github_is_the_intl_site_and_cnb_the_cn_site():
+    assert PACKAGING_RELEASE_SITES == {"intl": (GITHUB,), "cn": (CNB,)}

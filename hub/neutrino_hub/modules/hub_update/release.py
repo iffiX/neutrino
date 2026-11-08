@@ -1,8 +1,9 @@
 """What the hub's own releases publish, read from the release sites.
 
-A release site holds every file of every release under the names the release
-gives them, ``latest.json`` naming the newest release as ``{tag, version}``
-and each release's ``SHA256SUMS`` covering all of its files. The newest
+A release site holds every file of its edition's releases under the names
+the release gives them, ``latest.json`` naming the newest release as
+``{tag, version}`` and each release's ``SHA256SUMS`` covering all of its
+files; the build stamps the sites of this package's edition alone. The newest
 release is the one ``latest.json`` names, read from every site at once; its
 digest list is read the same way, and the package this box wants from it is
 the one whose name the build stamped into this package with the version left

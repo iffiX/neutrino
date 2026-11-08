@@ -313,9 +313,9 @@ def test_a_checkout_names_no_site_and_stops_with_one_sentence(run):
 
 def test_the_tree_s_script_names_the_sites_of_its_edition():
     """The GitHub checkout's script names none; the mainland tree's, which
-    CNB serves, names every release site."""
+    CNB serves, names the cn release site."""
     sites = (
-        install_script_stamp.sites_text(RELATIVE, PACKAGING_RELEASE_SITES)
+        install_script_stamp.sites_text(RELATIVE, PACKAGING_RELEASE_SITES["cn"])
         if TREE_EDITION == "cn"
         else ""
     )
@@ -447,9 +447,12 @@ def test_an_intl_script_never_takes_a_cn_msi(run):
 
 @from_intl_tree
 @pytest.mark.parametrize("edition", ["intl", "cn"])
-def test_a_release_build_stamps_sites_the_script_reads(tmp_path, edition):
+def test_a_release_build_stamps_its_own_site_the_script_reads(tmp_path, edition):
     text = install_script_stamp.stamped_text(
-        SCRIPT.read_text(), RELATIVE, edition=edition, sites=PACKAGING_RELEASE_SITES
+        SCRIPT.read_text(),
+        RELATIVE,
+        edition=edition,
+        sites=PACKAGING_RELEASE_SITES[edition],
     )
     functions = tmp_path / "functions.ps1"
     functions.write_text(text.rstrip()[: -len(LAST_LINE)])
@@ -473,7 +476,7 @@ def test_a_release_build_stamps_sites_the_script_reads(tmp_path, edition):
     assert result.returncode == 0, result.stderr
     stamped = json.loads(result.stdout.strip().splitlines()[-1])
     assert stamped["edition"] == edition
-    assert stamped["sites"] == [dict(site) for site in PACKAGING_RELEASE_SITES]
+    assert stamped["sites"] == [dict(site) for site in PACKAGING_RELEASE_SITES[edition]]
 
 
 @from_intl_tree
@@ -548,7 +551,7 @@ def test_a_script_run_from_invoke_expression_copies_itself_whole(tmp_path):
     released = SCRIPT.read_text()
     if TREE_EDITION == "intl":
         released = install_script_stamp.stamped_text(
-            released, RELATIVE, edition="intl", sites=PACKAGING_RELEASE_SITES
+            released, RELATIVE, edition="intl", sites=PACKAGING_RELEASE_SITES["intl"]
         )
     text = released.rstrip()[: -len(LAST_LINE)]
     whole = text + STAND_INS + LAST_LINE + "\n"
@@ -577,9 +580,8 @@ def test_a_script_run_from_invoke_expression_copies_itself_whole(tmp_path):
     copied = copy.read_text(encoding="utf-8-sig")
     assert copied.rstrip().endswith(LAST_LINE)
     assert "function Get-NeutrinoScriptText" in copied
-    assert (
-        "\n$script:NeutrinoReleaseSites = @(@{ Files = 'https://github.com/" in copied
-    )
+    first = PACKAGING_RELEASE_SITES[TREE_EDITION][0]["files"]
+    assert f"\n$script:NeutrinoReleaseSites = @(@{{ Files = '{first}'" in copied
     assert command.endswith("' hub")
 
 

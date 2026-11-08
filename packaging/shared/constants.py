@@ -31,20 +31,26 @@ PACKAGING_GO_TARGETS = (
     "darwin-amd64",
 )
 
-# The release sites, GitHub first: each the address of a tag's files, with
+# The release sites of each edition, GitHub for intl and CNB for cn, each
+# holding its edition's files alone: each the address of a tag's files, with
 # `{tag}` open, and the address of `latest.json`, which names the latest
-# release as {tag, version}. A release build stamps them into the hub, and
-# every build of the install scripts into the scripts; a checkout names none.
-PACKAGING_RELEASE_SITES = (
-    {
-        "files": "https://github.com/iffiX/neutrino/releases/download/{tag}/",
-        "latest": "https://github.com/iffiX/neutrino/releases/latest/download/latest.json",
-    },
-    {
-        "files": "https://cnb.cool/iffi-X/neutrino/-/releases/download/{tag}/",
-        "latest": "https://cnb.cool/iffi-X/neutrino/-/git/raw/main/latest.json",
-    },
-)
+# release as {tag, version}. A release build stamps its edition's sites into
+# the hub, and every build of the install scripts into its edition's
+# scripts; a checkout names none.
+PACKAGING_RELEASE_SITES = {
+    "intl": (
+        {
+            "files": "https://github.com/iffiX/neutrino/releases/download/{tag}/",
+            "latest": "https://github.com/iffiX/neutrino/releases/latest/download/latest.json",
+        },
+    ),
+    "cn": (
+        {
+            "files": "https://cnb.cool/iffi-X/neutrino/-/releases/download/{tag}/",
+            "latest": "https://cnb.cool/iffi-X/neutrino/-/git/raw/main/latest.json",
+        },
+    ),
+}
 # The file of every release that names it, and the variable a build in a
 # container reads as "1" when it stamps the release sites.
 PACKAGING_LATEST_FILE = "latest.json"
@@ -191,7 +197,7 @@ PACKAGING_INSTALL_SITES_LINES = {
 # The variable a build in a container reads its edition from.
 PACKAGING_EDITION_ENV = "NEUTRINO_EDITION"
 
-# The second release site's repository on CNB, its API, and the address the
+# The cn release site's repository on CNB, its API, and the address the
 # mainland source tree is pushed to.
 PACKAGING_CNB_REPOSITORY = "iffi-X/neutrino"
 PACKAGING_CNB_API = "https://api.cnb.cool"

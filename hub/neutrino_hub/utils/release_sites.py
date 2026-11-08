@@ -1,10 +1,11 @@
 """The release sites the hub's build stamped, as the addresses a download names.
 
-A release site holds every file of every release under the names the release
-gives them. The build stamps the sites into ``_version.py`` as
-``HUB_RELEASE_SITES``, each ``{files, latest}``: ``files`` the address of one
-tag's files with ``{tag}`` where the tag goes, ``latest`` the address of the
-site's ``latest.json``. A checkout has no stamp and names no site.
+A release site holds every file of its edition's releases under the names
+the release gives them. The build stamps its own edition's sites into
+``_version.py`` as ``HUB_RELEASE_SITES``, each ``{files, latest}``:
+``files`` the address of one tag's files with ``{tag}`` where the tag goes,
+``latest`` the address of the site's ``latest.json``. A checkout has no
+stamp and names no site.
 
 Pure.
 """

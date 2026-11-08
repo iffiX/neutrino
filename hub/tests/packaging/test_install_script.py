@@ -664,9 +664,9 @@ def test_a_checkout_names_no_site_and_stops_with_one_sentence(stand_ins):
 
 def test_the_tree_s_script_names_the_sites_of_its_edition():
     """The GitHub checkout's script names none; the mainland tree's, which
-    CNB serves, names every release site."""
+    CNB serves, names the cn release site."""
     sites = (
-        install_script_stamp.sites_text(RELATIVE, PACKAGING_RELEASE_SITES)
+        install_script_stamp.sites_text(RELATIVE, PACKAGING_RELEASE_SITES["cn"])
         if TREE_EDITION == "cn"
         else ""
     )
@@ -898,18 +898,25 @@ def test_an_intl_script_never_takes_a_cn_package(stand_ins):
 
 
 @from_intl_tree
-@pytest.mark.parametrize("edition", ["intl", "cn"])
-def test_a_release_build_stamps_the_edition_and_the_sites(edition):
+@pytest.mark.parametrize(
+    ("edition", "host"),
+    [("intl", "https://github.com/"), ("cn", "https://cnb.cool/")],
+)
+def test_a_release_build_stamps_the_edition_and_its_own_site_alone(edition, host):
     text = install_script_stamp.stamped_text(
-        SCRIPT.read_text(), RELATIVE, edition=edition, sites=PACKAGING_RELEASE_SITES
+        SCRIPT.read_text(),
+        RELATIVE,
+        edition=edition,
+        sites=PACKAGING_RELEASE_SITES[edition],
     )
 
     assert f'\nEDITION="{edition}"\n' in text
     sites = " ".join(
-        f"{site['files']} {site['latest']}" for site in PACKAGING_RELEASE_SITES
+        f"{site['files']} {site['latest']}" for site in PACKAGING_RELEASE_SITES[edition]
     )
     assert f'\nRELEASE_SITES="{sites}"\n' in text
-    assert sites.split()[0].startswith("https://github.com/")
+    assert len(sites.split()) == 2
+    assert all(address.startswith(host) for address in sites.split())
 
 
 @pytest.fixture(scope="module")
@@ -932,20 +939,23 @@ def mainland_tree(tmp_path_factory):
 
 
 @from_intl_tree
-def test_the_mainland_tree_stamps_both_scripts_cn_with_the_sites(mainland_tree):
+def test_the_mainland_tree_stamps_both_scripts_cn_with_the_cnb_site_alone(
+    mainland_tree,
+):
     install = mainland_tree / "packaging" / "install"
     shell = (install / "install.sh").read_text()
     powershell = (install / "install.ps1").read_text()
+    sites = install_script_stamp.sites_text(RELATIVE, PACKAGING_RELEASE_SITES["cn"])
 
     assert '\nEDITION="cn"\n' in shell
     assert "\n$script:NeutrinoEdition = 'cn'\n" in powershell
+    assert f'\nRELEASE_SITES="{sites}"\n' in shell
+    assert sites.startswith("https://cnb.cool/")
     assert (
-        f'\nRELEASE_SITES="{install_script_stamp.sites_text(RELATIVE, PACKAGING_RELEASE_SITES)}"\n'
-        in shell
-    )
-    assert "\n$script:NeutrinoReleaseSites = @(@{ Files = 'https://github.com/" in (
-        powershell
-    )
+        "\n$script:NeutrinoReleaseSites = @(@{ Files = 'https://cnb.cool/"
+        "iffi-X/neutrino/-/releases/download/{tag}/'; Latest = 'https://cnb.cool/"
+        "iffi-X/neutrino/-/git/raw/main/latest.json' })\n"
+    ) in powershell
 
 
 @from_intl_tree

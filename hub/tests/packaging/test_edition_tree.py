@@ -67,18 +67,21 @@ def test_the_mainland_tree_holds_none_of_the_listed_paths(tmp_path):
     check_tree(root, "cn")
 
 
-def test_both_install_scripts_are_stamped_cn_with_the_release_sites(tmp_path):
-    """CNB serves the mainland tree's scripts, so they name the sites."""
+def test_both_install_scripts_are_stamped_cn_with_the_cnb_site_alone(tmp_path):
+    """CNB serves the mainland tree's scripts, so they name the cn site."""
     root = intl_tree(tmp_path)
 
     make_cn_tree(root)
 
     for relative, line in PACKAGING_INSTALL_EDITION_LINES.items():
-        lines = (root / relative).read_text(encoding="utf-8").splitlines()
+        text = (root / relative).read_text(encoding="utf-8")
+        lines = text.splitlines()
         assert line.format(edition="cn") in lines
         assert line.format(edition="intl") not in lines
-        sites = install_script_stamp.sites_text(relative, PACKAGING_RELEASE_SITES)
+        sites = install_script_stamp.sites_text(relative, PACKAGING_RELEASE_SITES["cn"])
         assert PACKAGING_INSTALL_SITES_LINES[relative].format(sites=sites) in lines
+        assert "https://cnb.cool/" in sites
+        assert "https://github.com/" not in text
 
 
 def test_the_mainland_readme_is_the_cnb_one_and_the_only_one(tmp_path):

@@ -344,9 +344,12 @@ def test_the_stamp_carries_the_version_and_the_file_name_with_the_version_open(
     )
 
 
-@pytest.mark.parametrize("edition", ["intl", "cn"])
-def test_a_release_build_stamps_the_release_sites_in_both_editions(
-    monkeypatch, edition
+@pytest.mark.parametrize(
+    ("edition", "host"),
+    [("intl", "https://github.com/"), ("cn", "https://cnb.cool/")],
+)
+def test_a_release_build_stamps_its_own_edition_s_site_alone(
+    monkeypatch, edition, host
 ):
     from shared.constants import PACKAGING_RELEASE_SITES
 
@@ -356,12 +359,10 @@ def test_a_release_build_stamps_the_release_sites_in_both_editions(
 
     exec(venv_tree.version_stamp("0.3.1", "x"), namespace)  # noqa: S102
 
-    assert namespace["HUB_RELEASE_SITES"] == PACKAGING_RELEASE_SITES
-    assert namespace["HUB_RELEASE_SITES"][0]["files"].startswith("https://github.com/")
-    assert all(
-        "{tag}" in site["files"] and site["latest"].endswith("/latest.json")
-        for site in namespace["HUB_RELEASE_SITES"]
-    )
+    (site,) = namespace["HUB_RELEASE_SITES"]
+    assert namespace["HUB_RELEASE_SITES"] == PACKAGING_RELEASE_SITES[edition]
+    assert site["files"].startswith(host) and site["latest"].startswith(host)
+    assert "{tag}" in site["files"] and site["latest"].endswith("/latest.json")
 
 
 def test_any_other_build_stamps_no_release_site(monkeypatch):

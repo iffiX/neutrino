@@ -2,8 +2,8 @@
 
 The mainland tree is a checkout's tree with every path of
 ``PACKAGING_CN_LEFT_OUT_PATHS`` deleted, the root ``EDITION`` file naming
-``cn``, both install scripts stamped ``cn`` with the release sites, and the
-CNB README as its only README. A ``cn`` build refuses a tree that holds a
+``cn``, both install scripts stamped ``cn`` with the cn release sites, and
+the CNB README as its only README. A ``cn`` build refuses a tree that holds a
 left-out path, and an ``intl`` build one that lacks it.
 
 Not pure: deletes and writes files under the tree it is given.
@@ -45,7 +45,9 @@ def make_cn_tree(root: Path) -> None:
         elif path.exists():
             path.unlink()
     (root / PACKAGING_EDITION_FILE).write_text("cn\n", encoding="utf-8")
-    install_script_stamp.stamp_tree(root, edition="cn", sites=PACKAGING_RELEASE_SITES)
+    install_script_stamp.stamp_tree(
+        root, edition="cn", sites=PACKAGING_RELEASE_SITES["cn"]
+    )
     source = root / EDITION_CN_README_SOURCE
     if not source.is_file():
         raise SystemExit(f"the tree holds no {EDITION_CN_README_SOURCE}")

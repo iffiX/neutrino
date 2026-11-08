@@ -1,16 +1,17 @@
-"""Whether a build stamps the release sites into what it builds.
+"""Whether a build stamps its edition's release sites into what it builds.
 
 A release build is asked with ``--release-sites``; it names that in
 ``NEUTRINO_HAS_RELEASE_SITES``, which a build in a container is handed and
-which the step writing the hub's ``_version.py`` reads. Any other build
-stamps no site, so a hub it makes holds the one agent package it seeded and
-refuses the rest by name.
+which the step writing the hub's ``_version.py`` reads, and it stamps the
+sites of its own edition alone. Any other build stamps no site, so a hub it
+makes holds the one agent package it seeded and refuses the rest by name.
 
 Not pure: reads and sets the process's environment.
 """
 
 import os
 
+from shared import edition_build
 from shared.constants import PACKAGING_RELEASE_SITES, PACKAGING_RELEASE_SITES_ENV
 
 
@@ -24,7 +25,7 @@ def add_release_sites_argument(parser) -> None:
         "--release-sites",
         dest="has_release_sites",
         action="store_true",
-        help="stamp the release sites, as a tag's build does",
+        help="stamp the edition's release sites, as a tag's build does",
     )
 
 
@@ -41,9 +42,13 @@ def stamped_sites() -> tuple:
     """The release sites the running build stamps.
 
     Returns:
-        ``PACKAGING_RELEASE_SITES`` when the build was asked for them, else
+        The sites of the edition ``NEUTRINO_EDITION`` names, from
+        ``PACKAGING_RELEASE_SITES``, when the build was asked for them, else
         an empty tuple.
+
+    Raises:
+        SystemExit: When ``NEUTRINO_EDITION`` names no edition.
     """
     if os.environ.get(PACKAGING_RELEASE_SITES_ENV, "").strip() == "1":
-        return PACKAGING_RELEASE_SITES
+        return PACKAGING_RELEASE_SITES[edition_build.build_edition()]
     return ()
