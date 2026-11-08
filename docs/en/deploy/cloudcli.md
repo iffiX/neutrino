@@ -110,8 +110,6 @@ A project in CloudCLI is a folder on the system. Create a project before the fir
 
    ![The project open, with the input box at the bottom](/guide/en/deploy_cloudcli_30_project_open.webp)
 
-![A conversation in CloudCLI, with Claude answering through the AI gateway](/guide/zh/deploy_cloudcli_30_chat.webp)
-
 CloudCLI 1.37.3 displays each message you send twice, and sends it one time.
 
 When you finish, return to the client and select **Stop**, and the local address closes. If the browser shows a sign-in prompt, return to the client and select **Open** again.

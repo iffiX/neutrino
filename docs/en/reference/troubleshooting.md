@@ -42,6 +42,10 @@ On the **Clients** page of the panel, select **Permissions** on this client's ro
 
 The hub is busy and did not respond in time. This counts as a delay: the program retries automatically, and you take no action.
 
+### `result_too_large`
+
+The system's answer was larger than the 65536 bytes (64 KiB) one record holds, so the agent sent this code in its place. The panel shows **The machine's answer was larger than the 65536 bytes one record holds.**
+
 ### `vault_locked`
 
 The hub has no working key for the vault on this system, so it cannot read the credentials.

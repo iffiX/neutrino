@@ -61,8 +61,6 @@ Join your phone or computer to the hub first, as [Join the hub](/en/access/join)
 
    ![Hermes WebUI in the browser](/guide/en/deploy_hermes_webui_24_visitor.webp)
 
-![A conversation in Hermes WebUI, with deepseek-flash as the model](/guide/zh/deploy_hermes_webui_30_chat.webp)
-
 When you finish, return to the client and select **Stop**. On a phone, the steps are the same: on the **Apps** page, select **Use**, then **Open**.
 
 ## Share

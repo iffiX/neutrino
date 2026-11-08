@@ -108,8 +108,6 @@ CloudCLI 里的项目是系统上的一个文件夹。第一次使用时，你�
 
    ![项目打开了，下面是输入框](/guide/zh/deploy_cloudcli_30_project_open.webp)
 
-![CloudCLI 里的一次对话，Claude 经 AI 网关回答了](/guide/zh/deploy_cloudcli_30_chat.webp)
-
 CloudCLI 1.37.3 会把你发的消息显示两遍，实际只发送了一次。
 
 使用完后回到客户端按 **停止**，本机地址随即关闭。如果浏览器提示要登录，回到客户端再按一次 **打开**。

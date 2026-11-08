@@ -61,8 +61,6 @@ Hermes WebUI 运行在[容器](/deploy/containers)里，每个系统只运行一
 
    ![浏览器里的 Hermes WebUI](/guide/zh/deploy_hermes_webui_24_visitor.webp)
 
-![Hermes WebUI 里的一次对话，下面的模型是 deepseek-flash](/guide/zh/deploy_hermes_webui_30_chat.webp)
-
 使用完后回到客户端按 **停止**。手机上的操作相同：在 **应用** 页按 **使用**，再按 **打开**。
 
 ## 分享
