@@ -1,6 +1,6 @@
 {
-  "_comment": "The module catalog the machine page's Add module dialog draws: every module by the activity it serves, in the dialog's order. A module the hub has no manifest of yet is listed with is_available false. Terminal, Remote desktop and the SSH server are carried by the agent and locked checked.",
-  "categories": ["code", "paper", "lab", "design", "notes", "files", "remote", "other"],
+  "_comment": "The module catalog the machine page's Add module dialog draws: every module by the activity it serves, in the dialog's order. Only modules the hub has a manifest of are listed. Terminal, Remote desktop and the SSH server are carried by the agent and locked checked.",
+  "categories": ["code", "paper", "notes", "files", "remote", "other"],
   "modules": [
     {"name": "vscode", "category": "code"},
     {"name": "code_server", "category": "code"},
@@ -13,15 +13,9 @@
     {"name": "ssh_server", "category": "code"},
     {"name": "gitea", "category": "code"},
     {"name": "ayakaleaf", "category": "paper"},
-    {"name": "jupyter", "category": "lab"},
-    {"name": "ollama", "category": "lab"},
-    {"name": "penpot", "category": "design"},
-    {"name": "comfyui", "category": "design"},
     {"name": "siyuan", "category": "notes"},
     {"name": "samba", "category": "files"},
-    {"name": "openlist", "category": "files"},
     {"name": "remote_desktop", "category": "remote"},
-    {"name": "podman", "category": "other"},
-    {"name": "qinglong", "category": "other"}
+    {"name": "podman", "category": "other"}
   ]
 }

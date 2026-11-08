@@ -2047,6 +2047,34 @@ def test_a_module_s_rows_name_the_modules_its_entry_requires(containers_api):
     assert cards["ayakaleaf"]["is_supported"] is True
 
 
+def test_the_catalog_s_cards_carry_no_is_available(containers_api):
+    client, runtime = containers_api
+
+    catalog = client.get(f"{MODULE_PATH}/catalog", params={"device_id": DEVICE}).json()
+
+    assert catalog["modules"] != []
+    assert [card["name"] for card in catalog["modules"] if "is_available" in card] == []
+
+
+def test_the_catalog_sends_a_card_only_for_a_module_with_a_manifest(api, monkeypatch):
+    client, runtime = api
+    monkeypatch.setattr(
+        device_modules,
+        "read_module_catalog",
+        lambda: {
+            "categories": ["code"],
+            "modules": [
+                {"name": "fakedesk", "category": "code"},
+                {"name": "unbuilt", "category": "code"},
+            ],
+        },
+    )
+
+    catalog = client.get(f"{MODULE_PATH}/catalog", params={"device_id": DEVICE}).json()
+
+    assert [card["name"] for card in catalog["modules"]] == ["fakedesk"]
+
+
 def test_a_module_whose_required_module_has_no_entry_cannot_run(containers_api):
     """Containers has no entry for a Linux whose agent reports no family,
     and Hermes WebUI's one ``linux`` entry resolves there."""

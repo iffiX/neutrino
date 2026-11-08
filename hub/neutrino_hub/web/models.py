@@ -2410,8 +2410,6 @@ class ModuleCatalogEntryView(BaseModel):
     name: str
     title: str
     category: str
-    # False for a module the hub has no manifest of yet.
-    is_available: bool = True
     # Whether the machine's platform has an entry, and each module that
     # entry requires has one too.
     is_supported: bool = True

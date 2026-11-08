@@ -319,10 +319,10 @@ def module_catalog(
         runtime: The shared runtime.
 
     Returns:
-        The categories in their order and the modules in the catalog's
-        order, each with whether the hub has its manifest, whether the
-        machine's platform has an entry, whether the agent carries it,
-        whether its tab is on the page, and its state as last reported.
+        The categories in their order and the modules the hub has a
+        manifest of in the catalog's order, each with whether the machine's
+        platform has an entry, whether the agent carries it, whether its tab
+        is on the page, and its state as last reported.
 
     Raises:
         HTTPException: 404 ``device_unknown``.
@@ -338,15 +338,6 @@ def module_catalog(
         name = str(item.get("name", "") or "")
         manifest = manifests.get(name)
         if manifest is None:
-            rows.append(
-                ModuleCatalogEntryView(
-                    name=name,
-                    title=str(item.get("title", "") or name),
-                    category=str(item.get("category", "") or ""),
-                    is_available=False,
-                    is_supported=False,
-                )
-            )
             continue
         _, entry = resolve_platform_entry(manifest, platform)
         is_carried = DEVICE_METHOD_AGENT in manifest_methods(manifest)
@@ -356,7 +347,6 @@ def module_catalog(
                 name=name,
                 title=str(manifest.get("title", "") or name),
                 category=str(item.get("category", "") or ""),
-                is_available=True,
                 is_supported=(
                     is_runnable(manifests, entry, platform)
                     if keys and not is_carried

@@ -1081,7 +1081,6 @@ export class DemoHub {
         name: spec.name,
         title: spec.title,
         category: spec.category,
-        is_available: true,
         is_supported: true,
         is_carried: spec.isCarried,
         is_shown: device.modules[spec.name]?.isShown ?? false,

@@ -61,9 +61,9 @@ export const DEMO_LAB_HUB_ADDRESS = "198.51.100.20";
 export const DEMO_LAB_DEVICE_ID = "dev_lab";
 export const DEMO_LAB_DEVICE_HOSTNAME = "lab-server";
 export const DEMO_LAB_METRICS_SEED = 7;
-export const DEMO_LAB_APP_ID = "jupyterlab_dev_lab";
-export const DEMO_LAB_APP_TITLE = "JupyterLab";
-export const DEMO_LAB_APP_PORT = 8888;
+export const DEMO_LAB_APP_ID = "gitea_dev_lab";
+export const DEMO_LAB_APP_TITLE = "Gitea";
+export const DEMO_LAB_APP_PORT = 3000;
 
 /** A moment `seconds` ago, as an ISO stamp. */
 export function secondsAgo(seconds: number): string {

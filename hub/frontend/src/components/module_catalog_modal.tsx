@@ -27,8 +27,7 @@ import "./module_catalog_modal.css";
  * takes it away, at once.
  *
  * The modules the agent carries are checked and locked, and so is a module
- * the machine has; a module the machine cannot run is greyed out, and one
- * the hub has no manifest of yet has no check.
+ * the machine has; a module the machine cannot run is greyed out.
  */
 
 const CATALOG_PATH = "/agent/module/catalog";
@@ -67,7 +66,7 @@ export function ModuleCatalogModal({
       return;
     }
     const shown = view.modules
-      .filter((held) => held.is_available && held.is_shown)
+      .filter((held) => held.is_shown)
       .map((held) => held.name);
     const next = entry.is_shown
       ? shown.filter((name) => name !== entry.name)
@@ -191,7 +190,7 @@ interface CatalogCardProps {
 function CatalogCard({ entry, isBusy, onToggle }: CatalogCardProps) {
   const isPresent = !NOTHING_STATES.includes(entry.state);
   const isLocked = entry.is_carried || isPresent;
-  const isCheckable = entry.is_available && entry.is_supported;
+  const isCheckable = entry.is_supported;
   const isChecked = entry.is_carried || isPresent || entry.is_shown;
   const lineKey = `ui.module_catalog.${entry.name}`;
   const className = [

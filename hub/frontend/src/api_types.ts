@@ -1326,12 +1326,10 @@ export interface DeviceModuleRequest {
 /** One module of the catalog, as the **+ Add module** dialog draws its card. */
 export interface ModuleCatalogEntry {
   name: string;
-  /** The manifest's title, or the catalog's for a module with no manifest. */
+  /** The manifest's title. */
   title: string;
   /** The activity filter it sits under. */
   category: string;
-  /** False for a module the hub has no manifest of yet. */
-  is_available: boolean;
   /** Whether the machine's platform has an entry, and each module that
    * entry requires has one too. */
   is_supported: boolean;

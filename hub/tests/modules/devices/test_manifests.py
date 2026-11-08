@@ -2024,6 +2024,16 @@ def test_every_shipped_container_entry_requires_containers_and_no_other_anything
             )
 
 
+def test_every_module_in_the_catalog_has_a_manifest():
+    from neutrino_hub.modules.devices.constants import DEVICE_MODULE_CATALOG_PATH
+
+    manifests = load_module_manifests()
+    catalog = json.loads(DEVICE_MODULE_CATALOG_PATH.read_text(encoding="utf-8"))
+
+    listed = [item["name"] for item in catalog["modules"]]
+    assert [name for name in listed if name not in manifests] == []
+
+
 def test_every_required_module_is_in_the_catalog_and_runs_where_it_is_required():
     from neutrino_hub.modules.devices.constants import DEVICE_MODULE_CATALOG_PATH
 

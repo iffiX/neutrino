@@ -434,7 +434,7 @@ export class DemoClientCore {
         source: "module",
         device_id: DEMO_LAB_DEVICE_ID,
         device_name: this.word("lab_machine_name"),
-        local_name: `jupyterlab.${DEMO_LAB_DEVICE_HOSTNAME}.localhost`,
+        local_name: `gitea.${DEMO_LAB_DEVICE_HOSTNAME}.localhost`,
         job: run?.job ?? "",
         last_error: null,
         is_in_use: run?.isInUse ?? false,
