@@ -198,5 +198,5 @@ PACKAGING_CNB_API = "https://api.cnb.cool"
 PACKAGING_CNB_GIT_URL = "https://cnb.cool/iffi-X/neutrino.git"
 
 # The waits, in seconds, before each new try of a build's download that met a
-# 5xx, a 429, a timeout or a dropped connection: about five minutes in all.
-PACKAGING_DOWNLOAD_RETRY_WAITS_S = (5, 10, 20, 40, 60, 60, 60, 60)
+# 5xx, a 429, a timeout or a dropped connection: about ten minutes in all.
+PACKAGING_DOWNLOAD_RETRY_WAITS_S = (5, 10, 20, 40, 60, 60, 60, 60, 60, 60, 60, 60, 60)

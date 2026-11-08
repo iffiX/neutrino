@@ -99,7 +99,7 @@ def test_a_504_every_time_fails_after_the_last_wait(site, waits):
     assert refused.value.code == 504
     assert served.requests == len(PACKAGING_DOWNLOAD_RETRY_WAITS_S) + 1
     assert waits == list(PACKAGING_DOWNLOAD_RETRY_WAITS_S)
-    assert sum(waits) <= 330
+    assert sum(waits) <= 660
 
 
 def test_a_404_fails_at_once(site, waits):
