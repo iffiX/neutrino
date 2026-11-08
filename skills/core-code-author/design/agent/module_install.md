@@ -166,7 +166,7 @@ Codeg's npm packages carries Claude Code, runs that copy.
 | --- | --- |
 | Every address that serves the same bytes is in the one `sources` list of its download, or in the one source set of its ecosystem, which the download names ("Source sets"). No key names a country's or an edition's address. | The digest makes every source equal, so the fastest one serves. |
 | A source names a file as `{file}`, the artifact's `file` with `{version}` filled in. | One template lists the same file on the publisher and on every mirror. |
-| `{release}` names each release site the hub's build stamped, at the release the hub came from ([../../agent_work_rule/release.md](../../agent_work_rule/release.md), "Release sites"). A checkout has no stamp, so `{release}` names no source there. | The project's own release has one address per site, and the hub learns them only from its build. |
+| `{release}` names each release site the hub's build stamped, at the release the hub came from: GitHub for an `intl` hub, CNB for a `cn` hub ([../../agent_work_rule/release.md](../../agent_work_rule/release.md), "Release sites"). A checkout has no stamp, so `{release}` names no source there. | The project's own release has one address per site, each site holds one edition's files, and the hub learns its edition's sites only from its build. |
 | A `hub` artifact names `source_set` in place of `sources` when its file is a package of an ecosystem with a set: the hub's cache reads the artifact's `file` under each of the set's sources, the first source first. Claude Code's and Codex's tarballs name the `npm` set ([modules/claude_code.md](modules/claude_code.md), [modules/codex.md](modules/codex.md)). | Every npm registry serves a published tarball at the same path, so the set's one list of registries, mirrors in mainland China among them, serves the module too. |
 | No Claude Code artifact names `{release}`, and no release of Neutrino's carries Claude Code's files. | Claude Code is Anthropic's proprietary software, and its module's installer fetches it only from the npm registries, which serve the package Anthropic publishes. |
 | The Containers module's docker.io mirrors stay the person's ordered list, which Podman applies under any `docker.io` source. | They are the person's configuration, and Podman already tries them in order. |
@@ -188,8 +188,8 @@ Codeg's npm packages carries Claude Code, runs that copy.
 | the TeX packages Ayakaleaf's first start adds | the agent, for `tlmgr` in the app's container | the `ctan` set, its first ranked source on `tlmgr`'s command line ([modules/ayakaleaf.md](modules/ayakaleaf.md), "The first start") |
 | better-sqlite3's prebuilt binary | the agent, for prebuild-install to fetch | its GitHub releases, then npmmirror's copy ([modules/cloudcli.md](modules/cloudcli.md)) |
 | a module's version list | the hub, once a day, and every hour while a module holds no list | the publisher's API ("Module versions") |
-| the hub's own update | the hub | the release sites ([../architecture.md](../architecture.md), "The hub updates itself outside its own process") |
-| a package an install script installs | the install script | the release sites ([../../agent_work_rule/release.md](../../agent_work_rule/release.md), "Install scripts") |
+| the hub's own update | the hub | its edition's release sites ([../architecture.md](../architecture.md), "The hub updates itself outside its own process") |
+| a package an install script installs | the install script | its edition's release sites ([../../agent_work_rule/release.md](../../agent_work_rule/release.md), "Install scripts") |
 
 Codeg installs the coding agents it runs with `--registry
 https://registry.npmjs.org` fixed in its own command line, and npm reads that

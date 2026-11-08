@@ -262,7 +262,7 @@ packaging/
   ci/                What only the workflows run: check.py installs a
                      built package where it runs and checks it works;
                      publish_cn.py publishes a release and the mainland
-                     tree to CNB, the second release site; count_tests.py writes the test counts the
+                     tree to CNB, the `cn` release site; count_tests.py writes the test counts the
                      docs build serves for the README's badge;
                      check_demo.py opens the built panel demo in a
                      headless browser.

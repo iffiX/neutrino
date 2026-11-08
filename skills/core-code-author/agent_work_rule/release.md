@@ -32,8 +32,8 @@ into the source twice.
 
 An edition is the set of features a package is built with. One tag builds
 every package in two editions from the one source on GitHub, at the same
-version and the same `PROTOCOL`, and one release on every release site holds
-both ("Release sites"):
+version and the same `PROTOCOL`, and each edition is released on its own
+site, `intl` on GitHub and `cn` on CNB ("Release sites"):
 
 | Edition | Features |
 | --- | --- |
@@ -68,7 +68,8 @@ same press again"). A checkout has no stamp and reads
 the file `EDITION` at the repository's root, one line holding `intl` in the
 GitHub repository; the two phone builds read the same file. The stamp, or
 that file, names which edition's package an update or an install script
-takes, and no download address follows it
+takes. A build stamps its edition's release sites ("Release sites"), and no
+other download address follows the edition
 ([../design/agent/module_install.md](../design/agent/module_install.md),
 "Sources"). Which features a package has follows from the files
 its tree holds ([../design/architecture.md](../design/architecture.md), "A
@@ -188,8 +189,9 @@ Every platform is built in both editions.
 command ("Install scripts"). A `cn` file's name holds `-cn`: before the
 extension of a package or a script, such as
 `neutrino-hub_<version>_amd64-cn.deb` and `install-cn.sh`, and as
-`neutrino-<version>-cn-source.tar.xz` for the source tree. One release
-therefore holds both editions.
+`neutrino-<version>-cn-source.tar.xz` for the source tree. GitHub's release
+of a tag holds the `intl` files, and CNB's release the `cn` files ("Release
+sites").
 
 ### Hub
 
@@ -415,10 +417,11 @@ the next release's `.ipa`, signed and installed over the app.
 
 `packaging/install/install.sh` and `packaging/install/install.ps1` hold
 their edition as `EDITION` near their top, `intl` in the committed files,
-and the release sites the build stamped; the build writes the two `cn`
-scripts with `cn`. A person fetches a script from GitHub's address of the
-latest release, or the mainland one from the CNB repository, under
-`packaging/install/` of the mainland tree ("The mainland site on CNB"):
+and the release sites the build stamps for that edition; the build writes
+the two `cn` scripts with `cn` and CNB. A person fetches a script
+from GitHub's address of the latest release, or the mainland one from the
+CNB repository, under `packaging/install/` of the mainland tree ("The
+mainland site on CNB"):
 
 ```bash
 curl -fsSL https://github.com/iffiX/neutrino/releases/latest/download/install.sh | sh
@@ -523,36 +526,38 @@ carry the tree alone.
 
 `neutrino-<version>-cn-source.tar.xz` is the same for `cn`: the mainland tree
 of "The mainland source tree", with the upstream source of what the `cn`
-packages hold. It is attached to the release beside the full tree's, and
-every `cn` package is built from it.
+packages hold. It is attached to CNB's release, as the full tree's is to
+GitHub's, and every `cn` package is built from it.
 
 ## Every asset carries a checksum
 
-`SHA256SUMS` is attached beside the packages and covers every file of the
-release: both editions' packages, the four install scripts, the two source
-archives and the cc-switch files. The hub checks an agent package before it
-installs it on a device, so a cut or changed download fails with its code
-and installs nothing.
+Each release site's `SHA256SUMS` is attached beside the packages and covers
+every file that site's release holds: its edition's packages, its two
+install scripts, its source archive, the cc-switch files and `latest.json`.
+The hub checks an agent package before it installs it on a device, so a cut
+or changed download fails with its code and installs nothing.
 
 ## Release sites
 
-A release site is an address that holds every file of every release, under
-the names the release gives them. GitHub is the first site and CNB the
-second, the mainland one. `PACKAGING_RELEASE_SITES` in
-`packaging/shared/constants.py` lists them, each as two addresses:
+A release site is an address that holds every file of one edition's
+releases, under the names the release gives them. GitHub is the `intl`
+site and CNB the `cn` site, the mainland one. `PACKAGING_RELEASE_SITES` in
+`packaging/shared/constants.py` lists the sites of each edition, each site
+as two addresses:
 
-| Site | A tag's files | `latest.json` |
-| --- | --- | --- |
-| GitHub | `https://github.com/iffiX/neutrino/releases/download/{tag}/` | `https://github.com/iffiX/neutrino/releases/latest/download/latest.json` |
-| CNB | `https://cnb.cool/iffi-X/neutrino/-/releases/download/{tag}/` | `https://cnb.cool/iffi-X/neutrino/-/git/raw/main/latest.json` |
+| Edition | Site | A tag's files | `latest.json` |
+| --- | --- | --- | --- |
+| `intl` | GitHub | `https://github.com/iffiX/neutrino/releases/download/{tag}/` | `https://github.com/iffiX/neutrino/releases/latest/download/latest.json` |
+| `cn` | CNB | `https://cnb.cool/iffi-X/neutrino/-/releases/download/{tag}/` | `https://cnb.cool/iffi-X/neutrino/-/git/raw/main/latest.json` |
 
 | Rule | Reason |
 | --- | --- |
-| One list names every site, GitHub first, and a site joins it by one line. | A mirror holding the same files is one more source of each of them. |
-| The build stamps the list into the hub's `_version.py` as `HUB_RELEASE_SITES`, and into each install script. A checkout has no stamp and names no site. | The hub and the scripts learn the sites from the build alone ([../design/agent/module_install.md](../design/agent/module_install.md), "Sources"). |
-| Every site holds the same files under the same names, both editions in one release, and one `SHA256SUMS` over all of them. | The digest makes every site equal, so the fastest one serves. |
-| `latest.json` at a site's fixed address names the latest release as `{tag, version}`. On CNB it is a file of the repository. | CNB answers no API read without a login, and a file of its repository reads with no login. |
-| Every release holds the cc-switch files `PACKAGING_CC_SWITCH_ASSETS` pins, under the names upstream gives them, and their licence. | The hub's cache fetches cc-switch from upstream and from the release sites. |
+| GitHub's release of a tag holds the `intl` files, and CNB's the `cn` files, those whose name holds `-cn` ("What goes in a release"). Neither holds a file of the other edition. | Each site carries the edition its readers install. |
+| Each edition has one list of its sites, and a site joins it by one line. | A mirror holding the same files is one more source of each of them. |
+| A build stamps its own edition's list alone into the hub's `_version.py` as `HUB_RELEASE_SITES`, and into its edition's install scripts: an `intl` build names GitHub, a `cn` build names CNB. A checkout has no stamp and names no site. | The hub and the scripts learn the sites from the build alone ([../design/agent/module_install.md](../design/agent/module_install.md), "Sources"), and every file a package fetches is one its own edition's site holds. |
+| Each site's release holds its own `SHA256SUMS`, over every file it holds and no other. | An install script and the hub read the `SHA256SUMS` of the site they fetch from, and the digest makes each site of an edition equal, so the fastest one serves. |
+| `latest.json` at a site's fixed address names the latest release as `{tag, version}`, and each site's release holds its own. On CNB it is a file of the repository. | CNB answers no API read without a login, and a file of its repository reads with no login. |
+| Every release on both sites holds the cc-switch files `PACKAGING_CC_SWITCH_ASSETS` pins, under the names upstream gives them, and their licence. | The hub's cache of either edition fetches cc-switch from upstream and from its own edition's release sites. |
 | A site that has lost a file is one failed source among the others. | The fetch goes on to the next site, and the failure names each site only when every one fails. |
 
 
@@ -581,7 +586,7 @@ answer 504 at times; a 404 or a digest mismatch fails at once.
 | `build_client_ios.py` | the unsigned `.ipa` | macOS with Xcode and XcodeGen |
 | `build_core_netbird.py`, `build_core_easytier.py`, `build_core_rustdesk.py` | one core the phones carry | Linux |
 | `build_core_rustdesk_ios.py` | the RustDesk core of the iOS app, a static library for a device | macOS with Xcode |
-| `build_sources.py`, `build_checksums.py` | the source archive, or with `--edition cn` the mainland source tree; `SHA256SUMS` over a directory | anywhere |
+| `build_sources.py`, `build_checksums.py` | the source archive, or with `--edition cn` the mainland source tree; `latest.json` and `SHA256SUMS` over the files of one edition's site, taken by name from the files of both, and a file of the other edition refused | anywhere |
 | `build_cc_switch.py` | the pinned cc-switch release files under upstream's names, each checked against its pin, and their licence | anywhere |
 | `build_transport.py` | `neutrino_transport` for one system and architecture, `--target linux-amd64` and the like, cross-compiled from `transport/` with `CGO_ENABLED=0` and the version stamped by `-ldflags "-X"`, into `dist/go/<target>/` | anywhere with the pinned Go |
 | `build_ssh_server.py` | `neutrino_ssh_server` from `agent/sshserver/`, the same way | anywhere with the pinned Go |
@@ -659,9 +664,10 @@ rule.
 The build reads every agent package of its edition and writes
 `agent_packages.json` beside the cache. The manifest names every platform the
 release publishes an agent of that edition for, the file name each is
-published under, and its sha256, which is the line the release's
-`SHA256SUMS` lists for that file. A hub fetches another platform's package
-from the release sites the first time a device of that platform needs it
+published under, and its sha256, which is the line the `SHA256SUMS` of
+that edition's site lists for that file. A hub fetches another platform's
+package from its edition's release sites the first time a device of that
+platform needs it
 ([../design/agent.md](../design/agent.md), "The agent's packages come from
 the hub"). A build with no release sites holds the entry it seeded and
 refuses the rest by name. A package dropped under `config/devices/packages`
@@ -691,8 +697,8 @@ git push origin v0.4.0
 `.github/workflows/release.yml` builds the hub and the agent for both
 architectures in containers, the client's Linux packages on native runners of
 each architecture, the Windows installers, the macOS installers for both
-architectures, the apk, the unsigned `.ipa` and the source archive, generates `SHA256SUMS` over all
-of it and the two install scripts, and opens a draft release. Each job runs one `packaging/build/` script and then
+architectures, the apk, the unsigned `.ipa` and the source archive, generates `latest.json` and `SHA256SUMS` over all
+of it, the two install scripts and the cc-switch files, and opens a draft release of the `intl` files. Each job runs one `packaging/build/` script and then
 `packaging/ci/check.py` on what it built, so a broken package fails the build
 rather than the person who downloads it: every Linux package is installed in
 a fresh container of its family and its command answers `--version`; the
@@ -711,19 +717,24 @@ id `io.github.iffix.neutrino` in its `Info.plist`; the hub's macOS and Windows j
 set a hub up from the package and from the install script
 ([../design/tests.md](../design/tests.md)). The hub jobs wait for the agent's.
 
-The same workflow builds `cn`. The `sources` job also writes the mainland
+The same workflow builds `cn`. The `sources_cn` job writes the mainland
 source tree, and each build job runs a second time for `cn`, for every
 platform: it downloads that tree, unpacks it, and runs its
 `packaging/build/` script inside it with `--edition cn`, then
-`packaging/ci/check.py`. The `cn` files, the cc-switch files
-`build_cc_switch.py` fetches at their pin, and `latest.json` join the same
-draft, and `SHA256SUMS` covers every file of it.
+`packaging/ci/check.py`. The `draft` job collects every file the build
+jobs made, with the cc-switch files `build_cc_switch.py` fetches at their
+pin. `build_checksums.py` takes from them, by name, the files of one
+edition's site and writes that site's `latest.json` and `SHA256SUMS` over
+them. The `intl` site's files make the draft and the run's artifact
+`release_dist`. The `cn` site's files, taken with `--edition cn` inside the
+unpacked mainland tree, make the run's artifact `release_dist_cn`, and no
+GitHub release holds them.
 
 Fill in the changelog, check the section headings still match what shipped,
 and publish with `.github/workflows/publish.yml`, which takes the tag and the
 notes. Its `publish` job publishes the GitHub draft, and then runs
-`packaging/ci/publish_cn.py`, which publishes the same release to CNB ("The
-mainland site on CNB").
+`packaging/ci/publish_cn.py`, which publishes the `cn` files of
+`release_dist_cn` to CNB ("The mainland site on CNB").
 
 Its `share_page` job runs once the `publish` job succeeds. It checks out the
 tag, builds `share_page/` with `packaging/build/build_share_page.py`, and
@@ -740,23 +751,30 @@ on a branch of its own, deletes that deployment when the test ends. It
 deletes the deployments of that branch alone and never the production one.
 
 Running the same workflow from the Actions tab builds the packages and attaches
-them as artifacts without creating a release, which is how a change to the
-pipeline is tried before a tag depends on it.
+them as the artifacts `release_dist` and `release_dist_cn` without creating
+a release, which is how a change to the pipeline is tried before a tag
+depends on it.
 
 Draft, not published, is deliberate: the notes are written by a person who knows
 what the release is for.
 
 ## The mainland site on CNB
 
-`https://cnb.cool/iffi-X/neutrino` is the second release site. Its `main`
+`https://cnb.cool/iffi-X/neutrino` is the `cn` release site. Its `main`
 holds the mainland source tree of the latest release, with `latest.json` at
-its root, and its release of each tag holds every file GitHub's release
-holds.
+its root, and its release of each tag holds the `cn` files, the cc-switch
+files and their licence, and the `cn` `SHA256SUMS` and `latest.json`, and no
+`intl` file.
 
 `packaging/ci/publish_cn.py` publishes a tag there, for a tag with no
-suffix; a pre-release is published on GitHub alone. The script:
+suffix; a pre-release is published on GitHub alone, and its `cn` files stay
+in the run's artifact `release_dist_cn`. The script:
 
-1. Takes the release's files from the workflow run that built the tag.
+1. Takes the files of the artifact `release_dist_cn` from the workflow run
+   that built the tag, and stops with one sentence before any change when
+   one of them is an `intl` file, `SHA256SUMS` does not list exactly the
+   others, `latest.json` names another tag, or a cc-switch file is missing
+   or not its pin.
 1. Commits the mainland source tree, without `third_party/`, and
    `latest.json` as one commit on `main`, and pushes the tag on it.
 1. Creates the tag's release, or reuses the one the tag already has.
