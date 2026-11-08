@@ -63,7 +63,7 @@ The left side of the **Module configuration** area is the module list. At first 
    ![The Add module dialog with the code-server card boxed in red](/guide/en/deploy_on_a_machine_08_catalog.webp "Select code-server")
    ![The code-server card highlighted, with the Close button boxed in red](/guide/en/deploy_on_a_machine_09_catalog_ticked.webp "Select Close")
 
-This step only adds a tab, and the software stays uninstalled until the next section. To remove a tab you no longer need, open the dialog and deselect the app. You cannot deselect an installed app; uninstall it first. A grey card without a checkbox cannot be added, because this system cannot run the app or the app is still in development.
+This step only adds a tab, and the software stays uninstalled until the next section. To remove a tab you no longer need, open the dialog and deselect the app. You cannot deselect an installed app; uninstall it first. A grey card without a checkbox cannot be added, because this system cannot run the app.
 
 ## Install
 
@@ -139,7 +139,7 @@ A stopped app stays stopped through a restart of the computer, until you select 
 
 ## Change the version
 
-The **Install** button installs the version Neutrino Hub has tested. The tab shows `Installed 4.140.0 · newest 4.144.0`: the first number is the installed version, and the second is the publisher's newest version.
+The **Install** button installs the version Neutrino Hub has tested. The tab shows `Installed 4.140.0 · newest 4.145.2`: the first number is the installed version, and the second is the publisher's newest version.
 
 1. Select **Install another version…**.
 
@@ -156,9 +156,9 @@ The **Install** button installs the version Neutrino Hub has tested. The tab sho
 
 The **Update** button beside it switches straight to the newest version. The newest version can be **untested**, and if it causes problems, you can switch back to the previous version. The button is grey when the newest version is already installed.
 
-![Already on the newest version 4.144.0, with the Update button grey](/guide/en/deploy_on_a_machine_38_updated.webp)
+![Already on the newest version 4.145.2, with the Update button grey](/guide/en/deploy_on_a_machine_38_updated.webp)
 
-To return to the tested version, select **Follow the tested version** at the top of the dialog. The panel has no switch for automatic updates. Hermes WebUI, File share and Containers on Linux have no version choice, and their dialog shows one version you cannot select. The panel warns before a downgrade of Gitea or Ayakaleaf, because an older version can fail to read data a newer one migrated.
+To return to the tested version, select **Follow the tested version** at the top of the dialog. The panel has no switch for automatic updates. Hermes WebUI, File share and Containers on Linux have no version choice, and their dialog shows one version you cannot select. Gitea, Ayakaleaf, Codeg and CloudCLI carry **Upgrade only** on their tab. In their dialog, the versions older than the installed one are grey and cannot be selected; see [App kinds](/en/deploy/app_kinds#upgrade-only).
 
 ## Uninstall
 
