@@ -58,7 +58,7 @@ Open the client, go to the **Apps** page, and find the **VS Code (lab)** row, wi
 
 The browser opens the editor, with no password to enter. On the first open, this system downloads the VS Code server, and the page shows a single line of English text. The editor opens automatically when the download finishes.
 
-![VS Code in a browser](/guide/zh/deploy_vscode_16_visitor.webp)
+![VS Code in a browser](/guide/en/deploy_vscode_16_visitor.webp)
 
 Open your project folder in the editor to start writing code. The menu in the top-left corner also opens this account's terminal. When you finish, return to the client and select **Stop**.
 

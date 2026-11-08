@@ -32,11 +32,11 @@ An image is a packaged software bundle, such as `docker.io/library/redis:7`. Aft
 1. On Linux, the tab starts listing the steps right away. On Windows and macOS, **Choose the account that runs the containers** opens first; for its steps, see [Apps that need containers](/en/deploy/on_a_machine#apps-that-need-containers).
 
    ![The tab showing installing, with every step listed](/guide/en/deploy_containers_06_installing.webp "Linux: steps listed")
-   ![The Choose the account that runs the containers dialog](/guide/zh/windows_account_dialog.webp "Windows and macOS: choose an account first")
+   ![The Choose the account that runs the containers dialog](/guide/en/windows_account_dialog.webp "Windows and macOS: choose an account first")
 
 1. On Windows, if the tab shows that a restart is needed, select **Restart now**. Every program open on this system closes, and the install continues after the restart.
 
-   ![The Containers tab showing that Windows needs a restart, with Restart now boxed in red](/guide/zh/deploy_containers_18_reboot.webp)
+   ![The Containers tab showing that Windows needs a restart, with Restart now boxed in red](/guide/en/deploy_containers_18_reboot.webp)
 
 1. When the tab shows **installed**, select **Start**. When the tab shows **running**, select **Configure**.
 
@@ -97,7 +97,7 @@ The **Containers** tab has no web page of its own and cannot be shared. The web 
 
 The other person sees the web page inside the container. If the web page has a sign-in page, they sign in on their own. Port entries cannot be shared.
 
-![whoami's web page open in a visitor's browser](/guide/zh/deploy_containers_24_visitor.webp)
+![whoami's web page open in a visitor's browser](/guide/en/deploy_containers_24_visitor.webp)
 
 ## Risks and limits
 

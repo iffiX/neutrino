@@ -103,7 +103,7 @@ On a phone, skip mounting and open the **Files** page of the app:
 - **Android:** select **Open in Files**, and a new location appears in the system's Files app.
 - **iPhone:** select the open button on the row to go to the files page in the app, where you can upload, rename and delete files.
 
-![The Files page on a phone](/guide/zh/access_android_20_files.webp)
+![The Files page on a phone](/guide/en/access_android_20_files.webp)
 
 If mounting fails, see [Troubleshooting](/en/reference/troubleshooting).
 

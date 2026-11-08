@@ -22,7 +22,7 @@ The China edition leaves out this feature. Access from outside works without the
    The hub then measures each exit automatically. Each card shows a **connect** time and a **request** time, a score and a response rate. The exit with the highest score is marked **current exit**, and traffic goes through it. To test immediately, select **Test** on a card or **Test all** at the top.
 
    ![The new card and the yellow notice, with the apply button marked](/guide/en/hub_proxy_04_card.webp "Load this card")
-   ![A card marked current exit](/guide/zh/hub_proxy_09_card_selected.webp "The exit with the highest score is marked current exit")
+   ![A card marked current exit](/guide/en/hub_proxy_09_card_selected.webp "The exit with the highest score is marked current exit")
 
 You can usually leave **Probe URL**, **Reference URL** and **Probe interval (s)** as they are.
 
@@ -55,7 +55,7 @@ You can edit the following lists, one rule per line. Type a rule in the input bo
 
 Select **Apply route** to save the lists.
 
-![A rule typed in, with Add marked](/guide/zh/hub_proxy_10_lists.webp "Type the rule, then select Add")
+![A rule typed in, with Add marked](/guide/en/hub_proxy_10_lists.webp "Type the rule, then select Add")
 ![The bottom of the Route section with Apply route marked](/guide/en/hub_proxy_07_route_apply.webp "Select Apply route after a change")
 
 ## When every exit is down
@@ -66,7 +66,7 @@ To send this traffic through this computer's own connection instead, turn on **L
 
 With traffic flowing, the hub detects that the exits are down in about 5 seconds on Linux and macOS, and about 30 seconds on Windows. Without traffic, detection takes up to one routine probe round, which is 60 seconds.
 
-![The Route section of the Proxy page with the direct fallback switch marked](/guide/zh/hub_proxy_11_fallback.webp)
+![The Route section of the Proxy page with the direct fallback switch marked](/guide/en/hub_proxy_11_fallback.webp)
 
 ## Verify the proxy
 

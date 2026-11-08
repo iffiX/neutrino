@@ -57,7 +57,7 @@ On a computer, the desktop opens in a separate window, and the client's row show
 
 On a phone, the desktop fills the whole screen. The three round buttons in the top-right corner are, in order, **Keyboard**, **Keys** and **Disconnect**. **Keys** holds the keys a phone keyboard lacks, such as Esc, Ctrl and the arrow keys. Copy and paste work in both directions between the phone and the system.
 
-![A computer desktop on a phone](/guide/zh/access_android_32_viewer.webp)
+![A computer desktop on a phone](/guide/en/access_android_32_viewer.webp)
 
 ## Share
 

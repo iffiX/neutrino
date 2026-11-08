@@ -30,11 +30,11 @@ Ayakaleaf runs in [Containers](/en/deploy/containers), with one instance per sys
 
 1. On Windows and macOS, the first installation then opens **Choose the account that runs the containers**. Choose an account and select **Install**; the details are in [Apps that need containers](/en/deploy/on_a_machine#apps-that-need-containers). Linux has no such dialog.
 
-   ![The Choose the account that runs the containers dialog](/guide/zh/windows_account_dialog.webp)
+   ![The Choose the account that runs the containers dialog](/guide/en/windows_account_dialog.webp)
 
 1. On Windows, if a restart is needed, the tab shows a notice with **Restart now** beside it. Select **Restart now**. After the computer restarts, the installation continues automatically.
 
-   ![The Ayakaleaf tab showing that Windows needs a restart, with the Restart now button marked in red](/guide/zh/deploy_ayakaleaf_10_reboot.webp)
+   ![The Ayakaleaf tab showing that Windows needs a restart, with the Restart now button marked in red](/guide/en/deploy_ayakaleaf_10_reboot.webp)
 
 1. The tab lists each step. It pulls three images, which takes a few minutes. To give up, you can select **Cancel**. When the tab shows **installed**, select **Start**.
 
@@ -57,18 +57,18 @@ Join your phone or computer to the hub first, as [Join the hub](/en/access/join)
 
 1. The browser opens the project list, and you are signed in as the administrator without a password. Select **Create a new project**, then choose **Blank project** to create an empty project.
 
-   ![The project list with Create a new project marked in red](/guide/zh/deploy_ayakaleaf_30_projects.webp "Select Create a new project")
-   ![The open menu with Blank project marked in red](/guide/zh/deploy_ayakaleaf_31_new_menu.webp "Choose Blank project")
+   ![The project list with Create a new project marked in red](/guide/en/deploy_ayakaleaf_30_projects.webp "Select Create a new project")
+   ![The open menu with Blank project marked in red](/guide/en/deploy_ayakaleaf_31_new_menu.webp "Choose Blank project")
 
 1. Enter a project name and select **Create**. The editor opens with the source on the left and the PDF on the right. To write in Chinese, select the gear in the lower-left corner, change **Compiler** from **pdfLaTeX** to **XeLaTeX**, and press Esc to close. The first start installs the Chinese packages, so begin the document with `\documentclass{ctexart}`.
 
-   ![The new project dialog with the Create button marked in red](/guide/zh/deploy_ayakaleaf_32_new_name.webp "Select Create")
-   ![The settings dialog with the Compiler field marked in red and XeLaTeX chosen](/guide/zh/deploy_ayakaleaf_33_compiler.webp "Choose XeLaTeX")
+   ![The new project dialog with the Create button marked in red](/guide/en/deploy_ayakaleaf_32_new_name.webp "Select Create")
+   ![The settings dialog with the Compiler field marked in red and XeLaTeX chosen](/guide/en/deploy_ayakaleaf_33_compiler.webp "Choose XeLaTeX")
 
 1. When you finish writing, select **Recompile** at the top of the right side. The compiled PDF appears on the right.
 
-   ![The editor with the Recompile button marked in red](/guide/zh/deploy_ayakaleaf_34_editor.webp "Select Recompile")
-   ![The source on the left and the compiled Chinese PDF on the right](/guide/zh/deploy_ayakaleaf_35_pdf.webp "Compiled PDF")
+   ![The editor with the Recompile button marked in red](/guide/en/deploy_ayakaleaf_34_editor.webp "Select Recompile")
+   ![The source on the left and the compiled Chinese PDF on the right](/guide/en/deploy_ayakaleaf_35_pdf.webp "Compiled PDF")
 
 When you finish, return to the client and select **Stop**. On a phone, the steps are the same: on the **Apps** page, select **Use**, then **Open**.
 
@@ -95,12 +95,12 @@ The visitor sees only the projects that you invite this guest address to, so you
 
 Open the project and select **Share** in the top-right corner. Paste the guest address into **Add email address** and select **Invite**. A new row appears with the address and **Editor**. You can ignore the **Invite not yet accepted.** beside it, because the invitation is accepted automatically when the visitor opens the link.
 
-![The Share Project dialog with the Invite button marked in red](/guide/zh/deploy_ayakaleaf_36_share_project.webp "Select Invite")
-![A row with the guest address added to the dialog](/guide/zh/deploy_ayakaleaf_37_invited.webp "New row")
+![The Share Project dialog with the Invite button marked in red](/guide/en/deploy_ayakaleaf_36_share_project.webp "Select Invite")
+![A row with the guest address added to the dialog](/guide/en/deploy_ayakaleaf_37_invited.webp "New row")
 
 When the visitor opens the link, the project list opens directly.
 
-![The project list open in the visitor's browser](/guide/zh/deploy_ayakaleaf_24_visitor.webp)
+![The project list open in the visitor's browser](/guide/en/deploy_ayakaleaf_24_visitor.webp)
 
 When the share is revoked or expires, the guest account is deleted, and its changes stay in the project.
 

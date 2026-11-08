@@ -52,7 +52,7 @@ Before you start, add your phone or computer to the hub, as [Join the hub](/en/a
 
 On a phone, the terminal has an extra row of keys under it, such as Esc, Tab, Ctrl and the arrow keys. This row holds every key the phone keyboard lacks.
 
-![A terminal on a phone, with the key row under it](/guide/zh/access_android_23_terminal_keys.webp)
+![A terminal on a phone, with the key row under it](/guide/en/access_android_23_terminal_keys.webp)
 
 You can also use the terminal from the command line, for example to run one command and return immediately; see [nclient commands](/en/reference/nclient).
 

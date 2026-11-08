@@ -18,25 +18,25 @@ The app comes as an `.ipa` file from outside the App Store and TestFlight. You d
 
 1. On the iPhone, open **Settings** > **Privacy & Security** > **Developer Mode** and turn on the switch. The iPhone prompts for a restart; after it restarts, confirm one more time.
 
-   ![Developer Mode switch turned on and marked in red](/guide/zh/access_ios_03_developer_mode.webp)
+   ![Developer Mode switch turned on and marked in red](/guide/en/access_ios_03_developer_mode.webp)
 
 1. The first time you open the app, the screen shows **Untrusted Developer**, because the signature uses your own Apple ID. Select **Cancel**.
 
-   ![Untrusted Developer prompt with the developer name masked](/guide/zh/access_ios_05_untrusted_phone.webp)
+   ![Untrusted Developer prompt with the developer name masked](/guide/en/access_ios_05_untrusted_phone.webp)
 
 1. Open **Settings** > **General** > **VPN & Device Management**, and select your Apple ID under **Developer App**. Select **Trust**, then select **Trust** in the dialog. The step is complete when **Neutrino** appears with **Verified**.
 
-   ![Device management in Settings, the row under Developer App marked in red](/guide/zh/access_ios_06_device_management.webp "Select your Apple ID")
-   ![Trust dialog with the Trust button marked in red](/guide/zh/access_ios_07_trust_dialog.webp "Select Trust")
-   ![The Neutrino row shows Verified](/guide/zh/access_ios_08_trusted.webp "Verified")
+   ![Device management in Settings, the row under Developer App marked in red](/guide/en/access_ios_06_device_management.webp "Select your Apple ID")
+   ![Trust dialog with the Trust button marked in red](/guide/en/access_ios_07_trust_dialog.webp "Select Trust")
+   ![The Neutrino row shows Verified](/guide/en/access_ios_08_trusted.webp "Verified")
 
 1. Open the app again. If the screen shows **Allow “Neutrino” to Use Wireless Data?**, select **WLAN & Cellular**. With WLAN alone, the phone loses the hub when it leaves the wireless network.
 
-   ![Wireless data prompt for Neutrino with WLAN & Cellular marked in red](/guide/zh/access_ios_09_wireless_data_phone.webp)
+   ![Wireless data prompt for Neutrino with WLAN & Cellular marked in red](/guide/en/access_ios_09_wireless_data_phone.webp)
 
 1. Select **Join a hub**, then scan the QR code in the panel, or paste the link into the input box and select **Join**. [Join a hub](/en/access/join) covers the panel steps.
 
-   ![Join a hub page with the link input box marked in red](/guide/zh/access_ios_10_join.webp)
+   ![Join a hub page with the link input box marked in red](/guide/en/access_ios_10_join.webp)
 
 A signature from a free Apple ID expires after 7 days, and a phone holds at most 3 such apps at a time. Sign the app again before it expires. A paid Apple ID's signature is valid for one year. To upgrade, sign the new `.ipa` and install it over the old version.
 
@@ -50,7 +50,7 @@ A virtual network takes different steps, because the app has no virtual network 
 
 The buttons match the [Android app](/en/access/android): select **Use**, then **Open**.
 
-![iPhone Apps page with the Open button of the Gitea row marked in red](/guide/zh/access_ios_20_apps.webp)
+![iPhone Apps page with the Open button of the Gitea row marked in red](/guide/en/access_ios_20_apps.webp)
 
 **Open** shows the web page in the app's built-in browser, and the back arrow in the upper-left corner closes the page. The entry stays open until you select **Stop**.
 
@@ -66,7 +66,7 @@ You view shares inside the app; the system's Files app does not list them.
 
 1. The **+** button in the lower-right corner holds **Upload from Files**, **Upload from Photos** and **New folder**.
 
-   ![Share page with the lower-right menu open, showing New folder and the two upload choices](/guide/zh/access_ios_21_share_menu.webp)
+   ![Share page with the lower-right menu open, showing New folder and the two upload choices](/guide/en/access_ios_21_share_menu.webp)
 
 Each row's menu has **Rename**, **Save to Files** and **Delete**. Files transfer one at a time, the rest show **Waiting**, and you can **Cancel** any of them. For a share declared by hand, enter the username and password the first time, then select **Connect**.
 
@@ -74,7 +74,7 @@ Each row's menu has **Rename**, **Save to Files** and **Delete**. Files transfer
 
 **Terminals** and **Desktops** work as in the [Android app](/en/access/android).
 
-![Terminal open on the iPhone, showing the lab prompt](/guide/zh/access_ios_22_terminal.webp)
+![Terminal open on the iPhone, showing the lab prompt](/guide/en/access_ios_22_terminal.webp)
 
 ## After switching to another app
 

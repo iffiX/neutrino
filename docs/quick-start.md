@@ -174,16 +174,11 @@ CloudCLI 通过中枢的 AI 网关使用模型，所以你不用在电脑上安�
 
 ## 第四步：把手机加入中枢
 
-1. 在手机浏览器里打开发布页，可以选择[国际版](https://github.com/iffiX/neutrino/releases/latest)或[国内版](https://cnb.cool/iffi-X/neutrino/-/releases)。下载名字以 `android.apk` 结尾的文件，国内版的文件以 `android-cn.apk` 结尾。然后打开下载好的文件。
+1. 用手机的相机或微信扫码，下载并安装 App。
 
-   ![手机浏览器里的发布页](/guide/zh/access_install_client_01_release_page.webp "下载 apk 文件")
-   ![下载文件夹里的安装包](/guide/zh/access_install_client_02_downloaded.webp "打开安装包")
-
-1. 第一次安装时，系统提示不允许安装来自此来源的未知应用。按 **设置**，打开 **允许来自此来源的应用** 开关，再按手机的返回键。系统显示 **要安装此应用吗？** 时，按 **安装**。
-
-   ![系统的提示，设置按钮标红](/guide/zh/access_install_client_03_blocked.webp "按 设置")
-   ![允许来自此来源的应用这个开关标红](/guide/zh/access_install_client_04_allow_source.webp "打开开关，按返回")
-   ![要安装此应用吗的弹窗，安装按钮标红](/guide/zh/access_install_client_05_install.webp "按 安装")
+   | 国内版                                       | 国际版                                           |
+   | -------------------------------------------- | ------------------------------------------------ |
+   | ![国内版下载页的二维码](/home/qr_app_cn.svg) | ![国际版下载页的二维码](/home/qr_app_global.svg) |
 
 1. 回到电脑上的面板，在左侧栏点 **客户端**，再按 **新建客户端链接**。在 **名称** 里填写“我的手机”，再按 **生成链接**。
 

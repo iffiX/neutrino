@@ -60,18 +60,18 @@ Codeg communicates with each tool through an adapter, which is a separate progra
 
 1. In the middle of the workspace, a line of red text states that this tool's adapter is not installed. Select that text, and a new browser tab opens the **Agents** page of **Settings**, with each tool listed on the left.
 
-   ![The workspace with the red adapter notice marked in red](/guide/zh/deploy_codeg_20_workspace.webp "Select the red text")
-   ![The agent list on the settings page](/guide/zh/deploy_codeg_21_agents_settings.webp "Agents page")
+   ![The workspace with the red adapter notice marked in red](/guide/en/deploy_codeg_20_workspace.webp "Select the red text")
+   ![The agent list on the settings page](/guide/en/deploy_codeg_21_agents_settings.webp "Agents page")
 
 1. Under **Version Status**, select **Install**. The adapter downloads from the official npm registry in a minute or two.
 
-   ![The agent details with the Install button marked in red](/guide/zh/deploy_codeg_22_agent_install.webp)
+   ![The agent details with the Install button marked in red](/guide/en/deploy_codeg_22_agent_install.webp)
 
 Back in the workspace, choose a tool over the input box, enter what you want it to do, and select the send button. To choose your project, select **Open Folder** on the left.
 
 When you finish, return to the client and select **Stop**. On a phone, the steps are the same: on the **Apps** page, select **Use**, then **Open**.
 
-![The Codeg workspace on a phone](/guide/zh/deploy_codeg_60_phone.webp)
+![The Codeg workspace on a phone](/guide/en/deploy_codeg_60_phone.webp)
 
 ## Share
 
@@ -92,7 +92,7 @@ Codeg can generate a link with [App share](/en/share/web_share), and the visitor
 
 The visitor opens the link and enters the workspace without signing in, using the same account and AI quota as you.
 
-![The Codeg workspace open in the visitor's browser](/guide/zh/deploy_codeg_16_visitor.webp)
+![The Codeg workspace open in the visitor's browser](/guide/en/deploy_codeg_16_visitor.webp)
 
 ## Risks and limits
 
@@ -118,13 +118,13 @@ The version row on the tab shows the current version and the publisher's latest 
 
 1. Select **Install another version…**. The dialog lists newer versions first: **tested** marks a tested version, **untested** marks a newer one, and a check mark marks the installed one. Select the version you want.
 
-   ![The version row with the Install another version button marked in red](/guide/zh/deploy_codeg_30_version_button.webp "Select Install another version")
-   ![The version list with one version marked in red](/guide/zh/deploy_codeg_31_version_dialog.webp "Select a version")
+   ![The version row with the Install another version button marked in red](/guide/en/deploy_codeg_30_version_button.webp "Select Install another version")
+   ![The version list with one version marked in red](/guide/en/deploy_codeg_31_version_dialog.webp "Select a version")
 
 1. After the dialog closes, the tab switches the version. When the tab shows **running** again, the version row shows the new version.
 
-   ![The tab showing installing, with switching to the version as the first step](/guide/zh/deploy_codeg_32_version_switching.webp "Switching")
-   ![The version row showing the new version, with the Update button marked in red](/guide/zh/deploy_codeg_33_version_older.webp "Switch complete")
+   ![The tab showing installing, with switching to the version as the first step](/guide/en/deploy_codeg_32_version_switching.webp "Switching")
+   ![The version row showing the new version, with the Update button marked in red](/guide/en/deploy_codeg_33_version_older.webp "Switch complete")
 
 To return to the tested version, select **Follow the tested version** at the top of the dialog.
 

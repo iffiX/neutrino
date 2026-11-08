@@ -54,7 +54,7 @@ In the client, open the **Apps** page and find the **SiYuan (lab)** row, where t
 
 SiYuan opens in the browser without an access password. On the first visit, it already holds a notebook and a document named **A Fresh Start**, and you can type in the body right away.
 
-![SiYuan in the browser](/guide/zh/deploy_siyuan_16_visitor.webp)
+![SiYuan in the browser](/guide/en/deploy_siyuan_16_visitor.webp)
 
 To change the interface language, use the settings of SiYuan itself. When you finish, return to the client and select **Stop**. On a phone, the steps are the same: on the **Apps** page, select **Use**, then **Open**.
 

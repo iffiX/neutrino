@@ -76,39 +76,39 @@ CloudCLI opens in the browser without a password prompt. The first visit shows t
 
 1. The first screen is **Git Configuration**. Enter your name and email in **Git Name** and **Git Email**, and CloudCLI writes them to this account's git settings. Select **Next**.
 
-   ![The Git Configuration screen with the Git Name field marked in red](/guide/zh/deploy_cloudcli_20_git_config.webp "Enter your name and email")
-   ![Both fields filled in, with the Next button marked in red](/guide/zh/deploy_cloudcli_21_git_next.webp "Select Next")
+   ![The Git Configuration screen with the Git Name field marked in red](/guide/en/deploy_cloudcli_20_git_config.webp "Enter your name and email")
+   ![Both fields filled in, with the Next button marked in red](/guide/en/deploy_cloudcli_21_git_next.webp "Select Next")
 
 1. The second screen is **Connect Your AI Agents**, which shows whether each tool is signed in. Each sign-in can wait until later. Select **Complete Setup**.
 
-   ![The Connect Your AI Agents screen with the Complete Setup button marked in red](/guide/zh/deploy_cloudcli_22_connect_agents.webp)
+   ![The Connect Your AI Agents screen with the Complete Setup button marked in red](/guide/en/deploy_cloudcli_22_connect_agents.webp)
 
 On the main page, you can change the interface language, for example to Chinese:
 
 1. Select the small arrow on the right edge of the window to open **Quick Settings**. In **Language**, choose the language, such as **简体中文**.
 
-   ![The main page with the small arrow on the right marked in red](/guide/zh/deploy_cloudcli_23_home.webp "Select the small arrow")
-   ![Quick Settings open, with the Language field marked in red](/guide/zh/deploy_cloudcli_24_language.webp "Choose a language")
+   ![The main page with the small arrow on the right marked in red](/guide/en/deploy_cloudcli_23_home.webp "Select the small arrow")
+   ![Quick Settings open, with the Language field marked in red](/guide/en/deploy_cloudcli_24_language.webp "Choose a language")
 
 1. The interface switches to that language and keeps it on later visits.
 
-   ![The main page shown in Chinese](/guide/zh/deploy_cloudcli_25_home_zh.webp)
+   ![The main page shown in Chinese](/guide/en/deploy_cloudcli_25_home_zh.webp)
 
 A project in CloudCLI is a folder on the system. Create a project before the first use:
 
 1. Select **+** in the top-left corner. In **Workspace Path**, enter the folder's full path, here `/home/lab/demo`. Select **Next**.
 
-   ![The plus button in the top-left corner marked in red](/guide/zh/deploy_cloudcli_26_new_project.webp "Select +")
-   ![The new project dialog with the Workspace Path field marked in red](/guide/zh/deploy_cloudcli_27_new_project_path.webp "Enter the path")
+   ![The plus button in the top-left corner marked in red](/guide/en/deploy_cloudcli_26_new_project.webp "Select +")
+   ![The new project dialog with the Workspace Path field marked in red](/guide/en/deploy_cloudcli_27_new_project_path.webp "Enter the path")
 
 1. Check that the path is correct, then select **Create Project**. The project appears in the list on the left. Select the project.
 
-   ![The confirmation screen with the Create Project button marked in red](/guide/zh/deploy_cloudcli_28_new_project_confirm.webp "Select Create Project")
-   ![demo added to the list on the left, marked in red](/guide/zh/deploy_cloudcli_29_project_listed.webp "Select demo")
+   ![The confirmation screen with the Create Project button marked in red](/guide/en/deploy_cloudcli_28_new_project_confirm.webp "Select Create Project")
+   ![demo added to the list on the left, marked in red](/guide/en/deploy_cloudcli_29_project_listed.webp "Select demo")
 
 1. A new session opens on the right. In the input box at the bottom, enter what you want Claude Code to do, and press Enter to send it. The tabs in the top-right corner switch to **Shell**, **Files** and **Source Control**.
 
-   ![The project open, with the input box at the bottom](/guide/zh/deploy_cloudcli_30_project_open.webp)
+   ![The project open, with the input box at the bottom](/guide/en/deploy_cloudcli_30_project_open.webp)
 
 ![A conversation in CloudCLI, with Claude answering through the AI gateway](/guide/zh/deploy_cloudcli_30_chat.webp)
 
@@ -118,7 +118,7 @@ When you finish, return to the client and select **Stop**, and the local address
 
 On a phone, the steps are the same: on the **Apps** page, select **Use**, then **Open**, and the app opens in the phone's browser.
 
-![CloudCLI on a phone](/guide/zh/access_android_14_browser.webp)
+![CloudCLI on a phone](/guide/en/access_android_14_browser.webp)
 
 ## Share
 
@@ -139,7 +139,7 @@ CloudCLI can generate a link with [App share](/en/share/web_share), and the visi
 
 The visitor opens the link and enters CloudCLI without signing in, using the same account as you.
 
-![CloudCLI open in the visitor's browser](/guide/zh/deploy_cloudcli_16_visitor.webp)
+![CloudCLI open in the visitor's browser](/guide/en/deploy_cloudcli_16_visitor.webp)
 
 ## Risks and limits
 

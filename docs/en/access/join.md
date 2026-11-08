@@ -34,18 +34,18 @@ After the dialog closes, the **Clients** section gains a row showing **Waiting t
 
 1. Open the client app **Neutrino** on the phone and select **Join a hub** on the **Hubs** page. The first time, grant camera access: select **Allow the camera**, then allow it in the system dialog.
 
-   ![Phone Hubs page with the Join a hub button](/guide/zh/access_android_01_home_empty.webp "Select Join a hub")
-   ![Join page with the Allow the camera button](/guide/zh/access_android_03_allow_camera.webp "Select Allow the camera")
-   ![System camera permission dialog](/guide/zh/access_android_04_camera_prompt.webp "Allow the camera")
+   ![Phone Hubs page with the Join a hub button](/guide/en/access_android_01_home_empty.webp "Select Join a hub")
+   ![Join page with the Allow the camera button](/guide/en/access_android_03_allow_camera.webp "Select Allow the camera")
+   ![System camera permission dialog](/guide/en/access_android_04_camera_prompt.webp "Allow the camera")
 
 1. Point the camera at the QR code in the panel. After a successful scan, the phone returns to the **Hubs** page automatically. If the camera is unavailable, paste the link into the input box under the camera view and select **Join**.
 
    ![QR code in the panel dialog](/guide/en/access_join_03_link.webp "The panel shows the QR code")
-   ![Phone join page with the camera view](/guide/zh/access_android_05_camera_on.webp "Point the phone at the QR code")
+   ![Phone join page with the camera view](/guide/en/access_android_05_camera_on.webp "Point the phone at the QR code")
 
 1. The new row first shows **Connecting…**. The phone has joined when the row shows **Connected · LAN** or another connection method.
 
-   ![Phone Hubs page, connected](/guide/zh/access_android_07_joined.webp)
+   ![Phone Hubs page, connected](/guide/en/access_android_07_joined.webp)
 
 ## Join on a computer
 

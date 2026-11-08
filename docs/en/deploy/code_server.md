@@ -53,7 +53,7 @@ Open the client, go to the **Apps** page, and find the **code-server (lab)** row
 
 The browser opens the editor, with no password to enter. The first open shows a welcome page; select **open a folder** in it and choose your project folder to start writing code. The menu in the top-left corner has **Terminal**, which opens this account's terminal.
 
-![code-server in a browser, showing the welcome page](/guide/zh/deploy_code_server_16_visitor.webp)
+![code-server in a browser, showing the welcome page](/guide/en/deploy_code_server_16_visitor.webp)
 
 When you finish, return to the client and select **Stop**, and the local address closes with it. When the sign-in expires, return to the client and select **Open** again.
 

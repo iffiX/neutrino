@@ -32,11 +32,11 @@ Every model in Hermes WebUI comes from the AI gateway. Before you start, add an 
 
 1. On Windows and macOS, the first installation then opens **Choose the account that runs the containers**. Choose an account and select **Install**; the details are in [Apps that need containers](/en/deploy/on_a_machine#apps-that-need-containers). Linux has no such dialog.
 
-   ![The Choose the account that runs the containers dialog](/guide/zh/windows_account_dialog.webp)
+   ![The Choose the account that runs the containers dialog](/guide/en/windows_account_dialog.webp)
 
 1. On Windows, if a restart is needed, the tab shows a notice with **Restart now** beside it. Select **Restart now**. After the computer restarts, the installation continues automatically.
 
-   ![The Hermes WebUI tab showing that Windows needs a restart, with the Restart now button marked in red](/guide/zh/deploy_hermes_webui_10_reboot.webp)
+   ![The Hermes WebUI tab showing that Windows needs a restart, with the Restart now button marked in red](/guide/en/deploy_hermes_webui_10_reboot.webp)
 
 1. The tab lists each step. It pulls two images, which takes a few minutes. When the tab shows **installed**, select **Start**.
 
@@ -59,7 +59,7 @@ Join your phone or computer to the hub first, as [Join the hub](/en/access/join)
 
 1. The browser opens a page that is already signed in. Enter your question in the input box at the bottom and send it. A new conversation uses the AI gateway's [default model](/en/hub/ai_gateway#default-model). To change the model, use the list beside the input box, which shows the models the AI gateway serves.
 
-   ![Hermes WebUI in the browser](/guide/zh/deploy_hermes_webui_24_visitor.webp)
+   ![Hermes WebUI in the browser](/guide/en/deploy_hermes_webui_24_visitor.webp)
 
 ![A conversation in Hermes WebUI, with deepseek-flash as the model](/guide/zh/deploy_hermes_webui_30_chat.webp)
 
@@ -100,7 +100,7 @@ Hermes WebUI has no **Configure** button, and its tab holds only the status, the
 
 The Hermes page is dark by default. To switch to light, select the gear in the lower-left corner of the page, then choose **Light** under **Theme** in **Appearance**.
 
-![The Appearance page with Light under Theme marked in red](/guide/zh/deploy_hermes_webui_25_theme.webp)
+![The Appearance page with Light under Theme marked in red](/guide/en/deploy_hermes_webui_25_theme.webp)
 
 Its version is locked, so the **Install another version…** dialog lists a single version that cannot be selected. The two images are a tested pair, and each new Neutrino Hub release updates them.
 

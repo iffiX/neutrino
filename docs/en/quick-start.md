@@ -176,16 +176,11 @@ These steps use DeepSeek. For other providers, see [AI gateway](/en/hub/ai_gatew
 
 ## Step 4: Add your phone to the hub
 
-1. In the phone's browser, open the release page of the [International edition](https://github.com/iffiX/neutrino/releases/latest) or the [China edition](https://cnb.cool/iffi-X/neutrino/-/releases). Download the file whose name ends in `android.apk`; the China edition file ends in `android-cn.apk`. Then open the downloaded file.
+1. Scan the QR code with the phone camera or WeChat, then download and install the app.
 
-   ![The release page in the phone's browser](/guide/zh/access_install_client_01_release_page.webp "Download the apk file")
-   ![The package in the Downloads folder](/guide/zh/access_install_client_02_downloaded.webp "Open the package")
-
-1. The first time, Android shows a prompt that installing unknown apps from this source is not allowed. Select **Settings**, turn on **Allow from this source**, and press the phone's Back button. When Android shows **Do you want to install this app?**, select **Install**.
-
-   ![The Android prompt, with Settings marked in red](/guide/zh/access_install_client_03_blocked.webp "Select Settings")
-   ![The Allow from this source switch marked in red](/guide/zh/access_install_client_04_allow_source.webp "Turn on the switch, then press Back")
-   ![The install dialog, with Install marked in red](/guide/zh/access_install_client_05_install.webp "Select Install")
+   | China edition                                                      | International edition                                                          |
+   | ------------------------------------------------------------------ | ------------------------------------------------------------------------------ |
+   | ![QR code of the China edition download page](/home/qr_app_cn.svg) | ![QR code of the International edition download page](/home/qr_app_global.svg) |
 
 1. Back in the panel on the computer, select **Clients** in the left sidebar, then select **New client link**. Enter `My phone` in **Name**, then select **Generate link**.
 
@@ -195,11 +190,11 @@ These steps use DeepSeek. For other providers, see [AI gateway](/en/hub/ai_gatew
 1. The dialog shows a QR code; keep the dialog open. The app you installed is named **Neutrino**. Open it on the phone and select **Join a hub** on the **Hubs** page. Select **Allow the camera**, then point the camera at the QR code in the panel.
 
    ![The link and QR code in the dialog](/guide/en/access_join_03_link.webp "The panel shows a QR code")
-   ![The phone's join page, with the camera pointed at the QR code](/guide/zh/access_android_05_camera_on.webp "Point the phone's camera at the QR code")
+   ![The phone's join page, with the camera pointed at the QR code](/guide/en/access_android_05_camera_on.webp "Point the phone's camera at the QR code")
 
 1. When your hub appears on the **Hubs** page of the phone and shows **Connected · LAN**, this stage is complete. Back in the panel, select **Done** to close the dialog.
 
-   ![The phone's Hubs page, connected](/guide/zh/access_android_07_joined.webp)
+   ![The phone's Hubs page, connected](/guide/en/access_android_07_joined.webp)
 
 ## Step 5: Open CloudCLI on your phone
 
@@ -207,18 +202,18 @@ These steps use DeepSeek. For other providers, see [AI gateway](/en/hub/ai_gatew
 
    The row then shows an **Open** button. Select it, and the phone's browser opens CloudCLI. You are already signed in, so you do not type a password.
 
-   ![The phone's Apps page with the Use button](/guide/zh/access_android_11_use.webp "Select Use")
-   ![The system prompt for notification permission](/guide/zh/access_android_12_notify_prompt.webp "Select Allow")
-   ![The phone's Apps page with the Open button](/guide/zh/access_android_13_open.webp "Select Open")
+   ![The phone's Apps page with the Use button](/guide/en/access_android_11_use.webp "Select Use")
+   ![The system prompt for notification permission](/guide/en/access_android_12_notify_prompt.webp "Select Allow")
+   ![The phone's Apps page with the Open button](/guide/en/access_android_13_open.webp "Select Open")
 
 1. The first time, CloudCLI shows its setup page in English. Fill in **Git Name** and **Git Email**, then select **Next**. On the **Connect Your AI Agents** screen, select **Complete Setup**. These pictures come from a computer browser, and the phone shows the same content in a narrower layout.
 
-   ![The Git Configuration screen, with the Git Name field marked in red](/guide/zh/deploy_cloudcli_20_git_config.webp "Fill it in, then select Next")
-   ![The Connect Your AI Agents screen, with Complete Setup marked in red](/guide/zh/deploy_cloudcli_22_connect_agents.webp "Select Complete Setup")
+   ![The Git Configuration screen, with the Git Name field marked in red](/guide/en/deploy_cloudcli_20_git_config.webp "Fill it in, then select Next")
+   ![The Connect Your AI Agents screen, with Complete Setup marked in red](/guide/en/deploy_cloudcli_22_connect_agents.webp "Select Complete Setup")
 
 1. When the CloudCLI main page opens, you are done if you can open the projects on your computer and chat with Claude Code. To change the language of CloudCLI, open **Quick Settings** on the right and choose a language in **Language**.
 
-   ![The CloudCLI main page, with the small arrow on the right marked in red](/guide/zh/deploy_cloudcli_23_home.webp "The main page in a computer browser")
-   ![CloudCLI on the phone](/guide/zh/access_android_14_browser.webp "The same page on the phone")
+   ![The CloudCLI main page, with the small arrow on the right marked in red](/guide/en/deploy_cloudcli_23_home.webp "The main page in a computer browser")
+   ![CloudCLI on the phone](/guide/en/access_android_14_browser.webp "The same page on the phone")
 
 To use the hub from outside your network, see [Choose an access method](/en/access/ways_in). To share an app with other people, see [App share](/en/share/web_share).

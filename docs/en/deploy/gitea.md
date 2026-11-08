@@ -36,12 +36,12 @@ Each system runs one instance. Gitea runs as an account of its own, so you skip 
 1. The tab shows **running**. Select **Configure**, and the settings open under it. In the **Administrator** area, fill in **username** and **password**, which you use later to sign in to Gitea. You can leave **email (optional)** empty.
 
    ![The tab showing running, with the Configure button boxed in red](/guide/en/deploy_gitea_17_started.webp "Select Configure")
-   ![The Administrator area with the username field boxed in red](/guide/zh/deploy_gitea_08_config.webp "Enter a username and password")
+   ![The Administrator area with the username field boxed in red](/guide/en/deploy_gitea_08_config.webp "Enter a username and password")
 
 1. Select **Create administrator**. **Administrator** shows **exists** beside it, with this username listed under it. The install is complete.
 
-   ![The username and password filled in, with the Create administrator button boxed in red](/guide/zh/deploy_gitea_09_admin_create.webp "Select Create administrator")
-   ![The Administrator area showing exists](/guide/zh/deploy_gitea_10_admin_created.webp "Exists")
+   ![The username and password filled in, with the Create administrator button boxed in red](/guide/en/deploy_gitea_09_admin_create.webp "Select Create administrator")
+   ![The Administrator area showing exists](/guide/en/deploy_gitea_10_admin_created.webp "Exists")
 
 ## Use
 
@@ -68,7 +68,7 @@ Before you start, add your phone or computer to the hub, as [Join the hub](/en/a
 
 After you select **Use** in the client, git can use the clone address on the page. To clone with the SSH address, add your SSH key in Gitea's web page first.
 
-![A repository home page with two files, and the README under them](/guide/zh/deploy_gitea_47_repo_files.webp)
+![A repository home page with two files, and the README under them](/guide/en/deploy_gitea_47_repo_files.webp)
 
 ## Share
 
@@ -76,17 +76,17 @@ Gitea can generate a link with [App share](/en/share/web_share).
 
 1. In the panel sidebar, select **Services**, find the **Gitea** row, and select **Share**.
 
-   ![The Services page with the Share button of the Gitea row boxed in red](/guide/zh/deploy_gitea_20_services_share.webp)
+   ![The Services page with the Share button of the Gitea row boxed in red](/guide/en/deploy_gitea_20_services_share.webp)
 
 1. In the dialog, enter a **Name** that helps you identify the share; the other person does not see it. **Expires** defaults to 7 days, and you can choose another option before you select **Generate link**. Select **Copy** right away, send the link, then select **Done**. After the dialog closes, the panel no longer shows the link.
 
-   ![The share dialog with the Name field boxed in red](/guide/zh/deploy_gitea_21_share_dialog.webp "Enter a name")
-   ![The completed share dialog with the Generate link button boxed in red](/guide/zh/deploy_gitea_22_share_generate.webp "Select Generate link")
-   ![The share dialog showing the link and a QR code, with the link row boxed in red](/guide/zh/deploy_gitea_23_share_link.webp "Select Copy")
+   ![The share dialog with the Name field boxed in red](/guide/en/deploy_gitea_21_share_dialog.webp "Enter a name")
+   ![The completed share dialog with the Generate link button boxed in red](/guide/en/deploy_gitea_22_share_generate.webp "Select Generate link")
+   ![The share dialog showing the link and a QR code, with the link row boxed in red](/guide/en/deploy_gitea_23_share_link.webp "Select Copy")
 
 The link opens Gitea's own home page, where the other person signs in on their own. They can sign in after you create an account for them in Gitea.
 
-![Gitea's home page open in a visitor's browser](/guide/zh/deploy_gitea_24_visitor.webp)
+![Gitea's home page open in a visitor's browser](/guide/en/deploy_gitea_24_visitor.webp)
 
 ## Risks and limits
 

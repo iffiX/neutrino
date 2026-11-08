@@ -7,7 +7,7 @@ In the web panel, you deploy apps to the systems that joined the hub. You then u
 The hub serves the web panel and listens on one connection port, 8443 by default. Each system that joined the hub runs an agent, which installs and runs apps. After you install the client on your phone or computer, every client connection goes through this port. The Noise protocol encrypts it, and the hub forwards it to the app when the device has permission.
 
 ![The app list on a system page](/guide/en/overview_01_machine.webp "Panel: deploy and manage apps")
-![The Apps page on a phone](/guide/zh/access_android_11_use.webp "Phone: open these apps")
+![The Apps page on a phone](/guide/en/access_android_11_use.webp "Phone: open these apps")
 
 For each step of a connection, see [How it works](/en/how_it_works). For the protections, see [Security model](/en/share/security).
 

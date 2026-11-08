@@ -132,8 +132,8 @@ Adding over SSH works for Linux only. On any other system, the install stops wit
 
    A grey **The task ended without a result** at the top right means the install stopped partway. After a failure, read the error in **Install output** and see [Troubleshooting](/en/reference/troubleshooting). A failed install adds no row to the **Agents** page, so fix the cause and select **Install agent** again in the same dialog.
 
-   ![The install output during the install](/guide/zh/hub_add_machine_13_ssh_output.webp "Installing")
-   ![The install output ending in joined, with exit 0 at the top right](/guide/zh/hub_add_machine_14_ssh_done.webp "It shows exit 0")
+   ![The install output during the install](/guide/en/hub_add_machine_13_ssh_output.webp "Installing")
+   ![The install output ending in joined, with exit 0 at the top right](/guide/en/hub_add_machine_14_ssh_done.webp "It shows exit 0")
 
 1. The other computer has joined the hub automatically. After you select **Close**, a new row appears on the **Agents** page, with **Last seen** showing **online**.
 

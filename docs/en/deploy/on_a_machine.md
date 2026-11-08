@@ -180,11 +180,11 @@ Uninstalling ends every share of the app, and you must generate new links to use
 
 Hermes WebUI and Ayakaleaf run in containers, and their cards show **Needs: Containers**.
 
-![The Hermes WebUI card showing that it needs Containers, boxed in red](/guide/zh/deploy_on_a_machine_20_requires_card.webp)
+![The Hermes WebUI card showing that it needs Containers, boxed in red](/guide/en/deploy_on_a_machine_20_requires_card.webp)
 
 If Containers is not installed yet, **Install** first opens a confirmation that shows **Installing this also installs:** and **Containers**. **Yes** installs both modules, and **No** installs neither.
 
-![The confirmation listing Containers, with the No and Yes buttons](/guide/zh/deploy_on_a_machine_21_requires_dialog.webp)
+![The confirmation listing Containers, with the No and Yes buttons](/guide/en/deploy_on_a_machine_21_requires_dialog.webp)
 
 On Linux, this is the last step. On Windows and macOS, if you have not chosen an account before, **Choose the account that runs the containers** opens next. The containers run in a virtual machine that belongs to an account. Fill in the dialog:
 
@@ -193,11 +193,11 @@ On Linux, this is the last step. On Windows and macOS, if you have not chosen an
 1. Check the default values of **CPUs**, **Memory (GiB)** and **Disk limit (GiB)**. After the virtual machine's first start, a CPU or memory change needs a restart of the virtual machine, and the disk can only grow.
 1. Select **Install**.
 
-![The Choose the account that runs the containers dialog](/guide/zh/windows_account_dialog.webp)
+![The Choose the account that runs the containers dialog](/guide/en/windows_account_dialog.webp)
 
 On Windows, installing Containers can need a restart of the computer. The Containers tab then shows **Windows needs a restart to finish turning on WSL; the install goes on after it.** with **Restart now** beside it. Save your work first, because every program open on this system closes; then select **Restart now**, and **Restart** in the dialog. The install continues automatically after the restart, and apps that wait for Containers show the same button on their tabs.
 
-![The Containers tab showing that Windows needs a restart, with Restart now boxed in red](/guide/zh/deploy_containers_18_reboot.webp)
+![The Containers tab showing that Windows needs a restart, with Restart now boxed in red](/guide/en/deploy_containers_18_reboot.webp)
 
 ## Errors and offline systems
 

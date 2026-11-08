@@ -23,7 +23,7 @@ Devices on 0.5 cannot connect to a 0.6 hub, and the hub does not upgrade them, s
 
 Open the 0.5 panel. On the **Settings** page, select **Download backup** in the **Configuration archive** section. Record the vault passphrase, which a restore requires.
 
-![The Configuration archive section of the 0.5 panel with Download backup marked](/guide/zh/hub_upgrade_01_backup_05.webp)
+![The Configuration archive section of the 0.5 panel with Download backup marked](/guide/en/hub_upgrade_01_backup_05.webp)
 
 ## Step 2: upgrade the hub
 
