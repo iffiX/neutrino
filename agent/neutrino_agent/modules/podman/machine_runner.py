@@ -1702,7 +1702,7 @@ class PodmanMachineModuleRunner(ModuleRunner):
         for line in lines:
             if on_line is not None:
                 on_line(line)
-        return command_outcome(0, output="\n".join(lines))
+        return command_outcome(0)
 
     def _control(
         self, machine: PodmanMachine, record: dict, name: str, action: str

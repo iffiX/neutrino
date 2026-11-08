@@ -11,7 +11,9 @@ each attached on a connection of its own, ``accept`` written before the
 handler's records and its result the ``close``, a kind outside the table
 closed ``kind_unknown``, a handler's refusal closing with its code and no
 ``accept``, a handler that raises closing ``agent_internal``, and a
-command stream's lines and its exit code.
+command stream's lines and its exit code: a journal of 200 lines and 61 KB
+up as 200 ``data`` records and a small close, and a line past a record
+masked whole and then cut with ``…``.
 """
 
 import json
@@ -23,6 +25,7 @@ import pytest
 from neutrino_agent.constants import PROTOCOL
 from neutrino_agent.core.session import AgentSession
 from neutrino_agent.exceptions import StreamRefused
+from neutrino_agent.modules.shared.base import ModuleRunner
 from neutrino_agent.streams import STREAM_KINDS
 from neutrino_agent.streams.channel import StreamChannel
 from neutrino_agent.transport.connection import LocalSocketConnection
@@ -340,10 +343,68 @@ def test_a_command_stream_sends_its_lines_and_closes_with_its_exit():
     session.serve_stream("s10", {"kind": "command", "module": "agent", "verb": "x"})
 
     items = control.items("s10")
-    assert items[0] == ("accept",)
-    assert ("data", b"one\n") in items
-    assert items[-1] == (
-        "close",
-        "",
-        {"exit_code": 0, "output": "done", "result": {}},
+    assert items == [
+        ("accept",),
+        ("data", b"one\n"),
+        ("data", b"done\n"),
+        ("close", "", {"exit_code": 0, "result": {}}),
+    ]
+
+
+class CodegLog(ModuleRunner):
+    """A module whose log is the lines it was handed."""
+
+    name = "codeg"
+
+    def __init__(self, lines):
+        super().__init__(platform=None)
+        self._lines = lines
+
+    def journal_text(self, lines):
+        return list(self._lines)
+
+
+def serve_journal(control, log_lines, stream_id) -> list:
+    """A ``journal`` command of 200 lines on a runner of those log lines."""
+    runner = CodegLog(log_lines)
+
+    def run(module, verb, args, on_line):
+        return runner.command(verb, args, on_line)
+
+    session_with(control, run_command=run).serve_stream(
+        stream_id,
+        {"kind": "command", "module": "codeg", "verb": "journal", "lines": 200},
     )
+    return control.items(stream_id)
+
+
+def test_a_journal_of_200_lines_and_61_kb_goes_up_as_200_records_and_its_exit():
+    lines = [
+        f"\x1b[2m2026-11-07T10:{n // 60:02d}:{n % 60:02d}Z\x1b[0m \x1b[32mINFO\x1b[0m "
+        f'codeg_server: "GET /api/sessions" ' + "x" * 240
+        for n in range(200)
+    ]
+    # As one close's JSON, these lines are past a record's 64 KiB.
+    assert sum(len(line) + 1 for line in lines) > 61_000
+    assert len(json.dumps({"output": "\n".join(lines)})) > 64 * 1024
+
+    items = serve_journal(PairControl(), lines, "s12")
+
+    assert items[0] == ("accept",)
+    assert [item[1] for item in items[1:-1]] == [
+        (line + "\n").encode("utf-8") for line in lines
+    ]
+    assert items[-1] == ("close", "", {"exit_code": 0, "result": {}})
+
+
+def test_a_journal_line_past_a_record_goes_up_masked_whole_then_cut():
+    token_line = "x" * 65500 + ": " + "abc123" * 10
+    long_line = "codeg: " + "y" * (100 * 1024)
+
+    items = serve_journal(PairControl(), [token_line, long_line], "s14")
+
+    assert items[1] == ("data", ("x" * 65500 + ": ***\n").encode("utf-8"))
+    assert len(items[2][1]) == 64 * 1024
+    assert items[2][1].startswith(b"codeg: yyy")
+    assert items[2][1].endswith("…\n".encode("utf-8"))
+    assert items[-1] == ("close", "", {"exit_code": 0, "result": {}})

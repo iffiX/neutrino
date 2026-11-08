@@ -33,9 +33,8 @@ ACCOUNTS = 32
 INTERFACES = 16
 URLS = 8
 PLATFORM = {"os": "linux", "family": "debian", "arch": "amd64"}
-# What the agent bounds a failed step's output and a command's output to.
+# What the agent bounds a failed step's output to.
 STEP_OUTPUT_CHARS = 16 * 1024
-COMMAND_OUTPUT_CHARS = 64 * 1024
 JOURNAL_LINES = 200
 LINE = "x" * 160
 
@@ -298,16 +297,12 @@ def largest_agent_report() -> dict:
 
 
 def largest_command_close() -> dict:
-    """A command's close: its whole output and a journal's lines."""
+    """A command's close: its exit status and a result, its output up as lines."""
     return {
         "type": "close",
         "stream": 7,
         "code": "",
-        "params": {
-            "exit_code": 0,
-            "output": text(COMMAND_OUTPUT_CHARS, "output"),
-            "result": {"lines": [LINE] * JOURNAL_LINES},
-        },
+        "params": {"exit_code": 0, "result": {"lines": [LINE] * JOURNAL_LINES}},
     }
 
 

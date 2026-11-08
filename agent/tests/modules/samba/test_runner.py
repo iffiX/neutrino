@@ -2760,16 +2760,18 @@ def test_the_native_log_is_the_server_s_then_the_agent_s_lines(native, tmp_path)
     )
     native._platform.log_path = str(log)
 
-    outcome = native.command("journal", {"lines": 10})
+    sent: list = []
+    newest: list = []
 
-    assert outcome["output"].splitlines() == [
+    native.command("journal", {"lines": 10}, sent.append)
+    native.command("journal", {"lines": 1}, newest.append)
+
+    assert sent == [
         "10:00 1001 A client connected.",
         "10:05 1002 A client left.",
         "11:00 samba: created share media",
     ]
-    assert native.command("journal", {"lines": 1})["output"] == (
-        "11:00 samba: created share media"
-    )
+    assert newest == ["11:00 samba: created share media"]
 
 
 @pytest.mark.parametrize("os_name", ["windows", "darwin"])
@@ -2791,8 +2793,10 @@ def test_a_server_log_that_fails_is_warned_of_and_the_agent_s_lines_stay(
     native.applier.read_server_log = fail
     native._log = write
 
-    first = native.command("journal", {"lines": 10})["output"].splitlines()
-    second = native.command("journal", {"lines": 10})["output"].splitlines()
+    first: list = []
+    second: list = []
+    native.command("journal", {"lines": 10}, first.append)
+    native.command("journal", {"lines": 10}, second.append)
 
     assert first == [
         "11:00 samba: unchanged",

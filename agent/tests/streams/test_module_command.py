@@ -2,9 +2,9 @@
 
 What these pin: the open's ``module`` and ``verb`` reach the runner with
 the rest of the open as the verb's arguments, each line the command prints
-goes up as one binary frame, the close carries the exit status, the
-output and the result, a refusal closes with its code, and a stream the
-hub closed takes no more lines.
+goes up as one ``data`` record, its output after them line by line, the
+close carries the exit status and the result and no output, a refusal
+closes with its code, and a stream the hub closed takes no more lines.
 """
 
 from neutrino_agent.streams.module_command import ModuleCommandStream
@@ -39,11 +39,28 @@ def test_the_verb_reaches_the_runner_with_the_rest_of_the_open_as_its_args():
     )
 
     assert calls == [("samba", "set_password", {"name": "ann", "password": "x"})]
-    assert channel.sent == [b"line one\n", b"line two\n"]
-    assert closed == {
-        "code": "",
-        "params": {"exit_code": 0, "output": "ran", "result": {}},
-    }
+    assert channel.sent == [b"line one\n", b"line two\n", b"ran\n"]
+    assert closed == {"code": "", "params": {"exit_code": 0, "result": {}}}
+
+
+def test_the_output_goes_up_line_by_line_and_never_in_the_close():
+    channel = FakeChannel()
+
+    closed = served(
+        channel,
+        {"module": "agent", "verb": "reinstall"},
+        recording_run([], output="step one\r\nstep two\n\nlast"),
+    )
+
+    assert channel.sent == [
+        b"line one\n",
+        b"line two\n",
+        b"step one\n",
+        b"step two\n",
+        b"\n",
+        b"last\n",
+    ]
+    assert "output" not in closed["params"]
 
 
 def test_a_reading_verb_closes_with_its_result():
@@ -73,7 +90,6 @@ def test_a_refusal_closes_with_its_code_and_params():
             "module": "samba",
             "verb": "reticulate",
             "exit_code": 1,
-            "output": "",
             "result": {},
         },
     }

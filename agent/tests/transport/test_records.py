@@ -1,4 +1,9 @@
-"""The records every stream carries, as the transport passes them on."""
+"""The records every stream carries, as the transport passes them on.
+
+What these pin besides the layout: a line of text is one ``data`` record's
+payload with its newline, and a line too long for one record keeps its start
+up to a UTF-8 character's boundary and ends with ``…``.
+"""
 
 import io
 
@@ -10,8 +15,12 @@ from neutrino_agent.transport.records import (
     encode_close,
     encode_json,
     encode_record,
+    line_payload,
     split_data,
 )
+
+RECORD = 64 * 1024
+CUT_MARK = "…".encode("utf-8")
 
 
 class Chunks:
@@ -87,3 +96,37 @@ def test_bytes_read_past_a_first_line_are_the_first_records():
     reader.take_buffer(encode_record(5))
 
     assert reader.read() == (5, b"")
+
+
+def test_a_line_is_its_utf8_bytes_and_a_newline():
+    assert line_payload("héllo") == "héllo\n".encode("utf-8")
+
+
+def test_a_line_that_fills_a_record_with_its_newline_is_not_cut():
+    line = "x" * (RECORD - 1)
+
+    assert line_payload(line) == line.encode("utf-8") + b"\n"
+
+
+def test_a_100_kb_line_keeps_its_start_and_ends_with_the_cut_mark():
+    line = "start " + "x" * (100 * 1024)
+
+    payload = line_payload(line)
+
+    assert len(payload) == RECORD
+    assert payload.startswith(b"start xxx")
+    assert payload.endswith(CUT_MARK + b"\n")
+
+
+def test_a_cut_never_splits_a_character():
+    # One byte, then three-byte characters: the cut point falls inside one.
+    line = "x" + "中" * 40000
+
+    payload = line_payload(line)
+    text = payload.decode("utf-8")
+
+    assert len(payload) <= RECORD
+    assert text.endswith("…\n")
+    assert text[0] == "x"
+    assert set(text[1:-2]) == {"中"}
+    assert len(payload) > RECORD - 8

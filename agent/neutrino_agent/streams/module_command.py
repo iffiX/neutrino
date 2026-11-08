@@ -1,10 +1,10 @@
 """One command the hub opens: a module, a verb, and the verb's arguments.
 
 The open is ``command {module, verb, ...args}``; the command runs in the
-stream's thread, each line it prints goes up as one binary frame, and the
-close carries its exit status, its output and its result. A command that
-was refused closes with its code, and ``verb_unknown`` names a verb, or a
-module, this agent does not have.
+stream's thread, each line it prints goes up as one ``data`` record, its
+output after them line by line, and the close carries its exit status and
+its result. A command that was refused closes with its code, and
+``verb_unknown`` names a verb, or a module, this agent does not have.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -42,16 +42,17 @@ class ModuleCommandStream:
         """Nothing to check: the command itself answers."""
 
     def run(self) -> dict:
-        """Run the command, its lines going up as they come.
+        """Run the command, its lines going up as they come, then its output's.
 
         Returns:
-            ``{"code", "params"}``, the params ``{"exit_code", "output",
-            "result"}`` beside what the code's wording names.
+            ``{"code", "params"}``, the params ``{"exit_code", "result"}``
+            beside what the code's wording names.
         """
         outcome = self._run(self._module, self._verb, self._args, self._send_line)
+        for line in str(outcome.get("output", "") or "").splitlines():
+            self._send_line(line)
         params = dict(outcome.get("params") or {})
         params["exit_code"] = int(outcome.get("exit_code", 1))
-        params["output"] = str(outcome.get("output", "") or "")
         result = outcome.get("result")
         params["result"] = dict(result) if isinstance(result, dict) else {}
         return {"code": str(outcome.get("code", "") or ""), "params": params}

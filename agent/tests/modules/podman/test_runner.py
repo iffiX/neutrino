@@ -1033,13 +1033,13 @@ def test_a_refused_control_is_typed(runner):
     assert outcome["code"] == "command_failed"
 
 
-def test_the_journal_streams_its_lines_and_carries_them_in_the_output(runner):
+def test_the_journal_streams_its_lines_and_carries_no_output(runner):
     lines: list = []
 
     outcome = runner.command("journal", {"name": "web"}, lines.append)
 
     assert lines == ["a", "b"]
-    assert outcome["output"] == "a\nb"
+    assert outcome["output"] == ""
     assert outcome["exit_code"] == 0
 
 
@@ -1051,9 +1051,12 @@ def test_a_journal_naming_no_container_is_the_modules_own(runner, monkeypatch):
     )
     runner.apply(CONFIG)
 
-    outcome = runner.command("journal", {})
+    sent: list = []
 
-    assert outcome == {"exit_code": 0, "code": "", "params": {}, "output": "line"}
+    outcome = runner.command("journal", {}, sent.append)
+
+    assert outcome == {"exit_code": 0, "code": "", "params": {}, "output": ""}
+    assert sent == ["line"]
     assert asked == [["podman.socket", "web.service"]]
 
 

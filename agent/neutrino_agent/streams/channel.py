@@ -27,6 +27,7 @@ from neutrino_agent.transport.records import (
     decode_item,
     encode_close,
     encode_record,
+    line_payload,
     split_data,
 )
 
@@ -154,16 +155,17 @@ class StreamChannel:
         self._send(TRANSPORT_RECORD_STDERR, data)
 
     def send_line(self, text: str) -> None:
-        """Send one line of text as ``data``.
+        """Send one line of text as one ``data`` record.
 
         Args:
-            text: The line, without its newline.
+            text: The line, without its newline; a line too long for one
+                record is cut to fit it, ``…`` at its end.
 
         Raises:
             StreamClosed: When the stream ended before it was sent.
             GatewayUnreachable: When the connection is gone.
         """
-        self.send_bytes((text + "\n").encode("utf-8"))
+        self.send_bytes(line_payload(text))
 
     def close(self, code: str = "", params: "dict | None" = None) -> None:
         """End the stream from this side, with its result.

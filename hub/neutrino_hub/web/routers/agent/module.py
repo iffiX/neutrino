@@ -1209,8 +1209,9 @@ def run_command(
         args: What the verb takes.
 
     Returns:
-        The close's ``params``: ``{"exit_code", "output"}``, with ``result``
-        beside them for a verb that reads.
+        The close's ``params``, ``{"exit_code"}`` with ``result`` beside it
+        for a verb that reads, and ``output``: the command's ``data`` lines
+        joined in order.
 
     Raises:
         HTTPException: 409 ``agent_offline`` when the device has no socket,
@@ -1219,11 +1220,13 @@ def run_command(
     """
     require_online(context)
     serial = runtime.agent_sessions.report_serial_of(context.key)
+    lines: list = []
     try:
         info = runtime.agent_sessions.run_stream_from_thread(
             context.key,
             CHANNEL_STREAM_COMMAND,
             {"module": context.module, "verb": verb, **args},
+            on_chunk=lines.append,
             timeout=DEVICE_MODULE_COMMAND_TIMEOUT_S,
         )
     except AgentOfflineError:
@@ -1233,8 +1236,9 @@ def run_command(
     except StreamRefusedError as error:
         raise _refusal(status.HTTP_502_BAD_GATEWAY, error.code, **error.params)
     params = dict(info.get("params") or {})
+    params["output"] = b"".join(lines).decode("utf-8", errors="replace")
     if info.get("code") or int(params.get("exit_code", 1) or 0) != 0:
-        output = str(params.pop("output", "") or "").strip()
+        output = params.pop("output").strip()
         params.pop("exit_code", None)
         params.pop("result", None)
         if output and "detail" not in params:

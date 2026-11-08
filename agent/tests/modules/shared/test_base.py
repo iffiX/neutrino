@@ -2,8 +2,9 @@
 
 What these pin: ``validate`` closes typed either way, and a refusal writes
 one log line naming the module, the code and its params; ``journal``
-answers the runner's own log, the units' journal by default, capped at the
-newest lines; the agent's own lines about a module are the ones that
+sends the runner's own log up line by line, the units' journal by default,
+capped at the newest lines, each line masked, and closes with its exit
+status and no output; the agent's own lines about a module are the ones that
 name it, from the file the last rotation left and then the current one,
 less the lines the module's task writes about itself;
 they follow the module's own lines and take at most half the box when
@@ -77,12 +78,14 @@ class FileLogRunner(ModuleRunner):
         return list(self._lines)
 
 
-def test_the_journal_verb_answers_the_runner_s_own_log_capped_at_the_newest():
+def test_the_journal_verb_sends_the_runner_s_own_log_capped_at_the_newest():
     runner = FileLogRunner([f"line {n}" for n in range(5)], platform=None)
+    sent: list = []
 
-    outcome = runner.command("journal", {"lines": 2})
+    outcome = runner.command("journal", {"lines": 2}, sent.append)
 
-    assert (outcome["exit_code"], outcome["output"]) == (0, "line 3\nline 4")
+    assert sent == ["line 3", "line 4"]
+    assert outcome == {"exit_code": 0, "code": "", "params": {}, "output": ""}
 
 
 def test_the_journal_verb_masks_every_token_it_would_show():
@@ -93,12 +96,26 @@ def test_the_journal_verb_masks_every_token_it_would_show():
         ],
         platform=None,
     )
+    sent: list = []
 
-    outcome = runner.command("journal", {"lines": 10})
+    runner.command("journal", {"lines": 10}, sent.append)
 
-    assert outcome["output"] == (
-        "lab: Web UI available at http://0.0.0.0:8000?tkn=***\nlab: ***"
-    )
+    assert sent == [
+        "lab: Web UI available at http://0.0.0.0:8000?tkn=***",
+        "lab: ***",
+    ]
+
+
+def test_a_journal_of_200_lines_and_61_kb_goes_up_whole_and_closes_small():
+    lines = [f"\x1b[2m{n:03d}\x1b[0m codeg::server " + "x" * 290 for n in range(200)]
+    runner = FileLogRunner(lines, platform=None)
+    sent: list = []
+
+    outcome = runner.command("journal", {"lines": 200}, sent.append)
+
+    assert sum(len(line) + 1 for line in lines) > 61_000
+    assert sent == lines
+    assert outcome["output"] == ""
 
 
 def test_the_default_log_is_the_units_journal(monkeypatch):

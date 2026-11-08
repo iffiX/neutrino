@@ -34,6 +34,11 @@ TRANSPORT_OP_OPEN = "open"
 # ``RecordBytesMax``.
 TRANSPORT_LINE_BYTES_MAX = 2 * 1024 * 1024
 TRANSPORT_RECORD_BYTES_MAX = 64 * 1024
+# The most bytes one line of a stream's text takes, its cut mark included;
+# with its newline the line fits one record.
+TRANSPORT_DATA_LINE_BYTES_MAX = TRANSPORT_RECORD_BYTES_MAX - 1
+# What ends a line cut to fit one record.
+TRANSPORT_LINE_CUT_MARK = "…"
 # How long a command waits for the transport's answer, and a question for
 # this side's: ``ControlQuestionTimeout`` bounds the transport's own wait.
 TRANSPORT_COMMAND_TIMEOUT_S = 30.0

@@ -1307,8 +1307,8 @@ def test_a_reinstall_on_a_live_agent_runs_the_command_as_a_task(install_api):
     sessions = InstallRuntime.instance.agent_sessions
     sessions.online.add(device_id)
     sessions.scripts["command"] = lambda args: (
-        [],
-        {"code": "", "params": {"exit_code": 0, "output": "reinstall launched\n"}},
+        [("data", b"reinstall launched\n")],
+        {"code": "", "params": {"exit_code": 0}},
     )
 
     started = client.post(
@@ -1365,11 +1365,18 @@ class Presence:
 
 
 class _ClosedStream:
+    """A command stream that sends its outcome's output line by line, then closes."""
+
     def __init__(self, outcome):
-        self.close_info = {"code": outcome["code"], "params": dict(outcome)}
+        params = {name: value for name, value in outcome.items() if name != "output"}
+        self.close_info = {"code": outcome["code"], "params": params}
+        output = str(outcome.get("output", "") or "")
+        self._items = [
+            ("data", line.encode("utf-8")) for line in output.splitlines(keepends=True)
+        ]
 
     async def recv(self):
-        return None
+        return self._items.pop(0) if self._items else None
 
 
 FAILURE = {"exit_code": 1, "finished_at": "2026-09-10T00:00:04Z"}
@@ -1533,11 +1540,10 @@ def test_a_device_that_drops_before_the_command_ends_with_its_exit_line(
 def test_a_refused_reinstall_is_worded_and_ends_with_the_agents_status(monkeypatch):
     """The output box printed the close as JSON under an exit 0 title."""
     presence = Presence([(Session(), None)])
-    closed = _ClosedStream(presence.outcome)
-    closed.close_info = {
-        "code": "reinstall_failed",
-        "params": {"exit_code": 3, "output": "reinstall_failed: exit status 3\n"},
-    }
+    closed = _ClosedStream(
+        {"code": "reinstall_failed", "output": "reinstall_failed: exit status 3\n"}
+    )
+    closed.close_info = {"code": "reinstall_failed", "params": {"exit_code": 3}}
 
     async def open_stream(key, kind, args):
         return closed
@@ -1869,7 +1875,7 @@ def test_a_reboot_opens_the_reboot_verb_as_a_task(box_api):
     runtime.agent_sessions.online.add(DEVICE)
     runtime.agent_sessions.scripts["command"] = lambda args: (
         [],
-        {"code": "", "params": {"exit_code": 0, "output": ""}},
+        {"code": "", "params": {"exit_code": 0}},
     )
 
     started = client.post(f"{DEVICE_PATH}/reboot", json={"device_id": DEVICE})
@@ -1885,7 +1891,7 @@ def test_setting_a_remote_desktop_password_opens_its_verb_as_a_task(box_api):
     runtime.agent_sessions.online.add(DEVICE)
     runtime.agent_sessions.scripts["command"] = lambda args: (
         [],
-        {"code": "", "params": {"exit_code": 0, "output": ""}},
+        {"code": "", "params": {"exit_code": 0}},
     )
 
     started = client.post(

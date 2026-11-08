@@ -619,8 +619,9 @@ class FakeChannelSessions:
         verdict: What a validate answers, ``{is_valid, code, params}``,
             composed into the close the way the agent composes it.
         outcome: What a command answers, ``{exit_code, code, params,
-            output, result}``, composed the same way; ``outcomes`` by
-            verb wins over it where set.
+            output, result}``, composed the same way, its ``output`` sent
+            line by line as ``data`` before the close; ``outcomes`` by verb
+            wins over it where set.
         versions: What each device's last hello named, by key.
         ended_at: When each device's last channel ended, by key.
         reported_at: When each device's last report arrived, by key.
@@ -721,7 +722,9 @@ class FakeChannelSessions:
 
         A ``validate`` verb is recorded as ``(key, module, config)`` and
         closes with the verdict; any other verb is recorded as ``(key,
-        module, verb, args)`` and closes with the outcome for the verb.
+        module, verb, args)``, hands ``on_chunk`` each line of the outcome's
+        output as one ``data`` record's bytes, and closes with the rest of
+        the outcome for the verb.
         """
         self._require(key)
         module = args["module"]
@@ -736,7 +739,6 @@ class FakeChannelSessions:
             return _close_of(
                 self.verdict,
                 exit_code=0 if self.verdict.get("is_valid") else 1,
-                output="",
                 result={},
             )
         self.commands.append((key.lower(), module, verb, rest))
@@ -744,10 +746,10 @@ class FakeChannelSessions:
         if after is not None:
             after(key.lower(), module, verb, dict(rest))
         outcome = self.outcomes.get(verb, self.outcome)
-        result = {
-            "exit_code": int(outcome.get("exit_code", 0)),
-            "output": str(outcome.get("output", "") or ""),
-        }
+        for line in str(outcome.get("output", "") or "").splitlines():
+            if on_chunk is not None:
+                on_chunk((line + "\n").encode("utf-8"))
+        result = {"exit_code": int(outcome.get("exit_code", 0))}
         if outcome.get("result"):
             result["result"] = dict(outcome["result"])
         return _close_of(outcome, **result)

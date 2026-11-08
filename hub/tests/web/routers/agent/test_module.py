@@ -135,6 +135,31 @@ def test_a_journal_read_waits_for_no_report(api):
     assert runtime.agent_sessions.waited == []
 
 
+def test_a_journal_of_200_lines_and_61_kb_reaches_the_route_whole(api):
+    client, runtime = api
+    runtime.agent_sessions.online.add(DEVICE)
+    lines = [
+        f"2026-11-07T10:{n // 60:02d}:{n % 60:02d}Z INFO codeg_server: 读取 "
+        + "x" * 280
+        for n in range(200)
+    ]
+    runtime.agent_sessions.outcome = {
+        "exit_code": 0,
+        "code": "",
+        "params": {},
+        "output": "\n".join(lines),
+    }
+
+    answer = client.get(
+        f"{MODULE_PATH}/journal",
+        params={"device_id": DEVICE, "module": "fakedesk", "lines": 200},
+    )
+
+    assert sum(len(line.encode("utf-8")) + 1 for line in lines) > 61_000
+    assert answer.status_code == 200
+    assert answer.json() == {"text": "\n".join(lines)}
+
+
 def test_a_journal_of_a_module_nobody_ships_is_refused_by_name(api):
     client, runtime = api
     runtime.agent_sessions.online.add(DEVICE)

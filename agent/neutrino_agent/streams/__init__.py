@@ -18,7 +18,7 @@ carries when it did what it was asked:
 | hub | ``shell`` | ``{cols, rows, account}``, with ``{session_id, is_resumed, owner, is_shared}`` for a kept shell, or ``{module: podman, container}`` | ``{exit_code}``; empty for a kept shell that runs on |
 | hub | ``exec`` | ``{argv, is_tty, cols, rows, account}`` | ``{exit_code}`` |
 | hub | ``file`` | ``{op: list, path}`` | ``{path, separator, entries}`` |
-| hub | ``command`` | ``{module, verb, ...args}`` | ``{exit_code, output, result}`` |
+| hub | ``command`` | ``{module, verb, ...args}``, its output up as ``data`` lines | ``{exit_code, result}`` |
 | agent | ``log`` | ``{module}``, for an install or an uninstall | ``{state}`` |
 | agent | ``package`` | ``{module, artifact, digest}``, or ``{}`` for the agent's own | ``{sha256, name}``, from the hub |
 

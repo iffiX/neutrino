@@ -1555,9 +1555,11 @@ def test_the_journal_is_the_keepers_log_then_the_agents_lines(rig, tmp_path):
     (tmp_path / "Logs" / "podman_me.log").write_text('the machine is "stopped"\n')
     (tmp_path / "agent.log").write_text("podman: made the machine of me\nother\n")
 
-    outcome = rig.runner.command("journal", {"lines": 10})
+    sent: list = []
 
-    assert outcome["output"].splitlines() == [
+    rig.runner.command("journal", {"lines": 10}, sent.append)
+
+    assert sent == [
         'the machine is "stopped"',
         "podman: made the machine of me",
     ]
@@ -1636,7 +1638,7 @@ def test_a_containers_journal_is_read_in_the_machine(rig):
 
     outcome = rig.runner.command("journal", {"name": "web"}, seen.append)
 
-    assert outcome["output"] == "line one\nline two"
+    assert outcome["output"] == ""
     assert seen == ["line one", "line two"]
     assert rig.world.scripts[-1][2] == machine_journal_script("web", 200)
 
@@ -1662,9 +1664,11 @@ def test_a_containers_line_written_in_pieces_reads_as_one_line(rig):
         )
     ]
 
-    outcome = rig.runner.command("journal", {"name": "web"})
+    seen: list = []
 
-    assert outcome["output"] == "conmon[9]: + cffi"
+    rig.runner.command("journal", {"name": "web"}, seen.append)
+
+    assert seen == ["conmon[9]: + cffi"]
 
 
 def test_a_verb_before_any_apply_knows_no_container(rig):
@@ -1808,9 +1812,11 @@ def test_stop_with_no_record_stops_and_disables_the_configured_keeper(rig):
 def test_the_journal_with_no_record_reads_the_configured_keeper_s_log(rig):
     unanswered_machine(rig)
 
-    outcome = rig.runner.command("journal", {"lines": 10})
+    sent: list = []
 
-    assert outcome["output"].splitlines() == ["vfkit exited"]
+    rig.runner.command("journal", {"lines": 10}, sent.append)
+
+    assert sent == ["vfkit exited"]
 
 
 def test_the_journal_with_no_record_and_no_account_reads_the_agent_s_lines(
@@ -1818,9 +1824,11 @@ def test_the_journal_with_no_record_and_no_account_reads_the_agent_s_lines(
 ):
     (tmp_path / "agent.log").write_text("podman: no account is named\n")
 
-    outcome = rig.runner.command("journal", {"lines": 10})
+    sent: list = []
 
-    assert outcome["output"].splitlines() == ["podman: no account is named"]
+    rig.runner.command("journal", {"lines": 10}, sent.append)
+
+    assert sent == ["podman: no account is named"]
 
 
 def test_uninstall_with_no_record_removes_the_keeper_its_plist_and_its_log(rig):

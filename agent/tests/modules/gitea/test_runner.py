@@ -459,10 +459,12 @@ def test_journal_reads_the_servers_unit(runner, monkeypatch):
 
     monkeypatch.setattr("neutrino_agent.modules.shared.base.units_journal", journal)
 
-    outcome = runner.command("journal", {"lines": 50})
+    sent: list = []
+
+    outcome = runner.command("journal", {"lines": 50}, sent.append)
 
     assert outcome["exit_code"] == 0
-    assert outcome["output"].endswith("Starting")
+    assert sent[-1].endswith("Starting")
     assert asked == [(["neutrino_gitea.service"], 50)]
 
 
@@ -584,9 +586,11 @@ def test_the_journal_on_macos_reads_the_servers_log_as_its_account(tmp_path):
     log.write_text("...s/web.go:87:serveInstalled() Listen\n")
     runner = GiteaModuleRunner(platform=platform, log=lambda m: None, applier=applier)
 
-    outcome = runner.command("journal", {"lines": 20})
+    sent: list = []
 
-    assert outcome["output"].endswith("Listen")
+    runner.command("journal", {"lines": 20}, sent.append)
+
+    assert sent[-1].endswith("Listen")
     assert [argv[:3] for _, argv in platform.as_accounts] == [
         ["/bin/sh", "-c", READ_TAIL_SHELL]
     ]
@@ -871,10 +875,11 @@ def test_the_journal_on_macos_and_windows_is_the_servers_own_log(tmp_path):
     runner = GiteaModuleRunner(
         platform=MacPlatform(), log=lambda m: None, applier=applier
     )
+    sent: list = []
 
-    outcome = runner.command("journal", {"lines": 20})
+    runner.command("journal", {"lines": 20}, sent.append)
 
-    assert outcome["output"].endswith("Listen")
+    assert sent[-1].endswith("Listen")
 
 
 def test_a_log_gitea_has_not_written_yet_reads_empty_and_logs_nothing(tmp_path):
@@ -884,10 +889,12 @@ def test_a_log_gitea_has_not_written_yet_reads_empty_and_logs_nothing(tmp_path):
         platform=MacPlatform(), log=lines.append, applier=applier
     )
 
-    outcome = runner.command("journal", {"lines": 20})
+    sent: list = []
+
+    outcome = runner.command("journal", {"lines": 20}, sent.append)
 
     assert outcome["exit_code"] == 0
-    assert outcome["output"] == ""
+    assert sent == []
     assert lines == []
 
 

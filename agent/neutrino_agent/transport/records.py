@@ -12,6 +12,8 @@ import json
 import struct
 
 from neutrino_agent.transport.constants import (
+    TRANSPORT_DATA_LINE_BYTES_MAX,
+    TRANSPORT_LINE_CUT_MARK,
     TRANSPORT_RECORD_ACCEPT,
     TRANSPORT_RECORD_BYTES_MAX,
     TRANSPORT_RECORD_CLOSE,
@@ -70,6 +72,29 @@ def encode_close(code: str = "", params: "dict | None" = None) -> bytes:
     return encode_json(
         TRANSPORT_RECORD_CLOSE, {"code": code or "", "params": dict(params or {})}
     )
+
+
+def line_payload(text: str) -> bytes:
+    """One line of text as one ``data`` record's payload, its newline last.
+
+    A line longer than ``TRANSPORT_DATA_LINE_BYTES_MAX`` keeps its start up
+    to a UTF-8 character's boundary and ends with ``TRANSPORT_LINE_CUT_MARK``.
+
+    Args:
+        text: The line, without its newline.
+
+    Returns:
+        The line's UTF-8 bytes and a newline, at most one record's payload.
+    """
+    data = text.encode("utf-8")
+    if len(data) > TRANSPORT_DATA_LINE_BYTES_MAX:
+        mark = TRANSPORT_LINE_CUT_MARK.encode("utf-8")
+        end = TRANSPORT_DATA_LINE_BYTES_MAX - len(mark)
+        # A UTF-8 continuation byte, ``10xxxxxx``, is inside a character.
+        while end > 0 and (data[end] & 0xC0) == 0x80:
+            end -= 1
+        data = data[:end] + mark
+    return data + b"\n"
 
 
 def split_data(kind: int, data: bytes) -> list:

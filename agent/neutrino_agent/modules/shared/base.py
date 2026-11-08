@@ -521,7 +521,8 @@ class ModuleRunner:
         Args:
             verb: The verb on the wire, without the module's name.
             args: What the verb takes; ``{"lines"}`` for the journal.
-            on_line: Called with each output line as it is produced.
+            on_line: Called with each output line as it is produced; the
+                journal's lines, each masked, go to it alone.
 
         Returns:
             ``{"exit_code", "code", "params", "output"}``; ``verb_unknown``
@@ -530,18 +531,20 @@ class ModuleRunner:
         if verb == AGENT_MODULE_VERB_VALIDATE:
             return self._validate_command(args)
         if verb == AGENT_MODULE_VERB_JOURNAL:
-            return self._journal_command(args)
+            return self._journal_command(args, on_line)
         return command_outcome(1, "verb_unknown", {"module": self.name, "verb": verb})
 
-    def _journal_command(self, args: dict) -> dict:
-        """The tail of the module's log, its tokens masked, as the verb answers it."""
+    def _journal_command(self, args: dict, on_line) -> dict:
+        """The tail of the module's log, each line masked and handed to ``on_line``."""
         try:
             lines = int(args.get("lines", AGENT_MODULE_JOURNAL_LINES))
         except (TypeError, ValueError):
             lines = AGENT_MODULE_JOURNAL_LINES
         lines = max(1, min(lines, AGENT_MODULE_JOURNAL_LINES))
-        text = "\n".join(self.journal_text(lines)[-lines:])
-        return command_outcome(0, output=mask_secrets(text))
+        if on_line is not None:
+            for line in self.journal_text(lines)[-lines:]:
+                on_line(mask_secrets(line))
+        return command_outcome(0)
 
     def _agent_log_lines(self, lines: int) -> list:
         """The agent's own log lines that name this module, empty in a journal.

@@ -469,7 +469,7 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
             for line in lines:
                 if on_line is not None:
                     on_line(line)
-            return command_outcome(0, output="\n".join(lines))
+            return command_outcome(0)
         action = str(args.get("action", ""))
         if action not in PODMAN_CONTAINER_ACTIONS:
             return command_outcome(
