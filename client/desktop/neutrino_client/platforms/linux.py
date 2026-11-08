@@ -77,6 +77,8 @@ CLIPBOARD_WRITE_TOOLS = (
     ("WAYLAND_DISPLAY", ("wl-copy", "--type", "text/plain")),
     ("DISPLAY", ("xclip", "-selection", "clipboard", "-i")),
 )
+# What hands a folder to the desktop's file manager.
+XDG_OPEN = "xdg-open"
 
 
 def mount_helper_arguments(
@@ -292,6 +294,17 @@ class LinuxPlatform(ClientPlatform):
             if len(fields) >= 2 and fields[1] == encoded:
                 return True
         return False
+
+    def open_folder(self, *, location: str) -> None:
+        """Show a folder in the desktop's file manager, through ``xdg-open``.
+
+        Args:
+            location: The folder.
+
+        Raises:
+            OSError: When ``xdg-open`` cannot be started.
+        """
+        self.start_on_screen([XDG_OPEN, location])
 
     def run_answering(
         self, argv: list, *, prompt: str, answer: str, timeout_s: float

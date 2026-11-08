@@ -130,6 +130,8 @@ BINDING_IDENTITY_KEYS = ("id", "token", "ticket")
 JOB_OPENING = "opening"
 # The app job that opens the browser at its first page, under JOB_OPENING.
 APP_ACTION_OPEN = "open"
+# The Files page's Open: a mounted place shown at once, with no job.
+FILE_ACTION_OPEN = "open"
 JOB_DISCONNECTING = "disconnecting"
 JOB_MOUNTING = "mounting"
 JOB_UNMOUNTING = "unmounting"
@@ -1514,7 +1516,8 @@ class ClientResident:
         The entry's job is written and announced before this returns, and
         the handler runs on a thread of its own; how it ends is the entry's
         ``last_error``. A press on an entry already at work is dropped and
-        logged; an open that needs no forward runs at once and has no job.
+        logged; an open that needs no forward runs at once and has no job,
+        and how it ends is the entry's ``last_error`` as well.
 
         Args:
             service_type: The type the page acted on.
@@ -1537,9 +1540,16 @@ class ClientResident:
         body = dict(body, hub_id=hub_id)
         key, job = self._entry_job(service_type, body)
         if not job:
-            return self._answer_now(
+            outcome = self._answer_now(
                 handler.act(entries=self.service_entries(), body=body)
             )
+            with self._lock:
+                if outcome:
+                    self._entry_errors[key] = dict(outcome)
+                else:
+                    self._entry_errors.pop(key, None)
+            self.notify()
+            return outcome
         with self._lock:
             is_dropped = key in self._entry_jobs or self._is_mounting(key)
             if not is_dropped:
@@ -1854,6 +1864,8 @@ class ClientResident:
                     hub_id = str(record.get("hub_id", ""))
                     entry_id = str(record.get("entry_id", ""))
         key = service_key(hub_id, entry_id)
+        if service_type == "file" and action == FILE_ACTION_OPEN:
+            return key, ""
         if service_type == "file":
             return key, JOB_UNMOUNTING if action == "unmount" else JOB_MOUNTING
         if service_type == "ai":

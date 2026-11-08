@@ -431,6 +431,22 @@ class DarwinPlatform(ClientPlatform):
         except (OSError, subprocess.SubprocessError):
             super().open_url(url)
 
+    def open_folder(self, *, location: str) -> None:
+        """Show a folder in the Finder, through ``open``.
+
+        Args:
+            location: The folder.
+
+        Raises:
+            OSError: When ``open`` cannot run, fails, or takes too long.
+        """
+        try:
+            result = run_quietly([OPEN_TOOL, location], timeout_s=OPEN_TIMEOUT_S)
+        except subprocess.SubprocessError as error:
+            raise OSError(f"open did not finish: {error}") from error
+        if result.returncode != 0:
+            raise OSError(f"open failed: {(result.stderr or '').strip()}")
+
     def read_clipboard(self) -> str:
         """The text on the clipboard, from ``pbpaste``.
 

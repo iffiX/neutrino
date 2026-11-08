@@ -642,6 +642,25 @@ def test_a_link_falls_back_to_the_browser_module_without_open(monkeypatch):
     assert opened == ["https://hub.lan/"]
 
 
+def test_a_folder_opens_in_the_finder_through_open(monkeypatch):
+    recorder = CommandRecorder()
+    monkeypatch.setattr(darwin_module.subprocess, "run", recorder)
+
+    DarwinPlatform().open_folder(location="/Users/lab/remote/lab-media")
+
+    assert recorder.commands == [["open", "/Users/lab/remote/lab-media"]]
+
+
+def test_a_folder_open_refuses_is_an_os_error(monkeypatch):
+    recorder = CommandRecorder(
+        [completed(["open"], returncode=1, stderr="The file does not exist.")]
+    )
+    monkeypatch.setattr(darwin_module.subprocess, "run", recorder)
+
+    with pytest.raises(OSError):
+        DarwinPlatform().open_folder(location="/Users/lab/remote/gone")
+
+
 def test_a_program_that_asks_gets_its_answer_on_a_terminal_of_its_own():
     import sys
 

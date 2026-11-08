@@ -717,6 +717,8 @@ class FakeClientPlatform(ClientPlatform):
         self.volume_location = ""
         self.has_tooling = True
         self.opened_urls = []
+        self.opened_folders = []
+        self.open_folder_error = None
         self.started = []
         self.start_error = None
         self.socket_path = ""
@@ -784,6 +786,11 @@ class FakeClientPlatform(ClientPlatform):
 
     def open_url(self, url: str) -> None:
         self.opened_urls.append(url)
+
+    def open_folder(self, *, location: str) -> None:
+        if self.open_folder_error is not None:
+            raise self.open_folder_error
+        self.opened_folders.append(location)
 
     def start_on_screen(self, argv: list):
         if self.start_error is not None:

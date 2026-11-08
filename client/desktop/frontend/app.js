@@ -2522,7 +2522,7 @@ function base64Bytes(encoded) {
   return bytes;
 }
 
-// --- the Files page: Configure, then Mount / Unmount ---
+// --- the Files page: Mount or Unmount, Configure, and Open once mounted ---
 
 // A form staged for an entry no hub carries any more is gone.
 function dropStaleFileStages(state) {
@@ -2598,11 +2598,26 @@ function drawFileEntry(card, state, hub, entry) {
       if (row) setReasonLine(row, mountReason(hub, entry, record, mount));
     }));
   }
+  const actions = [mount, config];
+  if (record && record.is_attached) actions.push(openFolderButton(hub, entry, record));
   row = entryRow(hub, entry,
     '//' + (payload.host || '') + '/' + (payload.share || ''),
-    '', [config, mount], mountReason(hub, entry, record, mount), extras,
+    '', actions, mountReason(hub, entry, record, mount), extras,
     fileTitle(entry));
   card.appendChild(row);
+}
+
+// Open: a mounted record's place in the system's file manager, at once and
+// with no job.
+function openFolderButton(hub, entry, record) {
+  const open = document.createElement('button');
+  open.type = 'button';
+  open.className = 'ghost';
+  open.textContent = t('ui.app.open');
+  open.disabled = !isEntryFree(hub, entry);
+  open.onclick = () => serviceAction('file',
+    { action: 'open', hub_id: entry.hub_id, record_id: record.record_id });
+  return open;
 }
 
 // A share's row title: the share's name, and `<share> (<account>)` for a
@@ -2660,11 +2675,11 @@ function cancelFileForm(key) {
   }
 }
 
-// The one button beside Configure: Mount, its job while it mounts, Unmount
-// once mounted, its job while it unmounts. A machine's share mounts at the
-// first press at its default place; a stage wins: what it holds is sent as a
-// fresh mount, and it is kept until the share is mounted. After a refused
-// login on a declared share the press opens the form instead.
+// The record's button, before Configure: Mount, its job while it mounts,
+// Unmount once mounted, its job while it unmounts. A machine's share mounts
+// at the first press at its default place; a stage wins: what it holds is
+// sent as a fresh mount, and it is kept until the share is mounted. After a
+// refused login on a declared share the press opens the form instead.
 function mountButton(state, hub, entry, record, staged) {
   if (entry.job) {
     return jobButton('', entry.job, entry.job === 'unmounting' ? 'danger' : '');

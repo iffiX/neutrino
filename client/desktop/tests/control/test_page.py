@@ -3176,6 +3176,185 @@ def test_the_port_dialog_sends_the_changed_fields_and_says_a_taken_port():
     assert "const PORT_LAST = 65535;" in PAGE_JS
 
 
+# --- the Files page's buttons ---
+
+
+def run_file_row(entry: dict, records: list, hub=None, staged=None) -> dict:
+    """The page's own drawFileEntry and the buttons it draws, run in node
+    with the English catalog, returning the row's controls and, for each,
+    what its press sends."""
+    import json
+    import shutil
+    import subprocess
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("no node to run the page's script")
+    functions = "\n".join(
+        body_of(name)
+        for name in (
+            "fill",
+            "isUnhealthy",
+            "isRefreshing",
+            "serviceKey",
+            "entryWork",
+            "isEntryFree",
+            "entryReason",
+            "isMountFormFilled",
+            "isLoginRefused",
+            "mountReason",
+            "mountButton",
+            "openFolderButton",
+            "drawFileEntry",
+            "isMac",
+        )
+    )
+    constants = "\n".join(
+        f"const {name} = " + PAGE_JS.split(f"const {name} = ")[1].split(";\n")[0] + ";"
+        for name in ("MOUNT_BUSY_STATES", "LOGIN_CODES", "LOOPBACK_SERVER")
+    )
+    script = "\n".join(
+        [
+            "const CATALOG = " + json.dumps(EN_WORDS) + ";",
+            "const t = (key, params) => fill(CATALOG[key] || key, params);",
+            "const lastState = {platform: {os: 'linux'}};",
+            "const element = () => ({children: [], disabled: false, textContent: '',",
+            "  className: '', appendChild(child) { this.children.push(child); }});",
+            "const document = {createElement: element,",
+            "  createTextNode: (text) => text};",
+            "const sent = [];",
+            "const serviceAction = (type, body) => { sent.push([type, body]); };",
+            "const redraw = () => {};",
+            "const sendFileMount = () => {};",
+            "const sendFileLogin = () => {};",
+            "const openFileForm = () => {};",
+            "const cancelFileForm = () => {};",
+            "const drawFileForm = () => element();",
+            "const drawMountRecord = (record) => ({textContent: record.path});",
+            "const noteLine = (text) => ({textContent: text});",
+            "const setReasonLine = () => {};",
+            "const fileTitle = (entry) => entry.title;",
+            "function jobButton(label, job, className) {",
+            "  const button = element();",
+            "  button.textContent = job ? t('ui.job.' + job) : label;",
+            "  button.disabled = !!job;",
+            "  button.className = className || '';",
+            "  return button;",
+            "}",
+            "function entryRow(hub, entry, mono, standing, actions, reason, extras) {",
+            "  return {actions: actions, reason: reason};",
+            "}",
+            "const fileStaged = " + json.dumps(staged or {}) + ";",
+            constants,
+            functions,
+            "const card = {classList: {add() {}}, appendChild(row) { this.row = row; }};",
+            "drawFileEntry(card, {mounts: "
+            + json.dumps(records)
+            + "}, "
+            + json.dumps(hub or HUB_ROW)
+            + ", "
+            + json.dumps(entry)
+            + ");",
+            "const actions = card.row.actions.map((action) => {",
+            "  sent.length = 0;",
+            "  if (action.onclick && !action.disabled) action.onclick();",
+            "  return [action.textContent, action.disabled, action.className,",
+            "    sent.length ? sent[0] : null];",
+            "});",
+            "console.log(JSON.stringify({actions: actions, reason: card.row.reason}));",
+        ]
+    )
+    result = subprocess.run(
+        [node, "-e", script], capture_output=True, text=True, timeout=30
+    )
+    assert result.returncode == 0, result.stderr
+    return json.loads(result.stdout)
+
+
+MEDIA = {
+    "hub_id": "h1",
+    "id": "share_media",
+    "title": "media",
+    "type": "file",
+    "payload": {"host": "lab-gpu", "share": "media"},
+    "is_healthy": True,
+    "is_declared": False,
+    "mount_default": "/home/lab/remote/lab-gpu-media",
+    "job": "",
+    "last_error": None,
+}
+MEDIA_MOUNTED = {
+    "record_id": "r1",
+    "hub_id": "h1",
+    "entry_id": "share_media",
+    "path": "/home/lab/remote/lab-gpu-media",
+    "is_attached": True,
+    "state": "mounted",
+    "code": "",
+    "params": {},
+}
+OPEN_MEDIA = ["file", {"action": "open", "hub_id": "h1", "record_id": "r1"}]
+
+
+def test_an_unmounted_share_offers_mount_then_configure_and_no_open():
+    row = run_file_row(MEDIA, [])
+
+    assert [action[:3] for action in row["actions"]] == [
+        ["Mount", False, ""],
+        ["Configure", False, "ghost"],
+    ]
+
+    detached = dict(MEDIA_MOUNTED, is_attached=False, state="detached")
+    row = run_file_row(MEDIA, [detached])
+    assert [action[0] for action in row["actions"]] == ["Mount", "Configure"]
+
+
+def test_a_mounted_share_offers_unmount_configure_then_open():
+    row = run_file_row(MEDIA, [MEDIA_MOUNTED])
+
+    assert [action[:3] for action in row["actions"]] == [
+        ["Unmount", False, "danger"],
+        ["Configure", False, "ghost"],
+        ["Open", False, "ghost"],
+    ]
+    assert row["actions"][2][3] == OPEN_MEDIA
+    assert row["reason"] == ""
+
+
+def test_open_waits_for_the_mount_and_is_held_while_the_row_works():
+    mounting = dict(MEDIA_MOUNTED, is_attached=False, state="mounting")
+    row = run_file_row(MEDIA, [mounting])
+    assert [action[:2] for action in row["actions"]] == [
+        ["Mounting…", True],
+        ["Configure", False],
+    ]
+
+    row = run_file_row(dict(MEDIA, job="unmounting"), [MEDIA_MOUNTED])
+    assert [action[:3] for action in row["actions"]] == [
+        ["Unmounting…", True, "danger"],
+        ["Configure", True, "ghost"],
+        ["Open", True, "ghost"],
+    ]
+
+    refreshing = dict(HUB_ROW, jobs={"is_refreshing": True})
+    row = run_file_row(MEDIA, [MEDIA_MOUNTED], hub=refreshing)
+    assert [action[1] for action in row["actions"]] == [True, True, True]
+
+
+def test_a_saved_place_on_a_mounted_share_turns_its_button_to_mount_and_keeps_open():
+    staged = {"h1/share_media": {"is_open": False, "path": "/home/lab/elsewhere"}}
+
+    row = run_file_row(MEDIA, [MEDIA_MOUNTED], staged=staged)
+
+    assert [action[0] for action in row["actions"]] == ["Mount", "Configure", "Open"]
+
+
+def test_open_reuses_the_apps_open_word():
+    assert "t('ui.app.open')" in body_of("openFolderButton")
+    assert EN_WORDS["ui.app.open"] == "Open"
+    assert CATALOGS["zh-CN"]["ui.app.open"] == "打开"
+
+
 # --- the terminals' account picker ---
 
 
@@ -3292,6 +3471,12 @@ UI_TEXT_060 = (
     ("ui.app.use", "Use", "使用"),
     ("ui.app.configure", "Configure", "配置"),
     ("ui.app.stop", "Stop", "停止"),
+    ("ui.app.open", "Open", "打开"),
+    (
+        "code.folder_open_failed",
+        "The file manager could not open {path}.",
+        "文件管理器打不开 {path}。",
+    ),
     ("ui.app.port_dialog_title", "Local ports of {app}", "{app} 的本机端口"),
     (
         "ui.reason.terminal_no_account",

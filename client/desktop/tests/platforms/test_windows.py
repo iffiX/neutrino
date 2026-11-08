@@ -962,3 +962,25 @@ def test_a_starting_client_deletes_its_task(platform, monkeypatch):
     assert recorder.commands == [
         ["schtasks", "/delete", "/tn", "NeutrinoClientRelaunch_alice", "/f"]
     ]
+
+
+# --- a drive in File Explorer ---
+
+
+def test_a_drive_letter_opens_at_its_root_in_file_explorer(monkeypatch):
+    opened = []
+    monkeypatch.setattr(windows_module.os, "startfile", opened.append, raising=False)
+
+    WindowsPlatform(win32=FakeWin32()).open_folder(location="Z:")
+
+    assert opened == ["Z:\\"]
+
+
+def test_a_drive_the_shell_cannot_open_is_an_os_error(monkeypatch):
+    def refuse(path):
+        raise OSError(2, "The system cannot find the path specified", path)
+
+    monkeypatch.setattr(windows_module.os, "startfile", refuse, raising=False)
+
+    with pytest.raises(OSError):
+        WindowsPlatform(win32=FakeWin32()).open_folder(location="Z:")

@@ -11,6 +11,7 @@ system's own shape: on Linux and macOS a directory under the home,
 folder share's entry; on Windows a drive letter, the
 first free one by default. The privileged part of a mount is the
 platform's: on Linux it goes through the root helper under ``pkexec``.
+The page's Open shows a mounted record's place in the system's file manager.
 
 A record in the store is the hub and entry a share came from, its host, its
 share, the user it last mounted as and its place. On Windows a record of a
@@ -275,7 +276,8 @@ class FileServiceHandler(ServiceTypeHandler):
         self._wakeup = threading.Event()
 
     def act(self, *, entries: list, body: dict):
-        """Mount a share, unmount one, or save a declared share's login.
+        """Mount a share, unmount one, save a declared share's login, or show
+        a record's place in the file manager.
 
         Args:
             entries: The merged service list.
@@ -285,7 +287,8 @@ class FileServiceHandler(ServiceTypeHandler):
                 "mount", "record_id"}`` to mount a record again; ``{"action":
                 "unmount", "record_id"}``, the record kept; or ``{"action":
                 "set", "record_id", "username", "password"}`` to save a
-                declared share's new login and mount it at once.
+                declared share's new login and mount it at once; or
+                ``{"action": "open", "record_id"}`` to show its place.
 
         Returns:
             Empty on success, ``{"code", "params"}`` on a refusal.
@@ -314,6 +317,8 @@ class FileServiceHandler(ServiceTypeHandler):
                 username=str(body.get("username", "") or ""),
                 password=str(body.get("password", "") or ""),
             )
+        if action == "open":
+            return self.open_place(record_id=str(body.get("record_id", "")))
         return {"code": "unknown_request", "params": {}}
 
     def state(self) -> dict:
@@ -621,6 +626,29 @@ class FileServiceHandler(ServiceTypeHandler):
             self._attached.discard(record_id)
             self._end_forward(record)
             self._log(f"unmounted {location}; the record stays")
+        return {}
+
+    def open_place(self, *, record_id: str) -> dict:
+        """Show one record's place in the system's file manager.
+
+        Args:
+            record_id: The record whose place is shown.
+
+        Returns:
+            Empty once the file manager started; ``unknown_request`` for a
+            record not kept, ``unsupported_platform`` where no file manager
+            is known, ``folder_open_failed {path}`` when it does not start.
+        """
+        record = self._store.mounts().get(record_id)
+        if record is None:
+            return {"code": "unknown_request", "params": {}}
+        location = str(record.get("path", ""))
+        try:
+            self._platform.open_folder(location=location)
+        except PlatformUnsupportedError:
+            return {"code": "unsupported_platform", "params": {}}
+        except OSError:
+            return {"code": "folder_open_failed", "params": {"path": location}}
         return {}
 
     def rows(self) -> list:

@@ -93,6 +93,8 @@ SHCNE_DRIVEADD = win32.SHCNE_DRIVEADD
 SHCNE_DRIVEREMOVED = win32.SHCNE_DRIVEREMOVED
 # How often a job's wait looks at its live processes again.
 WINDOWS_JOB_WAIT_INTERVAL_S = 0.05
+# A drive letter with its colon alone.
+WINDOWS_DRIVE_LETTER = re.compile(r"[A-Za-z]:")
 
 
 def _program_data() -> str:
@@ -530,6 +532,20 @@ class WindowsPlatform(ClientPlatform):
         except (OSError, subprocess.SubprocessError):
             return False
         return result.returncode == 0 and "\\" in (result.stdout or "")
+
+    def open_folder(self, *, location: str) -> None:
+        """Show a folder in File Explorer, a drive letter at its root, through
+        the shell's ``ShellExecute``.
+
+        Args:
+            location: The drive letter, or a folder.
+
+        Raises:
+            OSError: When the shell cannot open it.
+        """
+        if WINDOWS_DRIVE_LETTER.fullmatch(location):
+            location += "\\"
+        os.startfile(location)
 
     def run_answering(
         self, argv: list, *, prompt: str, answer: str, timeout_s: float

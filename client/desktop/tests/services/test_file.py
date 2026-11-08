@@ -732,6 +732,46 @@ def test_unmounting_an_unknown_record_is_refused(service):
     }
 
 
+# --- Open: the mounted place in the file manager ---
+
+
+def test_open_shows_a_mounted_records_place_in_the_file_manager(service):
+    subject, platform, store, tmp_path = service
+    location = str(tmp_path / "remote" / "lab-media")
+    assert attach(subject, path=location) == {}
+    (record_id,) = store.mounts()
+
+    opened = subject.act(entries=[], body={"action": "open", "record_id": record_id})
+
+    assert opened == {}
+    assert platform.opened_folders == [location]
+    assert platform.opened_urls == []
+    assert subject.rows()[0]["state"] == "mounted"
+
+
+def test_a_file_manager_that_does_not_start_is_typed_with_the_place(service):
+    subject, platform, store, tmp_path = service
+    location = str(tmp_path / "remote" / "lab-media")
+    assert attach(subject, path=location) == {}
+    (record_id,) = store.mounts()
+    platform.open_folder_error = FileNotFoundError("xdg-open")
+
+    opened = subject.act(entries=[], body={"action": "open", "record_id": record_id})
+
+    assert opened == {"code": "folder_open_failed", "params": {"path": location}}
+    assert subject.rows()[0]["state"] == "mounted"
+
+
+def test_opening_an_unknown_record_is_refused(service):
+    subject, platform, _store, _tmp_path = service
+
+    assert subject.act(entries=[], body={"action": "open", "record_id": "gone"}) == {
+        "code": "unknown_request",
+        "params": {},
+    }
+    assert platform.opened_folders == []
+
+
 def test_release_detaches_everything_and_keeps_the_records(service):
     subject, platform, store, tmp_path = service
     assert attach(subject, path=str(tmp_path / "a")) == {}
@@ -1134,6 +1174,20 @@ def test_windows_mounts_at_the_first_free_letter_when_none_is_named(tmp_path):
     assert attach(subject, path="") == {}
 
     assert platform.attach_calls[0]["location"] == "Z:"
+
+
+def test_open_on_windows_hands_the_platform_the_drive_letter(tmp_path):
+    subject, platform = drive_service(
+        tmp_path, lambda hub_id, machine, user: "198.19.255.2"  # scan: allow
+    )
+    assert attach(subject, path="Z:") == {}
+    (record_id,) = subject._store.mounts()
+
+    assert (
+        subject.act(entries=[], body={"action": "open", "record_id": record_id}) == {}
+    )
+
+    assert platform.opened_folders == ["Z:"]
 
 
 def test_a_declared_share_names_its_host_as_the_machine(tmp_path):

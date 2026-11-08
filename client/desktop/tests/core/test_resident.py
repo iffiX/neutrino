@@ -2722,6 +2722,66 @@ def test_a_mount_on_its_way_is_the_entrys_job(two_hubs_up):
     assert entry(resident, "h1", "share_media")["job"] == "mounting"
 
 
+class OpeningFiles(ServiceTypeHandler):
+    """A file handler with one mounted record, whose Open ends as the test says.
+
+    Attributes:
+        acted: Every body it was handed.
+        answer: What the action ends with.
+    """
+
+    service_type = "file"
+
+    def __init__(self):
+        self.acted = []
+        self.answer = {}
+
+    def act(self, *, entries, body):
+        self.acted.append(dict(body))
+        return dict(self.answer)
+
+    def state(self):
+        return {
+            "mounts": [
+                {
+                    "record_id": "r1",
+                    "hub_id": "h1",
+                    "entry_id": "share_media",
+                    "state": "mounted",
+                    "is_attached": True,
+                }
+            ]
+        }
+
+    def entry_fields(self, entry):
+        return {}
+
+    def release_hub(self, hub_id: str):
+        return 0
+
+
+def test_an_open_runs_at_once_and_its_failure_is_the_entrys_error(two_hubs_up):
+    resident, _transport = two_hubs_up
+    handler = OpeningFiles()
+    handler.answer = {"code": "folder_open_failed", "params": {"path": "/m"}}
+    resident._services["file"] = handler
+    held = []
+    resident._start_thread = held.append
+    body = {"action": "open", "hub_id": "h1", "record_id": "r1"}
+
+    assert resident.service_action("file", body) == handler.answer
+
+    assert held == []
+    assert handler.acted == [body]
+    row = entry(resident, "h1", "share_media")
+    assert row["job"] == ""
+    assert row["last_error"] == handler.answer
+
+    handler.answer = {}
+    assert resident.service_action("file", body) == {}
+    assert entry(resident, "h1", "share_media")["last_error"] is None
+
+
 def test_a_file_entry_carries_its_default_place_and_whose_login_mounts_it(
     two_hubs_up, tmp_path
 ):

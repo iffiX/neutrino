@@ -593,3 +593,34 @@ def test_a_machine_with_no_pkexec_refuses_the_mount_by_name(monkeypatch, tmp_pat
 
     assert caught.value.code == "pkexec_missing"
     assert recorder.commands == []
+
+
+# --- a folder in the desktop's file manager ---
+
+
+class FakeOpener:
+    """Stands in for ``subprocess.Popen``, remembering each program started."""
+
+    started = []
+
+    def __init__(self, argv, **kwargs):
+        FakeOpener.started.append(list(argv))
+
+
+def test_a_folder_opens_in_the_desktops_file_manager_through_xdg_open(monkeypatch):
+    FakeOpener.started = []
+    monkeypatch.setattr(linux_module.subprocess, "Popen", FakeOpener)
+
+    LinuxPlatform().open_folder(location="/home/lab/remote/lab-media")
+
+    assert FakeOpener.started == [["xdg-open", "/home/lab/remote/lab-media"]]
+
+
+def test_a_folder_with_no_xdg_open_is_an_os_error(monkeypatch):
+    def missing(argv, **kwargs):
+        raise FileNotFoundError(argv[0])
+
+    monkeypatch.setattr(linux_module.subprocess, "Popen", missing)
+
+    with pytest.raises(OSError):
+        LinuxPlatform().open_folder(location="/home/lab/remote/lab-media")

@@ -30,6 +30,7 @@
   "code.enroll_refused": "The hub refused this link; it may have expired, so generate a fresh one",
   "code.files_adapter_in_use": "The files adapter is in use by another account on this machine",
   "code.files_adapter_unavailable": "The files adapter could not start: {detail}",
+  "code.folder_open_failed": "The file manager could not open {path}.",
   "code.fs_refused": "This account may not use that folder",
   "code.gui_webkitgtk_missing": "The window needs WebKitGTK; install it: sudo apt install {packages}",
   "code.gui_webview2_missing": "The window needs {runtime}; install it and try again",

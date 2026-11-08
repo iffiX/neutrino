@@ -246,6 +246,7 @@ CLIENT_CODE_WORDS = {
             "the files adapter could not start: {detail}; check the "
             "NeutrinoClientFiles service"
         ),
+        "folder_open_failed": "the file manager could not open {path}",
         "mountpoint_invalid": "give a folder under your home, like ~/remote/share",
         "mountpoint_not_drive_letter": "give an unused drive letter, like N:",
         "service_unknown": "the hub no longer publishes that service",
@@ -395,6 +396,7 @@ CLIENT_CODE_WORDS = {
         "files_adapter_unavailable": (
             "文件适配器无法启动：{detail}；检查 NeutrinoClientFiles 服务"
         ),
+        "folder_open_failed": "文件管理器打不开 {path}",
         "mountpoint_invalid": (
             "非法挂载路径：请填家目录下的文件夹，例如 ~/remote/share"
         ),

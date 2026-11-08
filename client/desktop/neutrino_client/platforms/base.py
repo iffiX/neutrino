@@ -3,7 +3,8 @@
 The contract names intents, not mechanisms: where this person's configuration
 and log live; which language this machine is set up in; where the control socket is
 and who its peer is; judge a proposed mount location; attach, detach and
-query a share at a location; open a link; start a windowed program; run
+query a share at a location; open a link; show a folder in the file
+manager; start a windowed program; run
 the carried overlay CLIs and say where the EasyTier daemon answers and keeps
 its state; say where the files daemon answers and give its adapter an
 address, on Windows; put this process's terminal in raw mode, and open the system's
@@ -515,6 +516,19 @@ class ClientPlatform:
             url: The link.
         """
         webbrowser.open(url)
+
+    def open_folder(self, *, location: str) -> None:
+        """Show a folder in this person's file manager.
+
+        Args:
+            location: The folder, or a drive letter where the system mounts
+                at one.
+
+        Raises:
+            PlatformUnsupportedError: Where no file manager is known.
+            OSError: When the file manager cannot be started.
+        """
+        raise PlatformUnsupportedError("no file manager is opened here")
 
     def read_clipboard(self) -> str:
         """The text on this person's clipboard.
