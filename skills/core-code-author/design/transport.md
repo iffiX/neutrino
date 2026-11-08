@@ -374,7 +374,7 @@ questions to the hub's Python ("The local channel").
 | --- | --- | --- |
 | 1 | `open` | JSON `{kind, ...args}` |
 | 2 | `accept` | empty, but JSON `{id}`, the share's id, answering a guest's first message ("The guest path") |
-| 3 | `data` | bytes: a terminal's both ways, a process's stdin up and its stdout down, a file listing, a log's lines, a package's bytes, the control stream's frames |
+| 3 | `data` | bytes: a terminal's both ways, a process's stdin up and its stdout down, a file listing's entries, one JSON entry per line, a log's lines, a package's bytes, the control stream's frames |
 | 4 | `stderr` | the bytes a process wrote to stderr, on an `exec` stream opened without `is_tty` |
 | 5 | `eof` | empty: no more input follows from this side, on an `exec` stream alone |
 | 6 | `resize` | JSON `{cols, rows}`, on a `shell` stream and on an `exec` stream opened with `is_tty` |
@@ -382,12 +382,12 @@ questions to the hub's Python ("The local channel").
 | 8 | `close` | JSON `{code, params}` |
 
 A record of a type the stream does not take is dropped. A stream's text
-output, an install log or a command's output, is its `data` records, one
-line each; the control stream's frames are the one stream whose lines can
-span records. A line longer than one record holds is cut: its start is kept
-up to a UTF-8 character's boundary, and `…` ends it, so the cut line is at
-most the agent's `TRANSPORT_DATA_LINE_BYTES_MAX`, 65535 bytes with the `…`,
-and with its newline fits one record.
+output, an install log, a command's output or a file listing's entries, is
+its `data` records, one line each; the control stream's frames are the one
+stream whose lines can span records. A line longer than one record holds is
+cut: its start is kept up to a UTF-8 character's boundary, and `…` ends it,
+so the cut line is at most the agent's `TRANSPORT_DATA_LINE_BYTES_MAX`,
+65535 bytes with the `…`, and with its newline fits one record.
 
 | Rule | Reason |
 | --- | --- |
