@@ -51,9 +51,12 @@ PACKAGING_RELEASE_SITES = {
         },
     ),
 }
-# The file of every release that names it, and the variable a build in a
-# container reads as "1" when it stamps the release sites.
+# The two files each site's release writes over its others: the one that
+# names the release and the one that lists every file's sha256; and the
+# variable a build in a container reads as "1" when it stamps the release
+# sites.
 PACKAGING_LATEST_FILE = "latest.json"
+PACKAGING_CHECKSUMS_FILE = "SHA256SUMS"
 PACKAGING_RELEASE_SITES_ENV = "NEUTRINO_HAS_RELEASE_SITES"
 
 # The name each family gives the same machine.

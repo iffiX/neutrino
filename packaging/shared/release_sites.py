@@ -1,4 +1,5 @@
-"""Whether a build stamps its edition's release sites into what it builds.
+"""The release sites of each edition: whether a build stamps them into what
+it builds, and which files each site's release holds.
 
 A release build is asked with ``--release-sites``; it names that in
 ``NEUTRINO_HAS_RELEASE_SITES``, which a build in a container is handed and
@@ -11,8 +12,13 @@ Not pure: reads and sets the process's environment.
 
 import os
 
-from shared import edition_build
-from shared.constants import PACKAGING_RELEASE_SITES, PACKAGING_RELEASE_SITES_ENV
+from shared import cc_switch_assets, edition_build
+from shared.constants import (
+    PACKAGING_CHECKSUMS_FILE,
+    PACKAGING_LATEST_FILE,
+    PACKAGING_RELEASE_SITES,
+    PACKAGING_RELEASE_SITES_ENV,
+)
 
 
 def add_release_sites_argument(parser) -> None:
@@ -52,3 +58,23 @@ def stamped_sites() -> tuple:
     if os.environ.get(PACKAGING_RELEASE_SITES_ENV, "").strip() == "1":
         return PACKAGING_RELEASE_SITES[edition_build.build_edition()]
     return ()
+
+
+def is_site_file(name: str, edition: str) -> bool:
+    """Whether an edition's release site holds a release file.
+
+    Args:
+        name: The file name.
+        edition: ``intl`` or ``cn``.
+
+    Returns:
+        True for a file of the edition, the pinned cc-switch files and their
+        licence, ``latest.json`` and ``SHA256SUMS``.
+    """
+    shared = {
+        PACKAGING_LATEST_FILE,
+        PACKAGING_CHECKSUMS_FILE,
+        cc_switch_assets.license_name(),
+        *cc_switch_assets.release_files(),
+    }
+    return name in shared or edition_build.is_edition_file(name, edition)

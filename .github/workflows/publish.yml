@@ -1,10 +1,11 @@
 name: publish
 
-# Turns the draft the release workflow opened for a tag into the published
-# release, with the notes a person wrote, then publishes the same release to
-# CNB, the second release site. The share_page job then deploys the share page,
-# built from the tag, to Cloudflare Pages. A tag with a suffix is a
-# pre-release, published on GitHub alone with no share page deployed.
+# Turns the draft of the intl files the release workflow opened for a tag into
+# the published release, with the notes a person wrote, then publishes the cn
+# files to CNB, the cn release site, with the same notes. The share_page job
+# then deploys the share page, built from the tag, to Cloudflare Pages. A tag
+# with a suffix is a pre-release, published on GitHub alone with no share page
+# deployed.
 on:
   workflow_dispatch:
     inputs:
@@ -41,8 +42,8 @@ jobs:
           gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --notes-file "$RUNNER_TEMP/notes.md"
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,url --jq '"draft="+(.isDraft|tostring)+" "+.url'
 
-      # The files come from the release workflow's run for the tag, the
-      # artifact release_dist.
+      # The cn files come from the release workflow's run for the tag, the
+      # artifact release_dist_cn.
       - name: Publish the release to CNB
         env:
           GH_TOKEN: ${{ github.token }}

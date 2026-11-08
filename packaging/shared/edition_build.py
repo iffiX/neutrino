@@ -6,7 +6,9 @@ Every script under ``packaging/build`` takes ``--edition intl`` or
 with :func:`shared.edition_tree.check_tree`, then names the edition in
 ``NEUTRINO_EDITION``, which a build in a container is handed and which the
 step writing each package's ``_version.py`` reads. A ``cn`` file's name
-holds ``-cn`` before its extension, so one release holds both editions.
+holds ``-cn`` before its extension, or before ``-source`` for the mainland
+source tree, and the name alone tells the files of the two release sites
+apart.
 
 Not pure: reads the tree and sets the process's environment.
 """
@@ -128,8 +130,10 @@ def is_edition_file(name: str, edition: str) -> bool:
         edition: ``intl`` or ``cn``.
 
     Returns:
-        True for a name holding ``-cn`` before its extension when the
-        edition is ``cn``, and for a name holding none when it is ``intl``.
+        True for a name holding ``-cn`` before its extension or before
+        ``-source.``, as the mainland source tree's does, when the edition
+        is ``cn``, and for a name holding neither when it is ``intl``.
     """
-    is_cn = f"{PACKAGING_EDITION_SUFFIXES['cn']}." in name
+    suffix = PACKAGING_EDITION_SUFFIXES["cn"]
+    is_cn = f"{suffix}." in name or f"{suffix}-source." in name
     return is_cn == (edition == "cn")

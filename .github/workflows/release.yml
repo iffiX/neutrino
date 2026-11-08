@@ -1,11 +1,13 @@
 name: release
 
-# A tag builds every platform in both editions and opens one draft holding
-# both, with the install scripts, the cc-switch files, latest.json and one
-# SHA256SUMS; the notes are written by a person. workflow_dispatch builds the
-# same files and attaches them as the artifact release_dist without touching
-# releases, which is how the pipeline is tried out; its editions input cuts a
-# trial to one edition.
+# A tag builds every platform in both editions and opens a draft of the intl
+# files, with their install scripts, the cc-switch files, and their own
+# latest.json and SHA256SUMS; the notes are written by a person. The cn files,
+# the same cc-switch files and their own latest.json and SHA256SUMS go to the
+# artifact release_dist_cn, for publish.yml to publish to CNB. A
+# workflow_dispatch builds the same files and attaches them as the artifacts
+# release_dist and release_dist_cn without touching releases, which is how the
+# pipeline is tried out; its editions input cuts a trial to one edition.
 #
 # Each job sets up its host, then runs one script under packaging/build and
 # checks what it built with packaging/ci/check.py; both run the same way on a
@@ -25,8 +27,8 @@ on:
 permissions:
   contents: write
 
-# A tag's hub packages hold the release sites, from which a hub fetches the
-# agent packages it does not carry; a dispatch build's hold none.
+# A tag's hub packages hold their edition's release sites, from which a hub
+# fetches the agent packages it does not carry; a dispatch build's hold none.
 env:
   RELEASE_SITES: ${{ startsWith(github.ref, 'refs/tags/') && '--release-sites' || '' }}
 
@@ -757,7 +759,7 @@ jobs:
 
   # One source archive: this tree at the commit, with the source of what the
   # packages carry under copyleft beside it, at the tags the binaries were
-  # built from; and install.sh and install.ps1, stamped with the release
+  # built from; and install.sh and install.ps1, stamped with the intl release
   # sites.
   sources:
     name: source archive and install scripts
@@ -774,10 +776,13 @@ jobs:
           path: dist/*
           if-no-files-found: error
 
-  # One draft holding both editions: every file the build jobs made, the
-  # four install scripts, the cc-switch files at their pin, latest.json and
-  # SHA256SUMS over all of it. A dispatch run that built one edition holds
-  # that edition alone.
+  # Each edition's site apart: every file the build jobs made and the
+  # cc-switch files at their pin are collected, and build_checksums.py takes
+  # the files of each edition's site from them and writes that site's
+  # latest.json and SHA256SUMS. The intl site's files make the draft and the
+  # artifact release_dist; the cn site's, taken inside the mainland tree, the
+  # artifact release_dist_cn. A dispatch run that built one edition holds that
+  # edition alone.
   draft:
     name: checksums and draft release
     if: ${{ !cancelled() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') }}
@@ -818,7 +823,7 @@ jobs:
 
       - name: Collect the files of both editions
         run: |
-          mkdir dist
+          mkdir collected
           for artifact in artifacts/*/; do
             case "$(basename "$artifact")" in
               # A check's evidence is no release file, and the Go programs
@@ -826,26 +831,51 @@ jobs:
               check_* | go_*) continue ;;
             esac
             for file in "$artifact"*; do
-              if [ -e "dist/$(basename "$file")" ]; then
+              if [ -e "collected/$(basename "$file")" ]; then
                 echo "two artifacts hold $(basename "$file")" >&2
                 exit 1
               fi
-              cp "$file" dist/
+              cp "$file" collected/
             done
           done
 
-      # The pinned cc-switch files and their licence, which the hubs fetch
-      # from the release sites.
-      - run: python3 packaging/build/build_cc_switch.py --output-dir dist
+      # The pinned cc-switch files and their licence, which the hubs of both
+      # editions fetch from their release sites.
+      - run: python3 packaging/build/build_cc_switch.py --output-dir collected
 
-      # latest.json and SHA256SUMS over every file at once, so they are
-      # written here rather than by the jobs that each produced one file.
-      - run: python3 packaging/build/build_checksums.py --output-dir dist
+      # Each site's latest.json and SHA256SUMS over its files alone, so they
+      # are written here rather than by the jobs that each produced one file.
+      - if: inputs.editions != 'cn'
+        run: >
+          python3 packaging/build/build_checksums.py
+          --release-files collected
+          --output-dir dist
 
-      - uses: actions/upload-artifact@v7
+      - name: Unpack the mainland source tree
+        if: inputs.editions != 'intl'
+        run: mkdir cn && tar -xf collected/*-cn-source.tar.xz -C cn --strip-components=1
+
+      - if: inputs.editions != 'intl'
+        run: >
+          python3 packaging/build/build_checksums.py
+          --edition cn
+          --release-files "$GITHUB_WORKSPACE/collected"
+          --output-dir "$GITHUB_WORKSPACE/dist_cn"
+        working-directory: cn
+
+      - if: inputs.editions != 'cn'
+        uses: actions/upload-artifact@v7
         with:
           name: release_dist
           path: dist/*
+          if-no-files-found: error
+
+      - if: inputs.editions != 'intl'
+        uses: actions/upload-artifact@v7
+        with:
+          name: release_dist_cn
+          path: dist_cn/*
+          if-no-files-found: error
 
       - name: Open the draft release
         if: startsWith(github.ref, 'refs/tags/')

@@ -1,4 +1,4 @@
-"""Publish a release to CNB, the second release site, from what the release
+"""Publish a release to CNB, the cn release site, from what the release
 workflow built.
 
     python3 packaging/ci/publish_cn.py --tag v0.6.0 --notes-file notes.md
@@ -10,14 +10,16 @@ repository's code and release scopes.
 
 A tag with a suffix is a pre-release, published on GitHub alone, and the
 script stops before it reads anything. Otherwise, in order: the workflow
-artifact ``release_dist`` of the latest successful run of ``release.yml``
-for the tag is downloaded; ``latest.json`` is checked to name the tag and
-the pinned cc-switch files against their pins; the mainland source tree,
-without ``third_party/``, and ``latest.json`` are committed as one commit on
-CNB's ``main`` and pushed with the tag on it, unless CNB already holds the
-tag; the tag's release is created, or the one it already has is reused; and
-each file the release does not already hold under the same name and size is
-uploaded. ``--dry-run`` does everything but the push and the requests that
+artifact ``release_dist_cn`` of the latest successful run of ``release.yml``
+for the tag is downloaded, the files of the cn site alone with their own
+``SHA256SUMS`` and ``latest.json``; every file is checked to be one the cn
+site holds, ``SHA256SUMS`` to list exactly the others, ``latest.json`` to
+name the tag and the pinned cc-switch files against their pins; the
+mainland source tree, without ``third_party/``, and ``latest.json`` are
+committed as one commit on CNB's ``main`` and pushed with the tag on it,
+unless CNB already holds the tag; the tag's release is created, or the one
+it already has is reused; and each file the release does not already hold
+under the same name and size is uploaded. ``--dry-run`` does everything but the push and the requests that
 change CNB.
 
 Not pure: runs gh and git, and changes the repository on CNB.
@@ -39,16 +41,19 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "packaging"))
-from shared import cc_switch_assets  # noqa: E402
+from shared import cc_switch_assets, release_sites  # noqa: E402
 from shared.constants import (  # noqa: E402
+    PACKAGING_CHECKSUMS_FILE,
     PACKAGING_CNB_API,
     PACKAGING_CNB_GIT_URL,
     PACKAGING_CNB_REPOSITORY,
     PACKAGING_LATEST_FILE,
 )
 
-# The workflow artifact the release workflow leaves the release's files in.
-PUBLISH_ARTIFACT = "release_dist"
+# The workflow artifact the release workflow leaves the cn site's files in,
+# and the edition the site holds.
+PUBLISH_ARTIFACT = "release_dist_cn"
+PUBLISH_EDITION = "cn"
 PUBLISH_WORKFLOW = "release.yml"
 # The name the mainland source tree's archive ends with, and the directory
 # of it that stays off the repository.
@@ -265,7 +270,7 @@ def publish(
     Args:
         tag: The tag, ``v<version>``.
         notes: The release's body.
-        files: Every file of the release.
+        files: Every file of the cn site's release.
         work: A directory to work in.
         client: CNB's API.
         git_url: The repository the tree is pushed to.
@@ -274,9 +279,11 @@ def publish(
             that changes CNB.
 
     Raises:
-        SystemExit: When ``latest.json`` names another tag, a cc-switch file
-            is missing or not its pin, git fails, or CNB refuses a call.
+        SystemExit: When ``SHA256SUMS`` does not list exactly the other
+            files, ``latest.json`` names another tag, a cc-switch file is
+            missing or not its pin, git fails, or CNB refuses a call.
     """
+    check_checksums(files)
     latest = check_latest(files, tag)
     check_cc_switch(files)
     tree, stamp = unpack_tree(files, work)
@@ -313,7 +320,7 @@ def publish(
 
 
 def release_files(dist: Path) -> list:
-    """The files a directory holds for the release, by name.
+    """The files a directory holds for the cn site's release, by name.
 
     Args:
         dist: The directory.
@@ -322,14 +329,45 @@ def release_files(dist: Path) -> list:
         Their paths, sorted.
 
     Raises:
-        SystemExit: When it is no directory or holds no mainland source tree.
+        SystemExit: When it is no directory, holds a file the cn site does
+            not hold, or holds no mainland source tree.
     """
     if not dist.is_dir():
         raise SystemExit(f"{dist} is not a directory of release files")
     files = sorted(path for path in dist.iterdir() if path.is_file())
+    for path in files:
+        if not release_sites.is_site_file(path.name, PUBLISH_EDITION):
+            raise SystemExit(
+                f"{path.name} in {dist} is no file of the {PUBLISH_EDITION} site"
+            )
     if not any(path.name.endswith(PUBLISH_SOURCE_SUFFIX) for path in files):
         raise SystemExit(f"{dist} holds no *{PUBLISH_SOURCE_SUFFIX}")
     return files
+
+
+def check_checksums(files: list) -> None:
+    """Check that the release's ``SHA256SUMS`` lists exactly its other files.
+
+    Args:
+        files: The release's files.
+
+    Raises:
+        SystemExit: When the release holds none, or it lists a file the
+            release lacks or leaves one out.
+    """
+    held = {path.name: path for path in files}
+    if PACKAGING_CHECKSUMS_FILE not in held:
+        raise SystemExit(f"the release holds no {PACKAGING_CHECKSUMS_FILE}")
+    lines = held[PACKAGING_CHECKSUMS_FILE].read_text(encoding="utf-8").splitlines()
+    listed = {line.split("  ", 1)[-1] for line in lines if line.strip()}
+    others = set(held) - {PACKAGING_CHECKSUMS_FILE}
+    if listed != others:
+        missing = sorted(others - listed)
+        extra = sorted(listed - others)
+        raise SystemExit(
+            f"{PACKAGING_CHECKSUMS_FILE} leaves out {missing or 'nothing'} "
+            f"and lists {extra or 'nothing'} the release does not hold"
+        )
 
 
 def check_latest(files: list, tag: str) -> Path:

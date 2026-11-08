@@ -176,3 +176,17 @@ def test_a_cn_file_name_holds_cn_before_its_extension(
 
 
 OTHER_OF = {"intl": "cn", "cn": "intl"}
+
+
+@pytest.mark.parametrize(
+    ("name", "edition"),
+    [
+        ("neutrino-0.6.0-source.tar.xz", "intl"),
+        ("neutrino-0.6.0-cn-source.tar.xz", "cn"),
+        ("install.sh", "intl"),
+        ("install-cn.sh", "cn"),
+    ],
+)
+def test_the_source_archive_and_the_scripts_are_their_edition_s_files(name, edition):
+    assert edition_build.is_edition_file(name, edition)
+    assert not edition_build.is_edition_file(name, OTHER_OF[edition])

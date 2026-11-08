@@ -2,7 +2,8 @@
 
 The fake keeps releases and their files in memory and records every call;
 a bare repository in a temporary directory stands in for CNB's git. What is
-asserted is every file of the release uploaded to the tag's release, the
+asserted is every file of the cn site uploaded to the tag's release, an intl
+file or a ``SHA256SUMS`` listing other files refused before anything, the
 mainland tree and ``latest.json`` committed on ``main`` with the tag on it,
 and a second run for the same tag reusing its release and uploading nothing
 twice.
@@ -152,9 +153,20 @@ class FakeCnb:
         return self._next_id
 
 
+def _write_checksums(dist):
+    """SHA256SUMS over every other file of the directory."""
+    lines = [
+        f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}"
+        for path in sorted(dist.iterdir())
+        if path.name != "SHA256SUMS"
+    ]
+    (dist / "SHA256SUMS").write_text("\n".join(lines) + "\n")
+
+
 def _dist(tmp_path, *, latest_tag=TAG):
-    """A directory of release files: a small mainland tree, two packages of
-    each edition, the scripts, cc-switch and latest.json."""
+    """The cn site's files as release_dist_cn holds them: a small mainland
+    tree, a cn package, the cn scripts, cc-switch, latest.json and
+    SHA256SUMS over them."""
     tree = tmp_path / "staged" / "neutrino-9.9.9"
     (tree / "hub").mkdir(parents=True)
     (tree / "hub" / "pyproject.toml").write_text('version = "9.9.9"\n')
@@ -165,10 +177,8 @@ def _dist(tmp_path, *, latest_tag=TAG):
     dist.mkdir()
     with tarfile.open(dist / "neutrino-9.9.9-cn-source.tar.xz", "w:xz") as archive:
         archive.add(tree, arcname="neutrino-9.9.9")
-    (dist / "neutrino-9.9.9-source.tar.xz").write_bytes(b"full tree")
-    (dist / "neutrino-hub_9.9.9_amd64.deb").write_bytes(b"hub package")
     (dist / "neutrino-hub_9.9.9_amd64-cn.deb").write_bytes(b"cn hub package")
-    (dist / "install.sh").write_bytes(b'EDITION="intl"\n')
+    (dist / "neutrino-agent_9.9.9_amd64-cn.deb").write_bytes(b"cn agent package")
     (dist / "install-cn.sh").write_bytes(b'EDITION="cn"\n')
     for name, data in CC_SWITCH_FILES.items():
         (dist / name).write_bytes(data)
@@ -176,6 +186,7 @@ def _dist(tmp_path, *, latest_tag=TAG):
     (dist / "latest.json").write_text(
         json.dumps({"tag": latest_tag, "version": latest_tag[1:]}) + "\n"
     )
+    _write_checksums(dist)
     return dist
 
 
@@ -237,7 +248,11 @@ def run(publish_cn, tmp_path, remote):
     return invoke
 
 
-def test_every_file_of_the_release_goes_up_to_the_tags_release(run, tmp_path):
+def test_the_files_come_from_the_cn_site_s_own_artifact(publish_cn):
+    assert publish_cn.PUBLISH_ARTIFACT == "release_dist_cn"
+
+
+def test_every_file_of_the_cn_site_goes_up_to_the_tags_release(run, tmp_path):
     cnb = FakeCnb()
     dist = _dist(tmp_path)
 
@@ -245,6 +260,81 @@ def test_every_file_of_the_release_goes_up_to_the_tags_release(run, tmp_path):
 
     assert cnb.held(TAG) == {path.name: path.stat().st_size for path in dist.iterdir()}
     assert ("POST", "") in cnb.changes()
+
+
+def test_the_cnb_release_holds_cn_files_cc_switch_and_its_own_two_alone(run, tmp_path):
+    cnb = FakeCnb()
+
+    run(cnb, _dist(tmp_path))
+
+    shared = set(CC_SWITCH_FILES) | {CC_SWITCH_LICENSE, "SHA256SUMS", "latest.json"}
+    assert sorted(name for name in cnb.held(TAG) if name not in shared) == [
+        "install-cn.sh",
+        "neutrino-9.9.9-cn-source.tar.xz",
+        "neutrino-agent_9.9.9_amd64-cn.deb",
+        "neutrino-hub_9.9.9_amd64-cn.deb",
+    ]
+
+
+@pytest.mark.parametrize(
+    "stray",
+    ["neutrino-hub_9.9.9_amd64.deb", "install.sh", "neutrino-9.9.9-source.tar.xz"],
+)
+def test_a_directory_holding_an_intl_file_is_refused_before_anything(
+    publish_cn, tmp_path, stray
+):
+    dist = _dist(tmp_path)
+    (dist / stray).write_bytes(b"intl")
+    _write_checksums(dist)
+
+    with pytest.raises(SystemExit) as refused:
+        publish_cn.release_files(dist)
+
+    assert str(refused.value) == f"{stray} in {dist} is no file of the cn site"
+
+
+@pytest.mark.parametrize(
+    ("change", "said"),
+    [
+        ("missing", "the release holds no SHA256SUMS"),
+        (
+            "short",
+            "SHA256SUMS leaves out ['install-cn.sh'] and lists nothing the "
+            "release does not hold",
+        ),
+        (
+            "long",
+            "SHA256SUMS leaves out nothing and lists ['neutrino-hub_9.9.9_amd64.deb']"
+            " the release does not hold",
+        ),
+    ],
+)
+def test_a_sha256sums_not_listing_exactly_the_files_is_refused_before_anything(
+    run, tmp_path, change, said
+):
+    cnb = FakeCnb()
+    dist = _dist(tmp_path)
+    sums = dist / "SHA256SUMS"
+    if change == "missing":
+        sums.unlink()
+    elif change == "short":
+        sums.write_text(
+            "".join(
+                line + "\n"
+                for line in sums.read_text().splitlines()
+                if not line.endswith("  install-cn.sh")
+            )
+        )
+    else:
+        sums.write_text(
+            sums.read_text() + "0" * 64 + "  neutrino-hub_9.9.9_amd64.deb\n"
+        )
+
+    with pytest.raises(SystemExit) as refused:
+        run(cnb, dist)
+
+    assert str(refused.value) == said
+    assert cnb.calls == []
 
 
 def test_the_tree_and_latest_json_are_one_commit_on_main_tagged(run, tmp_path, remote):
@@ -282,15 +372,15 @@ def test_a_second_run_for_the_tag_reuses_its_release_and_uploads_nothing(
 def test_a_run_again_uploads_only_what_the_release_lacks(run, tmp_path):
     cnb = FakeCnb()
     dist = _dist(tmp_path)
-    held = dist / "neutrino-hub_9.9.9_amd64.deb"
-    cnb.add_release(TAG, [(held.name, held.stat().st_size), ("install.sh", 1)])
+    held = dist / "neutrino-hub_9.9.9_amd64-cn.deb"
+    cnb.add_release(TAG, [(held.name, held.stat().st_size), ("install-cn.sh", 1)])
 
     run(cnb, dist)
 
     uploads = [call for call in cnb.changes() if call[1].endswith("asset-upload-url")]
     assert len(uploads) == len(list(dist.iterdir())) - 1
     assert ("POST", "") not in cnb.changes()
-    assert cnb.held(TAG)["install.sh"] == (dist / "install.sh").stat().st_size
+    assert cnb.held(TAG)["install-cn.sh"] == (dist / "install-cn.sh").stat().st_size
 
 
 def test_a_dry_run_changes_nothing_and_pushes_nothing(run, tmp_path, remote):
@@ -333,6 +423,7 @@ def test_a_release_without_the_pinned_cc_switch_files_is_refused_before_anything
         (dist / "cc-switch-cli-v5.10.4-darwin-x64.tar.gz").write_bytes(b"changed")
     else:
         (dist / CC_SWITCH_LICENSE).unlink()
+    _write_checksums(dist)
 
     with pytest.raises(SystemExit) as refused:
         run(cnb, dist)
