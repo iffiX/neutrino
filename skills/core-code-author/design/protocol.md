@@ -350,6 +350,7 @@ walk theirs. A new code and its wording are one change.
 | `web_share_entry_invalid`, `web_share_site_invalid`, `web_share_unknown` | `{entry_id}`, `{site}`, none | `web_share/create` naming an entry no share can offer now or a site that is not a listed one or an `https://` address, and `web_share/destroy` naming no share | added |
 | `ayakaleaf_guest_failed` | `{step, detail}` | a guest of the Ayakaleaf module in its `details.guests`, `step` being `admin_login`, `register`, `password` or `name` ([agent/modules/ayakaleaf.md](agent/modules/ayakaleaf.md), "The guest account") | added |
 | `op_unknown` | `{op}` | a `file` stream naming any `op` but `list` | added |
+| `result_too_large` | `{limit}` | a stream's close sent in place of one whose params do not fit one record, `limit` being `RecordBytesMax` in bytes, 65536 ([transport.md](transport.md), "The stream layer"); the panel shows it as the refusal of the command or the listing | added |
 | `model_not_served` | `{model}` | 400 of `ai/gateway/set`, a `default_model` the gateway does not serve ([hub_components/ai.md](hub_components/ai.md), "The default model") | added |
 | `key_passphrase_not_stored` | none | 400 of `device/add` and `device/agent/install`, an encrypted SSH key the hub stores with no passphrase: a key file named in `config/devices` or an older vault entry. The Credentials page keeps `key_passphrase_needed` | added |
 | `hub_untrusted` | none | a client's or an agent's own word for a message 2 that opens under no psk | kept, now of the handshake |
@@ -1942,7 +1943,7 @@ the transport gives whole to the Python on its side.
 | hub, to an agent | `exec` | `{argv, is_tty, cols, rows, account}`: one run of `argv`, a list of strings run as given with no shell between, as `account`, chosen as a `shell`'s is; never kept, and no `session_id`. Without `is_tty` the process's stdin, stdout and stderr are pipes: its stdout goes down as `data`, its stderr as `stderr`, the `data` up is its stdin, and `eof` closes its stdin; with `is_tty` it runs on a pseudo-terminal of `cols` by `rows` as a shell does. Closed with `params: {exit_code}` once the process ended and its output is sent; refused as a `shell` is, and `shell_program_unusable {path}` when `argv` is empty or its program cannot be found or run. Handed to the agent's Python, as a `shell` is. "The exec stream" has the rest |
 | hub, to an agent | `file` | `{op: list, path}`: one directory listing, every path absolute in the machine's own form, for the panel's path window ([ui_behavior.md](ui_behavior.md), "Modals, and where a record's detail lives"). It closes with `params: {path, separator, entries}`, `separator` being `\` on Windows and `/` elsewhere and each entry `{name, path, kind, size, modified_at, mode}`; on Windows a `list` of `/` or of no path closes with `path` `/` and one `dir` entry per drive, named `C:` with `path` `C:\`. Any other `op` is closed `op_unknown {op}`. Opened by the hub's Python and handed to the agent's |
 | agent, to the hub | `log` | `{module}`: opened for every task of the module, one line `step <i>/<n>: <name> <params>` at each step's start and the step's output line by line, up as `data`, closed with `params: {state}`, and with the failure's code and params when the task failed; the hub's task for it then ends with the `exit_code` those params name, else 1. Handed to the hub's Python |
-| hub, to an agent | `command` | `{module, verb, ...args}`: `{agent, reboot}`, `{samba, reload}`, `{podman, validate, config}`; an unknown module is closed `kind_unknown` and an unknown verb `verb_unknown`, which the panel shows as `unsupported`; closed with `params: {exit_code, output, result}`. Opened by the hub's Python and handed to the agent's |
+| hub, to an agent | `command` | `{module, verb, ...args}`: `{agent, reboot}`, `{samba, reload}`, `{podman, validate, config}`; an unknown module is closed `kind_unknown` and an unknown verb `verb_unknown`, which the panel shows as `unsupported`; the command's output up as `data`, one line per record ("The verbs on a `command` stream"), and closed with `params: {exit_code, result}`. Opened by the hub's Python and handed to the agent's |
 | agent, to the hub | `package` | `{module, artifact, digest}` for one artifact of a module, or of cc-switch, from the hub's cache, `{}` for the agent's own package; the bytes come down as `data`, and the close's `params` has the `sha256` of the bytes sent and `name`, the file's own name as its release gave it, with no directory. Handed to the hub's Python |
 | client, to the hub | `shell` | `{device_id, cols, rows, account, session_id, is_resumed, is_shared}`: a shell on a managed machine, which the hub opens as the agent's own `shell` with the same `account`, `session_id`, `is_resumed` and `is_shared`, stamped `owner: client:<id>`; relayed, records unchanged both ways; closed with `params: {exit_code}`, or refused `binding_unknown`, `client_disabled`, `permission_denied {kind: terminal}` (its permission does not allow `terminal` on the machine), `session_not_owned {session_id}` (a session another viewer owns and has not shared) or `agent_offline {device}` before any agent stream opens; closed with the agent's refusal, `terminal_account_missing`, `account_not_enabled {account}`, `account_unknown {account}` or `shell_program_unusable {path}` among them; closed `session_not_owned {session_id}` when the owner stops sharing the session |
 | client, to the hub | `exec` | `{device_id, argv, is_tty, cols, rows, account}`: one command on a managed machine, which the hub opens as the agent's own `exec` with the same `argv`, `is_tty`, `cols`, `rows` and `account`; relayed, records unchanged both ways, the client's `eof` included; no `session_id`, and no `owner` stamped; closed with the agent's `params: {exit_code}`, or refused `binding_unknown`, `client_disabled`, `permission_denied {kind: terminal}` (its permission does not allow `terminal` on the machine) or `agent_offline {device}` before any agent stream opens; closed with the agent's refusal |
@@ -1965,12 +1966,28 @@ being the module's section as the state will carry it, composed by the same
 step (Samba's with the networks its shares answer, Gitea's with its address
 and secrets, the tokens and logins of VS Code, code-server, CloudCLI, Codeg
 and SiYuan opened, SiYuan's gateway keys among them); and
-`journal`, as `command {module: <name>, verb: journal, lines}`, closes with
-the tail of the module's log in `output`: the units' journal on Linux, merged
-by time when the module runs as more than one unit, and the module's own
-sources with the agent's lines on Windows and macOS; it answers while an
+`journal`, as `command {module: <name>, verb: journal, lines}`, sends the
+tail of the module's log up, each line one `data` record in order, and
+closes with its exit status and no `output`: the units' journal on Linux,
+merged by time when the module runs as more than one unit, and the module's
+own sources with the agent's lines on Windows and macOS; it answers while an
 apply runs. On `podman`, a `journal` naming a
-container is that container's; one naming none is the module's own.
+container is that container's; one naming none is the module's own. The hub
+joins the lines in order, and the panel's box shows the text they make.
+
+A command's output goes up as `data` records, one line each, in the order
+the command printed it, and its close carries small fields alone:
+`exit_code`, `result`, and a refusal's code and params. The hub joins the
+lines into the command's text: a journal's box, a task's output, and the
+`detail` of a failed command, the text's last 500 characters. A line longer
+than one record holds is cut to fit one ([transport.md](transport.md), "The
+stream layer"), and a journal's tokens are masked before the cut
+([agent.md](agent.md), "Which modules each system runs").
+
+| Rule | Reason |
+| --- | --- |
+| Output that can grow goes up as `data` records, and a close carries small fields alone. | A close is one record of at most 64 KiB. Codeg's last 200 lines, about 61 KB, came to more than that as the close's JSON, the agent's stream ended without a close, and the panel's box stayed empty until the hub's wait ran out. |
+| The hub joins the lines, and each route answers the text a close carried. | The panel and the models it reads stay as they are. |
 
 ### Kept shells
 

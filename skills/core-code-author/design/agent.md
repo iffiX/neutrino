@@ -1237,10 +1237,13 @@ account's log before its program first runs. Any other source that cannot be
 read, a file the agent may not open among them, leaves one line in the
 agent's log naming it, so the next journal shows why. `journal` answers while an apply runs; it
 does not wait for the state to settle. Every log comes oldest line first,
-at most the number of lines the verb asked for. A journal never shows a
-secret: a token in a URL (`?tkn=`) or on a line of its own is masked before
-the text leaves the agent, and a reinstall's output goes through the same
-mask.
+one line per `data` record, at most the number of lines the verb asked for
+([protocol.md](protocol.md), "The verbs on a `command` stream"). A journal
+never shows a secret: a token in a URL (`?tkn=`) or on a line of its own is
+masked before the text leaves the agent, and a reinstall's output goes
+through the same mask. The mask runs on a whole line before a line too long
+for one record is cut ([transport.md](transport.md), "The stream layer"), so
+a cut never leaves part of a token.
 
 The hub's own machine on macOS and Windows runs the local agent
 `nhub setup` installs ([architecture.md](architecture.md), "`nhub setup`

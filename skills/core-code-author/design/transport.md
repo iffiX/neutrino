@@ -366,7 +366,7 @@ questions to the hub's Python ("The local channel").
 | Records | Every stream carries records, `<u8 type><u32 length, big-endian><payload>`, a payload being at most `RecordBytesMax`, 64 KiB; a TCP `connect` stream carries records only until its `accept` ([protocol.md](protocol.md), "The connect stream"). |
 | Open | The opener's first record is `open`, `{kind, ...args}`. The other side answers with one `accept` record and goes on, or with one `close` record that refuses. |
 | Windows | yamux's window per stream, from `StreamWindowInitialBytes` growing with the round trip to `StreamWindowMaxBytes`. A receiver takes bytes as it consumes them, so a long transfer starves nothing. |
-| Result | `close {code, params}` ends a stream from either side. `params` is the result and the only place a result goes; a `code` makes the close a refusal. The side that receives a close writes nothing more and closes the stream, so a stream one side closed gets no close back. A TCP `connect` stream after its `accept` carries no record, so it ends with no code: its end is the end of its bytes, or a yamux reset in the place of the refusing `close` any other stream takes. |
+| Result | `close {code, params}` ends a stream from either side. `params` is the result and the only place a result goes; a `code` makes the close a refusal. The side that receives a close writes nothing more and closes the stream, so a stream one side closed gets no close back. A close is one record: a side whose close does not fit one record sends `close {code: result_too_large, params: {limit}}` in its place, `limit` being `RecordBytesMax` in bytes, and the stream ends as after any close. A TCP `connect` stream after its `accept` carries no record, so it ends with no code: its end is the end of its bytes, or a yamux reset in the place of the refusing `close` any other stream takes. |
 | Order | The records of one stream arrive in the order they were written. |
 | Small writes | Every socket that carries a stream's bytes over TCP sends them at once, with `TCP_NODELAY` on: the transport's sockets by Go's default, and every Python socket that relays a stream, an agent forwarder's both sockets ([agent/module_template.md](agent/module_template.md), "The run") and the Windows client's files adapter's among them, set by hand. |
 
@@ -384,7 +384,15 @@ questions to the hub's Python ("The local channel").
 A record of a type the stream does not take is dropped. A stream's text
 output, an install log or a command's output, is its `data` records, one
 line each; the control stream's frames are the one stream whose lines can
-span records.
+span records. A line longer than one record holds is cut: its start is kept
+up to a UTF-8 character's boundary, and `…` ends it, so the cut line is at
+most the agent's `TRANSPORT_DATA_LINE_BYTES_MAX`, 65535 bytes with the `…`,
+and with its newline fits one record.
+
+| Rule | Reason |
+| --- | --- |
+| A line too long for one record is cut, its start kept and `…` at its end. | Each record stays one whole line, so a reader that shows records as they come never shows half a line. A log line's start names what the line is about. |
+| A close whose params do not fit one record is sent as `result_too_large`. | Encoding a record past `RecordBytesMax` raises an error. A close that could not be sent left its stream with no end, and the far side's wait ran out. |
 
 ## Where the port is reached
 
@@ -510,7 +518,7 @@ the hub's Python counts in `modules/channel/constants.py`.
 | knocks whose message 1 is being opened or whose question is open, and guests from their first check passing until their open record is answered | `HandshakesInFlightMax` 64 | a further knock or guest is closed at once with nothing written | The Diffie-Hellman, the DTLS handshake and the questions are the costly steps, and the limit bounds them at once. Only a sender with a link or a live share's pwd reaches it. |
 | under load: knocks in flight past `CookieLoadThreshold`, 16 | `CookieSecretLifetime` 120 s, the cookie secret's life and the cookie's | a knock without a valid `mac2` is answered with a cookie reply and closed ("Under load") | WireGuard's answer to a flood of knocks: the peer proves it reads what the hub writes to its address before the hub spends a Diffie-Hellman on it. |
 | one control frame | `ControlFrameBytesMax` 2 MiB | the session is ended | Four times the largest frame a hub of 64 machines and 256 entries carries, a client's `state` of about 270 KB. |
-| one record | `RecordBytesMax` 64 KiB | the stream is reset | A record is a chunk of a stream, never a whole file. |
+| one record | `RecordBytesMax` 64 KiB | the stream is reset; a sender cuts a line of text to fit one record, and sends a close too large for one as `result_too_large` ("The stream layer") | A record is a chunk of a stream, never a whole file. |
 | the answer to yamux's keepalive on an admitted session | `KeepAliveInterval` 20 s between pings, `KeepAliveTimeout` 60 s for the answer | the session ends and every stream on it ends; the transport writes one line for it, at most once a minute for each peer address | The ping waits behind what the session already queued: a desktop stream can hold a full window unconfirmed, and 60 seconds covers it at a slow uplink. |
 | admitted sessions | `SessionsMax` 512 | the next `hello` is refused `channel_full {limit}` | One binding holds one session, and a home has far fewer than 512 bindings. |
 | the bytes the hub's transport holds for one stream | `StreamWindowMaxBytes` 16 MiB, the stream's largest window | the window grows no further, and the sender waits | A stream whose reader is slow holds at most one window on the hub. |
