@@ -10,6 +10,7 @@ import io
 import importlib.util
 import json
 import subprocess
+import urllib.error
 from pathlib import Path
 
 import pytest
@@ -1368,6 +1369,28 @@ def test_an_earlier_package_is_fetched_from_its_release_and_its_hash_checked(
         "https://github.com/iffiX/neutrino/releases/download/"
         f"v{check.PACKAGING_EARLIER_VERSION}/old.msi"
     ]
+
+
+def test_an_earlier_package_is_fetched_again_after_a_504(check, monkeypatch, tmp_path):
+    body = b"the earlier msi"
+    asked = []
+
+    def urlopen(url, timeout):
+        asked.append(url)
+        if len(asked) == 1:
+            raise urllib.error.HTTPError(url, 504, "Gateway Time-out", {}, None)
+        return io.BytesIO(body)
+
+    monkeypatch.setattr(check.urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(check.download.time, "sleep", lambda s: None)
+    monkeypatch.setattr(
+        check,
+        "PACKAGING_EARLIER_PACKAGES",
+        {"agent_windows": ("old.msi", hashlib.sha256(body).hexdigest())},
+    )
+
+    assert check.fetch_earlier("agent_windows", tmp_path).read_bytes() == body
+    assert len(asked) == 2
 
 
 def test_an_earlier_package_whose_hash_differs_is_refused_and_deleted(

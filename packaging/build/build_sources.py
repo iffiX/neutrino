@@ -30,11 +30,11 @@ import subprocess
 import sys
 import tarfile
 import tempfile
-import urllib.request
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "packaging"))
+from shared import download  # noqa: E402
 from shared import install_script_stamp  # noqa: E402
 from shared.constants import PACKAGING_EDITIONS, PACKAGING_RELEASE_SITES  # noqa: E402
 from shared.edition_tree import make_cn_tree  # noqa: E402
@@ -158,8 +158,7 @@ def write_source_archive(output_dir: Path, *, edition: str = "intl") -> None:
             if edition == "cn" and name.startswith(CN_LEFT_OUT_SOURCES):
                 continue
             print(f"  fetching {name}")
-            with urllib.request.urlopen(url, timeout=600) as response:
-                data = response.read()
+            data = download.read_url(url, timeout=600, what=name)
             found = hashlib.sha256(data).hexdigest()
             if found != digest:
                 raise SystemExit(f"{name}: expected sha256 {digest}, got {found}")

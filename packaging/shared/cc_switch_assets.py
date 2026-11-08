@@ -12,9 +12,9 @@ Not pure: downloads, writes files.
 import hashlib
 import shutil
 import tempfile
-import urllib.request
 from pathlib import Path
 
+from shared import download
 from shared.constants import (
     PACKAGING_CC_SWITCH_ASSETS,
     PACKAGING_CC_SWITCH_BINARY_NAME,
@@ -168,10 +168,11 @@ def _fetch(url: str, digest: str) -> bytes:
 
     Raises:
         SystemExit: When what arrived is not what was pinned.
+        OSError: When the download fails, after its retries on a 5xx or a timeout.
     """
-    print(f"  fetching {url.rsplit('/', 1)[-1]}")
-    with urllib.request.urlopen(url, timeout=CC_SWITCH_FETCH_TIMEOUT_S) as response:
-        downloaded = response.read()
+    name = url.rsplit("/", 1)[-1]
+    print(f"  fetching {name}")
+    downloaded = download.read_url(url, timeout=CC_SWITCH_FETCH_TIMEOUT_S, what=name)
     arrived = hashlib.sha256(downloaded).hexdigest()
     if arrived != digest:
         raise SystemExit(

@@ -28,7 +28,6 @@ import subprocess
 import sys
 import tarfile
 import tempfile
-import urllib.request
 from pathlib import Path
 
 from constants import HUB_ICON_FACE, HUB_ICON_NAME, PACKAGING_GLIBC_FLOOR
@@ -37,6 +36,7 @@ from constants import HUB_ICON_FACE, HUB_ICON_NAME, PACKAGING_GLIBC_FLOOR
 SHARED_PACKAGING_DIR = Path(__file__).resolve().parents[2] / "packaging"
 if str(SHARED_PACKAGING_DIR) not in sys.path:
     sys.path.insert(0, str(SHARED_PACKAGING_DIR))
+from shared import download  # noqa: E402
 from shared import edition_build  # noqa: E402
 from shared import hub_assets  # noqa: E402
 from shared import icons  # noqa: E402
@@ -825,6 +825,7 @@ def _fetch_interpreter(staged_python: Path, machine: str) -> None:
     Raises:
         SystemExit: If there is no build for the machine, or what arrived is
             not what was pinned.
+        OSError: When the download fails, after its retries on a 5xx or a timeout.
     """
     name = MACHINE_NAMES.get(machine)
     if name is None or name not in PYTHON_SHA256:
@@ -833,9 +834,9 @@ def _fetch_interpreter(staged_python: Path, machine: str) -> None:
             f"{', '.join(sorted(PYTHON_SHA256))}"
         )
     url = PYTHON_URL.format(build=PYTHON_BUILD, version=PYTHON_VERSION, machine=name)
-    print(f"  fetching {url.rsplit('/', 1)[-1]}")
-    with urllib.request.urlopen(url, timeout=300) as response:
-        payload = response.read()
+    file_name = url.rsplit("/", 1)[-1]
+    print(f"  fetching {file_name}")
+    payload = download.read_url(url, timeout=300, what=file_name)
     digest = hashlib.sha256(payload).hexdigest()
     if digest != PYTHON_SHA256[name]:
         raise SystemExit(

@@ -21,7 +21,6 @@ import subprocess
 import sys
 import tarfile
 import tempfile
-import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -31,6 +30,7 @@ from constants import PACKAGING_GLIBC_FLOOR
 SHARED_PACKAGING_DIR = Path(__file__).resolve().parents[2] / "packaging"
 if str(SHARED_PACKAGING_DIR) not in sys.path:
     sys.path.insert(0, str(SHARED_PACKAGING_DIR))
+from shared import download  # noqa: E402
 from shared import edition_build  # noqa: E402
 from shared.go_build import GO_PROGRAMS_DIR, target_parts  # noqa: E402
 
@@ -642,10 +642,11 @@ def fetch(url: str, digest: str, what: str) -> bytes:
 
     Raises:
         SystemExit: When what arrived is not what was pinned.
+        OSError: When the download fails, after its retries on a 5xx or a timeout.
     """
-    print(f"  fetching {url.rsplit('/', 1)[-1]}")
-    with urllib.request.urlopen(url, timeout=600) as response:
-        payload = response.read()
+    name = url.rsplit("/", 1)[-1]
+    print(f"  fetching {name}")
+    payload = download.read_url(url, timeout=600, what=name)
     arrived = hashlib.sha256(payload).hexdigest()
     if arrived != digest:
         raise SystemExit(

@@ -34,12 +34,12 @@ import sys
 import tarfile
 import tempfile
 import time
-import urllib.request
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "packaging"))
 from shared import cores_cache  # noqa: E402
+from shared import download  # noqa: E402
 from shared import go_build  # noqa: E402
 from shared.constants import PACKAGING_GO_VERSION  # noqa: E402
 
@@ -108,12 +108,15 @@ def fetch_source(work_dir: Path) -> Path:
 
     Raises:
         SystemExit: When the archive is not the one pinned.
+        OSError: When the download fails, after its retries on a 5xx or a
+            timeout.
     """
     archive = work_dir / "netbird.tar.gz"
     if not archive.exists():
         print(f"downloading {NETBIRD_MOBILE_ARCHIVE_URL}")
-        with urllib.request.urlopen(NETBIRD_MOBILE_ARCHIVE_URL) as response:
-            archive.write_bytes(response.read())
+        archive.write_bytes(
+            download.read_url(NETBIRD_MOBILE_ARCHIVE_URL, timeout=600, what=archive.name)
+        )
     digest = hashlib.sha256(archive.read_bytes()).hexdigest()
     if digest != NETBIRD_MOBILE_ARCHIVE_SHA256:
         archive.unlink()

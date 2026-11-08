@@ -37,13 +37,13 @@ import sys
 import tarfile
 import tempfile
 import time
-import urllib.request
 import zipfile
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "packaging"))
 from shared import cores_cache  # noqa: E402
+from shared import download  # noqa: E402
 
 # --- the pinned source ---
 # The same archive build_sources.py puts in the release's third_party/.
@@ -120,12 +120,15 @@ def fetch_source(work_dir: Path) -> Path:
 
     Raises:
         SystemExit: When the archive is not the one pinned.
+        OSError: When the download fails, after its retries on a 5xx or a
+            timeout.
     """
     archive = work_dir / "easytier.tar.gz"
     if not archive.exists():
         print(f"downloading {EASYTIER_MOBILE_ARCHIVE_URL}")
-        with urllib.request.urlopen(EASYTIER_MOBILE_ARCHIVE_URL) as response:
-            archive.write_bytes(response.read())
+        archive.write_bytes(
+            download.read_url(EASYTIER_MOBILE_ARCHIVE_URL, timeout=600, what=archive.name)
+        )
     digest = hashlib.sha256(archive.read_bytes()).hexdigest()
     if digest != EASYTIER_MOBILE_ARCHIVE_SHA256:
         archive.unlink()
@@ -153,14 +156,17 @@ def fetch_protoc(work_dir: Path) -> str:
 
     Raises:
         SystemExit: When the download is not the one pinned.
+        OSError: When the download fails, after its retries on a 5xx or a
+            timeout.
     """
     if os.environ.get("PROTOC"):
         return os.environ["PROTOC"]
     archive = work_dir / "protoc.zip"
     if not archive.exists():
         print(f"downloading {EASYTIER_MOBILE_PROTOC_URL}")
-        with urllib.request.urlopen(EASYTIER_MOBILE_PROTOC_URL) as response:
-            archive.write_bytes(response.read())
+        archive.write_bytes(
+            download.read_url(EASYTIER_MOBILE_PROTOC_URL, timeout=600, what=archive.name)
+        )
     digest = hashlib.sha256(archive.read_bytes()).hexdigest()
     if digest != EASYTIER_MOBILE_PROTOC_SHA256:
         archive.unlink()

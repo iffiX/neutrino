@@ -6,10 +6,13 @@ what is taken out of a carried interpreter, and which machines the packages
 are published for.
 """
 
+import hashlib
+import io
 import os
 import re
 import subprocess
 import sys
+import urllib.error
 
 import pytest
 
@@ -435,3 +438,25 @@ def test_the_go_programs_are_staged_executable(tmp_path):
         assert staged.read_bytes() == f"{name} for linux-amd64".encode()
         assert staged.stat().st_mode & 0o777 == 0o755
     assert destination.stat().st_mode & 0o777 == 0o755
+
+
+def test_fetch_downloads_after_a_504_and_fails_at_once_on_a_404(monkeypatch):
+    body = b"the pinned bytes"
+    digest = hashlib.sha256(body).hexdigest()
+    answers = [504, 200, 404]
+    slept = []
+
+    def urlopen(url, timeout):
+        status = answers.pop(0)
+        if status != 200:
+            raise urllib.error.HTTPError(url, status, "Gateway Time-out", {}, None)
+        return io.BytesIO(body)
+
+    monkeypatch.setattr(payload.download.urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(payload.download.time, "sleep", slept.append)
+
+    assert payload.fetch("https://example.invalid/a.tar.gz", digest, "a") == body
+    assert len(slept) == 1
+    with pytest.raises(urllib.error.HTTPError):
+        payload.fetch("https://example.invalid/a.tar.gz", digest, "a")
+    assert answers == [] and len(slept) == 1

@@ -7,11 +7,13 @@ interpreter, which machines the packages are published for, and which
 licences the package owes.
 """
 
+import hashlib
 import io
 import os
 import pathlib
 import subprocess
 import sys
+import urllib.error
 import zipfile
 
 import pytest
@@ -490,3 +492,25 @@ def test_a_tree_at_the_floor_is_a_package_the_build_lets_through(tmp_path, monke
     tree = _elf_tree(tmp_path / "tree", ("2.2.5", "2.17", "2.34"))
 
     payload.require_glibc_floor(tree)
+
+
+def test_fetch_downloads_after_a_504_and_fails_at_once_on_a_404(monkeypatch):
+    body = b"the pinned bytes"
+    digest = hashlib.sha256(body).hexdigest()
+    answers = [504, 200, 404]
+    slept = []
+
+    def urlopen(url, timeout):
+        status = answers.pop(0)
+        if status != 200:
+            raise urllib.error.HTTPError(url, status, "Gateway Time-out", {}, None)
+        return io.BytesIO(body)
+
+    monkeypatch.setattr(payload.download.urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(payload.download.time, "sleep", slept.append)
+
+    assert payload.fetch("https://example.invalid/a.tar.gz", digest, "a") == body
+    assert len(slept) == 1
+    with pytest.raises(urllib.error.HTTPError):
+        payload.fetch("https://example.invalid/a.tar.gz", digest, "a")
+    assert answers == [] and len(slept) == 1

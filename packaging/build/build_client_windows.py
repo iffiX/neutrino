@@ -63,7 +63,6 @@ import platform
 import shutil
 import sys
 import tempfile
-import urllib.request
 from pathlib import Path
 
 sys.path.insert(
@@ -72,6 +71,7 @@ sys.path.insert(
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "client" / "desktop"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "packaging"))
 import bundled  # noqa: E402
+from shared import download  # noqa: E402
 from shared import edition_build  # noqa: E402
 from shared import icons  # noqa: E402
 from shared import nuitka_build  # noqa: E402
@@ -1113,8 +1113,9 @@ def _fetch_bootstrapper() -> bytes:
             the size one is.
     """
     print(f"  fetching {WEBVIEW2_BOOTSTRAPPER_NAME}")
-    with urllib.request.urlopen(WEBVIEW2_BOOTSTRAPPER_URL, timeout=600) as response:
-        content = response.read()
+    content = download.read_url(
+        WEBVIEW2_BOOTSTRAPPER_URL, timeout=600, what=WEBVIEW2_BOOTSTRAPPER_NAME
+    )
     if not content.startswith(b"MZ"):
         raise SystemExit(
             f"{WEBVIEW2_BOOTSTRAPPER_URL} did not serve a Windows executable"

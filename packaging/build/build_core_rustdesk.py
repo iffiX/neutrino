@@ -43,12 +43,12 @@ import subprocess
 import sys
 import tarfile
 import time
-import urllib.request
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "packaging"))
 from shared import cores_cache  # noqa: E402
+from shared import download  # noqa: E402
 
 # --- the pinned source ---
 RUSTDESK_MOBILE_TAG = "1.4.9"
@@ -133,6 +133,8 @@ def fetch(url: str, sha256: str, name: str) -> Path:
 
     Raises:
         SystemExit: When the file is not the one pinned.
+        OSError: When the download fails, after its retries on a 5xx or a
+            timeout.
     """
     downloads = RUSTDESK_MOBILE_CACHE / "downloads"
     downloads.mkdir(parents=True, exist_ok=True)
@@ -140,8 +142,7 @@ def fetch(url: str, sha256: str, name: str) -> Path:
     if not target.exists():
         print(f"downloading {url}")
         partial = target.with_suffix(".part")
-        with urllib.request.urlopen(url) as response, partial.open("wb") as out:
-            shutil.copyfileobj(response, out)
+        download.save_url(url, partial, timeout=600, what=name)
         partial.rename(target)
     digest = hashlib.sha256()
     with target.open("rb") as stream:

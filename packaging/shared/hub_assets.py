@@ -20,11 +20,10 @@ import hashlib
 import io
 import sys
 import tarfile
-import time
-import urllib.request
 import zipfile
 from pathlib import Path
 
+from shared import download
 from shared.constants import PACKAGING_TUN2SOCKS_LICENSE
 
 # The hub package, whose modules state every pin read here.
@@ -83,10 +82,6 @@ HUB_ASSET_WINDOWS_EXTRA_LICENSES = {"wintun.dll": "wintun.txt"}
 HUB_ASSET_GO_LICENSES = ("go_notices.txt",)
 HUB_ASSET_GEODATA_LICENSES = ("v2fly_geoip.txt", "v2fly_domain_list_community.txt")
 HUB_ASSET_FETCH_TIMEOUT_S = 300
-# A publisher answering 5xx for a few minutes is the usual way a build
-# fails, so a fetch is tried this many times with this wait between them.
-HUB_ASSET_FETCH_TRIES = 6
-HUB_ASSET_FETCH_RETRY_WAIT_S = 30
 
 
 def pinned(program: str, os_name: str, machine: str) -> tuple:
@@ -313,21 +308,12 @@ def fetch(url: str, digest: str, what: str) -> bytes:
 
     Raises:
         SystemExit: When what arrived is not what was pinned.
-        OSError: When the download fails ``HUB_ASSET_FETCH_TRIES`` times.
+        OSError: When the download fails, after its retries on a 5xx or a
+            timeout.
     """
-    print(f"  fetching {what} {url.rsplit('/', 1)[-1]}")
-    for attempt in range(1, HUB_ASSET_FETCH_TRIES + 1):
-        try:
-            with urllib.request.urlopen(
-                url, timeout=HUB_ASSET_FETCH_TIMEOUT_S
-            ) as response:
-                payload = response.read()
-            break
-        except OSError as error:
-            if attempt == HUB_ASSET_FETCH_TRIES:
-                raise
-            print(f"  {what}: {error}; trying again in {HUB_ASSET_FETCH_RETRY_WAIT_S}s")
-            time.sleep(HUB_ASSET_FETCH_RETRY_WAIT_S)
+    name = url.rsplit("/", 1)[-1]
+    print(f"  fetching {what} {name}")
+    payload = download.read_url(url, timeout=HUB_ASSET_FETCH_TIMEOUT_S, what=name)
     arrived = hashlib.sha256(payload).hexdigest()
     if arrived != digest:
         raise SystemExit(

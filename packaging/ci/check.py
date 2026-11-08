@@ -84,6 +84,7 @@ import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from shared import download  # noqa: E402
 from shared import hub_assets  # noqa: E402
 from shared.constants import (  # noqa: E402
     PACKAGING_EARLIER_PACKAGES,
@@ -1914,6 +1915,8 @@ def fetch_earlier(target: str, directory: Path) -> Path:
 
     Raises:
         SystemExit: When its hash is not the pinned one.
+        OSError: When the download fails, after its retries on a 5xx or a
+            timeout.
     """
     asset, digest = PACKAGING_EARLIER_PACKAGES[target]
     url = PACKAGING_EARLIER_RELEASE_URL.format(
@@ -1921,8 +1924,9 @@ def fetch_earlier(target: str, directory: Path) -> Path:
     )
     path = directory / asset
     _say(f"fetching {url}")
-    with urllib.request.urlopen(url, timeout=CHECK_COMMAND_TIMEOUT_S) as response:
-        path.write_bytes(response.read())
+    path.write_bytes(
+        download.read_url(url, timeout=CHECK_COMMAND_TIMEOUT_S, what=asset)
+    )
     found = hashlib.sha256(path.read_bytes()).hexdigest()
     if found != digest:
         path.unlink()

@@ -331,7 +331,7 @@ def test_a_download_that_is_not_what_was_pinned_stops_the_build(monkeypatch):
             return b"something else"
 
     monkeypatch.setattr(
-        hub_assets.urllib.request, "urlopen", lambda *a, **k: Response()
+        hub_assets.download.urllib.request, "urlopen", lambda *a, **k: Response()
     )
 
     with pytest.raises(SystemExit) as refused:
@@ -362,8 +362,8 @@ def test_fetch_tries_again_after_a_network_error_and_gives_up_after_the_last(
             raise TimeoutError("timed out")
         return Response()
 
-    monkeypatch.setattr(hub_assets.urllib.request, "urlopen", urlopen)
-    monkeypatch.setattr(hub_assets.time, "sleep", lambda s: None)
+    monkeypatch.setattr(hub_assets.download.urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(hub_assets.download.time, "sleep", lambda s: None)
     digest = hub_assets.hashlib.sha256(payload).hexdigest()
 
     assert hub_assets.fetch("https://example.invalid/a.dat", digest, "a") == payload
@@ -372,7 +372,7 @@ def test_fetch_tries_again_after_a_network_error_and_gives_up_after_the_last(
     def failing(url, timeout):
         raise TimeoutError("timed out")
 
-    monkeypatch.setattr(hub_assets.urllib.request, "urlopen", failing)
+    monkeypatch.setattr(hub_assets.download.urllib.request, "urlopen", failing)
     with pytest.raises(TimeoutError):
         hub_assets.fetch("https://example.invalid/a.dat", digest, "a")
 

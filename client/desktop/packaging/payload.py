@@ -29,11 +29,11 @@ import subprocess
 import sys
 import tarfile
 import tempfile
-import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "packaging"))
+from shared import download  # noqa: E402
 from shared import edition_build  # noqa: E402
 from shared import nuitka_build  # noqa: E402
 from shared.constants import (  # noqa: E402
@@ -735,10 +735,11 @@ def fetch(url: str, digest: str, what: str) -> bytes:
 
     Raises:
         SystemExit: When what arrived is not what was pinned.
+        OSError: When the download fails, after its retries on a 5xx or a timeout.
     """
-    print(f"  fetching {url.rsplit('/', 1)[-1]}")
-    with urllib.request.urlopen(url, timeout=600) as response:
-        downloaded = response.read()
+    name = url.rsplit("/", 1)[-1]
+    print(f"  fetching {name}")
+    downloaded = download.read_url(url, timeout=600, what=name)
     arrived = hashlib.sha256(downloaded).hexdigest()
     if arrived != digest:
         raise SystemExit(

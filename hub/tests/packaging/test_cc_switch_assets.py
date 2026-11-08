@@ -69,7 +69,7 @@ def test_a_download_that_is_not_the_pinned_file_stops_the_build(monkeypatch, tmp
             return False
 
     monkeypatch.setattr(
-        cc_switch_assets.urllib.request,
+        cc_switch_assets.download.urllib.request,
         "urlopen",
         lambda url, timeout: Response(b"not the release"),
     )

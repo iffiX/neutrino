@@ -19,8 +19,9 @@ import importlib
 import shutil
 import subprocess
 import tempfile
-import urllib.request
 from pathlib import Path
+
+from shared.download import read_url
 
 # The Flutter builds of one release. The same release publishes `-sciter`
 # assets of the old frontend, which are carried nowhere.
@@ -327,10 +328,11 @@ def _fetch(url: str, digest: str) -> bytes:
 
     Raises:
         SystemExit: When what arrived is not what was pinned.
+        OSError: When the download fails, after its retries on a 5xx or a timeout.
     """
-    print(f"  fetching {url.rsplit('/', 1)[-1]}")
-    with urllib.request.urlopen(url, timeout=600) as response:
-        downloaded = response.read()
+    name = url.rsplit("/", 1)[-1]
+    print(f"  fetching {name}")
+    downloaded = read_url(url, timeout=600, what=name)
     arrived = hashlib.sha256(downloaded).hexdigest()
     if arrived != digest:
         raise SystemExit(
