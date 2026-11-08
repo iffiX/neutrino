@@ -1,7 +1,9 @@
 """One stream's channel over a socket pair, read back as the transport reads it.
 
-What these pin: a line goes up as one ``data`` record, and a line of 100 KB
-as one record of its start with ``…`` at its end.
+What these pin: a line goes up as one ``data`` record, a line of 100 KB as
+one record of its start with ``…`` at its end, and a close whose params do
+not fit one record as ``result_too_large`` with the record's limit, the
+connection closed after it.
 """
 
 import socket
@@ -75,3 +77,14 @@ def test_a_100_kb_line_goes_up_as_one_record_cut_with_the_mark():
     assert payload.startswith(b"2026-11-07 codeg xxx")
     assert payload.endswith("…\n".encode("utf-8"))
     assert read[1][1] == ("close", "", {"exit_code": 0})
+
+
+def test_a_close_too_large_for_a_record_is_sent_as_result_too_large():
+    channel, far = channel_pair()
+    result = {"lines": ["\x1b[32mINFO\x1b[0m " + "x" * 300] * 300}
+
+    read = sent(far, lambda: channel.close("", {"exit_code": 0, "result": result}))
+
+    assert read[-1][1] == ("close", "result_too_large", {"limit": RECORD})
+    assert channel.is_closed
+    assert far.recv(1) == b""

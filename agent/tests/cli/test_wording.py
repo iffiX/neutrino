@@ -27,9 +27,11 @@ CODE_PATTERN = re.compile(r'"code": "([a-z0-9_]+)"')
 # The codes that reach a surface without riding a ``{"code": ...}`` literal:
 # the engine names a package operation's failure by its transient, the
 # commands build their refusals by name, the package stream names its own,
-# enrollment refuses a link made for another role, and the share says what a
-# peer would wait on as a bare token.
+# enrollment refuses a link made for another role, a stream's channel sends a
+# close too large for a record by name, and the share says what a peer would
+# wait on as a bare token.
 UNSTRUCTURED_CODES = (
+    "result_too_large",
     "link_not_for_agent",
     "no_platform_build",
     "unsupported_platform",

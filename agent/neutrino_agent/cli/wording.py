@@ -77,6 +77,7 @@ CLI_CODE_WORDS = {
     ),
     "kind_unknown": "the hub opened a stream this agent does not know",
     "verb_unknown": "the hub asked for a verb this agent does not know",
+    "result_too_large": "the answer was larger than the {limit} bytes one record holds",
     "no_platform_build": "no version of this exists for this machine",
     "install_failed": "the install failed: {detail}",
     "uninstall_failed": "the uninstall failed: {detail}",

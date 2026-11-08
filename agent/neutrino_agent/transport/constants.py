@@ -57,3 +57,5 @@ TRANSPORT_RECORD_CLOSE = 8
 # The code a question this side cannot answer in time, or a stream that
 # cannot be attached, comes to.
 TRANSPORT_CODE_CONTROL_UNAVAILABLE = "control_unavailable"
+# The code a close whose params do not fit one record is sent as.
+TRANSPORT_CODE_RESULT_TOO_LARGE = "result_too_large"

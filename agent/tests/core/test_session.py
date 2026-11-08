@@ -12,8 +12,9 @@ handler's records and its result the ``close``, a kind outside the table
 closed ``kind_unknown``, a handler's refusal closing with its code and no
 ``accept``, a handler that raises closing ``agent_internal``, and a
 command stream's lines and its exit code: a journal of 200 lines and 61 KB
-up as 200 ``data`` records and a small close, and a line past a record
-masked whole and then cut with ``…``.
+up as 200 ``data`` records and a small close, a line past a record masked
+whole and then cut with ``…``, and a close too large for a record sent as
+``result_too_large`` with the stream's thread ending.
 """
 
 import json
@@ -408,3 +409,25 @@ def test_a_journal_line_past_a_record_goes_up_masked_whole_then_cut():
     assert items[2][1].startswith(b"codeg: yyy")
     assert items[2][1].endswith("…\n".encode("utf-8"))
     assert items[-1] == ("close", "", {"exit_code": 0, "result": {}})
+
+
+def test_a_close_too_large_for_a_record_is_sent_as_result_too_large():
+    control = PairControl()
+
+    def run(module, verb, args, on_line):
+        return {
+            "exit_code": 0,
+            "code": "",
+            "params": {},
+            "output": "",
+            "result": {"lines": ["x" * 300] * 300},
+        }
+
+    session_with(control, run_command=run).serve_stream(
+        "s16", {"kind": "command", "module": "podman", "verb": "machine_read"}
+    )
+
+    assert control.items("s16") == [
+        ("accept",),
+        ("close", "result_too_large", {"limit": 64 * 1024}),
+    ]

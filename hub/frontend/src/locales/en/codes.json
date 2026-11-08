@@ -183,6 +183,7 @@
   "code.replaced": "This agent connected to the hub again from somewhere else.",
   "code.resolver_address_invalid": "{address} is not an address for a resolver.",
   "code.resolver_required": "The remote resolvers need at least one row.",
+  "code.result_too_large": "The machine's answer was larger than the {limit} bytes one record holds.",
   "code.role_mismatch": "That link is not for a {role}.",
   "code.samba_config_rejected": "Samba will not take that configuration: {detail}",
   "code.samba_missing": "Samba is not installed on this machine; install the module first.",

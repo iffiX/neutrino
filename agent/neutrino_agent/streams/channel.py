@@ -18,7 +18,9 @@ import threading
 
 from neutrino_agent.exceptions import GatewayUnreachable, StreamClosed
 from neutrino_agent.transport.constants import (
+    TRANSPORT_CODE_RESULT_TOO_LARGE,
     TRANSPORT_RECORD_ACCEPT,
+    TRANSPORT_RECORD_BYTES_MAX,
     TRANSPORT_RECORD_DATA,
     TRANSPORT_RECORD_STDERR,
 )
@@ -171,18 +173,25 @@ class StreamChannel:
         """End the stream from this side, with its result.
 
         A stream the far side already closed sends nothing; the connection
-        is closed either way.
+        is closed either way. A close whose params do not fit one record is
+        sent as ``result_too_large {limit}`` in its place.
 
         Args:
             code: The refusal; empty when the stream did what it was asked.
             params: The result, or what the code's wording names.
         """
+        try:
+            record = encode_close(code, params)
+        except ValueError:
+            record = encode_close(
+                TRANSPORT_CODE_RESULT_TOO_LARGE, {"limit": TRANSPORT_RECORD_BYTES_MAX}
+            )
         with self._write_lock:
             is_sent = self._is_closed
             self._is_closed = True
             if not is_sent:
                 with contextlib.suppress(OSError):
-                    self._connection.sendall(encode_close(code, params))
+                    self._connection.sendall(record)
         with contextlib.suppress(OSError):
             self._connection.close()
 

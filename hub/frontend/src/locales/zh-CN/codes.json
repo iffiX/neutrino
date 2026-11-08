@@ -183,6 +183,7 @@
   "code.replaced": "这个被控端从别处重新连上了中枢。",
   "code.resolver_address_invalid": "非法解析器地址：{address}。",
   "code.resolver_required": "远程解析器至少要有一行。",
+  "code.result_too_large": "这个系统返回的结果超过了一条记录最多能装的 {limit} 字节。",
   "code.role_mismatch": "这个链接不是给{role}用的。",
   "code.samba_config_rejected": "Samba 不接受这份配置：{detail}",
   "code.samba_missing": "这个系统上没有装 Samba；请先安装这个模块。",
