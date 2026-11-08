@@ -563,6 +563,11 @@ way on a machine that can build it as in the tag workflow. The docstring at
 the top of each names the hosts it runs on, and the script stops with one
 sentence when a tool it needs is missing.
 
+Every download a build makes, through `packaging/shared/download.py` or the
+Gradle wrapper, is tried again after a 5xx, a 429, a timeout or a dropped
+connection for about five minutes in all, because GitHub's release downloads
+answer 504 at times; a 404 or a digest mismatch fails at once.
+
 | Script | Builds | Runs on |
 | --- | --- | --- |
 | `build_hub.py` | the hub's `.deb`, `.rpm` and Arch package | Linux with podman or docker, after `npm run build` in `hub/frontend` |
