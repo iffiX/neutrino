@@ -45,7 +45,8 @@ docs/                The VitePress documentation site. Generated site output
                      is ignored.
 demo/                The panel demo the site serves at /demo/: the fake hub,
                      its sample data, the page around the panel and the
-                     client page, and its build. Design: demo.md.
+                     client page, and its build, with a package.json and
+                     node_modules of its own. Design: demo.md.
 tmp-docs/            The working copy's own notes, memory.md among them, and
                      drafts; gitignored.
 skills/              core-code-author/, this standard: design/ the design
