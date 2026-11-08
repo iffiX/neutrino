@@ -66,7 +66,7 @@ hub/frontend/.vite/
 hub/frontend/*.tsbuildinfo
 hub/neutrino_hub/data/frontend/
 demo/dist/
-demo/vite.config.ts.timestamp-*
+demo/node_modules/
 
 # --- Build products ---
 /dist/

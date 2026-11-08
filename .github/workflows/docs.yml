@@ -36,7 +36,7 @@ jobs:
           cache: npm
           cache-dependency-path: |
             docs/package-lock.json
-            hub/frontend/package-lock.json
+            demo/package-lock.json
       # The READMEs' tests badge reads badges/tests.json from the site.
       - uses: actions/setup-python@v7
         with:

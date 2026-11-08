@@ -1,8 +1,9 @@
 import { readFileSync } from "node:fs";
-import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
-import type { Plugin, UserConfig } from "vite";
+import { defineConfig } from "vite";
+import type { Plugin } from "vite";
+import react from "@vitejs/plugin-react";
 
 // The demo's build. It writes a folder of static files for any static host. The
 // panel is built from `hub/frontend/src/`, and the client page is copied as it
@@ -14,10 +15,6 @@ function here(relative: string): string {
 
 const DEMO_DIR = here(".");
 const OUT_DIR = here("./dist");
-const FRONTEND_DIR = here("../hub/frontend/");
-const PANEL_IMPORTER = here("../hub/frontend/src/main.tsx");
-const NODE_MODULES_DIR = here("../hub/frontend/node_modules/");
-const CACHE_DIR = here("../hub/frontend/node_modules/.vite/demo");
 const PUBLIC_DIR = here("../hub/frontend/public");
 const MODULE_ICONS_DIR = here("../images/icons/modules");
 const HUB_ICONS_DIR = here("../images/icons/neutrino_hub");
@@ -27,14 +24,6 @@ const PHONE_WORDS_DIR = here(
 );
 const EDITION_REPLACEMENT = here("./panel_edition.ts");
 const PREVIEW_PORT = 4780;
-
-// The panel's own copy of the build's plugins. The demo has no node_modules.
-const react = createRequire(`${FRONTEND_DIR}package.json`)(
-  "@vitejs/plugin-react",
-) as typeof import("@vitejs/plugin-react").default;
-
-// React and React DOM, which the React plugin resolves from the root alone.
-const REACT_PACKAGES = /^(react|react-dom)(\/.*)?$/;
 
 // The client page's files, the terminal fonts left out.
 const CLIENT_FILES = [
@@ -74,22 +63,6 @@ const CATALOG_REWORDED: Record<string, string> = {
   "ui.network.exposure_hint":
     "哪些网段的主机能连到中枢自己的端口：面板的 HTTP 和 HTTPS、连接端口、DNS。SSH 等不归中枢的服务由系统防火墙管。",
 };
-
-/** Resolves a package a demo file imports as a file in `hub/frontend/src/` does. */
-function panelPackages(): Plugin {
-  return {
-    name: "demo_panel_packages",
-    enforce: "pre",
-    resolveId(source, importer) {
-      const isBare = /^[^./\0]/.test(source) && !source.includes(":");
-      const isDemoImport =
-        importer === undefined || importer.startsWith(DEMO_DIR);
-      return isBare && isDemoImport
-        ? this.resolve(source, PANEL_IMPORTER, { skipSelf: true })
-        : null;
-    },
-  };
-}
 
 /** Puts the demo's edition table in place of `hub/frontend/src/edition.ts`. */
 function demoEdition(): Plugin {
@@ -164,6 +137,15 @@ function readJson(path: string): Record<string, unknown> {
   return JSON.parse(readFileSync(path, "utf-8")) as Record<string, unknown>;
 }
 
+/**
+ * The demo's packages. Each resolves from `demo/node_modules`, for a demo file
+ * and for a file of the panel's source alike.
+ */
+function demoPackages(): string[] {
+  const manifest = readJson(`${DEMO_DIR}package.json`);
+  return Object.keys(manifest.dependencies as Record<string, string>);
+}
+
 function clientPage(): string {
   const demoWords = readJson(`${DEMO_DIR}client_words.json`);
   const catalogs = Object.fromEntries(
@@ -219,13 +201,11 @@ function clientFiles(): Plugin {
   };
 }
 
-const config: UserConfig = {
+export default defineConfig({
   root: DEMO_DIR,
   base: "./",
-  cacheDir: CACHE_DIR,
   publicDir: PUBLIC_DIR,
   plugins: [
-    panelPackages(),
     demoEdition(),
     panelStyles(),
     panelCatalog(),
@@ -233,11 +213,11 @@ const config: UserConfig = {
     clientFiles(),
   ],
   resolve: {
-    alias: [
-      { find: "@module_icons", replacement: MODULE_ICONS_DIR },
-      { find: "@hub_icons", replacement: HUB_ICONS_DIR },
-      { find: REACT_PACKAGES, replacement: `${NODE_MODULES_DIR}$1$2` },
-    ],
+    alias: {
+      "@module_icons": MODULE_ICONS_DIR,
+      "@hub_icons": HUB_ICONS_DIR,
+    },
+    dedupe: demoPackages(),
   },
   build: {
     outDir: OUT_DIR,
@@ -259,6 +239,4 @@ const config: UserConfig = {
   preview: {
     port: PREVIEW_PORT,
   },
-};
-
-export default config;
+});

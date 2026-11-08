@@ -153,7 +153,7 @@ def main() -> int:
     arguments = parser.parse_args()
     folder = Path(arguments.folder).resolve()
     if not (folder / "index.html").is_file():
-        raise SystemExit(f"{folder} holds no index.html; run npm run demo:build")
+        raise SystemExit(f"{folder} holds no index.html; run npm run build in demo")
 
     handler = functools.partial(DemoHandler, directory=str(folder))
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)

@@ -593,14 +593,14 @@ jobs:
         with:
           node-version: "20"
           cache: npm
-          cache-dependency-path: hub/frontend/package-lock.json
+          cache-dependency-path: demo/package-lock.json
 
       - run: npm ci
-        working-directory: hub/frontend
+        working-directory: demo
 
-      # `npm run demo:build` runs `tsc -p ../../demo` first.
-      - run: npm run demo:build
-        working-directory: hub/frontend
+      # `npm run build` runs `tsc -p .` first.
+      - run: npm run build
+        working-directory: demo
 
       - uses: actions/setup-python@v7
         with:
