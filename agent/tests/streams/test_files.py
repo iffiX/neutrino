@@ -1,11 +1,14 @@
 """The file channel's one listing, over trees under ``tmp_path``.
 
 What these pin: the ``file`` kind serving ``list`` alone and refusing every
-other ``op`` ``op_unknown``, a listing's shape and its resolved path in the
-close's params, the machine's separator, the drives of a Windows machine
-for ``/``, and every refusal typed.
+other ``op`` ``op_unknown``, each entry up as one ``data`` record holding one
+JSON object in name order, a folder of 3,000 entries whole, the resolved path
+and the machine's separator in the close's params and nothing else there, the
+drives of a Windows machine for ``/``, and every refusal typed with no record
+before it.
 """
 
+import json
 import os
 import stat
 
@@ -26,6 +29,13 @@ def refusal(stream) -> StreamRefused:
 def served(stream) -> dict:
     stream.open()
     return stream.run()
+
+
+def entries_of(channel) -> list:
+    """The entries a listing sent, one JSON object per ``data`` record."""
+    for record in channel.sent:
+        assert record.endswith(b"\n") and record.count(b"\n") == 1
+    return [json.loads(record) for record in channel.sent]
 
 
 @pytest.fixture
@@ -78,9 +88,9 @@ def test_a_listing_names_every_entry_with_its_kind(tree):
     closed = served(FileListStream(channel, {"path": str(tree / "docs")}))
 
     assert closed["code"] == ""
-    assert set(closed["params"]) == {"path", "separator", "entries"}
+    assert set(closed["params"]) == {"path", "separator"}
     assert closed["params"]["path"] == os.path.realpath(tree / "docs")
-    by_name = {entry["name"]: entry for entry in closed["params"]["entries"]}
+    by_name = {entry["name"]: entry for entry in entries_of(channel)}
     assert set(by_name) == {"note.txt", "deep", "link", "sub"}
     assert by_name["note.txt"]["kind"] == "file"
     assert by_name["note.txt"]["size"] == 5
@@ -91,9 +101,47 @@ def test_a_listing_names_every_entry_with_its_kind(tree):
     assert by_name["note.txt"]["mode"] == stat.S_IMODE(
         (tree / "docs" / "note.txt").stat().st_mode
     )
-    assert [entry["name"] for entry in closed["params"]["entries"]] == sorted(
+    assert [entry["name"] for entry in entries_of(channel)] == sorted(
         by_name, key=str.lower
     )
+
+
+def test_a_folder_of_3000_entries_goes_up_whole_one_record_each(tmp_path):
+    folder = tmp_path / "bin"
+    folder.mkdir()
+    for n in range(3000):
+        (folder / f"program-with-a-long-name-{n:04d}").write_bytes(b"")
+    channel = FakeChannel()
+
+    closed = served(FileListStream(channel, {"path": str(folder)}))
+
+    entries = entries_of(channel)
+    assert len(entries) == 3000
+    assert sum(len(record) for record in channel.sent) > 300_000
+    assert [entry["name"] for entry in entries] == sorted(
+        f"program-with-a-long-name-{n:04d}" for n in range(3000)
+    )
+    assert closed == {
+        "code": "",
+        "params": {"path": os.path.realpath(folder), "separator": "/"},
+    }
+
+
+def test_a_folder_that_cannot_be_read_closes_with_its_code_and_no_record(
+    tree, monkeypatch
+):
+    def refuse(path):
+        raise PermissionError(13, "Permission denied", path)
+
+    monkeypatch.setattr(files.os, "scandir", refuse)
+    channel = FakeChannel()
+
+    closed = served(FileListStream(channel, {"path": str(tree / "docs")}))
+
+    assert closed == {
+        "code": "op_failed",
+        "params": {"path": os.path.realpath(tree / "docs")},
+    }
     assert channel.sent == []
 
 
@@ -124,14 +172,13 @@ def windows(monkeypatch):
 
 @pytest.mark.parametrize("path", ["/", ""])
 def test_a_windows_listing_of_the_root_is_one_entry_per_drive(windows, path):
-    closed = served(FileListStream(FakeChannel(), {"path": path}))
+    channel = FakeChannel()
 
-    assert closed["code"] == ""
-    assert closed["params"]["path"] == "/"
-    assert closed["params"]["separator"] == "\\"
+    closed = served(FileListStream(channel, {"path": path}))
+
+    assert closed == {"code": "", "params": {"path": "/", "separator": "\\"}}
     assert [
-        (entry["name"], entry["path"], entry["kind"])
-        for entry in closed["params"]["entries"]
+        (entry["name"], entry["path"], entry["kind"]) for entry in entries_of(channel)
     ] == [("C:", "C:\\", "dir"), ("D:", "D:\\", "dir")]
 
 
@@ -140,13 +187,17 @@ def test_a_windows_machine_before_listdrives_probes_each_letter(monkeypatch):
     monkeypatch.delattr(os, "listdrives", raising=False)
     monkeypatch.setattr(files.os.path, "exists", lambda path: path in {"C:\\"})
 
-    closed = served(FileListStream(FakeChannel(), {"path": "/"}))
+    channel = FakeChannel()
 
-    assert [entry["path"] for entry in closed["params"]["entries"]] == ["C:\\"]
+    served(FileListStream(channel, {"path": "/"}))
+
+    assert [entry["path"] for entry in entries_of(channel)] == ["C:\\"]
 
 
 def test_a_linux_listing_of_the_root_is_the_root_directory(tree):
-    closed = served(FileListStream(FakeChannel(), {"path": "/"}))
+    channel = FakeChannel()
+
+    closed = served(FileListStream(channel, {"path": "/"}))
 
     assert closed["params"]["path"] == "/"
-    assert "C:" not in {entry["name"] for entry in closed["params"]["entries"]}
+    assert "C:" not in {entry["name"] for entry in entries_of(channel)}

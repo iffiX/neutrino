@@ -14,10 +14,13 @@ closed ``kind_unknown``, a handler's refusal closing with its code and no
 command stream's lines and its exit code: a journal of 200 lines and 61 KB
 up as 200 ``data`` records and a small close, a line past a record masked
 whole and then cut with ``…``, and a close too large for a record sent as
-``result_too_large`` with the stream's thread ending.
+``result_too_large`` with the stream's thread ending; and a ``file`` listing
+of 3,000 entries up as 3,000 ``data`` records and a close of its path and
+separator.
 """
 
 import json
+import os
 import socket
 import threading
 
@@ -431,3 +434,26 @@ def test_a_close_too_large_for_a_record_is_sent_as_result_too_large():
         ("accept",),
         ("close", "result_too_large", {"limit": 64 * 1024}),
     ]
+
+
+def test_a_listing_of_3000_entries_goes_up_as_records_and_a_small_close(tmp_path):
+    folder = tmp_path / "bin"
+    folder.mkdir()
+    names = [f"program-with-a-long-name-{n:04d}" for n in range(3000)]
+    for name in names:
+        (folder / name).write_bytes(b"")
+    control = PairControl()
+
+    session_with(control).serve_stream(
+        "s18", {"kind": "file", "op": "list", "path": str(folder)}
+    )
+
+    items = control.items("s18")
+    assert items[0] == ("accept",)
+    assert [json.loads(item[1])["name"] for item in items[1:-1]] == names
+    assert sum(len(item[1]) for item in items[1:-1]) > 300_000
+    assert items[-1] == (
+        "close",
+        "",
+        {"path": os.path.realpath(folder), "separator": "/"},
+    )

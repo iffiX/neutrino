@@ -1,8 +1,9 @@
 """The file kind: one directory listing.
 
-One ``file`` stream is one listing, ``{op: list, path}``, and its result is
-its close's params: the directory's entries, for the panel's path window.
-Any other ``op`` is closed ``op_unknown``.
+One ``file`` stream is one listing, ``{op: list, path}``, for the panel's
+path window: each entry goes up as one ``data`` record holding one JSON
+object, in name order, and the close carries the resolved path and the
+machine's separator. Any other ``op`` is closed ``op_unknown``.
 
 Paths are absolute and in the machine's own form, and the agent is root.
 On Windows a listing of ``/`` or of no path is the machine's drives. A
@@ -16,6 +17,7 @@ Not pure: reads the file system.
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
+import json
 import os
 import stat
 import string
@@ -108,7 +110,7 @@ def open_file_stream(channel, args: dict):
 
 
 class FileListStream:
-    """One directory's entries, closed with the stream."""
+    """One directory's entries, one ``data`` record each, then the close."""
 
     def __init__(self, channel, args: dict):
         """
@@ -135,22 +137,25 @@ class FileListStream:
             raise StreamRefused("path_invalid", {"path": self._path})
 
     def run(self) -> dict:
-        """Read the directory.
+        """Read the directory and send its entries up, one ``data`` record each.
+
+        Each entry is ``{"name", "path", "kind", "size", "modified_at",
+        "mode"}`` as one JSON line, in name order. On Windows a listing of
+        ``/`` or of no path sends one ``dir`` entry per drive, its ``path``
+        the drive's root.
 
         Returns:
-            ``{"code", "params"}``, the params ``{"path", "separator",
-            "entries"}`` with the path resolved, the machine's path
-            separator, and each entry ``{"name", "path", "kind", "size",
-            "modified_at", "mode"}``. On Windows a listing of ``/`` or of no
-            path has ``path`` ``/`` and one ``dir`` entry per drive, its
-            ``path`` the drive's root.
+            ``{"code", "params"}``, the params ``{"path", "separator"}`` with
+            the path resolved, ``/`` for the drives, and the machine's path
+            separator.
+
+        Raises:
+            StreamClosed: When the hub closed the stream under the listing.
+            GatewayUnreachable: When the stream's connection is gone.
         """
         if self._is_drive_list():
-            return _done(
-                path=FILE_DRIVES_PATH,
-                separator=_separator(),
-                entries=[_drive_entry(root) for root in _drives()],
-            )
+            self._send_entries([_drive_entry(root) for root in _drives()])
+            return _done(path=FILE_DRIVES_PATH, separator=_separator())
         resolved = os.path.realpath(self._path)
         entries = []
         try:
@@ -173,10 +178,16 @@ class FileListStream:
         except OSError as error:
             return _failed(_error_code(error), path=resolved)
         entries.sort(key=_name_key)
-        return _done(path=resolved, separator=_separator(), entries=entries)
+        self._send_entries(entries)
+        return _done(path=resolved, separator=_separator())
 
     def _is_drive_list(self) -> bool:
         return IS_WINDOWS and self._path in ("", FILE_DRIVES_PATH)
+
+    def _send_entries(self, entries: list) -> None:
+        """Each entry up as one ``data`` record, one JSON object on one line."""
+        for entry in entries:
+            self._channel.send_line(json.dumps(entry, separators=(",", ":")))
 
 
 def _drive_entry(root: str) -> dict:

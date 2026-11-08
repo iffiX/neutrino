@@ -3,10 +3,13 @@
 The panel moves no file: a person reaches a machine's files through a
 client's mount or SSH, and the path window lists folders and files to pick
 one. Each request is one ``file {op: list}`` stream on the device's
-session, and what the agent refuses comes back typed.
+session: the agent sends each entry as one ``data`` record holding one JSON
+object, the close carries the path and the separator, and what the agent
+refuses comes back typed.
 """
 
 import asyncio
+import json
 import ntpath
 import posixpath
 
@@ -60,16 +63,33 @@ async def list_files(
         The resolved path, the machine's separator, and the entries,
         directories first. On Windows the root is the list of drives.
     """
-    info = await _run_stream(
+    info, lines = await _run_stream(
         runtime, device_id, {"op": CHANNEL_FILE_OP_LIST, "path": path or ROOT_PATH}
     )
-    entries = [_entry_view(entry) for entry in info.get("entries") or []]
+    entries = [_entry_view(entry) for entry in _listed_entries(lines)]
     entries.sort(key=_directories_first)
     return DeviceFileListView(
         path=str(info.get("path", path)),
         separator=str(info.get("separator") or _paths(runtime, device_id).sep),
         entries=entries,
     )
+
+
+def _listed_entries(lines: bytes) -> list:
+    """The entries a listing sent, one JSON object per line, in order.
+
+    Returns:
+        Each line that reads as a JSON object; any other line is left out.
+    """
+    entries = []
+    for line in lines.decode("utf-8", errors="replace").splitlines():
+        try:
+            entry = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(entry, dict):
+            entries.append(entry)
+    return entries
 
 
 def _is_plain_name(name: str) -> bool:
@@ -116,15 +136,16 @@ async def _open(runtime: PanelRuntime, device_id: str, args: dict):
         raise _offline(error)
 
 
-async def _run_stream(runtime: PanelRuntime, device_id: str, args: dict) -> dict:
+async def _run_stream(runtime: PanelRuntime, device_id: str, args: dict) -> tuple:
     """Open one ``file`` stream, wait for its close, and refuse what it refused.
 
     Returns:
-        The close's ``params``: the stream's result.
+        The close's ``params``, and the bytes of its ``data`` records joined
+        in order.
     """
     stream = await _open(runtime, device_id, args)
     try:
-        info = await asyncio.wait_for(_collect(stream), DEVICE_FILE_OP_TIMEOUT_S)
+        info, data = await asyncio.wait_for(_collect(stream), DEVICE_FILE_OP_TIMEOUT_S)
     except asyncio.TimeoutError:
         await stream.close()
         raise HTTPException(
@@ -135,25 +156,28 @@ async def _run_stream(runtime: PanelRuntime, device_id: str, args: dict) -> dict
             },
         )
     _refuse_if_coded(info)
-    return dict(info.get("params") or {})
+    return dict(info.get("params") or {}), data
 
 
-async def _collect(stream: ChannelStream) -> dict:
-    """Read a stream to its close.
+async def _collect(stream: ChannelStream) -> tuple:
+    """Read a stream to its close, keeping its ``data`` records' bytes.
 
     Returns:
-        The close, ``{"code", "params"}``.
+        The close, ``{"code", "params"}``, and the ``data`` bytes in order.
 
     Raises:
         HTTPException: 409 ``agent_offline`` when the socket went away.
     """
+    data = bytearray()
     while True:
         item = await stream.recv()
         if item is None:
             break
+        if item[0] == "data":
+            data.extend(item[1])
     if stream.is_abandoned:
         raise _offline(AgentOfflineError(stream.kind))
-    return dict(stream.close_info or {})
+    return dict(stream.close_info or {}), bytes(data)
 
 
 async def _first_bytes(stream: ChannelStream) -> bytes:
