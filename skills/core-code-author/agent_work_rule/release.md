@@ -565,7 +565,7 @@ sentence when a tool it needs is missing.
 
 Every download a build makes, through `packaging/shared/download.py` or the
 Gradle wrapper, is tried again after a 5xx, a 429, a timeout or a dropped
-connection for about five minutes in all, because GitHub's release downloads
+connection for about ten minutes in all, because GitHub's release downloads
 answer 504 at times; a 404 or a digest mismatch fails at once.
 
 | Script | Builds | Runs on |
