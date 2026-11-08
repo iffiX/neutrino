@@ -416,7 +416,7 @@ where they fit.
 | `ui.module_catalog.title` | Add module | 添加模块 |
 | `ui.module_catalog.search` | Search names and descriptions | 搜索名称或说明 |
 | `ui.module_catalog.close` | Close | 关闭 |
-| `ui.module_catalog.category_all`, `_code`, `_paper`, `_lab`, `_design`, `_notes`, `_files`, `_remote`, `_other` | All, Coding, Writing papers, Experiments, Design and creation, Notes, Files, Remote desktop, Other | 全部、写代码、写论文、跑实验、设计与创作、笔记、文件、远程桌面、其它 |
+| `ui.module_catalog.category_all`, `_code`, `_paper`, `_notes`, `_files`, `_remote`, `_other` | All, Coding, Writing papers, Notes, Files, Remote desktop, Other | 全部、写代码、写论文、笔记、文件、远程桌面、其它 |
 | `ui.module_catalog.<module>` | one line on the module, in each language | |
 | `ui.module_catalog.requires`, under the line of a module that requires another | Needs: {modules} | 需要：{modules} |
 | `ui.modules.install_title` | Install {module} on {device} | 在 {device} 上安装 {module} |

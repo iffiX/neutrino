@@ -908,16 +908,15 @@ module, and that row scrolls sideways.
 **+ Add module** opens the module catalog, a dialog in the install dialog's
 frame, wider: the title with a search box at its right, a row of activity
 filters (`ui.module_catalog.category_<id>`, **All** first), and a grid of
-cards, each the module's icon, its name, one line on it, its activity and a
-check at its top right. A card of a module that requires another
+cards, one per module the hub has a manifest of, each the module's icon,
+its name, one line on it, its activity and a check at its top right. A card of a module that requires another
 ([agent/module_install.md](agent/module_install.md), "Dependencies") shows
 `ui.module_catalog.requires` under its line with the required modules'
 titles, whether they are installed or not. Checking a card adds its tab, and unchecking takes
 it away; Terminal, Remote desktop and the SSH server are checked and locked,
 since the agent carries them, a module installed on the machine stays
-checked, a module the machine cannot run is greyed out, and a module the hub
-has no manifest of yet is drawn with no check. The dialog's foot holds
-**Close** alone.
+checked, and a module the machine cannot run is greyed out. The dialog's
+foot holds **Close** alone.
 
 A tab of the account layer, File share, Terminal, the SSH server, VS Code,
 code-server, CloudCLI, Codeg, SiYuan, Codex and Claude Code, holds **Enabled accounts**
