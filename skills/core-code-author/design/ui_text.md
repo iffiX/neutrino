@@ -287,6 +287,7 @@ Chinese a kind is 权限, as in 默认权限.
 | `ui.web_shares.empty`, `ui.web_shares.empty_hint` | No App shares; Share one app's page with people who have no client. | 还没有应用分享；把一个应用的页面分享给没有客户端的人。 |
 | `code.share_unknown` | This share no longer exists. | 这个分享已不存在。 |
 | `code.web_share_entry_invalid` | This app's page cannot be shared. | 非法应用：这个应用的页面不能分享。 |
+| `code.web_share_no_public_address` | First turn on one way in from the internet: Direct, SakuraFrp, OpenFrp or the SSH relay. | 先打开一种公网可达的外部访问：直连、SakuraFrp、OpenFrp 或 SSH 中继。 |
 | `code.web_share_site_invalid` | {site} is not an https:// address. | 非法站点：{site} 不是 https:// 地址。 |
 | `code.web_share_unknown` | This share no longer exists. | 这个分享已不存在。 |
 

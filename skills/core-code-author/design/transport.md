@@ -335,15 +335,16 @@ share's ticket, 18 random bytes as `secrets.token_urlsafe` gives them.
 
 The link holds one address, chosen when the share is made: the first public
 address in `urls` order, Direct's public address, then SakuraFrp's,
-OpenFrp's and the relay's while each is a member of `urls`; else the hub's
-address in its first exposed IPv4 segment, the first member of `urls`
-([hub_components/network.md](hub_components/network.md), "Direct"). The hub
-resolves a host name to its IP address at that moment and writes the
+OpenFrp's and the relay's while each is a member of `urls`
+([hub_components/network.md](hub_components/network.md), "Direct"). A hub
+with none of the four makes no share: `web_share/create` refuses
+`web_share_no_public_address` ([protocol.md](protocol.md), "App shares").
+The hub resolves a host name to its IP address at that moment and writes the
 address's port beside it.
 
 | Rule | Reason |
 | --- | --- |
-| A share link holds one address, a public one where the hub has one. | A visitor is most often outside the home, and the page offers the browser one candidate. Several candidates in one offer have not been measured. |
+| A share link holds one public address, and a hub with no public address makes no share. | A visitor is most often outside the home, and the page offers the browser one candidate. Several candidates in one offer have not been measured. A LAN or overlay address reaches no visitor outside it: with only NetBird and EasyTier on, a link was made that nobody outside could open. |
 | The address is an IP address resolved when the share is made, and it stays the link's for the share's life. | Chromium dials a candidate at an IP address alone. A public address that changes later leaves the link pointing at the old one, and a new share gives a new link. |
 
 ## TCP first
