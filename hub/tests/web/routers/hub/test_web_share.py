@@ -292,7 +292,7 @@ def test_a_share_returns_its_link_once_and_keeps_a_hash_of_its_ticket(api, tmp_p
     assert response.status_code == 200
     body = response.json()
     facts = decoded(body["link"])
-    assert body["link"].startswith("https://share.neutrinohub.net/__neutrino/#")
+    assert body["link"].startswith("https://share.neutrinohub.net/#")
     assert facts["hub"] == {"ip": "203.0.113.7", "port": 31234, "fp": FINGERPRINT}
     assert facts["app"] == {"entry": f"ayakaleaf_{DEVICE}_web", "title": "Ayakaleaf"}
     stored_text = (tmp_path / "clients" / "web_shares.json").read_text()

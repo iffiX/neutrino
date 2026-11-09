@@ -4,7 +4,7 @@ What these pin, by protocol.md's "App shares" and transport.md's "The
 links": a share keeps the SHA-256 of its ticket alone, its ufrag in the
 clear and its pwd sealed, and a guest account's password and secret sealed;
 the ticket is 18 random bytes, the ufrag 24 hex characters and the pwd 32;
-the link is ``<site>/__neutrino/#`` and base64url JSON with no padding; an
+the link is ``<site>/#`` and base64url JSON with no padding; an
 expired share is not live; the guest accounts of an app open for its state
 and stay closed while the vault is locked; and a share's state follows its
 entry, its machine and its guest.
@@ -145,7 +145,8 @@ def test_the_link_holds_the_hub_the_pair_the_ticket_and_the_app(config):
         path="/project",
     )
 
-    assert link.startswith("https://share.example/__neutrino/#")
+    assert link.startswith("https://share.example/#")
+    assert "__neutrino" not in link
     assert decoded(link) == {
         "v": 1,
         "hub": {"ip": "203.0.113.7", "port": 8443, "fp": "AB:CD"},

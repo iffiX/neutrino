@@ -74,8 +74,8 @@ CLIENT_CODE_PERMISSION_DEVICE_UNKNOWN = "permission_device_unknown"
 WEB_SHARES_CONFIG_PATH = "clients/web_shares.json"
 # The sites that serve the share page, each {url, title}.
 WEB_SHARE_SITES = ({"url": "https://share.neutrinohub.net", "title": "Neutrino"},)
-# The path of the share page under its site.
-WEB_SHARE_PAGE_PATH = "/__neutrino/"
+# The path of the share page under its site: the site's root.
+WEB_SHARE_PAGE_PATH = "/"
 # The link's form, the ``v`` of its JSON.
 WEB_SHARE_LINK_VERSION = 1
 # The lives a share may have, in days; None lasts until it is revoked.

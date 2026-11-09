@@ -380,7 +380,7 @@ def share_link(
         path: The path the app opens at, empty for none.
 
     Returns:
-        ``<site>/__neutrino/#<base64url>`` of the JSON the page reads
+        ``<site>/#<base64url>`` of the JSON the page reads
         (transport.md, "The links").
     """
     app = {"entry": share.entry_id, "title": title}
