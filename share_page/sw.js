@@ -5,6 +5,8 @@
 // shell's own files under /__neutrino/ go to the network.
 
 const SHELL_PREFIX = "/__neutrino/";
+// The Host the shell sends the app. The app's own addresses name it.
+const APP_HOST = "127.0.0.1";
 // The Web Lock of the active tab, one per origin.
 const ACTIVE_LOCK = "neutrino_active_tab";
 const DROPPED_HEADERS = new Set(["set-cookie", "content-security-policy", "content-security-policy-report-only", "x-frame-options", "transfer-encoding", "connection", "keep-alive"]);
@@ -49,8 +51,11 @@ self.addEventListener("message", (event) => {
 });
 
 self.addEventListener("fetch", (event) => {
-  const url = new URL(event.request.url);
-  if (url.origin !== self.location.origin || url.pathname.startsWith(SHELL_PREFIX)) return;
+  const asked = new URL(event.request.url);
+  const isAppHost = asked.origin !== self.location.origin && asked.hostname === APP_HOST;
+  if (asked.origin !== self.location.origin && !isAppHost) return;
+  if (!isAppHost && asked.pathname.startsWith(SHELL_PREFIX)) return;
+  const url = isAppHost ? new URL(asked.pathname + asked.search, self.location.origin) : asked;
   if (event.request.destination === "serviceworker") { event.respondWith(new Response("", { status: 403 })); return; }
   event.respondWith(route(event, url).catch(() => failure("The app did not answer.")));
 });

@@ -125,3 +125,25 @@ def test_the_kept_copy_holds_no_cookie_header():
         "storing = store(entry.shell.cache, entry.sent.url.href, toCache, entry.head);"
         in on_head
     )
+
+
+def test_a_request_to_the_app_s_own_host_goes_to_the_shell():
+    """The app builds its own addresses from the Host the shell sends."""
+    shell = (REPOSITORY_ROOT / "share_page" / "shell.js").read_text(encoding="utf-8")
+    assert 'const APP_HOST = "127.0.0.1";' in WORKER
+    assert 'host: "127.0.0.1"' in shell
+    start = WORKER.index('self.addEventListener("fetch", (event) => {')
+    handler = WORKER[start : WORKER.index("\n});\n", start)]
+    assert (
+        "const isAppHost = asked.origin !== self.location.origin && asked.hostname === APP_HOST;"
+        in handler
+    )
+    assert (
+        "if (!isAppHost && asked.pathname.startsWith(SHELL_PREFIX)) return;" in handler
+    )
+    assert "if (asked.origin !== self.location.origin && !isAppHost) return;" in handler
+    assert (
+        "const url = isAppHost ? new URL(asked.pathname + asked.search, self.location.origin) : asked;"
+        in handler
+    )
+    assert "event.respondWith(route(event, url)" in handler
