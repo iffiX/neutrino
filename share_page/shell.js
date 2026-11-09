@@ -937,6 +937,51 @@ function onHost(value) {
 // --- WebSockets --------------------------------------------------------------
 
 const WS = { text: 1, binary: 2, close: 8, ping: 9, pong: 10 };
+// The compression the shell offers an app's WebSocket, and the parameters a server may answer it with.
+const WS_DEFLATE_OFFER = "permessage-deflate; client_max_window_bits";
+const WS_DEFLATE_PARAMS = ["server_no_context_takeover", "client_no_context_takeover", "server_max_window_bits", "client_max_window_bits"];
+// The four bytes RFC 7692 takes off the end of each compressed message.
+const WS_DEFLATE_TAIL = new Uint8Array([0x00, 0x00, 0xff, 0xff]);
+// Whether this browser inflates deflate-raw.
+const isWsInflatable = (() => {
+  try { new DecompressionStream("deflate-raw"); return true; } catch (e) { return false; }
+})();
+
+// A server's answer to the offer: true for permessage-deflate, false for no extension, null for any other.
+function wsDeflateAnswer(value) {
+  if (!value) return false;
+  const [name, ...params] = value.split(";").map((part) => part.trim());
+  if (name !== "permessage-deflate" || value.includes(",")) return null;
+  const names = params.map((param) => param.split("=")[0].trim());
+  if (names.some((each) => !WS_DEFLATE_PARAMS.includes(each))) return null;
+  return true;
+}
+
+// The inflater of one socket: one deflate-raw stream for all its compressed messages, its context kept.
+// A message's output is what the stream gave once its write went through.
+function wsInflater() {
+  const stream = new DecompressionStream("deflate-raw");
+  const writer = stream.writable.getWriter();
+  const reader = stream.readable.getReader();
+  let chunks = [];
+  (async () => {
+    for (;;) { const { value, done } = await reader.read(); if (done) return; chunks.push(value); }
+  })().catch(() => {});
+  return {
+    async inflate(payload) {
+      const whole = new Uint8Array(payload.length + WS_DEFLATE_TAIL.length);
+      whole.set(payload); whole.set(WS_DEFLATE_TAIL, payload.length);
+      await writer.write(whole);
+      await sleep(0);
+      const message = new Uint8Array(chunks.reduce((sum, chunk) => sum + chunk.length, 0));
+      let at = 0;
+      for (const chunk of chunks) { message.set(chunk, at); at += chunk.length; }
+      chunks = [];
+      return message;
+    },
+    close() { writer.abort().catch(() => {}); },
+  };
+}
 
 // Opens a WebSocket of the app over a connect stream, framed by RFC 6455.
 function openWebSocket(session, url, protocols, handlers) {
@@ -948,16 +993,21 @@ function openWebSocket(session, url, protocols, handlers) {
   const headers = [["Host", HTTP.host], ["Upgrade", "websocket"], ["Connection", "Upgrade"], ["Sec-WebSocket-Key", key], ["Sec-WebSocket-Version", "13"], ["Origin", "http://" + HTTP.host]];
   const wanted = Array.isArray(protocols) ? protocols : (protocols ? [protocols] : []);
   if (wanted.length) headers.push(["Sec-WebSocket-Protocol", wanted.join(", ")]);
+  if (isWsInflatable) headers.push(["Sec-WebSocket-Extensions", WS_DEFLATE_OFFER]);
   const cookie = session.jar.header(target.pathname);
   if (cookie) headers.push(["Cookie", cookie]);
-  let isRaw = false, isOpen = false, isClosed = false;
-  let fragments = [], fragmentOpcode = 0;
+  let isRaw = false, isOpen = false, isClosed = false, isDeflate = false, inflater = null;
+  let fragments = [], fragmentOpcode = 0, isFragmentCompressed = false;
+  // The messages and the close in the order they came; a compressed message inflates before the next.
+  let delivery = Promise.resolve();
   const finish = (code, reason, wasClean) => {
     if (isClosed) return;
     isClosed = true;
     stream.close();
+    if (inflater) inflater.close();
     handlers.close(code, reason, wasClean);
   };
+  const fail = () => { handlers.error(); finish(1006, "", false); };
   const sendFrame = (opcode, payload) => {
     if (isClosed) return;
     const mask = crypto.getRandomValues(new Uint8Array(4));
@@ -977,7 +1027,7 @@ function openWebSocket(session, url, protocols, handlers) {
     while (frames.length >= 2) {
       const head = frames.peek(Math.min(14, frames.length));
       const view = new DataView(head.buffer);
-      const isFinal = (head[0] & 0x80) !== 0, opcode = head[0] & 0x0f, isMasked = (head[1] & 0x80) !== 0;
+      const isFinal = (head[0] & 0x80) !== 0, isCompressed = (head[0] & 0x40) !== 0, opcode = head[0] & 0x0f, isMasked = (head[1] & 0x80) !== 0;
       let length = head[1] & 0x7f, offset = 2;
       if (length === 126) { if (head.length < 4) return; length = view.getUint16(2); offset = 4; }
       else if (length === 127) { if (head.length < 10) return; length = view.getUint32(2) * 4294967296 + view.getUint32(6); offset = 10; }
@@ -986,15 +1036,21 @@ function openWebSocket(session, url, protocols, handlers) {
       const whole = frames.take(offset + length);
       const payload = whole.subarray(offset);
       if (isMasked) { const mask = whole.subarray(offset - 4, offset); for (let i = 0; i < payload.length; i++) payload[i] ^= mask[i & 3]; }
+      if (isCompressed && (opcode === 0 || opcode >= WS.close)) { fail(); return; }
       if (opcode === WS.ping) { sendFrame(WS.pong, payload); continue; }
       if (opcode === WS.pong) continue;
       if (opcode === WS.close) {
         const code = payload.length >= 2 ? (payload[0] << 8) | payload[1] : 1005;
+        const reason = payload.length > 2 ? decoder.decode(payload.subarray(2)) : "";
         sendFrame(WS.close, payload.subarray(0, Math.min(payload.length, 2)));
-        finish(code, payload.length > 2 ? decoder.decode(payload.subarray(2)) : "", true);
+        delivery = delivery.then(() => finish(code, reason, true));
         return;
       }
-      if (opcode === 0) fragments.push(payload); else { fragmentOpcode = opcode; fragments = [payload]; }
+      if (opcode === 0) fragments.push(payload);
+      else {
+        if (isCompressed && !isDeflate) { fail(); return; }
+        fragmentOpcode = opcode; isFragmentCompressed = isCompressed; fragments = [payload];
+      }
       if (!isFinal) continue;
       let message = fragments[0];
       if (fragments.length > 1) {
@@ -1002,13 +1058,22 @@ function openWebSocket(session, url, protocols, handlers) {
         let at = 0;
         for (const part of fragments) { message.set(part, at); at += part.length; }
       }
+      const isText = fragmentOpcode === WS.text, isInflated = isFragmentCompressed;
       fragments = [];
-      handlers.message(fragmentOpcode === WS.text ? decoder.decode(message) : message.slice());
+      delivery = delivery.then(async () => {
+        const bytes = isInflated ? await inflater.inflate(message) : message;
+        if (!isClosed) handlers.message(isText ? decoder.decode(bytes) : bytes.slice());
+      }).catch(fail);
     }
   };
   const parser = new HttpParser("GET", {
     head: (head) => {
-      if (head.status !== 101) { handlers.error(); finish(1006, "", false); return; }
+      if (head.status !== 101) { fail(); return; }
+      const extension = head.headers.find(([name]) => name.toLowerCase() === "sec-websocket-extensions");
+      const answer = wsDeflateAnswer(extension ? extension[1] : "");
+      if (answer === null || (answer && !isWsInflatable)) { fail(); return; }
+      isDeflate = answer;
+      if (isDeflate) inflater = wsInflater();
       const accepted = head.headers.find(([name]) => name.toLowerCase() === "sec-websocket-protocol");
       isOpen = true;
       handlers.open(accepted ? accepted[1] : "");
@@ -1025,8 +1090,8 @@ function openWebSocket(session, url, protocols, handlers) {
         if (record.type === RECORD.close) { handlers.error(); finish(1006, "", false); session.onCode(parseRefusal(record.payload).code); return; }
       }
     },
-    end: () => finish(1006, "", false),
-    error: () => finish(1006, "", false),
+    end: () => { delivery = delivery.then(() => finish(1006, "", false)); },
+    error: () => { delivery = delivery.then(() => finish(1006, "", false)); },
   };
   stream.write(encodeRecord(RECORD.open, json({ kind: "connect", id: session.entry })));
   stream.write(requestHead("GET", target.pathname + target.search, headers));
