@@ -4,7 +4,8 @@
 where each is mounted here and whether it is. ``mount`` is the Files page's **Mount**: a machine's share
 takes its login from the hub and asks nothing, and a declared share asks
 its user name and password at the terminal, never on the command line.
-Both wait for the record to settle and print how it ended.
+Both wait for the record to settle and print how it ended. ``open`` is
+**Open**: it shows a mounted share's place in the system's file manager.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -129,6 +130,41 @@ def main_unmount(share: str, *, account: str = "", hub: str = "") -> int:
     if fresh is None:
         return 1
     return _report(fresh, entry)
+
+
+def main_open(share: str, *, account: str = "", hub: str = "") -> int:
+    """Show a mounted share's place in the system's file manager, as **Open**
+    does.
+
+    Args:
+        share: ``<machine>[/<share>]`` as ``list`` names it.
+        account: The account a folder share is mounted as; empty where the
+            share has one.
+        hub: What ``--hub`` named.
+
+    Returns:
+        0 once the file manager was started, 1 for a refusal:
+        ``share_not_mounted`` for a share not mounted.
+    """
+    state = wording.read_state()
+    if state is None:
+        return 1
+    entry = names.choose_share(state, share, hub, account)
+    if entry is None:
+        return 1
+    record = _record(state, entry)
+    if record is None or record.get("state") != FILE_STATE_MOUNTED:
+        wording.refuse("share_not_mounted", {})
+        return 1
+    body = {
+        "action": "open",
+        "hub_id": entry.get("hub_id", ""),
+        "record_id": record.get("record_id", ""),
+    }
+    if wording.post("/api/services/file", body) is None:
+        return 1
+    wording.say(wording.line("opening", address=str(record.get("path", ""))))
+    return 0
 
 
 def _mount_body(entry: dict, record: "dict | None", place: str) -> "dict | None":

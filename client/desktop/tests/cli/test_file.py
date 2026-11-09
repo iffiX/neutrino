@@ -1,10 +1,12 @@
-"""``nclient file``: list, mount and unmount against a scripted client.
+"""``nclient file``: list, mount, unmount and open against a scripted client.
 
 A share is ``<machine>/<share>``, the share left out where the machine has
 one. A machine's share mounts with no question at the default place or the
 one given; a declared share asks its user name and password at the
 terminal, never on the command line. Both wait for the record to settle
-and print where it stands, or its failure's words.
+and print where it stands, or its failure's words. ``open`` sends the
+mounted record's **Open** and refuses ``share_not_mounted`` for a share
+that is not mounted.
 """
 
 import pytest
@@ -230,12 +232,63 @@ def test_unmount_of_a_share_not_mounted_changes_nothing(running):
     assert running.posts("/api/services/file") == []
 
 
+def test_open_shows_the_mounted_share_in_the_file_manager(running, capsys):
+    assert file.main_open("lab-gpu") == 0
+
+    assert running.posts("/api/services/file") == [
+        {"action": "open", "hub_id": "h1", "record_id": "r1"}
+    ]
+    assert capsys.readouterr().out.strip() == (
+        "opening /home/alice/remote/lab-gpu-alice"
+    )
+
+
+def test_open_speaks_chinese(running, chinese, capsys):
+    assert file.main_open("lab-gpu") == 0
+    assert capsys.readouterr().out.strip() == (
+        "正在打开 /home/alice/remote/lab-gpu-alice"
+    )
+
+
+def test_open_of_a_share_never_mounted_is_refused(running, capsys):
+    assert file.main_open("192.168.1.9") == 1
+
+    assert running.posts("/api/services/file") == []
+    assert capsys.readouterr().err.strip() == wording.word_code("share_not_mounted")
+
+
+def test_open_of_an_unmounted_record_is_refused(running, capsys):
+    running.state["mounts"][0].update(state="detached", is_attached=False)
+
+    assert file.main_open("lab-gpu") == 1
+
+    assert running.posts("/api/services/file") == []
+    assert capsys.readouterr().err.strip() == (
+        "mount the share first: nclient file mount"
+    )
+
+
+def test_open_that_the_client_refuses_prints_its_words(running, capsys):
+    place = "/home/alice/remote/lab-gpu-alice"
+
+    def refuse(body):
+        return 409, {"code": "folder_open_failed", "params": {"path": place}}
+
+    running.answers["/api/services/file"] = refuse
+
+    assert file.main_open("lab-gpu") == 1
+    assert capsys.readouterr().err.strip() == (
+        f"the file manager could not open {place}"
+    )
+
+
 @pytest.mark.parametrize(
     "call",
     [
         lambda: file.main_list(),
         lambda: file.main_mount("lab-gpu"),
         lambda: file.main_unmount("lab-gpu"),
+        lambda: file.main_open("lab-gpu"),
     ],
 )
 def test_no_running_client_is_client_not_running(running, capsys, call):

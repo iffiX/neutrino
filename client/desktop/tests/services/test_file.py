@@ -762,6 +762,19 @@ def test_a_file_manager_that_does_not_start_is_typed_with_the_place(service):
     assert subject.rows()[0]["state"] == "mounted"
 
 
+def test_open_of_a_place_with_nothing_mounted_is_refused(service):
+    subject, platform, store, tmp_path = service
+    location = str(tmp_path / "remote" / "lab-media")
+    assert attach(subject, path=location) == {}
+    (record_id,) = store.mounts()
+    platform.attached.discard(location)
+
+    opened = subject.act(entries=[], body={"action": "open", "record_id": record_id})
+
+    assert opened == {"code": "share_not_mounted", "params": {}}
+    assert platform.opened_folders == []
+
+
 def test_opening_an_unknown_record_is_refused(service):
     subject, platform, _store, _tmp_path = service
 

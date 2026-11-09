@@ -200,6 +200,7 @@ The machines' file shares. No password: the client takes it from the hub.
   list         each machine's shares and whether they are mounted here
   mount        mount a share
   unmount      unmount it
+  open         open it in the file manager, once it is mounted
 
 Example: nclient file mount lab-gpu""",
         "file list": """Usage: nclient file list
@@ -220,6 +221,13 @@ folder share, and the first free drive letter on Windows.
 
 Unmount it. Name the account with --account when a folder share is mounted
 as several.""",
+        "file open": """Usage: nclient file open <machine>[/<share>] [--account <account>]
+
+Open a mounted share in the file manager. The share must be mounted: nclient
+file mount first.
+
+  machine/share   the machine's name; the share can be left out when the machine has one
+  --account       the account a folder share is mounted as; can be left out when one account can use it""",
         "terminal": """Usage: nclient terminal <command> <machine> [arguments]
 
 Terminal sessions on a machine, run as an enabled account, with no password.
@@ -472,6 +480,7 @@ Change one setting. The names and the values they take are in nclient settings s
   list         每个系统的共享和本机的挂载状态
   mount        挂载一个共享
   unmount      卸载
+  open         已挂载时，在文件管理器里打开
 
 例子：nclient file mount lab-gpu""",
         "file list": """用法：nclient file list
@@ -489,6 +498,12 @@ Linux 和 macOS 是 ~/remote/<系统-共享>，文件夹共享再加 -<账户>�
         "file unmount": """用法：nclient file unmount <系统>[/<共享>] [--account <账户>]
 
 卸载。文件夹共享挂了几个账户时，用 --account 指定卸哪个。""",
+        "file open": """用法：nclient file open <系统>[/<共享>] [--account <账户>]
+
+在文件管理器里打开一个已挂载的共享。共享要先挂载：先 nclient file mount。
+
+  系统/共享    系统名；系统只有一个共享时共享名可以不写
+  --account    文件夹共享以哪个账户挂载；只有一个账户能用时可以不写""",
         "terminal": """用法：nclient terminal <命令> <系统> [参数]
 
 被控端上的终端会话，以启用的账户运行，不用密码。

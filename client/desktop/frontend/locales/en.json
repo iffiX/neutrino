@@ -96,6 +96,7 @@
   "code.share_login_rejected": "The share rejected the username or password. Open Configure and enter them again.",
   "code.share_hub_login_rejected": "The share refused the login the hub gave. Check this machine's file share in the panel.",
   "code.share_not_found": "The host has no share by this name.",
+  "code.share_not_mounted": "Mount the share first.",
   "code.share_session_conflict": "Windows already holds a connection to this server under another login; disconnect it first.",
   "code.share_unreachable": "The host cannot be reached.",
   "code.shell_program_unusable": "That machine cannot run {path}",

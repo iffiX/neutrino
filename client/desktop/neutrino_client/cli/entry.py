@@ -9,7 +9,7 @@ follow the window's pages, with the program itself and ``ssh`` above them:
     nclient hub list | join | leave | open
     nclient app list | open | stop | set
     nclient ai show | set
-    nclient file list | mount | unmount
+    nclient file list | mount | unmount | open
     nclient terminal list | open | attach | exec | set | stop
     nclient rdp list | connect
     nclient settings show | set
@@ -238,6 +238,9 @@ def _parser():
     unmount_parser = _leaf(verbs, "file", "unmount")
     unmount_parser.add_argument("share")
     unmount_parser.add_argument("--account", default="")
+    file_open_parser = _leaf(verbs, "file", "open")
+    file_open_parser.add_argument("share")
+    file_open_parser.add_argument("--account", default="")
 
     terminal_parser = _group(commands, levels, "terminal")
     verbs = terminal_parser.add_subparsers(dest="verb")
@@ -383,6 +386,10 @@ def _run_file_unmount(arguments, hub_name: str, command: list) -> int:
     return file.main_unmount(arguments.share, account=arguments.account, hub=hub_name)
 
 
+def _run_file_open(arguments, hub_name: str, command: list) -> int:
+    return file.main_open(arguments.share, account=arguments.account, hub=hub_name)
+
+
 def _run_terminal_list(arguments, hub_name: str, command: list) -> int:
     return terminal.main_list(arguments.machine, hub=hub_name)
 
@@ -459,6 +466,7 @@ DISPATCH = {
     ("file", "list"): _run_file_list,
     ("file", "mount"): _run_file_mount,
     ("file", "unmount"): _run_file_unmount,
+    ("file", "open"): _run_file_open,
     ("terminal", "list"): _run_terminal_list,
     ("terminal", "open"): _run_terminal_open,
     ("terminal", "attach"): _run_terminal_attach,

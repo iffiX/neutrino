@@ -636,14 +636,17 @@ class FileServiceHandler(ServiceTypeHandler):
 
         Returns:
             Empty once the file manager started; ``unknown_request`` for a
-            record not kept, ``unsupported_platform`` where no file manager
-            is known, ``folder_open_failed {path}`` when it does not start.
+            record not kept, ``share_not_mounted`` while nothing is mounted
+            at its place, ``unsupported_platform`` where no file manager is
+            known, ``folder_open_failed {path}`` when it does not start.
         """
         record = self._store.mounts().get(record_id)
         if record is None:
             return {"code": "unknown_request", "params": {}}
         location = str(record.get("path", ""))
         try:
+            if not self._platform.is_share_attached(location=location):
+                return {"code": "share_not_mounted", "params": {}}
             self._platform.open_folder(location=location)
         except PlatformUnsupportedError:
             return {"code": "unsupported_platform", "params": {}}

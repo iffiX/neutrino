@@ -2591,7 +2591,7 @@ function drawFileEntry(card, state, hub, entry) {
     const onSave = isLoginRefused(entry, record) && !entry.job
       ? () => sendFileLogin(entry, record, staged) : null;
     extras.push(drawFileForm(staged, state, entry, key, onSave, () => {
-      if (!entry.job) {
+      if (!entry.job && !(record && record.is_attached)) {
         mount.disabled = !isEntryFree(hub, entry) || isUnhealthy(entry)
           || !isMountFormFilled(staged, entry);
       }
@@ -2676,10 +2676,11 @@ function cancelFileForm(key) {
 }
 
 // The record's button, before Configure: Mount, its job while it mounts,
-// Unmount once mounted, its job while it unmounts. A machine's share mounts
-// at the first press at its default place; a stage wins: what it holds is
-// sent as a fresh mount, and it is kept until the share is mounted. After a
-// refused login on a declared share the press opens the form instead.
+// Unmount once mounted whatever the stage holds, its job while it unmounts.
+// A machine's share mounts at the first press at its default place; a stage
+// wins over a record not mounted: what it holds is sent as a fresh mount,
+// and it is kept until the share is mounted. After a refused login on a
+// declared share the press opens the form instead.
 function mountButton(state, hub, entry, record, staged) {
   if (entry.job) {
     return jobButton('', entry.job, entry.job === 'unmounting' ? 'danger' : '');
@@ -2693,6 +2694,14 @@ function mountButton(state, hub, entry, record, staged) {
   const button = document.createElement('button');
   button.type = 'button';
   const isFree = isEntryFree(hub, entry);
+  if (record && record.is_attached) {
+    button.className = 'danger';
+    button.textContent = t('ui.unmount');
+    button.disabled = !isFree;
+    button.onclick = () => serviceAction('file',
+      { action: 'unmount', hub_id: entry.hub_id, record_id: record.record_id });
+    return button;
+  }
   const isRefused = isLoginRefused(entry, record);
   if (staged && !staged.is_open && isRefused) {
     button.textContent = t('ui.mount');
@@ -2730,18 +2739,10 @@ function mountButton(state, hub, entry, record, staged) {
     };
     return button;
   }
-  if (!record.is_attached) {
-    button.textContent = t('ui.mount');
-    button.disabled = !isFree || isUnhealthy(entry);
-    button.onclick = () => serviceAction('file',
-      { action: 'mount', hub_id: entry.hub_id, record_id: record.record_id });
-    return button;
-  }
-  button.className = 'danger';
-  button.textContent = t('ui.unmount');
-  button.disabled = !isFree;
+  button.textContent = t('ui.mount');
+  button.disabled = !isFree || isUnhealthy(entry);
   button.onclick = () => serviceAction('file',
-    { action: 'unmount', hub_id: entry.hub_id, record_id: record.record_id });
+    { action: 'mount', hub_id: entry.hub_id, record_id: record.record_id });
   return button;
 }
 

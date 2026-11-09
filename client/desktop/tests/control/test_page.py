@@ -3205,6 +3205,7 @@ def run_file_row(entry: dict, records: list, hub=None, staged=None) -> dict:
             "mountReason",
             "mountButton",
             "openFolderButton",
+            "sendFileMount",
             "drawFileEntry",
             "isMac",
         )
@@ -3225,11 +3226,13 @@ def run_file_row(entry: dict, records: list, hub=None, staged=None) -> dict:
             "const sent = [];",
             "const serviceAction = (type, body) => { sent.push([type, body]); };",
             "const redraw = () => {};",
-            "const sendFileMount = () => {};",
             "const sendFileLogin = () => {};",
             "const openFileForm = () => {};",
             "const cancelFileForm = () => {};",
-            "const drawFileForm = () => element();",
+            "const drawFileForm = (staged, state, entry, key, onSave, onChange) => {",
+            "  onChange();",
+            "  return element();",
+            "};",
             "const drawMountRecord = (record) => ({textContent: record.path});",
             "const noteLine = (text) => ({textContent: text});",
             "const setReasonLine = () => {};",
@@ -3341,12 +3344,48 @@ def test_open_waits_for_the_mount_and_is_held_while_the_row_works():
     assert [action[1] for action in row["actions"]] == [True, True, True]
 
 
-def test_a_saved_place_on_a_mounted_share_turns_its_button_to_mount_and_keeps_open():
-    staged = {"h1/share_media": {"is_open": False, "path": "/home/lab/elsewhere"}}
+UNMOUNT_MEDIA = ["file", {"action": "unmount", "hub_id": "h1", "record_id": "r1"}]
+
+
+@pytest.mark.parametrize("is_open", [False, True])
+def test_a_mounted_row_keeps_its_buttons_whatever_configure_holds(is_open):
+    staged = {"h1/share_media": {"is_open": is_open, "path": "/home/lab/elsewhere"}}
 
     row = run_file_row(MEDIA, [MEDIA_MOUNTED], staged=staged)
 
-    assert [action[0] for action in row["actions"]] == ["Mount", "Configure", "Open"]
+    assert [action[:3] for action in row["actions"]] == [
+        ["Unmount", False, "danger"],
+        ["Configure", False, "ghost"],
+        ["Open", False, "ghost"],
+    ]
+    assert row["actions"][0][3] == UNMOUNT_MEDIA
+
+
+def test_a_declared_shares_open_form_never_holds_its_unmount():
+    declared = dict(MEDIA, is_declared=True)
+    staged = {"h1/share_media": {"is_open": True, "username": "", "path": "/x"}}
+
+    row = run_file_row(declared, [MEDIA_MOUNTED], staged=staged)
+
+    assert row["actions"][0][:3] == ["Unmount", False, "danger"]
+
+
+def test_the_next_mount_takes_the_place_configure_saved():
+    staged = {"h1/share_media": {"is_open": False, "path": "/home/lab/elsewhere"}}
+    detached = dict(MEDIA_MOUNTED, is_attached=False, state="detached")
+
+    row = run_file_row(MEDIA, [detached], staged=staged)
+
+    assert [action[0] for action in row["actions"]] == ["Mount", "Configure"]
+    assert row["actions"][0][3] == [
+        "file",
+        {
+            "action": "mount",
+            "hub_id": "h1",
+            "id": "share_media",
+            "path": "/home/lab/elsewhere",
+        },
+    ]
 
 
 def test_open_reuses_the_apps_open_word():
@@ -3477,6 +3516,7 @@ UI_TEXT_060 = (
         "The file manager could not open {path}.",
         "文件管理器打不开 {path}。",
     ),
+    ("code.share_not_mounted", "Mount the share first.", "先挂载这个共享。"),
     ("ui.app.port_dialog_title", "Local ports of {app}", "{app} 的本机端口"),
     (
         "ui.reason.terminal_no_account",

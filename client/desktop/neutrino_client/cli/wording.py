@@ -247,6 +247,7 @@ CLIENT_CODE_WORDS = {
             "NeutrinoClientFiles service"
         ),
         "folder_open_failed": "the file manager could not open {path}",
+        "share_not_mounted": "mount the share first: nclient file mount",
         "mountpoint_invalid": "give a folder under your home, like ~/remote/share",
         "mountpoint_not_drive_letter": "give an unused drive letter, like N:",
         "service_unknown": "the hub no longer publishes that service",
@@ -397,6 +398,7 @@ CLIENT_CODE_WORDS = {
             "文件适配器无法启动：{detail}；检查 NeutrinoClientFiles 服务"
         ),
         "folder_open_failed": "文件管理器打不开 {path}",
+        "share_not_mounted": "先挂载这个共享：nclient file mount",
         "mountpoint_invalid": (
             "非法挂载路径：请填家目录下的文件夹，例如 ~/remote/share"
         ),

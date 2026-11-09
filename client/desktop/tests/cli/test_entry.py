@@ -136,6 +136,20 @@ DISPATCHED = [
         ("gpu/lab",),
         {"account": "bob", "hub": ""},
     ),
+    (
+        ["file", "open", "gpu"],
+        "file",
+        "main_open",
+        ("gpu",),
+        {"account": "", "hub": ""},
+    ),
+    (
+        ["file", "open", "gpu/lab", "--account", "bob"],
+        "file",
+        "main_open",
+        ("gpu/lab",),
+        {"account": "bob", "hub": ""},
+    ),
     (["terminal", "list", "gpu"], "terminal", "main_list", ("gpu",), {"hub": ""}),
     (
         ["terminal", "open", "gpu", "--account", "lab"],
@@ -501,6 +515,7 @@ UNBOUND = [
     (["file", "list"], 0),
     (["file", "mount", "gpu"], 1),
     (["file", "unmount", "gpu"], 1),
+    (["file", "open", "gpu"], 1),
     (["terminal", "list", "gpu"], 2),
     (["terminal", "open", "gpu"], 2),
     (["terminal", "attach", "gpu", "3f"], 2),
