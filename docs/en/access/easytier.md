@@ -16,7 +16,7 @@ EasyTier runs in one of these modes:
 - **EasyTier console:** uses the official console, where you register an account.
 - **Manual bootstrap peers:** works without an account. You enter a bootstrap peer address, that is, the address of a computer already on the virtual network.
 
-Before you start, [join the device to the hub](/en/access/join) and turn on its **Virtual network** permission, as [Clients](/en/hub/clients) describes. With EasyTier, [App share](/en/share/web_share) links open only on the LAN; to send links to visitors outside, also turn on [SakuraFrp](/en/access/sakurafrp). A device uses one of EasyTier and NetBird at a time. On an iPhone, install EasyTier's own app.
+Before you start, [join the device to the hub](/en/access/join) and turn on its **Virtual network** permission, as [Clients](/en/hub/clients) describes. With only EasyTier on, the hub refuses to generate [App share](/en/share/web_share) links; to share an app, also turn on [SakuraFrp](/en/access/sakurafrp). A device uses one of EasyTier and NetBird at a time. On an iPhone, install EasyTier's own app.
 
 ## Turn on EasyTier
 

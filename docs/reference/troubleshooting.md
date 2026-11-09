@@ -684,13 +684,6 @@ cc-switch 无法把工具指向网关。按后面的原因处理，关闭开关�
 
 线路较慢，页面仍在连接。如果 30 秒后仍未连接成功，页面显示 **中枢已离线。**
 
-### 外部网络打不开，局域网能打开
-
-只打开了 EasyTier 或者 NetBird，或者生成链接时还没有公网地址。
-
-1. 打开直连、SakuraFrp、OpenFrp 或者 SSH 中继中的一种。
-1. 重新生成一条分享链接，见[应用分享](/share/web_share)。
-
 ### `web_share_entry_invalid`
 
 这个应用的页面不能分享。选择列表里的应用。
@@ -702,6 +695,13 @@ cc-switch 无法把工具指向网关。按后面的原因处理，关闭开关�
 ### `web_share_unknown`
 
 这个分享已经不存在。刷新页面。
+
+### `web_share_no_public_address`
+
+直连、SakuraFrp、OpenFrp 和 SSH 中继都没有打开，中枢不生成分享链接。面板显示 **先打开一种公网可达的外部访问：直连、SakuraFrp、OpenFrp 或 SSH 中继。** 只打开 EasyTier 或 NetBird 也是这样。
+
+1. 打开直连、SakuraFrp、OpenFrp 或者 SSH 中继中的一种，见[外部访问：选择一种方式](/access/ways_in)。
+1. 重新生成分享链接，见[应用分享](/share/web_share)。
 
 ## 客户端：中枢一行
 
@@ -897,6 +897,14 @@ EasyTier 控制台还没有把它挂载到网络。到控制台把它挂载到�
 ### `mount_tooling_missing`
 
 缺少挂载工具。重新安装客户端的软件包。
+
+### `share_not_mounted`
+
+这个共享还没有挂载，所以打不开。界面显示 **先挂载这个共享。** 先按 **挂载**，或者运行 `nclient file mount`。
+
+### `folder_open_failed`
+
+系统的文件管理器打不开挂载的文件夹，界面显示 **文件管理器打不开**，后面是文件夹的路径。确认这台电脑装有文件管理器，再按一次 **打开**。
 
 ### `pkexec_missing`
 

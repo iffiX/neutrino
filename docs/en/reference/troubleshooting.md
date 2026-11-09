@@ -686,13 +686,6 @@ The app's system is offline, or the app has stopped. After it recovers, the page
 
 The line is slow, and the page is still connecting. If it has not connected after 30 seconds, the page shows **The hub is offline.**
 
-### Outside networks cannot open it, and the LAN can
-
-Only EasyTier or NetBird is on, or the hub had no public address when the link was generated. To fix it:
-
-1. Turn on Direct, SakuraFrp, OpenFrp or the SSH relay.
-1. Generate a new share link, as [App shares](/en/share/web_share) describes.
-
 ### `web_share_entry_invalid`
 
 The page of this app cannot be shared. Choose an app from the list.
@@ -704,6 +697,13 @@ The site is not an `https://` address. Change it to an address that starts with 
 ### `web_share_unknown`
 
 This share no longer exists. Refresh the page.
+
+### `web_share_no_public_address`
+
+None of Direct, SakuraFrp, OpenFrp and the SSH relay is on, so the hub refuses to generate the share link. The panel shows **First turn on one way in from the internet: Direct, SakuraFrp, OpenFrp or the SSH relay.** EasyTier or NetBird alone gives the same result. To fix it:
+
+1. Turn on one of Direct, SakuraFrp, OpenFrp or the SSH relay; see [Choose an access method](/en/access/ways_in).
+1. Generate the share link again, as [App shares](/en/share/web_share) describes.
 
 ## Client: the hub row
 
@@ -899,6 +899,14 @@ The system did not finish the mount within ten minutes. Select **Mount** again.
 ### `mount_tooling_missing`
 
 The mount tool is missing. Reinstall the client's package.
+
+### `share_not_mounted`
+
+The share is not mounted, so it cannot be opened. The window shows **Mount the share first.** Select **Mount** first, or run `nclient file mount`.
+
+### `folder_open_failed`
+
+The system's file manager could not open the mounted folder, and the window shows **The file manager could not open** followed by the folder's path. Check that this computer has a file manager, then select **Open** again.
 
 ### `pkexec_missing`
 

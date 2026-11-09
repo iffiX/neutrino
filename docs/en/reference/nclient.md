@@ -177,13 +177,14 @@ Linux 5.15.0-198-generic
 
 ## file: files
 
-| Command                                   | Effect                                                                                                                    |
-| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `nclient file list`                       | Lists the shares by system: share name, local mount location, mount state                                                 |
-| `nclient file mount <system>[/<share>]`   | Mounts without a password. The default location is `~/remote/<system>-<share>`, or the first free drive letter on Windows |
-| `nclient file unmount <system>[/<share>]` | Unmounts. When a folder share is mounted for several accounts, `--account` names one                                      |
+| Command                                   | Effect                                                                                                                                                       |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `nclient file list`                       | Lists the shares by system: share name, local mount location, mount state                                                                                    |
+| `nclient file mount <system>[/<share>]`   | Mounts without a password. The default location is `~/remote/<system>-<share>`, or the first free drive letter on Windows                                    |
+| `nclient file unmount <system>[/<share>]` | Unmounts. When a folder share is mounted for several accounts, `--account` names one                                                                         |
+| `nclient file open <system>[/<share>]`    | Opens a mounted share in the system's file manager. For a share that is not mounted, it shows **mount the share first: nclient file mount** and exits with 1 |
 
-`nclient file mount` also takes these options: `--account` picks the account, `--path` picks the folder (Linux, macOS), and `--drive` picks the drive letter (Windows).
+`nclient file mount` also takes these options: `--account` picks the account, `--path` picks the folder (Linux, macOS), and `--drive` picks the drive letter (Windows). `nclient file open` also takes `--account`.
 
 ## ai
 

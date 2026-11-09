@@ -81,12 +81,12 @@ Before you start, add your phone or computer to the hub, as [Join the hub](/en/a
 
 Mounting connects a share to your computer, where you use it like a local drive or folder. On a computer, mount a share:
 
-1. Open the client and go to the **Files** page. A home share is named after its account, and a folder share shows as `demo (lab)`, with one row for each of its accounts. Select **Mount** on the row you want, with no password to enter. When the mount finishes, the location of the files appears under the row, and the button becomes **Unmount**.
+1. Open the client and go to the **Files** page. A home share is named after its account, and a folder share shows as `demo (lab)`, with one row for each of its accounts. Select **Mount** on the row you want, with no password to enter. When the mount finishes, the location of the files appears under the row, and the buttons become **Unmount**, **Configure** and **Open**. Select **Open** to open the folder in the system's file manager.
 
    ![The client's Files page with the Mount button boxed in red](/guide/en/deploy_file_share_40_client_mount.webp "Select Mount")
    ![A local path under the row, with the Unmount button boxed in red](/guide/en/deploy_file_share_42_client_mounted.webp "Mounted")
 
-1. To use another location, select **Configure** on the row before you mount, fill in the form, then select **Mount**.
+1. To use another location, select **Configure** on the row before you mount, fill in the form, then select **Mount**. A location saved after mounting applies at the next mount.
 
    ![The configure form open, with a mount path field](/guide/en/deploy_file_share_41_client_form.webp)
 

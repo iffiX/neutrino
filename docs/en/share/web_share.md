@@ -6,7 +6,7 @@ App share is the feature that shares a web app with other people through a link.
 
 App share works only for apps with a web page, such as code-server, SiYuan, Gitea, or a website you run in a container. Terminals, file sharing, remote desktop, SSH, port entries, the AI gateway and the panel cannot be shared.
 
-If the other person is on a campus or mobile network, the hub must be reachable from outside. Turn on one of [Direct](/en/access/direct), [SakuraFrp](/en/access/sakurafrp), [OpenFrp](/en/access/openfrp) or [SSH relay](/en/access/vps) first. If none of them is on, only devices on the hub's LAN can open the link. If you are unsure which one to choose, see [Choose an access method](/en/access/ways_in).
+Before you generate a link, turn on one of [Direct](/en/access/direct), [SakuraFrp](/en/access/sakurafrp), [OpenFrp](/en/access/openfrp) or [SSH relay](/en/access/vps), so that the hub is reachable from outside. If none of them is on, the hub refuses to generate the link. The panel then shows **First turn on one way in from the internet: Direct, SakuraFrp, OpenFrp or the SSH relay.** EasyTier or NetBird alone is not enough. If you are unsure which one to choose, see [Choose an access method](/en/access/ways_in).
 
 ## Generate a link
 
@@ -103,9 +103,7 @@ If you prefer not to depend on this website, you can host the page yourself:
 
 ## Address in a link
 
-Each link holds one address, which is fixed when the link is generated. The hub picks the first access method that is on, in this order: the public address of Direct, SakuraFrp, OpenFrp, SSH relay. If none of them is on, the link uses the LAN address.
-
-If only EasyTier or NetBird is on, the link also uses the LAN address, and only devices on the LAN can open it.
+Each link holds one address, which is fixed when the link is generated. The hub picks the first access method that is on, in this order: the public address of Direct, SakuraFrp, OpenFrp, SSH relay. If none of them is on, or only EasyTier or NetBird is on, the hub refuses to generate the link.
 
 An older link holds only the address from when it was generated. It cannot use an access method you turned on later, and it stops working when the public address changes. In both cases, generate a new link.
 

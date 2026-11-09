@@ -18,7 +18,7 @@ EasyTier 有两种用法：**EasyTier 控制台** 和 **手动引导节点**。
 
 开始之前，你要把设备[加入中枢](/access/join)，并打开这台设备的 **虚拟网** 权限，见[客户端](/hub/clients)。
 
-使用 EasyTier 时，[应用分享](/share/web_share)的链接只有局域网能打开。如果你要把链接发给外部网络的访客，再开启 [SakuraFrp](/access/sakurafrp)。一台设备同一时间只使用 EasyTier 和 NetBird 中的一个。在 iPhone 上，你要安装 EasyTier 自己的 App。
+只打开 EasyTier 时，中枢不生成[应用分享](/share/web_share)的链接。如果你要分享应用，再开启 [SakuraFrp](/access/sakurafrp)。一台设备同一时间只使用 EasyTier 和 NetBird 中的一个。在 iPhone 上，你要安装 EasyTier 自己的 App。
 
 ## 打开 EasyTier
 

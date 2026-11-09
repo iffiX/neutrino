@@ -12,7 +12,7 @@ NetBird is a virtual network service: the hub and your devices join one NetBird 
 
 Before you start, [join the device to the hub](/en/access/join) and turn on its **Virtual network** permission, as [Clients](/en/hub/clients) describes. The following steps also use a netbird.io account and a setup key.
 
-With NetBird, [App share](/en/share/web_share) links open only on the LAN. To send links to visitors outside, also turn on [SakuraFrp](/en/access/sakurafrp). A device uses one of NetBird and EasyTier at a time. On an iPhone, install NetBird's own app, as [iOS app](/en/access/ios) describes.
+With only NetBird on, the hub refuses to generate [App share](/en/share/web_share) links. To share an app, also turn on [SakuraFrp](/en/access/sakurafrp). A device uses one of NetBird and EasyTier at a time. On an iPhone, install NetBird's own app, as [iOS app](/en/access/ios) describes.
 
 ## Create a setup key
 

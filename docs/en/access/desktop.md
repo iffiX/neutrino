@@ -65,12 +65,14 @@ If this computer also has the agent installed, the switch is grey. Use **AI tool
 
 On the **Files** page, you mount the shares of your systems on this computer.
 
-Select **Mount** on a row; it mounts without a password. After mounting, the row shows the share's location. On Linux and macOS, shares mount under `~/remote/` by default, and on Windows a share mounts as a drive letter. You can open it in the file manager.
+While a share is not mounted, its row has **Mount** and **Configure**. Select **Mount**; it mounts without a password. After mounting, the row shows the share's location, and the buttons become **Unmount**, **Configure** and **Open**. On Linux and macOS, shares mount under `~/remote/` by default, and on Windows a share mounts as a drive letter.
 
 ![Files page with the Mount button marked in red](/guide/en/access_desktop_08_files.webp "Select Mount")
-![Mounted path shown, Unmount button marked in red](/guide/en/access_desktop_09_files_mounted.webp "The location appears")
+![Mounted location shown, Open button marked in red](/guide/en/access_desktop_09_files_mounted.webp "Select Open")
 
-Select **Configure** to change the mount location, and **Unmount** to unmount the share. For a share declared by hand, such as a NAS, first enter **Share username** and **Share password** in **Configure**. On macOS, the system shows a confirmation dialog at the first connection.
+Select **Open** to open the mounted folder in the system's file manager. Only the desktop client has this button. Select **Unmount** to unmount the share.
+
+Select **Configure** to change the mount location. A location saved for a mounted share applies at the next mount; the buttons and the current mount stay as they are. For a share declared by hand, such as a NAS, first enter **Share username** and **Share password** in **Configure**. On macOS, the system shows a confirmation dialog at the first connection.
 
 ## Terminals
 
