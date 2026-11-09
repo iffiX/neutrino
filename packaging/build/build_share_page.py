@@ -3,9 +3,9 @@
     python3 packaging/build/build_share_page.py --output-dir dist/share_page/
 
 Runs on: any machine with Python 3.11 or newer. The tree is what Cloudflare
-Pages and EdgeOne Pages publish as they are: the page's four files under
-``__neutrino/``, the shell page again at the root, which the host serves for
-every path it holds no file for, and the host's header file at the root,
+Pages and EdgeOne Pages publish as they are: the shell page at the root,
+which the host also serves for every path it holds no file for, the page's
+three scripts under ``__neutrino/``, and the host's header file at the root,
 ``_headers`` for Cloudflare Pages and ``edgeone.json`` for EdgeOne Pages,
 each sending ``Service-Worker-Allowed: /`` with ``sw.js``. Each script is
 named with ``?v=`` and the first 10 hex characters of its content's sha256.
@@ -25,7 +25,7 @@ sys.path.insert(0, str(REPO_ROOT / "packaging"))
 from shared import edition_build  # noqa: E402
 
 SHARE_PAGE_DIR = REPO_ROOT / "share_page"
-# The directory of the site the page is served from.
+# The directory of the site the page's scripts are served from.
 SHARE_PAGE_PREFIX = "__neutrino"
 SHARE_PAGE_FILES = ("index.html", "shell.js", "sw.js", "shim.js")
 # The files each host reads from the site's root.
@@ -83,8 +83,8 @@ def assemble(output_dir: Path) -> Path:
     page_dir = output_dir / SHARE_PAGE_PREFIX
     page_dir.mkdir(parents=True)
     for name, content in contents.items():
-        (page_dir / name).write_bytes(content)
-    (output_dir / "index.html").write_bytes(contents["index.html"])
+        target = output_dir if name == "index.html" else page_dir
+        (target / name).write_bytes(content)
     for name in SHARE_PAGE_HOST_FILES:
         shutil.copyfile(SHARE_PAGE_DIR / name, output_dir / name)
     return output_dir

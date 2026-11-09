@@ -58,6 +58,23 @@ def test_the_worker_and_the_shell_name_one_lock():
     assert "lockClient: this.lockClient" in shell
 
 
+def test_a_navigation_of_the_tab_gets_the_shell_page_from_the_site_s_root():
+    """The tab's ``/`` is the shell page, and the frame's ``/`` the app's page."""
+    assert 'const SHELL_PAGE = "/";' in WORKER
+    assert 'const SHELL_PREFIX = "/__neutrino/";' in WORKER
+    shell_page = function("async function shellPage() {")
+    assert 'const page = await fetch(SHELL_PAGE, { cache: "no-cache" });' in shell_page
+    route = function("async function route(event, url) {")
+    answered = route.index(
+        'if (isNavigation && request.destination === "document") return shellPage();'
+    )
+    assert answered < route.index("const shell = await shellOf();")
+    assert (
+        "if (!isAppHost && asked.pathname.startsWith(SHELL_PREFIX)) return;" in WORKER
+    )
+    assert WORKER.count("SHELL_PREFIX") == 2
+
+
 def test_every_request_of_the_frame_goes_to_the_active_shell():
     route = function("async function route(event, url) {")
     assert "const shell = await shellOf();" in route

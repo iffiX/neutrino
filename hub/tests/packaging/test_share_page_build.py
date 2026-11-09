@@ -1,6 +1,7 @@
 """The App share page's tree as ``build_share_page.py`` writes it.
 
-Each script's address in the built page carries ``?v=`` and the first 10 hex
+The shell page is the tree's root ``index.html``, and the three scripts are
+under ``__neutrino/``. Each script's address in the built page carries ``?v=`` and the first 10 hex
 characters of the script's content's sha256. The source names each script
 with no fingerprint and runs unbuilt.
 """
@@ -15,6 +16,8 @@ import pytest
 import build_share_page
 
 SOURCE_DIR = build_share_page.SHARE_PAGE_DIR
+# The scripts under __neutrino/.
+SCRIPTS = ("shell.js", "sw.js", "shim.js")
 # Each script and the file that names its address.
 SCRIPT_NAMERS = (
     ("shim.js", "sw.js"),
@@ -28,18 +31,37 @@ def fingerprint(content: bytes) -> str:
     return hashlib.sha256(content).hexdigest()[:10]
 
 
+def built(tree, name: str):
+    """A file of the built tree: the shell page at the root, a script under __neutrino/."""
+    return tree / name if name == "index.html" else tree / "__neutrino" / name
+
+
+def test_the_shell_page_is_at_the_root_and_the_scripts_under_their_folder(tmp_path):
+    tree = build_share_page.assemble(tmp_path / "site")
+
+    assert (tree / "index.html").is_file()
+    assert sorted(path.name for path in (tree / "__neutrino").iterdir()) == sorted(
+        SCRIPTS
+    )
+    assert sorted(path.name for path in tree.iterdir() if path.is_file()) == [
+        "_headers",
+        "edgeone.json",
+        "index.html",
+    ]
+
+
 def test_each_script_is_named_by_its_content(tmp_path):
     tree = build_share_page.assemble(tmp_path / "site")
-    page = tree / "__neutrino"
 
-    assert (page / "shim.js").read_bytes() == (SOURCE_DIR / "shim.js").read_bytes()
+    assert built(tree, "shim.js").read_bytes() == (SOURCE_DIR / "shim.js").read_bytes()
     for script, namer in SCRIPT_NAMERS:
         plain = f'"/__neutrino/{script}"'.encode()
-        named = f'"/__neutrino/{script}?v={fingerprint((page / script).read_bytes())}"'
+        named = (
+            f'"/__neutrino/{script}?v={fingerprint(built(tree, script).read_bytes())}"'
+        )
         source = (SOURCE_DIR / namer).read_bytes()
-        assert (page / namer).read_bytes() == source.replace(plain, named.encode())
-        assert (page / namer).read_text(encoding="utf-8").count(named) == 1
-    assert (tree / "index.html").read_bytes() == (page / "index.html").read_bytes()
+        assert built(tree, namer).read_bytes() == source.replace(plain, named.encode())
+        assert built(tree, namer).read_text(encoding="utf-8").count(named) == 1
 
 
 def test_the_source_names_each_script_once_with_no_fingerprint():
@@ -60,9 +82,9 @@ def test_a_changed_shim_changes_every_address_above_it(tmp_path, monkeypatch):
     after = build_share_page.assemble(tmp_path / "after")
 
     for name in ("index.html", "shell.js", "sw.js", "shim.js"):
-        built = (before / "__neutrino" / name).read_bytes()
-        assert (again / "__neutrino" / name).read_bytes() == built
-        assert (after / "__neutrino" / name).read_bytes() != built, name
+        first = built(before, name).read_bytes()
+        assert built(again, name).read_bytes() == first
+        assert built(after, name).read_bytes() != first, name
 
 
 @pytest.mark.parametrize(

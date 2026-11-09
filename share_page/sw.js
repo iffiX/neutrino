@@ -2,8 +2,10 @@
 // The service worker of an App share. It passes every request of an app's
 // frame to the shell of the active tab, builds the response from what the
 // shell sends back, and keeps the app's static files in Cache Storage. The
-// shell's own files under /__neutrino/ go to the network.
+// shell's scripts under /__neutrino/ go to the network.
 
+// The shell page's address: the site's root, as the app's own root is.
+const SHELL_PAGE = "/";
 const SHELL_PREFIX = "/__neutrino/";
 // The Host the shell sends the app. The app's own addresses name it.
 const APP_HOST = "127.0.0.1";
@@ -146,7 +148,7 @@ function waitFor(done) {
 
 // The shell page, for a navigation of the whole tab.
 async function shellPage() {
-  const page = await fetch(SHELL_PREFIX, { cache: "no-cache" });
+  const page = await fetch(SHELL_PAGE, { cache: "no-cache" });
   return new Response(await page.text(), { status: page.status, headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
 }
 

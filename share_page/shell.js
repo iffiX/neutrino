@@ -1487,15 +1487,15 @@ const page = {
 
   // Signs the visitor in where the reply has a token, then loads the app in the frame.
   async load(session, token) {
-    const isOwnAddress = !location.pathname.startsWith("/__neutrino");
-    let start = isOwnAddress ? location.pathname + location.search : (this.facts.app.path || "/");
+    const isLink = linkedFacts() !== null;
+    let start = isLink ? (this.facts.app.path || "/") : location.pathname + location.search;
     if (token) {
       const answer = await this.signIn(session, token);
       const where = answer.headers.find(([name]) => name.toLowerCase() === "location");
       if (where && start === "/" && !this.facts.app.path) start = where[1];
     }
     const url = new URL(start, location.origin);
-    if (isOwnAddress && location.hash && !linkedFacts()) url.hash = location.hash;
+    if (!isLink && location.hash) url.hash = location.hash;
     const frame = document.getElementById("app");
     const loaded = new Promise((resolve) => frame.addEventListener("load", resolve, { once: true }));
     frame.src = url.pathname + url.search + url.hash;

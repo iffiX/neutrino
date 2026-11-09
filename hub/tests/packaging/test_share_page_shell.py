@@ -1,7 +1,9 @@
 """The shell of the App share page, checked on the file the page ships.
 
-A tab the app opened at an address with a fragment opens the app at that
-fragment, and the fragment of a link's facts never reaches the app.
+The link is the site's root with the share's facts after ``#``: its frame
+opens at the link's ``app.path``. A tab the app opened at an address with a
+fragment opens the app at that fragment, and the fragment of a link's facts
+never reaches the app.
 """
 
 import pathlib
@@ -18,9 +20,7 @@ def load_method() -> str:
 
 def test_the_frame_opens_at_the_tab_s_own_fragment_with_no_tab_tag():
     load = load_method()
-    passed = load.index(
-        "if (isOwnAddress && location.hash && !linkedFacts()) url.hash = location.hash;"
-    )
+    passed = load.index("if (!isLink && location.hash) url.hash = location.hash;")
     framed = load.index("frame.src = url.pathname + url.search + url.hash;")
     assert passed < framed
     assert "searchParams" not in load
@@ -31,12 +31,47 @@ def test_the_address_the_shell_starts_from_holds_no_fragment():
     """A token's redirect takes the place of the root, whatever the fragment."""
     load = load_method()
     assert (
-        'let start = isOwnAddress ? location.pathname + location.search : (this.facts.app.path || "/");'
+        'let start = isLink ? (this.facts.app.path || "/") : location.pathname + location.search;'
         in load
     )
     assert (
         'if (where && start === "/" && !this.facts.app.path) start = where[1];' in load
     )
+
+
+def test_a_link_at_the_site_s_root_opens_the_frame_at_the_app_s_path():
+    """The link's address and the app's own share the path ``/``."""
+    load = load_method()
+    assert load.index("const isLink = linkedFacts() !== null;") < load.index(
+        "let start = isLink"
+    )
+    assert "pathname.startsWith" not in load
+    assert "__neutrino" not in load
+
+
+def test_the_shell_names_its_folder_only_in_the_worker_s_address():
+    """The shell page's own address is the site's root, as an app's page is."""
+    assert SHELL.count("/__neutrino") == 1
+    assert (
+        'await navigator.serviceWorker.register("/__neutrino/sw.js", { scope: "/" });'
+        in SHELL
+    )
+
+
+def test_the_screens_of_a_tab_with_no_facts_read_the_fragment_alone():
+    """The introduction at ``/`` with no ``#``, the incomplete link with one."""
+    start = SHELL.index("  showFactless(isOpened) {")
+    factless = SHELL[start : SHELL.index("\n  },\n", start)]
+    assert 'if (isOpened) screen.refuse("link");' in factless
+    assert (
+        'else if (location.href.includes("#")) screen.refuse("incomplete");' in factless
+    )
+    assert "else screen.intro();" in factless
+    assert "pathname" not in factless
+    page_start = SHELL.index("  async start() {")
+    page_start = SHELL[page_start : SHELL.index("\n  },\n", page_start)]
+    assert 'if (window.top !== window) { screen.refuse("link"); return; }' in page_start
+    assert "pathname" not in page_start
 
 
 def test_a_tab_announces_itself_once_the_newest_worker_controls_the_page():
