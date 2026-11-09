@@ -87,7 +87,7 @@ code-server 里有这个账户的终端，所以访客能访问这个账户能�
    python3 packaging/build/build_share_page.py --output-dir dist/share_page/
    ```
 
-1. 把这个文件夹部署到任何一个 https 静态网站上。Cloudflare Pages 和 EdgeOne Pages 可以直接使用，因为文件夹里已经包含它们的设置文件。部署到其他网站时，你要自己设置下面两条规则。
+1. 把这个文件夹部署到任何一个 https 静态网站上。网站的根目录就是分享页，链接写成 `https://你的网站地址/#…`。Cloudflare Pages 和 EdgeOne Pages 可以直接使用，因为文件夹里已经包含它们的设置文件。部署到其他网站时，你要自己设置下面两条规则。
 
    - 文件 `/__neutrino/sw.js` 要带一个响应头，写成 `Service-Worker-Allowed: /`。
    - 找不到文件的地址都返回 `index.html`。

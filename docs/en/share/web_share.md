@@ -91,7 +91,7 @@ If you prefer not to depend on this website, you can host the page yourself:
    python3 packaging/build/build_share_page.py --output-dir dist/share_page/
    ```
 
-1. Deploy this folder to any static HTTPS website. Cloudflare Pages and EdgeOne Pages work as they are, because the folder already includes their settings files. On any other website, set the following rules yourself:
+1. Deploy this folder to any static HTTPS website. The site's root is the share page, and links take the form `https://<your site>/#…`. Cloudflare Pages and EdgeOne Pages work as they are, because the folder already includes their settings files. On any other website, set the following rules yourself:
 
    - The file `/__neutrino/sw.js` must have the response header `Service-Worker-Allowed: /`.
    - Every address with no matching file returns `index.html`.
