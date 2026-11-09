@@ -84,6 +84,10 @@ of the browser's:
 | `WebSocket` | a socket the shell carries over a `connect` stream to the entry, framed by RFC 6455 in JavaScript |
 | `navigator.serviceWorker.register` | a call that does nothing; the worker also refuses every request whose destination is a service worker |
 
+| Rule | Reason |
+| --- | --- |
+| The shell's WebSocket offers `permessage-deflate; client_max_window_bits` where the browser's `DecompressionStream` takes `deflate-raw`. One `DecompressionStream("deflate-raw")` lives as long as the socket and inflates every compressed message of it, each written with `00 00 FF FF` appended. A message's output is what the stream gave once that write went through. The app gets its messages in the order they came, and the shell's own frames go uncompressed. A `101` with no extension carries plain frames, and a `101` naming any other extension or parameter fails the socket. | VS Code's socket carries about 24 MB at every load of the editor, most of it the list of its built-in extensions. A browser's own WebSocket offers `permessage-deflate`, and the same 24 MB arrived as about 2.5 MB. The shell offered nothing, so through a line of 330 KB/s every request of the editor waited behind 24 MB for over a minute. VS Code's server declines an offer that asks for no context kept, so the stream keeps the context of the messages before. |
+
 ## One active tab
 
 At any moment one tab of a browser is active: it holds the connection and
