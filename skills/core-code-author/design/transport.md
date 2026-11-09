@@ -318,10 +318,10 @@ The two links hold different facts and open different doors:
 | --- | --- |
 | An App share link holds no Noise public key. | The magic follows from that key alone, so a share link neither reveals the member door nor knocks on it. A leaked share link reaches one app. |
 
-An App share link is `<site>/__neutrino/#<base64url>`, `<site>` being the
-address of the static page the share names. After `#` is one JSON object,
-written with no spaces, in base64url without padding and not compressed; a
-browser sends nothing after `#` to the site:
+An App share link is `<site>/#<base64url>`, `<site>` being the address of
+the site the share names, which serves the static page at its root. After
+`#` is one JSON object, written with no spaces, in base64url without padding
+and not compressed; a browser sends nothing after `#` to the site:
 
 ```json
 {"v": 1, "hub": {"ip": "203.0.113.7", "port": 8443, "fp": "AB:CD:..."}, "ice": {"ufrag": "...", "pwd": "..."}, "ticket": "...", "app": {"entry": "<entry-id>", "title": "Ayakaleaf", "path": "/project"}}
