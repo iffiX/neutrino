@@ -572,8 +572,10 @@ state, and the row's button is the record's:
 | `pending` | the core takes it | `queued`, then `mounting` | `ui.job.mounting` |
 | `mounting` | the system mounts it | `mounted` | **Unmount** |
 | `mounting` | a code | `failed`, with the error line; the form keeps its values | **Mount** |
+| `mounted` | press **Save** in **Configure**'s form with a new place | `mounted`, the form's place kept for the next **Mount** | **Unmount** |
 | `mounted` | press **Unmount** | `unmounting`, then `detached`: the record stays | `ui.job.unmounting` |
 | `detached` | press **Mount** | `pending`, mounting at the same place with the hub's login read again, or a declared share's kept login | `ui.job.mounting` |
+| `detached` | press **Mount** with a place **Configure** saved | `pending`, a new record mounting at the saved place; the old record is dropped | `ui.job.mounting` |
 | `mounted` | the entry turns unhealthy | `mounted` | **Unmount**; the state word is `ui.unhealthy` |
 | `failed` | press **Mount** | `pending` | `ui.job.mounting` |
 | `failed` with a login refusal on a declared share | press **Save** in the form with a new login | `pending`, mounting with the new login at once | `ui.job.mounting` |
@@ -587,10 +589,13 @@ The row's buttons follow the Apps page's order, the record's button in
 | not mounted | **Mount**, **Configure** |
 | mounted | **Unmount**, **Configure**, **Open** |
 
+A mounted row keeps these three buttons whatever **Configure**'s form holds,
+and no press mounts a mounted share a second time.
+
 | Control | Shown | Enabled | Does |
 | --- | --- | --- | --- |
-| **Configure** | always | when no job runs on the row and the hub is neither refreshing nor disabled, the share mounted or not | opens the row's form in place; while the form is open or holds a saved place, the record's button is **Mount**, which mounts the share at that place |
-| **Open** (`ui.app.open`) | while the share is mounted | as **Configure** | shows the place in the system's file manager at once, with no job; a file manager that does not start writes `folder_open_failed {path}` on the row's error line |
+| **Configure** | always | when no job runs on the row and the hub is neither refreshing nor disabled, the share mounted or not | opens the row's form in place; a place it saves changes no button, and the next **Mount** mounts the share there |
+| **Open** (`ui.app.open`) | while the share is mounted | as **Configure** | shows the place in the system's file manager at once, with no job; a place with nothing mounted writes `share_not_mounted`, and a file manager that does not start writes `folder_open_failed {path}`, on the row's error line |
 
 **Open** shows the place the mounted row names:
 
@@ -1002,6 +1007,7 @@ follow the window's pages, with the program itself and `ssh` above them:
 | `file list` | prints each machine's shares: the share, with its account for a folder share's entry, where it is mounted here, and whether it is mounted | 0 |
 | `file mount <machine>[/<share>] [--account <account>] [--path <path> \| --drive <letter>]` | mounts a share, as **Mount** does, at the place given or the default ("The Files page"); the share's name can be left out where the machine has one share, and `--account`, which picks a folder share's entry, where the share has one account | 0, 1 for a refusal |
 | `file unmount <machine>[/<share>] [--account <account>]` | unmounts it | 0, 1 for a refusal |
+| `file open <machine>[/<share>] [--account <account>]` | shows a mounted share's place in the system's file manager, as **Open** does; refused `share_not_mounted` for a share not mounted | 0, 1 for a refusal |
 | `terminal list <machine>` | prints the machine's sessions: the session id's first eight characters, the account, how long it has been open, whether it is persistent, whether it is shared, and who is attached | 0 |
 | `terminal open <machine> [--account <account>]` | opens a new shell in this terminal, as the account named or the first enabled one; the shell ending ends the command | 0 once the shell closed, 1 for a refusal, 2 for a machine that is not offered |
 | `terminal attach <machine> <session>` | attaches to a kept session, one this client owns or a shared one, its kept output first; Ctrl+] leaves it running | as `open`, and 2 for a session the machine does not list |

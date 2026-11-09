@@ -1018,6 +1018,7 @@ page and SSH setting ([client.md](client.md)). A code is in the hub's
 | `code.app_not_in_use`, **Open** on an app not in use | Use the app first. | 先点使用。 |
 | `code.app_no_page`, **Open** on an app with no `http` or `https` entry | This app has no web page to open. | 这个应用没有可以打开的网页。 |
 | `code.app_in_use`, **Configure** on an app in use | Stop the app first to change its local ports. | 先停止这个应用，才能改它的本机端口。 |
+| `code.share_not_mounted`, `nclient file open` on a share not mounted | Mount the share first. | 先挂载这个共享。 |
 | `ui.app.port_dialog_title` | Local ports of {app} | {app} 的本机端口 |
 | `ui.reason.terminal_no_account` | No account is enabled for this machine's terminal. | 这个系统的终端没有启用的账户。 |
 | `ui.terminal.account` | Account | 账户 |
