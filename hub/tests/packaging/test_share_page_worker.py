@@ -99,3 +99,29 @@ def test_a_request_that_is_no_navigation_still_follows_its_redirects_in_the_work
         in route
     )
     assert "return follow(shell, sent);" in route
+
+
+def test_a_public_response_with_a_max_age_is_kept_though_it_sets_a_cookie():
+    """VS Code sets its cookies on every response, its scripts among them."""
+    keepable = function("function isKeepable(sent, head, contentType) {")
+    assert 'if (sent.method !== "GET" || head.status !== 200) return false;' in keepable
+    refused = keepable.index(
+        "if (head.hasSetCookie && !isPublicFor(control)) return false;"
+    )
+    assert (
+        keepable.index("if (/(^|[\\s,])(no-store|private)\\b/.test(control))") < refused
+    )
+    public = function("function isPublicFor(control) {")
+    assert "/(^|[\\s,])public\\b/.test(control)" in public
+    assert "/(^|[\\s,])max-age=\\d+/.test(control)" in public
+
+
+def test_the_kept_copy_holds_no_cookie_header():
+    dropped = WORKER[WORKER.index("const DROPPED_HEADERS = ") :]
+    assert '"set-cookie"' in dropped[: dropped.index(";\n")]
+    on_head = function("function onHead(entry, message) {")
+    assert "if (DROPPED_HEADERS.has(lower)) continue;" in on_head
+    assert (
+        "storing = store(entry.shell.cache, entry.sent.url.href, toCache, entry.head);"
+        in on_head
+    )

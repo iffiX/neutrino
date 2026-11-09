@@ -259,13 +259,20 @@ function injectShim(html, text) {
 
 // --- the cache of the app's files -------------------------------------------------
 
-// Whether the cache keeps a response: the app's code or artwork.
+// Whether the cache keeps a response: the app's code or artwork. A response
+// that sets a cookie is kept only when it is public and names a max-age.
 function isKeepable(sent, head, contentType) {
-  if (sent.method !== "GET" || head.status !== 200 || head.hasSetCookie) return false;
+  if (sent.method !== "GET" || head.status !== 200) return false;
   if (["document", "iframe", "frame"].includes(sent.destination) || contentType.includes("text/html")) return false;
   const control = (head.headers.find(([name]) => name.toLowerCase() === "cache-control") || ["", ""])[1].toLowerCase();
   if (/(^|[\s,])(no-store|private)\b/.test(control)) return false;
+  if (head.hasSetCookie && !isPublicFor(control)) return false;
   return KEPT_DESTINATIONS.has(sent.destination) || KEPT_TYPES.test(contentType);
+}
+
+// Whether a Cache-Control value names public and a max-age.
+function isPublicFor(control) {
+  return /(^|[\s,])public\b/.test(control) && /(^|[\s,])max-age=\d+/.test(control);
 }
 
 // Whether a cached response is served with no check: it has no validator and its max-age has not passed.
