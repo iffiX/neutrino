@@ -270,6 +270,7 @@
   "code.vlan_name_fixed": "VLAN 接口以干道和标签命名：{name}。",
   "code.vlan_parent_not_split": "{parent} 没有拆分，承载不了 VLAN。",
   "code.web_share_entry_invalid": "非法应用：这个应用的页面不能分享。",
+  "code.web_share_no_public_address": "先打开一种公网可达的外部访问：直连、SakuraFrp、OpenFrp 或 SSH 中继。",
   "code.web_share_site_invalid": "非法站点：{site} 不是 https:// 地址。",
   "code.web_share_unknown": "这个分享已不存在。",
   "code.wifi_join_failed": "{ssid} 没有让这个系统接入：{detail}",

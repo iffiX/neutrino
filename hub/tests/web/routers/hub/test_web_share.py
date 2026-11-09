@@ -5,8 +5,9 @@ published list, the machines' sessions and the transport are played by the
 test. What these pin, by protocol.md's ``/api/hub/client`` and "App shares":
 a make refuses an empty name, a ``days`` outside the four, a site that is
 not listed or an ``https://`` origin, an entry no share can offer, a hub
-with no certificate or no address, and a locked vault; it returns the link
-once and stores no copy of it; the link names the public address first; a
+with no certificate, no public address or one that does not resolve, and a
+locked vault; it returns the link once and stores no copy of it; the link
+names the public address first, and never a LAN or overlay address; a
 guest account's app gets a guest, and its module's state holds the guest;
 the machine's ``details.guests`` moves the share from preparing to failed or
 active; the list draws each share's state and count; a destroy ends the share
@@ -347,7 +348,60 @@ def test_a_make_refuses_a_hub_with_no_certificate_or_no_address(api, monkeypatch
     monkeypatch.setattr(web_share_router, "read_dtls_fingerprint", lambda: FINGERPRINT)
     monkeypatch.setattr(web_share_access, "channel_urls", lambda runtime: [])
 
+    assert create(client).json()["detail"]["code"] == "web_share_no_public_address"
+
+
+def test_a_make_refuses_a_hub_with_only_lan_and_overlay_addresses(api, monkeypatch):
+    """With only NetBird and EasyTier on, no visitor outside reaches the link."""
+    client, _ = api
+    monkeypatch.setattr(
+        web_share_access,
+        "channel_urls",
+        lambda runtime: [
+            "tcp://192.168.100.1:8443",
+            "tcp://100.92.4.7:8443",
+            "tcp://10.144.0.1:8443",
+        ],
+    )
+    monkeypatch.setattr(web_share_access, "frp_url", lambda vendor: "")
+
+    response = create(client)
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == {
+        "code": "web_share_no_public_address",
+        "params": {},
+    }
+    assert WebShareRegistry().all() == []
+
+
+def test_a_share_names_direct_s_public_address(api, monkeypatch):
+    client, _ = api
+    monkeypatch.setattr(
+        web_share_access,
+        "channel_urls",
+        lambda runtime: ["tcp://192.168.100.1:8443", "tcp://198.51.100.4:9443"],
+    )
+    monkeypatch.setattr(
+        web_share_access, "_direct_url", lambda: "tcp://198.51.100.4:9443"
+    )
+    monkeypatch.setattr(web_share_access, "frp_url", lambda vendor: "")
+
+    body = create(client).json()
+
+    assert decoded(body["link"])["hub"]["port"] == 9443
+
+
+def test_a_make_refuses_a_public_address_that_does_not_resolve(api, monkeypatch):
+    client, _ = api
+
+    def unresolved(host, port, **_):
+        raise OSError("no such host")
+
+    monkeypatch.setattr(web_share_access.socket, "getaddrinfo", unresolved)
+
     assert create(client).json()["detail"]["code"] == "no_reachable_address"
+    assert WebShareRegistry().all() == []
 
 
 def test_a_make_refuses_a_locked_vault(api, monkeypatch):
@@ -501,7 +555,7 @@ def test_the_link_names_direct_first_then_the_frp_vendors_then_the_relay(
     monkeypatch.setattr(web_share_access, "_direct_url", lambda: "")
     monkeypatch.setattr(web_share_access, "relay_url", lambda: "")
 
-    assert web_share_access.share_address(runtime) == ("203.0.113.7", 8443)
+    assert web_share_access.share_address(runtime) == ("", 0)
 
 
 @pytest.mark.parametrize(

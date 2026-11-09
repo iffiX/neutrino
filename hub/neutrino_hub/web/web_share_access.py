@@ -319,27 +319,41 @@ def share_site(site: str) -> str:
     return trimmed
 
 
-def share_address(runtime) -> tuple:
-    """The one address a new share's link names.
+def share_public_url(runtime) -> str:
+    """The public address a new share's link names.
 
     The first public address in ``urls`` order: Direct's, then SakuraFrp's,
-    OpenFrp's and the relay's, each while it is a member of ``urls``; else
-    the first member of ``urls``. A host name is resolved to its IP address
-    now (transport.md, "The links").
+    OpenFrp's and the relay's, each while it is a member of ``urls``. A LAN
+    or overlay address is never one (transport.md, "The links").
 
     Args:
         runtime: The shared runtime.
 
     Returns:
-        ``(ip, port)``; ``("", 0)`` when the hub has no address or the host
-        does not resolve.
+        The address's base URL; empty when the hub has no public address.
     """
     urls = channel_urls(runtime)
-    if not urls:
-        return "", 0
     publics = [_direct_url(), *(frp_url(vendor) for vendor in FRP_VENDORS)]
     publics.append(relay_url())
-    chosen = next((url for url in publics if url and url in urls), urls[0])
+    return next((url for url in publics if url and url in urls), "")
+
+
+def share_address(runtime) -> tuple:
+    """The one address a new share's link names, as an IP address and a port.
+
+    The address of :func:`share_public_url`, its host name resolved to its
+    IP address now (transport.md, "The links").
+
+    Args:
+        runtime: The shared runtime.
+
+    Returns:
+        ``(ip, port)``; ``("", 0)`` when the hub has no public address or
+        its host does not resolve.
+    """
+    chosen = share_public_url(runtime)
+    if not chosen:
+        return "", 0
     parts = urlsplit(chosen)
     if not parts.hostname or not parts.port:
         return "", 0

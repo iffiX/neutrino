@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from neutrino_hub.exceptions import VaultLockedError
 from neutrino_hub.modules.clients.constants import (
     WEB_SHARE_CODE_ENTRY_INVALID,
+    WEB_SHARE_CODE_NO_PUBLIC_ADDRESS,
     WEB_SHARE_CODE_SITE_INVALID,
     WEB_SHARE_CODE_UNKNOWN,
     WEB_SHARE_DAYS,
@@ -41,6 +42,7 @@ from neutrino_hub.web.web_share_access import (
     push_guest_devices,
     push_shares_from_thread,
     share_address,
+    share_public_url,
     share_site,
     share_views,
 )
@@ -69,8 +71,10 @@ def create_share(
         HTTPException: 400 ``body_invalid`` for an empty name or a ``days``
             outside 1, 7, 30 and null; 400 ``web_share_site_invalid {site}``;
             400 ``web_share_entry_invalid {entry_id}`` for an entry no share
-            can offer now; 400 ``no_reachable_address`` while the hub has no
-            address a link can name; 409 ``transport_key_missing`` while the
+            can offer now; 400 ``web_share_no_public_address`` while none of
+            Direct, SakuraFrp, OpenFrp and the SSH relay gives the hub a
+            public address; 400 ``no_reachable_address`` while that address
+            does not resolve; 409 ``transport_key_missing`` while the
             transport has made no DTLS certificate; 409 ``vault_locked``.
         OSError: When the shares file cannot be written.
     """
@@ -106,6 +110,8 @@ def create_share(
         fingerprint = read_dtls_fingerprint()
     except (OSError, ValueError) as error:
         raise _refused(status.HTTP_409_CONFLICT, "transport_key_missing") from error
+    if not share_public_url(runtime):
+        raise _refused(status.HTTP_400_BAD_REQUEST, WEB_SHARE_CODE_NO_PUBLIC_ADDRESS)
     ip, port = share_address(runtime)
     if not ip:
         raise _refused(status.HTTP_400_BAD_REQUEST, "no_reachable_address")

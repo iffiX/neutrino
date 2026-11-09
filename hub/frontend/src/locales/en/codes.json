@@ -270,6 +270,7 @@
   "code.vlan_name_fixed": "A VLAN interface is named after its trunk and id: {name}.",
   "code.vlan_parent_not_split": "{parent} is not split, so it can carry no VLANs.",
   "code.web_share_entry_invalid": "This app's page cannot be shared.",
+  "code.web_share_no_public_address": "First turn on one way in from the internet: Direct, SakuraFrp, OpenFrp or the SSH relay.",
   "code.web_share_site_invalid": "{site} is not an https:// address.",
   "code.web_share_unknown": "This share no longer exists.",
   "code.wifi_join_failed": "{ssid} did not let this box in: {detail}",
