@@ -14,8 +14,8 @@
 [![Version](https://img.shields.io/github/v/release/iffiX/neutrino?label=version&labelColor=0a0e14&color=22d3ee)](https://github.com/iffiX/neutrino/releases)
 [![Mainland edition](https://img.shields.io/badge/mainland%20edition-CNB-0a0e14?labelColor=0a0e14&color=22d3ee)](https://cnb.cool/iffi-X/neutrino/-/releases)
 [![Platforms](https://img.shields.io/badge/runs%20on-Linux%20%C2%B7%20macOS%20%C2%B7%20Windows%20%C2%B7%20Android%20%C2%B7%20iOS-0a0e14?labelColor=0a0e14&color=a78bfa)](https://neutrinohub.net/en/reference/platforms)
-[![LINUX DO](https://img.shields.io/badge/LINUX%20DO-discussion-0a0e14?labelColor=0a0e14&color=ffb003&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB3aWR0aD0iMTIwIiBoZWlnaHQ9IjEyMCIgdmlld0JveD0iMCAwIDEyMCAxMjAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI%2BPGNsaXBQYXRoIGlkPSJhIj48Y2lyY2xlIGN4PSI2MCIgY3k9IjYwIiByPSI0NyIvPjwvY2xpcFBhdGg%2BPGNpcmNsZSBmaWxsPSIjZjBmMGYwIiBjeD0iNjAiIGN5PSI2MCIgcj0iNTAiLz48cmVjdCBmaWxsPSIjMWMxYzFlIiBjbGlwLXBhdGg9InVybCgjYSkiIHg9IjEwIiB5PSIxMCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIzMCIvPjxyZWN0IGZpbGw9IiNmMGYwZjAiIGNsaXAtcGF0aD0idXJsKCNhKSIgeD0iMTAiIHk9IjQwIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjQwIi8%2BPHJlY3QgZmlsbD0iI2ZmYjAwMyIgY2xpcC1wYXRoPSJ1cmwoI2EpIiB4PSIxMCIgeT0iODAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMzAiLz48L3N2Zz4%3D)](https://linux.do/t/topic/3008982) <!-- scan: allow -->
-[![V2EX](https://img.shields.io/badge/V2EX-discussion-0a0e14?labelColor=0a0e14&color=e5e7eb&logo=v2ex&logoColor=white)](https://www.v2ex.com/t/1247759)
+[![LINUX DO](https://img.shields.io/badge/LINUX%20DO-discussion-0a0e14?labelColor=0a0e14&color=ffb003&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB3aWR0aD0iMTIwIiBoZWlnaHQ9IjEyMCIgdmlld0JveD0iMCAwIDEyMCAxMjAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI%2BPGNsaXBQYXRoIGlkPSJhIj48Y2lyY2xlIGN4PSI2MCIgY3k9IjYwIiByPSI0NyIvPjwvY2xpcFBhdGg%2BPGNpcmNsZSBmaWxsPSIjZjBmMGYwIiBjeD0iNjAiIGN5PSI2MCIgcj0iNTAiLz48cmVjdCBmaWxsPSIjMWMxYzFlIiBjbGlwLXBhdGg9InVybCgjYSkiIHg9IjEwIiB5PSIxMCIgd2lkdGg9IjEwMCIgaGVpZ2h0PSIzMCIvPjxyZWN0IGZpbGw9IiNmMGYwZjAiIGNsaXAtcGF0aD0idXJsKCNhKSIgeD0iMTAiIHk9IjQwIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjQwIi8%2BPHJlY3QgZmlsbD0iI2ZmYjAwMyIgY2xpcC1wYXRoPSJ1cmwoI2EpIiB4PSIxMCIgeT0iODAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMzAiLz48L3N2Zz4%3D)](https://linux.do/t/topic/3148299) <!-- scan: allow -->
+[![V2EX](https://img.shields.io/badge/V2EX-discussion-0a0e14?labelColor=0a0e14&color=e5e7eb&logo=v2ex&logoColor=white)](https://www.v2ex.com/t/1255790)
 
 [![CI](https://img.shields.io/github/actions/workflow/status/iffiX/neutrino/ci.yml?branch=main&label=CI&labelColor=0a0e14)](https://github.com/iffiX/neutrino/actions/workflows/ci.yml)
 [![Release build](https://img.shields.io/github/actions/workflow/status/iffiX/neutrino/release.yml?label=release%20build&labelColor=0a0e14)](https://github.com/iffiX/neutrino/actions/workflows/release.yml)
@@ -212,7 +212,7 @@ You do not need to register. You generate join links on the panel, and only peop
 ## Docs and community
 
 - [Docs](https://neutrinohub.net/en/), starting with the [quick start](https://neutrinohub.net/en/quick-start)
-- [LINUX DO introduction](https://linux.do/t/topic/3008982), [V2EX post](https://www.v2ex.com/t/1247759)
+- [LINUX DO introduction](https://linux.do/t/topic/3148299), [V2EX post](https://www.v2ex.com/t/1255790)
 - Pull requests, docs and tutorials are welcome
 
 ## Supported apps
