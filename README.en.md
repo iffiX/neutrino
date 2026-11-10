@@ -212,7 +212,7 @@ You do not need to register. You generate join links on the panel, and only peop
 ## Docs and community
 
 - [Docs](https://neutrinohub.net/en/), starting with the [quick start](https://neutrinohub.net/en/quick-start)
-- [LINUX DO introduction](https://linux.do/t/topic/3148299), [V2EX post](https://www.v2ex.com/t/1255790)
+- [LINUX DO post](https://linux.do/t/topic/3148299), [V2EX post](https://www.v2ex.com/t/1255790)
 - Pull requests, docs and tutorials are welcome
 
 ## Supported apps

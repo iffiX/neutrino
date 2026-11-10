@@ -212,7 +212,7 @@ Codeg、CloudCLI、Hermes WebUI 这类 agent 聚合工具是微子·中枢部署
 ## 文档和社区
 
 - [文档](https://neutrinohub.net/)，新手从[快速上手](https://neutrinohub.net/quick-start)读起
-- [LINUX DO 介绍帖](https://linux.do/t/topic/3148299)，[V2EX 帖子](https://www.v2ex.com/t/1255790)
+- [LINUX DO 帖子](https://linux.do/t/topic/3148299)，[V2EX 帖子](https://www.v2ex.com/t/1255790)
 - 欢迎提 PR、补文档、写教程
 
 ## 支持的应用
