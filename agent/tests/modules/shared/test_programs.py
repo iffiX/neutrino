@@ -27,6 +27,7 @@ import pytest
 from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.claude_code.hooks import ClaudeCodeHooks
 from neutrino_agent.modules.codex.hooks import CodexHooks
+from neutrino_agent.modules.opencode.hooks import OpencodeHooks
 from neutrino_agent.modules.shared.account_service import (
     AccountEntry,
     ServiceMachine,
@@ -869,6 +870,24 @@ def test_codex_s_verify_runs_with_codex_home_in_the_module_s_folder(tmp_path):
 
     copy_at(runner.program_path, "0.166.0")
     assert runner.verify_environment() == {"CODEX_HOME": folder}
+    assert stat.S_IMODE(os.stat(folder).st_mode) == 0o700
+
+
+def test_opencode_s_verify_runs_with_its_home_in_the_module_s_folder(tmp_path):
+    """opencode.md: every start of OpenCode, ``--version`` too, makes its
+    folders under the home folder it reads from ``HOME``, so ``verify``
+    points that at ``verify_home`` in the module's directory and nothing
+    lands in root's home."""
+    runner, _platform = runner_for(tmp_path, hooks=OpencodeHooks)
+    folder = os.path.join(runner.module_dir, "verify_home")
+
+    assert runner.program_path.endswith("opencode/package/bin/opencode")
+    assert runner.launcher_path.endswith("opencode/bin/opencode")
+    assert runner.verify_environment() == {"HOME": folder}
+    assert not os.path.exists(runner.module_dir)
+
+    copy_at(runner.program_path, "1.19.5")
+    assert runner.verify_environment() == {"HOME": folder}
     assert stat.S_IMODE(os.stat(folder).st_mode) == 0o700
 
 

@@ -34,7 +34,11 @@ from neutrino_agent.constants import (
 )
 from neutrino_agent.control.server import ControlServer
 from neutrino_agent.core.desired_state import DesiredStateStore
-from neutrino_agent.core.engine import ClaudeCodeModuleRunner, CodexModuleRunner
+from neutrino_agent.core.engine import (
+    ClaudeCodeModuleRunner,
+    CodexModuleRunner,
+    OpencodeModuleRunner,
+)
 from neutrino_agent.core.loop import Agent
 from neutrino_agent.core.store import MachineStateStore
 from neutrino_agent.exceptions import ModuleApplyError, PlatformUnsupportedError
@@ -158,7 +162,11 @@ def remove_program_ways_in(platform) -> list:
         What was removed or left, one line each.
     """
     lines = []
-    for runner_class in (ClaudeCodeModuleRunner, CodexModuleRunner):
+    for runner_class in (
+        ClaudeCodeModuleRunner,
+        CodexModuleRunner,
+        OpencodeModuleRunner,
+    ):
         runner = runner_class(platform=platform, log=print)
         lines += runner.remove_ways_in()
     return lines

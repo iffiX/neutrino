@@ -113,6 +113,7 @@ APPLY_ORDER = (
     "codeg",
     "claude_code",
     "codex",
+    "opencode",
     "siyuan",
     "remote_desktop",
 )

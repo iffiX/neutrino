@@ -373,7 +373,7 @@ AGENT_STEP_NPM = "npm"
 
 # The command line programs, in the order every Neutrino session's PATH
 # starts with the launcher folders of those an account is enabled in.
-AGENT_PROGRAM_MODULES = ("claude_code", "codex")
+AGENT_PROGRAM_MODULES = ("claude_code", "codex", "opencode")
 # Under a command line program's directory in the state root: the module's
 # own copy, the launcher's folder, the record of each account, and the
 # folder its verify points the program's own home folder at.

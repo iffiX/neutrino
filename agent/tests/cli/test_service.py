@@ -480,7 +480,7 @@ def test_every_account_s_path_is_given_back_byte_for_byte(monkeypatch, tmp_path)
             {
                 "accounts": {
                     "ann": {
-                        "modules": ["claude_code", "codex"],
+                        "modules": ["claude_code", "codex", "opencode"],
                         "env": [str(tree / "env.sh")],
                         "files": {
                             str(home / ".bashrc"): {"is_made": False},
@@ -494,7 +494,7 @@ def test_every_account_s_path_is_given_back_byte_for_byte(monkeypatch, tmp_path)
             }
         )
     )
-    for module in ("codex", "claude_code"):
+    for module in ("codex", "claude_code", "opencode"):
         (tmp_path / "state" / module).mkdir(parents=True)
         (tmp_path / "state" / module / "record.json").write_text(
             json.dumps({"accounts": {"ann": {"is_path_set": True}}})
@@ -521,4 +521,5 @@ def test_every_account_s_path_is_given_back_byte_for_byte(monkeypatch, tmp_path)
     assert lines == [
         "claude_code: gave back the PATH of ann",
         "codex: gave back the PATH of ann",
+        "opencode: gave back the PATH of ann",
     ]

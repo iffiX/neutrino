@@ -96,6 +96,7 @@ from neutrino_agent.modules.codex.hooks import CodexHooks
 from neutrino_agent.modules.gitea.runner import GiteaModuleRunner
 from neutrino_agent.modules.hermes_webui.constants import HERMES_WEBUI_NAME
 from neutrino_agent.modules.hermes_webui.hooks import HermesWebuiHooks
+from neutrino_agent.modules.opencode.hooks import OpencodeHooks
 from neutrino_agent.modules.podman.container_runner import (
     CONTAINER_MODULE_HOOKS,
     ContainerModuleRunner,
@@ -176,6 +177,9 @@ ClaudeCodeModuleRunner = functools.partial(
     ProgramsModuleRunner, hooks_class=ClaudeCodeHooks
 )
 CodexModuleRunner = functools.partial(ProgramsModuleRunner, hooks_class=CodexHooks)
+OpencodeModuleRunner = functools.partial(
+    ProgramsModuleRunner, hooks_class=OpencodeHooks
+)
 # The container modules with hooks of their own, which the container runner
 # reads by module name.
 CONTAINER_MODULE_HOOKS[HERMES_WEBUI_NAME] = HermesWebuiHooks
@@ -355,6 +359,7 @@ class ModuleEngine(ReconcileWorker):
                 CodegModuleRunner,
                 ClaudeCodeModuleRunner,
                 CodexModuleRunner,
+                OpencodeModuleRunner,
                 SiyuanModuleRunner,
             ]
         else:
@@ -369,6 +374,7 @@ class ModuleEngine(ReconcileWorker):
                 kinds.append(CodegModuleRunner)
                 kinds.append(ClaudeCodeModuleRunner)
                 kinds.append(CodexModuleRunner)
+                kinds.append(OpencodeModuleRunner)
                 kinds.append(SiyuanModuleRunner)
                 if platform.os_name in ("windows", "darwin"):
                     kinds.append(PodmanMachineModuleRunner)
