@@ -434,6 +434,29 @@ const lines = computed(() =>
     </section>
 
     <section class="home-band is-grey">
+      <div class="home-wrap">
+        <div class="home-section-head">
+          <h2>{{ w.advancedTitle }}</h2>
+        </div>
+        <ul class="home-advanced">
+          <li v-for="item in page.ADVANCED" :key="item.title">
+            <a
+              class="home-advanced-card"
+              :href="withBase(item.link)"
+              @click="go(item.link, $event)"
+            >
+              <h3>{{ item.title }}</h3>
+              <p>
+                <code v-if="item.command">{{ item.command }}</code>
+                {{ item.text }}
+              </p>
+            </a>
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="home-band">
       <div class="home-wrap home-three">
         <div v-for="point in w.points" :key="point.title">
           <h3>{{ point.title }}</h3>

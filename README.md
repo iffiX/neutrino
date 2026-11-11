@@ -77,6 +77,15 @@
 
 **分享地址 share.neutrinohub.net 只提供一个不到 40 KB 的静态客户端，不会另外连到微子的服务器。访客的浏览器和中枢之间全程加密，第三方线路看不到内容。你也可以自己部署这个页面的镜像。**
 
+## 高级功能
+
+- **[AI 网关](https://neutrinohub.net/hub/ai_gateway)**：AI 提供方在中枢上配一次，每台电脑上的 Claude Code、Codex 都能用。
+- **[远程唤醒](https://neutrinohub.net/hub/agents#唤醒)**：在面板上一键唤醒局域网里关机的电脑。
+- **[多机管理](https://neutrinohub.net/hub/agents)**：家里、实验室的多台电脑都加进来，CPU、内存、显卡、温度一眼看清。
+- **[客户端权限](https://neutrinohub.net/hub/clients#权限种类)**：每个客户端能用哪些应用、终端、文件、远程桌面，分别开关，可以细到每个应用。
+- **[凭据保险库](https://neutrinohub.net/hub/what_it_holds#保存的数据)**：文件共享、远程桌面的密码和 SSH 密钥由中枢生成和保管。
+- **[远程执行](https://neutrinohub.net/access/terminal#运行一条命令)**：`nclient terminal exec` 在别的电脑上跑命令，脚本和 AI agent 都能用。
+
 ## 为什么选它
 
 - **全能**：应用、桌面、终端、文件、SSH。点一下就能安装，客户端里都配好了。

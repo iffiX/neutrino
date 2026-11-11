@@ -355,6 +355,46 @@ export const COMPARE_GROUPS = [
   },
 ];
 
+/** The advanced features after the share section; a command shows as code before its text. */
+export const ADVANCED = [
+  {
+    title: "AI gateway",
+    command: "",
+    text: "Set up an AI provider once on the hub, and Claude Code and Codex on every computer can use it.",
+    link: "/en/hub/ai_gateway",
+  },
+  {
+    title: "Wake-on-LAN",
+    command: "",
+    text: "Wake a computer on your LAN that is off, with one click in the panel.",
+    link: "/en/hub/agents#wake",
+  },
+  {
+    title: "Multi-machine management",
+    command: "",
+    text: "Add your computers at home and in the lab, and see their CPU, memory, GPU and temperature at a glance.",
+    link: "/en/hub/agents",
+  },
+  {
+    title: "Client permissions",
+    command: "",
+    text: "Turn apps, terminals, files and remote desktop on or off for each client, down to single apps.",
+    link: "/en/hub/clients#permission-kinds",
+  },
+  {
+    title: "Credential vault",
+    command: "",
+    text: "The hub generates and keeps the passwords for file sharing and remote desktop, and the SSH keys.",
+    link: "/en/hub/what_it_holds#stored-data",
+  },
+  {
+    title: "Remote execution",
+    command: "nclient terminal exec",
+    text: "runs commands on another computer, for scripts and AI agents alike.",
+    link: "/en/access/terminal#run-one-command",
+  },
+];
+
 /** Every sentence and label of the English page. */
 export const WORDS = {
   name: "Neutrino Hub",
@@ -398,6 +438,7 @@ export const WORDS = {
   wolfTwoAlt: "Two mascots at a table",
   shareBrowserAlt: "Ayakaleaf open in a friend's browser",
   shareFriend: "Your friend opens it",
+  advancedTitle: "Advanced features",
   points: [
     {
       title: "Complete",

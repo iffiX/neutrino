@@ -407,6 +407,46 @@ export const COMPARE_GROUPS = [
 ];
 
 /** Every sentence and label of the Chinese page; home_content_en.ts holds the English ones. */
+/** The advanced features after the share section; a command shows as code before its text. */
+export const ADVANCED = [
+  {
+    title: "AI 网关",
+    command: "",
+    text: "AI 提供方在中枢上配一次，每台电脑上的 Claude Code、Codex 都能用。",
+    link: "/hub/ai_gateway",
+  },
+  {
+    title: "远程唤醒",
+    command: "",
+    text: "在面板上一键唤醒局域网里关机的电脑。",
+    link: "/hub/agents#唤醒",
+  },
+  {
+    title: "多机管理",
+    command: "",
+    text: "家里、实验室的多台电脑都加进来，CPU、内存、显卡、温度一眼看清。",
+    link: "/hub/agents",
+  },
+  {
+    title: "客户端权限",
+    command: "",
+    text: "每个客户端能用哪些应用、终端、文件、远程桌面，分别开关，可以细到每个应用。",
+    link: "/hub/clients#权限种类",
+  },
+  {
+    title: "凭据保险库",
+    command: "",
+    text: "文件共享、远程桌面的密码和 SSH 密钥由中枢生成和保管。",
+    link: "/hub/what_it_holds#保存的数据",
+  },
+  {
+    title: "远程执行",
+    command: "nclient terminal exec",
+    text: "在别的电脑上跑命令，脚本和 AI agent 都能用。",
+    link: "/access/terminal#运行一条命令",
+  },
+];
+
 export const WORDS = {
   name: "微子·中枢",
   title: ["一键部署应用，", "走到哪用到哪"],
@@ -447,6 +487,7 @@ export const WORDS = {
   wolfTwoAlt: "两只小狼一起坐在桌边",
   shareBrowserAlt: "同学的浏览器里打开的 Ayakaleaf",
   shareFriend: "同学打开",
+  advancedTitle: "高级功能",
   points: [
     {
       title: "全能",

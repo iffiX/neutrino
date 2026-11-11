@@ -77,6 +77,15 @@ Select **Share** on any web app to get a link. A friend opens it in a browser wi
 
 **The share address, share.neutrinohub.net, serves only a static client of under 40 KB. It opens no extra connection to any Neutrino server. The connection between the visitor's browser and the hub is encrypted all the way, and third-party lines cannot read it. You can also host your own copy of the page.**
 
+## Advanced features
+
+- **[AI gateway](https://neutrinohub.net/en/hub/ai_gateway)**: set up an AI provider once on the hub, and Claude Code and Codex on every computer can use it.
+- **[Wake-on-LAN](https://neutrinohub.net/en/hub/agents#wake)**: wake a computer on your LAN that is off, with one click in the panel.
+- **[Multi-machine management](https://neutrinohub.net/en/hub/agents)**: add your computers at home and in the lab, and see their CPU, memory, GPU and temperature at a glance.
+- **[Client permissions](https://neutrinohub.net/en/hub/clients#permission-kinds)**: turn apps, terminals, files and remote desktop on or off for each client, down to single apps.
+- **[Credential vault](https://neutrinohub.net/en/hub/what_it_holds#stored-data)**: the hub generates and keeps the passwords for file sharing and remote desktop, and the SSH keys.
+- **[Remote execution](https://neutrinohub.net/en/access/terminal#run-one-command)**: `nclient terminal exec` runs commands on another computer, for scripts and AI agents alike.
+
 ## Why Neutrino Hub
 
 - **Complete**: apps, the desktop, terminals, files and SSH. One click installs them, and the client has them ready.

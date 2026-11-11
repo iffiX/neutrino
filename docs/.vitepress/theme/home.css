@@ -867,6 +867,49 @@
   margin-left: -9%;
 }
 
+/* The advanced features: six cards of one size. */
+.home-advanced {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.home-advanced li {
+  margin: 0;
+}
+
+.home a.home-advanced-card {
+  display: block;
+  height: 100%;
+  padding: 22px 24px;
+  border: 1px solid var(--home-line);
+  border-radius: 12px;
+  background: var(--home-page);
+  color: var(--home-ink);
+}
+
+.home a.home-advanced-card:hover {
+  border-color: var(--home-accent);
+}
+
+.home-advanced .home-advanced-card h3 {
+  color: var(--home-accent);
+  font-size: 22px;
+}
+
+.home-advanced .home-advanced-card p {
+  margin: 10px 0 0;
+  color: var(--home-muted);
+}
+
+.home-advanced .home-advanced-card code {
+  color: var(--home-ink);
+  font-size: 0.9em;
+}
+
 /* 全能, 安全, 自主, 免费. */
 .home-three {
   display: grid;
@@ -1001,6 +1044,10 @@
 }
 
 @media (max-width: 960px) {
+  .home-advanced {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .home-hero {
     padding: 32px 0 48px;
   }
