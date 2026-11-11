@@ -23,6 +23,7 @@ import shutil
 import subprocess
 
 from neutrino_agent.ai_tools.constants import (
+    AI_TOOLS_CC_SWITCH_APPS,
     AI_TOOLS_CODE_CREDENTIAL_INVALID,
     AI_TOOLS_CODE_SWITCH_FAILED,
     AI_TOOLS_COMMAND_TIMEOUT_S,
@@ -55,6 +56,11 @@ POSIX_PRIVATE_DIR_SHELL = 'mkdir -p -- "$1" && chmod -- {mode} "$1"'
 POSIX_REMOVE_TREE_SHELL = (
     'rm -rf -- "$1"; shift; for d do rmdir -- "$d" 2>/dev/null || exit 0; done'
 )
+
+
+def cc_switch_app(app: str) -> str:
+    """A tool's name as cc-switch's ``--app`` takes it."""
+    return AI_TOOLS_CC_SWITCH_APPS.get(app, app)
 
 
 def permission_bits(listed: str) -> "int | None":
@@ -231,7 +237,7 @@ class AiToolsAccountSession:
             ToolSwitchError: When it cannot run as the account.
             subprocess.CalledProcessError: On a non-zero exit while checked.
         """
-        command = [self._binary, "--app", app] + list(arguments)
+        command = [self._binary, "--app", cc_switch_app(app)] + list(arguments)
         result = self._run(command, environment=self._store_environment())
         if is_checked and result.returncode != 0:
             raise subprocess.CalledProcessError(
@@ -257,7 +263,7 @@ class AiToolsAccountSession:
             ToolSwitchError: When no terminal can be made or it cannot run
                 as the account.
         """
-        command = [self._binary, "--app", app] + list(arguments)
+        command = [self._binary, "--app", cc_switch_app(app)] + list(arguments)
         try:
             _code, printed = self._platform.run_as_account_answering(
                 self.account,

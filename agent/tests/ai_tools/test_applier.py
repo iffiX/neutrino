@@ -100,6 +100,7 @@ def test_each_named_account_is_switched_as_itself(tmp_path, binary):
         "claude.json",
         "codex.json",
         "gemini.json",
+        "opencode.json",
     ]
     assert stat.S_IMODE(os.stat(record_dir).st_mode) == 0o700
     assert not [path for path in platform.files if path.endswith("/payload")]
@@ -163,7 +164,7 @@ def test_an_account_no_longer_named_is_switched_back(tmp_path, binary):
 
     assert states(applier) == {"ann": ("switched", ""), "bob": ("switched_back", "")}
     assert not (tmp_path / "state" / "ai_tools" / "bob").exists()
-    assert [answered[0] for answered in platform.answered] == ["bob"] * 3
+    assert [answered[0] for answered in platform.answered] == ["bob"] * 4
 
 
 def test_the_section_off_switches_every_account_back(tmp_path, binary):
@@ -258,6 +259,7 @@ def test_a_refusing_account_keeps_its_tools_and_the_next_is_switched(tmp_path, b
         "claude": "default",
         "codex": "default",
         "gemini": "default",
+        "opencode": "",
     }
 
 

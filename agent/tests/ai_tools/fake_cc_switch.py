@@ -6,12 +6,19 @@ files in memory: whatever the session reads, writes or removes there is a
 call recorded too, so a test can say what was done and as whom. As the
 real one does, the store writes a tool's files on ``use`` only into a tool
 directory that is there, and switching to another provider writes that
-provider's settings laid out its own way.
+provider's settings laid out its own way. OpenCode is additive as in
+cc-switch: no provider is current, ``provider add`` takes the provider whole
+as ``--config`` and writes it into the live file beside what is there, and
+``provider delete`` takes it out again.
 """
 
 import json
 
-from neutrino_agent.ai_tools.constants import AI_TOOLS_APPS, AI_TOOLS_PROVIDER_ID
+from neutrino_agent.ai_tools.constants import (
+    AI_TOOLS_ADDITIVE_APPS,
+    AI_TOOLS_APPS,
+    AI_TOOLS_PROVIDER_ID,
+)
 from neutrino_agent.exceptions import ToolSwitchError
 
 # The file a provider's settings are written to for each tool.
@@ -19,7 +26,15 @@ LIVE_FILES = {
     "claude": (".claude", "settings.json"),
     "codex": (".codex", "config.toml"),
     "gemini": (".gemini", ".env"),
+    "opencode": (".config", "opencode", "opencode.json"),
 }
+# Each tool by cc-switch's own name for it.
+APPS_BY_CC_SWITCH_NAME = {"open-code": "opencode"}
+# What cc-switch 5.10.4 says to a field flag for OpenCode.
+OPENCODE_FIELDS_REFUSAL = (
+    "Error: provider add for opencode requires raw config via --config or "
+    "--config-file (or use the TUI)"
+)
 
 
 def has_dir(files: dict, dirs: set, path: str) -> bool:
@@ -47,9 +62,14 @@ class FakeCcSwitch:
     def __init__(self, *, current="default", extracted=""):
         self.calls: list = []
         self.stores: list = []
-        self.current = {app: current for app in AI_TOOLS_APPS}
+        self.current = {
+            app: "" if app in AI_TOOLS_ADDITIVE_APPS else current
+            for app in AI_TOOLS_APPS
+        }
         self.snippet = {app: "" for app in AI_TOOLS_APPS}
-        self.providers = {app: {current} if current else set() for app in AI_TOOLS_APPS}
+        self.providers = {
+            app: {current} if self.current[app] else set() for app in AI_TOOLS_APPS
+        }
         self.extracted = extracted
         self.added: dict = {}
         self.refusals: dict = {}
@@ -57,11 +77,14 @@ class FakeCcSwitch:
 
     def answer(self, session, arguments, app) -> tuple:
         """``(returncode, stdout, stderr)`` for one call, as the account."""
+        app = APPS_BY_CC_SWITCH_NAME.get(app, app)
         key = tuple(arguments)
         self.calls.append((session.account, app, key))
         for prefix, words in self.refusals.items():
             if key[: len(prefix)] == prefix:
                 return 1, "", words
+        if app in AI_TOOLS_ADDITIVE_APPS:
+            return self._additive(session, key, app)
         if key[:2] == ("provider", "list"):
             rows = ["│   ┆ ID ┆ Name ┆ API URL │"]
             for identifier in sorted(self.providers[app]):
@@ -122,6 +145,44 @@ class FakeCcSwitch:
         if key[:3] == ("config", "common", "set"):
             self.snippet[app] = session.files[key[4]]
             return 0, "", ""
+        return 0, "", ""
+
+    def _additive(self, session, key, app) -> tuple:
+        """One call for OpenCode: the hub's provider added to the live file and taken out of it."""
+        live = session.path(*LIVE_FILES[app])
+        if key[:2] == ("provider", "list"):
+            rows = ["│   ┆ ID ┆ Name ┆ API URL │"]
+            for identifier in sorted(self.providers[app]):
+                rows.append(f"│   ┆ {identifier} ┆ {identifier} ┆ N/A │")
+            return 0, "\n".join(rows) + "\n", ""
+        if key[:2] == ("provider", "current"):
+            return 1, "", "Error: Current provider '' not found"
+        if key[:2] == ("provider", "add"):
+            given = flag_values(key)
+            if "--config" not in given:
+                return 1, "", OPENCODE_FIELDS_REFUSAL
+            identifier = key[key.index("--id") + 1]
+            try:
+                document = json.loads(session.files.get(live, "") or "{}")
+            except ValueError:
+                return 1, "", f"Error: JSON parse error: {live}: key must be a string"
+            document.setdefault("provider", {})[identifier] = json.loads(
+                given["--config"]
+            )
+            session.files[live] = json.dumps(document, indent=2)
+            self.providers[app].add(identifier)
+            self.added[app] = key
+            return 0, "added", ""
+        if key[:1] == ("use",):
+            return 0, f"Added provider '{key[1]}' to opencode config", ""
+        if key[:2] == ("provider", "delete"):
+            if not self.is_delete_kept:
+                self.providers[app].discard(key[2])
+                if live in session.files:
+                    document = json.loads(session.files[live])
+                    document.get("provider", {}).pop(key[2], None)
+                    session.files[live] = json.dumps(document, indent=2)
+            return 0, "Delete provider 'neutrino'? (y/N) y\r\nDeleted\r\n", ""
         return 0, "", ""
 
     def made(self, app) -> list:

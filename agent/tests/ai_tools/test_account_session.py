@@ -114,6 +114,15 @@ def test_cc_switch_runs_as_the_account_with_the_app_first():
     ]
 
 
+def test_opencode_is_named_to_cc_switch_by_its_own_name():
+    platform = RecordingPlatform(out="listed")
+
+    session_on(platform).cc(["provider", "list"], "opencode")
+
+    (run,) = platform.runs
+    assert run["argv"][1:3] == ["--app", "open-code"]
+
+
 def test_a_refusal_is_the_command_s_own_error_unless_unchecked():
     platform = RecordingPlatform(code=1, err="no store")
     session = session_on(platform)

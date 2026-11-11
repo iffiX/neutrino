@@ -14,7 +14,9 @@ A tool with no directory gets one made as the account, its files written,
 and both taken away again on the switch back; every file a switch may write
 comes back byte for byte; Codex's and Gemini's files must name the hub; a
 switch back that cannot run cc-switch is a refusal that keeps the records
-and the files.
+and the files. OpenCode's provider goes in whole as ``--config`` beside the
+account's own, with no adoption step but the list, and its ``~/.config``
+made for the switch is taken away again.
 """
 
 import json
@@ -37,8 +39,10 @@ CONFIGS = {
     "claude": {"default": "m1", "opus": "mo"},
     "codex": {"model": "m2", "model_reasoning_effort": "high"},
     "gemini": {"model": "m3"},
+    "opencode": {"model": "m4"},
 }
 SETTINGS = "/home/ann/.claude/settings.json"
+OPENCODE = "/home/ann/.config/opencode/opencode.json"
 
 
 def switcher_for(tmp_path, cc_switch, files=None):
@@ -59,7 +63,7 @@ def test_a_tool_is_adopted_once_and_the_hub_added_with_its_snippet(tmp_path):
         tmp_path, cc_switch, {SETTINGS: '{"env": {}, "hooks": {"x": 1}}'}
     )
 
-    assert activate(switcher) == ["claude", "codex", "gemini"]
+    assert activate(switcher) == ["claude", "codex", "gemini", "opencode"]
 
     assert cc_switch.made("claude") == [
         "provider list",
@@ -297,7 +301,7 @@ def test_a_tool_with_no_directory_gets_one_and_loses_it_again(tmp_path):
     cc_switch = FakeCcSwitch(current="")
     switcher, session = switcher_for(tmp_path, cc_switch)
 
-    assert activate(switcher) == ["claude", "codex", "gemini"]
+    assert activate(switcher) == ["claude", "codex", "gemini", "opencode"]
 
     assert ("make_dir", "/home/ann/.claude") in session.file_calls
     assert json.loads(session.files[SETTINGS])["env"]["ANTHROPIC_BASE_URL"] == HUB
@@ -400,7 +404,12 @@ def test_a_tool_that_refuses_is_put_back_itself(tmp_path):
     assert "neutrino" not in cc_switch.providers["claude"]
 
 
-KEY_FILES = (SETTINGS, "/home/ann/.codex/auth.json", "/home/ann/.gemini/.env")
+KEY_FILES = (
+    SETTINGS,
+    "/home/ann/.codex/auth.json",
+    "/home/ann/.gemini/.env",
+    OPENCODE,
+)
 
 
 def test_every_file_holding_the_key_is_the_account_s_alone_while_switched(tmp_path):
@@ -452,7 +461,7 @@ def test_a_tool_switched_before_the_store_existed_goes_back_in_the_person_s_own(
     cc_switch = FakeCcSwitch()
     switcher, session = switcher_for(tmp_path, cc_switch, {SETTINGS: "{}"})
     activate(switcher)
-    for app in ("claude", "codex", "gemini"):
+    for app in ("claude", "codex", "gemini", "opencode"):
         record = switcher.read_record(app)
         del record["is_own_store"]
         with open(switcher._record_path(app), "w", encoding="utf-8") as stream:
@@ -502,3 +511,109 @@ def test_a_store_that_could_not_be_made_stays_while_a_record_stands(tmp_path):
 
     assert session.store_calls == ["prepare"]
     assert switcher.has_records()
+
+
+def test_opencode_gets_the_hub_s_provider_whole_beside_the_account_s_own(tmp_path):
+    own = json.dumps(
+        {
+            "model": "mine/x",
+            "provider": {"mine": {"options": {"baseURL": "https://mine"}}},
+            "mcp": {"fs": {"type": "local"}},
+        }
+    )
+    cc_switch = FakeCcSwitch()
+    switcher, session = switcher_for(tmp_path, cc_switch, {OPENCODE: own})
+
+    activate(switcher)
+
+    assert cc_switch.made("opencode") == [
+        "provider list",
+        "provider list",
+        "provider add",
+        "use neutrino",
+    ]
+    added = cc_switch.added["opencode"]
+    assert not [flag for flag in added if flag.startswith(("--base-url", "--api-key"))]
+    (given,) = [flag for flag in added if flag.startswith("--config=")]
+    assert json.loads(given[len("--config=") :]) == {
+        "npm": "@ai-sdk/openai-compatible",
+        "name": "Neutrino Hub",
+        "options": {"baseURL": HUB + "/v1", "apiKey": KEY},
+        "models": {"m4": {"name": "m4"}},
+    }
+    live = json.loads(session.files[OPENCODE])
+    assert sorted(live["provider"]) == ["mine", "neutrino"]
+    assert live["model"] == "mine/x" and live["mcp"] == {"fs": {"type": "local"}}
+    assert switcher.read_record("opencode")["previous"] == ""
+
+    switcher.deactivate()
+
+    assert session.files[OPENCODE] == own
+    assert "provider delete" in cc_switch.made("opencode")
+    assert not [
+        key for _a, app, key in cc_switch.calls if app == "opencode" and key[0] == "use"
+    ][1:]
+
+
+def test_opencode_s_config_folder_made_for_the_switch_is_taken_away_again(tmp_path):
+    cc_switch = FakeCcSwitch(current="")
+    switcher, session = switcher_for(tmp_path, cc_switch)
+
+    activate(switcher)
+
+    assert ("make_dir", "/home/ann/.config/opencode") in session.file_calls
+    assert switcher.read_record("opencode")["is_parent_present"] is False
+    assert HUB + "/v1" in session.files[OPENCODE]
+
+    switcher.deactivate()
+
+    assert ("remove_empty_dir", "/home/ann/.config/opencode") in session.file_calls
+    assert ("remove_empty_dir", "/home/ann/.config") in session.file_calls
+    assert OPENCODE not in session.files
+
+
+def test_a_config_folder_that_was_there_stays(tmp_path):
+    cc_switch = FakeCcSwitch()
+    switcher, session = switcher_for(tmp_path, cc_switch)
+    session.dirs.add("/home/ann/.config")
+
+    activate(switcher)
+    record = switcher.read_record("opencode")
+    switcher.deactivate()
+
+    assert record["is_dir_present"] is False
+    assert record["is_parent_present"] is True
+    assert ("remove_empty_dir", "/home/ann/.config") not in session.file_calls
+    assert session.has_dir("/home/ann/.config")
+
+
+def test_a_changed_opencode_model_replaces_the_hub_s_provider(tmp_path):
+    cc_switch = FakeCcSwitch()
+    switcher, session = switcher_for(tmp_path, cc_switch)
+    activate(switcher)
+    cc_switch.calls.clear()
+
+    activate(switcher, {**CONFIGS, "opencode": {"model": "m5"}})
+
+    assert cc_switch.made("opencode") == [
+        "provider list",
+        "provider delete",
+        "provider list",
+        "provider add",
+        "use neutrino",
+    ]
+    live = json.loads(session.files[OPENCODE])
+    assert live["provider"]["neutrino"]["models"] == {"m5": {"name": "m5"}}
+
+
+def test_an_opencode_file_cc_switch_cannot_read_fails_the_switch(tmp_path):
+    cc_switch = FakeCcSwitch()
+    switcher, session = switcher_for(
+        tmp_path, cc_switch, {OPENCODE: '{\n  // mine\n  "model": "a/b"\n}\n'}
+    )
+
+    with pytest.raises(ToolSwitchError) as refused:
+        activate(switcher)
+
+    assert refused.value.params["detail"].startswith("opencode: Error: JSON")
+    assert not switcher.has_records()

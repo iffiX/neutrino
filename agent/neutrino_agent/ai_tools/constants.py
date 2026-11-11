@@ -5,22 +5,37 @@
 AI_TOOLS_PROVIDER_ID = "neutrino"
 AI_TOOLS_PROVIDER_NAME = "Neutrino Hub"
 
-# The tools cc-switch can point at the hub, in its own vocabulary, and where
-# each keeps the file that switching replaces, below the account's home.
-AI_TOOLS_APPS = ("claude", "codex", "gemini")
+# The tools cc-switch can point at the hub, and where each keeps the file
+# that switching replaces, below the account's home.
+AI_TOOLS_APPS = ("claude", "codex", "gemini", "opencode")
 AI_TOOLS_APP_FILES = {
     "claude": (".claude", "settings.json"),
     "codex": (".codex", "config.toml"),
     "gemini": (".gemini", ".env"),
+    "opencode": (".config", "opencode", "opencode.json"),
 }
+# cc-switch's own name of a tool, where it differs from the tool's name here.
+AI_TOOLS_CC_SWITCH_APPS = {"opencode": "open-code"}
+# The tools cc-switch adds the hub to beside the account's own providers,
+# with no provider current: no adoption step but the list, the provider
+# given whole as ``--config``.
+AI_TOOLS_ADDITIVE_APPS = ("opencode",)
+# OpenCode's provider package for an endpoint of the OpenAI API.
+AI_TOOLS_OPENCODE_NPM = "@ai-sdk/openai-compatible"
 # The directory cc-switch writes a tool's files into only once it is there,
 # and every file a switch may write in it, below the account's home: what
 # is kept aside before the first switch and put back after the switch back.
-AI_TOOLS_APP_DIRS = {"claude": ".claude", "codex": ".codex", "gemini": ".gemini"}
+AI_TOOLS_APP_DIRS = {
+    "claude": (".claude",),
+    "codex": (".codex",),
+    "gemini": (".gemini",),
+    "opencode": (".config", "opencode"),
+}
 AI_TOOLS_APP_KEPT_FILES = {
     "claude": ("settings.json",),
     "codex": ("config.toml", "auth.json"),
     "gemini": (".env", "settings.json"),
+    "opencode": ("opencode.json",),
 }
 # The files of a tool that hold the gateway key once it is switched, and
 # the mode each is left with: the account alone reads and writes it.
@@ -28,6 +43,7 @@ AI_TOOLS_APP_KEY_FILES = {
     "claude": ("settings.json",),
     "codex": ("auth.json",),
     "gemini": (".env",),
+    "opencode": ("opencode.json",),
 }
 AI_TOOLS_KEY_FILE_MODE = 0o600
 
@@ -40,9 +56,10 @@ AI_TOOLS_CLAUDE_SLOT_FLAGS = {
 }
 # Codex's one knob cc-switch has no flag for, a top-level key of config.toml.
 AI_TOOLS_CODEX_EFFORT_KEY = "model_reasoning_effort"
-# Codex asks for ``<base>/responses``; the gateway serves the Responses API
-# under ``/v1``. Claude Code and Gemini add their own versioned paths.
-AI_TOOLS_ENDPOINT_SUFFIXES = {"codex": "/v1"}
+# Codex asks for ``<base>/responses`` and OpenCode for
+# ``<base>/chat/completions``; the gateway serves both under ``/v1``. Claude
+# Code and Gemini add their own versioned paths.
+AI_TOOLS_ENDPOINT_SUFFIXES = {"codex": "/v1", "opencode": "/v1"}
 # The keys cc-switch's common snippet would carry from a tool's own file
 # that belong to the provider, not to the person.
 AI_TOOLS_COMMON_OWN_KEYS = {

@@ -23,6 +23,11 @@ cc-switch writes a tool's files only into a directory that is there, so
 the switch makes it, as the account, for a tool that has none. A switch
 back that cannot run cc-switch is a failure, and the records stay.
 
+OpenCode is additive: cc-switch adds the hub's provider to its file beside
+the account's own and keeps no provider current, so its adoption is the
+list alone, its provider goes in whole as ``--config``, and the hub is
+current while cc-switch lists its provider.
+
 Activation is all or nothing: a tool that refuses has itself, once its
 record was started, and every tool switched before it put back, and the
 refusal is the answer. Codex's reasoning effort
@@ -44,6 +49,7 @@ import subprocess
 import tempfile
 
 from neutrino_agent.ai_tools.constants import (
+    AI_TOOLS_ADDITIVE_APPS,
     AI_TOOLS_APP_DIRS,
     AI_TOOLS_APP_FILES,
     AI_TOOLS_APP_KEPT_FILES,
@@ -59,6 +65,7 @@ from neutrino_agent.ai_tools.constants import (
     AI_TOOLS_ENDPOINT_SUFFIXES,
     AI_TOOLS_KEY_DIGEST_CHARS,
     AI_TOOLS_OFFICIAL_PROVIDERS,
+    AI_TOOLS_OPENCODE_NPM,
     AI_TOOLS_PROVIDER_ID,
     AI_TOOLS_PROVIDER_NAME,
     AI_TOOLS_RECORD_SUFFIX,
@@ -95,6 +102,30 @@ def model_flags(app: str, config: dict) -> list:
     if model:
         flags.append("--model=" + model)
     return flags
+
+
+def provider_config(app: str, base_url: str, api_key: str, config: dict) -> str:
+    """OpenCode's provider whole, as ``provider add --config`` takes it.
+
+    Args:
+        app: Which tool.
+        base_url: The gateway's endpoint.
+        api_key: The device's gateway key.
+        config: The tool's choices.
+
+    Returns:
+        JSON of ``{npm, name, options: {baseURL, apiKey}, models}``, the
+        models naming the tool's one model.
+    """
+    model = str(config.get("model", "") or "")
+    return json.dumps(
+        {
+            "npm": AI_TOOLS_OPENCODE_NPM,
+            "name": AI_TOOLS_PROVIDER_NAME,
+            "options": {"baseURL": endpoint_for(app, base_url), "apiKey": api_key},
+            "models": {model: {"name": model}} if model else {},
+        }
+    )
 
 
 def wanted(app: str, base_url: str, api_key: str, config: dict) -> dict:
@@ -357,13 +388,20 @@ class AiToolsAccountSwitcher:
             AI_TOOLS_PROVIDER_ID,
             "--name",
             AI_TOOLS_PROVIDER_NAME,
-            "--base-url=" + endpoint_for(app, base_url),
-            "--api-key=" + api_key,
         ]
-        arguments += model_flags(app, config)
-        if self._common_snippet(app):
-            arguments.append("--common-config")
-        directory = self._session.path(AI_TOOLS_APP_DIRS[app])
+        if app in AI_TOOLS_ADDITIVE_APPS:
+            arguments.append(
+                "--config=" + provider_config(app, base_url, api_key, config)
+            )
+        else:
+            arguments += [
+                "--base-url=" + endpoint_for(app, base_url),
+                "--api-key=" + api_key,
+            ]
+            arguments += model_flags(app, config)
+            if self._common_snippet(app):
+                arguments.append("--common-config")
+        directory = self._session.path(*AI_TOOLS_APP_DIRS[app])
         if not self._session.is_dir(directory):
             self._session.make_dir(directory)
         try:
@@ -395,13 +433,13 @@ class AiToolsAccountSwitcher:
     def _adopt_once(self, app: str) -> dict:
         """Take the tool as it stands into cc-switch, and start its record.
 
-        The record keeps whether the tool's directory was there and each
-        file a switch may write as it was, None for one that was absent.
+        The record keeps whether the tool's directory was there, and its
+        parent below the home where it has one, and each file a switch may
+        write as it was, None for one that was absent.
         """
         is_present = self._session.is_file(self._app_file(app))
-        is_dir_present = self._session.is_dir(
-            self._session.path(AI_TOOLS_APP_DIRS[app])
-        )
+        dirs = AI_TOOLS_APP_DIRS[app]
+        is_dir_present = self._session.is_dir(self._session.path(*dirs))
         kept = {}
         kept_modes = {}
         for name in AI_TOOLS_APP_KEPT_FILES[app]:
@@ -412,9 +450,10 @@ class AiToolsAccountSwitcher:
             if mode is not None:
                 kept_modes[name] = mode
         self._session.cc(["provider", "list"], app, is_checked=False)
-        if is_present:
+        is_additive = app in AI_TOOLS_ADDITIVE_APPS
+        if is_present and not is_additive:
             self._adopt(app)
-        current = self._current_provider(app)
+        current = "" if is_additive else self._current_provider(app)
         record = {
             "is_present": is_present,
             "is_dir_present": is_dir_present,
@@ -424,6 +463,10 @@ class AiToolsAccountSwitcher:
             "previous": "" if current == AI_TOOLS_PROVIDER_ID else current,
             "added": None,
         }
+        if len(dirs) > 1:
+            record["is_parent_present"] = is_dir_present or self._session.is_dir(
+                self._session.path(*dirs[:-1])
+            )
         self._write_record(app, record)
         return record
 
@@ -477,10 +520,11 @@ class AiToolsAccountSwitcher:
         kept = record.get("kept")
         if isinstance(kept, dict):
             self._put_back(app, kept, record.get("kept_modes") or {})
+            dirs = AI_TOOLS_APP_DIRS[app]
             if record.get("is_dir_present") is False:
-                self._session.remove_empty_dir(
-                    self._session.path(AI_TOOLS_APP_DIRS[app])
-                )
+                self._session.remove_empty_dir(self._session.path(*dirs))
+            if record.get("is_parent_present") is False:
+                self._session.remove_empty_dir(self._session.path(*dirs[:-1]))
         else:
             path = self._app_file(app)
             if record and not record.get("is_present") and self._session.is_file(path):
@@ -513,7 +557,7 @@ class AiToolsAccountSwitcher:
 
     def _kept_path(self, app: str, name: str) -> str:
         """One file a switch may write, below the account's home."""
-        return self._session.path(AI_TOOLS_APP_DIRS[app], name)
+        return self._session.path(*AI_TOOLS_APP_DIRS[app], name)
 
     def _drop_provider(self, app: str, previous: str) -> str:
         """Remove the hub's provider, switching away first if it is current.
@@ -527,7 +571,7 @@ class AiToolsAccountSwitcher:
         if not self._has_provider(app):
             return ""
         returned_to = ""
-        if self._is_active_for(app):
+        if app not in AI_TOOLS_ADDITIVE_APPS and self._is_active_for(app):
             returned_to = previous or AI_TOOLS_OFFICIAL_PROVIDERS.get(app, "")
             if returned_to:
                 self._session.cc(["use", returned_to], app, is_checked=False)
@@ -563,7 +607,9 @@ class AiToolsAccountSwitcher:
         return False
 
     def _is_active_for(self, app: str) -> bool:
-        """Whether cc-switch points one tool at the hub."""
+        """Whether cc-switch points one tool at the hub: its provider current, or listed for an additive tool."""
+        if app in AI_TOOLS_ADDITIVE_APPS:
+            return self._has_provider(app)
         return self._current_provider(app) == AI_TOOLS_PROVIDER_ID
 
     def _current_provider(self, app: str) -> str:
