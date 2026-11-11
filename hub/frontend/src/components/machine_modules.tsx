@@ -201,6 +201,7 @@ const KIND_PROGRAM = "program";
 const PROGRAM_NOTICES: Record<string, string> = {
   claude_code: "ui.claude_code.owner_notice",
   codex: "ui.codex.owner_notice",
+  opencode: "ui.opencode.owner_notice",
 };
 
 /** The module whose containers run in an account's Podman machine. */

@@ -7,9 +7,9 @@ import "./ai_tool_models.css";
 
 /**
  * The model rows of an account's AI tools, as the desktop client's AI page
- * draws them: Claude Code's four slots, Codex's model and its effort, and
- * Gemini's model. Each picker's first choice is the gateway's default,
- * which the configuration holds as no entry.
+ * draws them: Claude Code's four slots, Codex's model and its effort,
+ * Gemini's model and OpenCode's model. Each picker's first choice is the
+ * gateway's default, which the configuration holds as no entry.
  */
 
 const CLAUDE_SLOTS = ["default", "opus", "sonnet", "haiku"];
@@ -105,6 +105,12 @@ export function AiToolModels({
       <div className="ai_tool_models_tool">{t("ui.ai_tools.tool_gemini")}</div>
       <div className="ai_tool_models_row">
         {modelPicker("gemini", MODEL_KEY, t("ui.ai_tools.model"))}
+      </div>
+      <div className="ai_tool_models_tool">
+        {t("ui.ai_tools.tool_opencode")}
+      </div>
+      <div className="ai_tool_models_row">
+        {modelPicker("opencode", MODEL_KEY, t("ui.ai_tools.model"))}
       </div>
     </div>
   );

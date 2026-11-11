@@ -96,6 +96,13 @@ export const MODULE_DESCRIPTORS: Record<string, ModuleDescriptor> = {
     field: null,
     isProgram: true,
   },
+  opencode: {
+    name: "opencode",
+    apply: "ui.opencode.apply",
+    applyHint: "ui.program.apply_hint",
+    field: null,
+    isProgram: true,
+  },
   siyuan: {
     name: "siyuan",
     apply: "ui.siyuan.apply",

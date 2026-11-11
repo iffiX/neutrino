@@ -1385,7 +1385,8 @@ export interface ModuleVersionSetRequest {
 
 // --- Available accounts ---
 
-/** A tool's choices: Claude's slots, Codex's model and effort, Gemini's model. */
+/** A tool's choices: Claude's slots, Codex's model and effort, Gemini's and
+ * OpenCode's model. */
 export type AiToolConfigs = Record<string, Record<string, string>>;
 
 /** An account's last AI tools result, as the machine reported it. */
@@ -1499,8 +1500,8 @@ export interface ProgramAccountRequest {
 }
 
 /** An account-layer module on one machine: Terminal, the file share, the SSH
- * server, VS Code, code-server, CloudCLI, Codeg, SiYuan, Codex or Claude
- * Code. */
+ * server, VS Code, code-server, CloudCLI, Codeg, SiYuan, Codex, Claude Code
+ * or OpenCode. */
 export interface EnabledAccountsView extends ModuleDeviceState {
   device_id: string;
   accounts: EnabledAccountView[];
