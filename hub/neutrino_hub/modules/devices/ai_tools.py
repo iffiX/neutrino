@@ -1,8 +1,8 @@
 """The tool configuration a managed machine's AI tools setting holds.
 
 The shape is the desktop client's own, the one its Configure dialog saves:
-Claude Code's four role slots, Codex's model and reasoning effort, and
-Gemini's model. The hub cleans what the panel sends the way the client
+Claude Code's four role slots, Codex's model and reasoning effort,
+Gemini's model and OpenCode's model. The hub cleans what the panel sends the way the client
 cleans what its page sends, and fills the slots nobody chose the way the
 client does before it hands the configuration to cc-switch.
 """
@@ -54,13 +54,14 @@ def resolved_tool_configs(tool_configs: dict, default_model: str) -> dict:
 
     Returns:
         ``{claude: {default, opus, sonnet, haiku}, codex: {model,
-        model_reasoning_effort}, gemini: {model}}``: every Claude slot,
-        Codex's model and Gemini's model carry a model; Codex's effort is
-        the chosen one or empty.
+        model_reasoning_effort}, gemini: {model}, opencode: {model}}``:
+        every Claude slot, Codex's, Gemini's and OpenCode's model carry a
+        model; Codex's effort is the chosen one or empty.
     """
     claude = tool_configs.get("claude") or {}
     codex = tool_configs.get("codex") or {}
     gemini = tool_configs.get("gemini") or {}
+    opencode = tool_configs.get("opencode") or {}
     return {
         "claude": {
             slot: str(claude.get(slot, "") or "") or default_model
@@ -73,4 +74,5 @@ def resolved_tool_configs(tool_configs: dict, default_model: str) -> dict:
             ),
         },
         "gemini": {"model": str(gemini.get("model", "") or "") or default_model},
+        "opencode": {"model": str(opencode.get("model", "") or "") or default_model},
     }

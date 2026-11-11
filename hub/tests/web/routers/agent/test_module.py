@@ -882,6 +882,7 @@ SUPPORTED_OFF_LINUX = {
     "codeg": (True, True),
     "claude_code": (True, True),
     "codex": (True, True),
+    "opencode": (True, True),
     "siyuan": (True, True),
     "gitea": (True, True),
     "podman": (True, True),
@@ -2242,7 +2243,7 @@ def shipped(api, monkeypatch):
     return client, runtime
 
 
-@pytest.mark.parametrize("module", ["claude_code", "codex"])
+@pytest.mark.parametrize("module", ["claude_code", "codex", "opencode"])
 def test_install_writes_running_on_a_command_line_program(shipped, tmp_path, module):
     client, runtime = shipped
 
@@ -2258,7 +2259,7 @@ def test_install_writes_running_on_a_command_line_program(shipped, tmp_path, mod
 
 
 @pytest.mark.parametrize("press", ["start", "stop"])
-@pytest.mark.parametrize("module", ["claude_code", "codex"])
+@pytest.mark.parametrize("module", ["claude_code", "codex", "opencode"])
 def test_start_and_stop_are_refused_on_a_command_line_program(
     shipped, tmp_path, press, module
 ):
@@ -2299,6 +2300,7 @@ def rows_by_name(client) -> dict:
                 "codeg": "upstream",
                 "claude_code": "upstream",
                 "codex": "upstream",
+                "opencode": "upstream",
                 "siyuan": "upstream",
                 "podman": "system",
                 "hermes_webui": "container",
@@ -2319,6 +2321,7 @@ def rows_by_name(client) -> dict:
                 "codeg": "upstream",
                 "claude_code": "upstream",
                 "codex": "upstream",
+                "opencode": "upstream",
                 "siyuan": "upstream",
                 "podman": "upstream",
                 "hermes_webui": "container",
@@ -2337,7 +2340,7 @@ def test_each_row_reads_its_source_from_its_method_and_its_kind_from_the_table(
 
     assert {name: row["source"] for name, row in rows.items()} == sources
     assert {name: row["kind"] for name, row in rows.items()} == {
-        name: "program" if name in ("claude_code", "codex") else "service"
+        name: "program" if name in ("claude_code", "codex", "opencode") else "service"
         for name in sources
     }
 

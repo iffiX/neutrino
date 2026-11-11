@@ -1,0 +1,148 @@
+{
+  "_comment": "OpenCode, Anomaly's open source coding agent for the terminal, as a command line program per account. One artifact per platform, the tarball of opencode-<platform>, the publisher's npm package of the program for that platform, the baseline build on amd64 and the glibc build on Linux; its source set is npm and its digest the integrity registry.npmjs.org names. The agent unpacks it without package/ into opencode/package, so the program is package/bin/opencode. The versions and their digests come from the npm feed of each platform's own package.",
+  "name": "opencode",
+  "title": "OpenCode",
+  "description": "Anomaly's open source coding agent on the command line, for each account",
+  "publisher": "Anomaly",
+  "uninstall_data": {
+    "is_deleted": false,
+    "text": {
+      "en": "Each account's settings in ~/.config/opencode stay, and so does a copy of OpenCode installed outside this module.",
+      "zh-CN": "每个账户在 ~/.config/opencode 里的设置都保留，在本模块之外安装的 OpenCode 也保留。"
+    }
+  },
+  "platforms": {
+    "linux-amd64": {
+      "runner": "opencode",
+      "install": {
+        "method": "hub",
+        "params": {
+          "version": "1.19.5",
+          "releases": [{"kind": "npm", "sources": ["https://registry.npmjs.org"], "package": "opencode-linux-x64-baseline"}],
+          "artifacts": [
+            {
+              "name": "opencode",
+              "kind": "tar_gz",
+              "directory": "package",
+              "file": "opencode-linux-x64-baseline/-/opencode-linux-x64-baseline-{version}.tgz",
+              "digest": "sha512-9kA+st3XXtCXMPx5f3Ld1u19uoHTO2u2Btt8a2cqhJ4GIqVbD1mXLevj3LHFEmtuQoFGk+UstGnl38sCqXj5sQ==", "_digest_scan": "scan: allow",
+              "source_set": "npm"
+            }
+          ],
+          "verify": "/var/lib/neutrino/agent/opencode/package/bin/opencode --version",
+          "uninstall": {"post_uninstall": [], "is_data_kept": true}
+        }
+      }
+    },
+    "linux-arm64": {
+      "runner": "opencode",
+      "install": {
+        "method": "hub",
+        "params": {
+          "version": "1.19.5",
+          "releases": [{"kind": "npm", "sources": ["https://registry.npmjs.org"], "package": "opencode-linux-arm64"}],
+          "artifacts": [
+            {
+              "name": "opencode",
+              "kind": "tar_gz",
+              "directory": "package",
+              "file": "opencode-linux-arm64/-/opencode-linux-arm64-{version}.tgz",
+              "digest": "sha512-u2HFRI6v1nNMVKiV34An8XrGBxJeZ+RCg2tYu3SqlGODKqKsr5RoEbaX1tnsfGb+rETh9AJVX9kS8dSZXPufsA==", "_digest_scan": "scan: allow",
+              "source_set": "npm"
+            }
+          ],
+          "verify": "/var/lib/neutrino/agent/opencode/package/bin/opencode --version",
+          "uninstall": {"post_uninstall": [], "is_data_kept": true}
+        }
+      }
+    },
+    "darwin-amd64": {
+      "runner": "opencode",
+      "install": {
+        "method": "hub",
+        "params": {
+          "version": "1.19.5",
+          "releases": [{"kind": "npm", "sources": ["https://registry.npmjs.org"], "package": "opencode-darwin-x64-baseline"}],
+          "artifacts": [
+            {
+              "name": "opencode",
+              "kind": "tar_gz",
+              "directory": "package",
+              "file": "opencode-darwin-x64-baseline/-/opencode-darwin-x64-baseline-{version}.tgz",
+              "digest": "sha512-rftvAoHBWPVkvwBLr3SQWRZvcIjyMTN0SlhMzlt+lgvoQBBGNEmZQ/7sS/Ux1oHsJV/++UDuLVso4n5L95YD5Q==", "_digest_scan": "scan: allow",
+              "source_set": "npm"
+            }
+          ],
+          "verify": "\"/Library/Application Support/Neutrino/agent/state/opencode/package/bin/opencode\" --version",
+          "uninstall": {"post_uninstall": [], "is_data_kept": true}
+        }
+      }
+    },
+    "darwin-arm64": {
+      "runner": "opencode",
+      "install": {
+        "method": "hub",
+        "params": {
+          "version": "1.19.5",
+          "releases": [{"kind": "npm", "sources": ["https://registry.npmjs.org"], "package": "opencode-darwin-arm64"}],
+          "artifacts": [
+            {
+              "name": "opencode",
+              "kind": "tar_gz",
+              "directory": "package",
+              "file": "opencode-darwin-arm64/-/opencode-darwin-arm64-{version}.tgz",
+              "digest": "sha512-0MbSbKkmwVHtgP31GJyyECe6QVy4T7W4Wp7s2TsmXHTPPyf01ne3dWSX97X9dkNK28Lc6kt+zMPQUP/9GgDLZg==", "_digest_scan": "scan: allow",
+              "source_set": "npm"
+            }
+          ],
+          "verify": "\"/Library/Application Support/Neutrino/agent/state/opencode/package/bin/opencode\" --version",
+          "uninstall": {"post_uninstall": [], "is_data_kept": true}
+        }
+      }
+    },
+    "windows-amd64": {
+      "runner": "opencode",
+      "install": {
+        "method": "hub",
+        "params": {
+          "version": "1.19.5",
+          "releases": [{"kind": "npm", "sources": ["https://registry.npmjs.org"], "package": "opencode-windows-x64-baseline"}],
+          "artifacts": [
+            {
+              "name": "opencode",
+              "kind": "tar_gz",
+              "directory": "package",
+              "file": "opencode-windows-x64-baseline/-/opencode-windows-x64-baseline-{version}.tgz",
+              "digest": "sha512-yRHN+TsfLjfLmdQVAVWqTGfGP1yq8YtUFy9Jw33XhlPIp77slBdCJrj2PC4amuEl6BJtaIQDhDFbpJ8+a5z7Qw==", "_digest_scan": "scan: allow",
+              "source_set": "npm"
+            }
+          ],
+          "verify": "\"%ProgramData%\\Neutrino\\agent\\state\\opencode\\package\\bin\\opencode.exe\" --version",
+          "uninstall": {"post_uninstall": [], "is_data_kept": true}
+        }
+      }
+    },
+    "windows-arm64": {
+      "runner": "opencode",
+      "install": {
+        "method": "hub",
+        "params": {
+          "version": "1.19.5",
+          "releases": [{"kind": "npm", "sources": ["https://registry.npmjs.org"], "package": "opencode-windows-arm64"}],
+          "artifacts": [
+            {
+              "name": "opencode",
+              "kind": "tar_gz",
+              "directory": "package",
+              "file": "opencode-windows-arm64/-/opencode-windows-arm64-{version}.tgz",
+              "digest": "sha512-aySF/MDji5KO3I5yl9Ec4g8kW/QIx4Jj5FXwBhh/FrDu0w6L8HAOGH7cyjFb3t8TW7pxRkH3Ei3rfkWAE7cScw==", "_digest_scan": "scan: allow",
+              "source_set": "npm"
+            }
+          ],
+          "verify": "\"%ProgramData%\\Neutrino\\agent\\state\\opencode\\package\\bin\\opencode.exe\" --version",
+          "uninstall": {"post_uninstall": [], "is_data_kept": true}
+        }
+      }
+    }
+  }
+}

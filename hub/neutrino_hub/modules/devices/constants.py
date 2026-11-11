@@ -202,6 +202,7 @@ DEVICE_MODULE_NAMES = (
     "codeg",
     "claude_code",
     "codex",
+    "opencode",
     "siyuan",
 )
 # The directory under ``config/`` that holds one directory per device.
@@ -273,12 +274,13 @@ DEVICE_CLOUDCLI_SECRET_AAD = b"device_cloudcli:token_secret"
 DEVICE_CLOUDCLI_SECRET_BYTES = 32
 # The tools and the knobs of each the AI tools setting holds, the client's
 # own: Claude Code's four role slots, Codex's model and reasoning effort,
-# Gemini's model.
+# Gemini's model and OpenCode's model.
 DEVICE_AI_CLAUDE_SLOTS = ("default", "opus", "sonnet", "haiku")
 DEVICE_AI_TOOL_CONFIG_KEYS = {
     "claude": DEVICE_AI_CLAUDE_SLOTS,
     "codex": ("model", "model_reasoning_effort"),
     "gemini": ("model",),
+    "opencode": ("model",),
 }
 DEVICE_AI_REASONING_EFFORT_KEY = "model_reasoning_effort"
 DEVICE_AI_REASONING_EFFORTS = ("minimal", "low", "medium", "high")
@@ -493,10 +495,12 @@ DEVICE_CODEG_MODULE = "codeg"
 DEVICE_CODEG_SECRET_KEY = "secret_sealed"  # scan: allow
 DEVICE_CODEG_SECRET_AAD = b"device_codeg:secret"
 DEVICE_CODEG_SECRET_BYTES = 32
-# Claude Code and Codex, the command line programs: each enabled account's
-# record holds the account alone, and on Windows the state sends its login.
+# Claude Code, Codex and OpenCode, the command line programs: each enabled
+# account's record holds the account alone, and on Windows the state sends
+# its login.
 DEVICE_CLAUDE_CODE_MODULE = "claude_code"
 DEVICE_CODEX_MODULE = "codex"
+DEVICE_OPENCODE_MODULE = "opencode"
 # SiYuan, once per account. Each enabled account's record holds, beside the
 # account, the secret its tokens are signed with and the kernel's access
 # code, which the hub generates once and keeps sealed, and while the account

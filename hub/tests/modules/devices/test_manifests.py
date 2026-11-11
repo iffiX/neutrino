@@ -432,6 +432,7 @@ def test_the_manifests_come_back_in_the_order_every_list_of_modules_shows():
         "codeg",
         "claude_code",
         "codex",
+        "opencode",
         "siyuan",
         "podman",
         "hermes_webui",
@@ -471,6 +472,7 @@ def test_every_shipped_entry_names_its_runner_and_method():
         ("codeg", CODEG_SERVER_BUILDS),
         ("codex", CODEX_BUILDS),
         ("claude_code", CLAUDE_CODE_BUILDS),
+        ("opencode", OPENCODE_BUILDS),
     ):
         assert shipped[name] == {key: (name, "hub") for key in keys}, name
 
@@ -494,6 +496,7 @@ def test_every_shipped_manifest_names_its_publisher():
         "codeg": "spacering-net/codeg",
         "codex": "OpenAI",
         "claude_code": "Anthropic",
+        "opencode": "Anomaly",
         "siyuan": "siyuan-note/siyuan",
         "hermes_webui": "nesquena/hermes-webui and NousResearch/hermes-agent",
         "ayakaleaf": "ayaka-notes/ayakaleaf-pro",
@@ -912,6 +915,36 @@ CLAUDE_CODE_BUILDS = {
         "sha512-Gc9o60Ji5RuP6xm7MBJsLUJE/AGymq8HF11idETBANHnLqg4uITD4O3tdOFE0yR7y6zEz2wl5D/7n4NlrY16Yg==",  # scan: allow
     ),
 }
+# OpenCode's npm package per platform, the baseline build on amd64, and
+# npm's integrity for 1.19.5, as registry.npmjs.org's document of each
+# platform package names it.
+OPENCODE_VERSION = "1.19.5"
+OPENCODE_BUILDS = {
+    "linux-amd64": (
+        "linux-x64-baseline",
+        "sha512-9kA+st3XXtCXMPx5f3Ld1u19uoHTO2u2Btt8a2cqhJ4GIqVbD1mXLevj3LHFEmtuQoFGk+UstGnl38sCqXj5sQ==",  # scan: allow
+    ),
+    "linux-arm64": (
+        "linux-arm64",
+        "sha512-u2HFRI6v1nNMVKiV34An8XrGBxJeZ+RCg2tYu3SqlGODKqKsr5RoEbaX1tnsfGb+rETh9AJVX9kS8dSZXPufsA==",  # scan: allow
+    ),
+    "darwin-amd64": (
+        "darwin-x64-baseline",
+        "sha512-rftvAoHBWPVkvwBLr3SQWRZvcIjyMTN0SlhMzlt+lgvoQBBGNEmZQ/7sS/Ux1oHsJV/++UDuLVso4n5L95YD5Q==",  # scan: allow
+    ),
+    "darwin-arm64": (
+        "darwin-arm64",
+        "sha512-0MbSbKkmwVHtgP31GJyyECe6QVy4T7W4Wp7s2TsmXHTPPyf01ne3dWSX97X9dkNK28Lc6kt+zMPQUP/9GgDLZg==",  # scan: allow
+    ),
+    "windows-amd64": (
+        "windows-x64-baseline",
+        "sha512-yRHN+TsfLjfLmdQVAVWqTGfGP1yq8YtUFy9Jw33XhlPIp77slBdCJrj2PC4amuEl6BJtaIQDhDFbpJ8+a5z7Qw==",  # scan: allow
+    ),
+    "windows-arm64": (
+        "windows-arm64",
+        "sha512-aySF/MDji5KO3I5yl9Ec4g8kW/QIx4Jj5FXwBhh/FrDu0w6L8HAOGH7cyjFb3t8TW7pxRkH3Ei3rfkWAE7cScw==",  # scan: allow
+    ),
+}
 NPM_REGISTRIES = [
     "https://registry.npmjs.org",
     "https://registry.npmmirror.com",
@@ -1020,7 +1053,53 @@ def test_claude_code_pins_anthropics_npm_package_per_platform_from_the_npm_set()
     )
 
 
-@pytest.mark.parametrize("name", ["codex", "claude_code"])
+def test_opencode_pins_the_publishers_npm_package_per_platform_from_the_npm_set():
+    """One tarball per platform, opencode-<platform> under npm's integrity,
+    the baseline build on amd64 and the glibc build on Linux, fetched from
+    the npm set alone and unpacked into opencode/package; the versions from
+    each platform package's own npm feed."""
+    manifest = load_module_manifests()["opencode"]
+
+    assert manifest["title"] == "OpenCode"
+    assert set(manifest["platforms"]) == set(OPENCODE_BUILDS)
+    for key, (build, integrity) in OPENCODE_BUILDS.items():
+        entry = manifest["platforms"][key]
+        package = f"opencode-{build}"
+        assert "min_version" not in entry and "requires" not in entry
+        assert build.endswith("-baseline") == key.endswith("amd64")
+        assert "musl" not in build
+        params = entry_params(entry)
+        assert params["version"] == OPENCODE_VERSION
+        assert params["releases"] == [
+            {
+                "kind": "npm",
+                "sources": ["https://registry.npmjs.org"],
+                "package": package,
+            }
+        ]
+        (artifact,) = entry_artifacts(manifest, entry)
+        assert artifact == {
+            "name": "opencode",
+            "kind": "tar_gz",
+            "directory": "package",
+            "file": f"{package}/-/{package}-{{version}}.tgz",
+            "digest": integrity,
+            "source_set": "npm",
+        }
+        assert artifact_sources(artifact, OPENCODE_VERSION) == [
+            f"{registry}/{package}/-/{package}-{OPENCODE_VERSION}.tgz"
+            for registry in NPM_REGISTRIES
+        ]
+        program = "opencode.exe" if key.startswith("windows") else "opencode"
+        path = _state_path(key, "opencode", "package", "bin", program)
+        is_quoted = not key.startswith("linux")
+        assert params["verify"] == (
+            f'"{path}" --version' if is_quoted else f"{path} --version"
+        )
+        assert params["uninstall"] == {"post_uninstall": [], "is_data_kept": True}
+
+
+@pytest.mark.parametrize("name", ["codex", "claude_code", "opencode"])
 def test_a_command_line_program_names_the_npm_set_as_its_one_source(name):
     manifest = load_module_manifests()[name]
 
@@ -1185,6 +1264,12 @@ SHIPPED_UNINSTALL_LINES = {
         "Each account's settings in ~/.claude stay, and so does a copy of Claude "
         "Code installed outside this module.",
         "每个账户在 ~/.claude 里的设置都保留，在本模块之外安装的 Claude Code 也保留。",
+    ),
+    "opencode": (
+        False,
+        "Each account's settings in ~/.config/opencode stay, and so does a copy of "
+        "OpenCode installed outside this module.",
+        "每个账户在 ~/.config/opencode 里的设置都保留，在本模块之外安装的 OpenCode 也保留。",
     ),
     "siyuan": (
         False,

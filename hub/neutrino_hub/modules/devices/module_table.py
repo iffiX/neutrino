@@ -4,7 +4,7 @@ A row names the module's kind, its configuration file under
 ``config/devices/<id>/``, whether it runs one instance per enabled account
 (the account layer), the fields the vault seals in each account's record,
 the published entry's ``description_code`` and title, and the panel the
-machine page draws it with. The ten account-layer modules share one
+machine page draws it with. The eleven account-layer modules share one
 router, one panel and one state composition, each driven by its row; every
 other kind has its own router and panel and reads its row for the rest.
 """
@@ -52,6 +52,7 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_MODULE_KIND_SERVICE_ACCOUNT,
     DEVICE_MODULE_KIND_SYSTEM_PACKAGE,
     DEVICE_MODULE_PANEL_INSTANCES,
+    DEVICE_OPENCODE_MODULE,
     DEVICE_PODMAN_MODULE,
     DEVICE_REMOTE_DESKTOP_MODULE,
     DEVICE_SAMBA_MODULE,
@@ -345,6 +346,13 @@ DEVICE_MODULE_ROWS = (
     ),
     _row(
         DEVICE_CODEX_MODULE,
+        DEVICE_MODULE_KIND_COMMAND_LINE_PROGRAM,
+        is_account_layer=True,
+        panel=DEVICE_MODULE_PANEL_INSTANCES,
+        is_login_named=True,
+    ),
+    _row(
+        DEVICE_OPENCODE_MODULE,
         DEVICE_MODULE_KIND_COMMAND_LINE_PROGRAM,
         is_account_layer=True,
         panel=DEVICE_MODULE_PANEL_INSTANCES,

@@ -3,7 +3,7 @@
 ``GET /api/agent/module/<module>`` and ``POST /api/agent/module/<module>/set``
 are served for each account-layer row of the description table: Terminal,
 the file share, the SSH server, VS Code, code-server, CloudCLI, Codeg,
-Claude Code, Codex and SiYuan. The view lists every available account with
+Claude Code, Codex, OpenCode and SiYuan. The view lists every available account with
 whether the module enables it and what the machine reports of its instance,
 or for a command line program the code of the copy the account's shell runs
 and its last AI tools result. A command line program also serves ``copy``,

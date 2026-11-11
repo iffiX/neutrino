@@ -5,7 +5,7 @@ table's order, the one ui_behavior.md names, and the page keeps it; the page
 reads the source chip from the row's ``source`` and the kind chip from its
 ``kind``, the words the hub sends, each word its own key and a word outside
 the table no chip; so every shipped module on Linux, Windows and macOS shows
-the chips ui_behavior.md gives it, Codex and Claude Code reading Program and
+the chips ui_behavior.md gives it, Codex, Claude Code and OpenCode reading Program and
 Upstream whatever the machine reports of their copy; the two chips
 sit between the title and the state; and the words say in both languages what
 ui_text.md writes.
@@ -39,13 +39,14 @@ ORDER = [
     "codeg",
     "claude_code",
     "codex",
+    "opencode",
     "siyuan",
     "podman",
     "hermes_webui",
     "ayakaleaf",
 ]
 # The command line programs, whose kind chip reads Program.
-PROGRAMS = ("claude_code", "codex")
+PROGRAMS = ("claude_code", "codex", "opencode")
 WORDS = {
     "en": {
         "ui.modules.source_agent": "Built-in",
@@ -80,6 +81,7 @@ SOURCES = {
     "codeg": ("source_upstream",) * 3,
     "claude_code": ("source_upstream",) * 3,
     "codex": ("source_upstream",) * 3,
+    "opencode": ("source_upstream",) * 3,
     "siyuan": ("source_upstream",) * 3,
     "podman": ("source_system", "source_upstream", "source_upstream"),
     "hermes_webui": ("source_container",) * 3,

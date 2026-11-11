@@ -1,4 +1,4 @@
-"""The tab of a command line program, Codex or Claude Code, held against the standard.
+"""The tab of a command line program, Codex, Claude Code or OpenCode, held against the standard.
 
 What these pin: no `find` step's words, the programs' section of ui_text.md
 being test_program_wording.py's; each tool a module of the account layer
@@ -28,7 +28,7 @@ COMPONENTS_DIR = FRONTEND_SRC_DIR / "components"
 LOCALES_DIR = FRONTEND_SRC_DIR / "locales"
 DESIGN_DIR = HUB_DIR.parent / "skills/core-code-author/design"
 LANGUAGES = ("en", "zh-CN")
-PROGRAMS = ("claude_code", "codex")
+PROGRAMS = ("claude_code", "codex", "opencode")
 ROW_PATTERN = re.compile(
     r"^\| `((?:ui|code|state)\.[a-z0-9_.]+)` \| (.+?) \| (.+?) \|$"
 )
@@ -122,8 +122,8 @@ def test_ui_behavior_draws_the_tab_as_these_check():
     text = flat(design("ui_behavior.md"))
 
     assert (
-        "draws the line `ui.codex.owner_notice` or `ui.claude_code.owner_notice` "
-        "over its state line, and **Install**, **Uninstall** and **Configure** "
+        "draws the line `ui.codex.owner_notice`, `ui.claude_code.owner_notice` or "
+        "`ui.opencode.owner_notice` over its state line, and **Install**, **Uninstall** and **Configure** "
         "alone at the bottom"
     ) in text
     assert (
@@ -155,8 +155,8 @@ def test_ui_behavior_draws_the_tab_as_these_check():
         "| The version line | shown while the module's own copy is on the machine;"
     ) in text
     assert (
-        "with its apply bar, `ui.codex.apply` or `ui.claude_code.apply` its "
-        "button and `ui.program.apply_hint` its hint; the apply waits for the "
+        "with its apply bar, `ui.codex.apply`, `ui.claude_code.apply` or "
+        "`ui.opencode.apply` its button and `ui.program.apply_hint` its hint; the apply waits for the "
         "module's state alone"
     ) in text
 

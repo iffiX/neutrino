@@ -52,6 +52,7 @@ def test_the_rows_come_in_the_order_every_list_of_modules_shows():
         "codeg",
         "claude_code",
         "codex",
+        "opencode",
         "siyuan",
         "podman",
         "hermes_webui",
@@ -79,6 +80,7 @@ def test_every_row_is_one_of_the_six_kinds():
         "codeg": DEVICE_MODULE_KIND_ACCOUNT_PROGRAM,
         "claude_code": DEVICE_MODULE_KIND_COMMAND_LINE_PROGRAM,
         "codex": DEVICE_MODULE_KIND_COMMAND_LINE_PROGRAM,
+        "opencode": DEVICE_MODULE_KIND_COMMAND_LINE_PROGRAM,
         "siyuan": DEVICE_MODULE_KIND_ACCOUNT_PROGRAM,
         "podman": DEVICE_MODULE_KIND_SYSTEM_PACKAGE,
         "hermes_webui": DEVICE_MODULE_KIND_CONTAINER,
@@ -86,7 +88,7 @@ def test_every_row_is_one_of_the_six_kinds():
     }
 
 
-def test_the_account_layer_is_ten_rows_in_table_order():
+def test_the_account_layer_is_eleven_rows_in_table_order():
     assert account_layer_names() == (
         "terminal",
         "ssh_server",
@@ -97,9 +99,10 @@ def test_the_account_layer_is_ten_rows_in_table_order():
         "codeg",
         "claude_code",
         "codex",
+        "opencode",
         "siyuan",
     )
-    assert command_line_program_names() == ("claude_code", "codex")
+    assert command_line_program_names() == ("claude_code", "codex", "opencode")
     assert [row.name for row in account_layer_rows()] == list(account_layer_names())
     assert account_program_names() == (
         "vscode",
@@ -139,6 +142,7 @@ def test_each_account_layer_row_seals_its_own_fields():
         "codeg": [("secret_sealed", "secret")],
         "claude_code": [],
         "codex": [],
+        "opencode": [],
         "siyuan": [
             ("secret_sealed", "secret"),
             ("access_code_sealed", "access_code"),
@@ -245,6 +249,7 @@ def test_each_row_names_its_published_entry():
         "codeg": ("codeg_module", "Codeg ({account})"),
         "claude_code": ("", ""),
         "codex": ("", ""),
+        "opencode": ("", ""),
         "siyuan": ("siyuan_module", "SiYuan ({account})"),
         "podman": ("container", ""),
         "hermes_webui": ("hermes_webui_module", "Hermes WebUI"),
@@ -272,7 +277,7 @@ def test_a_row_is_frozen_and_an_unknown_name_is_refused():
 
 
 def test_each_command_line_program_runs_as_its_login_with_no_page_or_key():
-    for name in ("claude_code", "codex"):
+    for name in ("claude_code", "codex", "opencode"):
         row = module_row(name)
 
         assert row.kind == DEVICE_MODULE_KIND_COMMAND_LINE_PROGRAM

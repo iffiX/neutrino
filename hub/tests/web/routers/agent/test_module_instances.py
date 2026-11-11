@@ -31,7 +31,7 @@ from tests.conftest import unlock_vault
 from tests.web.module_api_box import DEVICE, OFFLINE, module_box
 
 ACCEPTED_AT = "2026-10-05T08:00:00+00:00"
-TEN = [
+ELEVEN = [
     "terminal",
     "ssh_server",
     "samba",
@@ -41,6 +41,7 @@ TEN = [
     "codeg",
     "claude_code",
     "codex",
+    "opencode",
     "siyuan",
 ]
 
@@ -72,13 +73,13 @@ def stored(tmp_path, module: str) -> dict:
     return json.loads(path.read_text())
 
 
-def test_the_table_gives_the_ten_account_layer_modules_a_router_and_no_other():
-    assert list(module_instances.ROUTERS) == TEN
+def test_the_table_gives_the_eleven_account_layer_modules_a_router_and_no_other():
+    assert list(module_instances.ROUTERS) == ELEVEN
     assert "gitea" not in module_instances.ROUTERS
     assert "remote_desktop" not in module_instances.ROUTERS
 
 
-@pytest.mark.parametrize("module", TEN)
+@pytest.mark.parametrize("module", ELEVEN)
 def test_each_router_serves_the_read_the_apply_and_the_set_at_its_own_path(module):
     paths = sorted(
         (sorted(route.methods - {"HEAD", "OPTIONS"})[0], route.path)
@@ -94,13 +95,13 @@ def test_each_router_serves_the_read_the_apply_and_the_set_at_its_own_path(modul
             ("GET", f"/api/agent/module/{module}"),
             ("POST", f"/api/agent/module/{module}/apply"),
             ("POST", f"/api/agent/module/{module}/set"),
-            *(programs if module in ("claude_code", "codex") else []),
+            *(programs if module in ("claude_code", "codex", "opencode") else []),
         ]
     )
 
 
 @pytest.mark.parametrize("state", ["failed", "install_failed"])
-@pytest.mark.parametrize("module", TEN)
+@pytest.mark.parametrize("module", ELEVEN)
 def test_an_apply_on_a_failed_module_puts_a_retry_mark_and_pushes(api, module, state):
     client, runtime = api
     runtime.report(DEVICE, module, state=state)
@@ -180,6 +181,7 @@ def test_the_file_shares_rows_carry_the_share_path_and_the_smb_user(api):
         ("terminal", set()),
         ("claude_code", set()),
         ("codex", set()),
+        ("opencode", set()),
     ],
 )
 def test_a_set_enables_the_accounts_and_seals_each_ones_fields_once(
@@ -568,7 +570,7 @@ def test_a_stopped_file_shares_rows_run_none_of_its_home_shares(api):
     assert [row["is_running"] for row in rows] == [False, False]
 
 
-@pytest.mark.parametrize("module", ["claude_code", "codex"])
+@pytest.mark.parametrize("module", ["claude_code", "codex", "opencode"])
 def test_a_command_line_program_s_rows_carry_each_account_s_code_and_ai_tools(
     api, module
 ):
@@ -627,7 +629,8 @@ def found(**fields) -> dict:
 
 
 @pytest.mark.parametrize(
-    "module, tested", [("claude_code", "2.1.311"), ("codex", "0.166.0")]
+    "module, tested",
+    [("claude_code", "2.1.311"), ("codex", "0.166.0"), ("opencode", "1.19.5")],
 )
 def test_the_copy_read_answers_the_agent_s_find_at_once(api, module, tested):
     client, runtime = api
@@ -740,12 +743,12 @@ def test_prefer_asks_the_agent_for_an_enabled_account_alone(api):
 def test_only_the_command_line_programs_serve_copy_and_prefer():
     for name, router in module_instances.ROUTERS.items():
         paths = {route.path for route in router.routes}
-        is_program = name in ("claude_code", "codex")
+        is_program = name in ("claude_code", "codex", "opencode")
         assert (f"/api/agent/module/{name}/copy" in paths) is is_program
         assert (f"/api/agent/module/{name}/prefer" in paths) is is_program
 
 
-@pytest.mark.parametrize("module", ["claude_code", "codex"])
+@pytest.mark.parametrize("module", ["claude_code", "codex", "opencode"])
 def test_a_command_line_program_s_rows_carry_each_account_s_ai_tools_switch(
     api, module
 ):

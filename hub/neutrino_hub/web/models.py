@@ -1943,7 +1943,8 @@ class ChannelAiToolsAccount(BaseModel):
     # The login's own password, sent to a Windows machine alone.
     password: str = ""
     # ``{claude: {default, opus, sonnet, haiku}, codex: {model,
-    # model_reasoning_effort}, gemini: {model}}``, every slot filled.
+    # model_reasoning_effort}, gemini: {model}, opencode: {model}}``, every
+    # slot filled.
     tool_configs: dict = Field(default_factory=dict)
 
 

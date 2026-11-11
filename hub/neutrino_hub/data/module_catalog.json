@@ -9,6 +9,7 @@
     {"name": "hermes_webui", "category": "code"},
     {"name": "claude_code", "category": "code"},
     {"name": "codex", "category": "code"},
+    {"name": "opencode", "category": "code"},
     {"name": "terminal", "category": "code"},
     {"name": "ssh_server", "category": "code"},
     {"name": "gitea", "category": "code"},

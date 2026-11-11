@@ -579,6 +579,7 @@ def test_the_default_model_fills_the_ai_tools_and_siyuan_and_a_new_pick_moves_th
             *configs["claude"].values(),
             configs["codex"]["model"],
             configs["gemini"]["model"],
+            configs["opencode"]["model"],
             state["modules"]["siyuan"]["config"]["model"],
         ]
 

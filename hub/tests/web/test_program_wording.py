@@ -1,6 +1,6 @@
 """The command line programs' words and catalog entries, held against the standard.
 
-What these pin: Codex and Claude Code are one catalog entry each in the
+What these pin: Codex, Claude Code and OpenCode are one catalog entry each in the
 ``code`` category, where the one ``ai_cli`` entry stood, and its words are
 gone in both languages; each title is the fixed name; and every key of
 ui_text.md's "The command line programs' words" says in both languages what
@@ -20,7 +20,7 @@ HUB_DIR = Path(__file__).resolve().parents[2]
 LOCALES_DIR = HUB_DIR / "frontend/src/locales"
 UI_TEXT = HUB_DIR.parent / "skills/core-code-author/design/ui_text.md"
 LANGUAGES = ("en", "zh-CN")
-PROGRAMS = ("claude_code", "codex")
+PROGRAMS = ("claude_code", "codex", "opencode")
 ROW_PATTERN = re.compile(r"^\| `([a-z_.]+)` \| (.+) \| (.+) \|$")
 
 
@@ -47,7 +47,7 @@ def test_each_program_is_one_entry_of_the_code_category_where_ai_cli_stood():
     categories = {item["name"]: item["category"] for item in catalog["modules"]}
 
     assert "ai_cli" not in names
-    assert names[names.index("hermes_webui") + 1 :][:2] == list(PROGRAMS)
+    assert names[names.index("hermes_webui") + 1 :][:3] == list(PROGRAMS)
     assert {name: categories[name] for name in PROGRAMS} == dict.fromkeys(
         PROGRAMS, "code"
     )
@@ -68,16 +68,20 @@ def test_each_program_s_title_is_its_fixed_name(language):
 
     assert held["ui.module_title.claude_code"] == "Claude Code"
     assert held["ui.module_title.codex"] == "Codex"
+    assert held["ui.module_title.opencode"] == "OpenCode"
 
 
 def test_the_standard_names_every_key_of_the_programs():
     assert set(standard_rows()) == {
         "ui.module_catalog.codex",
         "ui.module_catalog.claude_code",
+        "ui.module_catalog.opencode",
         "ui.codex.owner_notice",
         "ui.claude_code.owner_notice",
+        "ui.opencode.owner_notice",
         "ui.codex.apply",
         "ui.claude_code.apply",
+        "ui.opencode.apply",
         "ui.program.apply_hint",
         "ui.program.replace_title",
         "ui.program.replace_body",

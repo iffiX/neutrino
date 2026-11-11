@@ -613,7 +613,7 @@ def test_a_windows_machine_is_sent_each_accounts_login_password(unlocked):
     assert "pw-ann" not in json.dumps(store.read(DEVICE, "accounts"))
 
 
-@pytest.mark.parametrize("module", ["claude_code", "codex"])
+@pytest.mark.parametrize("module", ["claude_code", "codex", "opencode"])
 def test_a_command_line_program_is_sent_its_enabled_accounts_and_their_logins(
     unlocked, module
 ):

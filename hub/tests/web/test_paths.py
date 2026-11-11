@@ -213,6 +213,7 @@ MODULE_NAMES = (
     "codeg",
     "claude_code",
     "codex",
+    "opencode",
     "siyuan",
     "hermes_webui",
     "ayakaleaf",

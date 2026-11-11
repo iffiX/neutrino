@@ -5,7 +5,7 @@ agent last reported it beside what the hub asks of it, with the words of
 its source chip and its kind chip, and its four presses write one ``want``
 each into ``config/devices/<id>/modules.json``: install ``installed``, start
 ``running``, stop ``stopped``, uninstall ``absent``. A command line program,
-Codex or Claude Code, has no Start or Stop, and its install writes
+Codex, Claude Code or OpenCode, has no Start or Stop, and its install writes
 ``running``.
 The state is pushed at once, and what the machine reports afterwards is
 shown, each row with its module's task as the agent reports it; a task's
