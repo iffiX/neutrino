@@ -50,6 +50,7 @@ AI_TOOL_CONFIG_KEYS = {
     "claude": AI_CLAUDE_SLOTS,
     "codex": ("model", "model_reasoning_effort"),
     "gemini": ("model",),
+    "opencode": ("model",),
 }
 AI_REASONING_EFFORTS = ("minimal", "low", "medium", "high")
 
@@ -89,12 +90,13 @@ def resolved_configs(credential: dict, tool_configs: dict) -> dict:
 
     Returns:
         ``{tool: {knob: value}}`` ready for the switcher; every Claude slot,
-        Codex's model and Gemini's model carry a model.
+        Codex's, Gemini's and OpenCode's model carry a model.
     """
     default_model = str(credential.get("model", ""))
     claude = tool_configs.get("claude", {})
     codex = tool_configs.get("codex", {})
     gemini = tool_configs.get("gemini", {})
+    opencode = tool_configs.get("opencode", {})
     return {
         "claude": {
             slot: str(claude.get(slot, "") or "") or default_model
@@ -107,6 +109,7 @@ def resolved_configs(credential: dict, tool_configs: dict) -> dict:
             ),
         },
         "gemini": {"model": str(gemini.get("model", "") or "") or default_model},
+        "opencode": {"model": str(opencode.get("model", "") or "") or default_model},
     }
 
 

@@ -15,9 +15,10 @@ def test_show_says_the_tools_are_their_own_while_off(running, capsys):
     assert ai.main_show() == 0
 
     assert capsys.readouterr().out.splitlines() == [
-        "claude  -  its own",
-        "codex   -  its own",
-        "gemini  -  its own",
+        "claude    -  its own",
+        "codex     -  its own",
+        "gemini    -  its own",
+        "opencode  -  its own",
     ]
 
 
@@ -29,7 +30,7 @@ def test_show_names_the_forward_and_the_hub_while_on(running, capsys):
     assert ai.main_show() == 0
 
     assert capsys.readouterr().out.splitlines()[0] == (
-        "claude  http://127.0.0.1:20001  the hub's (home)"
+        "claude    http://127.0.0.1:20001  the hub's (home)"
     )
 
 

@@ -348,8 +348,9 @@ class ClientServiceStore:
         """The per-tool model choices this person keeps.
 
         Returns:
-            ``{"claude": {...}, "codex": {...}, "gemini": {...}}``; empty
-            tools until somebody configures them.
+            ``{"claude": {...}, "codex": {...}, "gemini": {...},
+            "opencode": {...}}``; empty tools until somebody configures
+            them.
         """
         return self._read()["ai"]["tool_configs"]
 

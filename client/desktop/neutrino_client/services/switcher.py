@@ -27,6 +27,11 @@ failure, and the records stay.
 Activation is all or nothing: a tool that refuses has every tool switched
 before it put back, and the refusal is the answer.
 
+OpenCode is additive: cc-switch adds the hub's provider to its file beside
+the person's own and keeps no provider current, so its adoption is the list
+alone, its provider goes in whole as ``--config``, and the hub is current
+while cc-switch lists its provider.
+
 One knob has no flag in cc-switch: Codex's reasoning effort, which is
 settled into ``config.toml`` after the switch when the person chose one.
 
@@ -40,6 +45,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import posixpath
 import shutil
 import stat
 import subprocess
@@ -53,22 +59,37 @@ from neutrino_client.platforms.base import plain_text, run_quietly
 SWITCHER_PROVIDER_ID = "neutrino"
 SWITCHER_PROVIDER_NAME = "Neutrino Hub"
 
-# The tools cc-switch can point at the hub, in its own vocabulary, and where
-# each keeps the file that switching replaces.
-SWITCHER_APPS = ("claude", "codex", "gemini")
+# The tools cc-switch can point at the hub, and where each keeps the file
+# that switching replaces.
+SWITCHER_APPS = ("claude", "codex", "gemini", "opencode")
 SWITCHER_APP_FILES = {
     "claude": ".claude/settings.json",
     "codex": ".codex/config.toml",
     "gemini": ".gemini/.env",
+    "opencode": ".config/opencode/opencode.json",
 }
+# cc-switch's own name of a tool, where it differs from the tool's name here.
+SWITCHER_CC_SWITCH_APPS = {"opencode": "open-code"}
+# The tools cc-switch adds the hub to beside the person's own providers,
+# with no provider current: no adoption step but the list, the provider
+# given whole as ``--config``.
+SWITCHER_ADDITIVE_APPS = ("opencode",)
+# OpenCode's provider package for an endpoint of the OpenAI API.
+OPENCODE_NPM = "@ai-sdk/openai-compatible"
 # The directory cc-switch writes a tool's files into only once it is there,
 # and every file a switch may write in it, below the person's home: what is
 # kept aside before the first switch and put back after the switch back.
-SWITCHER_APP_DIRS = {"claude": ".claude", "codex": ".codex", "gemini": ".gemini"}
+SWITCHER_APP_DIRS = {
+    "claude": ".claude",
+    "codex": ".codex",
+    "gemini": ".gemini",
+    "opencode": ".config/opencode",
+}
 SWITCHER_APP_KEPT_FILES = {
     "claude": ("settings.json",),
     "codex": ("config.toml", "auth.json"),
     "gemini": (".env", "settings.json"),
+    "opencode": ("opencode.json",),
 }
 # The files of a tool that hold the gateway key once it is switched, and
 # the mode each is left with outside Windows: the person alone reads and
@@ -78,6 +99,7 @@ SWITCHER_APP_KEY_FILES = {
     "claude": ("settings.json",),
     "codex": ("auth.json",),
     "gemini": (".env",),
+    "opencode": ("opencode.json",),
 }
 SWITCHER_KEY_FILE_MODE = 0o600
 # cc-switch's own store for the client's runs, under the client's own
@@ -101,9 +123,10 @@ CLAUDE_SLOT_FLAGS = {
 
 # Codex's one knob cc-switch has no flag for, a top-level key of config.toml.
 CODEX_EFFORT_KEY = "model_reasoning_effort"
-# Codex asks for ``<base>/responses``; the gateway serves the Responses API
-# under ``/v1``. Claude Code and Gemini add their own versioned paths.
-TOOL_ENDPOINT_SUFFIXES = {"codex": "/v1"}
+# Codex asks for ``<base>/responses`` and OpenCode for
+# ``<base>/chat/completions``; the gateway serves both under ``/v1``. Claude
+# Code and Gemini add their own versioned paths.
+TOOL_ENDPOINT_SUFFIXES = {"codex": "/v1", "opencode": "/v1"}
 
 # What cc-switch's extract leaves in a common snippet that is nonetheless the
 # provider's own: a snippet carrying these would override the hub's choice.
@@ -178,8 +201,9 @@ def activate(*, base_url: str, api_key: str, tool_configs: "dict | None" = None)
         base_url: The hub's AI endpoint.
         api_key: This person's gateway key.
         tool_configs: Each tool's staged choices: ``claude`` slot names,
-            ``codex`` model and reasoning effort, ``gemini`` model. None or
-            a missing key leaves that choice to cc-switch.
+            ``codex`` model and reasoning effort, ``gemini`` and
+            ``opencode`` model. None or a missing key leaves that choice to
+            cc-switch.
 
     Returns:
         The tools switched this time, comma separated; empty when every
@@ -271,9 +295,12 @@ def is_active_for(app: str) -> bool:
         app: The tool, in cc-switch's vocabulary.
 
     Returns:
-        True when the hub is that tool's current provider.
+        True when the hub is that tool's current provider, or for an
+        additive tool when cc-switch lists the hub's provider.
     """
     _use_store_of(_read_record(app))
+    if app in SWITCHER_ADDITIVE_APPS:
+        return _has_provider(app)
     return _current_provider(app) == SWITCHER_PROVIDER_ID
 
 
@@ -312,14 +339,19 @@ def _point_at_hub(app: str, base_url: str, api_key: str, config: dict) -> bool:
         SWITCHER_PROVIDER_ID,
         "--name",
         SWITCHER_PROVIDER_NAME,
-        # Values joined with "=": a key or a model name may begin with a
-        # hyphen, which cc-switch would otherwise read as an option.
-        "--base-url=" + _endpoint_for(app, base_url),
-        "--api-key=" + api_key,
     ]
-    arguments += _model_flags(app, config)
-    if _common_snippet(app):
-        arguments.append("--common-config")
+    # Values joined with "=": a key or a model name may begin with a
+    # hyphen, which cc-switch would otherwise read as an option.
+    if app in SWITCHER_ADDITIVE_APPS:
+        arguments.append("--config=" + _provider_config(app, base_url, api_key, config))
+    else:
+        arguments += [
+            "--base-url=" + _endpoint_for(app, base_url),
+            "--api-key=" + api_key,
+        ]
+        arguments += _model_flags(app, config)
+        if _common_snippet(app):
+            arguments.append("--common-config")
     directory = _home_path(SWITCHER_APP_DIRS[app])
     if not os.path.isdir(directory):
         try:
@@ -362,8 +394,9 @@ def _adopt_once(app: str) -> dict:
     into its store, as the provider switching back will return to; the MCP
     servers and the shared settings follow. None of it happens again for
     this tool while its record stands. The record keeps whether the tool's
-    directory was there and each file a switch may write as it was, None
-    for one that was absent.
+    directory was there, and its parent below the home where it has one,
+    and each file a switch may write as it was, None for one that was
+    absent.
 
     Args:
         app: Which tool, in cc-switch's vocabulary.
@@ -382,9 +415,10 @@ def _adopt_once(app: str) -> dict:
         if mode is not None:
             kept_modes[name] = mode
     _run(["provider", "list"], app, is_checked=False)
-    if is_present:
+    is_additive = app in SWITCHER_ADDITIVE_APPS
+    if is_present and not is_additive:
         _adopt(app)
-    current = _current_provider(app)
+    current = "" if is_additive else _current_provider(app)
     record = {
         "is_present": is_present,
         "is_dir_present": is_dir_present,
@@ -394,6 +428,11 @@ def _adopt_once(app: str) -> dict:
         "previous": "" if current == SWITCHER_PROVIDER_ID else current,
         "added": None,
     }
+    parent = posixpath.dirname(SWITCHER_APP_DIRS[app])
+    if parent:
+        record["is_parent_present"] = is_dir_present or os.path.isdir(
+            _home_path(parent)
+        )
     _write_record(app, record)
     return record
 
@@ -465,6 +504,8 @@ def _point_away(app: str) -> str:
         _put_back(app, kept, record.get("kept_modes") or {})
         if record.get("is_dir_present") is False:
             _remove_empty_dir(_home_path(SWITCHER_APP_DIRS[app]))
+        if record.get("is_parent_present") is False:
+            _remove_empty_dir(_home_path(posixpath.dirname(SWITCHER_APP_DIRS[app])))
     else:
         path = _home_path(SWITCHER_APP_FILES[app])
         if record and not record.get("is_present") and os.path.isfile(path):
@@ -608,7 +649,7 @@ def _drop_provider(app: str, previous: str) -> str:
     if not _has_provider(app):
         return ""
     returned_to = ""
-    if is_active_for(app):
+    if app not in SWITCHER_ADDITIVE_APPS and is_active_for(app):
         returned_to = previous or OFFICIAL_PROVIDER_IDS.get(app, "")
         if returned_to:
             _run(["use", returned_to], app, is_checked=False)
@@ -635,7 +676,8 @@ def _delete_provider(app: str) -> str:
     binary = find_cli()
     if binary is None:
         raise ToolSwitchError("the cc-switch command line is not installed")
-    argv = [binary, "--app", app, "provider", "delete", SWITCHER_PROVIDER_ID]
+    argv = [binary, "--app", _cc_switch_app(app)]
+    argv += ["provider", "delete", SWITCHER_PROVIDER_ID]
     try:
         _, printed = _platform().run_answering(
             argv,
@@ -809,6 +851,35 @@ def _current_provider(app: str) -> str:
     return ""
 
 
+def _cc_switch_app(app: str) -> str:
+    """A tool's name as cc-switch's ``--app`` takes it."""
+    return SWITCHER_CC_SWITCH_APPS.get(app, app)
+
+
+def _provider_config(app: str, base_url: str, api_key: str, config: dict) -> str:
+    """OpenCode's provider whole, as ``provider add --config`` takes it.
+
+    Args:
+        app: Which tool.
+        base_url: The hub's AI endpoint.
+        api_key: This person's gateway key.
+        config: The tool's staged choices.
+
+    Returns:
+        JSON of ``{npm, name, options: {baseURL, apiKey}, models}``, the
+        models naming the tool's one model.
+    """
+    model = str(config.get("model", "") or "")
+    return json.dumps(
+        {
+            "npm": OPENCODE_NPM,
+            "name": SWITCHER_PROVIDER_NAME,
+            "options": {"baseURL": _endpoint_for(app, base_url), "apiKey": api_key},
+            "models": {model: {"name": model}} if model else {},
+        }
+    )
+
+
 def _endpoint_for(app: str, base_url: str) -> str:
     """The hub's endpoint as one tool's provider must carry it."""
     return base_url.rstrip("/") + TOOL_ENDPOINT_SUFFIXES.get(app, "")
@@ -881,7 +952,7 @@ def _run(arguments: list, app: str, *, is_checked: bool = True) -> str:
     binary = find_cli()
     if binary is None:
         raise ToolSwitchError("the cc-switch command line is not installed")
-    command = [binary, "--app", app] + arguments
+    command = [binary, "--app", _cc_switch_app(app)] + arguments
     try:
         result = run_quietly(
             command, timeout_s=COMMAND_TIMEOUT_S, encoding=COMMAND_ENCODING

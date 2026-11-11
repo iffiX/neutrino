@@ -3192,7 +3192,7 @@ function modelSelect(id, models, chosen, onPick) {
 // sends it at once when the gateway is in use.
 function openConfigDialog(staged, models, onSave) {
   const draft = JSON.parse(JSON.stringify(staged.tool_configs || {}));
-  for (const tool of ['claude', 'codex', 'gemini']) {
+  for (const tool of ['claude', 'codex', 'gemini', 'opencode']) {
     if (!draft[tool]) draft[tool] = {};
   }
   const overlay = document.createElement('div');
@@ -3246,6 +3246,10 @@ function openConfigDialog(staged, models, onSave) {
   toolTitle(t('ui.tool_gemini'));
   field(t('ui.gemini_model'), modelSelect('gemini_model', models,
     draft.gemini.model || '', (value) => { draft.gemini.model = value; }));
+
+  toolTitle(t('ui.tool_opencode'));
+  field(t('ui.opencode_model'), modelSelect('opencode_model', models,
+    draft.opencode.model || '', (value) => { draft.opencode.model = value; }));
 
   const actions = document.createElement('div');
   actions.className = 'form_actions';

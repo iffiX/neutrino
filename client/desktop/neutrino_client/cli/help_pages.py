@@ -182,8 +182,8 @@ Fix one entry's local port. The entry names are in nclient app list.
   --port entry=port   one at a time, and it repeats; an empty port goes back to the hub's""",
         "ai": """Usage: nclient ai <command>
 
-Which gateway this computer's AI tools (claude, codex, gemini) point at. A phone
-has no such page.
+Which gateway this computer's AI tools (claude, codex, gemini, opencode) point
+at. A phone has no such page.
 
   show         where they point now
   set          write the hub's gateway into these tools' configuration""",
@@ -463,7 +463,7 @@ Change one setting. The names and the values they take are in nclient settings s
   --port 入口=端口    一次一个，可以重复""",
         "ai": """用法：nclient ai <命令>
 
-这台电脑上的 AI 工具（claude、codex、gemini）指向哪个网关。手机端没有这一页。
+这台电脑上的 AI 工具（claude、codex、gemini、opencode）指向哪个网关。手机端没有这一页。
 
   show         现在指向哪里
   set          把中枢的网关写进这些工具的配置""",

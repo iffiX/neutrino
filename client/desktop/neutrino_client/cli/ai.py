@@ -14,7 +14,7 @@ from __future__ import annotations
 from neutrino_client.cli import names, wording
 
 # The tools the gateway is written into, as ``show`` names them.
-AI_TOOLS = ("claude", "codex", "gemini")
+AI_TOOLS = ("claude", "codex", "gemini", "opencode")
 AI_LOOPBACK_HOST = "127.0.0.1"
 AI_WORKING = "working"
 
@@ -44,7 +44,7 @@ def main_show(*, hub: str = "") -> int:
         else:
             address = wording.line("none")
             owner = wording.line("ai_own")
-        wording.say(f"{tool:<8}{address}  {owner}")
+        wording.say(f"{tool:<10}{address}  {owner}")
     if ai.get("is_managed"):
         wording.say(wording.word_code("ai_tools_managed"))
     return 0

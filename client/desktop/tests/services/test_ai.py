@@ -654,6 +654,7 @@ def test_tool_configs_are_cleaned_of_unknown_knobs():
         "claude": {"default": "m1"},
         "codex": {"model": "m2"},
         "gemini": {},
+        "opencode": {},
     }
 
 
@@ -668,6 +669,7 @@ def test_resolved_configs_fill_every_unchosen_model():
     }
     assert resolved["codex"] == {"model": "m1", "model_reasoning_effort": ""}
     assert resolved["gemini"] == {"model": "m1"}
+    assert resolved["opencode"] == {"model": "m1"}
 
 
 def test_resolved_configs_keep_a_chosen_model_and_effort():

@@ -3,7 +3,9 @@
 The carried CLI wins over one on the path; every file operation is the
 standard library's own on this person's home, with no step-down anywhere.
 cc-switch itself is scripted below as a small store: what it answers, and
-every call the switcher made, in order.
+every call the switcher made, in order. OpenCode's provider goes in whole
+as ``--config`` beside the person's own, under cc-switch's name
+``open-code``, and its ``.config`` made for the switch goes again.
 """
 
 import json
@@ -37,7 +39,10 @@ def wire(monkeypatch, cli):
     monkeypatch.setattr(switcher, "_run", cli)
 
     def delete(argv):
-        cli.providers[argv[2]].discard(argv[-1])
+        app = APPS_BY_CC_SWITCH_NAME.get(argv[2], argv[2])
+        cli.providers[app].discard(argv[-1])
+        if app in switcher.SWITCHER_ADDITIVE_APPS:
+            cli.take_out(app, argv[-1])
 
     switcher._PLATFORM.on_answer = delete
     return switcher._PLATFORM
@@ -146,17 +151,31 @@ def flag_values(arguments) -> dict:
     }
 
 
+# Each tool by cc-switch's own name for it.
+APPS_BY_CC_SWITCH_NAME = {"open-code": "opencode"}
+OPENCODE = ".config/opencode/opencode.json"
+
+
 class Cli:
-    """cc-switch, scripted: a store per app, and every call made."""
+    """cc-switch, scripted: a store per app, and every call made.
+
+    OpenCode is additive as in cc-switch 5.10.4: no provider is current,
+    ``provider add`` takes the provider whole as ``--config`` and writes it
+    into the live file beside what is there, and the delete takes it out.
+    """
 
     HEADER = "Common Config Snippet\n=====\nApp: {app}\n"
 
     def __init__(self, *, current="default", extracted="", writes_claude=True):
         self.calls = []
-        self.current = {app: current for app in switcher.SWITCHER_APPS}
+        self.current = {
+            app: "" if app in switcher.SWITCHER_ADDITIVE_APPS else current
+            for app in switcher.SWITCHER_APPS
+        }
         self.snippet = {app: "" for app in switcher.SWITCHER_APPS}
         self.providers = {
-            app: {current} if current else set() for app in switcher.SWITCHER_APPS
+            app: {self.current[app]} if self.current[app] else set()
+            for app in switcher.SWITCHER_APPS
         }
         self.extracted = extracted
         self.writes_claude = writes_claude
@@ -171,6 +190,8 @@ class Cli:
                 if is_checked:
                     raise error
                 return ""
+        if app in switcher.SWITCHER_ADDITIVE_APPS:
+            return self._additive(key, app, is_checked)
         if key[:2] == ("provider", "list"):
             rows = ["│   ┆ ID ┆ Name ┆ API URL │"]
             for identifier in sorted(self.providers[app]):
@@ -241,6 +262,52 @@ class Cli:
             return ""
         return ""
 
+    def _additive(self, key, app, is_checked):
+        """One call for OpenCode: the hub's provider added to the live file."""
+        if key[:2] == ("provider", "list"):
+            rows = ["│   ┆ ID ┆ Name ┆ API URL │"]
+            for identifier in sorted(self.providers[app]):
+                rows.append(f"│   ┆ {identifier} ┆ {identifier} ┆ N/A │")
+            return "\n".join(rows) + "\n"
+        if key[:2] == ("provider", "current"):
+            if is_checked:
+                raise subprocess.CalledProcessError(
+                    1, ["cc-switch"], stderr="Error: Current provider '' not found"
+                )
+            return ""
+        if key[:2] == ("provider", "add"):
+            given = flag_values(key)
+            if "--config" not in given:
+                raise subprocess.CalledProcessError(
+                    1,
+                    ["cc-switch"],
+                    stderr="Error: provider add for opencode requires raw config",
+                )
+            identifier = key[key.index("--id") + 1]
+            try:
+                document = json.loads(switcher._read_text(OPENCODE) or "{}")
+            except ValueError:
+                raise subprocess.CalledProcessError(
+                    1, ["cc-switch"], stderr="Error: JSON parse error"
+                )
+            document.setdefault("provider", {})[identifier] = json.loads(
+                given["--config"]
+            )
+            switcher._write_text(OPENCODE, json.dumps(document, indent=2))
+            self.providers[app].add(identifier)
+            self.added[app] = key
+            return "added"
+        if key[:1] == ("use",):
+            return f"Added provider '{key[1]}' to opencode config"
+        return ""
+
+    def take_out(self, app, identifier):
+        """The answered delete of OpenCode's provider, out of the live file."""
+        if os.path.isfile(switcher._home_path(OPENCODE)):
+            document = json.loads(switcher._read_text(OPENCODE))
+            document.get("provider", {}).pop(identifier, None)
+            switcher._write_text(OPENCODE, json.dumps(document, indent=2))
+
     def made(self, app):
         """The verbs called for one app, in order."""
         return [
@@ -309,9 +376,14 @@ def test_codex_is_pointed_at_the_versioned_path_the_responses_api_lives_under(
     switcher.activate(base_url="http://hub:8317", api_key="k", tool_configs={})
 
     for app, added in cli.added.items():
-        endpoint = flag_values(added)["--base-url"]
+        given = flag_values(added)
+        endpoint = (
+            json.loads(given["--config"])["options"]["baseURL"]
+            if app == "opencode"
+            else given["--base-url"]
+        )
         assert endpoint == (
-            "http://hub:8317/v1" if app == "codex" else "http://hub:8317"
+            "http://hub:8317/v1" if app in ("codex", "opencode") else "http://hub:8317"
         ), app
 
 
@@ -667,7 +739,7 @@ def test_a_rollback_that_fails_is_named_in_the_refusal(monkeypatch):
 def test_the_note_names_only_the_tools_switched_this_time(monkeypatch):
     monkeypatch.setattr(switcher, "_point_at_hub", lambda *args: True)
     assert switcher.activate(base_url="http://hub", api_key="k") == (
-        "claude, codex, gemini"
+        "claude, codex, gemini, opencode"
     )
 
     monkeypatch.setattr(switcher, "_point_at_hub", lambda app, *args: app == "codex")
@@ -683,7 +755,7 @@ def test_deactivation_names_where_each_tool_went(monkeypatch):
     )
 
     assert switcher.deactivate(base_url="http://hub") == (
-        "claude → deepseek, codex → unset, gemini → unset"
+        "claude → deepseek, codex → unset, gemini → unset, opencode → unset"
     )
 
 
@@ -722,9 +794,9 @@ def test_the_switcher_steps_down_to_nobody():
 def test_a_person_who_never_ran_the_tools_is_switched_and_left_with_nothing(
     tmp_path, monkeypatch
 ):
-    """No .claude, .codex or .gemini at all: cc-switch writes only into a
-    directory that is there, so the switch makes each, and the switch back
-    takes them away again."""
+    """No .claude, .codex, .gemini or .config at all: cc-switch writes only
+    into a directory that is there, so the switch makes each, OpenCode's
+    .config with its own, and the switch back takes them away again."""
     (tmp_path / "home").mkdir(exist_ok=True)
     wire(monkeypatch, Cli())
 
@@ -732,11 +804,12 @@ def test_a_person_who_never_ran_the_tools_is_switched_and_left_with_nothing(
         base_url="http://hub", api_key="k", tool_configs={"claude": {"default": "m1"}}
     )
 
-    assert switched == "claude, codex, gemini"
+    assert switched == "claude, codex, gemini, opencode"
     home = tmp_path / "home"
     assert "http://hub" in (home / ".claude/settings.json").read_text()
     assert "http://hub/v1" in (home / ".codex/config.toml").read_text()
     assert "http://hub" in (home / ".gemini/.env").read_text()
+    assert "http://hub/v1" in (home / OPENCODE).read_text()
 
     switcher.deactivate()
 
@@ -923,3 +996,94 @@ def test_a_store_that_could_not_be_made_is_taken_away_when_no_record_was_kept(
     assert "CC_SWITCH_CONFIG_DIR" not in os.environ
     assert cli.calls == []
     assert not any(switcher._read_record(app) for app in switcher.SWITCHER_APPS)
+
+
+def test_opencode_gets_the_hub_s_provider_whole_beside_the_person_s_own(
+    tmp_path, monkeypatch
+):
+    own = json.dumps(
+        {"model": "mine/x", "provider": {"mine": {}}, "mcp": {"fs": {}}}
+    ).encode("utf-8")
+    live = tmp_path / "home" / OPENCODE
+    live.parent.mkdir(parents=True)
+    live.write_bytes(own)
+    cli = Cli()
+    platform = wire(monkeypatch, cli)
+
+    switcher.activate(
+        base_url="http://hub", api_key="k", tool_configs={"opencode": {"model": "m4"}}
+    )
+
+    assert cli.made("opencode") == [
+        "provider list",
+        "provider list",
+        "provider add",
+        "use neutrino",
+    ]
+    given = flag_values(cli.added["opencode"])
+    assert "--base-url" not in given and "--api-key" not in given
+    assert json.loads(given["--config"]) == {
+        "npm": "@ai-sdk/openai-compatible",
+        "name": "Neutrino Hub",
+        "options": {"baseURL": "http://hub/v1", "apiKey": "k"},
+        "models": {"m4": {"name": "m4"}},
+    }
+    written = json.loads(live.read_text())
+    assert sorted(written["provider"]) == ["mine", "neutrino"]
+    assert written["model"] == "mine/x"
+    if os.name != "nt":
+        assert live.stat().st_mode & 0o777 == 0o600
+
+    switcher.deactivate()
+
+    assert live.read_bytes() == own
+    (delete,) = [argv for argv, _p, _a in platform.answered if "open-code" in argv]
+    assert delete[1:3] == ["--app", "open-code"]
+
+
+def test_opencode_s_config_folder_made_for_the_switch_goes_again(tmp_path, monkeypatch):
+    (tmp_path / "home").mkdir(exist_ok=True)
+    wire(monkeypatch, Cli())
+
+    switcher.activate(base_url="http://hub", api_key="k", tool_configs={})
+
+    assert switcher._read_record("opencode")["is_parent_present"] is False
+    switcher.deactivate()
+    assert not (tmp_path / "home" / ".config").exists()
+
+
+def test_a_config_folder_that_was_there_stays(tmp_path, monkeypatch):
+    (tmp_path / "home" / ".config").mkdir(parents=True)
+    wire(monkeypatch, Cli())
+
+    switcher.activate(base_url="http://hub", api_key="k", tool_configs={})
+    switcher.deactivate()
+
+    assert (tmp_path / "home" / ".config").is_dir()
+    assert not (tmp_path / "home" / ".config" / "opencode").exists()
+
+
+def test_an_opencode_file_cc_switch_cannot_read_fails_the_switch(tmp_path, monkeypatch):
+    home_file(tmp_path, OPENCODE, '{\n  // mine\n  "model": "a/b"\n}\n')
+    wire(monkeypatch, Cli())
+
+    with pytest.raises(switcher.ToolSwitchError) as caught:
+        switcher.activate(base_url="http://hub", api_key="k", tool_configs={})
+
+    assert str(caught.value).startswith("opencode: Error: JSON")
+
+
+def test_opencode_is_named_to_cc_switch_by_its_own_name(monkeypatch):
+    monkeypatch.setattr(bundled, "cc_switch_path", lambda: "/opt/cc-switch")
+    monkeypatch.setattr(switcher, "find_cli", REAL_FIND_CLI)
+    recorded = []
+
+    def record(command, **kwargs):
+        recorded.append(list(command))
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(switcher, "run_quietly", record)
+
+    switcher._run(["provider", "list"], "opencode")
+
+    assert recorded == [["/opt/cc-switch", "--app", "open-code", "provider", "list"]]

@@ -676,6 +676,7 @@ def test_every_choice_the_page_offers_goes_through_the_one_picker():
         "'codex_effort'",
         "'codex_model'",
         "'gemini_model'",
+        "'opencode_model'",
         "'claude_' + slot",
         "'language'",
         "'terminal_account'",
