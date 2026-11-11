@@ -66,7 +66,7 @@ client's own pin.
 | `agent` | `{}` | the agent's own package | the agent's install | Terminal, Remote desktop, the SSH server |
 | `builtin` | `{}` | the system itself | nothing; the runner checks that the software is there | the file share on Windows and macOS |
 | `system` | `{version: "system", packages, pre_install, verify, uninstall: {packages, post_uninstall}}` | the system's package repositories | the system's package manager, run by the agent | the file share and Containers on Linux |
-| `hub` | `{version, releases, artifacts, packages, verify, uninstall: {post_uninstall, is_data_kept}}` | the publisher's release, fetched into the hub's cache | the agent, from the `package` stream | Gitea, VS Code, code-server, CloudCLI, Codeg, SiYuan, Codex, Claude Code, Containers on Windows and macOS |
+| `hub` | `{version, releases, artifacts, packages, verify, uninstall: {post_uninstall, is_data_kept}}` | the publisher's release, fetched into the hub's cache | the agent, from the `package` stream | Gitea, VS Code, code-server, CloudCLI, Codeg, SiYuan, Codex, Claude Code, OpenCode, Containers on Windows and macOS |
 | `container` | `{version, releases, artifacts, source_sets}`, `releases` and `source_sets` optional | the registries each image's `sources` name | the Containers module's Podman | Hermes WebUI ([modules/hermes_webui.md](modules/hermes_webui.md)), Ayakaleaf ([modules/ayakaleaf.md](modules/ayakaleaf.md)) |
 
 `pre_install` is optional, for a system that needs a step before its package
@@ -99,7 +99,7 @@ in [../ui_text.md](../ui_text.md), "The machine page's words".
 | The source chip names who installs, updates and removes the module's software on the machine: Built-in (自带), the agent, which carries it; System (系统), the system, through its package manager or as part of itself; Upstream (外部源), the module's installer, from the publisher's release at the version the hub sets; Container (容器), the Containers module's Podman, which pulls the images. | Who manages the software decides what an update and an uninstall do to it, and who first pressed **Install** changes neither. |
 | `agent` reads Built-in, `builtin` and `system` read System, `hub` reads Upstream, and `container` reads Container. A command line program reads Upstream, as every `hub` module does. The hub derives the word and the module row carries it as `source`. | The method of the machine's entry is what the hub knows of who places the software. A command line program always runs the module's copy ([../agent.md](../agent.md), "Parallel, never take over"). |
 | A Samba or a Podman that was on a Linux machine before its module reads System, as the one the module installed does. | The system's package manager updates and removes a package whoever installed it. |
-| The kind chip reads Service (服务) for a module with **Start** and **Stop**, and Program (普通程序) for one with neither. Codex and Claude Code read Program; every other module reads Service, the carried ones too, though their tab holds no **Start**, since the agent runs them. The module row carries the kind as `kind`. | A person reads from the kind whether the software runs by itself until stopped, or only when a person runs it, as a command line program does. |
+| The kind chip reads Service (服务) for a module with **Start** and **Stop**, and Program (普通程序) for one with neither. Codex, Claude Code and OpenCode read Program; every other module reads Service, the carried ones too, though their tab holds no **Start**, since the agent runs them. The module row carries the kind as `kind`. | A person reads from the kind whether the software runs by itself until stopped, or only when a person runs it, as a command line program does. |
 | A module whose manifest says `is_data_forward_only` shows a third chip after the kind chip, Upgrade only (只能升级). The module row carries the flag as `is_data_forward_only`. | A person reads before opening the version dialog that the module goes to no older version. |
 
 ## Artifacts
@@ -117,7 +117,7 @@ software it holds. Where each class lands on each system is
 
 | Class | Kinds | What the agent does with it | Used today by |
 | --- | --- | --- | --- |
-| archive (压缩包) | `tar_gz`, `zip` | unpacks it into the module's directory and seals it | VS Code, code-server, Codeg's server, SiYuan on Linux, Codex, Claude Code, the Node.js of CloudCLI and Codeg, and Gitea's MinGit on Windows |
+| archive (压缩包) | `tar_gz`, `zip` | unpacks it into the module's directory and seals it | VS Code, code-server, Codeg's server, SiYuan on Linux, Codex, Claude Code, OpenCode, the Node.js of CloudCLI and Codeg, and Gitea's MinGit on Windows |
 | installer (安装包) | `msi`, `pkg` | keeps it in the module's directory and has the system's installer install it | Containers: Podman and WSL on Windows, Podman on macOS |
 | disk image (磁盘映像) | `dmg`, `nsis` | copies the program out of it into the module's directory and seals it; nothing in it runs | SiYuan on macOS and Windows |
 | machine image (虚拟机映像) | `tar_zst`, `raw_zst` | keeps it in the module's directory, and Podman builds its machine from it | Containers on Windows and macOS |
@@ -155,8 +155,8 @@ software it holds. Where each class lands on each system is
 
 A runtime a module needs, Node.js among them, is one of its artifacts,
 pinned in its own manifest. Two modules that need the same runtime each hold
-it. A program a person also runs from a shell by its name, such as Codex or
-Claude Code, is a module of its own, a command line program, and a module
+it. A program a person also runs from a shell by its name, such as Codex,
+Claude Code or OpenCode, is a module of its own, a command line program, and a module
 whose own packages carry a copy of it, as the Agent SDK in CloudCLI's and
 Codeg's npm packages carries Claude Code, runs that copy.
 
@@ -167,7 +167,7 @@ Codeg's npm packages carries Claude Code, runs that copy.
 | Every address that serves the same bytes is in the one `sources` list of its download, or in the one source set of its ecosystem, which the download names ("Source sets"). No key names a country's or an edition's address. | The digest makes every source equal, so the fastest one serves. |
 | A source names a file as `{file}`, the artifact's `file` with `{version}` filled in. | One template lists the same file on the publisher and on every mirror. |
 | `{release}` names each release site the hub's build stamped, at the release the hub came from: GitHub for an `intl` hub, CNB for a `cn` hub ([../../agent_work_rule/release.md](../../agent_work_rule/release.md), "Release sites"). A checkout has no stamp, so `{release}` names no source there. | The project's own release has one address per site, each site holds one edition's files, and the hub learns its edition's sites only from its build. |
-| A `hub` artifact names `source_set` in place of `sources` when its file is a package of an ecosystem with a set: the hub's cache reads the artifact's `file` under each of the set's sources, the first source first. Claude Code's and Codex's tarballs name the `npm` set ([modules/claude_code.md](modules/claude_code.md), [modules/codex.md](modules/codex.md)). | Every npm registry serves a published tarball at the same path, so the set's one list of registries, mirrors in mainland China among them, serves the module too. |
+| A `hub` artifact names `source_set` in place of `sources` when its file is a package of an ecosystem with a set: the hub's cache reads the artifact's `file` under each of the set's sources, the first source first. Claude Code's, Codex's and OpenCode's tarballs name the `npm` set ([modules/claude_code.md](modules/claude_code.md), [modules/codex.md](modules/codex.md), [modules/opencode.md](modules/opencode.md)). | Every npm registry serves a published tarball at the same path, so the set's one list of registries, mirrors in mainland China among them, serves the module too. |
 | No Claude Code artifact names `{release}`, and no release of Neutrino's carries Claude Code's files. | Claude Code is Anthropic's proprietary software, and its module's installer fetches it only from the npm registries, which serve the package Anthropic publishes. |
 | The Containers module's docker.io mirrors stay the person's ordered list, which Podman applies under any `docker.io` source. | They are the person's configuration, and Podman already tries them in order. |
 
@@ -175,7 +175,7 @@ Codeg's npm packages carries Claude Code, runs that copy.
 | --- | --- | --- |
 | a `hub` artifact | the hub's cache | the publisher's address first, then each mirror that serves the same file, such as the USTC mirror of code-server and npmmirror's copy of Node.js; `{release}` last, where the project's release holds the file |
 | Codeg's archives | the hub's cache | Codeg's GitHub release, the one address that serves them |
-| Claude Code's and Codex's tarballs | the hub's cache | the `npm` set: registry.npmjs.org, npmmirror and Tencent's mirror ([modules/claude_code.md](modules/claude_code.md), [modules/codex.md](modules/codex.md)) |
+| Claude Code's, Codex's and OpenCode's tarballs | the hub's cache | the `npm` set: registry.npmjs.org, npmmirror and Tencent's mirror ([modules/claude_code.md](modules/claude_code.md), [modules/codex.md](modules/codex.md), [modules/opencode.md](modules/opencode.md)) |
 | SiYuan's desktop builds | the hub's cache | SiYuan's GitHub release, then the publisher's own `https://release.liuyun.io/siyuan/{file}` ([modules/siyuan.md](modules/siyuan.md)) |
 | Gitea's MinGit on Windows | the hub's cache | Git for Windows' GitHub release, then npmmirror's copy ([modules/gitea.md](modules/gitea.md)) |
 | VS Code's CLI | the hub's cache | Microsoft's address alone, a list of one |
@@ -238,7 +238,7 @@ ecosystem's packages, such as PyPI's, for the whole system.
 | Rule | Reason |
 | --- | --- |
 | Each ecosystem has one set, and every download from it names the set: an artifact by `source_set`, a `container` entry by `source_sets`. | Two lists for one ecosystem drift apart, and a mirror added to one reaches half the modules. |
-| An artifact that names a set probes as its kind says: CloudCLI's npm artifact names `npm` and probes its own package's document, and Claude Code's and Codex's tarballs, of kind `tar_gz`, probe the tarball itself as any `hub` artifact does. | The package being installed is the document or the file that has to be there. |
+| An artifact that names a set probes as its kind says: CloudCLI's npm artifact names `npm` and probes its own package's document, and Claude Code's, Codex's and OpenCode's tarballs, of kind `tar_gz`, probe the tarball itself as any `hub` artifact does. | The package being installed is the document or the file that has to be there. |
 | A `container` entry lists the sets its containers use in `source_sets`, and the hub copies the list into each hub container of the module. | The tools inside a container fetch from the network at their start, and the container's environment is where they read the address. |
 | Before the agent writes a hub container's environment file, it probes each set the container lists and writes every variable of the set, with the first ranked source, into the container's environment. | Which source is fastest depends on the machine's own network. |
 | An environment value `{<set>}`, such as `{pypi}`, is the first ranked source of that set, for a variable the set does not list. The set is one the module lists. | A tool that reads a variable of its own gets the same choice. |
@@ -315,7 +315,7 @@ Each list names its probe file once, in the data file that holds the list.
 | an image's registries | its largest layer, by its digest | the layer's | The digest names the bytes, and the layer goes only with the image. |
 | CloudCLI's registries | the package's document | 220 to 296 KB | The install needs this document, and the probe checks its integrity. |
 | a `hub` artifact | the artifact | the artifact's | The download takes this file. |
-| Claude Code's and Codex's tarballs on the `npm` set | the tarball, `@anthropic-ai/claude-code-<platform>/-/claude-code-<platform>-{version}.tgz` and `@openai/codex/-/codex-{version}-<platform>.tgz` | 127 MiB and 164 MiB for linux-x64 | A published version's tarball does not change, and the download takes this file. |
+| Claude Code's, Codex's and OpenCode's tarballs on the `npm` set | the tarball, `@anthropic-ai/claude-code-<platform>/-/claude-code-<platform>-{version}.tgz`, `@openai/codex/-/codex-{version}-<platform>.tgz` and `opencode-<platform>/-/opencode-<platform>-{version}.tgz` | 127 MiB, 164 MiB and 75.5 MiB for linux-x64 | A published version's tarball does not change, and the download takes this file. |
 
 | Rule | Reason |
 | --- | --- |

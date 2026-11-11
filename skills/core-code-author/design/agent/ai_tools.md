@@ -14,12 +14,14 @@ its own. Codeg's Claude Code and
 Codex entries are the ACP adapters `claude-agent-acp` and `codex-acp`, which
 read the account's `~/.claude/settings.json` and `~/.codex/config.toml`, the
 files cc-switch writes, so the setting covers Codeg's sessions as well
-([modules/codeg.md](modules/codeg.md)). The Codex and Claude Code modules
-write no settings file of their own: the module's copy and a person's own
-copy read the same `~/.codex/config.toml` and `~/.claude/settings.json`, so
-the setting points either copy at the gateway, and installing either module
+([modules/codeg.md](modules/codeg.md)). The Codex, Claude Code and OpenCode
+modules write no settings file of their own: the module's copy and a
+person's own copy read the same `~/.codex/config.toml`,
+`~/.claude/settings.json` and `~/.config/opencode/opencode.json`, so the
+setting points either copy at the gateway, and installing any of the three
 changes no account's switch ([modules/codex.md](modules/codex.md),
-[modules/claude_code.md](modules/claude_code.md)).
+[modules/claude_code.md](modules/claude_code.md),
+[modules/opencode.md](modules/opencode.md)).
 
 For each account the state names, the agent runs the client's steps as that
 account with the account's own `tool_configs`, with the copy of cc-switch the agent fetched
@@ -97,19 +99,22 @@ switch, its record also keeps `is_dir_present`, whether the tool's
 directory was there, and `kept`, the text of every file a switch may write
 in it, read as the account, or null for one that was absent: Claude Code's
 `~/.claude/settings.json`, Codex's `~/.codex/config.toml` and `auth.json`,
-and Gemini's `~/.gemini/.env` and `settings.json`. cc-switch writes a tool's
+Gemini's `~/.gemini/.env` and `settings.json`, and OpenCode's
+`~/.config/opencode/opencode.json`. cc-switch writes a tool's
 files only into a directory that is there, so a switch makes the directory,
 as the account, for a tool that has none, and every tool the log names as
-switched has its files written and read back naming the hub. cc-switch
-writes them with the account's own file mask, so once it has run, every file
+switched has its files written and read back naming the hub. OpenCode's
+record also keeps `is_parent_present`, whether `~/.config` was there.
+cc-switch writes them with the account's own file mask, so once it has run, every file
 that holds the gateway key, Claude Code's `settings.json`, Codex's
-`auth.json` and Gemini's `.env`, is set to mode 600 as the account, and the
+`auth.json`, Gemini's `.env` and OpenCode's `opencode.json`, is set to mode
+600 as the account, and the
 record keeps `kept_modes`, each kept file's own mode; on Windows a profile's
 files are its owner's by their access list and no mode is set or kept. The
 switch back, once cc-switch has switched away and deleted the hub's
 provider, writes each kept file back as it was with its own mode, takes
 away each that was absent, and takes away a directory the switch made once
-it is empty. A switch back that
+it is empty, OpenCode's `~/.config` among them. A switch back that
 cannot run cc-switch, or cannot read its list of providers, is the
 account's `failed` with `switch_failed {account, detail}`, and the records,
 with the kept files, stay for the next try.

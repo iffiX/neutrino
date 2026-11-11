@@ -151,8 +151,8 @@ and SiYuan's `model`.
 
 The client does not write a tool's configuration itself. It hands the hub
 to cc-switch as one more provider and lets cc-switch write Claude Code's
-`settings.json`, Codex's `config.toml` and Gemini's `.env`, in each tool's
-own format. What the client owns is the order of operations, because
+`settings.json`, Codex's `config.toml`, Gemini's `.env` and OpenCode's
+`opencode.json`, in each tool's own format. What the client owns is the order of operations, because
 cc-switch replaces a tool's file whole when it switches and would otherwise
 drop what the person had in it.
 
@@ -176,6 +176,23 @@ what the person already had, through cc-switch's own stores:
 | Shared settings | `config common extract` on the live file, then `config common set` | Claude's `permissions`, `hooks`, `statusLine`; Codex's `approval_policy`, `sandbox_mode`; Gemini's own variables |
 | The hub | `provider add --common-config` with the endpoint, key and model flags, then `use` | The hub's provider carries the shared settings, so both stand in the file at once |
 
+Of these steps OpenCode takes the list and the hub alone. cc-switch
+5.10.4 adds a provider to OpenCode's `~/.config/opencode/opencode.json`
+beside every provider and setting the person has there, and keeps no
+current one, so nothing of the person's has to pass through its stores:
+
+| Step | cc-switch command | What it writes |
+| --- | --- | --- |
+| The hub | `provider add --config` with the whole provider, `{npm: "@ai-sdk/openai-compatible", name, options: {baseURL, apiKey}, models: {<model>: {name}}}`, then `use` | `provider.neutrino` in the file, every other key's value as it was |
+| Switching back | `provider delete` | the file without `provider.neutrino` |
+
+| Rule | Reason |
+| --- | --- |
+| The hub's provider names one model, the tool's model. | OpenCode starts on the file's own `model` when it names one, then on the last model it used of a provider it still has, then on a model of a provider the file names. A person with no OpenCode settings of their own starts on the hub's model. |
+| The provider goes in whole as `--config`. | cc-switch 5.10.4 refuses `--base-url`, `--api-key` and `--model` for OpenCode: "provider add for opencode requires raw config via --config or --config-file". |
+| For OpenCode the hub is current while cc-switch lists its provider. | `provider current` fails for OpenCode, with "Current provider '' not found". |
+| A file cc-switch cannot read as JSON fails the switch. | OpenCode accepts comments in `opencode.json`, and cc-switch refuses a file holding one. |
+
 A common snippet the person already set is never replaced. cc-switch's
 extract counts the provider's own model as shared for Gemini (`GEMINI_MODEL`)
 and, defensively, Codex (`model`); the client takes those keys out of the
@@ -193,24 +210,26 @@ whether the tool had a configuration file and a directory at all, and the
 bytes of every file a switch may write as they were before the first
 switch, or that the file was absent: Claude Code's `~/.claude/settings.json`,
 Codex's `~/.codex/config.toml` and `auth.json`, Gemini's `~/.gemini/.env` and
-`settings.json`. The record is `{is_present, is_dir_present, kept,
-kept_modes, previous, added}`, `kept_modes` being each kept file's own mode
-outside Windows and `added` the provider settings last written. A tool whose
+`settings.json`, and OpenCode's `~/.config/opencode/opencode.json`. The
+record is `{is_present, is_dir_present, kept, kept_modes, previous, added}`,
+`kept_modes` being each kept file's own mode outside Windows and `added` the
+provider settings last written, and OpenCode's also holds
+`is_parent_present`, whether `~/.config` was there. A tool whose
 record says it already carries the wanted settings is not run again, so
 nothing runs when nothing changed.
 
 cc-switch writes a tool's files only into a directory that is there, and
 says nothing else when it skips one, so a switch makes the directory of a
 tool that has none, and every tool named as switched has its file read back
-naming the hub: Claude Code's endpoint, key and model, Codex's and Gemini's
-endpoint. cc-switch writes those files with the person's own file mask, so
-every file that then holds the gateway key, Claude Code's `settings.json`,
-Codex's `auth.json` and Gemini's `.env`, is set to mode 600 outside
-Windows. Deactivating switches back to the recorded provider, deletes the
+naming the hub: Claude Code's endpoint, key and model, Codex's, Gemini's
+and OpenCode's endpoint. cc-switch writes those files with the person's own
+file mask, so every file that then holds the gateway key, Claude Code's
+`settings.json`, Codex's `auth.json`, Gemini's `.env` and OpenCode's
+`opencode.json`, is set to mode 600 outside Windows. Deactivating switches back to the recorded provider, deletes the
 hub's entry, then writes each kept file back byte for byte with its own
 mode, takes away each
 that was absent, and takes away a directory the switch made once it is
-empty; cc-switch's own switch back re-writes a file in its own layout, so
+empty, OpenCode's `~/.config` among them; cc-switch's own switch back re-writes a file in its own layout, so
 its result is never what is left. A switch back that cannot run cc-switch,
 or cannot read its list of providers, fails and keeps the records, so the
 person's own files are still there to put back at the next try. What the
@@ -233,7 +252,8 @@ The setting is one per available account of the machine, in the account's
 form on the machine page ([../agent.md](../agent.md), "The two layers and the
 accounts"): whether that account's AI tools use the gateway, and the
 account's tool configuration (`{claude: {default, opus, sonnet, haiku},
-codex: {model, model_reasoning_effort}, gemini: {model}}`), each model
+codex: {model, model_reasoning_effort}, gemini: {model}, opencode:
+{model}}`), each model
 picker's first choice being the gateway's default. It is off on a new
 account. The hub keeps it on the account's row in
 `config/devices/<id>/accounts.json` and sends it in the device's `ai_tools`

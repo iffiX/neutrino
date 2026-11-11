@@ -188,6 +188,7 @@ Chinese: SiYuan is 思源笔记.
 | `codeg` | Codeg | Codeg |
 | `codex` | Codex | Codex |
 | `claude_code` | Claude Code | Claude Code |
+| `opencode` | OpenCode | OpenCode |
 | `hermes_webui` | Hermes WebUI | Hermes WebUI |
 | `ayakaleaf` | Ayakaleaf | Ayakaleaf |
 | `siyuan` | SiYuan | 思源笔记 |
@@ -196,7 +197,7 @@ Chinese: SiYuan is 思源笔记.
 ## Software the owner installs
 
 Gitea, VS Code, code-server, CloudCLI, Codeg, SiYuan, Hermes WebUI,
-Ayakaleaf, Codex and Claude Code are programs the machine's owner installs on their own machine through a module. The text
+Ayakaleaf, Codex, Claude Code and OpenCode are programs the machine's owner installs on their own machine through a module. The text
 rules follow from that:
 
 | Rule | Example |
@@ -204,7 +205,7 @@ rules follow from that:
 | A module page that names third-party software says that the owner installs it on that machine. | `You install VS Code Server on this machine under Microsoft's license terms.` |
 | A module page names the publisher's terms only where the publisher asks for acceptance; VS Code is the one such module ([ui_behavior.md](ui_behavior.md), "Terms before a module opens"). CloudCLI's, Codeg's and SiYuan's pages carry no licence line. | |
 | No surface says the hub downloads, provides, bundles or distributes third-party software, in either language (代为下载, 提供, 自带). A sentence about the mechanism, in a standard page or a code comment, makes the module's installer its subject. The source chip's 自带 marks the modules the agent carries alone, and never one of these programs ("The machine page's words"). | `The module's installer fetches the archive.`, never `The hub downloads VS Code.` |
-| The **About** card on the Settings page credits only the components the hub's own package carries on that system and in that edition, such as xray, CLIProxyAPI, NetBird, EasyTier, frp and tun2socks. Gitea, VS Code, code-server, CloudCLI, Codeg, SiYuan, Hermes WebUI, Ayakaleaf, Codex and Claude Code are never on it. | |
+| The **About** card on the Settings page credits only the components the hub's own package carries on that system and in that edition, such as xray, CLIProxyAPI, NetBird, EasyTier, frp and tun2socks. Gitea, VS Code, code-server, CloudCLI, Codeg, SiYuan, Hermes WebUI, Ayakaleaf, Codex, Claude Code and OpenCode are never on it. | |
 
 The VS Code notice and its button:
 
@@ -432,7 +433,7 @@ where they fit.
 | `state.ai_tools_switched` | Uses the hub's AI gateway | 使用中枢的 AI 网关 |
 | `state.ai_tools_switched_back` | Uses its own settings | 使用自己原来的设置 |
 | `ui.ai_tools.switch_back_failed`, an account `failed` with `switch_failed` while its switch is off | cc-switch did not put the tools back to their own settings: {detail} | cc-switch 没能把工具改回原来的设置：{detail} |
-| `ui.ai_tools.tool_claude`, `ui.ai_tools.tool_codex`, `ui.ai_tools.tool_gemini` | Claude Code, Codex, Gemini | Claude Code、Codex、Gemini |
+| `ui.ai_tools.tool_claude`, `ui.ai_tools.tool_codex`, `ui.ai_tools.tool_gemini`, `ui.ai_tools.tool_opencode` | Claude Code, Codex, Gemini, OpenCode | Claude Code、Codex、Gemini、OpenCode |
 | `ui.ai_tools.slot_default`, `ui.ai_tools.slot_opus`, `ui.ai_tools.slot_sonnet`, `ui.ai_tools.slot_haiku` | Default model, Opus slot, Sonnet slot, Haiku slot | 默认模型、Opus 档位、Sonnet 档位、Haiku 档位 |
 | `ui.ai_tools.codex_effort` | Reasoning effort | 推理强度 |
 | `code.gateway_not_serving` | The hub's AI gateway serves no model yet; set it up on the AI page first. | 中枢的 AI 网关还没有可用的模型，先到 AI 页设置好。 |
@@ -464,7 +465,7 @@ kind chip":
 | kind | Service | 服务 |
 | kind | Program | 普通程序 |
 
-Codex and Claude Code read Program and Upstream.
+Codex, Claude Code and OpenCode read Program and Upstream.
 
 The keys of the Modules page's machine picker and **Global configuration**,
 `ui.modules.no_pick`, `ui.modules.no_pick_hint`, `ui.modules.global_title`,
@@ -589,6 +590,7 @@ machine's system.
 | `codeg` | no | Each account's Codeg data stays in {data_dir}. | 每个账户的 Codeg 数据留在 {data_dir}。 |
 | `codex` | no | Each account's settings in ~/.codex stay, and so does a copy of Codex installed outside this module. | 每个账户在 ~/.codex 里的设置都保留，在本模块之外安装的 Codex 也保留。 |
 | `claude_code` | no | Each account's settings in ~/.claude stay, and so does a copy of Claude Code installed outside this module. | 每个账户在 ~/.claude 里的设置都保留，在本模块之外安装的 Claude Code 也保留。 |
+| `opencode` | no | Each account's settings in ~/.config/opencode stay, and so does a copy of OpenCode installed outside this module. | 每个账户在 ~/.config/opencode 里的设置都保留，在本模块之外安装的 OpenCode 也保留。 |
 | `siyuan` | no | Each account's notes stay in {data_dir}. | 每个账户的笔记留在 {data_dir}。 |
 | `hermes_webui` | yes | The conversations, settings and workspace files are deleted and cannot be recovered. | 对话、设置和工作区里的文件都会删除，无法恢复。 |
 | `ayakaleaf` | yes | The papers and projects are deleted and cannot be recovered. | 论文和项目都会删除，无法恢复。 |
@@ -634,7 +636,7 @@ account and the shell program it set before.
 
 ## The command line programs' words
 
-The tabs of Codex and Claude Code ([ui_behavior.md](ui_behavior.md), "The
+The tabs of Codex, Claude Code and OpenCode ([ui_behavior.md](ui_behavior.md), "The
 machine page"). The `ui.*` keys are in `locales/<language>/modules.json`
 and the `code.*` keys in `codes.json`. The catalog's one entry
 `ai_cli` goes, with `ui.module_catalog.ai_cli` and `ui.module_title.ai_cli`,
@@ -644,10 +646,13 @@ whose line named Gemini; each tool is one entry of the `code` category.
 | --- | --- | --- |
 | `ui.module_catalog.codex` | Codex on the command line, for each account. | 命令行里的 Codex，每个账户都能用。 |
 | `ui.module_catalog.claude_code` | Claude Code on the command line, for each account. | 命令行里的 Claude Code，每个账户都能用。 |
+| `ui.module_catalog.opencode` | OpenCode on the command line, for each account. | 命令行里的 OpenCode，每个账户都能用。 |
 | `ui.codex.owner_notice` | You install Codex, Apache-2.0-licensed, on this machine. | 你在这个系统上安装 Codex，它以 Apache-2.0 许可发布。 |
 | `ui.claude_code.owner_notice` | You install Claude Code on this machine under Anthropic's legal agreements. | 你在这个系统上按 Anthropic 的法律协议安装 Claude Code。 |
+| `ui.opencode.owner_notice` | You install OpenCode, MIT-licensed, on this machine. | 你在这个系统上安装 OpenCode，它以 MIT 许可发布。 |
 | `ui.codex.apply` | Apply Codex | 应用 Codex |
 | `ui.claude_code.apply` | Apply Claude Code | 应用 Claude Code |
+| `ui.opencode.apply` | Apply OpenCode | 应用 OpenCode |
 | `ui.program.apply_hint` | Puts this module's copy first on each checked account's PATH. | 让每个勾选账户的 PATH 先找到本模块安装的副本。 |
 | `ui.program.replace_title` | Replace the copy {account} runs | 替换 {account} 运行的副本 |
 | `ui.program.replace_body` | {account}'s shell runs {path}, version {version}. This module's copy, version {module_version}, will run in its place. | {account} 的 shell 现在运行 {path}，版本 {version}。之后改为运行本模块安装的副本，版本 {module_version}。 |

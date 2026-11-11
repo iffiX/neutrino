@@ -42,7 +42,7 @@ never to the agent.
 hub's pages, in the agent, and in the client:
 
 - **Modules** are software the hub administers on a machine: Samba, Gitea,
-  Podman, VS Code, code-server, CloudCLI, Codeg, Codex, Claude Code, and the two the
+  Podman, VS Code, code-server, CloudCLI, Codeg, Codex, Claude Code, OpenCode, and the two the
   agent's own package carries, Terminal, Remote desktop and the SSH server, of the kinds
   in "The kinds of module". The hub says what is wanted and sends
   the bytes; the agent observes, installs and configures. A device's Modules
@@ -125,7 +125,7 @@ module's actual state equal its `want`:
 | `stopped` | the package is present, the configuration is applied, the unit is stopped |
 | `running` | the package is present, the configuration is applied, the unit is active |
 
-A command line program, Codex or Claude Code, has no unit ("The kinds of
+A command line program, Codex, Claude Code or OpenCode, has no unit ("The kinds of
 module"). Its `want` is `absent` or `running`, and `running` means that the
 module's copy is on the machine and each enabled account's `PATH` names its
 launcher folder first ("Parallel, never take over"). Its **Install** writes
@@ -148,7 +148,7 @@ for a module whose task runs replaces the plan at the next step boundary.
 `APPLY_ORDER` is the order tasks are made in and rows and the state error
 are read in: the file share, Terminal, the SSH server, Gitea, Containers,
 Hermes WebUI, Ayakaleaf, VS Code, code-server, CloudCLI, Codeg, Claude Code,
-Codex, SiYuan, Remote desktop. A module whose task has not run its first step, since that
+Codex, OpenCode, SiYuan, Remote desktop. A module whose task has not run its first step, since that
 step waits for a step lock, reads `queued` with the lock's code. A module
 whose task installs it or switches its version reads `installing` until the
 task ends, one whose task uninstalls it reads `uninstalling`, and a read of
@@ -166,8 +166,8 @@ pulled, so Containers read `stopped`.
 A module installed is a service: **Start** starts it and **Stop** stops it,
 whatever instances it has. An account, a share, a setting and **Configure**
 never start one. Terminal, Remote desktop and the SSH server have no **Start**
-or **Stop**: their panel's apply runs them. Codex and Claude Code are
-command line programs, which a person runs from a shell: their tab has no
+or **Stop**: their panel's apply runs them. Codex, Claude Code and OpenCode
+are command line programs, which a person runs from a shell: their tab has no
 **Start** or **Stop**, the routes refuse both `module_not_service {module}`,
 and **Install** and their panel's apply make them ready for each enabled
 account. **Install** on a module that
@@ -483,7 +483,7 @@ that can pass 30 seconds by the lab's times:
 | Ayakaleaf | `wait_module podman`, `pull app`, `pull mongo`, `pull redis`, `verify`, `render`, `start`, `replica_set`, `wait_app`, `admin`, `tex`, `guests` | `pull app` 84 to 135 seconds, `tex` 4 to 5 minutes |
 | VS Code, code-server, Codeg, SiYuan | `artifact <name>` per archive, `verify`, `configure`, then `account {account}` per enabled account | an archive, up to 42 seconds for Codeg's |
 | CloudCLI | the same, with `npm {account}` before each `account {account}` | `npm`, 2 to 3.5 minutes on Linux |
-| Codex, Claude Code | `artifact <name>` and `verify` while the module's copy is missing, `configure`, then `account {account}` per enabled account | the tarball, 127 MiB for Claude Code and 164 MiB for Codex on Linux amd64; an `account` step, up to 5 seconds for the account's login shell |
+| Codex, Claude Code, OpenCode | `artifact <name>` and `verify` while the module's copy is missing, `configure`, then `account {account}` per enabled account | the tarball, 127 MiB for Claude Code, 164 MiB for Codex and 75.5 MiB for OpenCode on Linux amd64; an `account` step, up to 5 seconds for the account's login shell |
 
 Gitea's `account` is a step apart from its `configure`, so `system_accounts`
 is held for the one command that makes the account and not for Gitea's
@@ -672,7 +672,7 @@ question: can two copies live on one machine side by side? A command line
 program can, one per place on `PATH`. A server with a fixed port, unit,
 system account or GPU cannot.
 
-| What the module finds | Software two copies of run side by side: a command line program, Codex or Claude Code | Software of which one copy runs on a machine: a server, such as Samba or a Podman machine |
+| What the module finds | Software two copies of run side by side: a command line program, Codex, Claude Code or OpenCode | Software of which one copy runs on a machine: a server, such as Samba or a Podman machine |
 | --- | --- | --- |
 | no copy | installs its own | installs its own |
 | the person's copy | asks before it enables the account; on the yes the account's shell runs the module's copy first, and the person's copy stays as it is | adopts it, as the file share adopts a person's Samba, or refuses with a code that names it and never runs a second server |
@@ -687,7 +687,7 @@ system account or GPU cannot.
 | After an account is enabled the module never fights. Each `account` step reads which copy the account's shell runs, the first on the `PATH` its login shell prints, and for bash also on that of `bash -i`. While that is not the module's launcher, the account's row reads `copy_runs_first {account, path, version}`, `copy_unreached {account}` when the shell finds no copy, or `copy_in_system_path` on Windows. **Put this module's copy first** then moves the line to the end of each file again, or the entry to the front of the user `PATH`. The module does neither by itself. | A line the person adds after the module's, or a copy the person installs, stays the person's choice until the person presses. |
 | A read compares the size, time and inode of each startup file and `env.sh` with what the account's last `account` step recorded, and asks for a task of the module's own when one changed ("The kinds of module"). On Windows the copy is read again at the module's next task. | A person who edits a startup file sees the row change with no press. A file's stat costs nothing, where a login shell costs up to 5 seconds. |
 | Neutrino's own sessions, a Terminal shell, an `exec` command and an SSH server session, start with the launcher folders of the command line programs the account is enabled in at the front of `PATH`, read as each session starts. Checking or unchecking a program starts no SSH server instance again ([agent/module_template.md](agent/module_template.md), "The launcher and the account's `PATH`"). | Those sessions run the module's copy whatever the startup files hold, and a session the person has open stays connected. |
-| When an account has no command line program enabled any more, unchecked, at **Uninstall** or at `nagent service uninstall`, the module removes its line from each file and the env file, and on Windows the entry. Each startup file is then byte for byte what it was. The person's copy, `~/.claude`, `~/.codex` and every other file of theirs stay. | The module removes what it made and nothing else, and an account that ran the module's copy runs none afterwards, as after any uninstall. |
+| When an account has no command line program enabled any more, unchecked, at **Uninstall** or at `nagent service uninstall`, the module removes its line from each file and the env file, and on Windows the entry. Each startup file is then byte for byte what it was. The person's copy, `~/.claude`, `~/.codex`, `~/.config/opencode` and every other file of theirs stay. | The module removes what it made and nothing else, and an account that ran the module's copy runs none afterwards, as after any uninstall. |
 
 ### The account's startup files
 
@@ -716,7 +716,7 @@ On macOS the line names `$HOME/Library/Application Support/Neutrino/agent/env.sh
 | fish gets a line and `env.fish` of its own, at the end of `config.fish`. | fish reads no `sh` script, and a file in `conf.d/` runs before `config.fish`, where no line can be moved after the person's. |
 | A file that is missing is made with the line alone, and a file whose last byte is no newline gets one before the line. `program_path.json` under the state root keeps, per account and per file, whether the module made the file and whether it added the newline, and removing the line removes those too. | Each file is then byte for byte what it was. |
 | Every read and write of the account's files runs as the account, and a startup file is written in place. | A link in the account's home cannot point the agent at a file of root's, and a startup file that is a link into the person's own dotfiles stays a link. |
-| The line and `env.sh` are the account's and shared by Codex and Claude Code. The first program enabled writes them, each program writes `env.sh` again with the folders it names, and the last one let go removes them. `program_path.json` records, per account, the programs `env.sh` names and the files the line is in. | One file and one line serve both programs, and the files the line went in are removed from even after the login shell changed. |
+| The line and `env.sh` are the account's and shared by Codex, Claude Code and OpenCode. The first program enabled writes them, each program writes `env.sh` again with the folders it names, and the last one let go removes them. `program_path.json` records, per account, the programs `env.sh` names and the files the line is in. | One file and one line serve every program, and the files the line went in are removed from even after the login shell changed. |
 | The account's Neutrino tree and its own folders are removed with `env.sh` when nothing else is in them. A folder above the tree, `~/.local/share`, `~/.local` or `~/.config/fish`, stays, whether the module made it or not ([agent/module_install.md](agent/module_install.md), "What an uninstall removes"). | A shared folder may have been taken into use by anything since. |
 
 ## The kinds of module
@@ -736,7 +736,7 @@ linked from the table.
 | a service with a system account of its own | [Gitea](agent/modules/gitea.md) | `hub` | the account and the service the module makes, in the publisher's layout on every system |
 | a program run as a person's account | [VS Code](agent/modules/vscode.md), [code-server](agent/modules/code_server.md), [CloudCLI](agent/modules/cloudcli.md), [Codeg](agent/modules/codeg.md), [SiYuan](agent/modules/siyuan.md) | `hub`, each archive unpacked and sealed under `agent/<module>/<directory>/` | one account service per enabled account, the forwarder in front of it, one app per running instance |
 | container images | [Hermes WebUI](agent/modules/hermes_webui.md), [Ayakaleaf](agent/modules/ayakaleaf.md) | `container`, pulled by the Containers module's Podman | hub containers on the Containers module, which the module needs |
-| a command line program per account | [Codex](agent/modules/codex.md), [Claude Code](agent/modules/claude_code.md) | `hub`, the module's own copy unpacked and sealed under `agent/<module>/<directory>/` | nothing runs until a person runs the program: each enabled account's `PATH` reaches the module's copy first |
+| a command line program per account | [Codex](agent/modules/codex.md), [Claude Code](agent/modules/claude_code.md), [OpenCode](agent/modules/opencode.md) | `hub`, the module's own copy unpacked and sealed under `agent/<module>/<directory>/` | nothing runs until a person runs the program: each enabled account's `PATH` reaches the module's copy first |
 
 A command line program is a module with no service, no port and no page.
 It has no **Start** and no **Stop**, as the modules the agent carries have
@@ -788,7 +788,7 @@ runs as root, SYSTEM on Windows: installs, system services, Containers, the
 SMB server and the remote desktop service. The account layer runs as one of
 the machine's own accounts, each process being that account and nothing
 more: the terminal, the SSH server, VS Code, code-server, CloudCLI, Codeg,
-SiYuan, Codex, Claude Code, the AI tools and the account's file share.
+SiYuan, Codex, Claude Code, OpenCode, the AI tools and the account's file share.
 
 An available account is one of the machine's accounts the person added on
 the machine page, with what every feature of the account layer needs to know
@@ -803,7 +803,7 @@ share_path, shell_path, is_ai_tools_enabled, tool_configs}]}`:
 | `share_path` | the folder the account's share serves, absolute in the machine's own form; empty is the account's home |
 | `shell_path` | the shell the account's terminal and SSH server start, absolute; empty is the account's login shell, and PowerShell on Windows |
 | `is_ai_tools_enabled` | whether the account's AI tools use the hub's AI gateway ([ai_tools.md](agent/ai_tools.md)); false on a new account |
-| `tool_configs` | the account's model choices, `{claude: {default, opus, sonnet, haiku}, codex: {model, model_reasoning_effort}, gemini: {model}}`, each empty for the gateway's default |
+| `tool_configs` | the account's model choices, `{claude: {default, opus, sonnet, haiku}, codex: {model, model_reasoning_effort}, gemini: {model}, opencode: {model}}`, each empty for the gateway's default |
 
 A module of the account layer keeps its enabled accounts in its own file
 under `config/devices/<id>/`, each one an available account, and runs one
@@ -1098,7 +1098,7 @@ module the state names reads `unsupported`, never `failed`, beside the
 Terminal, Remote desktop and SSH server rows every platform has. A platform with
 `hub_packages` gets Gitea and the programs run as an account, VS Code,
 CloudCLI, Codeg and SiYuan, and macOS code-server beside them, the command
-line programs, Codex and Claude Code, and Containers as
+line programs, Codex, Claude Code and OpenCode, and Containers as
 `PodmanMachineModuleRunner`, runner `podman_machine`, which runs Podman inside
 a Podman machine of one account; on Linux all of them are among the runners
 `packages` builds, Containers as `PodmanModuleRunner`, runner `podman`, by
@@ -1113,7 +1113,7 @@ only POSIX has is guarded, so one package imports on all three systems.
 | --- | --- | --- | --- |
 | Program | `/opt/neutrino/agent` | `C:\Program Files\Neutrino\agent` | `/Library/Application Support/Neutrino/agent/app` |
 | Configuration root: the binding, the credentials, the desired state | `/etc/neutrino/agent` | `%ProgramData%\Neutrino\agent\config`, under `%ProgramData%\Neutrino\agent`, whose ACL, SYSTEM and the administrators alone, the `.msi` sets | `/Library/Application Support/Neutrino/agent/config`, mode 700 |
-| State root: configured marks, the modules' kept failures, packages, the last reinstall, `vscode/`, `code_server/`, `cloudcli/`, `codeg/`, `siyuan/`, `codex/`, `claude_code/`, `ai_tools/`, `podman/`, on Windows and macOS `gitea/` and `gitea_data/`, and on Windows `batch_logon.json`, the accounts the agent granted the batch logon right ([module_template.md](agent/module_template.md), "The run") | `/var/lib/neutrino/agent` | `%ProgramData%\Neutrino\agent\state` | `/Library/Application Support/Neutrino/agent/state`, mode 755 |
+| State root: configured marks, the modules' kept failures, packages, the last reinstall, `vscode/`, `code_server/`, `cloudcli/`, `codeg/`, `siyuan/`, `codex/`, `claude_code/`, `opencode/`, `ai_tools/`, `podman/`, on Windows and macOS `gitea/` and `gitea_data/`, and on Windows `batch_logon.json`, the accounts the agent granted the batch logon right ([module_template.md](agent/module_template.md), "The run") | `/var/lib/neutrino/agent` | `%ProgramData%\Neutrino\agent\state` | `/Library/Application Support/Neutrino/agent/state`, mode 755 |
 | Log | the journal | `%ProgramData%\Neutrino\agent\log\agent.log` | `/Library/Logs/Neutrino/agent/agent.log` |
 | Service | systemd `neutrino_agent.service` runs `nagent run` | the `neutrino_agent` service, LocalSystem, runs `nagent service run` | the `com.neutrino.agent` LaunchDaemon runs `nagent run` |
 | Control transport | Unix socket `/run/neutrino/agent/agent.sock` | named pipe `\\.\pipe\neutrino_agent`, its descriptor SYSTEM and the administrators | Unix socket `/var/run/neutrino/agent/agent.sock` |
@@ -1201,6 +1201,7 @@ module a system cannot run is left out on that system.
 | [Codeg](agent/modules/codeg.md) | glibc 2.34, the agent's own floor, amd64 and arm64 | amd64 | arm64 and amd64 |
 | [Codex](agent/modules/codex.md) | amd64 and arm64 | amd64 and arm64 | arm64 and amd64 |
 | [Claude Code](agent/modules/claude_code.md) | amd64 and arm64 | amd64 and arm64, Windows 10 1809 or later | arm64 and amd64, macOS 13 or later |
+| [OpenCode](agent/modules/opencode.md) | amd64 and arm64 | amd64 and arm64 | arm64 and amd64 |
 | [SiYuan](agent/modules/siyuan.md) | amd64 and arm64 | amd64 | arm64 and amd64 |
 | [Hermes WebUI](agent/modules/hermes_webui.md) | wherever Containers runs, amd64 and arm64 | amd64, on Containers | arm64 and amd64, on Containers |
 | [Ayakaleaf](agent/modules/ayakaleaf.md) | wherever Containers runs, amd64 and arm64 | amd64, on Containers | arm64 and amd64, on Containers |

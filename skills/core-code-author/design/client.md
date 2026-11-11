@@ -522,7 +522,7 @@ the forward listens. The desktop controls:
 
 | Control | Enabled | Does |
 | --- | --- | --- |
-| **AI tools use this gateway** (a chip) | when the entry is not unhealthy, the hub is not disabled and no switch runs | job `ui.job.switching`: makes the entry's forward, reads this client's key with the `service` frame, and points Claude Code, Codex and Gemini at `http://127.0.0.1:<local-port>` with that key ([hub_components/ai.md](hub_components/ai.md)); one hub is the exit at a time, and only a chip the person turned on makes it so: with no chip turned on no hub is the exit; the chip of the other hub turns off in the same push, and its forward ends |
+| **AI tools use this gateway** (a chip) | when the entry is not unhealthy, the hub is not disabled and no switch runs | job `ui.job.switching`: makes the entry's forward, reads this client's key with the `service` frame, and points Claude Code, Codex, Gemini and OpenCode at `http://127.0.0.1:<local-port>` with that key ([hub_components/ai.md](hub_components/ai.md)); one hub is the exit at a time, and only a chip the person turned on makes it so: with no chip turned on no hub is the exit; the chip of the other hub turns off in the same push, and its forward ends |
 | **Configure** | the same | opens the configuration dialog: a picker per tool for its model and, for Codex, its effort, each picker's first row `ui.gateway_default`; **Save** and **Cancel**; the dialog is the inline-form idiom with a dirty frame |
 
 A model left at `ui.gateway_default` is the hub's default model, the

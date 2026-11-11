@@ -861,7 +861,7 @@ list, the panel add of "Inline forms", lit with the accent frame:
 | **Password** | on a Windows machine alone, a password field kept in the vault as the account's login; left empty on an edit, the login stays |
 | **Share path** | a text field showing the account's home as its placeholder, with **Browse…** opening the path window in its folder mode; left empty, it sends empty and the default holds |
 | **Shell** | a text field showing the account's login shell as its placeholder, PowerShell on Windows, with **Browse…** opening the path window in its file mode; left empty, it sends empty |
-| **AI tools use the hub's gateway** | a switch, off by default; turned on, it shows the model rows: Claude Code's four slots, Codex's model and its effort, and Gemini's model, each picker's first choice `ui.ai_tools.gateway_default` |
+| **AI tools use the hub's gateway** | a switch, off by default; turned on, it shows the model rows: Claude Code's four slots, Codex's model and its effort, Gemini's model and OpenCode's model, each picker's first choice `ui.ai_tools.gateway_default` |
 
 **Cancel** and **Save** sit at the form's bottom right. A row shows the
 account's name, and while its AI tools switch is on the result as a
@@ -898,7 +898,7 @@ page's words":
 | Chip | What it reads |
 | --- | --- |
 | source | the row's `source`, the word the hub derives from the install method of the module's entry for the machine's platform; a word outside the four shows no chip |
-| kind | the row's `kind`: Program on Codex and Claude Code, Service on every other module |
+| kind | the row's `kind`: Program on Codex, Claude Code and OpenCode, Service on every other module |
 | upgrade only | `ui.modules.forward_only` on a row whose `is_data_forward_only` is true, after the kind chip; none on any other row |
 
 In a window 880 px wide or narrower, or one no wider than it is tall, the
@@ -919,7 +919,7 @@ checked, and a module the machine cannot run is greyed out. The dialog's
 foot holds **Close** alone.
 
 A tab of the account layer, File share, Terminal, the SSH server, VS Code,
-code-server, CloudCLI, Codeg, SiYuan, Codex and Claude Code, holds **Enabled accounts**
+code-server, CloudCLI, Codeg, SiYuan, Codex, Claude Code and OpenCode, holds **Enabled accounts**
 (`ui.modules.enabled_accounts`) in its panel: one check row per available
 account, Terminal's showing each account's shell and the file share's each
 account's share path, and `ui.modules.no_accounts` pointing at **Available
@@ -940,10 +940,12 @@ machine layer,
 Remote desktop, Gitea, Containers and the container modules, hold no
 accounts. No module asks for a port: the agent takes them.
 
-The tab of a command line program, Codex or Claude Code
+The tab of a command line program, Codex, Claude Code or OpenCode
 ([agent/modules/codex.md](agent/modules/codex.md),
-[agent/modules/claude_code.md](agent/modules/claude_code.md)), draws the
-line `ui.codex.owner_notice` or `ui.claude_code.owner_notice` over its
+[agent/modules/claude_code.md](agent/modules/claude_code.md),
+[agent/modules/opencode.md](agent/modules/opencode.md)), draws the
+line `ui.codex.owner_notice`, `ui.claude_code.owner_notice` or
+`ui.opencode.owner_notice` over its
 state line, and **Install**, **Uninstall** and **Configure** alone at the
 bottom, since it has no **Start** or **Stop** ([agent.md](agent.md), "The
 kinds of module"). Its state line reads `state.ready` in place of
@@ -955,7 +957,7 @@ a program runs only when a person runs it. A program the machine reports
 
 | Part of the panel | Idiom |
 | --- | --- |
-| **Enabled accounts** | one check row per available account, configurable, with its apply bar, `ui.codex.apply` or `ui.claude_code.apply` its button and `ui.program.apply_hint` its hint; the apply waits for the module's state alone, since no account runs an instance |
+| **Enabled accounts** | one check row per available account, configurable, with its apply bar, `ui.codex.apply`, `ui.claude_code.apply` or `ui.opencode.apply` its button and `ui.program.apply_hint` its hint; the apply waits for the module's state alone, since no account runs an instance |
 | Checking an account | first reads `GET /api/agent/module/<name>/copy` for the account, the check busy meanwhile; with no copy found the row is checked; with a copy, the dialog below; a refusal shows in the bar's error and the row stays unchecked |
 | The replace dialog | `useConfirm`: the title `ui.program.replace_title`, the body `ui.program.replace_body`, or `ui.program.replace_body_unversioned` for a copy that prints no version, the detail `ui.program.replace_detail`, and `ui.program.replace_confirm`, which checks the row; **Cancel**, Escape and the backdrop leave it unchecked |
 | The system copy dialog | on Windows, for `copy_in_system_path`: the title `ui.program.system_copy_title`, the code's words as the body, and one button, `ui.program.system_copy_close`; the row stays unchecked |
@@ -1207,11 +1209,11 @@ version on the version line.
 
 The rows of the module list, each a tab, come in one order, the modules
 every system runs first: Terminal, the SSH server, Remote desktop, File
-share, Gitea, VS Code, code-server, CloudCLI, Codeg, Claude Code, Codex, SiYuan,
+share, Gitea, VS Code, code-server, CloudCLI, Codeg, Claude Code, Codex, OpenCode, SiYuan,
 Containers, Hermes WebUI, Ayakaleaf. The order is the row order of the hub's description table
 ([agent/module_template.md](agent/module_template.md), "The hub side"), in
 which `GET /api/agent/module` sends the rows, and the page keeps it. The
-ten modules of the account layer are drawn by one `instances_panel.tsx`
+eleven modules of the account layer are drawn by one `instances_panel.tsx`
 from the hub's description table. Its apply bar and frame
 are lit while the module reads `failed` or `install_failed`, and its apply with
 nothing changed sends `POST /api/agent/module/<name>/apply`. A module the machine cannot

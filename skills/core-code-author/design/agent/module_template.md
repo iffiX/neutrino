@@ -19,7 +19,7 @@ a module the agent has no runner for reads `unsupported`.
 | A service with a system account of its own | Gitea, `gitea` | makes the account and the service, and the publisher's layout holds on every system | its configuration, one applier per system, the rendered `app.ini` ([modules/gitea.md](modules/gitea.md)) |
 | A program run as a person's account | VS Code, `vscode`; code-server, `code_server`; CloudCLI, `cloudcli`; Codeg, `codeg`; SiYuan, `siyuan` | the whole flow of this page: one account service per instance, the forwarder, the `web` entry, the shared router and the shared panel | `config.py`, `constants.py` and `hooks.py` ([modules/vscode.md](modules/vscode.md), [modules/code_server.md](modules/code_server.md), [modules/cloudcli.md](modules/cloudcli.md), [modules/codeg.md](modules/codeg.md), [modules/siyuan.md](modules/siyuan.md)) |
 | Container images | Hermes WebUI and Ayakaleaf, `container` | runs the images as hub containers on the Containers module, one network per module, and the forwarder where the module has a page | its images in the manifest, the containers it composes on the hub, and its `hooks.py` where it has a page or a step after its first start ([module_install.md](module_install.md), "From container images", [modules/hermes_webui.md](modules/hermes_webui.md), [modules/ayakaleaf.md](modules/ayakaleaf.md)) |
-| A command line program per account | Codex, `codex`; Claude Code, `claude_code` | `modules/shared/programs.py` and `modules/shared/program_path.py`: the module's copy, the launcher, the record, each enabled account's `PATH` put first and the `find` of the copy its shell runs ([agent.md](../agent.md), "Parallel, never take over"); no service, no port, no forwarder and no published entry | `config.py`, `constants.py` and `hooks.py`: the program's name, the places a person's copy is looked for, how its version reads, and what its launcher sets ([modules/codex.md](modules/codex.md), [modules/claude_code.md](modules/claude_code.md)) |
+| A command line program per account | Codex, `codex`; Claude Code, `claude_code`; OpenCode, `opencode` | `modules/shared/programs.py` and `modules/shared/program_path.py`: the module's copy, the launcher, the record, each enabled account's `PATH` put first and the `find` of the copy its shell runs ([agent.md](../agent.md), "Parallel, never take over"); no service, no port, no forwarder and no published entry | `config.py`, `constants.py` and `hooks.py`: the program's name, the places a person's copy is looked for, how its version reads, and what its launcher sets ([modules/codex.md](modules/codex.md), [modules/claude_code.md](modules/claude_code.md), [modules/opencode.md](modules/opencode.md)) |
 
 `runner` names the agent runner, and an agent that has no runner of that
 name reports the module `unsupported`. Where a module's software comes
@@ -176,7 +176,7 @@ in besides `PATH` are its own page's.
 | On Windows `find` is one `run_as_account` per account: it reads the system's `PATH` and then the account's user `PATH`, expanded, as Windows joins them for a new process, and looks for `<name>.exe`, then `<name>.cmd`, in each folder in order. | A shell starts a program from the first folder that holds it, and npm puts a `.cmd` for each command it installs. |
 | `find` answers the first copy on that `PATH` that is not the module's launcher, else the first in the module's known places, with its version; whether it is on `PATH`; on Windows whether its folder is in the system `PATH`; and whether the module's launcher comes before it. | The dialog names the copy the module's would run in place of, and the account's row the copy its shell runs before the module's. |
 | A shell that fails or runs past its time leaves the account with the module's known places alone, and one line in the agent's log names the account and the shell. | A broken profile is the person's, and the module still finds a copy in the usual places. |
-| A copy's version is the first dotted number its `--version` prints, run as the account with at most 10 seconds, and empty when it prints none. | `claude --version` prints `2.1.311 (Claude Code)` and `codex --version` prints `codex-cli 0.166.0`. A program of the name that prints no version still runs in the module's place. |
+| A copy's version is the first dotted number its `--version` prints, run as the account with at most 10 seconds, and empty when it prints none. | `claude --version` prints `2.1.311 (Claude Code)`, `codex --version` prints `codex-cli 0.166.0` and `opencode --version` prints `1.19.5`. A program of the name that prints no version still runs in the module's place. |
 | An `account` step reads the account's code from what `find` answers: none while the module's launcher comes first; `copy_in_system_path {account, path, version}` for a copy in Windows' system `PATH`; `copy_runs_first {account, path, version}` for another copy on `PATH`; and `copy_unreached {account}` while the shell finds no copy. | The row has one line for a code, and the first two name the copy the shell runs. |
 
 ### The launcher and the account's `PATH`
@@ -208,7 +208,7 @@ The hub describes every module once, in the description table
 entry's `description_code`, and the panel kind the machine page draws. The
 table's rows are in the one order every list of modules shows, and the
 manifest loader returns the modules in it ([ui_behavior.md](../ui_behavior.md),
-"The machine page"). The five programs run as an account and the two
+"The machine page"). The five programs run as an account and the three
 command line programs share one router,
 `routers/agent/module_instances.py`, which serves `GET
 /api/agent/module/<module>` and `POST /api/agent/module/<module>/set` for
@@ -216,7 +216,7 @@ each from that table; VS Code's terms acceptance stays in
 `module_vscode_terms.py`. Their secrets, each enabled account's token secret,
 CloudCLI's password and SiYuan's access code, are generated the first time the account is enabled
 and kept sealed under the vault's data key in
-`config/devices/<id>/<module>.json`, and the state carries them opened. SiYuan's gateway key per enabled account is generated with them, and voided when the account is disabled ([modules/siyuan.md](modules/siyuan.md), "The gateway"). A command line program generates no secret. The panel draws the seven with one `instances_panel.tsx`
+`config/devices/<id>/<module>.json`, and the state carries them opened. SiYuan's gateway key per enabled account is generated with them, and voided when the account is disabled ([modules/siyuan.md](modules/siyuan.md), "The gateway"). A command line program generates no secret. The panel draws the eight with one `instances_panel.tsx`
 ([ui_behavior.md](../ui_behavior.md), "The machine page").
 
 ## Guest accounts of an App share
