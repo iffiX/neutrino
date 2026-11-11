@@ -53,7 +53,7 @@ Pick an app and it installs in one click, with no environment to prepare and no 
 | --- | --- |
 | System access | [Remote desktop](https://neutrinohub.net/en/deploy/remote_desktop), [File share](https://neutrinohub.net/en/deploy/file_share), [Terminal](https://neutrinohub.net/en/deploy/terminal), [SSH](https://neutrinohub.net/en/deploy/ssh) |
 | Writing code | [VS Code](https://neutrinohub.net/en/deploy/vscode), [code-server](https://neutrinohub.net/en/deploy/code_server) |
-| AI workflows | [CloudCLI](https://neutrinohub.net/en/deploy/cloudcli), [Codeg](https://neutrinohub.net/en/deploy/codeg), [Hermes WebUI](https://neutrinohub.net/en/deploy/hermes_webui) |
+| AI workflows | [Claude Code](https://neutrinohub.net/en/deploy/claude_code), [Codex](https://neutrinohub.net/en/deploy/codex), [CloudCLI](https://neutrinohub.net/en/deploy/cloudcli), [Codeg](https://neutrinohub.net/en/deploy/codeg), [Hermes WebUI](https://neutrinohub.net/en/deploy/hermes_webui) |
 | Writing papers | [Ayakaleaf](https://neutrinohub.net/en/deploy/ayakaleaf) |
 | Notes | [SiYuan](https://neutrinohub.net/en/deploy/siyuan) |
 | Hosting code | [Gitea](https://neutrinohub.net/en/deploy/gitea) |
@@ -225,6 +225,8 @@ Anything else works too. You can declare your own service, with several ports an
 | --- | --- | --- |
 | [VS Code](https://github.com/microsoft/vscode) | Microsoft's code editor, running in a browser | [Deploy VS Code](https://neutrinohub.net/en/deploy/vscode) |
 | [code-server](https://github.com/coder/code-server) | VS Code as an open source web app | [Deploy code-server](https://neutrinohub.net/en/deploy/code_server) |
+| [Claude Code](https://github.com/anthropics/claude-code) | The command-line AI coding tool from Anthropic | [Deploy Claude Code](https://neutrinohub.net/en/deploy/claude_code) |
+| [Codex](https://github.com/openai/codex) | The command-line AI coding tool from OpenAI | [Deploy Codex](https://neutrinohub.net/en/deploy/codex) |
 | [CloudCLI](https://github.com/siteboon/claudecodeui) | A web page for Claude Code and other AI coding tools | [Deploy CloudCLI](https://neutrinohub.net/en/deploy/cloudcli) |
 | [Codeg](https://github.com/spacering-net/codeg) | An AI coding workspace with Claude Code, Codex and Gemini on one page | [Deploy Codeg](https://neutrinohub.net/en/deploy/codeg) |
 | [Hermes WebUI](https://github.com/nesquena/hermes-webui) | A web page for the Hermes Agent assistant | [Deploy Hermes WebUI](https://neutrinohub.net/en/deploy/hermes_webui) |
