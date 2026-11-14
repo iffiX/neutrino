@@ -205,3 +205,17 @@ def test_the_port_a_hub_container_s_page_is_published_at_is_never_served():
         40123: "127.0.0.1",
         9000: "127.0.0.1",
     }
+
+
+def test_ollama_s_port_is_published_while_its_row_reads_present():
+    for state in ("installed", "stopped", "running"):
+        ollama = {"state": state, "details": {"port": 11434, "found": ""}}
+        assert published_ports({"ollama": ollama}, {}, {}) == {11434: "127.0.0.1"}
+    for state in ("absent", "installing", "failed"):
+        ollama = {"state": state, "details": {"port": 11434}}
+        assert published_ports({"ollama": ollama}, {}, {}) == {}
+    assert (
+        published_ports({"ollama": {"state": "running", "details": {}}}, {}, {}) == {}
+    )
+    found = {"state": "installed", "details": {"port": 11434, "found": "app"}}
+    assert published_ports({"ollama": found}, {}, {}, "udp") == {}

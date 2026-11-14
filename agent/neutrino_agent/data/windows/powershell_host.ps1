@@ -98,6 +98,22 @@ function Register-NeutrinoTask($Request) {
     return @{}
 }
 
+# Registers a task of SYSTEM's: at startup, no time limit, started again a
+# minute after it stops, at the normal priority.
+function Register-NeutrinoSystemTask($Request) {
+    $action = New-ScheduledTaskAction -Execute $Request.program -Argument $Request.arguments
+    $trigger = New-ScheduledTaskTrigger -AtStartup
+    $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) `
+        -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -Priority 4 `
+        -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
+    $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount `
+        -RunLevel Highest
+    Register-ScheduledTask -TaskName $Request.task -Description $Request.description `
+        -Action $action -Trigger $trigger -Settings $settings -Principal $principal `
+        -Force | Out-Null
+    return @{}
+}
+
 # Registers a one-shot task under the account's login with a time limit and a
 # limited token, and starts it.
 function Invoke-NeutrinoOneShotTask($Request) {
@@ -692,6 +708,7 @@ $NeutrinoOperations = @{
     'task_read' = 'Get-NeutrinoTask'
     'task_states' = 'Get-NeutrinoTaskState'
     'task_write' = 'Register-NeutrinoTask'
+    'task_write_system' = 'Register-NeutrinoSystemTask'
     'task_run_once' = 'Invoke-NeutrinoOneShotTask'
     'task_start' = 'Start-NeutrinoTask'
     'task_stop' = 'Stop-NeutrinoTask'

@@ -595,6 +595,7 @@ AGENT_ARTIFACT_KIND_BINARY = "binary"
 AGENT_ARTIFACT_KIND_MSI = "msi"
 AGENT_ARTIFACT_KIND_PKG = "pkg"
 AGENT_ARTIFACT_KIND_NPM = "npm"
+AGENT_ARTIFACT_KIND_TAR_ZST = "tar_zst"
 AGENT_ARTIFACT_ARCHIVE_KINDS = (
     AGENT_ARTIFACT_KIND_TAR_GZ,
     AGENT_ARTIFACT_KIND_ZIP,
@@ -606,7 +607,7 @@ AGENT_ARTIFACT_ARCHIVE_KINDS = (
 AGENT_ARTIFACT_KEPT_SUFFIXES = {
     AGENT_ARTIFACT_KIND_MSI: ".msi",
     AGENT_ARTIFACT_KIND_PKG: ".pkg",
-    "tar_zst": ".tar.zst",
+    AGENT_ARTIFACT_KIND_TAR_ZST: ".tar.zst",
     "raw_zst": ".raw.zst",
 }
 # A hub artifact's digest is this prefix and the SHA-256 of its bytes in hex.

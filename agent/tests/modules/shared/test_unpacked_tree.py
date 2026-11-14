@@ -14,6 +14,7 @@ lands whole under the artifact's directory.
 import io
 import os
 import stat
+import sys
 import tarfile
 import zipfile
 
@@ -350,3 +351,36 @@ def test_the_staging_directory_takes_the_default_mode_and_a_new_name(tmp_path):
     assert first != second
     assert os.path.basename(first).startswith(".unpack_")
     assert stat.S_IMODE(os.stat(first).st_mode) == 0o755
+
+
+def test_a_zstd_tar_is_read_through_the_system_s_zstd(tmp_path, monkeypatch):
+    plain = tmp_path / "plain.tar"
+    with tarfile.open(plain, "w") as archive:
+        for name, data in (("bin/ollama", b"program"), ("lib/ollama/a.so", b"a")):
+            info = tarfile.TarInfo(name)
+            info.size = len(data)
+            info.mode = 0o755
+            archive.addfile(info, io.BytesIO(data))
+        link = tarfile.TarInfo("lib/ollama/b.so")
+        link.type = tarfile.SYMTYPE
+        link.linkname = "a.so"
+        archive.addfile(link)
+    copy = "import shutil, sys; shutil.copyfileobj(open(sys.argv[-1], 'rb'), sys.stdout.buffer)"
+    monkeypatch.setattr(unpacked_tree, "ZSTD_COMMAND", (sys.executable, "-c", copy))
+    unpack_into(str(plain), "tar_zst", str(tmp_path / "out"))
+    assert (tmp_path / "out" / "bin" / "ollama").read_bytes() == b"program"
+    assert os.readlink(tmp_path / "out" / "lib" / "ollama" / "b.so") == "a.so"
+    assert not os.stat(tmp_path / "out" / "bin" / "ollama").st_mode & 0o222
+
+
+def test_a_zstd_tar_member_outside_is_refused(tmp_path, monkeypatch):
+    plain = tmp_path / "plain.tar"
+    with tarfile.open(plain, "w") as archive:
+        info = tarfile.TarInfo("../escape")
+        info.size = 1
+        archive.addfile(info, io.BytesIO(b"x"))
+    copy = "import shutil, sys; shutil.copyfileobj(open(sys.argv[-1], 'rb'), sys.stdout.buffer)"
+    monkeypatch.setattr(unpacked_tree, "ZSTD_COMMAND", (sys.executable, "-c", copy))
+    with pytest.raises((ValueError, tarfile.TarError)):
+        extract_archive(str(plain), "tar_zst", str(tmp_path / "out"))
+    assert not (tmp_path / "escape").exists()

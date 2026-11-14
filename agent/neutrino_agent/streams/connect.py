@@ -32,6 +32,10 @@ RUNNING_INSTANCE_MODULES = ("ssh_server",)
 # The container modules whose page the agent's forwarder serves at the port
 # their details report.
 FORWARDED_MODULES = ("hermes_webui", "ayakaleaf")
+# The module whose port is published while it reads present, a person's
+# Ollama among them, and the states that are present.
+OLLAMA_MODULE = "ollama"
+PRESENT_STATES = ("installed", "stopped", "running")
 
 
 def published_ports(
@@ -57,8 +61,8 @@ def published_ports(
         port and its own SSH server's while it reports a url, each
         configured VS Code, code-server, CloudCLI, Codeg or SiYuan instance's port,
         each running SSH server instance's port, the port of a container
-        module's forwarder, and each port a running container publishes on
-        TCP. On UDP: each port a running container publishes on UDP, and
+        module's forwarder, Ollama's port while its row reads present, and
+        each port a running container publishes on TCP. On UDP: each port a running container publishes on UDP, and
         nothing else. The port a hub container's ``page_port`` is published
         at is never one. A container's port goes to the one address it is
         published on when it names one; every other to loopback. A binding
@@ -96,6 +100,12 @@ def published_ports(
     for name in FORWARDED_MODULES:
         details = _configured(modules.get(name))
         port = _port((details or {}).get("port"))
+        if port:
+            ports[port] = AGENT_CONNECT_LOOPBACK
+    ollama = modules.get(OLLAMA_MODULE)
+    if isinstance(ollama, dict) and ollama.get("state") in PRESENT_STATES:
+        details = ollama.get("details")
+        port = _port(details.get("port")) if isinstance(details, dict) else 0
         if port:
             ports[port] = AGENT_CONNECT_LOOPBACK
     ports.update(_container_ports(modules, desired_modules, protocol))

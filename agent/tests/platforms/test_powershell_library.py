@@ -114,6 +114,21 @@ def test_a_task_is_registered_at_boot_under_the_login_with_no_time_limit():
     assert "Get-NeutrinoLogonRefusal $Request.account" in register
 
 
+def test_a_task_of_system_s_is_registered_at_boot_with_no_login():
+    register = body("task_write_system")
+
+    assert "New-ScheduledTaskTrigger -AtStartup" in register
+    assert "-ExecutionTimeLimit ([TimeSpan]::Zero)" in register
+    assert "-RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1)" in register
+    assert "-Priority 4" in register
+    assert "New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount" in (
+        register
+    )
+    assert "-Principal $principal" in register
+    assert "-Description $Request.description" in register
+    assert "-Password" not in register
+
+
 def test_a_one_shot_task_has_a_time_limit_and_starts_once_registered():
     once = body("task_run_once")
 

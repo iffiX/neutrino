@@ -1950,6 +1950,7 @@ def test_a_system_that_unpacks_the_hub_s_software_runs_vs_code_from_its_bytes(
     assert set(engine.module_runners) == {
         "samba",
         "gitea",
+        "ollama",
         "podman",
         "vscode",
         "cloudcli",
@@ -2025,6 +2026,7 @@ def test_a_platform_with_packages_builds_every_runner_by_its_name(tmp_path):
     assert set(engine.module_runners) == {
         "samba",
         "gitea",
+        "ollama",
         "podman",
         "vscode",
         "code_server",
@@ -2042,6 +2044,7 @@ def test_a_platform_with_packages_builds_every_runner_by_its_name(tmp_path):
     assert set(engine._runners_by_name) == {
         "samba",
         "gitea",
+        "ollama",
         "podman",
         "vscode",
         "code_server",

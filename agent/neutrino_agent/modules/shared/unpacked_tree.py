@@ -32,6 +32,7 @@ from neutrino_agent.constants import (
     AGENT_ARTIFACT_KIND_DMG,
     AGENT_ARTIFACT_KIND_NSIS,
     AGENT_ARTIFACT_KIND_TAR_GZ,
+    AGENT_ARTIFACT_KIND_TAR_ZST,
     AGENT_ARTIFACT_KIND_ZIP,
 )
 from neutrino_agent.modules.shared.seven_zip import extract_embedded
@@ -40,26 +41,36 @@ from neutrino_agent.modules.shared.seven_zip import extract_embedded
 DMG_STEP_TIMEOUT_S = 600
 # What a directory an archive is unpacked into before it moves is named after.
 STAGING_PREFIX = ".unpack_"
+# The system's zstd, which writes a ``tar_zst`` archive's tar for the unpack,
+# and the most of its errors a failure names.
+ZSTD_COMMAND = ("zstd", "-dcq")
+ZSTD_ERROR_BYTES = 400
 
 
 def extract_archive(path: str, kind: str, directory: str, *, member: str = "") -> None:
     """Unpack an archive whole into a directory, refusing a path outside it.
 
+    A ``tar_zst`` is read through the system's ``zstd``, which only its
+    module's runner asks for.
+
     Args:
         path: The archive on disk.
-        kind: ``tar_gz``, ``zip``, ``dmg`` or ``nsis``.
+        kind: ``tar_gz``, ``zip``, ``dmg``, ``nsis`` or ``tar_zst``.
         directory: Where it is unpacked.
         member: The folder a ``dmg`` holds the program in, relative to the
             image's root; unread for the other kinds.
 
     Raises:
         ValueError: For an unknown kind, a member outside the directory, an
-            image that does not attach or holds no such folder, or an
-            installer whose archive does not read.
+            image that does not attach or holds no such folder, an
+            installer whose archive does not read, or a ``zstd`` that fails.
         tarfile.TarError: When a tarball cannot be read.
         zipfile.BadZipFile: When a zip cannot be read.
         OSError: When the directory cannot be written or a tool cannot run.
     """
+    if kind == AGENT_ARTIFACT_KIND_TAR_ZST:
+        extract_zstd_tar(path, directory)
+        return
     if kind == AGENT_ARTIFACT_KIND_NSIS:
         extract_embedded(path, directory)
         return
@@ -87,6 +98,55 @@ def extract_archive(path: str, kind: str, directory: str, *, member: str = "") -
             _keep_zip_modes(archive, directory)
     else:
         raise ValueError(f"unknown archive kind {kind!r}")
+
+
+def extract_zstd_tar(path: str, directory: str) -> None:
+    """Unpack a zstd-compressed tar whole into a directory through the system's ``zstd``.
+
+    ``zstd -dc`` writes the tar to a pipe, which ``tarfile`` reads as a
+    stream with the checks of every tarball, so no member lands outside the
+    directory and no copy of the tar is written.
+
+    Args:
+        path: The archive on disk.
+        directory: Where it is unpacked.
+
+    Raises:
+        ValueError: For a member outside the directory, or a ``zstd`` that
+            exits other than 0.
+        tarfile.TarError: When the tar cannot be read.
+        OSError: When ``zstd`` cannot run or the directory cannot be written.
+    """
+    process = subprocess.Popen(
+        [*ZSTD_COMMAND, path], stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    )
+    try:
+        with tarfile.open(fileobj=process.stdout, mode="r|") as archive:
+            if hasattr(tarfile, "data_filter"):
+                archive.extractall(directory, filter="data")
+            else:
+                for member in archive:
+                    _check_member(member.name, directory)
+                    if member.issym() or member.islnk():
+                        _check_member(
+                            os.path.join(os.path.dirname(member.name), member.linkname),
+                            directory,
+                        )
+                    archive.extract(member, directory)
+        while process.stdout.read(1 << 16):
+            pass
+    except BaseException:
+        process.kill()
+        process.wait()
+        process.stderr.close()
+        raise
+    finally:
+        process.stdout.close()
+    said = process.stderr.read()[-ZSTD_ERROR_BYTES:]
+    process.stderr.close()
+    if process.wait() != 0:
+        detail = said.decode("utf-8", "replace").strip()
+        raise ValueError(f"zstd failed: {detail or process.returncode}")
 
 
 def copy_out_of_image(path: str, member: str, directory: str) -> None:

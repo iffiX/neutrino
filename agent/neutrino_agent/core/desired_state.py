@@ -104,6 +104,7 @@ APPLY_ORDER = (
     "terminal",
     "ssh_server",
     "gitea",
+    "ollama",
     "podman",
     "hermes_webui",
     "ayakaleaf",

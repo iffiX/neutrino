@@ -34,6 +34,7 @@ WINDOWS_POWERSHELL_HOST_OPS = {
     "task_read": "Get-NeutrinoTask",
     "task_states": "Get-NeutrinoTaskState",
     "task_write": "Register-NeutrinoTask",
+    "task_write_system": "Register-NeutrinoSystemTask",
     "task_run_once": "Invoke-NeutrinoOneShotTask",
     "task_start": "Start-NeutrinoTask",
     "task_stop": "Stop-NeutrinoTask",
@@ -60,6 +61,7 @@ WINDOWS_POWERSHELL_HOST_OPS = {
 WINDOWS_POWERSHELL_HOST_CHANGING_OPS = frozenset(
     {
         "task_write",
+        "task_write_system",
         "task_run_once",
         "task_start",
         "task_stop",
