@@ -83,12 +83,15 @@ type Hub struct {
 	key   noise.DHKey
 	jar   *knock.CookieJar
 
-	// mu guards sessions, byBinding, unadmitted, nextSession, nextStream,
-	// listeners, keepAliveLogged, memoryRefused, memoryLogged,
+	// mu guards sessions, byBinding, readyWaiters, unadmitted, nextSession,
+	// nextStream, listeners, keepAliveLogged, memoryRefused, memoryLogged,
 	// unavailableRefused, unavailableLogged and isUnavailableRun.
-	mu              sync.Mutex
-	sessions        map[string]*RelaySession
-	byBinding       map[string]*RelaySession
+	mu        sync.Mutex
+	sessions  map[string]*RelaySession
+	byBinding map[string]*RelaySession
+	// readyWaiters holds, by binding id, the channel a binding with no
+	// admitted session closes at its next welcome.
+	readyWaiters    map[string]chan struct{}
 	unadmitted      map[*knock.Unadmitted]*doorCloser
 	nextSession     uint64
 	nextStream      uint64
@@ -155,6 +158,7 @@ func NewHub(config HubConfig, python Python) (*Hub, error) {
 		jar:             jar,
 		sessions:        make(map[string]*RelaySession),
 		byBinding:       make(map[string]*RelaySession),
+		readyWaiters:    make(map[string]chan struct{}),
 		unadmitted:      make(map[*knock.Unadmitted]*doorCloser),
 		keepAliveLogged: make(map[string]time.Time),
 		config:          config,
@@ -326,6 +330,10 @@ func (h *Hub) welcome(rs *RelaySession) {
 	h.mu.Lock()
 	earlier := h.byBinding[rs.BindingID]
 	h.byBinding[rs.BindingID] = rs
+	if waiter, ok := h.readyWaiters[rs.BindingID]; ok {
+		close(waiter)
+		delete(h.readyWaiters, rs.BindingID)
+	}
 	h.mu.Unlock()
 	rs.markWelcomed()
 	if earlier != nil && earlier != rs {
@@ -409,6 +417,71 @@ func (h *Hub) OpenStream(sessionID string, open json.RawMessage) (io.ReadWriteCl
 	}
 	return stream, nil
 }
+
+// BindingReady returns a channel closed once the binding has an admitted
+// session, already closed while it has one.
+func (h *Hub) BindingReady(bindingID string) <-chan struct{} {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if _, ok := h.byBinding[bindingID]; ok {
+		return closedChannel
+	}
+	waiter, ok := h.readyWaiters[bindingID]
+	if !ok {
+		waiter = make(chan struct{})
+		h.readyWaiters[bindingID] = waiter
+	}
+	return waiter
+}
+
+// OpenBindingStream opens a stream of the hub's own on the binding's admitted
+// session with the open record given, and reads its answer: the stream after
+// an accept, the refusal of a refusing close, or ErrNoSession while the
+// binding has no session.
+func (h *Hub) OpenBindingStream(ctx context.Context, bindingID string, open json.RawMessage) (*RecordStream, *session.Refusal, error) {
+	h.mu.Lock()
+	rs := h.byBinding[bindingID]
+	h.mu.Unlock()
+	if rs == nil {
+		return nil, nil, ErrNoSession
+	}
+	dialCtx, cancel := context.WithTimeout(ctx, session.ConnectDialTimeout)
+	defer cancel()
+	stream, err := rs.session.OpenStream(dialCtx)
+	if err != nil {
+		return nil, nil, err
+	}
+	return OpenOn(stream, open)
+}
+
+// BindingOpener opens the hub's own streams on one binding's admitted
+// session, for a forward on the hub's loopback.
+func (h *Hub) BindingOpener(bindingID string) *BindingOpener {
+	return &BindingOpener{hub: h, bindingID: bindingID}
+}
+
+// BindingOpener is a StreamOpener on one binding, whatever session it has.
+type BindingOpener struct {
+	hub       *Hub
+	bindingID string
+}
+
+// OpenStream opens a stream on the binding's admitted session.
+func (o *BindingOpener) OpenStream(ctx context.Context, open json.RawMessage) (*RecordStream, *session.Refusal, error) {
+	return o.hub.OpenBindingStream(ctx, o.bindingID, open)
+}
+
+// Ready is closed while the binding has an admitted session.
+func (o *BindingOpener) Ready() <-chan struct{} {
+	return o.hub.BindingReady(o.bindingID)
+}
+
+// closedChannel is the channel BindingReady hands while a session is live.
+var closedChannel = func() chan struct{} {
+	channel := make(chan struct{})
+	close(channel)
+	return channel
+}()
 
 // Attach returns the stream announced under id, or ErrStreamUnknown.
 func (h *Hub) Attach(streamID string) (*RecordStream, error) {

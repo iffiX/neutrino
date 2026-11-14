@@ -24,11 +24,21 @@ type HubControl struct {
 	// hub is set once the relay exists, before Serve.
 	hub *relay.Hub
 
-	// mu guards control, pending and nextID.
+	// mu guards control, pending, nextID and forwards.
 	mu      sync.Mutex
 	control *LineConnection
 	pending map[string]chan map[string]any
 	nextID  uint64
+	// forwards holds each forward on the hub's loopback by its key, with the
+	// control connection that started it.
+	forwards map[string]hubForward
+}
+
+// hubForward is one forward_start's listener and the control connection
+// whose end stops it.
+type hubForward struct {
+	forward *relay.Forward
+	line    *LineConnection
 }
 
 // NewHubControl makes the hub's local channel on listener, admitting
@@ -37,7 +47,7 @@ func NewHubControl(listener net.Listener, secret, keyDir string, log relay.Event
 	if log == nil {
 		log = func(string, ...string) {}
 	}
-	return &HubControl{secret: secret, keyDir: keyDir, listener: listener, log: log, pending: make(map[string]chan map[string]any)}
+	return &HubControl{secret: secret, keyDir: keyDir, listener: listener, log: log, pending: make(map[string]chan map[string]any), forwards: make(map[string]hubForward)}
 }
 
 // SetHub binds the relay the commands and connections act on.
@@ -56,14 +66,19 @@ func (c *HubControl) Serve() {
 	}
 }
 
-// Close closes the listener and the control connection.
+// Close closes the listener, the control connection and every forward.
 func (c *HubControl) Close() {
 	c.listener.Close()
 	c.mu.Lock()
 	control := c.control
+	forwards := c.forwards
+	c.forwards = make(map[string]hubForward)
 	c.mu.Unlock()
 	if control != nil {
 		control.Close()
+	}
+	for _, held := range forwards {
+		held.forward.Stop()
 	}
 }
 
@@ -129,6 +144,7 @@ func (c *HubControl) serveControl(line *LineConnection) {
 	}
 	c.mu.Unlock()
 	line.Close()
+	c.stopForwardsOf(line)
 	c.log("control_disconnected")
 }
 
@@ -147,6 +163,9 @@ type controlLine struct {
 	Key       string          `json:"key"`
 	SessionID string          `json:"session_id"`
 	Shares    []gate.Share    `json:"shares"`
+	Listen    string          `json:"listen"`
+	Protocol  string          `json:"protocol"`
+	Open      json.RawMessage `json:"open"`
 }
 
 func (c *HubControl) handleLine(line *LineConnection, raw []byte) {
@@ -159,6 +178,15 @@ func (c *HubControl) handleLine(line *LineConnection, raw []byte) {
 		if err := c.hub.WriteFrame(parsed.Session, parsed.Frame, parsed.IsLast); err != nil {
 			c.log("frame_dropped", "session", parsed.Session, "error", err.Error())
 		}
+	case parsed.Command == CommandForwardStart:
+		listen, refusal := c.startForward(line, parsed)
+		fields := map[string]any{}
+		if refusal == nil {
+			fields["listen"] = listen
+		}
+		c.answerWith(line, parsed.ID, fields, refusal)
+	case parsed.Command == CommandForwardStop:
+		c.answer(line, parsed.ID, c.stopForward(parsed.Listen, parsed.Protocol))
 	case parsed.Command != "":
 		c.answer(line, parsed.ID, c.runCommand(parsed))
 	case parsed.ID != "":
@@ -176,7 +204,8 @@ func (c *HubControl) handleLine(line *LineConnection, raw []byte) {
 	}
 }
 
-// runCommand runs one of the four commands and returns its refusal, if any.
+// runCommand runs one of the four commands with no fields to answer and
+// returns its refusal, if any.
 func (c *HubControl) runCommand(parsed controlLine) *session.Refusal {
 	switch parsed.Command {
 	case CommandSessionClose:
@@ -198,12 +227,81 @@ func (c *HubControl) runCommand(parsed controlLine) *session.Refusal {
 }
 
 func (c *HubControl) answer(line *LineConnection, id string, refusal *session.Refusal) {
+	c.answerWith(line, id, nil, refusal)
+}
+
+// answerWith writes a command's answer: its fields, or its refusal.
+func (c *HubControl) answerWith(line *LineConnection, id string, fields map[string]any, refusal *session.Refusal) {
 	reply := map[string]any{"id": id}
 	if refusal != nil {
 		reply["code"] = refusal.Code
 		reply["params"] = refusal.Params
+	} else {
+		for key, value := range fields {
+			reply[key] = value
+		}
 	}
 	_ = line.WriteObject(reply)
+}
+
+// startForward binds a forward on the hub's loopback whose connections each
+// open a stream on the binding's session; it accepts nothing while the
+// binding has no session, and the end of line stops it.
+func (c *HubControl) startForward(line *LineConnection, parsed controlLine) (string, *session.Refusal) {
+	protocol := parsed.Protocol
+	if protocol == "" {
+		protocol = session.ProtocolTCP
+	}
+	if protocol != session.ProtocolTCP || parsed.BindingID == "" || len(parsed.Open) == 0 {
+		return "", session.NewRefusal(CodeBodyInvalid, map[string]any{"detail": "forward_start takes binding_id, open and protocol tcp"})
+	}
+	forward, refusal, err := relay.StartForward(context.Background(), parsed.Listen, protocol, parsed.Open, c.hub.BindingOpener(parsed.BindingID), nil)
+	if err != nil {
+		return "", session.NewRefusal(CodeBodyInvalid, map[string]any{"detail": err.Error()})
+	}
+	if refusal != nil {
+		return "", refusal
+	}
+	key := forwardKey(forward.Listen, protocol)
+	c.mu.Lock()
+	earlier, hadEarlier := c.forwards[key]
+	c.forwards[key] = hubForward{forward: forward, line: line}
+	c.mu.Unlock()
+	if hadEarlier {
+		earlier.forward.Stop()
+	}
+	c.log("forward_started", "listen", forward.Listen, "binding", parsed.BindingID)
+	return forward.Listen, nil
+}
+
+// stopForward closes one forward and its streams.
+func (c *HubControl) stopForward(listen, protocol string) *session.Refusal {
+	key := forwardKey(listen, protocol)
+	c.mu.Lock()
+	held, ok := c.forwards[key]
+	delete(c.forwards, key)
+	c.mu.Unlock()
+	if !ok {
+		return session.NewRefusal(CodeForwardUnknown, map[string]any{"listen": listen})
+	}
+	held.forward.Stop()
+	return nil
+}
+
+// stopForwardsOf closes every forward a control connection started.
+func (c *HubControl) stopForwardsOf(line *LineConnection) {
+	c.mu.Lock()
+	var ended []*relay.Forward
+	for key, held := range c.forwards {
+		if held.line == line {
+			ended = append(ended, held.forward)
+			delete(c.forwards, key)
+		}
+	}
+	c.mu.Unlock()
+	for _, forward := range ended {
+		forward.Stop()
+	}
 }
 
 // Ask sends a question on the control connection and waits for its answer

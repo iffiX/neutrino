@@ -266,3 +266,53 @@ func TestLineLimits(t *testing.T) {
 		t.Fatalf("long line: %v", err)
 	}
 }
+
+func TestForwardStartAndStop(t *testing.T) {
+	hub := newHubUnderTest(t)
+	control := hub.connectControl(t)
+	control.write(t, map[string]any{"id": "f1", "command": "forward_start", "binding_id": "dev", "listen": "127.0.0.1:0", "protocol": "tcp", "open": map[string]any{"kind": "connect", "port": 11434, "protocol": "tcp"}})
+	answer := control.read(t)
+	listen, _ := answer["listen"].(string)
+	if answer["id"] != "f1" || answer["code"] != nil || listen == "" {
+		t.Fatalf("forward_start answer %v", answer)
+	}
+	conn, err := net.DialTimeout("tcp", listen, time.Second)
+	if err != nil {
+		t.Fatalf("the forward does not listen: %v", err)
+	}
+	conn.Close()
+
+	control.write(t, map[string]any{"id": "f2", "command": "forward_start", "binding_id": "dev", "listen": "127.0.0.1:0", "protocol": "udp", "open": map[string]any{"kind": "connect", "port": 1}})
+	if answer := control.read(t); answer["code"] != CodeBodyInvalid {
+		t.Fatalf("a udp forward on the hub: %v", answer)
+	}
+	control.write(t, map[string]any{"id": "f3", "command": "forward_stop", "listen": listen, "protocol": "tcp"})
+	if answer := control.read(t); answer["id"] != "f3" || answer["code"] != nil {
+		t.Fatalf("forward_stop answer %v", answer)
+	}
+	control.write(t, map[string]any{"id": "f4", "command": "forward_stop", "listen": listen, "protocol": "tcp"})
+	if answer := control.read(t); answer["code"] != CodeForwardUnknown {
+		t.Fatalf("a second forward_stop: %v", answer)
+	}
+	if _, err := net.DialTimeout("tcp", listen, time.Second); err == nil {
+		t.Fatal("the stopped forward still listens")
+	}
+
+	control.write(t, map[string]any{"id": "f5", "command": "forward_start", "binding_id": "dev", "listen": "127.0.0.1:0", "open": map[string]any{"kind": "connect", "port": 11434}})
+	answer = control.read(t)
+	listen, _ = answer["listen"].(string)
+	if listen == "" {
+		t.Fatalf("forward_start answer %v", answer)
+	}
+	control.conn.Close()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		conn, err := net.DialTimeout("tcp", listen, time.Second)
+		if err != nil {
+			return
+		}
+		conn.Close()
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("the forward outlived the control connection that started it")
+}

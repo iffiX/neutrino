@@ -511,3 +511,65 @@ func TestACloseBeforeTheAcceptKeepsTheAcceptOut(t *testing.T) {
 		t.Fatalf("reset %v closed %v, want a close", peer.isReset, peer.isClosed)
 	}
 }
+
+func TestAForwardOnTheHubOpensOnTheBindingsSession(t *testing.T) {
+	hub := newTestHub(t)
+	address := hub.listen(t)
+	open := json.RawMessage(`{"kind":"connect","port":11434,"protocol":"tcp"}`)
+	opener := hub.hub.BindingOpener("dev")
+	select {
+	case <-opener.Ready():
+		t.Fatal("ready before the binding has a session")
+	default:
+	}
+	if _, _, err := opener.OpenStream(context.Background(), open); !errors.Is(err, ErrNoSession) {
+		t.Fatalf("open with no session: %v", err)
+	}
+	forward, refusal, err := StartForward(context.Background(), "127.0.0.1:0", session.ProtocolTCP, open, opener, nil)
+	if err != nil || refusal != nil {
+		t.Fatalf("forward %v %v", refusal, err)
+	}
+	t.Cleanup(forward.Stop)
+
+	agent := newPeer(t, hub, "dev", "agent")
+	agentConn, _ := agent.admit(t, hub, address, "dev")
+	serveAgentStreams(t, agentConn, 11434)
+	select {
+	case <-opener.Ready():
+	case <-time.After(5 * time.Second):
+		t.Fatal("not ready after the binding's welcome")
+	}
+	conn, err := net.DialTimeout("tcp", forward.Listen, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	_, _ = conn.Write([]byte("GET /api/version"))
+	got := make([]byte, len("GET /api/version"))
+	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	if _, err := io.ReadFull(conn, got); err != nil || string(got) != "GET /api/version" {
+		t.Fatalf("echo %q %v", got, err)
+	}
+
+	_, refusal, err = hub.hub.OpenBindingStream(context.Background(), "dev", json.RawMessage(`{"kind":"connect","port":9,"protocol":"tcp"}`))
+	if err != nil || refusal == nil || refusal.Code != "port_not_published" {
+		t.Fatalf("an unpublished port: %v %v", refusal, err)
+	}
+
+	agentConn.session.Close()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		select {
+		case <-opener.Ready():
+			time.Sleep(20 * time.Millisecond)
+			continue
+		default:
+		}
+		break
+	}
+	select {
+	case <-opener.Ready():
+		t.Fatal("still ready after the session ended")
+	default:
+	}
+}
