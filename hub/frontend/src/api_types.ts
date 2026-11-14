@@ -1919,6 +1919,58 @@ export interface HermesWebuiDeviceView extends ModuleDeviceState {
   details: Record<string, unknown>;
 }
 
+/** One model a machine's Ollama holds, from `/api/tags` and `/api/ps`. */
+export interface OllamaModel {
+  name: string;
+  parameter_size: string;
+  quantization: string;
+  size_bytes: number;
+  /** When the model last changed, as Ollama names it. */
+  modified_at: string;
+  /** Whether the model is in memory now, and how much of it is, all of it
+   * and the part on a GPU. */
+  is_loaded: boolean;
+  memory_bytes: number;
+  vram_bytes: number;
+}
+
+/** One pull in a machine's queue. */
+export interface OllamaPull {
+  name: string;
+  /** `running`, `queued` or `failed`. */
+  state: string;
+  completed_bytes: number;
+  total_bytes: number;
+  /** The bytes per second of the last few seconds. */
+  speed_bytes: number;
+  code: string;
+  params: Record<string, unknown>;
+}
+
+/** One machine's Ollama: where the module stands, its models and its pulls. */
+export interface OllamaDeviceView extends ModuleDeviceState {
+  device_id: string;
+  host: string;
+  /** The version the machine reports; empty before it reports one. */
+  version: string;
+  /** What the machine last reported: `{is_running, port, version, found,
+   * has_package_mark}`. */
+  details: Record<string, unknown>;
+  /** Whether the server answers, as the machine reports it. */
+  is_running: boolean;
+  /** The models, read through the hub's forward while the server answers. */
+  models: OllamaModel[];
+  total_bytes: number;
+  /** The machine's pulls, the running one first. */
+  pulls: OllamaPull[];
+}
+
+/** One model named on one machine. */
+export interface OllamaModelRequest {
+  device_id: string;
+  name: string;
+}
+
 /** One machine's Ayakaleaf: the forwarder's port, the AI model and where the
  * module stands. */
 export interface AyakaleafDeviceView extends ModuleDeviceState {

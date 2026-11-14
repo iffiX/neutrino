@@ -192,7 +192,7 @@ def test_a_program_has_no_start_and_no_stop():
     body = page()
     actions = body[body.index('<div className="modules_actions">') :]
     actions = actions[: actions.index("{actionError !== null")]
-    held = actions[actions.index("{!isProgram && ( <>") :]
+    held = actions[actions.index("{!isProgram && !isFoundApp && ( <>") :]
     held = held[: held.index("</> )}")]
 
     assert actions.count('<ActionButton action="start"') == 1

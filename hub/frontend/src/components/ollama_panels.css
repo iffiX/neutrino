@@ -1,0 +1,105 @@
+.ollama_models_title {
+  justify-content: space-between;
+}
+
+.ollama_models_summary {
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.ollama_pull_form {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.ollama_pull_form .input {
+  flex: 1;
+  min-width: 0;
+}
+
+.ollama_list {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+}
+
+/* Name, parameters, quantization, size, modified and the presses; a pull's
+   progress takes the four middle columns. */
+.ollama_row {
+  display: grid;
+  grid-template-columns:
+    minmax(0, 2.2fr) minmax(0, 0.8fr) minmax(0, 0.9fr)
+    minmax(0, 0.8fr) minmax(0, 1.4fr) auto;
+  gap: var(--space-2) var(--space-3);
+  align-items: center;
+  min-height: 48px;
+  padding: var(--space-2) var(--space-3);
+  font-size: 13px;
+}
+
+.ollama_row + .ollama_row {
+  border-top: 1px solid var(--color-border);
+}
+
+.ollama_row--head {
+  min-height: 32px;
+  font-size: 12px;
+}
+
+.ollama_row_name {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.ollama_row_loaded {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.ollama_row_fact {
+  min-width: 0;
+  color: var(--color-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.ollama_row_progress,
+.ollama_row_failure {
+  display: flex;
+  grid-column: 2 / 6;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+  min-width: 0;
+}
+
+.ollama_row_actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+@media (max-width: 880px) {
+  .ollama_row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .ollama_row--head {
+    display: none;
+  }
+
+  .ollama_row_fact {
+    grid-column: 1;
+  }
+
+  .ollama_row_progress,
+  .ollama_row_failure {
+    grid-column: 1;
+  }
+}

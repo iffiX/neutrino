@@ -17,6 +17,7 @@ import { ModuleIcon } from "./module_icon";
 import { ModuleLog } from "./module_log";
 import { ModuleTaskSteps, REBOOT_REQUIRED_CODE } from "./module_task_steps";
 import { ModuleVersionBlock } from "./module_version_block";
+import { OllamaPanels } from "./ollama_panels";
 import { RemoteDesktopPanels } from "./remote_desktop_panels";
 import { SambaStatusPanel } from "./samba_status_panel";
 import { Spinner } from "./spinner";
@@ -150,6 +151,13 @@ const MODULE_PANELS: Record<string, (target: PanelTarget) => ReactNode> = {
       isWaitingForStart={target.want !== WANT_RUNNING}
     />
   ),
+  ollama: (target) => (
+    <OllamaPanels
+      deviceId={target.deviceId}
+      basePath={target.basePath}
+      isEditable={target.isEditable}
+    />
+  ),
   podman: (target) => (
     <ContainersPanels
       deviceId={target.deviceId}
@@ -218,6 +226,14 @@ const HERMES_MODULE = "hermes_webui";
 
 /** The module whose tab says the owner installs it and its two databases. */
 const AYAKALEAF_MODULE = "ayakaleaf";
+
+/** The module whose tab says the owner installs it, or names the person's
+ * own app it serves through with no presses but Configure. */
+const OLLAMA_MODULE = "ollama";
+
+/** What `details.found` says of a person's own Ollama app on Windows and
+ * macOS. */
+const OLLAMA_FOUND_APP = "app";
 
 /** The method of a module whose containers run on Containers. */
 const CONTAINER_METHOD = "container";
@@ -649,6 +665,10 @@ export function MachineModules({
     activeModule === null ? undefined : MODULE_PANELS[activeModule];
   const isCarriedRow = activeRow?.is_carried === true;
   const isProgram = activeRow?.kind === KIND_PROGRAM;
+  // A person's own Ollama app, which takes no press but Configure.
+  const isFoundApp =
+    activeRow?.name === OLLAMA_MODULE &&
+    activeRow.details.found === OLLAMA_FOUND_APP;
   const programNotice =
     activeRow === undefined ? undefined : PROGRAM_NOTICES[activeRow.name];
   const isConfiguring =
@@ -755,6 +775,11 @@ export function MachineModules({
           )}
           {activeRow.name === AYAKALEAF_MODULE && (
             <p className="field_hint">{t("ui.ayakaleaf.owner_notice")}</p>
+          )}
+          {activeRow.name === OLLAMA_MODULE && (
+            <p className="field_hint">
+              {t(isFoundApp ? "ui.ollama.found_app" : "ui.ollama.owner_notice")}
+            </p>
           )}
           {programNotice !== undefined && (
             <p className="field_hint">{t(programNotice)}</p>
@@ -914,7 +939,7 @@ export function MachineModules({
               )}
               {!isCarriedRow && (
                 <div className="modules_actions">
-                  {isCancelShown ? (
+                  {isFoundApp ? null : isCancelShown ? (
                     <CancelButton
                       isCancelling={isRowCancelling}
                       isEnabled={isAgentOnline && !isBusy && !isRowCancelling}
@@ -940,7 +965,7 @@ export function MachineModules({
                       onClick={() => void askInstall()}
                     />
                   )}
-                  {!isProgram && (
+                  {!isProgram && !isFoundApp && (
                     <>
                       <ActionButton
                         action="start"
@@ -970,20 +995,22 @@ export function MachineModules({
                       />
                     </>
                   )}
-                  <ActionButton
-                    action="uninstall"
-                    isEnabled={
-                      canAct &&
-                      (isPresent || FAILED_STATES.includes(activeRow.state))
-                    }
-                    disabledReason={
-                      activeRow.state === "absent"
-                        ? t("ui.modules.uninstall_absent")
-                        : undefined
-                    }
-                    isBusy={busyAction === "uninstall"}
-                    onClick={askUninstall}
-                  />
+                  {!isFoundApp && (
+                    <ActionButton
+                      action="uninstall"
+                      isEnabled={
+                        canAct &&
+                        (isPresent || FAILED_STATES.includes(activeRow.state))
+                      }
+                      disabledReason={
+                        activeRow.state === "absent"
+                          ? t("ui.modules.uninstall_absent")
+                          : undefined
+                      }
+                      isBusy={busyAction === "uninstall"}
+                      onClick={askUninstall}
+                    />
+                  )}
                   {panels !== undefined && (
                     <button
                       type="button"

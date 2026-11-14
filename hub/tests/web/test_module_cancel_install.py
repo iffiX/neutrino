@@ -199,7 +199,7 @@ def test_each_plan_shows_cancel_by_its_row(state, plan, instances, is_shown):
 
 def test_cancel_stands_in_install_s_place_in_the_danger_tier():
     assert (
-        "{isCancelShown ? ( <CancelButton isCancelling={isRowCancelling} "
+        "{isFoundApp ? null : isCancelShown ? ( <CancelButton isCancelling={isRowCancelling} "
         "isEnabled={isAgentOnline && !isBusy && !isRowCancelling} "
         "isBusy={busyAction === CANCEL_BUSY} onClick={askCancel} /> ) : ( "
         '<ActionButton action="install"'
