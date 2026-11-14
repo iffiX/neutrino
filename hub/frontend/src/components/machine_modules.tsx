@@ -71,7 +71,8 @@ import "./machine_modules.css";
  * the presses at the right edge. The modules the agent carries show their
  * state line and their panel alone. A command line program has no Start or
  * Stop, and its version line shows while its own copy is on the machine.
- * The picked tab is kept in the address as `?module=`.
+ * The picked tab is kept in the address as `?module=`, and
+ * `&configure=1` opens its panel at the page's start.
  */
 
 /** The machine a module's own panels are pointed at. */
@@ -345,6 +346,9 @@ const ACTION_KEYS: Record<ModuleAction, string> = {
 /** The query the picked tab is kept in. */
 const MODULE_QUERY = "module";
 
+/** The query that opens the picked tab's panel at the page's start, `1`. */
+const CONFIGURE_QUERY = "configure";
+
 /** How tall the panel is while the first list is still on its way. */
 const SKELETON_HEIGHT_PX = 120;
 
@@ -372,8 +376,14 @@ export function MachineModules({
   // at the press, and when the press was made.
   const [presses, setPresses] = useState<Record<string, Press>>({});
   const [actionError, setActionError] = useState<string | null>(null);
-  // The modules whose configuration is open.
-  const [configured, setConfigured] = useState<string[]>([]);
+  // The modules whose configuration is open: the asked tab's when the
+  // address names `configure=1`.
+  const [configured, setConfigured] = useState<string[]>(() => {
+    const opened = searchParams.get(MODULE_QUERY);
+    return opened !== null && searchParams.get(CONFIGURE_QUERY) === "1"
+      ? [opened]
+      : [];
+  });
   const [isCatalogOpen, setIsCatalogOpen] = useState(false);
   const [isAccountAsked, setIsAccountAsked] = useState(false);
   // The modules this page saw cancelling, by name, until the uninstall ends.
@@ -416,6 +426,7 @@ export function MachineModules({
       (current) => {
         const next = new URLSearchParams(current);
         next.set(MODULE_QUERY, name);
+        next.delete(CONFIGURE_QUERY);
         return next;
       },
       { replace: true },

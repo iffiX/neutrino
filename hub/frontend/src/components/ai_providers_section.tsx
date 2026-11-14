@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
+import { Link } from "react-router-dom";
 
 import { ApplyBar } from "./apply_bar";
 import { ErrorPanel } from "./error_panel";
@@ -12,7 +13,10 @@ import { t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
 import { useConfirm } from "../use_confirm";
 import { useDraft } from "../use_draft";
+import { HUB_EVENT_AI_USAGE } from "../use_hub_events";
 import type {
+  AiOllamaProviderView,
+  AiOllamaProvidersResponse,
   AiProviderKind,
   AiProviderModel,
   AiProviderView,
@@ -30,10 +34,16 @@ import "./ai_providers_section.css";
  * bar commits, because a drag is a rearrangement of the whole list and
  * committing each step of it would restart the gateway. The records
  * themselves — adding, editing and deleting a provider — write where they are
- * entered, the way every other record list in the panel does.
+ * entered, the way every other record list in the panel does. After them
+ * come the read-only rows of the providers the hub generates from each
+ * machine's Ollama.
  */
 
 const AI_PATH = "/hub/ai";
+const AI_OLLAMA_PATH = "/hub/ai/ollama";
+// What moves the Ollama rows: the hub saying the gateway's providers or its
+// served list changed.
+const OLLAMA_INVALIDATE_ON = [{ type: HUB_EVENT_AI_USAGE }];
 const AI_GATEWAY_APPLY_PATH = "/hub/ai/gateway/apply";
 
 const PROVIDER_KINDS: AiProviderKind[] = [
@@ -100,6 +110,10 @@ export function AiProvidersSection({
   // Redrawn when the panel's language changes.
   useLanguage();
   const resource = useApiResource<AiProvidersResponse>(AI_PATH);
+  const ollama = useApiResource<AiOllamaProvidersResponse>(AI_OLLAMA_PATH, {
+    invalidateOn: OLLAMA_INVALIDATE_ON,
+  });
+  const ollamaProviders = ollama.data?.providers ?? [];
   const providersDraft = useDraft(resource.data, providersOf);
   const saved = resource.data?.providers ?? [];
   const draft = providersDraft.draft ?? [];
@@ -304,7 +318,7 @@ export function AiProvidersSection({
         />
       )}
 
-      {draft.length === 0 && !isAdding ? (
+      {draft.length === 0 && ollamaProviders.length === 0 && !isAdding ? (
         <div className="keys_empty">
           <Icon name="nodes" size={22} />
           <span className="keys_empty_title">{t("ui.ai.providers_empty")}</span>
@@ -350,6 +364,9 @@ export function AiProvidersSection({
               />
             ),
           )}
+          {ollamaProviders.map((provider) => (
+            <OllamaProviderRow key={provider.device_id} value={provider} />
+          ))}
         </div>
       )}
 
@@ -643,6 +660,43 @@ function ProviderRow({
 
       {error !== null && <span className="field_error">{error}</span>}
       {confirm.modal}
+    </div>
+  );
+}
+
+/** The machine page on its Ollama tab, with its Models panel open. */
+function ollamaModelsPath(deviceId: string): string {
+  return `/agents/${encodeURIComponent(deviceId)}?module=ollama&configure=1`;
+}
+
+interface OllamaProviderRowProps {
+  value: AiOllamaProviderView;
+}
+
+/** A provider the hub generates from one machine's Ollama: its machine, its
+ * models, and a link to the machine's Models panel. */
+function OllamaProviderRow({ value }: OllamaProviderRowProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
+  const models = value.models.join(", ");
+  return (
+    <div className="ai_provider_row">
+      <div className="ai_provider_line">
+        <span className="ai_provider_name">
+          {t("ui.ai.ollama_provider", { machine: value.name })}
+        </span>
+        <span className="ai_provider_models mono" title={models}>
+          {models}
+        </span>
+        <div className="ai_provider_actions">
+          <Link
+            to={ollamaModelsPath(value.device_id)}
+            className="button button--ghost button--small"
+          >
+            {t("ui.ai.ollama_models")}
+          </Link>
+        </div>
+      </div>
     </div>
   );
 }

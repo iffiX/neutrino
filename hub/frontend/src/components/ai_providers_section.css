@@ -77,7 +77,8 @@
   text-overflow: ellipsis;
 }
 
-.ai_provider_url {
+.ai_provider_url,
+.ai_provider_models {
   flex: 1 1 10ch;
   min-width: 0;
   overflow: hidden;
@@ -106,10 +107,11 @@
   white-space: nowrap;
 }
 
-/* Portrait: the endpoint drops to its own line and the actions stay on the
-   first one. */
+/* Portrait: the endpoint or the models drop to their own line and the
+   actions stay on the first one. */
 @media (max-width: 640px) {
-  .ai_provider_url {
+  .ai_provider_url,
+  .ai_provider_models {
     order: 1;
     flex-basis: 100%;
   }

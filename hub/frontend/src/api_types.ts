@@ -751,6 +751,21 @@ export interface AiProvidersResponse {
   providers: AiProviderView[];
 }
 
+/** A provider the hub generates from one machine's Ollama, read-only. */
+export interface AiOllamaProviderView {
+  device_id: string;
+  /** The machine's name. */
+  name: string;
+  /** The names the machine's Ollama lists. */
+  models: string[];
+}
+
+/** The providers generated from each machine's Ollama, by the machine's
+ * name. */
+export interface AiOllamaProvidersResponse {
+  providers: AiOllamaProviderView[];
+}
+
 /** The serving order write: every provider id, in the order tried. */
 export interface AiProviderOrderUpdate {
   provider_ids: string[];

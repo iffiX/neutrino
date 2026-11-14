@@ -113,6 +113,8 @@
   "ui.ai.not_installed": "AI 网关未安装",
   "ui.ai.not_installed_hint": "运行 nhub apply 可以装回。",
   "ui.ai.not_serving_label": "未服务",
+  "ui.ai.ollama_models": "模型",
+  "ui.ai.ollama_provider": "来自 {machine} 的 Ollama",
   "ui.ai.paste_label": "地址栏或验证码",
   "ui.ai.paste_placeholder": "把地址栏或验证码粘到这里",
   "ui.ai.port": "端口",

@@ -113,6 +113,8 @@
   "ui.ai.not_installed": "The AI gateway is not installed",
   "ui.ai.not_installed_hint": "Run nhub apply to put it back.",
   "ui.ai.not_serving_label": "Not serving",
+  "ui.ai.ollama_models": "Models",
+  "ui.ai.ollama_provider": "from {machine}'s Ollama",
   "ui.ai.paste_label": "Address bar or code",
   "ui.ai.paste_placeholder": "paste the address bar or the code here",
   "ui.ai.port": "Port",
