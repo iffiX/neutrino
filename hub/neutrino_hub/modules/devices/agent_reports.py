@@ -31,6 +31,8 @@ from neutrino_hub.modules.channel.constants import (
 from neutrino_hub.modules.devices.constants import (
     DEVICE_GITEA_MODULE,
     DEVICE_HUB_ADDRESS,
+    DEVICE_OLLAMA_MODULE,
+    DEVICE_OLLAMA_PORT,
 )
 from neutrino_hub.modules.devices.module_import import (
     MODULE_IMPORTS,
@@ -116,6 +118,7 @@ def record_report(
         report.get("desktop") or {},
         runtime.device_address.get(key, ""),
     )
+    _follow_ollama(runtime, key, modules.get(DEVICE_OLLAMA_MODULE))
     error = report.get("error")
     if isinstance(error, dict) and error.get("code"):
         runtime.device_last_error[key] = {
@@ -314,6 +317,22 @@ def _adopt_modules(runtime, key: str, modules: dict) -> bool:
         LOGGER.info("device %s: %s reported %s, adopted as %s", key, name, state, want)
         is_changed = True
     return is_changed
+
+
+def _follow_ollama(runtime, key: str, status) -> None:
+    """Keep the hub's forward to the machine's Ollama while it answers, and stop it once it does not."""
+    details = status.get("details") if isinstance(status, dict) else None
+    is_running = isinstance(details, dict) and details.get("is_running") is True
+    forwards = runtime.hub_forwards
+    if is_running == forwards.is_held(key, DEVICE_OLLAMA_PORT):
+        return
+    try:
+        if is_running:
+            forwards.address(key, DEVICE_OLLAMA_PORT)
+        else:
+            forwards.stop(key, DEVICE_OLLAMA_PORT)
+    except (AgentOfflineError, StreamRefusedError) as error:
+        LOGGER.warning("device %s: no forward to its Ollama: %s", key, error)
 
 
 def _import(store, key: str, name: str, status: dict) -> bool:

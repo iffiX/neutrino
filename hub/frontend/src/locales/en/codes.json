@@ -393,5 +393,12 @@
   "code.waiting_for_check": "Checking every {seconds} seconds.",
   "code.waiting_for_lock": "Waiting for {lock}, held by {module}.",
   "code.waiting_for_module": "Waiting for {module} to be ready.",
-  "code.waiting_for_package_manager": "Waiting for the system's package manager, held by {holder}."
+  "code.waiting_for_package_manager": "Waiting for the system's package manager, held by {holder}.",
+  "code.ollama_found": "The Ollama app is already installed on this machine at {path}.",
+  "code.ollama_unreachable": "Ollama on this machine did not answer: {detail}",
+  "code.ollama_not_running": "Ollama is not running on this machine.",
+  "code.ollama_model_name_invalid": "{name} is not a model name.",
+  "code.ollama_model_unknown": "This machine has no model named {name}.",
+  "code.ollama_pull_unknown": "No pull of {name} is waiting or running.",
+  "code.ollama_pull_failed": "Ollama could not pull {name}: {detail}"
 }

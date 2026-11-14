@@ -1,0 +1,107 @@
+{
+  "_comment": "Ollama: the release archive its publisher builds, one tested version for every system, the newest stable release on the day. On Linux the archive is a .tar.zst, which the module unpacks through the system's zstd that packages names; on Windows the zip the publisher names for running as a service; on macOS the one tarball for both architectures, from macOS 14, Ollama's own floor. Every digest is the one GitHub's API gives the release asset, and the GitHub release is the one source. The Linux verify also passes on a person's unit, which the module adopts.",
+  "name": "ollama",
+  "title": "Ollama",
+  "description": "A server that runs language models on the machine",
+  "publisher": "ollama/ollama",
+  "uninstall_data": {
+    "is_deleted": false,
+    "text": {
+      "en": "The pulled models stay in its data directory.",
+      "zh-CN": "拉取的模型都留在它的数据目录里。"
+    }
+  },
+  "platforms": {
+    "linux-amd64": {
+      "runner": "ollama",
+      "install": {
+        "method": "hub",
+        "params": {
+          "version": "0.40.16",
+          "releases": [{"kind": "github", "sources": ["https://api.github.com"], "repository": "ollama/ollama", "tag": "v{version}"}],
+          "artifacts": [
+            {
+              "name": "ollama",
+              "kind": "tar_zst",
+              "directory": "ollama",
+              "file": "ollama-linux-amd64.tar.zst",
+              "digest": "sha256:87bfafb2acbc89b2e6a1be0a9043de6aa75fb450696f86bc426e65fc448f788d", "_digest_scan": "scan: allow",
+              "sources": ["https://github.com/ollama/ollama/releases/download/v{version}/{file}"], "_sources_scan": "scan: allow"
+            }
+          ],
+          "packages": ["zstd"],
+          "verify": "\"/var/lib/neutrino/agent/ollama/ollama/bin/ollama\" --version || test -f /etc/systemd/system/ollama.service -o -f /usr/lib/systemd/system/ollama.service -o -f /lib/systemd/system/ollama.service",
+          "uninstall": {"post_uninstall": [], "is_data_kept": true}
+        }
+      }
+    },
+    "linux-arm64": {
+      "runner": "ollama",
+      "install": {
+        "method": "hub",
+        "params": {
+          "version": "0.40.16",
+          "releases": [{"kind": "github", "sources": ["https://api.github.com"], "repository": "ollama/ollama", "tag": "v{version}"}],
+          "artifacts": [
+            {
+              "name": "ollama",
+              "kind": "tar_zst",
+              "directory": "ollama",
+              "file": "ollama-linux-arm64.tar.zst",
+              "digest": "sha256:e45b8e6dcb86cb9f3057396351655079c9a4879b4ced2678c9350d375dcbc224", "_digest_scan": "scan: allow",
+              "sources": ["https://github.com/ollama/ollama/releases/download/v{version}/{file}"], "_sources_scan": "scan: allow"
+            }
+          ],
+          "packages": ["zstd"],
+          "verify": "\"/var/lib/neutrino/agent/ollama/ollama/bin/ollama\" --version || test -f /etc/systemd/system/ollama.service -o -f /usr/lib/systemd/system/ollama.service -o -f /lib/systemd/system/ollama.service",
+          "uninstall": {"post_uninstall": [], "is_data_kept": true}
+        }
+      }
+    },
+    "windows-amd64": {
+      "runner": "ollama",
+      "install": {
+        "method": "hub",
+        "params": {
+          "version": "0.40.16",
+          "releases": [{"kind": "github", "sources": ["https://api.github.com"], "repository": "ollama/ollama", "tag": "v{version}"}],
+          "artifacts": [
+            {
+              "name": "ollama",
+              "kind": "zip",
+              "directory": "ollama",
+              "file": "ollama-windows-amd64.zip",
+              "digest": "sha256:50fcf5ad54277f2fa5d173ebfc93bcb017adbc0c9ef2314daabc96ca9e6aa64e", "_digest_scan": "scan: allow",
+              "sources": ["https://github.com/ollama/ollama/releases/download/v{version}/{file}"], "_sources_scan": "scan: allow"
+            }
+          ],
+          "verify": "\"%ProgramData%\\Neutrino\\agent\\state\\ollama\\ollama\\ollama.exe\" --version",
+          "uninstall": {"post_uninstall": [], "is_data_kept": true}
+        }
+      }
+    },
+    "darwin": {
+      "runner": "ollama",
+      "min_version": "14",
+      "install": {
+        "method": "hub",
+        "params": {
+          "version": "0.40.16",
+          "releases": [{"kind": "github", "sources": ["https://api.github.com"], "repository": "ollama/ollama", "tag": "v{version}"}],
+          "artifacts": [
+            {
+              "name": "ollama",
+              "kind": "tar_gz",
+              "directory": "ollama",
+              "file": "ollama-darwin.tgz",
+              "digest": "sha256:a743717494315da7cd352982b805f6b992d4b4452ca117fd5fbf86c4ee46fca0", "_digest_scan": "scan: allow",
+              "sources": ["https://github.com/ollama/ollama/releases/download/v{version}/{file}"], "_sources_scan": "scan: allow"
+            }
+          ],
+          "verify": "\"/Library/Application Support/Neutrino/agent/state/ollama/ollama/ollama\" --version",
+          "uninstall": {"post_uninstall": [], "is_data_kept": true}
+        }
+      }
+    }
+  }
+}

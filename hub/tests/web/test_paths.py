@@ -206,6 +206,7 @@ MODULE_NAMES = (
     "ssh_server",
     "remote_desktop",
     "gitea",
+    "ollama",
     "podman",
     "vscode",
     "code_server",

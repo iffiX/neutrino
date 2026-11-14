@@ -21,12 +21,14 @@ from neutrino_hub.modules.cliproxyapi.ops import (
 )
 from neutrino_hub.modules.channel.constants import (
     CHANNEL_MODULE_CONFIGURED_WANTS,
+    CHANNEL_MODULE_PRESENT_STATES,
     CHANNEL_MODULE_STATE_RUNNING,
 )
 from neutrino_hub.modules.devices.constants import (
     DEVICE_AYAKALEAF_MODULE,
     DEVICE_HERMES_WEBUI_MODULE,
     DEVICE_MODULE_NAMES,
+    DEVICE_OLLAMA_MODULE,
     DEVICE_SAMBA_MODULE,
     DEVICE_SSH_SERVER_MODULE,
 )
@@ -406,6 +408,8 @@ class PublishedServiceCache:
             return None
         if name == "podman":
             return self._hosted_containers(key, status)
+        if name == DEVICE_OLLAMA_MODULE:
+            return _hosted_ollama(status)
         if status.get("state") not in CHANNEL_MODULE_CONFIGURED_WANTS:
             return None
         if name == DEVICE_SSH_SERVER_MODULE:
@@ -600,6 +604,17 @@ def _platform_of(report) -> dict:
     machine = report.get("machine") if isinstance(report, dict) else None
     platform = machine.get("platform") if isinstance(machine, dict) else None
     return dict(platform) if isinstance(platform, dict) else {}
+
+
+def _hosted_ollama(status: dict) -> "dict | None":
+    """Ollama's port while its row reads present, a person's copy among them, None otherwise."""
+    if status.get("state") not in CHANNEL_MODULE_PRESENT_STATES:
+        return None
+    details = status.get("details") if isinstance(status.get("details"), dict) else {}
+    port = _port_of(details.get("port"))
+    if not port:
+        return None
+    return {"port": port, "is_healthy": bool(details.get("is_running"))}
 
 
 def _port_of(value) -> int:

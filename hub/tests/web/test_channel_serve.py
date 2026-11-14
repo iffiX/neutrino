@@ -20,7 +20,7 @@ from neutrino_hub.modules.services.device_shares import DeviceShareRegistry
 from neutrino_hub.web import channel_serve
 from neutrino_hub.web.channel_serve import join_client, serve_package_stream
 from neutrino_hub.web.models import ChannelJoin
-from tests.conftest import StubDesiredStates, StubPublishedServices
+from tests.conftest import StubDesiredStates, StubHubForwards, StubPublishedServices
 
 PUBLIC_KEY = "ab" * 32
 
@@ -293,6 +293,7 @@ class AgentRuntime:
     def __init__(self):
         self.events = Events()
         self.published_services = StubPublishedServices()
+        self.hub_forwards = StubHubForwards()
         self.desired_states = StubDesiredStates()
         self.device_shares = DeviceShareRegistry()
         self.device_metrics: dict = {}

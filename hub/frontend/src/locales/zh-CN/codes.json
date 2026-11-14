@@ -393,5 +393,12 @@
   "code.waiting_for_check": "每 {seconds} 秒检查一次。",
   "code.waiting_for_lock": "在等“{module}”用完{lock}。",
   "code.waiting_for_module": "在等“{module}”准备好。",
-  "code.waiting_for_package_manager": "在等系统的包管理器空出来（占用者：{holder}）。"
+  "code.waiting_for_package_manager": "在等系统的包管理器空出来（占用者：{holder}）。",
+  "code.ollama_found": "这个系统上已经装有 Ollama 应用：{path}。",
+  "code.ollama_unreachable": "这个系统上的 Ollama 没有响应：{detail}",
+  "code.ollama_not_running": "这个系统上的 Ollama 没有运行。",
+  "code.ollama_model_name_invalid": "{name} 不是模型名称。",
+  "code.ollama_model_unknown": "这个系统上没有叫 {name} 的模型。",
+  "code.ollama_pull_unknown": "没有在等待或进行中的 {name} 拉取。",
+  "code.ollama_pull_failed": "Ollama 没能拉取 {name}：{detail}"
 }

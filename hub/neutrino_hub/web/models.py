@@ -3320,6 +3320,60 @@ class HermesWebuiDeviceView(ModuleDeviceFields):
     details: dict = Field(default_factory=dict)
 
 
+class OllamaModelView(BaseModel):
+    """One model a machine's Ollama holds, from ``/api/tags`` and ``/api/ps``."""
+
+    name: str
+    parameter_size: str = ""
+    quantization: str = ""
+    size_bytes: int = 0
+    # When the model last changed, as Ollama names it.
+    modified_at: str = ""
+    # Whether the model is in memory now, and how much of it is, all of it
+    # and the part on a GPU.
+    is_loaded: bool = False
+    memory_bytes: int = 0
+    vram_bytes: int = 0
+
+
+class OllamaPullView(BaseModel):
+    """One pull in a machine's queue."""
+
+    name: str
+    # ``running``, ``queued`` or ``failed``.
+    state: str
+    completed_bytes: int = 0
+    total_bytes: int = 0
+    # The bytes per second of the last few seconds.
+    speed_bytes: int = 0
+    code: str = ""
+    params: dict = Field(default_factory=dict)
+
+
+class OllamaDeviceView(ModuleDeviceFields):
+    """One device's Ollama: where the module stands, its models and its pulls."""
+
+    # The version the machine reports; empty before it reports one.
+    version: str = ""
+    # What the machine last reported: ``{is_running, port, version, found,
+    # has_package_mark}``.
+    details: dict = Field(default_factory=dict)
+    # Whether the server answers, as the machine reports it.
+    is_running: bool = False
+    # The models, read through the hub's forward while the server answers.
+    models: list[OllamaModelView] = Field(default_factory=list)
+    total_bytes: int = 0
+    # The machine's pulls, the running one first.
+    pulls: list[OllamaPullView] = Field(default_factory=list)
+
+
+class OllamaModelRequest(BaseModel):
+    """One model named on one device."""
+
+    device_id: str
+    name: str
+
+
 class AyakaleafDeviceView(ModuleDeviceFields):
     """One device's Ayakaleaf: the forwarder's port, the AI model and where the module stands."""
 

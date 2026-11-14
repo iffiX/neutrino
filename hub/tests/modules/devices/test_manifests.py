@@ -426,6 +426,7 @@ def test_the_manifests_come_back_in_the_order_every_list_of_modules_shows():
         "remote_desktop",
         "samba",
         "gitea",
+        "ollama",
         "vscode",
         "code_server",
         "cloudcli",
@@ -490,6 +491,7 @@ def test_every_shipped_manifest_names_its_publisher():
         "podman": "podman-container-tools/podman",
         "samba": "Samba Team",
         "gitea": "go-gitea/gitea",
+        "ollama": "ollama/ollama",
         "vscode": "Microsoft",
         "code_server": "coder/code-server",
         "cloudcli": "siteboon/claudecodeui",
@@ -668,6 +670,7 @@ def test_gitea_resolves_by_machine_and_refuses_the_rest():
         ("codeg", "codeg\\server\\codeg-server.exe"),
         ("siyuan", "siyuan\\app\\resources\\kernel\\SiYuan-Kernel.exe"),
         ("gitea", "gitea\\gitea.exe"),
+        ("ollama", "ollama\\ollama\\ollama.exe"),
         ("vscode", "vscode\\code.exe"),
     ],
 )
@@ -690,6 +693,82 @@ def test_no_windows_verify_starts_powershell():
             verify = str(entry_params(entry).get("verify", "")).lower()
             if key.startswith("windows"):
                 assert "powershell" not in verify, (name, key)
+
+
+OLLAMA_BUILDS = {
+    "linux-amd64": (
+        "ollama-linux-amd64.tar.zst",
+        "tar_zst",
+        "sha256:87bfafb2acbc89b2e6a1be0a9043de6aa75fb450696f86bc426e65fc448f788d",  # scan: allow
+    ),
+    "linux-arm64": (
+        "ollama-linux-arm64.tar.zst",
+        "tar_zst",
+        "sha256:e45b8e6dcb86cb9f3057396351655079c9a4879b4ced2678c9350d375dcbc224",  # scan: allow
+    ),
+    "windows-amd64": (
+        "ollama-windows-amd64.zip",
+        "zip",
+        "sha256:50fcf5ad54277f2fa5d173ebfc93bcb017adbc0c9ef2314daabc96ca9e6aa64e",  # scan: allow
+    ),
+    "darwin": (
+        "ollama-darwin.tgz",
+        "tar_gz",
+        "sha256:a743717494315da7cd352982b805f6b992d4b4452ca117fd5fbf86c4ee46fca0",  # scan: allow
+    ),
+}
+
+
+def test_ollama_pins_the_publishers_release_archive_per_platform_from_github():
+    """Linux names zstd for its unpack and a verify that also passes on a
+    person's unit; macOS starts at 14, Ollama's own floor."""
+    manifest = load_module_manifests()["ollama"]
+
+    assert set(manifest["platforms"]) == set(OLLAMA_BUILDS)
+    assert "web_share" not in manifest
+    assert "is_data_forward_only" not in manifest
+    for key, (file, kind, digest) in OLLAMA_BUILDS.items():
+        entry = manifest["platforms"][key]
+        params = entry_params(entry)
+        assert entry["runner"] == "ollama"
+        assert entry["install"]["method"] == "hub"
+        assert params["version"] == "0.40.16"
+        assert params["releases"] == [
+            {
+                "kind": "github",
+                "sources": ["https://api.github.com"],
+                "repository": "ollama/ollama",
+                "tag": "v{version}",
+            }
+        ]
+        [artifact] = params["artifacts"]
+        assert artifact == {
+            "name": "ollama",
+            "kind": kind,
+            "directory": "ollama",
+            "file": file,
+            "digest": digest,
+            "sources": [
+                "https://github.com/ollama/ollama/releases/download/v{version}/{file}"
+            ],
+        }
+        assert params["uninstall"] == {"post_uninstall": [], "is_data_kept": True}
+        assert params.get("packages", []) == (
+            ["zstd"] if key.startswith("linux") else []
+        )
+    assert manifest["platforms"]["darwin"]["min_version"] == "14"
+    assert "min_version" not in manifest["platforms"]["windows-amd64"]
+    for key in ("linux-amd64", "linux-arm64"):
+        assert entry_params(manifest["platforms"][key])["verify"] == (
+            '"/var/lib/neutrino/agent/ollama/ollama/bin/ollama" --version'
+            " || test -f /etc/systemd/system/ollama.service"
+            " -o -f /usr/lib/systemd/system/ollama.service"
+            " -o -f /lib/systemd/system/ollama.service"
+        )
+    assert entry_params(manifest["platforms"]["darwin"])["verify"] == (
+        '"/Library/Application Support/Neutrino/agent/state/ollama/ollama/ollama"'
+        " --version"
+    )
 
 
 def test_vscode_pins_microsofts_cli_per_platform_at_one_build():
@@ -1216,6 +1295,11 @@ def test_siyuan_pins_the_publishers_desktop_build_per_platform_from_two_sources(
 # The line each shipped module's uninstall dialog shows (ui_text.md, "The
 # uninstall dialog's words"), and whether it is in the error tone.
 SHIPPED_UNINSTALL_LINES = {
+    "ollama": (
+        False,
+        "The pulled models stay in its data directory.",
+        "拉取的模型都留在它的数据目录里。",
+    ),
     "samba": (
         False,
         "The shared folders and the files in them stay where they are.",

@@ -39,6 +39,11 @@ CHANNEL_QUESTION_GUEST = "guest"
 CHANNEL_COMMAND_SESSION_CLOSE = "session_close"
 CHANNEL_COMMAND_STREAMS_CLOSE = "streams_close"
 CHANNEL_COMMAND_KEYS_RELOAD = "keys_reload"
+CHANNEL_COMMAND_FORWARD_START = "forward_start"
+CHANNEL_COMMAND_FORWARD_STOP = "forward_stop"
+# Where a forward of the hub's own listens: the hub's loopback, at a port the
+# system picks.
+CHANNEL_FORWARD_LISTEN = "127.0.0.1:0"
 CHANNEL_EVENT_SESSION_OPEN = "session_open"
 CHANNEL_EVENT_SESSION_END = "session_end"
 CHANNEL_EVENT_STREAM = "stream"

@@ -47,6 +47,7 @@ from neutrino_hub.modules.devices.desired_state import (
     DesiredStateStore,
     machine_apps,
 )
+from neutrino_hub.modules.devices.constants import DEVICE_OLLAMA_PORT
 from neutrino_hub.modules.devices.module_releases import (
     ModuleReleaseStore,
     reported_newest_run,
@@ -54,6 +55,7 @@ from neutrino_hub.modules.devices.module_releases import (
 from neutrino_hub.modules.devices.retry_marks import DeviceRetryMarks
 from neutrino_hub.modules.services.apps import app_slugs, machine_slugs
 from neutrino_hub.modules.services.constants import SERVICES_MACHINE_SLUG_FALLBACK
+from neutrino_hub.modules.devices.ollama_models import OllamaPullQueue
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.system.machine import machine_id
 from neutrino_hub.modules.overlay.constants import OVERLAY_ENGINES
@@ -121,6 +123,7 @@ from neutrino_hub.web.web_share_access import (
     PanelWebShareSweeper,
     WebShareGuestSessions,
 )
+from neutrino_hub.modules.channel.hub_forwards import HubForwardTable
 from neutrino_hub.modules.channel.local_channel import LocalChannelClient
 from neutrino_hub.modules.transport.ops import (
     TransportApplier,
@@ -222,6 +225,11 @@ class PanelRuntime:
             secret_of=transport_secret,
             handler=ChannelControlHandler(self),
         )
+        # The forwards of the hub's transport on its loopback, each to a
+        # port a machine publishes, and every machine's Ollama pulls, which
+        # reach Ollama's API through them.
+        self.hub_forwards = HubForwardTable(channel=self.channel)
+        self.ollama_pulls = OllamaPullQueue(address_of=self.ollama_address)
         # The scope each client's socket arrived from, settled at its hello;
         # its list and its gateway URL are resolved for it.
         self.client_scope: dict[str, HostScope] = {}
@@ -1048,6 +1056,23 @@ class PanelRuntime:
         """
         channel_state.push_state(self, CHANNEL_ROLE_AGENT, key)
 
+    def ollama_address(self, device_id: str) -> str:
+        """Where the hub reaches one machine's Ollama API: its forward on the hub's loopback.
+
+        Call from a thread other than the channel's loop.
+
+        Args:
+            device_id: The machine.
+
+        Returns:
+            ``127.0.0.1:<port>``.
+
+        Raises:
+            AgentOfflineError: When the transport is not reached.
+            StreamRefusedError: With the transport's code.
+        """
+        return self.hub_forwards.address(device_id, DEVICE_OLLAMA_PORT)
+
     def forget_device(self, device_id: str) -> None:
         """Drop everything held in memory about one device.
 
@@ -1071,6 +1096,7 @@ class PanelRuntime:
         self.device_scope.pop(key, None)
         self.device_last_error.pop(key, None)
         self.device_shares.withdraw(key)
+        self.hub_forwards.stop(key, DEVICE_OLLAMA_PORT)
         self.agent_sessions.refuse_from_thread(key, CHANNEL_CODE_BINDING_UNKNOWN)
         self.published_services.schedule_refresh()
 

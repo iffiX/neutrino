@@ -193,6 +193,7 @@ DEVICE_MODULE_NAMES = (
     "samba",
     "ssh_server",
     "gitea",
+    "ollama",
     "podman",
     "hermes_webui",
     "ayakaleaf",
@@ -247,6 +248,24 @@ DEVICE_DISABLED_ACCOUNTS_KEY = "disabled"
 # The module whose configuration is the hub's own secrets and nothing the
 # machine can be read for.
 DEVICE_GITEA_MODULE = "gitea"
+# Ollama: its configuration is empty, and the hub reads and changes its
+# models through Ollama's own API at its port on the machine, reached by a
+# forward of the hub's transport on the hub's loopback.
+DEVICE_OLLAMA_MODULE = "ollama"
+DEVICE_OLLAMA_PORT = 11434
+# A model's name as the pull form takes it: a letter or a digit first, then
+# letters, digits and ``._-:/``, 200 characters at most.
+DEVICE_OLLAMA_MODEL_NAME_PATTERN = r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}"
+# How long a call to Ollama's API waits for an answer, and how long a pull
+# waits for its next line before it fails.
+DEVICE_OLLAMA_CALL_TIMEOUT_S = 10.0
+DEVICE_OLLAMA_PULL_READ_TIMEOUT_S = 300.0
+# The seconds a pull's speed is measured over.
+DEVICE_OLLAMA_SPEED_WINDOW_S = 5.0
+# The states of a pull in the queue.
+DEVICE_OLLAMA_PULL_QUEUED = "queued"
+DEVICE_OLLAMA_PULL_RUNNING = "running"
+DEVICE_OLLAMA_PULL_FAILED = "failed"
 # VS Code in the browser. Each instance in its file under the device's
 # directory holds, beside its account and port, two keys the hub keeps there:
 # its connection token sealed under the vault's data key, and the vault login

@@ -32,8 +32,30 @@ LINK_MAC = "aa:bb:cc:dd:ee:ff"
 PLATFORM = {"os": "linux", "family": "debian", "arch": "amd64"}
 
 
+class FakeForwards:
+    """The hub's forward table, recording what a report asks of it."""
+
+    def __init__(self):
+        self.held = set()
+        self.asked: list = []
+
+    def is_held(self, binding_id, port):
+        return (binding_id, port) in self.held
+
+    def address(self, binding_id, port):
+        self.asked.append(("address", binding_id, port))
+        self.held.add((binding_id, port))
+        return "127.0.0.1:40001"
+
+    def stop(self, binding_id, port):
+        self.asked.append(("stop", binding_id, port))
+        self.held.discard((binding_id, port))
+        return True
+
+
 class FakeRuntime:
     def __init__(self, lans=()):
+        self.hub_forwards = FakeForwards()
         self.device_metrics = {}
         self.device_modules = {}
         self.device_platform = {}
@@ -846,3 +868,25 @@ def test_a_share_left_off_for_a_folder_that_is_gone_stays_in_the_hubs_file_share
     assert runtime.desired_states.enabled_accounts(DEVICE, "samba") == ["alice"]
     assert list(ClientRegistry().default_permission_entries().values()) == [True]
     assert runtime.pushed == []
+
+
+def test_a_report_keeps_the_forward_to_ollama_while_it_answers(box):
+    runtime, device = box
+
+    def ollama(is_running):
+        return {
+            "modules": {
+                "ollama": {
+                    "state": "running",
+                    "details": {"is_running": is_running, "port": 11434},
+                }
+            }
+        }
+
+    agent_reports.record_report(runtime, device, ollama(True))
+    agent_reports.record_report(runtime, device, ollama(True))
+    assert runtime.hub_forwards.asked == [("address", DEVICE, 11434)]
+    agent_reports.record_report(runtime, device, ollama(False))
+    assert runtime.hub_forwards.asked[-1] == ("stop", DEVICE, 11434)
+    agent_reports.record_report(runtime, device, {"modules": {}})
+    assert len(runtime.hub_forwards.asked) == 2

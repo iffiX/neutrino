@@ -37,7 +37,7 @@ from neutrino_hub.web.channel_serve import ChannelControlHandler
 from neutrino_hub.web.dependencies import session_cookie
 from neutrino_hub.web.events import PanelEventBus
 from neutrino_hub.web.web_share_access import WebShareGuestSessions
-from tests.conftest import StubDesiredStates, StubPublishedServices
+from tests.conftest import StubDesiredStates, StubHubForwards, StubPublishedServices
 
 SESSION_TOKEN = "panel-session"
 POLICY_VIOLATION_CODE = 1008
@@ -86,6 +86,7 @@ class FakeRuntime:
         self.device_last_error = {}
         self.device_shares = DeviceShareRegistry()
         self.published_services = StubPublishedServices()
+        self.hub_forwards = StubHubForwards()
         self.desired_states = StubDesiredStates()
         self.agent_sessions = ChannelSessionRegistry(CHANNEL_ROLE_AGENT)
         self.web_share_guests = WebShareGuestSessions()

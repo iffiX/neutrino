@@ -146,6 +146,7 @@ class ChannelControlHandler:
         returns, since the connection's answers are read after it.
         """
         self._pending.clear()
+        self._runtime.hub_forwards.forget_all()
         start_owned_task(self._push_shares())
 
     async def _push_shares(self) -> None:

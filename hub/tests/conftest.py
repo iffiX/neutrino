@@ -883,6 +883,22 @@ class StubDesiredStates:
         return {"is_enabled": bool(is_enabled)}
 
 
+class StubHubForwards:
+    """The hub's forward table, holding nothing: no transport answers here."""
+
+    def is_held(self, binding_id, port) -> bool:
+        return False
+
+    def address(self, binding_id, port) -> str:
+        raise ConnectionError("no transport in a test")
+
+    def stop(self, binding_id, port) -> bool:
+        return False
+
+    def forget_all(self) -> None:
+        return None
+
+
 class StubPublishedServices:
     """The published list as the paths that can move it reach for it.
 
@@ -936,6 +952,7 @@ class FakeModuleRuntime:
         self.tasks = TaskStreamRegistry()
         self.agent_sessions = FakeChannelSessions(online)
         self.published_services = StubPublishedServices()
+        self.hub_forwards = StubHubForwards()
         self.desired_states = DesiredStateStore()
         self.module_releases = ModuleReleaseStore(path=None)
         self.channel_replies = SessionReplyBook()

@@ -49,15 +49,20 @@ from neutrino_hub.modules.services.constants import (
     SERVICES_DESCRIPTION_DECLARED,
     SERVICES_DESCRIPTION_DEVICE_SHARE,
     SERVICES_DESCRIPTION_GITEA_MODULE,
+    SERVICES_DESCRIPTION_OLLAMA_MODULE,
     SERVICES_DESCRIPTION_HERMES_WEBUI_MODULE,
     SERVICES_DESCRIPTION_SAMBA_MODULE,
     SERVICES_DESCRIPTION_SSH_SERVER_MODULE,
+    SERVICES_ENTRY_API,
     SERVICES_ENTRY_SSH,
     SERVICES_ENTRY_WEB,
     SERVICES_FILE_PROTOCOL,
     SERVICES_GITEA_DESCRIPTION,
     SERVICES_GITEA_ID,
     SERVICES_GITEA_TITLE,
+    SERVICES_OLLAMA_DESCRIPTION,
+    SERVICES_OLLAMA_ID,
+    SERVICES_OLLAMA_TITLE,
     SERVICES_HERMES_WEBUI_DESCRIPTION,
     SERVICES_HERMES_WEBUI_ID,
     SERVICES_HERMES_WEBUI_TITLE,
@@ -168,7 +173,8 @@ class ServiceListCollector:
                 ``{"device_id", "host"}`` and one key per module, None when
                 the device does not serve it, else ``samba: {"is_healthy",
                 "shares": [{"name", "user"}]}``, ``gitea: {"is_healthy",
-                "url", "ssh_listen_port"}``, each program run as an account
+                "url", "ssh_listen_port"}``, ``ollama: {"port", "is_healthy"}``,
+                each program run as an account
                 under its name as ``{"instances": [{"account", "port",
                 "is_healthy"}]}``, ``ssh_server: {"instances": [{"account",
                 "port", "is_healthy", "host_key_fingerprint",
@@ -295,6 +301,33 @@ class ServiceListCollector:
                         device_id=device_id,
                     )
                 )
+        ollama = device.get("ollama")
+        if ollama and ollama.get("port"):
+            app_id = f"{SERVICES_OLLAMA_ID}_{device_id}"
+            apps.setdefault(
+                app_id,
+                self._app(
+                    app_id, SERVICES_OLLAMA_TITLE, SERVICES_SOURCE_MODULE, device
+                ),
+            )
+            entries.append(
+                self._app_entry(
+                    app_id,
+                    SERVICES_ENTRY_API,
+                    type=SERVICES_TYPE_PORT,
+                    title=SERVICES_OLLAMA_TITLE,
+                    payload={
+                        "host": host,
+                        "port": int(ollama["port"]),
+                        "protocol": SERVICES_PROTOCOL_TCP,
+                    },
+                    is_healthy=bool(ollama.get("is_healthy")),
+                    description=SERVICES_OLLAMA_DESCRIPTION.format(host=host),
+                    description_code=SERVICES_DESCRIPTION_OLLAMA_MODULE,
+                    description_params={"host": host},
+                    device_id=device_id,
+                )
+            )
         for row in account_program_rows():
             hosted = device.get(row.name)
             if not hosted:

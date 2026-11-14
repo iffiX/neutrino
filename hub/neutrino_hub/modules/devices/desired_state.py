@@ -154,6 +154,8 @@ from neutrino_hub.modules.services.constants import (
     SERVICES_ENTRY_WEB,
     SERVICES_GITEA_ID,
     SERVICES_GITEA_TITLE,
+    SERVICES_OLLAMA_ID,
+    SERVICES_OLLAMA_TITLE,
     SERVICES_HERMES_WEBUI_ID,
     SERVICES_HERMES_WEBUI_TITLE,
     SERVICES_MACHINE_SLUG_FALLBACK,
@@ -237,8 +239,9 @@ def machine_apps(store: "DesiredStateStore", key: str) -> dict:
     """Every app the hub composes for one machine, by id, with its title.
 
     The set the local names are told apart in: each enabled account's
-    instance of a program run as an account, Gitea, the SSH server, Hermes
-    WebUI, Ayakaleaf and the containers the Containers module declares.
+    instance of a program run as an account, Gitea, Ollama, the SSH server,
+    Hermes WebUI, Ayakaleaf and the containers the Containers module
+    declares.
 
     Args:
         store: The per-device store.
@@ -249,6 +252,7 @@ def machine_apps(store: "DesiredStateStore", key: str) -> dict:
     """
     titles = {
         f"{SERVICES_GITEA_ID}_{key}": SERVICES_GITEA_TITLE,
+        f"{SERVICES_OLLAMA_ID}_{key}": SERVICES_OLLAMA_TITLE,
         f"{SERVICES_SSH_SERVER_ID}_{key}": SERVICES_SSH_SERVER_TITLE,
         f"{SERVICES_HERMES_WEBUI_ID}_{key}": SERVICES_HERMES_WEBUI_TITLE,
         f"{SERVICES_AYAKALEAF_ID}_{key}": SERVICES_AYAKALEAF_TITLE,

@@ -173,6 +173,29 @@ def test_gitea_is_one_app_with_a_web_entry_and_a_tcp_port_entry_for_its_ssh():
     assert entries[f"{app_id}_web"]["payload"] == {"url": f"http://{HOST}:3000/"}
 
 
+def test_ollama_is_one_app_with_a_tcp_port_entry_for_its_api():
+    entries = by_id(
+        collector(
+            device_modules=[
+                {
+                    "device_id": DEVICE,
+                    "host": HOST,
+                    "ollama": {"port": 11434, "is_healthy": False},
+                }
+            ]
+        ).render()
+    )
+
+    entry = entries[f"ollama_{DEVICE}_api"]
+    assert set(entries) == {f"ollama_{DEVICE}_api"}
+    assert entry["type"] == "port"
+    assert entry["app_id"] == f"ollama_{DEVICE}"
+    assert entry["payload"] == {"host": HOST, "port": 11434, "protocol": "tcp"}
+    assert entry["is_healthy"] is False
+    assert entry["description_code"] == "ollama_module"
+    assert entry["local_port"] == local_port(f"ollama_{DEVICE}_api")
+
+
 def test_the_ssh_server_is_one_app_with_an_ssh_entry_per_instance_in_order():
     entries = collector(
         device_modules=[

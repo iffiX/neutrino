@@ -42,7 +42,7 @@ from neutrino_hub.web.events import PanelEventBus
 from neutrino_hub.web.shell_bridge import ShellSessionLedger
 from neutrino_hub.web.task_stream import TaskStreamRegistry
 from neutrino_hub.web.web_share_access import WebShareGuestSessions
-from tests.conftest import StubPublishedServices
+from tests.conftest import StubHubForwards, StubPublishedServices
 from tests.web.fake_transport import SECRET, FakeTransport
 
 AGENT_KEY = "a1" * 32
@@ -64,6 +64,7 @@ class FakeRuntime:
         self.channel_replies = SessionReplyBook()
         self.shell_ledger = ShellSessionLedger()
         self.published_services = StubPublishedServices()
+        self.hub_forwards = StubHubForwards()
         self.device_platform: dict = {}
         self.device_hostname: dict = {}
         self.device_address: dict = {}

@@ -188,6 +188,7 @@ SERVICES_RDP_PORT = 21118
 SERVICES_PUBLISHED_MODULES = (
     "samba",
     "gitea",
+    "ollama",
     "podman",
     "vscode",
     "code_server",
@@ -205,6 +206,7 @@ SERVICES_LIST_TTL_S = 10.0
 # data the declarer words, so these live beside the entries they describe.
 # The English sentence still travels for a page too old to know the codes.
 SERVICES_GITEA_DESCRIPTION = "published by the gitea module on {host}"
+SERVICES_OLLAMA_DESCRIPTION = "published by the ollama module on {host}"
 SERVICES_SAMBA_DESCRIPTION = "published by the samba module on {host}"
 # The ids of a machine's file entries (protocol.md, "The services section,
 # one entry per published service"). A Home share's entry is
@@ -228,6 +230,7 @@ SERVICES_DESCRIPTION_CONTAINER = "container"
 SERVICES_DESCRIPTION_DECLARED = "declared"
 SERVICES_DESCRIPTION_DEVICE_SHARE = "device_share"
 SERVICES_DESCRIPTION_GITEA_MODULE = "gitea_module"
+SERVICES_DESCRIPTION_OLLAMA_MODULE = "ollama_module"
 SERVICES_DESCRIPTION_SAMBA_MODULE = "samba_module"
 SERVICES_DESCRIPTION_VSCODE_MODULE = "vscode_module"
 SERVICES_DESCRIPTION_CLOUDCLI_MODULE = "cloudcli_module"
@@ -243,6 +246,7 @@ SERVICES_DESCRIPTION_CODES = (
     SERVICES_DESCRIPTION_DECLARED,
     SERVICES_DESCRIPTION_DEVICE_SHARE,
     SERVICES_DESCRIPTION_GITEA_MODULE,
+    SERVICES_DESCRIPTION_OLLAMA_MODULE,
     SERVICES_DESCRIPTION_SAMBA_MODULE,
     SERVICES_DESCRIPTION_VSCODE_MODULE,
     SERVICES_DESCRIPTION_CLOUDCLI_MODULE,
@@ -258,6 +262,11 @@ SERVICES_GITEA_TITLE = "Gitea"
 SERVICES_AI_TITLE = "AI gateway"
 SERVICES_AI_ID = "ai"
 SERVICES_GITEA_ID = "gitea"
+# Ollama's app, ``ollama_<device id>``, and its one TCP ``port`` entry, the
+# API.
+SERVICES_OLLAMA_ID = "ollama"
+SERVICES_OLLAMA_TITLE = "Ollama"
+SERVICES_ENTRY_API = "api"
 # One web entry per instance of a program run as a person's account, its id
 # ``<module>_<device id>_<account>`` and its title the description table's,
 # opened by a client through its own forward with the token the ``service``
