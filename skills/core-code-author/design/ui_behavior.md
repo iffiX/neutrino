@@ -889,6 +889,11 @@ panel and writes no `want`, after the first import of Gitea or Containers, and
 the module stays as it is until its **Start** ([protocol.md](protocol.md), "The
 modules section, one entry per module").
 
+An address with `?module=<name>&configure=1` opens the page on that tab with
+its panel open, as **Configure** opens it; picking another tab takes
+`configure` out of the address. The Ollama rows of the AI page link there
+("The Ollama rows of the Providers panel").
+
 The chips are plain `badge`s between the title and the state, the
 source chip first; what each means and which install method reads as which
 source is [agent/module_install.md](agent/module_install.md), "The source chip
@@ -1377,6 +1382,27 @@ The AI tools of each account are its switch and its model rows in its form
 (**Available accounts** above), and the account's row shows its last result
 as a `StatusDot` with a word: `switched` `ok`, `switched_back` `idle`, and
 `failed` `error` with the code's words.
+
+## The Ollama rows of the Providers panel
+
+The **Providers** panel of the AI page lists, after the stored providers,
+one read-only row for each provider the hub generates from a machine's
+Ollama ([hub_components/ai.md](hub_components/ai.md), "Every machine's
+Ollama"), by the machine's name. The rows come from `GET /api/hub/ai/ollama`,
+read again at each `ai_usage` event.
+
+| Part | Idiom |
+| --- | --- |
+| The name | `ui.ai.ollama_provider {machine}`, in the place of a stored row's name |
+| The models | the names the machine's Ollama lists, joined by commas, faint and cut with an ellipsis, in the place of a stored row's endpoint, with the whole list as its title |
+| **Models** | `ui.ai.ollama_models`, a ghost `button--small` link at the row's right to `/agents/<device id>?module=ollama&configure=1`, the machine page on its Ollama tab with **Models** open ("The machine page") |
+
+| Rule | Reason |
+| --- | --- |
+| A row has no grip, no switch, no **Edit** and no **Delete**, and belongs to no draft: the panel's apply bar does not light for it. | The hub generates the row from the machine's Ollama, and its models change on the machine's Models panel. |
+| The rows come after the stored rows, and a drag moves the stored rows alone. | The stored rows' order is their serving order, and a generated provider rotates in its names' pool. |
+| The panel's empty state shows while it has neither a stored provider nor a generated one. | A generated row is a provider the gateway serves. |
+| A row goes when its machine goes offline, its Ollama stops or holds no model, and comes back with them, at the event the change publishes. | The page draws the gateway as it serves now ("Nothing asks for a refresh"). |
 
 ## Account sign-in on the AI page
 

@@ -340,7 +340,8 @@ link's `app.title`.
 
 ## The AI page's words
 
-The **Access** panel and the **Gateway port** field of the AI page
+The **Access** panel, the **Gateway port** field and the Ollama rows of
+the **Providers** panel of the AI page
 ([hub_components/ai.md](hub_components/ai.md), "What each panel surface
 owns"). `ui.ai.endpoint`'s line shows `http://127.0.0.1:<port>`, since the
 gateway listens on the hub's loopback alone.
@@ -358,6 +359,8 @@ gateway listens on the hub's loopback alone.
 | `ui.ai.access_apply`, the Access panel's apply bar | Apply access settings | 应用接入配置 |
 | `ui.ai.access_apply_warning`, shown only while an installed Ayakaleaf follows the gateway default ([ui_behavior.md](ui_behavior.md), "The Access panel of the AI page") | An Ayakaleaf on the gateway default restarts. | 用网关默认的 Ayakaleaf 会重启。 |
 | `code.model_not_served` | The gateway does not serve {model}. | 网关不提供 {model}。 |
+| `ui.ai.ollama_provider`, the name of a provider generated from a machine's Ollama ([ui_behavior.md](ui_behavior.md), "The Ollama rows of the Providers panel") | from {machine}'s Ollama | 来自 {machine} 的 Ollama |
+| `ui.ai.ollama_models`, that row's link to the machine's **Models** panel | Models | 模型 |
 
 ## The machine page's words
 

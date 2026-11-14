@@ -112,6 +112,18 @@ models: no verb and no field of the report.
 | A name is any name Ollama takes: a library name such as `qwen2.5:7b`, `hf.co/<owner>/<repository>:<quantization>` or `modelscope.cn/<owner>/<repository>:<quantization>`. The hub refuses `ollama_model_name_invalid {name}` for a name that is empty, longer than 200 characters, or holds a character other than a letter, a digit, `.`, `_`, `-`, `:` and `/`. | ModelScope serves Ollama's registry protocol for its GGUF repositories, the way in mainland China. The hub keeps no catalog of models of its own. |
 | A call that does not reach Ollama answers `ollama_unreachable {detail}`. | The machine's row says whether the module runs; this code says the call itself failed. |
 
+**Every machine's Ollama feeds the hub's AI gateway.** While the machine is
+online and its Ollama runs with at least one model, the hub adds an
+OpenAI-compatible provider to the gateway at the forward above, under
+`/v1`, serving the names `/api/tags` returns with no machine name in front
+([../../hub_components/ai.md](../../hub_components/ai.md), "Every machine's
+Ollama"). Every program that goes through the gateway can then use them,
+the AI tools of a client and of a managed machine among them, and the same
+name on two machines rotates between both. The provider goes while the
+machine is offline and when its Ollama stops, is uninstalled or holds no
+model. The AI page lists it as a read-only row that links to this tab's
+**Models** panel. The agent carries nothing more for it.
+
 **Uninstall takes what the module added and keeps the models**: the unit,
 the LaunchDaemon or the task, its script and the program go; the data
 directory stays, so an install afterwards serves the same models. The
