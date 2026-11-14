@@ -69,6 +69,7 @@ machine.
 
 | Rule | Reason |
 | --- | --- |
+| Every `verify` and every read of the program's version runs with `OLLAMA_MODELS` naming the module's `models` folder ([../module_install.md](../module_install.md), "One presence check"). | Ollama's `--version` stops with `$HOME is not defined` while neither names a folder, and the agent's LaunchDaemon on macOS has no `HOME`: on the lab Mac the first install ended `install_unconfirmed`. |
 | The Linux entries' `verify` is the module's program with `--version`, else a test that the person's unit file is in one of its three places. | The method's presence check is the one test that Ollama is there, whoever installed it ([../module_install.md](../module_install.md), "One presence check"), and a test of a file runs no program of the person's as root. |
 | An **Install** on Windows or macOS refuses `ollama_found {path}` while the publisher's app is on the machine, at `%LOCALAPPDATA%\Programs\Ollama\ollama.exe` of any profile or at `/Applications/Ollama.app`. | The app starts its own server at the person's login, and a second server would fight it for the port. |
 | The hub takes no Ollama over at a report. | A person's Ollama has no configuration to import, and the row's own state is enough to publish its port and list its models. |
