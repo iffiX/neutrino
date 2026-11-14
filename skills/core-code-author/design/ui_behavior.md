@@ -937,7 +937,7 @@ module has. A
 running module of this layer with no enabled account reads
 `state.running_no_accounts` on its tab's state line. The tabs of the
 machine layer,
-Remote desktop, Gitea, Containers and the container modules, hold no
+Remote desktop, Gitea, Ollama, Containers and the container modules, hold no
 accounts. No module asks for a port: the agent takes them.
 
 The tab of a command line program, Codex, Claude Code or OpenCode
@@ -1209,7 +1209,7 @@ version on the version line.
 
 The rows of the module list, each a tab, come in one order, the modules
 every system runs first: Terminal, the SSH server, Remote desktop, File
-share, Gitea, VS Code, code-server, CloudCLI, Codeg, Claude Code, Codex, OpenCode, SiYuan,
+share, Gitea, Ollama, VS Code, code-server, CloudCLI, Codeg, Claude Code, Codex, OpenCode, SiYuan,
 Containers, Hermes WebUI, Ayakaleaf. The order is the row order of the hub's description table
 ([agent/module_template.md](agent/module_template.md), "The hub side"), in
 which `GET /api/agent/module` sends the rows, and the page keeps it. The
@@ -1272,6 +1272,36 @@ container modules"). It is a hint: every button stays as its state makes it.
 A tab whose module the machine reports `unsupported`, an agent older than the
 module, keeps its state word `unsupported` and draws its panel with every
 field, the switch and the apply bar disabled, and no sentence added.
+
+The Ollama tab ([agent/modules/ollama.md](agent/modules/ollama.md)) draws
+the line `ui.ollama.owner_notice` over its state, its log and its buttons.
+On a row whose `details.found` is `app`, a person's Ollama app on Windows or
+macOS, it draws `ui.ollama.found_app` in its place and no **Install**,
+**Start**, **Stop** or **Uninstall**: **Configure** alone. Its panel, which
+**Configure** opens as every module's, is **Models**
+(`ui.ollama.models_title`), one `settings_group` with no apply bar, each
+press acting at once, as the Containers tab's rows do:
+
+| Part | Idiom |
+| --- | --- |
+| The head | `ui.ollama.models_summary {count, size}` at the right of the title |
+| The pull form | a text field with `qwen2.5:7b` as its placeholder and no hint, and **Pull** (`ui.ollama.pull`), a bordered `button` beside it, disabled while the field is empty; a refused name shows the code's words under the field |
+| A pull row | first in the list, one per pull in the queue's order: the name, a `meter` of the bytes done over the total, and `ui.ollama.pull_progress {done, total, speed}`, `ui.ollama.pull_preparing` before Ollama names a total, or `state.queued` for a pull that waits; and **Cancel** (`ui.ollama.cancel`) at its right. A failed pull reads its code's words in the error tone, and its **Cancel** takes it off the list |
+| A model row | the name, the parameter size, the quantization, the size on disk and the last change, from `/api/tags`; a model in memory, from `/api/ps`, also `ui.ollama.loaded {memory}`, or `ui.ollama.loaded_vram {memory, vram}` while part of it is on a GPU, and **Unload** (`ui.ollama.unload`); and **Remove** (`ui.ollama.remove`) at the right of every row |
+| **Remove** | asks through `useConfirm`: the title `ui.ollama.remove_title {name}`, the body `ui.ollama.remove_body {size}`, and the confirming `button--danger` `ui.ollama.remove` |
+| No model | `ui.ollama.models_empty` |
+| Not running | while the row's `details.is_running` is false or the machine is offline, the panel draws the tab's state word alone, `state.stopped` or the word of a machine that has not reported, with no list and no action |
+| A failed read | the view's `ollama_unreachable` in its code's words, in `ErrorPanel` with its retry |
+
+| Rule | Reason |
+| --- | --- |
+| The panel reads `GET /api/agent/module/ollama` every 2 seconds while a pull runs or waits, every 15 seconds otherwise, and again at each press. | A person watches a pull move ("Nothing asks for a refresh"), and the list changes on a press otherwise. |
+| A pull is the hub's task: leaving the page leaves it running, and the page draws the queue the view carries when it comes back. A further **Pull** waits behind the running one. | A model is gigabytes, and a page is closed long before. |
+| A person's Ollama, adopted on Linux or an app on Windows and macOS, has the same panel. | The model list is Ollama's API, whoever installed the server. |
+| Nothing for models is on a client. | The panel is where a machine's software is managed. |
+
+The tab holds no link to Ollama: a client forwards its `api` entry, and a
+tool there reaches the API at the forward's address.
 
 The Containers tab on Windows and macOS opens with **Run settings**
 (`components/containers_run_settings.tsx`), above **Running now**,

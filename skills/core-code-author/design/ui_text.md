@@ -182,6 +182,7 @@ Chinese: SiYuan is 思源笔记.
 | `remote_desktop` | Remote desktop | 远程桌面 |
 | `podman` | Containers | 容器 |
 | `gitea` | Gitea | Gitea |
+| `ollama` | Ollama | Ollama |
 | `vscode` | VS Code | VS Code |
 | `code_server` | code-server | code-server |
 | `cloudcli` | CloudCLI | CloudCLI |
@@ -196,7 +197,7 @@ Chinese: SiYuan is 思源笔记.
 
 ## Software the owner installs
 
-Gitea, VS Code, code-server, CloudCLI, Codeg, SiYuan, Hermes WebUI,
+Gitea, Ollama, VS Code, code-server, CloudCLI, Codeg, SiYuan, Hermes WebUI,
 Ayakaleaf, Codex, Claude Code and OpenCode are programs the machine's owner installs on their own machine through a module. The text
 rules follow from that:
 
@@ -205,7 +206,7 @@ rules follow from that:
 | A module page that names third-party software says that the owner installs it on that machine. | `You install VS Code Server on this machine under Microsoft's license terms.` |
 | A module page names the publisher's terms only where the publisher asks for acceptance; VS Code is the one such module ([ui_behavior.md](ui_behavior.md), "Terms before a module opens"). CloudCLI's, Codeg's and SiYuan's pages carry no licence line. | |
 | No surface says the hub downloads, provides, bundles or distributes third-party software, in either language (代为下载, 提供, 自带). A sentence about the mechanism, in a standard page or a code comment, makes the module's installer its subject. The source chip's 自带 marks the modules the agent carries alone, and never one of these programs ("The machine page's words"). | `The module's installer fetches the archive.`, never `The hub downloads VS Code.` |
-| The **About** card on the Settings page credits only the components the hub's own package carries on that system and in that edition, such as xray, CLIProxyAPI, NetBird, EasyTier, frp and tun2socks. Gitea, VS Code, code-server, CloudCLI, Codeg, SiYuan, Hermes WebUI, Ayakaleaf, Codex, Claude Code and OpenCode are never on it. | |
+| The **About** card on the Settings page credits only the components the hub's own package carries on that system and in that edition, such as xray, CLIProxyAPI, NetBird, EasyTier, frp and tun2socks. Gitea, Ollama, VS Code, code-server, CloudCLI, Codeg, SiYuan, Hermes WebUI, Ayakaleaf, Codex, Claude Code and OpenCode are never on it. | |
 
 The VS Code notice and its button:
 
@@ -584,6 +585,7 @@ machine's system.
 | `samba` | no | The shared folders and the files in them stay where they are. | 共享的文件夹和里面的文件都原样保留。 |
 | `podman` | no | The declared containers' volumes stay, and on Windows and macOS so does the Podman machine. | 声明的容器的卷都保留，Windows 和 macOS 上的 Podman 虚拟机也保留。 |
 | `gitea` | no | The repositories, Gitea's accounts and its database stay in its data directory. | 仓库、Gitea 的账户和数据库都留在它的数据目录里。 |
+| `ollama` | no | The pulled models stay in its data directory. | 拉取的模型都留在它的数据目录里。 |
 | `vscode` | no | Each account's settings and extensions stay in its home folder. | 每个账户的设置和扩展都留在它的主目录里。 |
 | `code_server` | no | Each account's code-server settings and extensions stay in its home folder. | 每个账户的 code-server 设置和扩展都留在它的主目录里。 |
 | `cloudcli` | no | Each account's CloudCLI data stays in {data_dir}. | 每个账户的 CloudCLI 数据留在 {data_dir}。 |
@@ -666,6 +668,40 @@ whose line named Gemini; each tool is one entry of the `code` category.
 | `code.copy_unreached` | {account}'s shell does not find this module's copy. | {account} 的 shell 找不到本模块安装的副本。 |
 | `code.copy_in_system_path` | {path} {version} is on the system PATH, so {account}'s shell runs it before this module's copy. | {path} {version} 在系统 PATH 里，{account} 的 shell 会先于本模块安装的副本运行它。 |
 | `code.module_not_service` | {module} is a program and has no Start or Stop. | “{module}”是普通程序，没有启动和停止。 |
+
+## The Ollama tab's words
+
+[ui_behavior.md](ui_behavior.md), "The machine page", places them. The keys
+are in `locales/<language>/modules.json`, and the codes' in `codes.json`.
+A size reads as `format_bytes.ts` writes it, and a time as the panel's
+other times.
+
+| Key | English | Chinese |
+| --- | --- | --- |
+| `ui.module_catalog.ollama` | Language models on this machine, through Ollama's API. | 在这个系统上运行大语言模型，通过 Ollama 的 API 使用。 |
+| `ui.ollama.owner_notice` | You install Ollama, MIT-licensed, on this machine. | 你在这个系统上安装 Ollama，它以 MIT 许可发布。 |
+| `ui.ollama.found_app` | The Ollama app installed on this machine serves here. | 这里用的是这个系统上已安装的 Ollama 应用。 |
+| `ui.ollama.models_title` | Models | 模型 |
+| `ui.ollama.models_summary` | {count} models, {size} | {count} 个模型，共 {size} |
+| `ui.ollama.pull` | Pull | 拉取 |
+| `ui.ollama.models_empty` | No models yet. | 还没有模型。 |
+| `ui.ollama.col_name`, `col_parameters`, `col_quantization`, `col_size`, `col_modified` | Name, Parameters, Quantization, Size, Modified | 名称、参数量、量化、大小、修改时间 |
+| `ui.ollama.loaded` | loaded, {memory} | 已加载，占用 {memory} |
+| `ui.ollama.loaded_vram` | loaded, {memory}, {vram} in VRAM | 已加载，占用 {memory}，显存 {vram} |
+| `ui.ollama.unload` | Unload | 移出内存 |
+| `ui.ollama.remove` | Remove | 删除 |
+| `ui.ollama.remove_title` | Remove {name} | 删除 {name} |
+| `ui.ollama.remove_body` | The model is deleted from this machine, which frees {size}. | 这个模型会从这个系统上删除，腾出 {size}。 |
+| `ui.ollama.pull_progress` | {done} of {total}, {speed}/s | {done} / {total}，{speed}/s |
+| `ui.ollama.pull_preparing` | preparing | 准备中 |
+| `ui.ollama.cancel` | Cancel | 取消 |
+| `code.ollama_found` | The Ollama app is already installed on this machine at {path}. | 这个系统上已经装有 Ollama 应用：{path}。 |
+| `code.ollama_unreachable` | Ollama on this machine did not answer: {detail} | 这个系统上的 Ollama 没有响应：{detail} |
+| `code.ollama_not_running` | Ollama is not running on this machine. | 这个系统上的 Ollama 没有运行。 |
+| `code.ollama_model_name_invalid` | {name} is not a model name. | {name} 不是模型名称。 |
+| `code.ollama_model_unknown` | This machine has no model named {name}. | 这个系统上没有叫 {name} 的模型。 |
+| `code.ollama_pull_unknown` | No pull of {name} is waiting or running. | 没有在等待或进行中的 {name} 拉取。 |
+| `code.ollama_pull_failed` | Ollama could not pull {name}: {detail} | Ollama 没能拉取 {name}：{detail} |
 
 ## The Hermes WebUI tab's words
 

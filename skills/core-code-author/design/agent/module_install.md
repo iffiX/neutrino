@@ -66,13 +66,13 @@ client's own pin.
 | `agent` | `{}` | the agent's own package | the agent's install | Terminal, Remote desktop, the SSH server |
 | `builtin` | `{}` | the system itself | nothing; the runner checks that the software is there | the file share on Windows and macOS |
 | `system` | `{version: "system", packages, pre_install, verify, uninstall: {packages, post_uninstall}}` | the system's package repositories | the system's package manager, run by the agent | the file share and Containers on Linux |
-| `hub` | `{version, releases, artifacts, packages, verify, uninstall: {post_uninstall, is_data_kept}}` | the publisher's release, fetched into the hub's cache | the agent, from the `package` stream | Gitea, VS Code, code-server, CloudCLI, Codeg, SiYuan, Codex, Claude Code, OpenCode, Containers on Windows and macOS |
+| `hub` | `{version, releases, artifacts, packages, verify, uninstall: {post_uninstall, is_data_kept}}` | the publisher's release, fetched into the hub's cache | the agent, from the `package` stream | Gitea, Ollama, VS Code, code-server, CloudCLI, Codeg, SiYuan, Codex, Claude Code, OpenCode, Containers on Windows and macOS |
 | `container` | `{version, releases, artifacts, source_sets}`, `releases` and `source_sets` optional | the registries each image's `sources` name | the Containers module's Podman | Hermes WebUI ([modules/hermes_webui.md](modules/hermes_webui.md)), Ayakaleaf ([modules/ayakaleaf.md](modules/ayakaleaf.md)) |
 
 `pre_install` is optional, for a system that needs a step before its package
 manager installs, such as a repository to add. A `hub` entry's `packages` is
 optional too: the system packages the program needs beside its artifacts,
-such as Gitea's `git` on Linux. The system's package manager installs them
+such as Gitea's `git` and Ollama's `zstd` on Linux. The system's package manager installs them
 before the artifacts, and an uninstall keeps them.
 
 | | `agent` | `builtin` | `system` | `hub` | `container` |
@@ -120,7 +120,7 @@ software it holds. Where each class lands on each system is
 | archive (压缩包) | `tar_gz`, `zip` | unpacks it into the module's directory and seals it | VS Code, code-server, Codeg's server, SiYuan on Linux, Codex, Claude Code, OpenCode, the Node.js of CloudCLI and Codeg, and Gitea's MinGit on Windows |
 | installer (安装包) | `msi`, `pkg` | keeps it in the module's directory and has the system's installer install it | Containers: Podman and WSL on Windows, Podman on macOS |
 | disk image (磁盘映像) | `dmg`, `nsis` | copies the program out of it into the module's directory and seals it; nothing in it runs | SiYuan on macOS and Windows |
-| machine image (虚拟机映像) | `tar_zst`, `raw_zst` | keeps it in the module's directory, and Podman builds its machine from it | Containers on Windows and macOS |
+| machine image (虚拟机映像) | `tar_zst`, `raw_zst` | keeps it in the module's directory, and Podman builds its machine from it | Containers on Windows and macOS; Ollama's Linux archive is a `tar_zst` its module unpacks (below) |
 | container image (容器镜像) | `image` | has the Containers module's Podman pull it from a registry | Hermes WebUI, Ayakaleaf |
 | single program (单个程序文件) | `binary` | keeps the publisher's bytes as one program and makes it executable | Gitea |
 | npm package (npm 包) | `npm` | installs it with npm, run as the account | CloudCLI |
@@ -129,6 +129,7 @@ software it holds. Where each class lands on each system is
 | --- | --- |
 | A machine image and a container image are two classes. | A machine image is one file that comes down the `package` stream from the hub's cache into the module's directory, and Podman builds a machine from it; a container image Podman pulls itself from a registry into its own store, and the hub caches none. |
 | A new class is added only when a new way of placing software on a machine appears, and a new kind joins the class whose way it shares. | A class fixes where its software lands, so a kind placed the way another is lands where that one does. |
+| Ollama's runner unpacks its Linux artifact of kind `tar_zst` as an archive: the system's `zstd -dc`, which the entry's `packages` installs, writes the tar to Python's `tarfile`, and the tree lands under its `directory` with every archive's checks and seal ([modules/ollama.md](modules/ollama.md)). No other module unpacks a `tar_zst`. | Ollama publishes its Linux builds as `.tar.zst` alone, and the agent's Python reads no zstd. The kind keeps its name, so no second name means the same bytes. |
 
 | `kind` | The file | What happens to it on the machine |
 | --- | --- | --- |
@@ -136,7 +137,7 @@ software it holds. Where each class lands on each system is
 | `binary` | one program, as Gitea publishes it | kept as the publisher's bytes where [module_template.md](module_template.md), "Disk layout", puts a single program, and made executable |
 | `msi` | a Windows Installer package | kept under `agent/<module>/<directory>/`, then installed with `installers.install_msi` |
 | `pkg` | a macOS installer package | kept under `agent/<module>/<directory>/`, then installed with `installers.install_pkg` |
-| `tar_zst` | a zstd-compressed tar, such as Podman's machine image for WSL | kept under `agent/<module>/<directory>/`, its path given to the module's program |
+| `tar_zst` | a zstd-compressed tar, such as Podman's machine image for WSL | kept under `agent/<module>/<directory>/`, its path given to the module's program; Ollama's archive unpacked under `agent/ollama/<directory>/` by its runner and sealed |
 | `raw_zst` | a zstd-compressed disk image, such as Podman's machine image for applehv | kept under `agent/<module>/<directory>/`, its path given to the module's program |
 | `dmg` | a macOS disk image, such as SiYuan's desktop build | attached with `hdiutil attach -nobrowse -readonly` at a temporary mount point; the folder `member` names is copied with `ditto` to `agent/<module>/<directory>/` and sealed, and the image is detached |
 | `nsis` | a Windows installer made with NSIS that holds a 7z archive stored whole, such as SiYuan's | the 7z archive found inside the installer by its signature and read by the agent's own reader with Python's `lzma`, its files unpacked under `agent/<module>/<directory>/` and sealed; nothing in the installer runs |
@@ -175,6 +176,7 @@ Codeg's npm packages carries Claude Code, runs that copy.
 | --- | --- | --- |
 | a `hub` artifact | the hub's cache | the publisher's address first, then each mirror that serves the same file, such as the USTC mirror of code-server and npmmirror's copy of Node.js; `{release}` last, where the project's release holds the file |
 | Codeg's archives | the hub's cache | Codeg's GitHub release, the one address that serves them |
+| Ollama's archives | the hub's cache | Ollama's GitHub release, the one address that serves them ([modules/ollama.md](modules/ollama.md)) |
 | Claude Code's, Codex's and OpenCode's tarballs | the hub's cache | the `npm` set: registry.npmjs.org, npmmirror and Tencent's mirror ([modules/claude_code.md](modules/claude_code.md), [modules/codex.md](modules/codex.md), [modules/opencode.md](modules/opencode.md)) |
 | SiYuan's desktop builds | the hub's cache | SiYuan's GitHub release, then the publisher's own `https://release.liuyun.io/siyuan/{file}` ([modules/siyuan.md](modules/siyuan.md)) |
 | Gitea's MinGit on Windows | the hub's cache | Git for Windows' GitHub release, then npmmirror's copy ([modules/gitea.md](modules/gitea.md)) |
@@ -407,6 +409,7 @@ The tools inside its containers fetch from the source sets its entry lists
 | --- | --- |
 | The method's presence check is the one test that the software is there: `verify` for `system` and `hub`, every image's digest for `container`. On Windows and macOS, while Containers' machine does not answer the read, the digests are read from the list Containers saved at its last read ([modules/containers.md](modules/containers.md), "The keeper"). | Two checks that disagree give a module that is present and never `running`. A stopped machine lists no images. |
 | A `verify` that names its program by an absolute path, as every `hub` entry's does, runs again only once that file changes its size, its time or its inode. A pass stands until then, and a failure runs again at the next read. | The agent reads every module at each report, every 5 seconds: on the lab Mac `gitea --version` and `code --version` each ran 12 times a minute as root. |
+| A `verify` also passes on a person's copy of the software in its publisher's place by a test of a file, which runs nothing of the person's: Ollama's Linux `verify` tests for the person's unit file ([modules/ollama.md](modules/ollama.md)). | The check says whether the software is there, whoever installed it, and root runs no program a person could have changed. |
 | `is_active` and `details` are read whenever the presence check passes, and a runner adds no check of its own in front of them. | A runner check stricter than `verify` read Containers as `stopped` with an empty list on a machine whose Docker CE kept `podman-docker` off. |
 | A runner's own check answers only for a `builtin` entry and for a module the hub does not name in the machine's state, which the agent still observes and reports, such as a Samba a person installed by hand. A container module the state does not name is read against the recipe the agent kept ("From container images"). | Neither comes with a `verify` to run. |
 | A `builtin` module reads absent while its uninstalled mark stands, whatever the runner's own check finds. | The system keeps its own software, so the runner's check stays true after an uninstall, and the row read `failed` `uninstall_unconfirmed` with no press that cleared it. |
@@ -459,6 +462,7 @@ version list can be read.
 | Codeg | true | Its server runs sea-orm-migration at its start, which refuses a database holding a migration the binary does not know, so an older Codeg does not start on data a newer one migrated. |
 | CloudCLI | true | Its server migrates its database at each start: it merges `session_names` into `sessions` and drops `workspace_original_paths`, so an older version finds the tables it reads gone. |
 | SiYuan | absent | Its kernel logs a downgrade at its start and goes on. |
+| Ollama | absent | Its models are files named by their digests, and its data holds no database. |
 | Hermes WebUI | absent | Its one version is locked. |
 
 | Feed `kind` | Its keys | The versions | A version's digest |

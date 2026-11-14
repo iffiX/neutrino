@@ -352,6 +352,10 @@ walk theirs. A new code and its wording are one change.
 | `ayakaleaf_guest_failed` | `{step, detail}` | a guest of the Ayakaleaf module in its `details.guests`, `step` being `admin_login`, `register`, `password` or `name` ([agent/modules/ayakaleaf.md](agent/modules/ayakaleaf.md), "The guest account") | added |
 | `op_unknown` | `{op}` | a `file` stream naming any `op` but `list` | added |
 | `result_too_large` | `{limit}` | a stream's close sent in place of one whose params do not fit one record, `limit` being `RecordBytesMax` in bytes, 65536 ([transport.md](transport.md), "The stream layer"); the panel shows it as the command's refusal | added |
+| `ollama_found` | `{path}` | the `code` of an `install_failed` `ollama` row on Windows or macOS, an install beside the publisher's app at `path` ([agent/modules/ollama.md](agent/modules/ollama.md)) | added |
+| `ollama_unreachable` | `{detail}` | the `code` of `GET /api/agent/module/ollama` and 502 of its model routes, a call through the hub's forward that did not reach Ollama | added |
+| `ollama_not_running`, `ollama_model_name_invalid`, `ollama_model_unknown`, `ollama_pull_unknown` | none, `{name}`, `{name}`, `{name}` | the model routes of `ollama`: a machine whose server does not run, a name outside the form a model's name takes, a model the machine does not have, and a pull the queue does not hold | added |
+| `ollama_pull_failed` | `{name, detail}` | a pull's `code` in `OllamaDeviceView.pulls`, with Ollama's own words | added |
 | `model_not_served` | `{model}` | 400 of `ai/gateway/set`, a `default_model` the gateway does not serve ([hub_components/ai.md](hub_components/ai.md), "The default model") | added |
 | `key_passphrase_not_stored` | none | 400 of `device/add` and `device/agent/install`, an encrypted SSH key the hub stores with no passphrase: a key file named in `config/devices` or an older vault entry. The Credentials page keeps `key_passphrase_needed` | added |
 | `hub_untrusted` | none | a client's or an agent's own word for a message 2 that opens under no psk | kept, now of the handshake |
@@ -384,7 +388,7 @@ the agent group follows, then the panel's live sockets.
 | `/api/hub/credential` | The secrets the box keeps for somebody, SSH keys, logins and tokens, and the ones it generated for the machines |
 | `/api/hub/setting` | The panel's own: its two ports, its scheme and certificate authority, password, hub name, backup, restore, version, and updating the hub itself from its newest release |
 | `/api/agent/file` | A machine's directory listing, for the panel's path window |
-| `/api/agent/module` | The machine page `/agents/<id>`: the modules a device hosts through its agent, observed state, install, start, stop, uninstall, versions and the catalog; `account`, the machine's available accounts; and under it one block per module, `samba`, `terminal`, `ssh_server`, `remote_desktop`, `gitea`, `podman`, `vscode`, `code_server`, `cloudcli`, `codeg`, `siyuan`, `codex`, `claude_code`, `opencode`, `hermes_webui`, `ayakaleaf`, each setting what it is to have and `gitea` and `podman` importing what the machine already has |
+| `/api/agent/module` | The machine page `/agents/<id>`: the modules a device hosts through its agent, observed state, install, start, stop, uninstall, versions and the catalog; `account`, the machine's available accounts; and under it one block per module, `samba`, `terminal`, `ssh_server`, `remote_desktop`, `gitea`, `ollama`, `podman`, `vscode`, `code_server`, `cloudcli`, `codeg`, `siyuan`, `codex`, `claude_code`, `opencode`, `hermes_webui`, `ayakaleaf`, each setting what it is to have and `gitea` and `podman` importing what the machine already has |
 | `/ws` | The panel's live sockets, grouped the same way: `/ws/hub/event` (cache invalidation, site-wide), `/ws/hub/dashboard/stat`, `/ws/hub/dashboard/dns_log`, `/ws/hub/task`; `/ws/agent/terminal` |
 
 The machine page `/agents/<id>` reads `/api/agent/module?device_id=...`
@@ -789,6 +793,11 @@ to pick one.
 | `POST /api/agent/module/gitea/set` | `{device_id, ...}` | |
 | `POST /api/agent/module/gitea/admin/add` | `{device_id, ...}` | |
 | `POST /api/agent/module/gitea/admin/password/set` | `{device_id, username, password}` | |
+| `GET /api/agent/module/ollama` | `?device_id=` | `OllamaDeviceView`: the fields of every module view, `version` and `details` as last reported; `is_running`, the details' own; and while it is true, `models`, each `{name, parameter_size, quantization, size_bytes, modified_at, is_loaded, memory_bytes, vram_bytes}` from Ollama's `/api/tags` and `/api/ps` through the hub's forward, `total_bytes` their sum, and `code` and `params` `ollama_unreachable {detail}` when that call fails; on every row `pulls`, the machine's pulls in order, each `{name, state, completed_bytes, total_bytes, speed_bytes, code, params}`, `state` `running`, `queued` or `failed` ([agent/modules/ollama.md](agent/modules/ollama.md), "The model list is the hub's, through a forward of its own") |
+| `POST /api/agent/module/ollama/model/pull` | `{device_id, name}` | puts a pull of `name` at the end of the machine's queue, a hub task that outlives the page; `OllamaDeviceView`; 400 `ollama_model_name_invalid {name}`; 409 `agent_offline`, and `ollama_not_running` while the details say the server does not run |
+| `POST /api/agent/module/ollama/model/cancel` | `{device_id, name}` | ends the running pull of `name` by closing its connection, or takes a waiting or failed one off the queue; `OllamaDeviceView`; 404 `ollama_pull_unknown {name}` |
+| `POST /api/agent/module/ollama/model/remove` | `{device_id, name}` | `DELETE /api/delete` for `name`; `OllamaDeviceView`; 404 `ollama_model_unknown {name}`; 409 `agent_offline` and `ollama_not_running`; 502 `ollama_unreachable {detail}` |
+| `POST /api/agent/module/ollama/model/unload` | `{device_id, name}` | `POST /api/generate` for `name` with `keep_alive` 0, which takes it out of memory; the same answer and refusals |
 | `GET /api/agent/module/remote_desktop` | `?device_id=` | `RemoteDesktopDeviceView`: the fields of every module view, `state` being the module's as last reported; `is_enabled`, the switch; `platform_os`, the machine's `linux`, `windows` or `darwin`; and `rdp`, the share as the machine last declared it, `{is_shared, account, port, attention, connected_count, is_available}`, the last true unless the machine's agent package reports the host absent |
 | `POST /api/agent/module/remote_desktop/set` | `{device_id, is_enabled}` | stores `config/devices/<id>/remote_desktop.json` and pushes; turning it on generates the seat password when the device has none; 409 `agent_offline`; `RemoteDesktopDeviceView` |
 | `GET /api/agent/module/hermes_webui` | `?device_id=` | `HermesWebuiDeviceView`: `port`, the forwarder's port as the machine reports it, and `state`, `version` and `details` as last reported |
@@ -877,7 +886,7 @@ None of them is keyed by the peer's address.
 | Directory | Files |
 | --- | --- |
 | `web/routers/hub/` | `setup.py`, `auth.py`, `display.py`, `dashboard.py`, `network.py`, `overlay.py` with `overlay_direct.py`, `overlay_netbird.py`, `overlay_easytier.py`, `overlay_relay.py`, `overlay_sakurafrp.py` and `overlay_openfrp.py`, `proxy.py` with `proxy_node.py`, `ai.py` with `ai_gateway.py`, `device.py`, `client.py`, `service.py`, `credential.py`, `setting.py` |
-| `web/routers/agent/` | `file.py`, `module.py` with `module_account.py`, `module_instances.py` (Terminal, the file share, the SSH server, VS Code, code-server, CloudCLI, Codeg and SiYuan) with `module_vscode_terms.py`, `module_samba.py` (its status), `module_remote_desktop.py`, `module_gitea.py`, `module_podman.py`, `module_hermes_webui.py` and `module_ayakaleaf.py` |
+| `web/routers/agent/` | `file.py`, `module.py` with `module_account.py`, `module_instances.py` (Terminal, the file share, the SSH server, VS Code, code-server, CloudCLI, Codeg and SiYuan) with `module_vscode_terms.py`, `module_samba.py` (its status), `module_remote_desktop.py`, `module_gitea.py`, `module_ollama.py`, `module_podman.py`, `module_hermes_webui.py` and `module_ayakaleaf.py` |
 | `web/` | `ws.py`, both socket groups |
 
 Each router's test is `hub/tests/web/routers/{hub,agent}/test_<page>.py`
@@ -1596,6 +1605,22 @@ the step `command_line_tools` first, which fails `gitea_git_missing` when no
 `git` is found after it, and an install refuses `user_create_failed {user,
 detail}` when the system will not make the server's account.
 
+The `ollama` module runs Ollama on Linux, macOS and Windows
+([agent/modules/ollama.md](agent/modules/ollama.md)). Its configuration is
+empty, `{}`, and the hub keeps no file for it. Its recipe names one
+artifact, `ollama`, the release archive of the version the machine runs, of
+kind `tar_zst` on Linux, which its runner unpacks with the system's `zstd`
+that `packages` names, `zip` on Windows and `tar_gz` on macOS, whose entry
+names `min_version` 14; the agent opens `package {module: ollama, artifact,
+digest}` for it. `details` is `{is_running, port, version, found,
+has_package_mark}`, `found` empty for the module's own server and `unit`
+or `app` for a person's, which the module adopts and the hub locks at its
+version. The server listens on `127.0.0.1:11434` alone, so its `api` entry
+is reached through the agent's `connect` stream ("The connect stream").
+An install on Windows or macOS beside the publisher's app refuses
+`ollama_found {path}`. The report carries no model: the hub reads and
+changes them through Ollama's own API.
+
 The `podman` module runs the declared containers on Linux, Windows and
 macOS ([agent/modules/containers.md](agent/modules/containers.md)). Its
 configuration is `{containers, hub_containers, mirrors, machine}`.
@@ -1835,6 +1860,7 @@ its own language:
 | `declared` | none |
 | `device_share` | `{device}` |
 | `gitea_module` | `{host}` |
+| `ollama_module` | `{host}`; the entry exists while the device reports the module `installed`, `stopped` or `running` with its port |
 | `samba_module` | `{host}` |
 | `vscode_module` | `{host, account}`; the entry exists only while the device reports the instance running |
 | `cloudcli_module` | `{host, account}`; the same |
@@ -1885,6 +1911,7 @@ source, device_id, device_name, local_name}`:
 | --- | --- | --- | --- | --- |
 | an instance of VS Code, code-server, CloudCLI, Codeg or SiYuan | `<module>_<device id>_<account>` | `<module title> (<account>)` | `module` | `web` |
 | Gitea | `gitea_<device id>` | `Gitea` | `module` | `web`, and `ssh`, a TCP `port` entry for Gitea's own SSH server ([agent/modules/gitea.md](agent/modules/gitea.md)) |
+| Ollama | `ollama_<device id>` | `Ollama` | `module` | `api`, a TCP `port` entry for Ollama's API at 11434 ([agent/modules/ollama.md](agent/modules/ollama.md)) |
 | the SSH server | `ssh_server_<device id>` | `SSH` | `module` | one `ssh` entry per account the module enables, named by its account |
 | a container module, Hermes WebUI and Ayakaleaf among them | `<module>_<device id>` | the module's title | `module` | `web`, its forwarder's page, and for every other port its containers publish `<port>`, or `<port>_udp` for a UDP one |
 | a container the Containers module declares | `podman_<device id>_<container>` | the container's name | `declared` | `<port>`, or `<port>_udp` for a UDP one |
@@ -2136,7 +2163,7 @@ The agent's end dials `127.0.0.1:<port>`, or the host address a container
 port is published on when it names one, and only a port the machine
 publishes at that moment on the stream's protocol ([agent.md](agent.md), "The
 connect stream"); any other port, and a number published on the other
-protocol alone, is refused `port_not_published {port}`. Gitea, VS Code and
+protocol alone, is refused `port_not_published {port}`. Gitea, Ollama, VS Code and
 every forwarder listen on `127.0.0.1` alone, so this dial is the one way a
 client reaches them, and no module opens a port for them in the machine's
 firewall.

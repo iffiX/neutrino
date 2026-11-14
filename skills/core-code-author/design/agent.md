@@ -42,7 +42,7 @@ never to the agent.
 hub's pages, in the agent, and in the client:
 
 - **Modules** are software the hub administers on a machine: Samba, Gitea,
-  Podman, VS Code, code-server, CloudCLI, Codeg, Codex, Claude Code, OpenCode, and the two the
+  Ollama, Podman, VS Code, code-server, CloudCLI, Codeg, Codex, Claude Code, OpenCode, and the two the
   agent's own package carries, Terminal, Remote desktop and the SSH server, of the kinds
   in "The kinds of module". The hub says what is wanted and sends
   the bytes; the agent observes, installs and configures. A device's Modules
@@ -146,7 +146,7 @@ other modules' tasks ("The steps"). A step takes the step locks it needs
 before it runs and lets them go when it ends ("Step locks"). A newer entry
 for a module whose task runs replaces the plan at the next step boundary.
 `APPLY_ORDER` is the order tasks are made in and rows and the state error
-are read in: the file share, Terminal, the SSH server, Gitea, Containers,
+are read in: the file share, Terminal, the SSH server, Gitea, Ollama, Containers,
 Hermes WebUI, Ayakaleaf, VS Code, code-server, CloudCLI, Codeg, Claude Code,
 Codex, OpenCode, SiYuan, Remote desktop. A module whose task has not run its first step, since that
 step waits for a step lock, reads `queued` with the lock's code. A module
@@ -452,7 +452,7 @@ the first failure in `APPLY_ORDER`.
 | `verify` | the method's presence check; a `hub` module's version is kept | `install_failed` |
 | `switch {version}` | the whole version switch: stage, stop, swap, `verify`, start ([module_install.md](agent/module_install.md), "Module versions") | `failed` |
 | `configure` | the runner's apply of the configuration | `failed` |
-| `account {account}` | one enabled account of a program run as an account, its preparation, its service written and started; Gitea's system account; one enabled account of a command line program, the module's copy put first on its `PATH` at its first enabling and the copy its shell runs read, as that account | `failed` |
+| `account {account}` | one enabled account of a program run as an account, its preparation, its service written and started; Gitea's and Ollama's system account; one enabled account of a command line program, the module's copy put first on its `PATH` at its first enabling and the copy its shell runs read, as that account | `failed` |
 | `npm {account}` | CloudCLI's npm for one account | `failed` |
 | `start`, `stop` | the runner's start or stop | `failed` |
 | `uninstall` | the module stopped, the hub's configuration removed, an install still running stopped ([modules/cloudcli.md](agent/modules/cloudcli.md), "An uninstall stops what still installs"), the software, `post_uninstall`, and the data where the recipe says | `failed` |
@@ -476,6 +476,7 @@ that can pass 30 seconds by the lab's times:
 | Terminal, Remote desktop | `configure` | none |
 | SSH server | `configure`, then `account {account}` per enabled account | none |
 | Gitea | `packages` on Linux for `git`, `command_line_tools` on macOS while no `git` is found, `artifact git` on Windows for MinGit, `artifact gitea`, `verify`, `account {account}`, `configure`, `start` | `command_line_tools` about 7 minutes; `configure` waits for the server, about 30 seconds for the whole task otherwise |
+| Ollama | `packages` on Linux for `zstd`, `artifact ollama`, `verify`, `account neutrino_ollama` on Linux and macOS, `configure`, `start`; on Linux with a person's unit, `verify` alone before `configure` ([modules/ollama.md](agent/modules/ollama.md)) | `artifact ollama`, a 1.6 GB archive on Linux and Windows; `configure` waits for the server, at most 60 seconds |
 | Containers on Linux | `packages`, `verify`, `configure`, `start` | `packages`, and `configure` while it restarts containers |
 | Containers on Windows | `windows_features`, `restart`, `artifact wsl`, `artifact podman`, `artifact image`, `verify`, `machine`, `configure`, `start` | `restart` until a person restarts, `machine` about 40 seconds, `configure` 15 to 23 seconds |
 | Containers on macOS | `artifact podman`, `artifact image`, `verify`, `machine`, `configure`, `start` | `machine` |
@@ -578,7 +579,7 @@ lets them go when it ends. A task holds no step lock between steps.
 | --- | --- | --- | --- |
 | `containers` | Containers' engine: its Podman on Linux or its Podman machine, its rendered files and units, its record and in-memory configuration, its page ports | alone: every step of Containers' own task, and a container module's `uninstall`; shared: a container module's `pull`, `verify`, `start`, `replica_set` and `tex`, Hermes WebUI's key write in `first_start`, and Containers' `control` verb | A pull or a `tlmgr` run must not meet a Containers apply that restarts units, resizes the machine or runs `wsl --shutdown`, and two pulls, or a pull and an exec, on one Podman are safe together. |
 | `package_manager` | the system's installer: apt and dpkg, dnf, yum and rpm, pacman, msiexec and dism, macOS `installer` | `packages`, an `artifact` of kind `msi` or `pkg`, `windows_features`, an `uninstall` that removes system packages or an msi, and the self-update before it launches | One package manager runs on a machine at a time, and apt and dnf 5 fail at once on a lock another run holds. dism and msiexec share Windows servicing. |
-| `system_accounts` | the machine's account database: `useradd` and `userdel` on Linux, `sysadminctl` and `dscl` on macOS, local accounts on Windows | the file share's `configure`, Gitea's `account`, and their `uninstall` | `useradd` fails at once with `cannot lock /etc/passwd` while another one runs. On Windows the PowerShell host already runs one request at a time, so the lock costs nothing there and keeps one rule. |
+| `system_accounts` | the machine's account database: `useradd` and `userdel` on Linux, `sysadminctl` and `dscl` on macOS, local accounts on Windows | the file share's `configure`, Gitea's and Ollama's `account`, and their `uninstall` | `useradd` fails at once with `cannot lock /etc/passwd` while another one runs. On Windows the PowerShell host already runs one request at a time, so the lock costs nothing there and keeps one rule. |
 
 | Rule | Reason |
 | --- | --- |
@@ -664,6 +665,7 @@ way.
 | A thing of the person's that stands where the agent needs to put its own, a share with the name an account's share takes, an account with the name an SMB user takes, is left as it is, with a code that names it, worded so the person renames or removes their own thing: the apply leaves the module's share of that name off with `share_name_taken {name}` on the row and serves the rest, and refuses the account with `user_name_taken {user}`. | The person decides what gives way; the agent never does it for them. |
 | A setting of the person's that stops the agent's own things from working is reported on the module row by a code that names the setting, and is never changed. The file share's SELinux boolean `samba_export_all_rw` is the one exception ([agent/modules/file_share.md](agent/modules/file_share.md), "SELinux on Linux"). | The person sees why and keeps their setting. |
 | A program the person installed by hand that a module drives, a Samba on Linux among them, reads `installed` and `running` as the module's and is adopted as the module with an empty configuration; what it already serves stays the person's, is not copied into `config/`, and the panel does not manage it. The module's **Start** and **Stop** start and stop its service, and its **Uninstall** removes what the module added and no package, and puts the service back as the first **Start** found it ([agent/modules/file_share.md](agent/modules/file_share.md), "A person's Samba and the module's, on Linux"). | Adoption gives the person the module's switch and keeps their setup. |
+| A person's Ollama is adopted on Linux by its unit, and published on Windows and macOS while its app answers on Ollama's port; an **Install** beside the app refuses `ollama_found {path}` ([agent/modules/ollama.md](agent/modules/ollama.md)). | Ollama holds one port and the GPU, and the app starts its own server at the person's login. |
 | A module adds its own things through a seam the program offers for exactly that, an `include` line, a share of the system's SMB server, a unit of its own, and takes them away through the same seam at uninstall, leaving the person's things as they were. | The person's configuration is theirs before, during and after. |
 | No module fences the machine: no `hosts allow` of the whole server, no firewall rule, no pf anchor. A module's own share answers the loopback alone, since every client reaches it through the agent's relay. | A fence around the person's shares would block what the person opened on purpose. |
 
@@ -672,7 +674,7 @@ question: can two copies live on one machine side by side? A command line
 program can, one per place on `PATH`. A server with a fixed port, unit,
 system account or GPU cannot.
 
-| What the module finds | Software two copies of run side by side: a command line program, Codex, Claude Code or OpenCode | Software of which one copy runs on a machine: a server, such as Samba or a Podman machine |
+| What the module finds | Software two copies of run side by side: a command line program, Codex, Claude Code or OpenCode | Software of which one copy runs on a machine: a server, such as Samba, Ollama or a Podman machine |
 | --- | --- | --- |
 | no copy | installs its own | installs its own |
 | the person's copy | asks before it enables the account; on the yes the account's shell runs the module's copy first, and the person's copy stays as it is | adopts it, as the file share adopts a person's Samba, or refuses with a code that names it and never runs a second server |
@@ -733,7 +735,7 @@ linked from the table.
 | --- | --- | --- | --- |
 | carried by the agent | [Terminal](agent/modules/terminal.md), [Remote desktop](agent/modules/remote_desktop.md), which also detects a person's own AnyDesk and TeamViewer, and the [SSH server](agent/modules/ssh_server.md), the agent's own Go program run once per enabled account | `agent`, on every system | the module's own applier per system; the SSH server's instances through the account service layer |
 | software the module configures | [File share](agent/modules/file_share.md), [Containers](agent/modules/containers.md) | `system`; on Windows and macOS the file share's SMB server is `builtin`, and Containers is `hub` | the module's own applier; for Containers on Windows and macOS, inside a Podman machine of one account |
-| a service with a system account of its own | [Gitea](agent/modules/gitea.md) | `hub` | the account and the service the module makes, in the publisher's layout on every system |
+| a service with a system account of its own | [Gitea](agent/modules/gitea.md), [Ollama](agent/modules/ollama.md) | `hub` | the account and the service the module makes, in the publisher's layout on every system |
 | a program run as a person's account | [VS Code](agent/modules/vscode.md), [code-server](agent/modules/code_server.md), [CloudCLI](agent/modules/cloudcli.md), [Codeg](agent/modules/codeg.md), [SiYuan](agent/modules/siyuan.md) | `hub`, each archive unpacked and sealed under `agent/<module>/<directory>/` | one account service per enabled account, the forwarder in front of it, one app per running instance |
 | container images | [Hermes WebUI](agent/modules/hermes_webui.md), [Ayakaleaf](agent/modules/ayakaleaf.md) | `container`, pulled by the Containers module's Podman | hub containers on the Containers module, which the module needs |
 | a command line program per account | [Codex](agent/modules/codex.md), [Claude Code](agent/modules/claude_code.md), [OpenCode](agent/modules/opencode.md) | `hub`, the module's own copy unpacked and sealed under `agent/<module>/<directory>/` | nothing runs until a person runs the program: each enabled account's `PATH` reaches the module's copy first |
@@ -873,6 +875,7 @@ protocol:
 | the file share reports a share | 445, the SMB port |
 | the desktop is shared | the RustDesk direct port the `desktop` section reports |
 | the Gitea module reports its URL | that URL's port, and `ssh_listen_port`, its own SSH server's |
+| the Ollama module reads `installed`, `stopped` or `running` and its details name its port, the module's own server or a person's ([modules/ollama.md](agent/modules/ollama.md)) | 11434 |
 | a VS Code, code-server, CloudCLI, Codeg or SiYuan instance is configured | the instance's port |
 | an instance of the SSH server runs | the instance's port |
 | a container module with a page, Hermes WebUI or Ayakaleaf, is configured | its forwarder's port |
@@ -914,6 +917,7 @@ connection"), and each also answers the agent's dial on loopback:
 | Samba on Linux | every address; `hosts allow` names the networks the hub composed and `127.0.0.1` |
 | the file share on Windows and macOS | the system's SMB server on every address; the fence blocks every network outside the composed ones and leaves `127.0.0.0/8` and `::1` out of what it blocks |
 | Gitea | `127.0.0.1` alone (`HTTP_ADDR = 127.0.0.1`, `SSH_LISTEN_HOST = 127.0.0.1`) on every system, and the module opens no port in any firewall ([modules/gitea.md](agent/modules/gitea.md)) |
+| Ollama | `127.0.0.1:11434` alone (`OLLAMA_HOST`), and the module opens no port in any firewall ([modules/ollama.md](agent/modules/ollama.md)) |
 | the SSH server's instances | `127.0.0.1` alone ([modules/ssh_server.md](agent/modules/ssh_server.md)) |
 | RustDesk's direct port | every address, as RustDesk opens it; the share is declared once the port answers on `127.0.0.1` |
 | a Podman container's published port | every address, or the one address it is published on, which the agent dials; on Windows `127.0.0.1` alone, through WSL's forwarding from the Podman machine, and on macOS where Podman's forwarder listens, `127.0.0.1` among them |
@@ -1054,7 +1058,7 @@ The seventh is every read, write, `chmod`, `chown`, rename and removal in a
 place an account can write, its home and every folder it owns, whichever
 module makes it: its RustDesk settings, Codeg's data directory, the access
 entries of a share's folder on macOS, the read of whether a share's folder
-is a real folder on Linux and macOS and Gitea's folders among them, each made through
+is a real folder on Linux and macOS and Gitea's and Ollama's folders among them, each made through
 `modules/shared/account_files.py`. The one exception is the file share on
 Windows, whose grants on a share's folder SYSTEM sets itself, and whose
 folder it reads itself, on the folder's handle with no reparse point followed
@@ -1096,7 +1100,7 @@ platform with `smb_server` gets the file share, driving the SMB server the
 system carries, with nothing to install or uninstall; there, any other
 module the state names reads `unsupported`, never `failed`, beside the
 Terminal, Remote desktop and SSH server rows every platform has. A platform with
-`hub_packages` gets Gitea and the programs run as an account, VS Code,
+`hub_packages` gets Gitea, Ollama and the programs run as an account, VS Code,
 CloudCLI, Codeg and SiYuan, and macOS code-server beside them, the command
 line programs, Codex, Claude Code and OpenCode, and Containers as
 `PodmanMachineModuleRunner`, runner `podman_machine`, which runs Podman inside
@@ -1113,7 +1117,7 @@ only POSIX has is guarded, so one package imports on all three systems.
 | --- | --- | --- | --- |
 | Program | `/opt/neutrino/agent` | `C:\Program Files\Neutrino\agent` | `/Library/Application Support/Neutrino/agent/app` |
 | Configuration root: the binding, the credentials, the desired state | `/etc/neutrino/agent` | `%ProgramData%\Neutrino\agent\config`, under `%ProgramData%\Neutrino\agent`, whose ACL, SYSTEM and the administrators alone, the `.msi` sets | `/Library/Application Support/Neutrino/agent/config`, mode 700 |
-| State root: configured marks, the modules' kept failures, packages, the last reinstall, `vscode/`, `code_server/`, `cloudcli/`, `codeg/`, `siyuan/`, `codex/`, `claude_code/`, `opencode/`, `ai_tools/`, `podman/`, on Windows and macOS `gitea/` and `gitea_data/`, and on Windows `batch_logon.json`, the accounts the agent granted the batch logon right ([module_template.md](agent/module_template.md), "The run") | `/var/lib/neutrino/agent` | `%ProgramData%\Neutrino\agent\state` | `/Library/Application Support/Neutrino/agent/state`, mode 755 |
+| State root: configured marks, the modules' kept failures, packages, the last reinstall, `vscode/`, `code_server/`, `cloudcli/`, `codeg/`, `siyuan/`, `codex/`, `claude_code/`, `opencode/`, `ai_tools/`, `podman/`, `ollama/` and `ollama_data/`, on Windows and macOS `gitea/` and `gitea_data/`, and on Windows `batch_logon.json`, the accounts the agent granted the batch logon right ([module_template.md](agent/module_template.md), "The run") | `/var/lib/neutrino/agent` | `%ProgramData%\Neutrino\agent\state` | `/Library/Application Support/Neutrino/agent/state`, mode 755 |
 | Log | the journal | `%ProgramData%\Neutrino\agent\log\agent.log` | `/Library/Logs/Neutrino/agent/agent.log` |
 | Service | systemd `neutrino_agent.service` runs `nagent run` | the `neutrino_agent` service, LocalSystem, runs `nagent service run` | the `com.neutrino.agent` LaunchDaemon runs `nagent run` |
 | Control transport | Unix socket `/run/neutrino/agent/agent.sock` | named pipe `\\.\pipe\neutrino_agent`, its descriptor SYSTEM and the administrators | Unix socket `/var/run/neutrino/agent/agent.sock` |
@@ -1194,6 +1198,7 @@ module a system cannot run is left out on that system.
 | --- | --- | --- | --- |
 | [File share](agent/modules/file_share.md) | Samba | the system's own SMB server | the system's own SMB server |
 | [Gitea](agent/modules/gitea.md) | amd64 and arm64 | amd64 | arm64 and amd64 |
+| [Ollama](agent/modules/ollama.md) | amd64 and arm64 | amd64 | arm64 and amd64, macOS 14 or later |
 | [Containers](agent/modules/containers.md) (Podman) | yes | amd64, build 19041 or later, on WSL 2 | arm64 with Podman 6.x and amd64 with Podman 5.8.x, macOS 13 or later |
 | [VS Code](agent/modules/vscode.md) | amd64 and arm64 | amd64 | arm64 and amd64 |
 | [code-server](agent/modules/code_server.md) | amd64 and arm64 | no | arm64 and amd64 |
@@ -1225,6 +1230,7 @@ among them. `agent.log` holds one record per line: the lines of a message, a
 failure's words among them, stand joined by ` / `. Which sources a module reads there is on its own
 page: [file_share.md](agent/modules/file_share.md),
 [gitea.md](agent/modules/gitea.md),
+[ollama.md](agent/modules/ollama.md),
 [containers.md](agent/modules/containers.md), [vscode.md](agent/modules/vscode.md),
 [code_server.md](agent/modules/code_server.md),
 [cloudcli.md](agent/modules/cloudcli.md),
