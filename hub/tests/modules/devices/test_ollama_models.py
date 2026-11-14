@@ -216,3 +216,15 @@ def test_a_machine_that_cannot_be_reached_fails_its_pull():
     queue.add("dev", "a:1")
     assert _until(lambda: queue.pulls("dev")[0]["state"] == "failed")
     assert queue.pulls("dev")[0]["params"]["detail"] == "agent_offline"
+
+
+def test_a_pull_that_lands_reads_the_machine_again(ollama):
+    ollama.pull_lines["a:1"] = PULL
+    landed: list = []
+    queue = OllamaPullQueue(
+        address_of=lambda device: ollama.address, on_pulled=landed.append
+    )
+    queue.add("dev", "a:1")
+    queue.add("dev", "nothing:1")
+    assert _until(lambda: [pull["state"] for pull in queue.pulls("dev")] == ["failed"])
+    assert landed == ["dev"]

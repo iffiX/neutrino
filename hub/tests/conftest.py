@@ -899,6 +899,26 @@ class StubHubForwards:
         return None
 
 
+class StubOllamaGateway:
+    """The gateway's Ollama providers, recording each machine refreshed and each forget."""
+
+    def __init__(self):
+        self.refreshed: list = []
+        self.forgotten = 0
+
+    def follow(self, device_id, address) -> None:
+        return None
+
+    def forget_all(self) -> None:
+        self.forgotten += 1
+
+    def drop(self, device_id) -> None:
+        return None
+
+    def refresh(self, device_id) -> None:
+        self.refreshed.append(device_id)
+
+
 class StubPublishedServices:
     """The published list as the paths that can move it reach for it.
 
@@ -953,6 +973,7 @@ class FakeModuleRuntime:
         self.agent_sessions = FakeChannelSessions(online)
         self.published_services = StubPublishedServices()
         self.hub_forwards = StubHubForwards()
+        self.ollama_gateway = StubOllamaGateway()
         self.desired_states = DesiredStateStore()
         self.module_releases = ModuleReleaseStore(path=None)
         self.channel_replies = SessionReplyBook()

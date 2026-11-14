@@ -282,7 +282,12 @@ class OllamaPullQueue:
     """Every machine's pulls, one running at a time per machine, on a thread of its own."""
 
     def __init__(
-        self, *, address_of, client_class=OllamaApiClient, clock=time.monotonic
+        self,
+        *,
+        address_of,
+        client_class=OllamaApiClient,
+        clock=time.monotonic,
+        on_pulled=None,
     ):
         """
         Args:
@@ -291,8 +296,10 @@ class OllamaPullQueue:
                 it cannot be reached.
             client_class: Makes the client for an address.
             clock: The monotonic clock a pull's speed is measured on.
+            on_pulled: Called with the device id after a pull succeeds.
         """
         self._address_of = address_of
+        self._on_pulled = on_pulled
         self._client_class = client_class
         self._clock = clock
         self._lock = threading.Lock()
@@ -445,6 +452,8 @@ class OllamaPullQueue:
             queue = self._queues.get(device_id, [])
             if pull in queue:
                 queue.remove(pull)
+        if self._on_pulled is not None:
+            self._on_pulled(device_id)
 
 
 def _close(connection) -> None:

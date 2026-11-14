@@ -262,6 +262,9 @@ DEVICE_OLLAMA_CALL_TIMEOUT_S = 10.0
 DEVICE_OLLAMA_PULL_READ_TIMEOUT_S = 300.0
 # The seconds a pull's speed is measured over.
 DEVICE_OLLAMA_SPEED_WINDOW_S = 5.0
+# How often the gateway's Ollama providers read every followed machine's
+# ``/api/tags`` again.
+DEVICE_OLLAMA_GATEWAY_READ_INTERVAL_S = 30.0
 # The states of a pull in the queue.
 DEVICE_OLLAMA_PULL_QUEUED = "queued"
 DEVICE_OLLAMA_PULL_RUNNING = "running"

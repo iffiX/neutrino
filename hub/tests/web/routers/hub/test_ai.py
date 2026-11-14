@@ -4,10 +4,19 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from neutrino_hub.modules.cliproxyapi.ops import write_ollama_providers
 from neutrino_hub.modules.credentials.vault import SecretVault
-from neutrino_hub.web.dependencies import require_session
+from neutrino_hub.modules.devices.registry import DeviceRegistry
+from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.routers.hub import ai as ai_router
 from tests.conftest import unlock_vault
+
+
+class HostnameRuntime:
+    """The runtime's hostnames, as the machines reported them."""
+
+    def __init__(self):
+        self.device_hostname: dict = {}
 
 
 @pytest.fixture
@@ -17,7 +26,10 @@ def client(monkeypatch, tmp_path):
     app = FastAPI()
     app.include_router(ai_router.router)
     app.dependency_overrides[require_session] = lambda: None
+    runtime = HostnameRuntime()
+    app.dependency_overrides[get_runtime] = lambda: runtime
     with TestClient(app) as test_client:
+        test_client.hostnames = runtime.device_hostname
         yield test_client
 
 
@@ -187,3 +199,23 @@ def test_provider_refusals(client):
     absent = {"provider_id": "absent"}
     assert client.post("/api/hub/ai/provider/set", json=absent).status_code == 404
     assert client.post("/api/hub/ai/provider/remove", json=absent).status_code == 404
+
+
+def test_each_machines_ollama_is_listed_by_the_machines_name(client):
+    assert client.get("/api/hub/ai/ollama").json() == {"providers": []}
+    named = DeviceRegistry().create("zeta").id
+    unnamed = DeviceRegistry().create(None).id
+    client.hostnames[unnamed] = "alpha-host"
+    write_ollama_providers(
+        [
+            {"device_id": named, "address": "127.0.0.1:40001", "models": ["a:1"]},
+            {"device_id": unnamed, "address": "127.0.0.1:40002", "models": ["b:1"]},
+        ]
+    )
+
+    assert client.get("/api/hub/ai/ollama").json() == {
+        "providers": [
+            {"device_id": unnamed, "name": "alpha-host", "models": ["b:1"]},
+            {"device_id": named, "name": "zeta", "models": ["a:1"]},
+        ]
+    }

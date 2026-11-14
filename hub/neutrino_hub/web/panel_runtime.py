@@ -42,7 +42,7 @@ from neutrino_hub.modules.channel.port_guard import ChannelPortGuard
 from neutrino_hub.modules.channel.tickets import ChannelTicketRegistry
 from neutrino_hub.modules.cliproxyapi.ops import CliproxyApiServedModelCache
 from neutrino_hub.modules.devices.catalog import DeviceCatalogCache
-from neutrino_hub.modules.clients.ai_keys import gateway_models
+from neutrino_hub.modules.clients.ai_keys import apply_keys, gateway_models
 from neutrino_hub.modules.devices.desired_state import (
     DesiredStateStore,
     machine_apps,
@@ -55,6 +55,7 @@ from neutrino_hub.modules.devices.module_releases import (
 from neutrino_hub.modules.devices.retry_marks import DeviceRetryMarks
 from neutrino_hub.modules.services.apps import app_slugs, machine_slugs
 from neutrino_hub.modules.services.constants import SERVICES_MACHINE_SLUG_FALLBACK
+from neutrino_hub.modules.devices.ollama_gateway import OllamaGatewayProviderTable
 from neutrino_hub.modules.devices.ollama_models import OllamaPullQueue
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.system.machine import machine_id
@@ -227,9 +228,15 @@ class PanelRuntime:
         )
         # The forwards of the hub's transport on its loopback, each to a
         # port a machine publishes, and every machine's Ollama pulls, which
-        # reach Ollama's API through them.
+        # reach Ollama's API through them. The gateway's providers generated
+        # from each machine's Ollama follow both.
         self.hub_forwards = HubForwardTable(channel=self.channel)
-        self.ollama_pulls = OllamaPullQueue(address_of=self.ollama_address)
+        self.ollama_gateway = OllamaGatewayProviderTable(
+            on_change=self._ollama_providers_changed
+        )
+        self.ollama_pulls = OllamaPullQueue(
+            address_of=self.ollama_address, on_pulled=self.ollama_gateway.refresh
+        )
         # The scope each client's socket arrived from, settled at its hello;
         # its list and its gateway URL are resolved for it.
         self.client_scope: dict[str, HostScope] = {}
@@ -1073,6 +1080,11 @@ class PanelRuntime:
         """
         return self.hub_forwards.address(device_id, DEVICE_OLLAMA_PORT)
 
+    def _ollama_providers_changed(self) -> None:
+        """Hand the gateway the changed Ollama providers in place, and tell the AI page."""
+        apply_keys()
+        self.publish_ai_usage()
+
     def forget_device(self, device_id: str) -> None:
         """Drop everything held in memory about one device.
 
@@ -1097,6 +1109,7 @@ class PanelRuntime:
         self.device_last_error.pop(key, None)
         self.device_shares.withdraw(key)
         self.hub_forwards.stop(key, DEVICE_OLLAMA_PORT)
+        self.ollama_gateway.drop(key)
         self.agent_sessions.refuse_from_thread(key, CHANNEL_CODE_BINDING_UNKNOWN)
         self.published_services.schedule_refresh()
 

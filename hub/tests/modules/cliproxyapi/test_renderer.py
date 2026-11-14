@@ -156,3 +156,33 @@ def test_a_device_key_is_one_of_the_gateways_keys(monkeypatch, tmp_path):
     ).render()
 
     assert yaml.safe_load(text)["api-keys"] == ["client-key-1", key.open_key()]
+
+
+def test_a_machines_ollama_follows_the_stored_providers_with_no_key():
+    text = CliproxyApiConfigRenderer(
+        config=CliproxyApiConfig(listen_port=8317),
+        providers=[
+            _provider(id="p1", kind="custom", name="Relay", base_url="https://a/v1")
+        ],
+        api_keys={"p1": "k1"},
+        client_keys=["client-key-1"],
+        management_key="",
+        ollama_providers=[
+            {
+                "device_id": "0a1b",
+                "address": "127.0.0.1:40001",
+                "models": ["qwen2.5:0.5b", "smollm2:135m"],
+            }
+        ],
+    ).render()
+
+    entries = yaml.safe_load(text)["openai-compatibility"]
+    assert [entry["name"] for entry in entries] == ["relay", "ollama-0a1b"]
+    assert entries[1] == {
+        "name": "ollama-0a1b",
+        "base-url": "http://127.0.0.1:40001/v1",
+        "models": [
+            {"name": "qwen2.5:0.5b", "alias": "qwen2.5:0.5b"},
+            {"name": "smollm2:135m", "alias": "smollm2:135m"},
+        ],
+    }

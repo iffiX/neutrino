@@ -4,7 +4,8 @@ The providers come from the credentials store and the rest from
 ``config/cliproxyapi``; CLIProxyAPI never gets configured by hand. A provider's
 kind decides which upstream block it lands in: ``anthropic`` speaks the
 Messages protocol, ``openai`` the Responses protocol, ``gemini`` Google's,
-and ``custom`` is an OpenAI-compatible chat endpoint.
+and ``custom`` is an OpenAI-compatible chat endpoint. Each machine's Ollama
+is an OpenAI-compatible entry of its own after them, with no key.
 
 Pure: state in, text out. The client keys arrive already resolved from the
 vault; the device keys are opened through the configuration they belong to.
@@ -18,6 +19,8 @@ from neutrino_hub.modules.cliproxyapi.config import CliproxyApiConfig
 from neutrino_hub.modules.cliproxyapi.constants import (
     CLIPROXYAPI_AUTH_DIR,
     CLIPROXYAPI_LISTEN_HOST,
+    CLIPROXYAPI_OLLAMA_API_PATH,
+    CLIPROXYAPI_OLLAMA_PROVIDER_PREFIX,
 )
 from neutrino_hub.modules.ai.registry import AiProviderRecord
 
@@ -40,6 +43,7 @@ class CliproxyApiConfigRenderer:
         client_keys: list[str],
         management_key: str,
         module_keys: "list[str] | tuple" = (),
+        ollama_providers: "list[dict] | tuple" = (),
     ):
         """
         Args:
@@ -53,6 +57,8 @@ class CliproxyApiConfigRenderer:
                 with the management API and usage metering off.
             module_keys: The resolved keys of the container modules that use
                 the gateway, read from each device's module file.
+            ollama_providers: The providers generated from each machine's
+                Ollama, ``{device_id, address, models}`` each.
         """
         self._config = config
         self._providers = providers
@@ -60,6 +66,7 @@ class CliproxyApiConfigRenderer:
         self._client_keys = client_keys
         self._management_key = management_key
         self._module_keys = list(module_keys)
+        self._ollama_providers = list(ollama_providers)
 
     def render(self) -> str:
         """Render the configuration file.
@@ -112,6 +119,20 @@ class CliproxyApiConfigRenderer:
                 if models:
                     entry["models"] = models
                 compatibility.append(entry)
+        for provider in self._ollama_providers:
+            compatibility.append(
+                {
+                    "name": _slug(
+                        CLIPROXYAPI_OLLAMA_PROVIDER_PREFIX + provider["device_id"]
+                    ),
+                    "base-url": (
+                        f"http://{provider['address']}{CLIPROXYAPI_OLLAMA_API_PATH}"
+                    ),
+                    "models": [
+                        {"name": name, "alias": name} for name in provider["models"]
+                    ],
+                }
+            )
         if compatibility:
             document["openai-compatibility"] = compatibility
         rendered = yaml.safe_dump(document, sort_keys=False, allow_unicode=True)

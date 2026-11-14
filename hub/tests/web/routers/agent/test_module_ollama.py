@@ -154,3 +154,13 @@ def test_a_remove_and_an_unload_change_the_next_view(api):
     )
     assert answer.status_code == 404
     assert answer.json()["detail"]["code"] == "ollama_model_unknown"
+
+
+def test_a_remove_reads_the_machines_models_again_for_the_gateway(api):
+    client, runtime, server = api
+    server.models = [MODEL]
+    runtime.report(DEVICE, "ollama", state="running", is_running=True, port=11434)
+    client.post(
+        f"{BASE}/model/remove", json={"device_id": DEVICE, "name": "qwen2.5:0.5b"}
+    )
+    assert runtime.ollama_gateway.refreshed == [DEVICE]

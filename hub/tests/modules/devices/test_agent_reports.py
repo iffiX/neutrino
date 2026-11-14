@@ -43,8 +43,9 @@ class FakeForwards:
         return (binding_id, port) in self.held
 
     def address(self, binding_id, port):
-        self.asked.append(("address", binding_id, port))
-        self.held.add((binding_id, port))
+        if (binding_id, port) not in self.held:
+            self.asked.append(("address", binding_id, port))
+            self.held.add((binding_id, port))
         return "127.0.0.1:40001"
 
     def stop(self, binding_id, port):
@@ -53,9 +54,23 @@ class FakeForwards:
         return True
 
 
+class FakeOllamaGateway:
+    """The gateway's Ollama providers, recording what a report asks of them."""
+
+    def __init__(self):
+        self.asked: list = []
+
+    def follow(self, device_id, address):
+        self.asked.append(("follow", device_id, address))
+
+    def drop(self, device_id):
+        self.asked.append(("drop", device_id))
+
+
 class FakeRuntime:
     def __init__(self, lans=()):
         self.hub_forwards = FakeForwards()
+        self.ollama_gateway = FakeOllamaGateway()
         self.device_metrics = {}
         self.device_modules = {}
         self.device_platform = {}
@@ -890,3 +905,40 @@ def test_a_report_keeps_the_forward_to_ollama_while_it_answers(box):
     assert runtime.hub_forwards.asked[-1] == ("stop", DEVICE, 11434)
     agent_reports.record_report(runtime, device, {"modules": {}})
     assert len(runtime.hub_forwards.asked) == 2
+
+
+def test_a_report_follows_the_machines_ollama_for_the_gateway(box):
+    runtime, device = box
+
+    def ollama(is_running):
+        return {
+            "modules": {
+                "ollama": {
+                    "state": "running",
+                    "details": {"is_running": is_running, "port": 11434},
+                }
+            }
+        }
+
+    agent_reports.record_report(runtime, device, ollama(True))
+    agent_reports.record_report(runtime, device, ollama(True))
+    agent_reports.record_report(runtime, device, ollama(False))
+    agent_reports.record_report(runtime, device, {"modules": {}})
+    assert runtime.ollama_gateway.asked == [
+        ("follow", DEVICE, "127.0.0.1:40001"),
+        ("follow", DEVICE, "127.0.0.1:40001"),
+        ("follow", DEVICE, ""),
+        ("follow", DEVICE, ""),
+    ]
+
+
+def test_a_socket_ending_takes_the_machines_ollama_out_of_the_gateway(box):
+    runtime, device = box
+    agent_reports.record_offline(runtime, device)
+    assert runtime.ollama_gateway.asked == [("drop", DEVICE)]
+
+
+def test_a_lost_control_connection_keeps_the_machines_ollama_in_the_gateway(box):
+    runtime, device = box
+    agent_reports.record_offline(runtime, device, is_control_lost=True)
+    assert runtime.ollama_gateway.asked == []

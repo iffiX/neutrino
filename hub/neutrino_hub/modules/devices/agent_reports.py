@@ -129,14 +129,19 @@ def record_report(
         runtime.device_last_error.pop(key, None)
 
 
-def record_offline(runtime, device) -> None:
+def record_offline(runtime, device, *, is_control_lost: bool = False) -> None:
     """Take a socket ending: whatever the machine hosted stops with it.
 
     Args:
         runtime: The shared runtime.
         device: The device whose socket ended.
+        is_control_lost: Whether the session ended with the panel's control
+            connection to the transport. The gateway keeps the machine's
+            Ollama provider then.
     """
     record_desktop_share(runtime, device, {}, runtime.device_address.get(device.id, ""))
+    if not is_control_lost:
+        runtime.ollama_gateway.drop(device.id)
 
 
 def link_address(network: dict, peer_host: str) -> str:
@@ -320,19 +325,23 @@ def _adopt_modules(runtime, key: str, modules: dict) -> bool:
 
 
 def _follow_ollama(runtime, key: str, status) -> None:
-    """Keep the hub's forward to the machine's Ollama while it answers, and stop it once it does not."""
+    """Keep the hub's forward to the machine's Ollama while it answers, and stop it once it does not.
+
+    The gateway's Ollama providers follow the forward's address, empty
+    while there is none.
+    """
     details = status.get("details") if isinstance(status, dict) else None
     is_running = isinstance(details, dict) and details.get("is_running") is True
     forwards = runtime.hub_forwards
-    if is_running == forwards.is_held(key, DEVICE_OLLAMA_PORT):
-        return
+    address = ""
     try:
         if is_running:
-            forwards.address(key, DEVICE_OLLAMA_PORT)
-        else:
+            address = forwards.address(key, DEVICE_OLLAMA_PORT)
+        elif forwards.is_held(key, DEVICE_OLLAMA_PORT):
             forwards.stop(key, DEVICE_OLLAMA_PORT)
     except (AgentOfflineError, StreamRefusedError) as error:
         LOGGER.warning("device %s: no forward to its Ollama: %s", key, error)
+    runtime.ollama_gateway.follow(key, address)
 
 
 def _import(store, key: str, name: str, status: dict) -> bool:

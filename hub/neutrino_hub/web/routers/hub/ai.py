@@ -4,7 +4,11 @@ One provider is one endpoint and one credential reference: ``secret_id``
 names a ``token`` the Credentials page holds, the gateway's own renderer
 resolves it, and a device's Dev Setup is pointed at what the providers
 serve. No key material passes through these routes in either direction.
+The providers the hub generates from each machine's Ollama are read here
+and written by nobody.
 """
+
+import operator
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
@@ -13,9 +17,14 @@ from neutrino_hub.modules.ai.registry import (
     AiProviderRecord,
     AiProviderRegistry,
 )
+from neutrino_hub.modules.cliproxyapi.ops import read_ollama_providers
 from neutrino_hub.modules.credentials.vault import SecretVault
-from neutrino_hub.web.dependencies import require_session
+from neutrino_hub.modules.devices.registry import DeviceRegistry
+from neutrino_hub.web.dependencies import get_runtime, require_session
+from neutrino_hub.web.shell_bridge import device_name
 from neutrino_hub.web.models import (
+    AiOllamaProviderListView,
+    AiOllamaProviderView,
     AiProviderCreate,
     AiProviderListView,
     AiProviderModelView,
@@ -43,6 +52,34 @@ def list_providers() -> AiProviderListView:
     """
     return AiProviderListView(
         providers=[_provider_view(r) for r in AiProviderRegistry().list_records()]
+    )
+
+
+@router.get("/ollama", response_model=AiOllamaProviderListView)
+def list_ollama_providers(runtime=Depends(get_runtime)) -> AiOllamaProviderListView:
+    """Read the providers the hub generates from each machine's Ollama.
+
+    Args:
+        runtime: The shared runtime, for the hostname each machine reports.
+
+    Returns:
+        One row per machine whose Ollama feeds the gateway, by the machine's
+        name.
+    """
+    registry = DeviceRegistry()
+    rows = []
+    for provider in read_ollama_providers():
+        device = registry.get(provider["device_id"])
+        name = (device_name(runtime, device) if device is not None else "") or provider[
+            "device_id"
+        ]
+        rows.append(
+            AiOllamaProviderView(
+                device_id=provider["device_id"], name=name, models=provider["models"]
+            )
+        )
+    return AiOllamaProviderListView(
+        providers=sorted(rows, key=operator.attrgetter("name", "device_id"))
     )
 
 

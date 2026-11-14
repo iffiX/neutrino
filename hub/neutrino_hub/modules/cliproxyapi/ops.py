@@ -39,6 +39,7 @@ from neutrino_hub.modules.cliproxyapi.constants import (
     CLIPROXYAPI_GENERATED_NAME,
     CLIPROXYAPI_HUB_KEY_NAME,
     CLIPROXYAPI_KEY_REFUSED_STATUSES,
+    CLIPROXYAPI_OLLAMA_PROVIDERS_RELATIVE,
     CLIPROXYAPI_RELOAD_POLL_S,
     CLIPROXYAPI_RELOAD_WAIT_S,
     CLIPROXYAPI_RESTART_WAIT_S,
@@ -202,6 +203,17 @@ def _served_models_path() -> Path:
     return constants.UTILS_STATE_ROOT / CLIPROXYAPI_SERVED_MODELS_RELATIVE
 
 
+def _ollama_providers_path() -> Path:
+    # Resolved per call, against the state root as it is right now.
+    return constants.UTILS_STATE_ROOT / CLIPROXYAPI_OLLAMA_PROVIDERS_RELATIVE
+
+
+def _is_address(address: str) -> bool:
+    """Whether an address is ``host:port``."""
+    host, _, port = address.rpartition(":")
+    return bool(host) and port.isdigit()
+
+
 def _read_served_models() -> list:
     """The stored served list; empty when none is stored or it does not read."""
     try:
@@ -214,19 +226,70 @@ def _read_served_models() -> list:
     return [name for name in models if isinstance(name, str) and name]
 
 
+def read_ollama_providers() -> list:
+    """The providers generated from each machine's Ollama, as last stored.
+
+    Returns:
+        ``{device_id, address, models}`` per stored provider whose device id
+        is set, whose address is ``host:port`` and that names a model;
+        empty when none is stored or the file does not read.
+    """
+    try:
+        held = json.loads(_ollama_providers_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    entries = held.get("providers") if isinstance(held, dict) else None
+    providers = []
+    for entry in entries if isinstance(entries, list) else []:
+        if not isinstance(entry, dict):
+            continue
+        device_id = entry.get("device_id")
+        address = entry.get("address")
+        models = entry.get("models")
+        if not isinstance(device_id, str) or not device_id:
+            continue
+        if not isinstance(address, str) or not _is_address(address):
+            continue
+        names = [name for name in models or [] if isinstance(name, str) and name]
+        if names:
+            providers.append(
+                {"device_id": device_id, "address": address, "models": names}
+            )
+    return providers
+
+
+def write_ollama_providers(providers: list) -> None:
+    """Store the providers generated from each machine's Ollama.
+
+    Args:
+        providers: ``{device_id, address, models}`` per provider.
+
+    Raises:
+        OSError: If the state file cannot be written.
+    """
+    write_generated(
+        _ollama_providers_path(),
+        json.dumps({"providers": providers}) + "\n",
+        mode=0o600,
+    )
+
+
 def has_credentials() -> bool:
     """Whether an account is signed in or a provider is turned on with a key.
 
     Returns:
-        True when a token file is in the auth directory under the state root
-        or an enabled provider with a key is in ``config/ai/providers.json``.
-        A providers file that does not parse counts as no provider.
+        True when a token file is in the auth directory under the state root,
+        an enabled provider with a key is in ``config/ai/providers.json``, or
+        a provider generated from a machine's Ollama is stored. A providers
+        file that does not parse counts as no provider.
     """
     try:
         providers = AiProviderRegistry().list_records()
     except ValueError:
         providers = []
     if any(provider.is_enabled and provider.secret_id for provider in providers):
+        return True
+    if read_ollama_providers():
         return True
     try:
         paths = list((constants.UTILS_STATE_ROOT / CLIPROXYAPI_AUTH_RELATIVE).iterdir())
@@ -497,6 +560,7 @@ class CliproxyApiConfigApplier:
             ],
             module_keys=_opened_module_keys(),
             management_key=management_key,
+            ollama_providers=read_ollama_providers(),
         ).render()
         return rendered, sum(1 for key in api_keys.values() if key)
 

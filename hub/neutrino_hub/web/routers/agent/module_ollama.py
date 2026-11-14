@@ -150,6 +150,7 @@ def remove_model(
     """
     context = running_context(runtime, request.device_id)
     _call(runtime, context, "delete", request.name)
+    runtime.ollama_gateway.refresh(context.key)
     return device_view(runtime, context)
 
 

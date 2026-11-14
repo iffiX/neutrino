@@ -79,6 +79,7 @@ class StubRuntime:
         self.served_models = None
         self.link_sampler = StubLinkSampler()
         self.address_sampler = StubLinkSampler()
+        self.ollama_gateway = StubLinkSampler()
         self.release_sampler = StubLinkSampler()
         self.traffic_history = StubLinkSampler()
         self.enrollment_sweeper = StubExitController()

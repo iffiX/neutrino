@@ -21,7 +21,12 @@ from neutrino_hub.modules.channel.sessions import ChannelSessionRegistry
 from neutrino_hub.modules.devices.desired_state import DesiredStateStore
 from neutrino_hub.modules.devices.registry import ManagedDevice
 from neutrino_hub.modules.services.device_shares import DeviceShareRegistry
-from tests.conftest import StubHubForwards, StubPublishedServices, unlock_vault
+from tests.conftest import (
+    StubHubForwards,
+    StubOllamaGateway,
+    StubPublishedServices,
+    unlock_vault,
+)
 
 DEVICE = "device-one"
 RDP_PATH = f"devices/{DEVICE}/rdp.json"
@@ -43,6 +48,7 @@ class ReportingRuntime:
         self.device_shares = DeviceShareRegistry()
         self.published_services = StubPublishedServices()
         self.hub_forwards = StubHubForwards()
+        self.ollama_gateway = StubOllamaGateway()
         self.agent_sessions = ChannelSessionRegistry(CHANNEL_ROLE_AGENT)
         self.desired_states = DesiredStateStore()
         self.pushed: list = []

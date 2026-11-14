@@ -741,6 +741,20 @@ class AiProviderListView(BaseModel):
     providers: list[AiProviderView]
 
 
+class AiOllamaProviderView(BaseModel):
+    """A provider the hub generates from one machine's Ollama, read-only."""
+
+    device_id: str
+    name: str
+    models: list[str]
+
+
+class AiOllamaProviderListView(BaseModel):
+    """The providers generated from each machine's Ollama, by the machine's name."""
+
+    providers: list[AiOllamaProviderView]
+
+
 class AiProviderCreate(BaseModel):
     """A provider to store; ``secret_id`` names a vault token, or nothing."""
 

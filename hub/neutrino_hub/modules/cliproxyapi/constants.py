@@ -75,6 +75,13 @@ CLIPROXYAPI_SERVED_MODELS_TTL_S = 10.0
 # The served model list, beside the usage store. The panel reads it at its
 # start.
 CLIPROXYAPI_SERVED_MODELS_RELATIVE = "cliproxyapi/served_models.json"
+# The providers the hub generates from each machine's Ollama, beside the
+# usage store. Every render of the gateway reads it.
+CLIPROXYAPI_OLLAMA_PROVIDERS_RELATIVE = "cliproxyapi/ollama_providers.json"
+# A generated provider's name before its device id, and the path of
+# Ollama's OpenAI-compatible API after its forward's address.
+CLIPROXYAPI_OLLAMA_PROVIDER_PREFIX = "ollama-"
+CLIPROXYAPI_OLLAMA_API_PATH = "/v1"
 
 # A change of keys alone is written into the served file, which the gateway
 # watches and reloads without a restart: how long the hub waits for it to

@@ -147,6 +147,7 @@ class ChannelControlHandler:
         """
         self._pending.clear()
         self._runtime.hub_forwards.forget_all()
+        self._runtime.ollama_gateway.forget_all()
         start_owned_task(self._push_shares())
 
     async def _push_shares(self) -> None:
@@ -383,7 +384,14 @@ class ChannelControlHandler:
             if runtime.agent_sessions.detach(session):
                 device = await asyncio.to_thread(DeviceRegistry().get, session.key)
                 if device is not None:
-                    await asyncio.to_thread(record_offline, runtime, device)
+                    await asyncio.to_thread(
+                        record_offline,
+                        runtime,
+                        device,
+                        is_control_lost=(
+                            fields.get("reason") == CHANNEL_CODE_CONTROL_UNAVAILABLE
+                        ),
+                    )
         else:
             runtime.client_sessions.detach(session)
             runtime.events.publish(WEB_EVENT_CLIENTS)

@@ -315,10 +315,11 @@ def _start_samplers() -> None:
     """The process-wide background readers, started with the panel application.
 
     Each watches something no write announces: what the gateway metered, what
-    the interfaces are doing, what each module's publisher released, and,
-    with the proxy, what every exit node measures. Each publishes an event
-    when its reading moves, so no page has to ask on a timer. The traffic
-    history counts every interface's bytes beside them.
+    the interfaces are doing, what each module's publisher released, the
+    models of each machine's Ollama, and, with the proxy, what every exit
+    node measures. Each publishes an event when its reading moves, so no page
+    has to ask on a timer. The traffic history counts every interface's bytes
+    beside them.
     """
     global _usage_collector
     runtime = shared_runtime()
@@ -330,6 +331,7 @@ def _start_samplers() -> None:
         _usage_collector.start()
     runtime.link_sampler.start()
     runtime.address_sampler.start()
+    runtime.ollama_gateway.start()
     runtime.release_sampler.start()
     runtime.enrollment_sweeper.start()
     runtime.web_share_sweeper.start()

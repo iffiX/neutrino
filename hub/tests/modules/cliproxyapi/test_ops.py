@@ -312,6 +312,54 @@ def test_a_signed_in_account_or_a_keyed_provider_turned_on_is_a_credential(box):
     assert ops.has_credentials() is True
 
 
+def _store_ollama_providers(box, providers) -> None:
+    path = box / "state" / "cliproxyapi" / "ollama_providers.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"providers": providers}), encoding="utf-8")
+
+
+def test_a_stored_ollama_provider_with_a_model_is_a_credential(box):
+    _store_ollama_providers(box, [])
+    assert ops.has_credentials() is False
+
+    _store_ollama_providers(
+        box, [{"device_id": "d", "address": "127.0.0.1:1", "models": ["a:1"]}]
+    )
+    assert ops.has_credentials() is True
+
+
+def test_every_render_carries_the_stored_ollama_providers(box):
+    _store_ollama_providers(
+        box,
+        [
+            {"device_id": "d1", "address": "127.0.0.1:40001", "models": ["a:1"]},
+            {"device_id": "", "address": "127.0.0.1:40002", "models": ["b:1"]},
+            {"device_id": "d3", "address": "nowhere", "models": ["c:1"]},
+            {"device_id": "d4", "address": "127.0.0.1:40004", "models": [3, ""]},
+        ],
+    )
+
+    assert [held["device_id"] for held in ops.read_ollama_providers()] == ["d1"]
+    CliproxyApiConfigApplier().apply()
+    entries = _rendered(box)["openai-compatibility"]
+    assert entries == [
+        {
+            "name": "ollama-d1",
+            "base-url": "http://127.0.0.1:40001/v1",
+            "models": [{"name": "a:1", "alias": "a:1"}],
+        }
+    ]
+    assert "ollama-d1" in CliproxyApiConfigApplier().render_with_stored_key()
+
+
+def test_a_stored_list_written_reads_back(box):
+    providers = [{"device_id": "d1", "address": "127.0.0.1:40001", "models": ["a:1"]}]
+    ops.write_ollama_providers(providers)
+    path = box / "state" / "cliproxyapi" / "ollama_providers.json"
+    assert path.stat().st_mode & 0o777 == 0o600
+    assert ops.read_ollama_providers() == providers
+
+
 def test_a_failed_or_empty_probe_leaves_the_last_list_that_held_a_name(
     box, monkeypatch
 ):

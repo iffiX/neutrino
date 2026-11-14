@@ -13,7 +13,8 @@ recorded and the state pushed once; ``leave`` drops the token and writes
 ``stream`` event for ``log`` is attached and accepted; the ``entry`` and
 ``token`` questions carry the judgments' answers; a client's ``persist`` is
 relayed to the agent and the agent's ``reply`` answered back; and a control
-connection that drops ends every session and is dialled again.
+connection that drops ends every session as a lost control connection and is
+dialled again, the gateway's Ollama table following nothing at each new one.
 """
 
 import asyncio
@@ -42,7 +43,7 @@ from neutrino_hub.web.events import PanelEventBus
 from neutrino_hub.web.shell_bridge import ShellSessionLedger
 from neutrino_hub.web.task_stream import TaskStreamRegistry
 from neutrino_hub.web.web_share_access import WebShareGuestSessions
-from tests.conftest import StubHubForwards, StubPublishedServices
+from tests.conftest import StubHubForwards, StubOllamaGateway, StubPublishedServices
 from tests.web.fake_transport import SECRET, FakeTransport
 
 AGENT_KEY = "a1" * 32
@@ -65,6 +66,7 @@ class FakeRuntime:
         self.shell_ledger = ShellSessionLedger()
         self.published_services = StubPublishedServices()
         self.hub_forwards = StubHubForwards()
+        self.ollama_gateway = StubOllamaGateway()
         self.device_platform: dict = {}
         self.device_hostname: dict = {}
         self.device_address: dict = {}
@@ -111,7 +113,9 @@ def recorded(monkeypatch):
     monkeypatch.setattr(
         channel_serve,
         "record_offline",
-        lambda runtime, device: seen["offline"].append(device.id),
+        lambda runtime, device, **fields: seen["offline"].append(
+            (device.id, fields.get("is_control_lost", False))
+        ),
     )
     monkeypatch.setattr(channel_state, "agent_state", lambda runtime, key: dict(STATE))
     monkeypatch.setattr(
@@ -396,7 +400,7 @@ def test_a_hello_on_an_opened_session_is_welcomed_and_puts_the_device_online(
     assert [device for device, _ in seen["hello"]] == [device_id_of(seen)]
     assert len(seen["reports"]) == 1
     assert is_online_after is False
-    assert seen["offline"] == [device_id_of(seen)]
+    assert seen["offline"] == [(device_id_of(seen), False)]
 
 
 def device_id_of(seen) -> str:
@@ -707,6 +711,9 @@ def test_a_dropped_control_connection_ends_every_session_and_is_dialled_again(
             online_again = runtime.agent_sessions.is_online(device_id)
         finally:
             await stopped(fake, channel, task)
-        return offline, online_again, fake.control_count
+        return offline, online_again, fake.control_count, runtime.ollama_gateway
 
-    assert asyncio.run(scenario()) == (True, True, 2)
+    offline, online_again, count, gateway = asyncio.run(scenario())
+    assert (offline, online_again, count) == (True, True, 2)
+    assert recorded["offline"] == [(device_id_of(recorded), True)]
+    assert gateway.forgotten == 2
