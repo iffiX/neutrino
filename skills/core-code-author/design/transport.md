@@ -867,8 +867,10 @@ answered `control_unavailable`.
 | `streams_close` | `{binding_id, kind, device_id, key, session_id, code, params}`, `device_id`, `key` and `session_id` empty for every machine, every row and every kept shell | closes every stream of that binding it holds under `kind`, on that machine, under that row and on that kept shell where they are named, with `close {code, params}`, a raw TCP `connect` with a reset: `permission_denied {kind}` when a permission changes, a kind, a machine or a row taken away, `session_not_owned {session_id}` when an owner stops sharing a shell, closing the other clients' streams on it |
 | `keys_reload` | `{}` | reads its static key and its DTLS certificate again, makes a new one of either when its file is missing, writes `public_key` and `dtls_fingerprint`, and ends every session |
 | `shares_set` | `{shares: [{ufrag, pwd}]}`, every live share | replaces its table of live shares with the list; the guest door answers the ufrags it names alone, and stays shut while it is empty. The Python sends it at every change of a share and first on each new control connection |
+| `forward_start` | `{binding_id, listen, protocol, open}`, `protocol` `tcp` | listens on `listen` on the hub's loopback, `127.0.0.1:0` for a port the system picks, and opens a stream with `open`, such as `{kind: connect, port: 11434, protocol: tcp}` for Ollama's API ([agent/modules/ollama.md](agent/modules/ollama.md)), on that binding's session for each connection, relaying its raw bytes; while the binding has no session the listener accepts nothing new; answers `{id, listen}`, the address bound. A forward lasts while the control connection that started it is open |
+| `forward_stop` | `{listen, protocol}` | closes that listener and its streams; `forward_unknown {listen}` for a listener it does not hold |
 
-These four are the commands. Besides them the Python sends frames: `welcome`,
+These six are the commands. Besides them the Python sends frames: `welcome`,
 `refused`, `state`, `left` with `is_last`, a `reply` to a `persist` or a
 `stop_session`, and the `persist` and `stop_session` it sends an agent.
 
