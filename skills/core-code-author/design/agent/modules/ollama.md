@@ -39,8 +39,10 @@ and `ollama-linux-arm64.tar.zst` of kind `tar_zst`,
 `ollama-windows-amd64.zip` of kind `zip`, and `ollama-darwin.tgz` of kind
 `tar_gz` for both Mac architectures, each with the digest GitHub's API
 gives the asset. Its versions come from a `github` feed on
-`ollama/ollama`, and its one source is the GitHub release; no mirror in
-mainland China serves these files. The hub's cache fetches each archive and
+`ollama/ollama`. Its sources are the GitHub release, then SourceForge's
+`ollama.mirror` project, which holds the same files under `v{version}/`;
+no mirror in mainland China serves them, and the hub's cache takes
+whichever of the two its probe finds faster. The hub's cache fetches each archive and
 sends it down `package {module: ollama, artifact, digest}`.
 
 | Rule | Reason |

@@ -176,7 +176,7 @@ Codeg's npm packages carries Claude Code, runs that copy.
 | --- | --- | --- |
 | a `hub` artifact | the hub's cache | the publisher's address first, then each mirror that serves the same file, such as the USTC mirror of code-server and npmmirror's copy of Node.js; `{release}` last, where the project's release holds the file |
 | Codeg's archives | the hub's cache | Codeg's GitHub release, the one address that serves them |
-| Ollama's archives | the hub's cache | Ollama's GitHub release, the one address that serves them ([modules/ollama.md](modules/ollama.md)) |
+| Ollama's archives | the hub's cache | Ollama's GitHub release, then SourceForge's `ollama.mirror` project, which holds the same files ([modules/ollama.md](modules/ollama.md)) |
 | Claude Code's, Codex's and OpenCode's tarballs | the hub's cache | the `npm` set: registry.npmjs.org, npmmirror and Tencent's mirror ([modules/claude_code.md](modules/claude_code.md), [modules/codex.md](modules/codex.md), [modules/opencode.md](modules/opencode.md)) |
 | SiYuan's desktop builds | the hub's cache | SiYuan's GitHub release, then the publisher's own `https://release.liuyun.io/siyuan/{file}` ([modules/siyuan.md](modules/siyuan.md)) |
 | Gitea's MinGit on Windows | the hub's cache | Git for Windows' GitHub release, then npmmirror's copy ([modules/gitea.md](modules/gitea.md)) |
