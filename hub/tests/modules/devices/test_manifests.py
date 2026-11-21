@@ -719,7 +719,7 @@ OLLAMA_BUILDS = {
 }
 
 
-def test_ollama_pins_the_publishers_release_archive_per_platform_from_github():
+def test_ollama_pins_the_publishers_release_archive_per_platform_from_github_and_sourceforge():
     """Linux names zstd for its unpack and a verify that also passes on a
     person's unit; macOS starts at 14, Ollama's own floor."""
     manifest = load_module_manifests()["ollama"]
@@ -749,7 +749,8 @@ def test_ollama_pins_the_publishers_release_archive_per_platform_from_github():
             "file": file,
             "digest": digest,
             "sources": [
-                "https://github.com/ollama/ollama/releases/download/v{version}/{file}"
+                "https://github.com/ollama/ollama/releases/download/v{version}/{file}",
+                "https://downloads.sourceforge.net/project/ollama.mirror/v{version}/{file}",
             ],
         }
         assert params["uninstall"] == {"post_uninstall": [], "is_data_kept": True}
