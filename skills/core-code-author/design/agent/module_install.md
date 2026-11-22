@@ -124,7 +124,7 @@ software it holds. Where each class lands on each system is
 | machine image (虚拟机映像) | `tar_zst`, `raw_zst` | keeps it in the module's directory, and Podman builds its machine from it | Containers on Windows and macOS; Ollama's Linux archive is a `tar_zst` its module unpacks (below) |
 | container image (容器镜像) | `image` | has the Containers module's Podman pull it from a registry | Hermes WebUI, Ayakaleaf |
 | single program (单个程序文件) | `binary` | keeps the publisher's bytes as one program and makes it executable | Gitea |
-| npm package (npm 包) | `npm` | installs it with npm, run as the account | CloudCLI |
+| npm package (npm 包) | `npm` | installs it with npm, run as the account the module runs as | CloudCLI |
 
 | Rule | Reason |
 | --- | --- |
@@ -143,7 +143,7 @@ software it holds. Where each class lands on each system is
 | `dmg` | a macOS disk image, such as SiYuan's desktop build | attached with `hdiutil attach -nobrowse -readonly` at a temporary mount point; the folder `member` names is copied with `ditto` to `agent/<module>/<directory>/` and sealed, and the image is detached |
 | `nsis` | a Windows installer made with NSIS that holds a 7z archive stored whole, such as SiYuan's | the 7z archive found inside the installer by its signature and read by the agent's own reader with Python's `lzma`, its files unpacked under `agent/<module>/<directory>/` and sealed; nothing in the installer runs |
 | `image` | a container image, its `sources` image references with no tag | pulled by the Containers module's Podman |
-| `npm` | an npm package, named by `package`, its `source_set` the `npm` set | installed by npm run as the account, where [module_template.md](module_template.md), "Disk layout", puts an npm package |
+| `npm` | an npm package, named by `package`, its `source_set` the `npm` set | installed by npm, run as the account the module runs as, where [module_template.md](module_template.md), "Disk layout", puts a runtime environment of the module's kind |
 
 | Rule | Reason |
 | --- | --- |
@@ -161,6 +161,21 @@ it. A program a person also runs from a shell by its name, such as Codex,
 Claude Code or OpenCode, is a module of its own, a command line program, and a module
 whose own packages carry a copy of it, as the Agent SDK in CloudCLI's and
 Codeg's npm packages carries Claude Code, runs that copy.
+
+A module of every kind can install a runtime environment with npm. The
+module's kind ("The source chip and the kind chip") decides who installs it,
+and [module_template.md](module_template.md), "Disk layout", names where it
+lands.
+
+| Kind | How the npm package reaches the machine | Used today by |
+| --- | --- | --- |
+| System service | an `npm` artifact, installed by npm run as the module's service account | no module |
+| Account service | an `npm` artifact, installed by npm run as each enabled account, or the program's own npm run as the account | CloudCLI, and Codeg's adapters |
+| Program | a `tar_gz` artifact on the `npm` set: the hub's cache fetches the package's tarball, and the agent unpacks it into the module's directory and seals it, with no npm run | Codex, Claude Code, OpenCode |
+
+| Rule | Reason |
+| --- | --- |
+| npm runs as the account the module runs as, never as root. A Program's package is unpacked by the agent, as every archive is. | A program writes in its environment as it runs, as Codeg's npm writes its adapters, and it writes only where its own account can. A Program is one copy that every account runs and none can change. |
 
 ## Sources
 

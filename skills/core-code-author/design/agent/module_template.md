@@ -341,10 +341,26 @@ path without `<directory>`. Each install class
 | machine image | kept as `<directory>/<name>.tar.zst` or `<directory>/<name>.raw.zst` in the module's directory, which `podman machine init --image` reads; Podman keeps the machine it builds in its own place for the run account |
 | container image | Podman's own store, root's on Linux and the Podman machine's on Windows and macOS; nothing lands in the module's directory |
 | single program | on Linux `/usr/local/bin/<program>`; on macOS `<program>` and on Windows `<program>.exe` in the module's directory; a new version replaces it in one rename |
-| npm package | as the account, under the module's per-account data directory, in one layout for every module: `npm/`, npm's prefix, which holds what npm installs; `npm_cache/` beside it, npm's cache; and, where the agent runs npm itself, `npmrc` beside them, an empty file npm reads as the user configuration. CloudCLI's `npm` artifact is installed into `npm/` with `--prefix`, and Codeg's own npm installs its adapters there through `NPM_CONFIG_PREFIX` |
+| npm package | as the account the module runs as, in the folder the module's kind names (below), in one layout for every module: `npm/`, npm's prefix, which holds what npm installs; `npm_cache/` beside it, npm's cache; and, where the agent runs npm itself, `npmrc` beside them, an empty file npm reads as the user configuration. CloudCLI's `npm` artifact is installed into `npm/` with `--prefix`, and Codeg's own npm installs its adapters there through `NPM_CONFIG_PREFIX` |
 
 | Rule | Reason |
 | --- | --- |
 | Every npm install under a module keeps its prefix and its cache side by side, `npm/` and `npm_cache/`, and never one inside the other. | A run that starts from a clean prefix deletes `npm/` and keeps the cache, so the next run downloads nothing it already has, and one rule names every module's npm files. |
 | `npmrc` is written only where the agent runs npm, as for CloudCLI. Where the program runs npm itself, as Codeg does, npm reads the account's own `~/.npmrc`. | The agent's npm takes its registry from the `npm` set and nothing else, and a program's own npm follows the settings the person gave it, a proxy among them. |
 | The layout holds for every module from the version that brings it, and the code installs into no other. An install an earlier version left elsewhere, CloudCLI's `app/`, is removed, and the module installs again in `npm/` at its next apply ([modules/cloudcli.md](modules/cloudcli.md), "`npm/` is the one prefix"). | Code that keeps two layouts keeps them for as long as one machine holds the old one. |
+
+A module of every kind can install a runtime environment with npm
+([module_install.md](module_install.md), "Artifacts"). Where the environment
+lands follows the module's kind
+([module_install.md](module_install.md), "The source chip and the kind
+chip"):
+
+| Kind | Where the environment lands | Owned by |
+| --- | --- | --- |
+| System service | `npm/` and `npm_cache/` in the module's data directory, `<module>_data/` under the state root | the module's service account, as the rest of its data |
+| Account service | `npm/` and `npm_cache/` in the module's per-account data directory, the second row of the first table | the account |
+| Program | the package's tarball unpacked into `<directory>/` in the module's directory and sealed, as every archive is | root or SYSTEM, read-only to every account |
+
+| Rule | Reason |
+| --- | --- |
+| The module's kind picks the folder of its runtime environment, and no module installs one anywhere else. | The account that runs the software writes its environment, in a folder that account owns: a service account's data directory, an account's own files. A Program is one copy that every account runs and none can change. |
