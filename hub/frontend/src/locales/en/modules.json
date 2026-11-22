@@ -597,7 +597,6 @@
   "ui.module_catalog.ollama": "Language models on this machine, through Ollama's API.",
   "ui.module_title.ollama": "Ollama",
   "ui.ollama.owner_notice": "You install Ollama, MIT-licensed, on this machine.",
-  "ui.ollama.found_app": "The Ollama app installed on this machine serves here.",
   "ui.ollama.models_title": "Models",
   "ui.ollama.models_summary": "{count} models, {size}",
   "ui.ollama.models_summary_one": "1 model, {size}",

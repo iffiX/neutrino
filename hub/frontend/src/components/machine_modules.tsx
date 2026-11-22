@@ -230,13 +230,8 @@ const HERMES_MODULE = "hermes_webui";
 /** The module whose tab says the owner installs it and its two databases. */
 const AYAKALEAF_MODULE = "ayakaleaf";
 
-/** The module whose tab says the owner installs it, or names the person's
- * own app it serves through with no presses but Configure. */
+/** The module whose tab says the owner installs it. */
 const OLLAMA_MODULE = "ollama";
-
-/** What `details.found` says of a person's own Ollama app on Windows and
- * macOS. */
-const OLLAMA_FOUND_APP = "app";
 
 /** The method of a module whose containers run on Containers. */
 const CONTAINER_METHOD = "container";
@@ -678,10 +673,6 @@ export function MachineModules({
     activeModule === null ? undefined : MODULE_PANELS[activeModule];
   const isCarriedRow = activeRow?.is_carried === true;
   const isProgram = activeRow?.kind === KIND_PROGRAM;
-  // A person's own Ollama app, which takes no press but Configure.
-  const isFoundApp =
-    activeRow?.name === OLLAMA_MODULE &&
-    activeRow.details.found === OLLAMA_FOUND_APP;
   const programNotice =
     activeRow === undefined ? undefined : PROGRAM_NOTICES[activeRow.name];
   const isConfiguring =
@@ -790,9 +781,7 @@ export function MachineModules({
             <p className="field_hint">{t("ui.ayakaleaf.owner_notice")}</p>
           )}
           {activeRow.name === OLLAMA_MODULE && (
-            <p className="field_hint">
-              {t(isFoundApp ? "ui.ollama.found_app" : "ui.ollama.owner_notice")}
-            </p>
+            <p className="field_hint">{t("ui.ollama.owner_notice")}</p>
           )}
           {programNotice !== undefined && (
             <p className="field_hint">{t(programNotice)}</p>
@@ -952,7 +941,7 @@ export function MachineModules({
               )}
               {!isCarriedRow && (
                 <div className="modules_actions">
-                  {isFoundApp ? null : isCancelShown ? (
+                  {isCancelShown ? (
                     <CancelButton
                       isCancelling={isRowCancelling}
                       isEnabled={isAgentOnline && !isBusy && !isRowCancelling}
@@ -978,7 +967,7 @@ export function MachineModules({
                       onClick={() => void askInstall()}
                     />
                   )}
-                  {!isProgram && !isFoundApp && (
+                  {!isProgram && (
                     <>
                       <ActionButton
                         action="start"
@@ -1008,22 +997,20 @@ export function MachineModules({
                       />
                     </>
                   )}
-                  {!isFoundApp && (
-                    <ActionButton
-                      action="uninstall"
-                      isEnabled={
-                        canAct &&
-                        (isPresent || FAILED_STATES.includes(activeRow.state))
-                      }
-                      disabledReason={
-                        activeRow.state === "absent"
-                          ? t("ui.modules.uninstall_absent")
-                          : undefined
-                      }
-                      isBusy={busyAction === "uninstall"}
-                      onClick={askUninstall}
-                    />
-                  )}
+                  <ActionButton
+                    action="uninstall"
+                    isEnabled={
+                      canAct &&
+                      (isPresent || FAILED_STATES.includes(activeRow.state))
+                    }
+                    disabledReason={
+                      activeRow.state === "absent"
+                        ? t("ui.modules.uninstall_absent")
+                        : undefined
+                    }
+                    isBusy={busyAction === "uninstall"}
+                    onClick={askUninstall}
+                  />
                   {panels !== undefined && (
                     <button
                       type="button"

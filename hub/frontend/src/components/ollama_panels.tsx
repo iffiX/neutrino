@@ -23,8 +23,7 @@ import "./ollama_panels.css";
 
 /**
  * The Ollama module's Configure on one machine: **Settings**, then
- * **Models**, both drawn from one view read every few seconds. A person's
- * Ollama app on Windows or macOS takes no setting and has **Models** alone.
+ * **Models**, both drawn from one view read every few seconds.
  *
  * **Models** opens with the machine's GPUs and memory, then a field to pull
  * any name Ollama takes, the pulls the hub runs for the machine, and one
@@ -59,9 +58,6 @@ const NAME_PLACEHOLDER = "qwen2.5:7b";
 const PULL_RUNNING = "running";
 const PULL_QUEUED = "queued";
 const PULL_FAILED = "failed";
-
-/** What `details.found` says of a person's own Ollama app. */
-const FOUND_APP = "app";
 
 /** The word of a module that is not running, by its state. */
 const STATE_KEYS: Record<string, string> = {
@@ -110,17 +106,15 @@ export function OllamaPanels({
 
   return (
     <>
-      {saved.details.found !== FOUND_APP && (
-        <OllamaSettings
-          deviceId={deviceId}
-          basePath={basePath}
-          saved={saved}
-          isEditable={isEditable}
-          platformOs={platformOs}
-          want={want}
-          onSaved={resource.setData}
-        />
-      )}
+      <OllamaSettings
+        deviceId={deviceId}
+        basePath={basePath}
+        saved={saved}
+        isEditable={isEditable}
+        platformOs={platformOs}
+        want={want}
+        onSaved={resource.setData}
+      />
       <OllamaModels
         deviceId={deviceId}
         basePath={basePath}

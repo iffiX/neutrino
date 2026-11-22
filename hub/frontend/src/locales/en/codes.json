@@ -394,7 +394,6 @@
   "code.waiting_for_lock": "Waiting for {lock}, held by {module}.",
   "code.waiting_for_module": "Waiting for {module} to be ready.",
   "code.waiting_for_package_manager": "Waiting for the system's package manager, held by {holder}.",
-  "code.ollama_found": "The Ollama app is already installed on this machine at {path}.",
   "code.ollama_unreachable": "Ollama on this machine did not answer: {detail}",
   "code.ollama_not_running": "Ollama is not running on this machine.",
   "code.ollama_model_name_invalid": "{name} is not a model name.",
