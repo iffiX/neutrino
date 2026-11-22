@@ -42,6 +42,8 @@ export interface DemoModuleSpec {
   method: string;
   version: string;
   isCarried: boolean;
+  /** Whether it is a command line program, with no Start or Stop. */
+  isProgram: boolean;
   requires: string[];
   installSteps: ModuleTaskStep[];
   uninstallData: ModuleUninstallData | null;
@@ -72,6 +74,7 @@ export const DEMO_MODULES: DemoModuleSpec[] = [
     method: "agent",
     version: "",
     isCarried: true,
+    isProgram: false,
     requires: [],
     installSteps: [],
     uninstallData: null,
@@ -84,6 +87,7 @@ export const DEMO_MODULES: DemoModuleSpec[] = [
     method: "agent",
     version: "",
     isCarried: true,
+    isProgram: false,
     requires: [],
     installSteps: [],
     uninstallData: null,
@@ -96,6 +100,7 @@ export const DEMO_MODULES: DemoModuleSpec[] = [
     method: "agent",
     version: "",
     isCarried: true,
+    isProgram: false,
     requires: [],
     installSteps: [],
     uninstallData: null,
@@ -108,6 +113,7 @@ export const DEMO_MODULES: DemoModuleSpec[] = [
     method: "system",
     version: "4.19.5",
     isCarried: false,
+    isProgram: false,
     requires: [],
     installSteps: [step("packages"), step("configure"), step("start")],
     uninstallData: uninstallKept(
@@ -123,6 +129,7 @@ export const DEMO_MODULES: DemoModuleSpec[] = [
     method: "hub",
     version: "1.24.6",
     isCarried: false,
+    isProgram: false,
     requires: [],
     installSteps: [
       step("artifact", { name: "gitea" }),
@@ -144,12 +151,33 @@ export const DEMO_MODULES: DemoModuleSpec[] = [
     },
   },
   {
+    name: "ollama",
+    title: "Ollama",
+    category: "code",
+    method: "hub",
+    version: "0.40.16",
+    isCarried: false,
+    isProgram: false,
+    requires: [],
+    installSteps: [
+      step("packages"),
+      step("artifact", { name: "ollama" }),
+      step("verify"),
+    ],
+    uninstallData: uninstallKept(
+      "拉取的模型都留在它的数据目录里。",
+      "The pulled models stay in its data directory.",
+    ),
+    web: null,
+  },
+  {
     name: "vscode",
     title: "VS Code",
     category: "code",
     method: "hub",
     version: "1.105.1",
     isCarried: false,
+    isProgram: false,
     requires: [],
     installSteps: [
       step("artifact", { name: "vscode" }),
@@ -177,6 +205,7 @@ export const DEMO_MODULES: DemoModuleSpec[] = [
     method: "hub",
     version: "4.104.3",
     isCarried: false,
+    isProgram: false,
     requires: [],
     installSteps: [
       step("artifact", { name: "code_server" }),
@@ -204,6 +233,7 @@ export const DEMO_MODULES: DemoModuleSpec[] = [
     method: "hub",
     version: "1.8.4",
     isCarried: false,
+    isProgram: false,
     requires: [],
     installSteps: [
       step("artifact", { name: "node" }),
@@ -231,6 +261,7 @@ export const DEMO_MODULES: DemoModuleSpec[] = [
     method: "hub",
     version: "0.9.2",
     isCarried: false,
+    isProgram: false,
     requires: [],
     installSteps: [
       step("artifact", { name: "node" }),
@@ -252,12 +283,34 @@ export const DEMO_MODULES: DemoModuleSpec[] = [
     },
   },
   {
+    name: "opencode",
+    title: "OpenCode",
+    category: "code",
+    method: "hub",
+    version: "1.19.5",
+    isCarried: false,
+    isProgram: true,
+    requires: [],
+    installSteps: [
+      step("artifact", { name: "opencode" }),
+      step("verify"),
+      step("configure"),
+      step("account", { account: DEMO_ACCOUNT }),
+    ],
+    uninstallData: uninstallKept(
+      "每个账户在 ~/.config/opencode 里的设置都保留，在本模块之外安装的 OpenCode 也保留。",
+      "Each account's settings in ~/.config/opencode stay, and so does a copy of OpenCode installed outside this module.",
+    ),
+    web: null,
+  },
+  {
     name: "siyuan",
     title: "SiYuan",
     category: "notes",
     method: "hub",
     version: "3.3.5",
     isCarried: false,
+    isProgram: false,
     requires: [],
     installSteps: [
       step("artifact", { name: "siyuan" }),
@@ -285,6 +338,7 @@ export const DEMO_MODULES: DemoModuleSpec[] = [
     method: "system",
     version: "5.6.2",
     isCarried: false,
+    isProgram: false,
     requires: [],
     installSteps: [step("packages"), step("configure"), step("start")],
     uninstallData: uninstallKept(
@@ -300,6 +354,7 @@ export const DEMO_MODULES: DemoModuleSpec[] = [
     method: "container",
     version: "0.4.1",
     isCarried: false,
+    isProgram: false,
     requires: ["podman"],
     installSteps: [
       step("wait_module", { module: "podman" }),
@@ -329,6 +384,7 @@ export const DEMO_MODULES: DemoModuleSpec[] = [
     method: "container",
     version: "2.1.0",
     isCarried: false,
+    isProgram: false,
     requires: ["podman"],
     installSteps: [
       step("wait_module", { module: "podman" }),

@@ -22,6 +22,7 @@ import {
   DEMO_KEYS,
   DEMO_LOGINS,
   DEMO_NETBIRD,
+  DEMO_OPENCODE_MODEL,
   DEMO_OPENFRP,
   DEMO_OPENFRP_TUNNELS,
   DEMO_OVERLAY_KINDS,
@@ -38,6 +39,8 @@ import {
   sample,
 } from "./demo_fixtures";
 import { DemoNetwork, demoDnsLog } from "./demo_network";
+import { DemoOllama, sampleModel, samplePull } from "./demo_ollama";
+import type { DemoOllamaModel, DemoOllamaPull } from "./demo_ollama";
 import { DemoProxy, DemoRefusal } from "./demo_proxy";
 import {
   DEMO_STAT_BACKLOG,
@@ -48,8 +51,10 @@ import {
 } from "./demo_traffic";
 import type { DemoFrameReadings } from "./demo_traffic";
 import type {
+  AiOllamaProvidersResponse,
   AiUsageRange,
   AppEntryView,
+  ApplyResult,
   CliproxyApiStatusView,
   AppView,
   AuthState,
@@ -59,6 +64,7 @@ import type {
   ClientView,
   DeclaredAppCreate,
   DeviceFileListView,
+  DeviceMetricsView,
   DeviceModuleListView,
   DeviceModuleView,
   DeviceView,
@@ -75,9 +81,12 @@ import type {
   NetworkOptions,
   NetworkView,
   NodesResponse,
+  OllamaDeviceView,
+  OllamaGpuSetting,
   OverlayChoiceView,
   PermissionRowView,
   PodmanDeviceView,
+  ProgramCopyView,
   ProxySettings,
   PublishedService,
   RemoteDesktopDeviceView,
@@ -202,6 +211,18 @@ const PERMISSION_KINDS = [
 ];
 const DEFAULT_PERMISSION = PERMISSION_KINDS.filter((kind) => kind !== "panel");
 const ROW_KINDS = ["web", "port", "ssh", "file", "rdp", "terminal"];
+const OLLAMA_MODULE = "ollama";
+const OLLAMA_PORT = 11434;
+// The Ollama app's one entry, the API, and the states it is published in.
+const OLLAMA_ENTRY = "api";
+const OLLAMA_PUBLISHED_STATES = ["installed", "stopped", "running"];
+const OLLAMA_RESTART_STEPS: ModuleTask["steps"] = [
+  { name: "configure", params: {} },
+  { name: "start", params: {} },
+];
+// Each machine's memory in all, by its metrics seed, for the Ollama tab.
+const MEMORY_TOTAL_MB: Record<number, number> = { 0: 65536, 1: 16384 };
+const MEMORY_TOTAL_DEFAULT_MB = 16384;
 
 function moduleState(
   state: string,
@@ -242,7 +263,15 @@ function initialDevices(): DemoDevice[] {
       platformArch: "amd64",
       lastSeen: null,
       metricsSeed: 0,
-      modules: modulesWith(["samba", "vscode", "gitea", "siyuan", "podman"]),
+      modules: modulesWith([
+        "samba",
+        "vscode",
+        "gitea",
+        "ollama",
+        "opencode",
+        "siyuan",
+        "podman",
+      ]),
     },
     {
       id: "dev_laptop",
@@ -256,7 +285,7 @@ function initialDevices(): DemoDevice[] {
       platformArch: "amd64",
       lastSeen: null,
       metricsSeed: 1,
-      modules: modulesWith(["code_server", "cloudcli"]),
+      modules: modulesWith(["code_server", "cloudcli", "ollama"]),
     },
     {
       id: "dev_mini",
@@ -372,6 +401,8 @@ export class DemoHub {
   private readonly declaredApps = initialDeclaredApps();
   private readonly clients = initialClients();
   private readonly shares: WebShareView[] = [];
+  /** Each machine's Ollama, by device id. */
+  private readonly ollamas = new Map<string, DemoOllama>();
   /** Every client's join link, to its client id. */
   private readonly clientLinks = new Map<string, string>();
   private readonly statSenders = new Set<DemoFrameSender>();
@@ -399,6 +430,7 @@ export class DemoHub {
     this.reads = this.readRoutes();
     this.writes = this.writeRoutes();
     this.addFirstShare();
+    this.addSampleOllamas();
     for (let age = DEMO_STAT_BACKLOG; age > 0; age -= 1) {
       this.statFrames.push(
         this.stats.frame(age, 0, this.onlineCount(), this.frameReadings()),
@@ -740,6 +772,7 @@ export class DemoHub {
         ),
       "/hub/ai/gateway/account": () => DEMO_AI_ACCOUNTS,
       "/hub/ai/gateway/journal": () => ({ lines: DEMO_AI_JOURNAL_LINES }),
+      "/hub/ai/ollama": () => this.ollamaProviders(),
       "/hub/overlay": () => this.overlayChoice(),
       "/hub/overlay/netbird": () => DEMO_NETBIRD,
       "/hub/overlay/easytier": () => DEMO_EASYTIER,
@@ -771,7 +804,10 @@ export class DemoHub {
       "/agent/module/catalog": (query) =>
         this.moduleCatalog(query.get("device_id") ?? ""),
       "/agent/module/account": (query) =>
-        demoAccounts(this.device(query.get("device_id") ?? "").platformOs),
+        demoAccounts(
+          this.device(query.get("device_id") ?? "").platformOs,
+          this.servedModels(),
+        ),
       "/agent/module/version": (query) =>
         this.moduleVersion(
           query.get("device_id") ?? "",
@@ -788,6 +824,14 @@ export class DemoHub {
       "/agent/module/samba/folder_share": () => this.folderShares(),
       "/agent/file": (query) => this.fileList(query.get("path") ?? "/"),
       "/agent/module/podman/container/journal": () => ({ text: "" }),
+      "/agent/module/opencode/copy": (query): ProgramCopyView => ({
+        account: query.get("account") ?? DEMO_ACCOUNT,
+        path: "",
+        version: "",
+        module_version: demoModule("opencode")?.version ?? "",
+        code: "",
+        params: {},
+      }),
     };
   }
 
@@ -812,6 +856,23 @@ export class DemoHub {
         this.pressModule(body, "uninstall"),
       "/agent/module/vscode/terms/set": (_query, body) =>
         this.setVscodeTerms(body),
+      "/agent/module/ollama/set": (_query, body) =>
+        this.setOllamaSettings(body),
+      "/agent/module/ollama/apply": (_query, body) =>
+        this.applyOllamaSettings(body),
+      "/agent/module/ollama/model/add": (_query, body) =>
+        this.pressOllama(body, (ollama, name) => ollama.pull(name)),
+      "/agent/module/ollama/pull/remove": (_query, body) =>
+        this.pressOllama(body, (ollama, name) => ollama.cancel(name), false),
+      "/agent/module/ollama/model/remove": (_query, body) =>
+        this.pressOllama(body, (ollama, name) => {
+          ollama.remove(name);
+          this.publish("ai_usage", "");
+        }),
+      "/agent/module/ollama/loaded/add": (_query, body) =>
+        this.pressOllama(body, (ollama, name) => ollama.load(name)),
+      "/agent/module/ollama/loaded/remove": (_query, body) =>
+        this.pressOllama(body, (ollama, name) => ollama.unload(name)),
       "/hub/client/enrollment/create": (_query, body) =>
         this.createClientLink(body),
       "/hub/client/web_share/create": (_query, body) => this.createShare(body),
@@ -1014,7 +1075,7 @@ export class DemoHub {
         last_report_at: device.isOnline ? secondsAgo(2) : device.lastSeen,
         last_seen: device.lastSeen,
         is_version_mismatched: false,
-        metrics: demoMetrics(device.metricsSeed),
+        metrics: this.machineMetrics(device),
         last_error: null,
       },
     };
@@ -1022,7 +1083,35 @@ export class DemoHub {
 
   /** The AI gateway's state, with the default model a visitor picked. */
   private aiStatus(): CliproxyApiStatusView {
-    return { ...DEMO_AI_STATUS, default_model: this.defaultModel };
+    return {
+      ...DEMO_AI_STATUS,
+      served_models: this.servedModels(),
+      default_model: this.defaultModel,
+    };
+  }
+
+  /** The names the gateway serves: the providers' and every running
+   * Ollama's, each once. */
+  private servedModels(): string[] {
+    const local = new Set(
+      this.ollamaProviders().providers.flatMap((provider) => provider.models),
+    );
+    return [...(DEMO_AI_STATUS.served_models ?? []), ...[...local].sort()];
+  }
+
+  /** One provider per online machine whose Ollama runs and holds a model,
+   * by the machine's name. */
+  private ollamaProviders(): AiOllamaProvidersResponse {
+    const providers = this.devices
+      .filter((device) => this.isOllamaRunning(device))
+      .map((device) => ({
+        device_id: device.id,
+        name: device.name,
+        models: this.ollamaOf(device).modelNames(),
+      }))
+      .filter((provider) => provider.models.length > 0)
+      .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    return { providers };
   }
 
   private deviceList(): DevicesResponse {
@@ -1042,7 +1131,7 @@ export class DemoHub {
       title: spec.title,
       method: spec.method,
       source: DEMO_SOURCE[spec.method] ?? "upstream",
-      kind: "service",
+      kind: spec.isProgram ? "program" : "service",
       want: held.want,
       state: held.state,
       is_active: held.state === "running",
@@ -1050,7 +1139,7 @@ export class DemoHub {
       version: held.state === "absent" ? "" : spec.version,
       code: "",
       params: {},
-      details: {},
+      details: this.moduleDetails(device, spec),
       is_supported: true,
       is_carried: spec.isCarried,
       is_shown: held.isShown,
@@ -1062,6 +1151,33 @@ export class DemoHub {
       step: null,
       task_id: "",
     };
+  }
+
+  /** What the machine last reported of a module: Ollama's server, and the
+   * copy of a command line program. */
+  private moduleDetails(
+    device: DemoDevice,
+    spec: DemoModuleSpec,
+  ): Record<string, unknown> {
+    const held = device.modules[spec.name];
+    const isPresent = held !== undefined && held.state !== "absent";
+    if (spec.name === OLLAMA_MODULE) {
+      return {
+        is_running: this.isOllamaRunning(device),
+        port: OLLAMA_PORT,
+        version: isPresent ? spec.version : "",
+        found: "",
+        has_package_mark: true,
+      };
+    }
+    if (spec.isProgram) {
+      return {
+        has_module_copy: isPresent,
+        version: isPresent ? spec.version : "",
+        accounts: [{ account: DEMO_ACCOUNT, code: "", params: {} }],
+      };
+    }
+    return {};
   }
 
   private moduleList(deviceId: string): DeviceModuleListView {
@@ -1118,6 +1234,9 @@ export class DemoHub {
     if (name === "ayakaleaf") {
       return this.ayakaleafView(device);
     }
+    if (name === OLLAMA_MODULE) {
+      return this.ollamaView(device);
+    }
     return this.accountsView(device, name);
   }
 
@@ -1139,6 +1258,10 @@ export class DemoHub {
           share_path: "",
           user: DEMO_ACCOUNT,
           host_key_fingerprint: "SHA256:demo-host-key-of-a-made-up-system",
+          ai_tools: spec?.isProgram
+            ? { state: "switched", code: "", params: {} }
+            : null,
+          is_ai_tools_enabled: spec?.isProgram ? true : null,
         },
       ],
       is_terms_accepted: device.modules[name]?.isTermsAccepted ?? false,
@@ -1248,11 +1371,156 @@ export class DemoHub {
       host: device.address,
       port: demoModule("ayakaleaf")?.web?.port ?? 0,
       model: "",
-      models: DEMO_AI_STATUS.served_models ?? [],
+      models: this.servedModels(),
       is_gateway_serving: true,
       version: demoModule("ayakaleaf")?.version ?? "",
       details: {},
     };
+  }
+
+  /** Whether a machine's Ollama answers: online, and asked to run. A
+   * restart keeps it answering. */
+  private isOllamaRunning(device: DemoDevice): boolean {
+    const held = device.modules[OLLAMA_MODULE];
+    return (
+      device.isOnline &&
+      held !== undefined &&
+      held.want === "running" &&
+      (held.state === "running" || held.state === "queued")
+    );
+  }
+
+  /** A machine's Ollama, with no model until a pull. */
+  private ollamaOf(device: DemoDevice): DemoOllama {
+    return this.ollamas.get(device.id) ?? this.addOllama(device, [], []);
+  }
+
+  private addOllama(
+    device: DemoDevice,
+    models: DemoOllamaModel[],
+    pulls: DemoOllamaPull[],
+  ): DemoOllama {
+    const ollama = new DemoOllama({
+      gpus: demoMetrics(device.metricsSeed).gpus,
+      memoryTotalMb:
+        MEMORY_TOTAL_MB[device.metricsSeed] ?? MEMORY_TOTAL_DEFAULT_MB,
+      models,
+      pulls,
+      onModelsChange: () => this.publish("ai_usage", device.id),
+    });
+    this.ollamas.set(device.id, ollama);
+    return ollama;
+  }
+
+  /** The desktop's Ollama: one model in memory, two on disk, one with a
+   * source in front, and a pull; the laptop's: two models on disk. */
+  private addSampleOllamas(): void {
+    this.addOllama(
+      this.device("dev_desktop"),
+      [
+        sampleModel(
+          DEMO_OPENCODE_MODEL,
+          "7.6B",
+          "Q4_K_M",
+          4_683_087_332,
+          12,
+          true,
+        ),
+        sampleModel("deepseek-r1:14b", "14.8B", "Q4_K_M", 8_988_112_040, 20),
+        sampleModel(
+          "modelscope.cn/unsloth/SmolLM2-360M-Instruct-GGUF:Q4_K_M",
+          "361.82M",
+          "Q4_K_M",
+          270_600_288,
+          3,
+        ),
+      ],
+      [samplePull("qwen3:8b", 0.38)],
+    );
+    this.addOllama(
+      this.device("dev_laptop"),
+      [
+        sampleModel(DEMO_OPENCODE_MODEL, "7.6B", "Q4_K_M", 4_683_087_332, 9),
+        sampleModel("llama3.2:3b", "3.2B", "Q4_K_M", 2_019_393_189, 6),
+      ],
+      [],
+    );
+  }
+
+  /** A machine's sample report, its GPUs holding its Ollama's models. */
+  private machineMetrics(
+    device: DemoDevice,
+    ageS: number = 0,
+  ): DeviceMetricsView {
+    const metrics = demoMetrics(device.metricsSeed, ageS);
+    const ollama = this.ollamas.get(device.id);
+    if (ollama === undefined) {
+      return metrics;
+    }
+    return {
+      ...metrics,
+      gpus: ollama.gpuReadings(metrics.gpus, this.isOllamaRunning(device)),
+    };
+  }
+
+  private ollamaView(device: DemoDevice): OllamaDeviceView {
+    const spec = demoModule(OLLAMA_MODULE);
+    const details = spec === null ? {} : this.moduleDetails(device, spec);
+    return this.ollamaOf(device).view({
+      state: this.moduleDeviceState(device, OLLAMA_MODULE),
+      deviceId: device.id,
+      host: device.address,
+      version: String(details.version ?? ""),
+      details,
+      isRunning: this.isOllamaRunning(device),
+      metrics: device.isOnline ? this.machineMetrics(device) : null,
+    });
+  }
+
+  private setOllamaSettings(body: DemoBody): OllamaDeviceView {
+    const device = this.device(textField(body, "device_id"));
+    const ollama = this.ollamaOf(device);
+    ollama.keepAlive = textField(body, "keep_alive") || ollama.keepAlive;
+    ollama.gpus = Array.isArray(body.gpus)
+      ? (structuredClone(body.gpus) as OllamaGpuSetting[])
+      : null;
+    this.publish("config", OLLAMA_MODULE);
+    return this.ollamaView(device);
+  }
+
+  /** Restarts a running Ollama with its stored settings. */
+  private applyOllamaSettings(body: DemoBody): ApplyResult {
+    const device = this.device(textField(body, "device_id"));
+    const spec = demoModule(OLLAMA_MODULE);
+    if (spec !== null && device.modules[OLLAMA_MODULE]?.state === "running") {
+      this.runTask(device, spec, "queued", OLLAMA_RESTART_STEPS, "running");
+      this.ollamaOf(device).restart(STEP_MS * OLLAMA_RESTART_STEPS.length);
+    }
+    return { is_applied: true, changes: [], failures: [] };
+  }
+
+  /**
+   * One press of the Ollama tab's Models panel.
+   *
+   * Args:
+   *   body: The request, naming the machine and the model.
+   *   act: What the press does to the machine's Ollama.
+   *   isRunNeeded: Whether the press needs the server to answer.
+   *
+   * Returns:
+   *   The machine's Ollama after the press.
+   */
+  private pressOllama(
+    body: DemoBody,
+    act: (ollama: DemoOllama, name: string) => void,
+    isRunNeeded: boolean = true,
+  ): OllamaDeviceView {
+    const device = this.device(textField(body, "device_id"));
+    if (isRunNeeded && !this.isOllamaRunning(device)) {
+      throw new DemoRefusal("ollama_not_running");
+    }
+    act(this.ollamaOf(device), textField(body, "name"));
+    return this.ollamaView(device);
   }
 
   private sambaStatus(deviceId: string): SambaStatus {
@@ -1405,7 +1673,13 @@ export class DemoHub {
     if (action === "install") {
       this.installRequired(device, spec);
       held.isShown = true;
-      this.runTask(device, spec, "installing", spec.installSteps, "installed");
+      this.runTask(
+        device,
+        spec,
+        "installing",
+        spec.installSteps,
+        spec.isProgram ? "running" : "installed",
+      );
     } else if (action === "start" && held.state === "running") {
       held.want = "running";
     } else if (action === "start") {
@@ -1416,6 +1690,9 @@ export class DemoHub {
         [{ name: "start", params: {} }],
         "running",
       );
+      if (spec.name === OLLAMA_MODULE) {
+        this.ollamaOf(device).restart(STEP_MS);
+      }
     } else if (action === "stop") {
       this.runTask(
         device,
@@ -1473,6 +1750,7 @@ export class DemoHub {
       is_running: true,
     };
     this.publish("device_report", device.id);
+    this.publishOllamaChange(spec, device);
     const timer = window.setInterval(() => {
       const task = held.task;
       if (task === null) {
@@ -1491,10 +1769,18 @@ export class DemoHub {
       this.publish("task", spec.name);
       this.publish("services", "");
       this.publish("clients", "");
+      this.publishOllamaChange(spec, device);
       if (endState === "running") {
         this.noteRunning(spec);
       }
     }, STEP_MS);
+  }
+
+  /** Tells the AI page that a machine's Ollama may have come or gone. */
+  private publishOllamaChange(spec: DemoModuleSpec, device: DemoDevice): void {
+    if (spec.name === OLLAMA_MODULE) {
+      this.publish("ai_usage", device.id);
+    }
   }
 
   private noteRunning(spec: DemoModuleSpec): void {
@@ -1536,6 +1822,11 @@ export class DemoHub {
           apps.push(
             this.moduleApp(device, spec, held.state === "running", language),
           );
+        }
+        const isOllamaPublished =
+          held !== undefined && OLLAMA_PUBLISHED_STATES.includes(held.state);
+        if (spec.name === OLLAMA_MODULE && isOllamaPublished) {
+          apps.push(this.ollamaApp(device));
         }
       }
       apps.push(this.sshApp(device));
@@ -1588,6 +1879,38 @@ export class DemoHub {
           local_port: localPort(entryId),
           detail_code: null,
           guest_login: spec.web?.guestLogin ?? "",
+        },
+      ],
+    };
+  }
+
+  /** Ollama's app: its one TCP port entry, the API, healthy while the
+   * server answers. */
+  private ollamaApp(device: DemoDevice): AppView {
+    const id = `${OLLAMA_MODULE}_${device.id}`;
+    const entryId = `${id}_${OLLAMA_ENTRY}`;
+    return {
+      id,
+      title: "Ollama",
+      source: "module",
+      device_id: device.id,
+      device_name: device.name,
+      local_name: `${OLLAMA_MODULE}.${device.hostname}.localhost`,
+      description: "",
+      entries: [
+        {
+          id: entryId,
+          name: OLLAMA_ENTRY,
+          type: "port",
+          payload: {
+            host: device.address,
+            port: OLLAMA_PORT,
+            protocol: "tcp",
+          },
+          is_healthy: this.isOllamaRunning(device),
+          local_port: localPort(entryId),
+          detail_code: null,
+          guest_login: "",
         },
       ],
     };
@@ -2065,7 +2388,7 @@ export class DemoHub {
       const frame = this.event(
         "metrics",
         deviceId,
-        demoMetrics(device.metricsSeed, at * 3),
+        this.machineMetrics(device, at * 3),
       );
       for (const send of this.eventSenders) {
         send(frame);
@@ -2085,7 +2408,7 @@ export class DemoHub {
       const frame = this.event(
         "metrics",
         device.id,
-        demoMetrics(device.metricsSeed),
+        this.machineMetrics(device),
       );
       for (const send of this.eventSenders) {
         send(frame);

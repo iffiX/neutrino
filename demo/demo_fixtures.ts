@@ -43,7 +43,7 @@ export function sample(chinese: string, english: string): string {
   return IS_ENGLISH_DEMO ? english : chinese;
 }
 
-export const DEMO_HUB_VERSION = "0.6.0";
+export const DEMO_HUB_VERSION = "0.6.1";
 export const DEMO_XRAY_VERSION = "25.8.3";
 export const DEMO_GEODATA_RELEASE = "202510282214";
 export const DEMO_HUB_NAME = sample("我的中枢", "My hub");
@@ -100,6 +100,9 @@ export const DEMO_AI_STATUS: CliproxyApiStatusView = {
   requests_today: 418,
   tokens_today: 1_284_000,
 };
+
+/** The model the demo account's OpenCode uses: one of the desktop's Ollama. */
+export const DEMO_OPENCODE_MODEL = "qwen2.5:7b";
 
 export const DEMO_AI_PROVIDERS: AiProvidersResponse = {
   providers: [
@@ -487,8 +490,21 @@ export function demoAbout(uptimeS: number, isProxyCarried: boolean): AboutInfo {
   };
 }
 
-/** A machine's available accounts, all on the one demo account. */
-export function demoAccounts(platformOs: string): AccountListView {
+/**
+ * A machine's available accounts, all on the one demo account, whose
+ * OpenCode uses a model of the desktop's Ollama.
+ *
+ * Args:
+ *   platformOs: The machine's system.
+ *   models: The names the gateway serves.
+ *
+ * Returns:
+ *   The accounts' view.
+ */
+export function demoAccounts(
+  platformOs: string,
+  models: string[],
+): AccountListView {
   const home =
     platformOs === "windows"
       ? `C:\\Users\\${DEMO_ACCOUNT}`
@@ -501,7 +517,7 @@ export function demoAccounts(platformOs: string): AccountListView {
         share_path: "",
         shell_path: "",
         is_ai_tools_enabled: true,
-        tool_configs: {},
+        tool_configs: { opencode: { model: DEMO_OPENCODE_MODEL } },
         modules: ["terminal", "samba"],
         ai_tools: { state: "switched", code: "", params: {} },
       },
@@ -514,7 +530,7 @@ export function demoAccounts(platformOs: string): AccountListView {
       },
     ],
     platform_os: platformOs,
-    models: DEMO_AI_STATUS.served_models ?? [],
+    models,
     is_gateway_serving: true,
   };
 }
