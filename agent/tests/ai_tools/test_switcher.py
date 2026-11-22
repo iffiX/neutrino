@@ -18,7 +18,8 @@ and the files. OpenCode's provider goes in whole as ``--config`` beside the
 account's own, with no adoption step but the list, and its ``~/.config``
 made for the switch is taken away again. OpenCode's top-level ``model``
 names the hub's model when the file names none, follows a changed model
-while it is the one written, and a ``model`` of the account's own stays.
+while it is the one written, and a ``model`` of the account's own stays; a
+record without the wanted ``model`` is switched once more.
 """
 
 import json
@@ -713,3 +714,33 @@ def test_the_written_opencode_model_goes_when_the_tool_has_no_model():
     assert with_opencode_model(text, "", "neutrino/m4") == ("{}", "")
     assert with_opencode_model(text, "", "") == (text, "")
     assert with_opencode_model("{}", "", "") == ("{}", "")
+
+
+def test_an_opencode_record_without_the_wanted_model_is_switched_once_more(tmp_path):
+    cc_switch = FakeCcSwitch()
+    switcher, session = switcher_for(tmp_path, cc_switch)
+    activate(switcher)
+    path = tmp_path / "ai_tools" / "ann" / "opencode.json"
+    record = json.loads(path.read_text())
+    del record["added"]["model"]
+    del record["written_model"]
+    path.write_text(json.dumps(record))
+    live = json.loads(session.files[OPENCODE])
+    del live["model"]
+    session.files[OPENCODE] = json.dumps(live, indent=2)
+    cc_switch.calls.clear()
+
+    assert not switcher.is_current(base_url=HUB, api_key=KEY, tool_configs=CONFIGS)
+    assert activate(switcher) == ["opencode"]
+
+    assert cc_switch.made("opencode") == [
+        "provider list",
+        "provider delete",
+        "provider list",
+        "provider add",
+        "use neutrino",
+    ]
+    assert json.loads(session.files[OPENCODE])["model"] == "neutrino/m4"
+    assert switcher.read_record("opencode")["added"]["model"] == "neutrino/m4"
+    assert switcher.is_current(base_url=HUB, api_key=KEY, tool_configs=CONFIGS)
+    assert activate(switcher) == []

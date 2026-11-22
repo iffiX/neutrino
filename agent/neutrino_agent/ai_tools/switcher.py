@@ -187,10 +187,10 @@ def wanted(app: str, base_url: str, api_key: str, config: dict) -> dict:
         config: The tool's choices.
 
     Returns:
-        The endpoint, a digest of the key, the flags and Codex's effort; the
-        key itself is never written down.
+        The endpoint, a digest of the key, the flags, Codex's effort and
+        OpenCode's top-level ``model``; the key itself is never written down.
     """
-    return {
+    settings = {
         "base_url": endpoint_for(app, base_url),
         "key_digest": hashlib.sha256(api_key.encode("utf-8")).hexdigest()[
             :AI_TOOLS_KEY_DIGEST_CHARS
@@ -202,6 +202,9 @@ def wanted(app: str, base_url: str, api_key: str, config: dict) -> dict:
             else ""
         ),
     }
+    if app == "opencode":
+        settings[AI_TOOLS_OPENCODE_MODEL_KEY] = opencode_model(config)
+    return settings
 
 
 def without_own_keys(app: str, snippet: str) -> str:
