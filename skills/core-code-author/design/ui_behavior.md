@@ -903,7 +903,7 @@ page's words":
 | Chip | What it reads |
 | --- | --- |
 | source | the row's `source`, the word the hub derives from the install method of the module's entry for the machine's platform; a word outside the four shows no chip |
-| kind | the row's `kind`: Program on Codex, Claude Code and OpenCode, Service on every other module |
+| kind | the row's `kind`, the word the hub's description table names for the module: System service, Account service or Program; a word outside the three shows no chip |
 | upgrade only | `ui.modules.forward_only` on a row whose `is_data_forward_only` is true, after the kind chip; none on any other row |
 
 In a window 880 px wide or narrower, or one no wider than it is tall, the

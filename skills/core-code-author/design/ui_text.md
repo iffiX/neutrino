@@ -397,7 +397,7 @@ where they fit.
 | `ui.ai_tools.gateway_default` | Gateway default | 网关默认 |
 | `ui.modules.tabs_title` | Module configuration | 模块配置 |
 | `ui.modules.source_agent`, `ui.modules.source_system`, `ui.modules.source_upstream`, `ui.modules.source_container`, the source chip of a module's tab | Built-in, System, Upstream, Container | 自带、系统、外部源、容器 |
-| `ui.modules.kind_service`, `ui.modules.kind_program`, the kind chip of a module's tab | Service, Program | 服务、普通程序 |
+| `ui.modules.kind_system_service`, `ui.modules.kind_account_service`, `ui.modules.kind_program`, the kind chip of a module's tab | System service, Account service, Program | 系统服务、账户服务、普通程序 |
 | `ui.modules.forward_only`, the chip of a module whose data moves forward only | Upgrade only | 只能升级 |
 | `ui.modules.log_title` | Log · last 200 lines | 日志 · 最后 200 行 |
 | `ui.modules.config_title` | Configuration | 配置 |
@@ -455,8 +455,8 @@ where they fit.
 | `code.version_older_than_run` | {module} has run {newest_run} on this machine and moved its data forward, so it cannot install the older {version}. | {module} 在这个系统上运行过 {newest_run}，数据已经往前迁移，不能安装更旧的 {version}。 |
 | `ui.modules.stopped_hint`, the hint of every apply bar of a module's panel while its module's `want` is not `running`, and under the file share's folder shares. The panels of the modules the agent carries keep their own hint | The module is stopped; these settings take effect at the next Start. | 模块已停止，这些设置在下次启动时生效。 |
 
-A module tab's chips take one word each. What each word says, and which
-install method reads as which source, is
+A module tab's chips take one word each. What each word says, which install
+method reads as which source, and which module reads as which kind, is
 [agent/module_install.md](agent/module_install.md), "The source chip and the
 kind chip":
 
@@ -466,7 +466,8 @@ kind chip":
 | source | System | 系统 |
 | source | Upstream | 外部源 |
 | source | Container | 容器 |
-| kind | Service | 服务 |
+| kind | System service | 系统服务 |
+| kind | Account service | 账户服务 |
 | kind | Program | 普通程序 |
 
 Codex, Claude Code and OpenCode read Program and Upstream.

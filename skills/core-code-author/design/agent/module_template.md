@@ -203,7 +203,9 @@ take over").
 ## The hub side
 
 The hub describes every module once, in the description table
-`modules/devices/module_table.py`: its kind, its configuration file name under
+`modules/devices/module_table.py`: its kind, the word of its kind chip
+([module_install.md](module_install.md), "The source chip and the kind
+chip"), its configuration file name under
 `config/devices/<id>/`, the fields the vault seals in it, the published
 entry's `description_code`, and the panel kind the machine page draws. The
 table's rows are in the one order every list of modules shows, and the
