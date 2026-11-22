@@ -104,8 +104,13 @@ Gemini's `~/.gemini/.env` and `settings.json`, and OpenCode's
 files only into a directory that is there, so a switch makes the directory,
 as the account, for a tool that has none, and every tool the log names as
 switched has its files written and read back naming the hub. OpenCode's
-record also keeps `is_parent_present`, whether `~/.config` was there.
-cc-switch writes them with the account's own file mask, so once it has run, every file
+record also keeps `is_parent_present`, whether `~/.config` was there, and
+`written_model`, the top-level `model` the agent wrote into `opencode.json`
+as the account after cc-switch added the hub's provider, empty when it
+wrote none ([hub_components/ai.md](../hub_components/ai.md), "How a client points its
+tools at the gateway").
+cc-switch writes them with the account's own file mask, so once it has run
+and the agent has written OpenCode's `model`, every file
 that holds the gateway key, Claude Code's `settings.json`, Codex's
 `auth.json`, Gemini's `.env` and OpenCode's `opencode.json`, is set to mode
 600 as the account, and the
@@ -137,7 +142,8 @@ cc-switch runs as the account, with the account's home and its own
 environment ("Running as an account" in the platform table,
 [agent.md](../agent.md), "The platform layer"), and so does each file step of
 the client's sequence: reading a tool's file, writing Codex's effort into
-`config.toml`, removing a file cc-switch made. An account can replace any
+`config.toml` and OpenCode's `model` into `opencode.json`, removing a file
+cc-switch made. An account can replace any
 file in its home with a link to a file only root reads, so a read made as
 root would hand that file to cc-switch and through it back to the account. On
 Linux and macOS the file steps are `cat`, `test -f`, `sh -c` writing what

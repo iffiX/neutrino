@@ -85,8 +85,9 @@ and never writes the module's.
 **The gateway is the machine's AI tools setting.** The module writes no
 settings file: both copies read the account's
 `~/.config/opencode/opencode.json`, to which the setting adds the hub as the
-provider `neutrino` when the account's switch is on
-([../ai_tools.md](../ai_tools.md)).
+provider `neutrino` when the account's switch is on, and the top-level
+`model`, `neutrino/<model>`, when the file names no `model`, so either copy
+starts on the account's model ([../ai_tools.md](../ai_tools.md)).
 
 **CloudCLI and Codeg do not reach the module's copy.** The `PATH` of each
 one's service names no launcher folder ([cloudcli.md](cloudcli.md), "The

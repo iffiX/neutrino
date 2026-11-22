@@ -240,11 +240,16 @@ current one, so nothing of the person's has to pass through its stores:
 | Step | cc-switch command | What it writes |
 | --- | --- | --- |
 | The hub | `provider add --config` with the whole provider, `{npm: "@ai-sdk/openai-compatible", name, options: {baseURL, apiKey}, models: {<model>: {name}}}`, then `use` | `provider.neutrino` in the file, every other key's value as it was |
+| The model | none: the client writes the file itself after `use` | the top-level `model`, `neutrino/<model>`, when the file names no `model` |
 | Switching back | `provider delete` | the file without `provider.neutrino` |
 
 | Rule | Reason |
 | --- | --- |
-| The hub's provider names one model, the tool's model. | OpenCode starts on the file's own `model` when it names one, then on the last model it used of a provider it still has, then on a model of a provider the file names. A person with no OpenCode settings of their own starts on the hub's model. |
+| The hub's provider names one model, the tool's model. When the file names no top-level `model`, the client sets `model` to `neutrino/<model>` after `use`. | OpenCode starts on the file's own `model` when it names one. Without one, OpenCode 1.19.5 opened on its own built-in model, Big Pickle, on a new account with the hub's provider in the file and no `~/.local/state/opencode`, `~/.local/share/opencode` or `~/.cache/opencode`. cc-switch 5.10.4 writes no `model` for OpenCode, and its `provider set-default` refuses OpenCode: "Only Hermes and OpenClaw support setting a default provider/model". |
+| A `model` the person wrote stays as it is. | It is the model the person chose to start on, and the hub's model is in OpenCode's model list beside it. |
+| The record keeps `written_model`, the `model` the client wrote, empty when it wrote none. A `model` in the file other than `written_model` is the person's. | A `model` that names `neutrino/` can be the person's own, so the file alone does not tell who wrote it. |
+| When the tool's model changes, a `model` equal to `written_model` is set to the new `neutrino/<model>`, and taken away when the tool has no model. A `model` the person wrote stays. | The `model` the client wrote stands for the tool's model. Left as it was, it names a model the hub's provider no longer lists. |
+| The client reads the file as JSON and writes it back as JSON with two-space indentation, every other key's value as cc-switch left it. | cc-switch writes the file that way, and it refuses a file it cannot read as JSON at its next run. |
 | The provider goes in whole as `--config`. | cc-switch 5.10.4 refuses `--base-url`, `--api-key` and `--model` for OpenCode: "provider add for opencode requires raw config via --config or --config-file". |
 | For OpenCode the hub is current while cc-switch lists its provider. | `provider current` fails for OpenCode, with "Current provider '' not found". |
 | A file cc-switch cannot read as JSON fails the switch. | OpenCode accepts comments in `opencode.json`, and cc-switch refuses a file holding one. |
@@ -254,9 +259,12 @@ extract counts the provider's own model as shared for Gemini (`GEMINI_MODEL`)
 and, defensively, Codex (`model`); the client takes those keys out of the
 snippet before saving it, or the snippet would override the hub's choice.
 
-Two things stay the client's own. Codex's reasoning effort has no flag in
+Three things stay the client's own. Codex's reasoning effort has no flag in
 cc-switch's `provider add`, so a chosen effort is set as a top-level key of
-`config.toml` after the switch. And cc-switch's `provider delete` asks
+`config.toml` after the switch. OpenCode's top-level `model` has none
+either, so the client writes it after `use` as the rules above say. The
+switch back writes the kept file back byte for byte, so no `model` the
+client wrote stays. And cc-switch's `provider delete` asks
 `(y/N)` on its terminal with no flag in the prompt's place, so the client
 runs it on a terminal of its own (a pty on Linux, a pseudo console on
 Windows) and answers `y`.
@@ -270,7 +278,8 @@ Codex's `~/.codex/config.toml` and `auth.json`, Gemini's `~/.gemini/.env` and
 record is `{is_present, is_dir_present, kept, kept_modes, previous, added}`,
 `kept_modes` being each kept file's own mode outside Windows and `added` the
 provider settings last written, and OpenCode's also holds
-`is_parent_present`, whether `~/.config` was there. A tool whose
+`is_parent_present`, whether `~/.config` was there, and `written_model`,
+the top-level `model` the client wrote. A tool whose
 record says it already carries the wanted settings is not run again, so
 nothing runs when nothing changed.
 
