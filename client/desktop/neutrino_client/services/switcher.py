@@ -30,7 +30,8 @@ before it put back, and the refusal is the answer.
 OpenCode is additive: cc-switch adds the hub's provider to its file beside
 the person's own and keeps no provider current, so its adoption is the list
 alone, its provider goes in whole as ``--config``, and the hub is current
-while cc-switch lists its provider.
+while cc-switch lists its provider. Its top-level ``model`` is written after
+the switch when the file names none, and the record keeps it.
 
 One knob has no flag in cc-switch: Codex's reasoning effort, which is
 settled into ``config.toml`` after the switch when the person chose one.
@@ -76,6 +77,9 @@ SWITCHER_CC_SWITCH_APPS = {"opencode": "open-code"}
 SWITCHER_ADDITIVE_APPS = ("opencode",)
 # OpenCode's provider package for an endpoint of the OpenAI API.
 OPENCODE_NPM = "@ai-sdk/openai-compatible"
+# OpenCode's top-level key naming the model it starts on, as
+# ``<provider>/<model>``. cc-switch writes none.
+OPENCODE_MODEL_KEY = "model"
 # The directory cc-switch writes a tool's files into only once it is there,
 # and every file a switch may write in it, below the person's home: what is
 # kept aside before the first switch and put back after the switch back.
@@ -371,6 +375,14 @@ def _point_at_hub(app: str, base_url: str, api_key: str, config: dict) -> bool:
                 relative,
                 _merge_toml_top_level(_read_text(relative), {CODEX_EFFORT_KEY: effort}),
             )
+    if app == "opencode":
+        text = _read_text(relative)
+        merged, written = _with_opencode_model(
+            text, _opencode_model(config), str(record.get("written_model", "") or "")
+        )
+        if merged != text:
+            _write_text(relative, merged)
+        record["written_model"] = written
     for name in SWITCHER_APP_KEY_FILES[app]:
         path = _kept_path(app, name)
         if os.path.isfile(path):
@@ -878,6 +890,46 @@ def _provider_config(app: str, base_url: str, api_key: str, config: dict) -> str
             "models": {model: {"name": model}} if model else {},
         }
     )
+
+
+def _opencode_model(config: dict) -> str:
+    """OpenCode's top-level ``model`` naming the tool's model in the hub's provider."""
+    model = str(config.get("model", "") or "")
+    return f"{SWITCHER_PROVIDER_ID}/{model}" if model else ""
+
+
+def _with_opencode_model(text: str, model: str, written: str) -> "tuple[str, str]":
+    """OpenCode's file with its top-level ``model`` set to the hub's model.
+
+    A ``model`` the file names other than ``written`` is the person's own and
+    stays. The one written before follows ``model``, and goes when it is empty.
+
+    Args:
+        text: The file as cc-switch left it.
+        model: The ``model`` to write, empty for none.
+        written: The ``model`` written before, empty for none.
+
+    Returns:
+        The file's text, the same text when nothing changes, and the
+        ``model`` now written, empty for none.
+    """
+    try:
+        document = json.loads(text or "{}")
+    except ValueError:
+        return text, ""
+    if not isinstance(document, dict):
+        return text, ""
+    current = document.get(OPENCODE_MODEL_KEY)
+    if OPENCODE_MODEL_KEY in document and (not written or current != written):
+        return text, ""
+    if current == model or (current is None and not model):
+        return text, model
+    if model:
+        document[OPENCODE_MODEL_KEY] = model
+    else:
+        document.pop(OPENCODE_MODEL_KEY, None)
+    ending = "\n" if text.endswith("\n") else ""
+    return json.dumps(document, indent=2, ensure_ascii=False) + ending, model
 
 
 def _endpoint_for(app: str, base_url: str) -> str:

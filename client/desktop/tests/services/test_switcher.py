@@ -5,7 +5,9 @@ standard library's own on this person's home, with no step-down anywhere.
 cc-switch itself is scripted below as a small store: what it answers, and
 every call the switcher made, in order. OpenCode's provider goes in whole
 as ``--config`` beside the person's own, under cc-switch's name
-``open-code``, and its ``.config`` made for the switch goes again.
+``open-code``, and its ``.config`` made for the switch goes again. Its
+top-level ``model`` names the hub's model when the file names none, follows
+a changed model while it is the one written, and the person's own stays.
 """
 
 import json
@@ -1031,6 +1033,7 @@ def test_opencode_gets_the_hub_s_provider_whole_beside_the_person_s_own(
     written = json.loads(live.read_text())
     assert sorted(written["provider"]) == ["mine", "neutrino"]
     assert written["model"] == "mine/x"
+    assert switcher._read_record("opencode")["written_model"] == ""
     if os.name != "nt":
         assert live.stat().st_mode & 0o777 == 0o600
 
@@ -1087,3 +1090,86 @@ def test_opencode_is_named_to_cc_switch_by_its_own_name(monkeypatch):
     switcher._run(["provider", "list"], "opencode")
 
     assert recorded == [["/opt/cc-switch", "--app", "open-code", "provider", "list"]]
+
+
+def test_opencode_with_no_model_of_its_own_starts_on_the_hub_s_model(
+    tmp_path, monkeypatch
+):
+    (tmp_path / "home").mkdir(exist_ok=True)
+    wire(monkeypatch, Cli())
+    live = tmp_path / "home" / OPENCODE
+
+    switcher.activate(
+        base_url="http://hub", api_key="k", tool_configs={"opencode": {"model": "m4"}}
+    )
+
+    written = json.loads(live.read_text())
+    assert written["model"] == "neutrino/m4"
+    assert written["provider"]["neutrino"]["models"] == {"m4": {"name": "m4"}}
+    assert switcher._read_record("opencode")["written_model"] == "neutrino/m4"
+    if os.name != "nt":
+        assert live.stat().st_mode & 0o777 == 0o600
+
+    switcher.activate(
+        base_url="http://hub", api_key="k", tool_configs={"opencode": {"model": "m5"}}
+    )
+
+    assert json.loads(live.read_text())["model"] == "neutrino/m5"
+    switcher.deactivate()
+    assert not live.exists()
+
+
+def test_a_model_of_the_person_s_own_stays_when_the_model_changes(
+    tmp_path, monkeypatch
+):
+    own = json.dumps({"model": "mine/x", "provider": {"mine": {}}}).encode("utf-8")
+    live = tmp_path / "home" / OPENCODE
+    live.parent.mkdir(parents=True)
+    live.write_bytes(own)
+    wire(monkeypatch, Cli())
+
+    for model in ("m4", "m5"):
+        switcher.activate(
+            base_url="http://hub",
+            api_key="k",
+            tool_configs={"opencode": {"model": model}},
+        )
+
+    written = json.loads(live.read_text())
+    assert written["model"] == "mine/x"
+    assert written["provider"]["neutrino"]["models"] == {"m5": {"name": "m5"}}
+    switcher.deactivate()
+    assert live.read_bytes() == own
+
+
+def test_the_switch_back_takes_the_written_model_away_byte_for_byte(
+    tmp_path, monkeypatch
+):
+    own = b'{\n  "$schema": "https://opencode.ai/config.json",\n  "theme": "x"\n}\n'
+    live = tmp_path / "home" / OPENCODE
+    live.parent.mkdir(parents=True)
+    live.write_bytes(own)
+    wire(monkeypatch, Cli())
+
+    switcher.activate(
+        base_url="http://hub", api_key="k", tool_configs={"opencode": {"model": "m4"}}
+    )
+    assert json.loads(live.read_text())["model"] == "neutrino/m4"
+    switcher.deactivate()
+
+    assert live.read_bytes() == own
+
+
+def test_the_opencode_model_is_written_as_json_in_cc_switch_s_layout():
+    text = '{\n  "provider": {\n    "neutrino": {}\n  }\n}'
+
+    merged, written = switcher._with_opencode_model(text, "neutrino/m4", "")
+
+    assert merged == (
+        '{\n  "provider": {\n    "neutrino": {}\n  },\n  "model": "neutrino/m4"\n}'
+    )
+    assert written == "neutrino/m4"
+    assert switcher._with_opencode_model(merged, "", "neutrino/m4")[0] == (
+        '{\n  "provider": {\n    "neutrino": {}\n  }\n}'
+    )
+    assert switcher._with_opencode_model(merged, "neutrino/m5", "")[0] == merged
