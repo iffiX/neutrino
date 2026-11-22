@@ -250,12 +250,7 @@ function OllamaModels({
           onRetry={onRetry}
         />
       )}
-      {!isUnreachable && !hasRows && (
-        <div className="placeholder">
-          <span className="faint">{t("ui.ollama.models_empty")}</span>
-        </div>
-      )}
-      {hasRows && (
+      {!isUnreachable && (
         <div className="ollama_list_frame">
           <div className="ollama_list">
             <div className="ollama_row ollama_row--head faint">
@@ -269,6 +264,11 @@ function OllamaModels({
               <span>{t("ui.ollama.col_memory")}</span>
               <span />
             </div>
+            {!hasRows && (
+              <div className="ollama_row ollama_row--empty faint">
+                <span>{t("ui.ollama.models_empty")}</span>
+              </div>
+            )}
             {saved.pulls.map((pull) => (
               <PullRow
                 key={`pull:${pull.name}`}

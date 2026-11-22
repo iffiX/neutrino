@@ -74,15 +74,14 @@
 }
 
 /* One grid for the head and every row: name, the four facts, memory and
-   the buttons, each row a subgrid of it, so no column moves with a long
-   name or a changed button. */
+   the buttons, each row a subgrid of it. The name takes what the set
+   widths leave, so no column's width depends on what the rows hold or how
+   many there are. */
 .ollama_list {
-  --ollama-actions-width: 10.5rem;
-
   display: grid;
   grid-template-columns:
-    minmax(min-content, 2.4fr) repeat(4, max-content)
-    minmax(8rem, 1.4fr) var(--ollama-actions-width);
+    minmax(0, 1fr) 4rem 4.75rem 3.5rem 5rem 7.5rem
+    10.5rem;
   column-gap: var(--space-3);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
@@ -108,6 +107,12 @@
   font-size: 12px;
 }
 
+.ollama_row--empty > span {
+  grid-column: 1 / -1;
+  padding: var(--space-4) 0;
+  text-align: center;
+}
+
 /* The facts sit in their own columns of the table, and on one line in a
    card. */
 .ollama_facts {
@@ -117,6 +122,10 @@
 
 .ollama_row--head .ollama_facts {
   color: inherit;
+}
+
+.ollama_facts > span {
+  min-width: 0;
 }
 
 .ollama_row_name {
@@ -189,7 +198,7 @@
   min-width: 5.5rem;
 }
 
-@container ollama_list (max-width: 760px) {
+@container ollama_list (max-width: 780px) {
   .ollama_list {
     display: flex;
     flex-direction: column;
