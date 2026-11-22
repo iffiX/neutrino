@@ -8,7 +8,12 @@
 }
 
 /* The machine's resources: a name, its bar and its numbers per line, the
-   three in line from one line to the next. */
+   three in line from one line to the next; when narrow, the name above its
+   bar and numbers. */
+.ollama_resources_frame {
+  container: ollama_resources / inline-size;
+}
+
 .ollama_resources {
   display: grid;
   grid-template-columns: minmax(0, max-content) minmax(6rem, 1fr) max-content;
@@ -42,6 +47,17 @@
   text-align: right;
 }
 
+@container ollama_resources (max-width: 480px) {
+  .ollama_resources {
+    grid-template-columns: minmax(0, 1fr) max-content;
+    row-gap: var(--space-1);
+  }
+
+  .ollama_resource_name {
+    grid-column: 1 / -1;
+  }
+}
+
 .ollama_pull_form {
   display: flex;
   gap: var(--space-2);
@@ -61,12 +77,12 @@
    the buttons, each row a subgrid of it, so no column moves with a long
    name or a changed button. */
 .ollama_list {
-  --ollama-actions-width: 13rem;
+  --ollama-actions-width: 10.5rem;
 
   display: grid;
   grid-template-columns:
     minmax(min-content, 2.4fr) repeat(4, max-content)
-    minmax(9.5rem, 1.4fr) var(--ollama-actions-width);
+    minmax(8rem, 1.4fr) var(--ollama-actions-width);
   column-gap: var(--space-3);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
@@ -170,7 +186,7 @@
 
 /* Load and Unload take one width, so Remove keeps its place. */
 .ollama_row_toggle {
-  min-width: 6.5rem;
+  min-width: 5.5rem;
 }
 
 @container ollama_list (max-width: 760px) {
@@ -192,17 +208,12 @@
   .ollama_facts {
     display: flex;
     flex-wrap: wrap;
-    gap: 0 var(--space-2);
+    gap: 0 var(--space-3);
     font-size: 12px;
   }
 
   .ollama_facts > span:empty {
     display: none;
-  }
-
-  .ollama_facts > span + span::before {
-    margin-right: var(--space-2);
-    content: "·";
   }
 
   .ollama_memory:empty {

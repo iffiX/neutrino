@@ -327,22 +327,24 @@ function OllamaModels({
 function Resources({ saved }: { saved: OllamaDeviceView }) {
   const { gpus, memory_used_mb, memory_total_mb } = saved.resources;
   return (
-    <div className="ollama_resources">
-      {gpus.map((gpu, place) => (
+    <div className="ollama_resources_frame">
+      <div className="ollama_resources">
+        {gpus.map((gpu, place) => (
+          <ResourceLine
+            key={place}
+            name={gpuName(gpu, place)}
+            usedMib={gpu.memory_used_mb}
+            totalMib={gpu.memory_total_mb}
+            tone={GPU_TONE}
+          />
+        ))}
         <ResourceLine
-          key={place}
-          name={gpuName(gpu, place)}
-          usedMib={gpu.memory_used_mb}
-          totalMib={gpu.memory_total_mb}
-          tone={GPU_TONE}
+          name={t("ui.ollama.system_memory")}
+          usedMib={memory_used_mb}
+          totalMib={memory_total_mb}
+          tone={SYSTEM_TONE}
         />
-      ))}
-      <ResourceLine
-        name={t("ui.ollama.system_memory")}
-        usedMib={memory_used_mb}
-        totalMib={memory_total_mb}
-        tone={SYSTEM_TONE}
-      />
+      </div>
     </div>
   );
 }
@@ -377,13 +379,22 @@ function ResourceLine({ name, usedMib, totalMib, tone }: ResourceLineProps) {
 }
 
 /** A model's name in two lines when a source stands in front of it: the
- * source up to its last `/`, small and muted, then the model's own name. */
+ * source up to its last `/`, small and muted, then the model's own name.
+ * A narrow column breaks the source after a `/` and the name after a `-`,
+ * never inside a word. */
 function ModelName({ name }: { name: string }) {
   const cut = name.lastIndexOf("/") + 1;
+  const parts = name.slice(0, cut).split("/").slice(0, -1);
   return (
     <span className="ollama_row_name">
       {cut > 0 && (
-        <span className="ollama_row_source">{name.slice(0, cut)}</span>
+        <span className="ollama_row_source">
+          {parts.map((part, place) => (
+            <span key={place}>
+              {part}/<wbr />
+            </span>
+          ))}
+        </span>
       )}
       <span className="ollama_row_model">{name.slice(cut)}</span>
     </span>
