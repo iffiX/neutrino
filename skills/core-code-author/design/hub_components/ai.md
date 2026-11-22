@@ -184,15 +184,14 @@ the AI page"), and the hub keeps the pick as `default_model` in
 `config/cliproxyapi/cliproxyapi.json`, empty until a person picks one. Its
 readers are the unchosen models of the AI tools, on a managed machine and on
 a client; Ayakaleaf's model while its tab names none; Hermes WebUI's `model`;
-AstrBot's `model`, which the agent writes into AstrBot's settings file before
-its first start; and SiYuan's `model`.
+AstrBot's `model`; and SiYuan's `model`.
 
 | Rule | Reason |
 | --- | --- |
 | The default model is the pick while the served list holds it, and otherwise the first name of the served list, which is sorted by name. It is empty while the list is empty. | The gateway rejects a request that names a model it does not serve with `400 unknown provider for model`, and a provider turned off or an account signed out takes its names out of the list. |
 | A pick the gateway no longer serves stays in the file, and the picker shows it until a person picks another. | The pick is in force again when its name comes back, as when its provider is turned on again. |
 | The pick is written by `POST /api/hub/ai/gateway/set {default_model}`, which restarts nothing. The hub then sends its state to every online machine and client whose state changes, a client's through its `ai` entry, which carries the default model; a client sends its `service` frame again at each state ([../protocol.md](../protocol.md), "The service frame"). | The gateway serves every name the same with any pick. What changes is the model the readers are sent. |
-| A model chosen for one account's tool, or in one Ayakaleaf tab, stays. | The default model fills only what nobody chose. |
+| A model chosen for one account's tool, in one Ayakaleaf tab, or as AstrBot's default in its own page, stays. | The default model fills only what nobody chose. |
 
 ## What each panel surface owns
 

@@ -1777,7 +1777,10 @@ cookie, `neutrino_` and the first 12 hex characters of the SHA-256 of the
 entry's id; the app's local name; and the default model
 ([hub_components/ai.md](hub_components/ai.md), "The default model"),
 empty while the gateway serves none, which the agent writes into
-AstrBot's settings file before the first start. The agent takes the
+AstrBot's settings file before the first start and, when it changes,
+through AstrBot's API while the person's own default stays
+([agent/modules/astrbot.md](agent/modules/astrbot.md), "The gateway"). The
+agent takes the
 forwarder's port itself, from 6185 up. The hub generates both secrets the
 first time the module is installed, keeps them sealed in
 `config/devices/<id>/astrbot.json` beside the module's gateway key, and
