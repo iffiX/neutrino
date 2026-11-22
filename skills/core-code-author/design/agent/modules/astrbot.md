@@ -113,7 +113,7 @@ keys below. AstrBot adds its defaults for every other key at that start.
 
 | Rule | Reason |
 | --- | --- |
-| The step `settings` makes the volume when it is missing, and writes the file only into a volume that holds no `cmd_config.json`. A volume that holds one keeps it. | Once AstrBot has started, the file holds the person's bots, providers and settings, and a volume kept across a version change keeps them. |
+| The step `settings` makes the volume when it is missing, and writes the file only into a volume that holds no `cmd_config.json`. A volume that holds one keeps it, apart from the `dashboard` keys after a change of hub ("A machine that joins another hub"). | Once AstrBot has started, the file holds the person's bots, providers and settings, and a volume kept across a version change keeps them. |
 | The step runs before `render` in the install's plan, since Containers' configure task starts the container. | AstrBot started on an empty volume generates its own password, sets the change flag and sends its metrics. |
 | On Linux the agent writes the file and the folder as root into the volume's folder that `podman volume inspect` names. The file is written whole under a temporary name and renamed into place. On Windows and macOS the root script writes them the same way inside the Podman machine ([containers.md](containers.md), "Reads and writes"). | The lab wrote the file this way on Ubuntu 22.04 with Podman 3.4.4, and the first login returned `change_pwd_hint: false` and `setup_required` read false. A write inside the Podman machine is not proven. |
 | The agent never writes `cmd_config.json` while AstrBot runs. A later change goes through AstrBot's own API, signed in as the forwarder signs in ("The page"). | A running AstrBot does not read the file again, and its next save of any setting writes its own copy over it. In the lab a timeout edited in the file read 120 from the API 3 seconds later, and the file itself read 120 again after AstrBot's next save. |
@@ -156,7 +156,7 @@ seconds with a small Ollama model.
 
 | Rule | Reason |
 | --- | --- |
-| From the install, and after a version change, the module reads `installing` until `GET /` first returns 200 at the published port. The module's task checks every 30 seconds in its step `first_start` meanwhile ([../../agent.md](../../agent.md), "The steps"). | The first start took 8.8 seconds on Ubuntu 22.04, 50 on Windows and 15 on an Intel Mac in the lab, and a version change migrates the data at its first start. The entry appears when the page can serve. |
+| From the install, after a version change, and after a new password ("A machine that joins another hub"), the module reads `installing` until `GET /` first returns 200 at the published port. The module's task checks every 30 seconds in its step `first_start` meanwhile ([../../agent.md](../../agent.md), "The steps"). | The first start took 8.8 seconds on Ubuntu 22.04, 50 on Windows and 15 on an Intel Mac in the lab, and a version change migrates the data at its first start. The entry appears when the page can serve. |
 | A version change makes the container again on the new image and keeps the volume, with the settings, the plugins and their requirements. The step `settings` writes nothing then. | The data is in the volume, and AstrBot migrates it at the new version's first start. In the lab 4.28.2 to 4.29.4 on the same volume started in 10.9 seconds and kept the persona and the provider. |
 
 The pull by digest took 77 seconds on Ubuntu 22.04, 198 on Windows and 81
@@ -165,6 +165,25 @@ on the Intel Mac. The first start installs nothing. It fetches
 `api.soulter.top`. The plugin market's list comes from `api.soulter.top`,
 with GitHub as AstrBot's own fallback, and plugin archives from
 `astrbot-cloud-test-s3.astrbot.app`.
+
+## A machine that joins another hub
+
+A machine that runs AstrBot and joins another hub keeps the module's volume,
+with its bots, conversations, plugins and settings. Its container stops
+when it leaves the earlier hub, and the new hub imports none of it. The
+module reads `stopped` on the new hub, from the recipe the agent kept
+([../module_install.md](../module_install.md), "From container images"),
+and its **Start** there starts the container again on the same volume
+([containers.md](containers.md), "Hub containers"). The new hub generates
+the module's secret and its password at that **Start**, as at every first
+install.
+
+| Rule | Reason |
+| --- | --- |
+| The module's record keeps the password written into `cmd_config.json`. When the state names another password, or the record holds none, the step `settings` runs before `start`: it stops the container, writes the `dashboard` keys of "The settings file" again with the new password and a new `jwt_secret`, keeps every other key, and starts the container. The record then keeps the new password. | The volume keeps the dashboard user with the earlier hub's password, and the forwarder signs in with the password the state names. AstrBot is stopped while the file changes, so no running AstrBot writes its copy over it. A new `jwt_secret` ends every login made under the earlier hub. |
+| The step takes `containers` shared ([../../agent.md](../../agent.md), "Step locks"). | An apply of Containers takes the lock alone and starts each container that starts with the box, so none starts the container while the file changes. |
+| The module reads `installing` until the step ends and `GET /` returns 200. A step that fails ends the task `install_failed {detail}`, and **Start** runs it again. | The entry appears when the forwarder's login works. |
+| The rewrite after a change of hub is not proven in the lab. | R196 wrote the file into an empty volume alone. |
 
 ## The page
 

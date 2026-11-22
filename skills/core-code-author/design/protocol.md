@@ -1789,9 +1789,9 @@ artifact, `astrbot`, one `oci` feed in `releases`, `source_sets:
 ["pypi"]` and `is_data_forward_only`. Its hub container names
 `page_port` 6185, `local_ports` `[6199]` and `stop_signal` `SIGINT`. It
 reads `running` while the container runs and `GET /` returns 200 at its
-published port, and `installing` from the install, or a version change,
-until the first such read. `details` is `{version, port}`, `port` the
-forwarder's.
+published port, and `installing` from the install, a version change or a
+new password, until the first such read. `details` is `{version, port}`,
+`port` the forwarder's.
 
 Package bytes come to the agent down a `package {module, artifact, digest}`
 stream it opens, `artifact` naming the artifact and `digest` the bytes

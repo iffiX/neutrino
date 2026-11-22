@@ -463,7 +463,7 @@ the first failure in `APPLY_ORDER`.
 | `machine` | Containers on Windows and macOS: the Podman machine made or taken over, sized and started, and the wait until it answers | `failed` |
 | `command_line_tools` | Gitea on macOS with no usable `git`: Apple's Command Line Tools installed with `softwareupdate` ([modules/gitea.md](agent/modules/gitea.md), "Gitea brings its git on macOS and Windows") | `install_failed` |
 | `first_start`, `update_check` | Hermes WebUI's first start and its one read of the update setting ([modules/hermes_webui.md](agent/modules/hermes_webui.md), "The first start"); `first_start` also AstrBot's first start ([modules/astrbot.md](agent/modules/astrbot.md), "The first start") | `install_failed` |
-| `settings` | AstrBot's settings file and its plugins' requirements folder written into its empty volume before the container's first start ([modules/astrbot.md](agent/modules/astrbot.md), "The settings file") | `install_failed` |
+| `settings` | AstrBot's settings file and its plugins' requirements folder written into its empty volume before the container's first start, and the `dashboard` keys written again with the container stopped after a new password ([modules/astrbot.md](agent/modules/astrbot.md), "The settings file", "A machine that joins another hub") | `install_failed` |
 | `replica_set`, `wait_app`, `admin`, `tex`, `guests` | Ayakaleaf's first start ([modules/ayakaleaf.md](agent/modules/ayakaleaf.md), "The first start") | `install_failed` |
 | `tools {account}` | the `ai_tools` section's switch of one account ([ai_tools.md](agent/ai_tools.md)) | the account's own result |
 
@@ -500,7 +500,7 @@ names.
 
 | Task | Its steps |
 | --- | --- |
-| A start of a configured module | `configure`, the `account` steps and `start`; a container module's `wait_module podman`, `start` and the first-start steps its record does not hold |
+| A start of a configured module | `configure`, the `account` steps and `start`; a container module's `wait_module podman`, `start` and the first-start steps its record does not hold, with AstrBot's `settings` before `start` while its record holds another password than the state's |
 | A stop | `configure`, then `stop`; a container module's `wait_module podman`, then `stop` |
 | A configure | `configure` and, under `running`, the `account` steps, then `start` or `stop` by the `want` |
 | An uninstall | `uninstall`; a container module's drops its hub containers and removes its containers, network, volumes and unused images |
@@ -544,7 +544,7 @@ sends the state, and each module is planned again from what the machine shows:
 | `switch` | `swap_in` removes a stale `.old` first, and the kept version is written only after success |
 | `verify`, `configure`, `start`, `stop`, `uninstall`, `pull`, `render`, `machine` | each makes the machine match and changes nothing that already matches |
 | Ayakaleaf's first-start steps | each step done is kept in the module's record, and a death between the administrator's registration and the record's write makes `admin` fail `ayakaleaf_setup_failed {step: admin}`. `replica_set`, `tex` and `wait_app`, and Hermes WebUI's `first_start`, write nothing in the record once the agent began to stop, since their commands run in a container the stop's signal reaches. `admin`, `guests` and Hermes WebUI's `update_check` call the app over HTTP, which the stop does not end, and keep what they did |
-| AstrBot's `settings` and `first_start` | `settings` writes only into a volume that holds no `cmd_config.json`, the file whole under a temporary name and then renamed; `first_start` only reads `GET /` |
+| AstrBot's `settings` and `first_start` | `settings` writes the file whole under a temporary name and then renames it, into a volume that holds none or, after a new password, with the container stopped; the record keeps the new password only after the rename, so a death before it runs the step again; `first_start` only reads `GET /` |
 | `npm {account}` on Linux | the transient service of that name outlives the agent, and the step waits for it, at most the install's 30 minutes, before it starts one ([modules/cloudcli.md](agent/modules/cloudcli.md), "npm cannot take the agent down") |
 
 A self-update takes `package_manager` before it launches, so it never cuts
