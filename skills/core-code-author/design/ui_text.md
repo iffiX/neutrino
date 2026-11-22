@@ -688,10 +688,23 @@ other times.
 | `ui.ollama.models_summary`, and `ui.ollama.models_summary_one` for one model | {count} models, {size}; 1 model, {size} | {count} 个模型，共 {size}；1 个模型，共 {size} |
 | `ui.ollama.pull` | Pull | 拉取 |
 | `ui.ollama.models_empty` | No models yet. | 还没有模型。 |
-| `ui.ollama.col_name`, `col_parameters`, `col_quantization`, `col_size`, `col_modified` | Name, Parameters, Quantization, Size, Modified | 名称、参数量、量化、大小、修改时间 |
-| `ui.ollama.loaded` | loaded, {memory} | 已加载，占用 {memory} |
-| `ui.ollama.loaded_vram` | loaded, {memory}, {vram} in VRAM | 已加载，占用 {memory}，显存 {vram} |
+| `ui.ollama.col_name`, `col_parameters`, `col_quantization`, `col_size`, `col_modified`, `col_memory` | Name, Parameters, Quantization, Size, Modified, Memory | 名称、参数量、量化、大小、修改时间、内存 |
+| `ui.ollama.memory_gpu`, a model all on a GPU | {percent}% GPU | {percent}% GPU |
+| `ui.ollama.memory_cpu`, a model all in system memory | {percent}% CPU | {percent}% CPU |
+| `ui.ollama.memory_split`, a model split between the two, as `ollama ps` words it | {cpu}%/{gpu}% CPU/GPU | {cpu}%/{gpu}% CPU/GPU |
+| `ui.ollama.loading` | loading | 载入中 |
+| `ui.ollama.load` | Load | 载入内存 |
 | `ui.ollama.unload` | Unload | 移出内存 |
+| `ui.ollama.system_memory` | System memory | 系统内存 |
+| `ui.ollama.memory_used`, a GPU's memory or the system's | {used} / {total} | {used} / {total} |
+| `ui.ollama.gpu_number`, a GPU the report names no name for | GPU {number} | GPU {number} |
+| `ui.ollama.settings_title` | Settings | 设置 |
+| `ui.ollama.keep_alive` | Idle unload time | 空闲多久后移出内存 |
+| `ui.ollama.keep_alive_5m`, `_30m`, `_1h`, `_4h`, `_never` | 5 minutes, 30 minutes, 1 hour, 4 hours, Never | 5 分钟、30 分钟、1 小时、4 小时、从不 |
+| `ui.ollama.gpus` | GPUs | GPU |
+| `ui.ollama.settings_apply` | Apply settings | 应用设置 |
+| `ui.ollama.settings_apply_hint` | Restarts Ollama with these settings. | 用这些设置重启 Ollama。 |
+| `ui.ollama.settings_restart_warning` | Ollama restarts, and only the models loaded with Load come back into memory. | Ollama 会重启，只有用“载入内存”载入的模型会回到内存。 |
 | `ui.ollama.remove` | Remove | 删除 |
 | `ui.ollama.remove_title` | Remove {name} | 删除 {name} |
 | `ui.ollama.remove_body` | The model is deleted from this machine, which frees {size}. | 这个模型会从这个系统上删除，腾出 {size}。 |

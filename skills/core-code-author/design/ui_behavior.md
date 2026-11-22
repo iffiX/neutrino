@@ -1282,27 +1282,50 @@ The Ollama tab ([agent/modules/ollama.md](agent/modules/ollama.md)) draws
 the line `ui.ollama.owner_notice` over its state, its log and its buttons.
 On a row whose `details.found` is `app`, a person's Ollama app on Windows or
 macOS, it draws `ui.ollama.found_app` in its place and no **Install**,
-**Start**, **Stop** or **Uninstall**: **Configure** alone. Its panel, which
-**Configure** opens as every module's, is **Models**
-(`ui.ollama.models_title`), one `settings_group` with no apply bar, each
-press acting at once, as the Containers tab's rows do:
+**Start**, **Stop** or **Uninstall**: **Configure** alone. **Configure**
+opens two panels, **Settings** and under it **Models**; a row whose
+`details.found` is `app` has **Models** alone.
+
+**Settings** (`ui.ollama.settings_title`) is one `settings_group` with its
+own apply bar, as the Containers tab's **Run settings**:
+
+| Control | Idiom |
+| --- | --- |
+| **Idle unload time** (`ui.ollama.keep_alive`) | the panel's picker over `ui.ollama.keep_alive_5m`, `_30m`, `_1h`, `_4h` and `_never`, the view's `keep_alive` chosen |
+| **GPUs** (`ui.ollama.gpus`) | one checkbox per GPU of the view's `resources.gpus`, in its order, with the GPU's name, or `ui.ollama.gpu_number {number}` for one the report names none; ticked while the view's `gpus` is null, else by the stored card at its place of the same vendor, a card it does not name unticked. No checkbox is required. The row is not drawn on macOS or while the report names no GPU |
+
+The bar's label is `ui.ollama.settings_apply` and its hint
+`ui.ollama.settings_apply_hint`, or `ui.modules.stopped_hint` while the
+module's `want` is not `running`. While the bar is dirty and the module runs,
+its warning is `ui.ollama.settings_restart_warning`. A press writes
+`POST /api/agent/module/ollama/set`, `gpus` null when every card is ticked,
+and the bar stays busy until the machine reports the module where its `want`
+asks, at most two minutes, as the Containers tab's bars do.
+
+**Models** (`ui.ollama.models_title`) is one `settings_group` with no apply
+bar, each press acting at once, as the Containers tab's rows do:
 
 | Part | Idiom |
 | --- | --- |
 | The head | `ui.ollama.models_summary {count, size}` at the right of the title |
+| The machine's resources | first, one line per GPU of the view's `resources.gpus`: its name, a `meter` of its memory used over its total, and `ui.ollama.memory_used {used, total}`; then `ui.ollama.system_memory` with the same reading of the machine's memory. A line whose numbers the report lacks shows its name alone |
 | The pull form | a text field with `qwen2.5:7b` as its placeholder and no hint, and **Pull** (`ui.ollama.pull`), a bordered `button` beside it, disabled while the field is empty; a refused name shows the code's words under the field |
-| A pull row | first in the list, one per pull in the queue's order: the name, a `meter` of the bytes done over the total, and `ui.ollama.pull_progress {done, total, speed}`, `ui.ollama.pull_preparing` before Ollama names a total, or `state.queued` for a pull that waits; and **Cancel** (`ui.ollama.cancel`) at its right. A failed pull reads its code's words in the error tone, and its **Cancel** takes it off the list |
-| A model row | the name, the parameter size, the quantization, the size on disk and the last change, from `/api/tags`; a model in memory, from `/api/ps`, also `ui.ollama.loaded {memory}`, or `ui.ollama.loaded_vram {memory, vram}` while part of it is on a GPU, and **Unload** (`ui.ollama.unload`); and **Remove** (`ui.ollama.remove`) at the right of every row |
-| **Remove** | asks through `useConfirm`: the title `ui.ollama.remove_title {name}`, the body `ui.ollama.remove_body {size}`, and the confirming `button--danger` `ui.ollama.remove` |
+| The list | one grid whose head row and every model row share its columns as subgrids, so a long name or a changed button moves no column: **Name**, **Parameters**, **Quantization**, **Size**, **Modified** and **Memory** (`ui.ollama.col_name` to `col_memory`), then the buttons in a column of fixed width |
+| A pull row | first in the list, one per pull in the queue's order: the name, then across the middle columns a `meter` of the bytes done over the total and `ui.ollama.pull_progress {done, total, speed}`, `ui.ollama.pull_preparing` before Ollama names a total, or `state.queued` for a pull that waits; and **Cancel** (`ui.ollama.cancel`) in the buttons' column. A failed pull reads its code's words in the error tone, and its **Cancel** takes it off the list |
+| A model row | the models in memory first, then the others, each by name. The name, from `/api/tags`, in two lines when it has a source in front: the source up to its last `/` small and muted (`modelscope.cn/unsloth/`), the model's own name under it, broken only where a `-` or a space allows; then the parameter size, the quantization, the size on disk and the last change |
+| **Memory** | for a model in memory, from `/api/ps`, a bar of two parts, the part on a GPU (`size_vram`) in the accent tone and the rest in the secondary tone, over its total in memory (`size`) and its share as `ollama ps` words it: `ui.ollama.memory_gpu {percent}`, `ui.ollama.memory_cpu {percent}`, or `ui.ollama.memory_split {cpu, gpu}` for a model split between the two; `ui.ollama.loading` while the view marks it `is_loading`; empty for a model not in memory |
+| **Load** and **Unload** | **Load** (`ui.ollama.load`) on a model not in memory, disabled while it loads, and **Unload** (`ui.ollama.unload`) on one in memory, a ghost `button--small` of one width in either language |
+| **Remove** | a ghost `button--danger` at the right of every model row; it asks through `useConfirm`: the title `ui.ollama.remove_title {name}`, the body `ui.ollama.remove_body {size}`, and the confirming `button--danger` `ui.ollama.remove` |
+| A narrow list | under 760 px of the list's width each row is a card: the name, a line of its facts, its memory, and its buttons; the head row is not drawn |
 | No model | `ui.ollama.models_empty` |
-| Not running | while the row's `details.is_running` is false or the machine is offline, the panel draws the tab's state word alone, `state.stopped` or the word of a machine that has not reported, with no list and no action |
+| Not running | while the row's `details.is_running` is false or the machine is offline, the panel draws the tab's state word alone, `state.stopped` or the word of a machine that has not reported, with no resources, no list and no action |
 | A failed read | the view's `ollama_unreachable` in its code's words, in `ErrorPanel` with its retry |
 
 | Rule | Reason |
 | --- | --- |
-| The panel reads `GET /api/agent/module/ollama` every 2 seconds while a pull runs or waits, every 15 seconds otherwise, and again at each press. | A person watches a pull move ("Nothing asks for a refresh"), and the list changes on a press otherwise. |
+| The tab reads `GET /api/agent/module/ollama` every 2 seconds while a pull runs or waits, every 5 seconds otherwise, and again at each press; both panels draw that one view. | A person watches a pull, a load and the memory move ("Nothing asks for a refresh"), and the agent reports its readings every 5 seconds. |
 | A pull is the hub's task: leaving the page leaves it running, and the page draws the queue the view carries when it comes back. A further **Pull** waits behind the running one. | A model is gigabytes, and a page is closed long before. |
-| A person's Ollama, adopted on Linux or an app on Windows and macOS, has the same panel. | The model list is Ollama's API, whoever installed the server. |
+| A person's Ollama, adopted on Linux or an app on Windows and macOS, has the same **Models** panel. | The model list is Ollama's API, whoever installed the server. |
 | Nothing for models is on a client. | The panel is where a machine's software is managed. |
 
 The tab holds no link to Ollama: a client forwards its `api` entry, and a
