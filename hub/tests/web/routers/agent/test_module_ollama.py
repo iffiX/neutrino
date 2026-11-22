@@ -10,7 +10,9 @@ of a model the machine does not have answers 404, and a remove and an
 unload change what the next view lists. The settings: the view's defaults
 while none are stored and the machine's resources from its last report;
 ``set`` storing them beside ``kept_models`` after the agent checked them
-without ``kept_models``, and refusing a value outside the choices. A load
+without ``kept_models``, the context length among them, refusing a value
+outside the choices, and a context length outside 4096 to 262144 with
+``ollama_context_length_invalid {context_length, min, max}``. A load
 keeps a pulled model's name and starts its load, refuses a name the
 machine does not hold, and an unload and a remove take the name off.
 """
@@ -179,7 +181,11 @@ def test_the_view_carries_the_default_settings_and_the_machine_s_resources(api):
     client, runtime, server = api
     runtime.report(DEVICE, "ollama", state="running", is_running=True, port=11434)
     held = view(client)
-    assert (held["keep_alive"], held["gpus"]) == ("30m", None)
+    assert (held["keep_alive"], held["context_length"], held["gpus"]) == (
+        "30m",
+        65536,
+        None,
+    )
     assert held["resources"] == {
         "gpus": [],
         "memory_used_mb": None,
@@ -206,39 +212,91 @@ def test_set_stores_the_settings_beside_the_kept_models(api):
         {"vendor": "nvidia", "is_used": False},
     ]
     answer = client.post(
-        f"{BASE}/set", json={"device_id": DEVICE, "keep_alive": "1h", "gpus": gpus}
+        f"{BASE}/set",
+        json={
+            "device_id": DEVICE,
+            "keep_alive": "1h",
+            "context_length": 32768,
+            "gpus": gpus,
+        },
     )
     assert answer.status_code == 200
-    assert (answer.json()["keep_alive"], answer.json()["gpus"]) == ("1h", gpus)
+    held = answer.json()
+    assert (held["keep_alive"], held["context_length"], held["gpus"]) == (
+        "1h",
+        32768,
+        gpus,
+    )
     assert _stored(runtime) == {
         "kept_models": ["a:1"],
         "keep_alive": "1h",
+        "context_length": 32768,
         "gpus": gpus,
     }
     assert runtime.agent_sessions.validations[-1][2] == {
         "keep_alive": "1h",
+        "context_length": 32768,
         "gpus": gpus,
     }
     assert runtime.agent_sessions.pushes
     answer = client.post(
-        f"{BASE}/set", json={"device_id": DEVICE, "keep_alive": "-1", "gpus": None}
+        f"{BASE}/set",
+        json={
+            "device_id": DEVICE,
+            "keep_alive": "-1",
+            "context_length": 262144,
+            "gpus": None,
+        },
     )
     assert answer.status_code == 200
-    assert _stored(runtime) == {"kept_models": ["a:1"], "keep_alive": "-1"}
-    assert runtime.agent_sessions.validations[-1][2] == {"keep_alive": "-1"}
+    assert _stored(runtime) == {
+        "kept_models": ["a:1"],
+        "keep_alive": "-1",
+        "context_length": 262144,
+    }
+    assert runtime.agent_sessions.validations[-1][2] == {
+        "keep_alive": "-1",
+        "context_length": 262144,
+    }
 
 
 def test_set_refuses_a_value_outside_the_choices(api):
     client, runtime, server = api
     for body in (
-        {"keep_alive": "2h"},
-        {"keep_alive": "30m", "gpus": [{"vendor": "nvidia"}]},
+        {"keep_alive": "2h", "context_length": 65536},
+        {"keep_alive": "30m", "context_length": 65536, "gpus": [{"vendor": "nvidia"}]},
+        {"keep_alive": "30m"},
+        {"keep_alive": "30m", "context_length": "65536"},
+        {"keep_alive": "30m", "context_length": 65536.5},
     ):
         answer = client.post(f"{BASE}/set", json={"device_id": DEVICE, **body})
         assert answer.status_code == 422
-    answer = client.post(f"{BASE}/set", json={"device_id": OFFLINE, "keep_alive": "5m"})
+    answer = client.post(
+        f"{BASE}/set",
+        json={"device_id": OFFLINE, "keep_alive": "5m", "context_length": 65536},
+    )
     assert answer.json()["detail"]["code"] == "agent_offline"
     assert _stored(runtime) == {}
+
+
+@pytest.mark.parametrize("context_length", [0, 2048, 4095, 262145, 1048576])
+def test_set_refuses_a_context_length_outside_its_bounds(api, context_length):
+    client, runtime, server = api
+    answer = client.post(
+        f"{BASE}/set",
+        json={
+            "device_id": DEVICE,
+            "keep_alive": "30m",
+            "context_length": context_length,
+        },
+    )
+    assert answer.status_code == 400
+    assert answer.json()["detail"] == {
+        "code": "ollama_context_length_invalid",
+        "params": {"context_length": context_length, "min": 4096, "max": 262144},
+    }
+    assert _stored(runtime) == {}
+    assert not runtime.agent_sessions.validations
 
 
 def test_a_load_keeps_a_pulled_model_and_starts_its_load(api):

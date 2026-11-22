@@ -257,11 +257,16 @@ DEVICE_OLLAMA_MODULE = "ollama"
 DEVICE_OLLAMA_PORT = 11434
 # The settings: how long a model a request loaded stays in memory, as
 # ``OLLAMA_KEEP_ALIVE`` spells it with ``-1`` for never, and its default;
-# and the key of the GPUs the server uses. ``kept_models``, the models a
-# person loaded, stays in the file and never reaches the machine.
+# the most tokens a loaded model holds, its least and most value and its
+# default; and the key of the GPUs the server uses. ``kept_models``, the
+# models a person loaded, stays in the file and never reaches the machine.
 DEVICE_OLLAMA_KEEP_ALIVE_CHOICES = ("5m", "30m", "1h", "4h", "-1")
 DEVICE_OLLAMA_KEEP_ALIVE_DEFAULT = "30m"
 DEVICE_OLLAMA_KEEP_ALIVE_KEY = "keep_alive"
+DEVICE_OLLAMA_CONTEXT_LENGTH_MIN = 4096
+DEVICE_OLLAMA_CONTEXT_LENGTH_MAX = 262144
+DEVICE_OLLAMA_CONTEXT_LENGTH_DEFAULT = 65536
+DEVICE_OLLAMA_CONTEXT_LENGTH_KEY = "context_length"
 DEVICE_OLLAMA_GPUS_KEY = "gpus"
 DEVICE_OLLAMA_KEPT_MODELS_KEY = "kept_models"
 # How often a machine that keeps a model has its ``/api/ps`` read for one

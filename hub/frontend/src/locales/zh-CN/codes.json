@@ -396,6 +396,7 @@
   "code.waiting_for_package_manager": "在等系统的包管理器空出来（占用者：{holder}）。",
   "code.ollama_unreachable": "这个系统上的 Ollama 没有响应：{detail}",
   "code.ollama_not_running": "这个系统上的 Ollama 没有运行。",
+  "code.ollama_context_length_invalid": "非法上下文长度：要在 {min} 到 {max} 个 token 之间。",
   "code.ollama_model_name_invalid": "{name} 不是模型名称。",
   "code.ollama_model_unknown": "这个系统上没有叫 {name} 的模型。",
   "code.ollama_pull_unknown": "没有在等待或进行中的 {name} 拉取。",

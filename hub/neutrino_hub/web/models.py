@@ -6,7 +6,7 @@ so a rename here is a rename there.
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StrictBool
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt
 
 from neutrino_hub.web.constants import (
     WEB_DEFAULT_AGENT_LISTEN_PORT,
@@ -3381,6 +3381,8 @@ class OllamaSettingsUpdate(BaseModel):
     # How long a model a request loaded stays in memory after its last
     # request, as ``OLLAMA_KEEP_ALIVE`` spells it; ``-1`` is never.
     keep_alive: Literal["5m", "30m", "1h", "4h", "-1"]
+    # The most tokens a loaded model holds, from 4096 to 262144.
+    context_length: StrictInt
     # The machine's GPUs in its report's order; null for every GPU.
     gpus: list[OllamaGpuSetting] | None = None
 
@@ -3404,8 +3406,10 @@ class OllamaDeviceView(ModuleDeviceFields):
     details: dict = Field(default_factory=dict)
     # Whether the server answers, as the machine reports it.
     is_running: bool = False
-    # The stored settings: ``30m`` and every GPU while none are stored.
+    # The stored settings: ``30m``, 65536 tokens and every GPU while none
+    # are stored.
     keep_alive: str = "30m"
+    context_length: int = 65536
     gpus: list[OllamaGpuSetting] | None = None
     resources: OllamaResourcesView = Field(default_factory=OllamaResourcesView)
     # The models, read through the hub's forward while the server answers.

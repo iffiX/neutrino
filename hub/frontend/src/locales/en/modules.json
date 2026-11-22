@@ -624,6 +624,7 @@
   "ui.ollama.keep_alive_1h": "1 hour",
   "ui.ollama.keep_alive_4h": "4 hours",
   "ui.ollama.keep_alive_never": "Never",
+  "ui.ollama.context_length": "Context length (tokens)",
   "ui.ollama.gpus": "GPUs",
   "ui.ollama.settings_apply": "Apply settings",
   "ui.ollama.settings_apply_hint": "Restarts Ollama with these settings.",

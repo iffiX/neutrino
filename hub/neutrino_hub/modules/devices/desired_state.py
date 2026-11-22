@@ -103,6 +103,10 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_INSTANCE_LOGIN_KEY,
     DEVICE_MODULE_KIND_COMMAND_LINE_PROGRAM,
     DEVICE_MODULES_FILE,
+    DEVICE_OLLAMA_CONTEXT_LENGTH_DEFAULT,
+    DEVICE_OLLAMA_CONTEXT_LENGTH_KEY,
+    DEVICE_OLLAMA_CONTEXT_LENGTH_MAX,
+    DEVICE_OLLAMA_CONTEXT_LENGTH_MIN,
     DEVICE_OLLAMA_GPUS_KEY,
     DEVICE_OLLAMA_KEEP_ALIVE_CHOICES,
     DEVICE_OLLAMA_KEEP_ALIVE_DEFAULT,
@@ -505,6 +509,24 @@ def _public_key(private_key: str) -> str:
         return ""
 
 
+def is_context_length(value: object) -> bool:
+    """Whether a value is a context length the Ollama module takes: a whole number within its bounds. Pure.
+
+    Args:
+        value: The value, as stored or sent.
+
+    Returns:
+        True for an ``int``, not a bool, from 4096 to 262144.
+    """
+    return (
+        isinstance(value, int)
+        and not isinstance(value, bool)
+        and DEVICE_OLLAMA_CONTEXT_LENGTH_MIN
+        <= value
+        <= DEVICE_OLLAMA_CONTEXT_LENGTH_MAX
+    )
+
+
 def ollama_settings(stored: dict) -> dict:
     """The Ollama module's settings as ``ollama.json`` holds them, the defaults where it names none. Pure.
 
@@ -512,12 +534,14 @@ def ollama_settings(stored: dict) -> dict:
         stored: ``ollama.json``: the settings and ``kept_models``.
 
     Returns:
-        ``{keep_alive, gpus}``: ``keep_alive`` one of the five choices,
-        ``30m`` for none or another value; ``gpus`` the stored list of
-        ``{vendor, is_used}``, None for every GPU and for a list of another
-        shape.
+        ``{keep_alive, context_length, gpus}``: ``keep_alive`` one of the
+        five choices, ``30m`` for none or another value; ``context_length``
+        a whole number within its bounds, 65536 for none or another value;
+        ``gpus`` the stored list of ``{vendor, is_used}``, None for every
+        GPU and for a list of another shape.
     """
     keep_alive = stored.get(DEVICE_OLLAMA_KEEP_ALIVE_KEY)
+    context_length = stored.get(DEVICE_OLLAMA_CONTEXT_LENGTH_KEY)
     gpus = stored.get(DEVICE_OLLAMA_GPUS_KEY)
     is_list = isinstance(gpus, list) and all(
         isinstance(gpu, dict)
@@ -530,6 +554,11 @@ def ollama_settings(stored: dict) -> dict:
             keep_alive
             if keep_alive in DEVICE_OLLAMA_KEEP_ALIVE_CHOICES
             else DEVICE_OLLAMA_KEEP_ALIVE_DEFAULT
+        ),
+        DEVICE_OLLAMA_CONTEXT_LENGTH_KEY: (
+            context_length
+            if is_context_length(context_length)
+            else DEVICE_OLLAMA_CONTEXT_LENGTH_DEFAULT
         ),
         DEVICE_OLLAMA_GPUS_KEY: (
             [{"vendor": gpu["vendor"], "is_used": gpu["is_used"]} for gpu in gpus]
@@ -546,8 +575,8 @@ def ollama_agent_config(stored: dict) -> dict:
         stored: ``ollama.json``: the settings and ``kept_models``.
 
     Returns:
-        ``{keep_alive}``, with ``gpus`` beside it while a list is stored;
-        ``kept_models`` stays on the hub.
+        ``{keep_alive, context_length}``, with ``gpus`` beside them while a
+        list is stored; ``kept_models`` stays on the hub.
     """
     settings = ollama_settings(stored)
     if settings[DEVICE_OLLAMA_GPUS_KEY] is None:

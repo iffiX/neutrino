@@ -1972,6 +1972,8 @@ export interface OllamaSettingsUpdate {
   /** How long a model a request loaded stays in memory after its last
    * request, as `OLLAMA_KEEP_ALIVE` spells it; `-1` is never. */
   keep_alive: string;
+  /** The most tokens a loaded model holds, from 4096 to 262144. */
+  context_length: number;
   /** The machine's GPUs in its report's order; null for every GPU. */
   gpus: OllamaGpuSetting[] | null;
 }
@@ -2001,8 +2003,10 @@ export interface OllamaDeviceView extends ModuleDeviceState {
   details: Record<string, unknown>;
   /** Whether the server answers, as the machine reports it. */
   is_running: boolean;
-  /** The stored settings: `30m` and every GPU while none are stored. */
+  /** The stored settings: `30m`, 65536 tokens and every GPU while none
+   * are stored. */
   keep_alive: string;
+  context_length: number;
   gpus: OllamaGpuSetting[] | null;
   resources: OllamaResourcesView;
   /** The models, read through the hub's forward while the server answers. */

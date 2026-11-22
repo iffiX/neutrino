@@ -20,10 +20,10 @@ import "./ollama_settings.css";
 
 /**
  * **Settings** of the Ollama module on one machine: how long a model a
- * request loaded stays in memory, and which of the machine's GPUs the
- * server uses, one checkbox per GPU of its last report. Applying stores
- * them and restarts the server, and holds until the machine reports the
- * module where the hub asks it.
+ * request loaded stays in memory, the most tokens a loaded model holds,
+ * and which of the machine's GPUs the server uses, one checkbox per GPU of
+ * its last report. Applying stores them and restarts the server, and holds
+ * until the machine reports the module where the hub asks it.
  */
 
 /** The idle unload times, as `OLLAMA_KEEP_ALIVE` spells them. */
@@ -34,6 +34,10 @@ const KEEP_ALIVE_CHOICES: { id: string; key: string }[] = [
   { id: "4h", key: "ui.ollama.keep_alive_4h" },
   { id: "-1", key: "ui.ollama.keep_alive_never" },
 ];
+
+/** The least and the most context length, in tokens. */
+const CONTEXT_LENGTH_MIN = 4096;
+const CONTEXT_LENGTH_MAX = 262144;
 
 /** The system whose one GPU is Apple's and takes no choice. */
 const DARWIN = "darwin";
@@ -63,9 +67,11 @@ interface OllamaSettingsProps {
   onSaved: (view: OllamaDeviceView) => void;
 }
 
-/** The form's own fields: the idle time and one tick per reported GPU. */
+/** The form's own fields: the idle time, the context length's field text
+ * and one tick per reported GPU. */
 interface SettingsDraft {
   keep_alive: string;
+  context_length: string;
   ticks: boolean[];
 }
 
@@ -94,14 +100,26 @@ export function OllamaSettings({
   const gpus = saved.resources.gpus;
   const isGpuShown = platformOs !== DARWIN && gpus.length > 0;
   const isUnsupported = saved.state === STATE_UNSUPPORTED;
+  const contextLength = contextLengthOf(draft.context_length);
+  const contextLengthError =
+    contextLength === null
+      ? t("code.ollama_context_length_invalid", {
+          min: CONTEXT_LENGTH_MIN,
+          max: CONTEXT_LENGTH_MAX,
+        })
+      : null;
 
   const apply = async () => {
+    if (contextLength === null) {
+      return;
+    }
     setIsBusy(true);
     setError(null);
     settle.clear();
     const request: OllamaSettingsUpdate = {
       device_id: deviceId,
       keep_alive: draft.keep_alive,
+      context_length: contextLength,
       gpus: gpuSettings(gpus, draft.ticks),
     };
     try {
@@ -141,6 +159,25 @@ export function OllamaSettings({
           label={t("ui.ollama.keep_alive")}
           isDisabled={!isEditable || isUnsupported}
         />
+        <label className="field">
+          <span className="field_label">{t("ui.ollama.context_length")}</span>
+          <input
+            className="input"
+            type="number"
+            inputMode="numeric"
+            min={CONTEXT_LENGTH_MIN}
+            max={CONTEXT_LENGTH_MAX}
+            step={1}
+            value={draft.context_length}
+            disabled={!isEditable || isUnsupported}
+            onChange={(event) => {
+              setDraft({ ...draft, context_length: event.target.value });
+            }}
+          />
+          {contextLengthError !== null && (
+            <span className="field_error">{contextLengthError}</span>
+          )}
+        </label>
         {isGpuShown && (
           <div
             className="field ollama_settings_gpus"
@@ -183,7 +220,7 @@ export function OllamaSettings({
             : undefined
         }
         blockedHint={isEditable ? null : t("ui.modules.agent_offline")}
-        isApplyDisabled={isUnsupported}
+        isApplyDisabled={isUnsupported || contextLengthError !== null}
         error={error}
         notice={
           settle.isApplied && !isFailing(report) ? t("ui.api.applied") : null
@@ -199,14 +236,15 @@ export function OllamaSettings({
   );
 }
 
-/** What the form starts from: the stored idle time, and a tick per GPU of
- * the report, every card ticked while no list is stored, otherwise the
- * stored card at the same place and of the same vendor, a card the list
- * does not name unticked. */
+/** What the form starts from: the stored idle time and context length, and
+ * a tick per GPU of the report, every card ticked while no list is stored,
+ * otherwise the stored card at the same place and of the same vendor, a
+ * card the list does not name unticked. */
 function draftOf(view: OllamaDeviceView): SettingsDraft {
   const stored = view.gpus;
   return {
     keep_alive: view.keep_alive,
+    context_length: String(view.context_length),
     ticks: view.resources.gpus.map((gpu, place) => {
       if (stored === null) {
         return true;
@@ -215,6 +253,18 @@ function draftOf(view: OllamaDeviceView): SettingsDraft {
       return held !== undefined && held.vendor === gpu.vendor && held.is_used;
     }),
   };
+}
+
+/** The context length a field's text names: a whole number of tokens
+ * within the bounds, null for any other text. */
+function contextLengthOf(text: string): number | null {
+  if (!/^\d+$/.test(text.trim())) {
+    return null;
+  }
+  const value = Number(text.trim());
+  return value >= CONTEXT_LENGTH_MIN && value <= CONTEXT_LENGTH_MAX
+    ? value
+    : null;
 }
 
 /** The GPUs as the settings store them: null while every card is ticked,

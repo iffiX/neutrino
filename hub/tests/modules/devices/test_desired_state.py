@@ -738,10 +738,21 @@ def test_forgetting_a_device_and_the_orphans_removes_their_directories(config):
 
 def test_ollama_is_sent_its_settings_and_never_its_kept_models():
     gpus = [{"vendor": "nvidia", "is_used": False}]
-    assert ollama_agent_config({}) == {"keep_alive": "30m"}
+    assert ollama_agent_config({}) == {"keep_alive": "30m", "context_length": 65536}
     assert ollama_agent_config(
-        {"keep_alive": "4h", "gpus": gpus, "kept_models": ["a:1"]}
-    ) == {"keep_alive": "4h", "gpus": gpus}
+        {
+            "keep_alive": "4h",
+            "context_length": 16384,
+            "gpus": gpus,
+            "kept_models": ["a:1"],
+        }
+    ) == {"keep_alive": "4h", "context_length": 16384, "gpus": gpus}
     assert ollama_agent_config({"keep_alive": "2h", "gpus": [{"vendor": 1}]}) == {
-        "keep_alive": "30m"
+        "keep_alive": "30m",
+        "context_length": 65536,
     }
+
+
+@pytest.mark.parametrize("stored", [1024, 300000, "65536", True, 8192.0, None])
+def test_a_stored_context_length_outside_its_bounds_is_sent_as_65536(stored):
+    assert ollama_agent_config({"context_length": stored})["context_length"] == 65536

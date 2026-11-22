@@ -1,9 +1,9 @@
 """The Ollama block: where the module stands, its settings, its models and its pulls.
 
-The module's configuration is its settings, ``{keep_alive, gpus}``, which the
-hub keeps in ``config/devices/<id>/ollama.json`` beside ``kept_models``,
-the models a person loaded (agent/modules/ollama.md, "The settings are the
-hub's"). The models are read and changed through Ollama's own API at its
+The module's configuration is its settings, ``{keep_alive, context_length,
+gpus}``, which the hub keeps in ``config/devices/<id>/ollama.json`` beside
+``kept_models``, the models a person loaded (agent/modules/ollama.md, "The
+settings are the hub's"). The models are read and changed through Ollama's own API at its
 port on the machine, which the hub reaches through a forward of its
 transport on its own loopback; a pull is a background task of the hub's
 that outlives the page, and a kept model is loaded again whenever the
@@ -14,10 +14,15 @@ through a forward of its own").
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from neutrino_hub.modules.devices.constants import (
+    DEVICE_OLLAMA_CONTEXT_LENGTH_MAX,
+    DEVICE_OLLAMA_CONTEXT_LENGTH_MIN,
     DEVICE_OLLAMA_KEPT_MODELS_KEY,
     DEVICE_OLLAMA_MODULE,
 )
-from neutrino_hub.modules.devices.desired_state import ollama_settings
+from neutrino_hub.modules.devices.desired_state import (
+    is_context_length,
+    ollama_settings,
+)
 from neutrino_hub.modules.devices.ollama_models import (
     CODE_UNREACHABLE,
     OllamaApiClient,
@@ -51,6 +56,8 @@ CODE_NOT_RUNNING = "ollama_not_running"
 CODE_NAME_INVALID = "ollama_model_name_invalid"
 CODE_MODEL_UNKNOWN = "ollama_model_unknown"
 CODE_PULL_UNKNOWN = "ollama_pull_unknown"
+# The refusal of a context length outside its bounds.
+CODE_CONTEXT_LENGTH_INVALID = "ollama_context_length_invalid"
 
 
 def device_view(
@@ -150,11 +157,25 @@ def update_settings(
     """Store the settings after the agent checked them, and push them; the configure restarts the server.
 
     Raises:
-        HTTPException: 409 ``agent_offline``; 400 with the agent's code
-            when it refuses the settings; 500 ``config_unwritable``.
+        HTTPException: 400 ``ollama_context_length_invalid {context_length,
+            min, max}`` for a length outside its bounds; 409
+            ``agent_offline``; 400 with the agent's code when it refuses
+            the settings; 500 ``config_unwritable``.
     """
     context = device_context(runtime, MODULE, update.device_id)
-    config = {**context.config, "keep_alive": update.keep_alive}
+    if not is_context_length(update.context_length):
+        raise _refusal(
+            status.HTTP_400_BAD_REQUEST,
+            CODE_CONTEXT_LENGTH_INVALID,
+            context_length=update.context_length,
+            min=DEVICE_OLLAMA_CONTEXT_LENGTH_MIN,
+            max=DEVICE_OLLAMA_CONTEXT_LENGTH_MAX,
+        )
+    config = {
+        **context.config,
+        "keep_alive": update.keep_alive,
+        "context_length": update.context_length,
+    }
     if update.gpus is None:
         config.pop("gpus", None)
     else:

@@ -624,6 +624,7 @@
   "ui.ollama.keep_alive_1h": "1 小时",
   "ui.ollama.keep_alive_4h": "4 小时",
   "ui.ollama.keep_alive_never": "从不",
+  "ui.ollama.context_length": "上下文长度（token）",
   "ui.ollama.gpus": "GPU",
   "ui.ollama.settings_apply": "应用设置",
   "ui.ollama.settings_apply_hint": "用这些设置重启 Ollama。",
