@@ -1640,15 +1640,16 @@ configuration is `{containers, hub_containers, mirrors, machine}`.
 `hub_containers` is the list the hub composes from the `container` modules,
 each `{module, name, image, ports, volumes, environment, command,
 is_autostart, services, source_sets, after, page_port, local_ports,
-stop_timeout_s, stop_signal}` with
+stop_timeout_s, stop_signal, success_exit_codes}` with
 `image` as `{digest, sources}`, and empty while no such module is installed:
 `source_sets` names the sets whose fastest source the agent writes into the
 container's environment, `after` the module's containers it starts after,
 `page_port` the container port the module's forwarder serves,
 `local_ports` the container ports published on `127.0.0.1` at the same
 number with no entry, `stop_timeout_s` the seconds its stop waits before
-SIGKILL, 10 when absent, and `stop_signal` the signal its stop sends,
-SIGTERM when absent
+SIGKILL, 10 when absent, `stop_signal` the signal its stop sends,
+SIGTERM when absent, and `success_exit_codes` the exit codes beside 143
+that end a clean stop
 ([agent/modules/containers.md](agent/modules/containers.md), "Hub
 containers"). Each container is
 `{name, image, ports, volumes, environment, command, is_autostart,
