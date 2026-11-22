@@ -234,7 +234,7 @@ class OllamaLinuxApplier:
         return "started"
 
     def remove_person_settings(self) -> bool:
-        """Delete the settings' drop-in, and restart a person's unit that runs without it.
+        """Delete the settings' drop-in and its folder when nothing else is in it, and restart a person's unit that runs without it.
 
         Returns:
             Whether there was a drop-in.
@@ -243,6 +243,10 @@ class OllamaLinuxApplier:
             os.unlink(self._drop_in_path)
         except FileNotFoundError:
             return False
+        try:
+            os.rmdir(os.path.dirname(self._drop_in_path))
+        except OSError:
+            pass
         self._run(["systemctl", "daemon-reload"], is_checked=False)
         self._run(["systemctl", "try-restart", OLLAMA_PERSON_UNIT], is_checked=False)
         return True

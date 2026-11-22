@@ -11,7 +11,8 @@ over; a person's unit is found in its three places, driven through
 ``systemctl`` alone and put back as it was found. The settings' variables
 go into the unit, a change of them restarts it, and on a person's unit they
 go into a drop-in of the module's own, which a changed write restarts the
-unit for and which its removal takes away with a restart of a running unit.
+unit for and which its removal takes away with a restart of a running unit,
+with its folder when nothing of the person's is in it.
 """
 
 import os
@@ -244,8 +245,13 @@ def test_the_drop_in_s_removal_restarts_a_running_unit(tmp_path, monkeypatch):
     applier.apply_person(environment={"OLLAMA_KEEP_ALIVE": "1h"}, is_started=False)
     system.commands.clear()
     assert applier.remove_person_settings() is True
-    assert not (tmp_path / "systemd" / "ollama.service.d" / "neutrino.conf").exists()
+    assert not (tmp_path / "systemd" / "ollama.service.d").exists()
     assert system.commands == [
         ["systemctl", "daemon-reload"],
         ["systemctl", "try-restart", "ollama.service"],
     ]
+    applier.apply_person(environment={"OLLAMA_KEEP_ALIVE": "1h"}, is_started=False)
+    own = tmp_path / "systemd" / "ollama.service.d" / "override.conf"
+    own.write_text("[Service]\n")
+    assert applier.remove_person_settings() is True
+    assert own.read_text() == "[Service]\n"
