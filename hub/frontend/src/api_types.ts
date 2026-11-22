@@ -1942,11 +1942,38 @@ export interface OllamaModel {
   size_bytes: number;
   /** When the model last changed, as Ollama names it. */
   modified_at: string;
-  /** Whether the model is in memory now, and how much of it is, all of it
-   * and the part on a GPU. */
+  /** Whether the model is in memory now, whether the hub is loading it,
+   * and how much of it is in memory, all of it and the part on a GPU. */
   is_loaded: boolean;
+  is_loading: boolean;
   memory_bytes: number;
   vram_bytes: number;
+}
+
+/** One GPU of a machine's report in the Ollama settings, and whether the
+ * server uses it. */
+export interface OllamaGpuSetting {
+  vendor: string;
+  is_used: boolean;
+}
+
+/** What a machine has for its models, from its last report. */
+export interface OllamaResourcesView {
+  gpus: DeviceGpuInfo[];
+  /** The machine's memory in use and in all; null while the report lacks
+   * it. */
+  memory_used_mb: number | null;
+  memory_total_mb: number | null;
+}
+
+/** The Ollama module's settings on one device. */
+export interface OllamaSettingsUpdate {
+  device_id: string;
+  /** How long a model a request loaded stays in memory after its last
+   * request, as `OLLAMA_KEEP_ALIVE` spells it; `-1` is never. */
+  keep_alive: string;
+  /** The machine's GPUs in its report's order; null for every GPU. */
+  gpus: OllamaGpuSetting[] | null;
 }
 
 /** One pull in a machine's queue. */
@@ -1962,7 +1989,8 @@ export interface OllamaPull {
   params: Record<string, unknown>;
 }
 
-/** One machine's Ollama: where the module stands, its models and its pulls. */
+/** One machine's Ollama: where the module stands, its settings, its models
+ * and its pulls. */
 export interface OllamaDeviceView extends ModuleDeviceState {
   device_id: string;
   host: string;
@@ -1973,6 +2001,10 @@ export interface OllamaDeviceView extends ModuleDeviceState {
   details: Record<string, unknown>;
   /** Whether the server answers, as the machine reports it. */
   is_running: boolean;
+  /** The stored settings: `30m` and every GPU while none are stored. */
+  keep_alive: string;
+  gpus: OllamaGpuSetting[] | null;
+  resources: OllamaResourcesView;
   /** The models, read through the hub's forward while the server answers. */
   models: OllamaModel[];
   total_bytes: number;

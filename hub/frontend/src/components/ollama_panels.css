@@ -7,6 +7,41 @@
   font-weight: 400;
 }
 
+/* The machine's resources: a name, its bar and its numbers per line, the
+   three in line from one line to the next. */
+.ollama_resources {
+  display: grid;
+  grid-template-columns: minmax(0, max-content) minmax(6rem, 1fr) max-content;
+  gap: var(--space-2) var(--space-3);
+  align-items: center;
+  font-size: 13px;
+}
+
+.ollama_resource {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: center;
+}
+
+.ollama_resource .meter {
+  --meter-track-width: 100%;
+
+  display: flex;
+}
+
+.ollama_resource_name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ollama_resource_numbers {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
 .ollama_pull_form {
   display: flex;
   gap: var(--space-2);
@@ -17,26 +52,35 @@
   min-width: 0;
 }
 
+/* The list's width decides between the table and the cards. */
+.ollama_list_frame {
+  container: ollama_list / inline-size;
+}
+
+/* One grid for the head and every row: name, the four facts, memory and
+   the buttons, each row a subgrid of it, so no column moves with a long
+   name or a changed button. */
 .ollama_list {
-  display: flex;
-  flex-direction: column;
+  --ollama-actions-width: 13rem;
+
+  display: grid;
+  grid-template-columns:
+    minmax(min-content, 2.4fr) repeat(4, max-content)
+    minmax(9.5rem, 1.4fr) var(--ollama-actions-width);
+  column-gap: var(--space-3);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   background: var(--color-bg);
+  font-size: 13px;
 }
 
-/* Name, parameters, quantization, size, modified and the presses; a pull's
-   progress takes the four middle columns. */
 .ollama_row {
   display: grid;
-  grid-template-columns:
-    minmax(0, 2.2fr) minmax(0, 0.8fr) minmax(0, 0.9fr)
-    minmax(0, 0.8fr) minmax(0, 1.4fr) auto;
-  gap: var(--space-2) var(--space-3);
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
   align-items: center;
-  min-height: 48px;
+  min-height: 52px;
   padding: var(--space-2) var(--space-3);
-  font-size: 13px;
 }
 
 .ollama_row + .ollama_row {
@@ -44,39 +88,78 @@
 }
 
 .ollama_row--head {
-  min-height: 32px;
+  min-height: 34px;
   font-size: 12px;
+}
+
+/* The facts sit in their own columns of the table, and on one line in a
+   card. */
+.ollama_facts {
+  display: contents;
+  color: var(--color-text-muted);
+}
+
+.ollama_row--head .ollama_facts {
+  color: inherit;
 }
 
 .ollama_row_name {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
   min-width: 0;
+  font-family: var(--font-mono);
+}
+
+.ollama_row_source {
+  color: var(--color-text-faint);
+  font-size: 11px;
+}
+
+.ollama_row_model {
   font-weight: 600;
-  overflow-wrap: anywhere;
 }
 
-.ollama_row_loaded {
-  color: var(--color-text-muted);
-  font-size: 12px;
-  font-weight: 400;
-}
-
-.ollama_row_fact {
-  min-width: 0;
-  color: var(--color-text-muted);
-  overflow-wrap: anywhere;
-}
-
-.ollama_row_progress,
-.ollama_row_failure {
+.ollama_row_progress {
   display: flex;
-  grid-column: 2 / 6;
+  grid-column: 2 / 7;
   flex-wrap: wrap;
   gap: var(--space-2);
   align-items: center;
   min-width: 0;
+}
+
+.ollama_memory {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+/* A model's memory: its GPU part, then its system part. */
+.ollama_memory_bar {
+  display: flex;
+  overflow: hidden;
+  width: 100%;
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: var(--color-border);
+}
+
+.ollama_memory_gpu {
+  background: var(--color-accent);
+}
+
+.ollama_memory_cpu {
+  background: var(--color-accent-secondary);
+}
+
+.ollama_memory_numbers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-2);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
 }
 
 .ollama_row_actions {
@@ -85,21 +168,52 @@
   gap: var(--space-2);
 }
 
-@media (max-width: 880px) {
+/* Load and Unload take one width, so Remove keeps its place. */
+.ollama_row_toggle {
+  min-width: 6.5rem;
+}
+
+@container ollama_list (max-width: 760px) {
+  .ollama_list {
+    display: flex;
+    flex-direction: column;
+  }
+
   .ollama_row {
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-2);
+    padding: var(--space-3);
   }
 
   .ollama_row--head {
     display: none;
   }
 
-  .ollama_row_fact {
-    grid-column: 1;
+  .ollama_facts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 var(--space-2);
+    font-size: 12px;
   }
 
-  .ollama_row_progress,
-  .ollama_row_failure {
-    grid-column: 1;
+  .ollama_facts > span:empty {
+    display: none;
+  }
+
+  .ollama_facts > span + span::before {
+    margin-right: var(--space-2);
+    content: "·";
+  }
+
+  .ollama_memory:empty {
+    display: none;
+  }
+
+  .ollama_row_progress {
+    grid-column: auto;
+  }
+
+  .ollama_row_actions {
+    justify-content: flex-start;
   }
 }

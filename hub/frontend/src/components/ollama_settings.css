@@ -1,0 +1,20 @@
+/* The Settings: the idle time beside the GPUs, one under the other when
+   narrow. */
+.ollama_settings_fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--space-3);
+  align-items: start;
+}
+
+.ollama_settings_gpus {
+  gap: var(--space-2);
+}
+
+.ollama_settings_gpu {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  min-width: 0;
+  font-size: 13px;
+}

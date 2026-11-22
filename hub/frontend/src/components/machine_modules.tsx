@@ -157,6 +157,8 @@ const MODULE_PANELS: Record<string, (target: PanelTarget) => ReactNode> = {
       deviceId={target.deviceId}
       basePath={target.basePath}
       isEditable={target.isEditable}
+      platformOs={target.platformOs}
+      want={target.want}
     />
   ),
   podman: (target) => (
