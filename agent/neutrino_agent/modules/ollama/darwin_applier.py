@@ -8,8 +8,9 @@ two alone, by open descriptor following no link. The account is
 ``neutrino_ollama``, made with ``sysadminctl`` and read back before it
 counts, as Gitea's is. The LaunchDaemon ``com.neutrino.ollama`` runs
 ``ollama serve`` as that account with the module's environment. A person's
-Ollama here is the publisher's app, which the module never starts or stops
-and gives no setting.
+Ollama here is the publisher's app, taken over while the module is installed:
+its login job disabled, its processes ended, both given back at the
+uninstall.
 
 Not pure: writes under ``/Library``, drives ``sysadminctl``, ``dscl`` and
 launchd.
@@ -21,6 +22,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import signal
 import plistlib
 import re
 import secrets
@@ -32,7 +34,9 @@ from neutrino_agent.modules.gitea.constants import GITEA_DARWIN_ACCOUNT_KEYS
 from neutrino_agent.modules.ollama.constants import (
     OLLAMA_DARWIN_ACCOUNT,
     OLLAMA_DARWIN_ACCOUNT_FULL_NAME,
+    OLLAMA_DARWIN_APP_JOB,
     OLLAMA_DARWIN_APP_PATHS,
+    OLLAMA_DARWIN_FIRST_UID,
     OLLAMA_DARWIN_LABEL,
     OLLAMA_DARWIN_LAUNCHD_DIR,
     OLLAMA_DARWIN_OUTPUT_PATH,
@@ -42,6 +46,8 @@ from neutrino_agent.modules.ollama.constants import (
     OLLAMA_DARWIN_UNLOAD_POLL_S,
     OLLAMA_DARWIN_UNLOAD_TIMEOUT_S,
     OLLAMA_DATA_DIR_NAME,
+    OLLAMA_KEPT_DIR_NAME,
+    OLLAMA_KEPT_RECORD_NAME,
     OLLAMA_ENVIRONMENT,
     OLLAMA_HOST,
     OLLAMA_MODELS_DIR_NAME,
@@ -51,6 +57,7 @@ from neutrino_agent.modules.ollama.constants import (
     OLLAMA_PROGRAM_DIR_NAME,
     OLLAMA_SERVE_ARGUMENTS,
 )
+from neutrino_agent.modules.ollama.kept_apps import read_kept, write_kept
 from neutrino_agent.modules.samba.darwin_applier import tool_line
 from neutrino_agent.modules.shared.account_files import AccountFiles
 from neutrino_agent.modules.shared.account_service import write_if_changed
@@ -102,6 +109,31 @@ def render_plist(
     )
 
 
+def people_accounts() -> list:
+    """The accounts a person logs in with: ``(name, uid)`` from uid 501, with a shell that is no ``false`` or ``nologin``.
+
+    Returns:
+        The accounts, by uid.
+    """
+    if pwd is None:
+        return []
+    return sorted(
+        (
+            (entry.pw_name, entry.pw_uid)
+            for entry in pwd.getpwall()
+            if entry.pw_uid >= OLLAMA_DARWIN_FIRST_UID
+            and not entry.pw_shell.endswith(("false", "nologin"))
+        ),
+        key=lambda held: held[1],
+    )
+
+
+def _end_process(pid: int) -> None:
+    """End one process, ignoring one already gone."""
+    with contextlib.suppress(OSError):
+        os.kill(pid, signal.SIGTERM)
+
+
 def _account_entry(account: str) -> tuple:
     """One account's uid and gid.
 
@@ -115,15 +147,13 @@ def _account_entry(account: str) -> tuple:
 
 
 class OllamaDarwinApplier:
-    """Runs Ollama as a LaunchDaemon of its own hidden account.
+    """Runs Ollama as a LaunchDaemon of its own hidden account, and takes the publisher's app over.
 
     Attributes:
         account: The hidden account the server runs as.
-        is_app_system: True: a person's Ollama here is the publisher's app.
     """
 
     account = OLLAMA_DARWIN_ACCOUNT
-    is_app_system = True
 
     def __init__(
         self,
@@ -137,6 +167,8 @@ class OllamaDarwinApplier:
         output_path: str = OLLAMA_DARWIN_OUTPUT_PATH,
         app_paths: tuple = OLLAMA_DARWIN_APP_PATHS,
         sleep=time.sleep,
+        accounts=people_accounts,
+        kill=_end_process,
     ):
         """
         Args:
@@ -153,6 +185,9 @@ class OllamaDarwinApplier:
             output_path: Where launchd writes the server's output.
             app_paths: Where the publisher's app is looked for.
             sleep: Waits a number of seconds.
+            accounts: Called with no argument; the accounts a person logs
+                in with, ``(name, uid)``.
+            kill: Called with a pid; ends that process.
         """
         self.module_dir = os.path.join(state_dir, OLLAMA_NAME)
         self.data_dir = os.path.join(state_dir, OLLAMA_DATA_DIR_NAME)
@@ -167,6 +202,9 @@ class OllamaDarwinApplier:
         self._output_path = output_path
         self._app_paths = tuple(app_paths)
         self._sleep = sleep
+        self._accounts = accounts
+        self._kill = kill
+        self._kept_dir = os.path.join(self.module_dir, OLLAMA_KEPT_DIR_NAME)
 
     def person_unit_path(self) -> str:
         """Empty: a person's unit is Linux's."""
@@ -203,21 +241,89 @@ class OllamaDarwinApplier:
         return False
 
     def stop_person(self) -> None:
-        """Nothing: a person's app is the person's to stop."""
+        """Nothing: a person's unit is Linux's."""
 
     def restore_person(self, found: dict) -> None:
-        """Nothing: a person's app was never moved.
+        """Nothing: a person's unit is Linux's.
 
         Args:
             found: Unread.
         """
 
-    def app_path(self) -> str:
-        """The publisher's app on this Mac, empty when it is not there."""
-        for path in self._app_paths:
-            if os.path.isdir(path):
-                return path
-        return ""
+    def take_over_apps(self) -> list:
+        """Take the publisher's app over once per account: its login job disabled, its processes ended.
+
+        Whether the job was disabled before, and whether the account's app
+        ran, are recorded, so an uninstall gives back only what it took.
+
+        Returns:
+            The accounts taken over now, by name.
+
+        Raises:
+            OSError: When the record cannot be written.
+        """
+        app = self._app()
+        if not app:
+            return []
+        record = os.path.join(self._kept_dir, OLLAMA_KEPT_RECORD_NAME)
+        records = read_kept(record)
+        running = {uid for _pid, uid in self._app_processes(app)}
+        taken = []
+        for name, uid in self._accounts():
+            if name in records:
+                continue
+            domain = f"gui/{uid}/{OLLAMA_DARWIN_APP_JOB}"
+            records[name] = {
+                "uid": uid,
+                "was_disabled": self._is_disabled(uid),
+                "was_running": uid in running,
+            }
+            self._run(["launchctl", "disable", domain], is_checked=False)
+            taken.append(name)
+        if taken:
+            write_kept(record, records)
+        self.stop_apps()
+        return taken
+
+    def stop_apps(self) -> list:
+        """End every process of the publisher's app.
+
+        Returns:
+            The processes ended.
+        """
+        app = self._app()
+        pids = [pid for pid, _uid in self._app_processes(app)] if app else []
+        for pid in pids:
+            self._kill(pid)
+        return pids
+
+    def give_back_apps(self) -> list:
+        """Enable each login job that was enabled, and open the app again for the account at the console whose app ran.
+
+        Returns:
+            The accounts given back, by name.
+        """
+        records = read_kept(os.path.join(self._kept_dir, OLLAMA_KEPT_RECORD_NAME))
+        console = self._console_uid()
+        app = self._app()
+        given = []
+        for name, held in sorted(records.items()):
+            uid = held.get("uid")
+            if not isinstance(uid, int):
+                continue
+            if not held.get("was_disabled"):
+                self._run(
+                    ["launchctl", "enable", f"gui/{uid}/{OLLAMA_DARWIN_APP_JOB}"],
+                    is_checked=False,
+                )
+            if held.get("was_running") and app and uid == console:
+                self._run(
+                    ["launchctl", "asuser", str(uid), "/usr/bin/open", "-a", app],
+                    is_checked=False,
+                )
+            given.append(name)
+        remove_tree(self._kept_dir)
+        return given
 
     def ensure_account(self, *, log=None) -> bool:
         """Make the account when it is missing, and the data directory its own.
@@ -316,6 +422,7 @@ class OllamaDarwinApplier:
         self._unload()
         with contextlib.suppress(OSError):
             os.unlink(self._plist_path)
+        self.give_back_apps()
         remove_tree(self.module_dir)
         return ""
 
@@ -326,6 +433,45 @@ class OllamaDarwinApplier:
     def output_path(self) -> str:
         """The file launchd writes the server's output to."""
         return self._output_path
+
+    def _app(self) -> str:
+        """The publisher's app on this Mac, empty when it is not there."""
+        for path in self._app_paths:
+            if os.path.isdir(path):
+                return path
+        return ""
+
+    def _app_processes(self, app: str) -> list:
+        """Each process of the app: ``(pid, uid)``."""
+        result = self._run(["ps", "-axo", "pid=,uid=,comm="], is_checked=False)
+        found = []
+        for line in (result.stdout or "").splitlines():
+            parts = line.strip().split(None, 2)
+            if len(parts) == 3 and parts[2].startswith(app + "/"):
+                try:
+                    found.append((int(parts[0]), int(parts[1])))
+                except ValueError:
+                    continue
+        return found
+
+    def _is_disabled(self, uid: int) -> bool:
+        """Whether the app's login job is disabled in an account's gui domain now."""
+        result = self._run(
+            ["launchctl", "print-disabled", f"gui/{uid}"], is_checked=False
+        )
+        for line in (result.stdout or "").splitlines():
+            if f'"{OLLAMA_DARWIN_APP_JOB}"' in line:
+                return line.rstrip().endswith(("disabled", "true"))
+        return False
+
+    def _console_uid(self) -> "int | None":
+        """The uid of the account at the console, None for none."""
+        result = self._run(["stat", "-f", "%u", "/dev/console"], is_checked=False)
+        try:
+            uid = int((result.stdout or "").strip())
+        except ValueError:
+            return None
+        return uid if uid >= OLLAMA_DARWIN_FIRST_UID else None
 
     def _ensure_account(self) -> tuple:
         """The account's uid and gid, made first when it is missing.

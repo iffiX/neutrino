@@ -5,9 +5,12 @@ What these pin: the LaunchDaemon runs ``ollama serve`` as
 agent's log folder; an apply loads it and reloads it only on a change, and
 under ``stopped`` writes it alone; a stop disables and unloads it; an
 uninstall deletes the plist and the program and keeps the data directory
-and the account; the publisher's app is found in ``/Applications``. The
-settings' variables join the job's environment, and a change of them
-reloads it.
+and the account. The settings' variables join the job's environment, and a
+change of them reloads it. The publisher's app is taken over once per
+account: its login job ``com.ollama.ollama`` disabled, whether it was
+disabled before kept, its processes ended, at each report again; the
+uninstall enables what was enabled and opens the app again for the account
+at the console whose app ran.
 """
 
 import os
@@ -109,12 +112,107 @@ def test_a_stop_disables_and_an_uninstall_keeps_the_data_and_the_account(tmp_pat
     )
 
 
-def test_the_publisher_s_app_is_found_in_applications(tmp_path):
-    applier = _applier(tmp_path, FakeLaunchd())
-    assert applier.app_path() == ""
-    (tmp_path / "Applications" / "Ollama.app").mkdir(parents=True)
-    assert applier.app_path() == str(tmp_path / "Applications" / "Ollama.app")
-    assert applier.person_unit_path() == ""
+class AppLaunchd(FakeLaunchd):
+    """launchd, ps and the console as the take-over of the app reads them."""
+
+    def __init__(self, app):
+        super().__init__()
+        self.app = app
+        self.disabled = {"501": False, "502": True}
+        self.processes = {}
+        self.console = "501"
+
+    def run(self, command, *, is_checked=True, **kwargs):
+        if command[:2] == ["launchctl", "print-disabled"]:
+            self.commands.append(list(command))
+            uid = command[2].split("/")[1]
+            word = "disabled" if self.disabled.get(uid) else "enabled"
+            return Result(
+                0, f'disabled services = {{\n\t"com.ollama.ollama" => {word}\n}}\n'
+            )
+        if command[:2] in (
+            ["launchctl", "disable"],
+            ["launchctl", "enable"],
+        ) and command[2].startswith("gui/"):
+            self.commands.append(list(command))
+            self.disabled[command[2].split("/")[1]] = command[1] == "disable"
+            return Result(0)
+        if command[0] == "ps":
+            self.commands.append(list(command))
+            lines = "".join(
+                f"{pid} {uid} {path}\n" for pid, (uid, path) in self.processes.items()
+            )
+            return Result(0, lines)
+        if command[:3] == ["stat", "-f", "%u"]:
+            return Result(0, self.console + "\n")
+        return super().run(command, is_checked=is_checked, **kwargs)
+
+
+def _taking_applier(tmp_path):
+    app = tmp_path / "Applications" / "Ollama.app"
+    app.mkdir(parents=True)
+    launchd = AppLaunchd(str(app))
+    ended = []
+    applier = OllamaDarwinApplier(
+        state_dir=str(tmp_path / "state"),
+        run=launchd.run,
+        lookup_account=lambda account: (os.getuid(), os.getgid()),
+        chown=lambda path, uid, gid: None,
+        launchd_dir=str(tmp_path / "LaunchDaemons"),
+        output_path=str(tmp_path / "Logs" / "ollama.log"),
+        app_paths=(str(app),),
+        sleep=lambda seconds: None,
+        accounts=lambda: [("ann", 501), ("bob", 502)],
+        kill=lambda pid: ended.append(pid),
+    )
+    (tmp_path / "LaunchDaemons").mkdir()
+    applier._prepare_data = lambda uid, gid: None
+    return applier, launchd, ended
+
+
+def test_the_app_of_every_account_is_taken_over_once(tmp_path):
+    applier, launchd, ended = _taking_applier(tmp_path)
+    launchd.processes = {
+        80: (501, launchd.app + "/Contents/MacOS/Ollama"),
+        81: (501, launchd.app + "/Contents/Resources/ollama"),
+        82: (501, "/usr/bin/top"),
+    }
+    assert applier.take_over_apps() == ["ann", "bob"]
+    assert ["launchctl", "disable", "gui/501/com.ollama.ollama"] in launchd.commands
+    assert sorted(ended) == [80, 81]
+    launchd.commands.clear()
+    assert applier.take_over_apps() == []
+    assert not any(
+        command[1] == "disable"
+        for command in launchd.commands
+        if command[0] == "launchctl"
+    )
+
+
+def test_each_report_ends_an_app_opened_by_hand_on_the_mac(tmp_path):
+    applier, launchd, ended = _taking_applier(tmp_path)
+    launchd.processes = {90: (502, launchd.app + "/Contents/MacOS/Ollama")}
+    assert applier.stop_apps() == [90]
+
+
+def test_the_uninstall_enables_what_was_enabled_and_opens_the_app_again(tmp_path):
+    applier, launchd, _ended = _taking_applier(tmp_path)
+    launchd.processes = {80: (501, launchd.app + "/Contents/MacOS/Ollama")}
+    applier.take_over_apps()
+    launchd.processes = {}
+    applier.uninstall()
+    assert launchd.disabled == {"501": False, "502": True}
+    assert ["launchctl", "enable", "gui/501/com.ollama.ollama"] in launchd.commands
+    assert ["launchctl", "enable", "gui/502/com.ollama.ollama"] not in launchd.commands
+    assert [
+        "launchctl",
+        "asuser",
+        "501",
+        "/usr/bin/open",
+        "-a",
+        launchd.app,
+    ] in launchd.commands
+    assert not os.path.exists(applier.module_dir)
 
 
 def test_the_settings_variables_join_the_job_and_reload_it(tmp_path):

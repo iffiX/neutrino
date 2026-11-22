@@ -139,11 +139,9 @@ class OllamaLinuxApplier:
 
     Attributes:
         account: The system account the server runs as.
-        is_app_system: False: a person's Ollama here is a unit.
     """
 
     account = OLLAMA_LINUX_ACCOUNT
-    is_app_system = False
 
     def __init__(
         self,
@@ -268,9 +266,21 @@ class OllamaLinuxApplier:
         verb = "start" if found.get("is_active") else "stop"
         self._run(["systemctl", verb, OLLAMA_PERSON_UNIT], is_checked=False)
 
-    def app_path(self) -> str:
-        """Empty: the publisher's app is for Windows and macOS."""
-        return ""
+    def take_over_apps(self) -> list:
+        """Nothing: the publisher's app is for Windows and macOS.
+
+        Returns:
+            Empty.
+        """
+        return []
+
+    def stop_apps(self) -> list:
+        """Nothing: the publisher's app is for Windows and macOS.
+
+        Returns:
+            Empty.
+        """
+        return []
 
     def ensure_account(self, *, log=None) -> bool:
         """Make the account when it is missing, and the data directory its own.

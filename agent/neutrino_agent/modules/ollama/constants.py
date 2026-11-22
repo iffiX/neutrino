@@ -35,16 +35,18 @@ OLLAMA_START_WAIT_S = 60.0
 OLLAMA_START_POLL_S = 0.5
 
 # What a person's own Ollama is, as ``details.found`` names it: the unit of
-# Linux, the app of Windows and macOS.
+# Linux.
 OLLAMA_FOUND_UNIT = "unit"
-OLLAMA_FOUND_APP = "app"
+# The publisher's app taken over on Windows and macOS: the folder under the
+# module's directory its start at login is kept aside in, and the record of
+# each account taken over in it.
+OLLAMA_KEPT_DIR_NAME = "kept"
+OLLAMA_KEPT_RECORD_NAME = "apps.json"
 # The module's record: its file's name and the fields it holds.
 OLLAMA_RECORD_NAME = "ollama"
 OLLAMA_RECORD_FIELDS = ("account", "found_unit")
 
-# The refusal of an install on Windows or macOS beside the publisher's app,
-# and of a configuration outside the settings.
-OLLAMA_CODE_FOUND = "ollama_found"
+# The refusal of a configuration outside the settings.
 OLLAMA_CODE_CONFIG_INVALID = "config_invalid"
 
 # The settings: how long a model a request loaded stays in memory, as
@@ -98,6 +100,10 @@ OLLAMA_DARWIN_LAUNCHD_DIR = "/Library/LaunchDaemons"
 OLLAMA_DARWIN_OUTPUT_PATH = "/Library/Logs/Neutrino/agent/ollama.log"
 OLLAMA_DARWIN_PATH = "/usr/bin:/bin:/usr/sbin:/sbin"
 OLLAMA_DARWIN_APP_PATHS = ("/Applications/Ollama.app",)
+# The login job the app registers with SMAppService in each account's gui
+# domain, and the least uid of a person's account.
+OLLAMA_DARWIN_APP_JOB = "com.ollama.ollama"
+OLLAMA_DARWIN_FIRST_UID = 501
 OLLAMA_DARWIN_UNLOAD_TIMEOUT_S = 30
 OLLAMA_DARWIN_UNLOAD_POLL_S = 0.5
 # The parts of the data directory a handover gives on macOS, whose data
@@ -112,7 +118,22 @@ OLLAMA_WINDOWS_TASK_MARKER = "neutrino:"
 OLLAMA_WINDOWS_SCRIPT_PARTS = ("run", "serve.cmd")
 OLLAMA_WINDOWS_LOG_NAME = "ollama.log"
 OLLAMA_WINDOWS_PROGRAM_NAME = "ollama.exe"
-OLLAMA_WINDOWS_APP_PARTS = ("AppData", "Local", "Programs", "Ollama", "ollama.exe")
+OLLAMA_WINDOWS_APP_DIR_PARTS = ("AppData", "Local", "Programs", "Ollama")
+OLLAMA_WINDOWS_APP_PROGRAM_NAME = "ollama app.exe"
+# The app's start at login: the shortcut it copies into the profile's
+# Startup folder at its first start.
+OLLAMA_WINDOWS_STARTUP_PARTS = (
+    "AppData",
+    "Roaming",
+    "Microsoft",
+    "Windows",
+    "Start Menu",
+    "Programs",
+    "Startup",
+)
+OLLAMA_WINDOWS_STARTUP_NAME = "Ollama.lnk"
+# The task that opens the app again once as an account, interactive only.
+OLLAMA_WINDOWS_OPEN_TASK = "neutrino_ollama_app"
 # How many times, and how often, a stop waits for the program's processes to
 # end, and an uninstall deletes the module's directory.
 OLLAMA_WINDOWS_STOP_TRIES = 30

@@ -10,7 +10,9 @@ log. The task starts at boot and again a minute after it stops, and its
 description carries a digest of the script, so an unchanged task is left
 running. A stop ends the task and every process of the module's program. A
 person's Ollama here is the publisher's per-user app, which the module
-never starts or stops and gives no setting.
+is taken over while the module is installed: its Startup shortcut kept
+aside under ``kept/``, its processes ended, both given back at the
+uninstall.
 
 Not pure: writes under ``%ProgramData%``, drives the Task Scheduler and
 ends processes.
@@ -20,10 +22,10 @@ ends processes.
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
-import glob
 import hashlib
 import ntpath
 import os
+import stat
 import subprocess
 import time
 
@@ -37,7 +39,10 @@ from neutrino_agent.modules.ollama.constants import (
     OLLAMA_PORT,
     OLLAMA_PROGRAM_DIR_NAME,
     OLLAMA_SERVE_ARGUMENTS,
-    OLLAMA_WINDOWS_APP_PARTS,
+    OLLAMA_KEPT_DIR_NAME,
+    OLLAMA_KEPT_RECORD_NAME,
+    OLLAMA_WINDOWS_APP_DIR_PARTS,
+    OLLAMA_WINDOWS_APP_PROGRAM_NAME,
     OLLAMA_WINDOWS_LOG_NAME,
     OLLAMA_WINDOWS_PROGRAM_NAME,
     OLLAMA_WINDOWS_REMOVE_RETRY_S,
@@ -46,9 +51,14 @@ from neutrino_agent.modules.ollama.constants import (
     OLLAMA_WINDOWS_STOP_RETRY_S,
     OLLAMA_WINDOWS_STOP_TRIES,
     OLLAMA_WINDOWS_TASK,
+    OLLAMA_WINDOWS_OPEN_TASK,
+    OLLAMA_WINDOWS_STARTUP_NAME,
+    OLLAMA_WINDOWS_STARTUP_PARTS,
     OLLAMA_WINDOWS_TASK_MARKER,
 )
+from neutrino_agent.modules.ollama.kept_apps import read_kept, write_kept
 from neutrino_agent.modules.shared.account_service import write_if_changed
+from neutrino_agent.modules.shared.subprocess_run import run
 from neutrino_agent.modules.shared.unpacked_tree import remove_tree
 
 # The shell the task runs the script with, and the state of a running task.
@@ -99,16 +109,39 @@ def task_description(script: str) -> str:
     )
 
 
+def is_plain_folder(path: str) -> bool:
+    """Whether a folder is no junction or link, nor any folder above it up to its drive.
+
+    Args:
+        path: The folder.
+
+    Returns:
+        True while every level is a plain folder.
+    """
+    while True:
+        try:
+            held = os.lstat(path)
+        except OSError:
+            return False
+        reparse = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+        if getattr(held, "st_file_attributes", 0) & reparse or stat.S_ISLNK(
+            held.st_mode
+        ):
+            return False
+        parent = os.path.dirname(path)
+        if parent == path:
+            return True
+        path = parent
+
+
 class OllamaWindowsApplier:
-    """Runs Ollama as a scheduled task of SYSTEM's.
+    """Runs Ollama as a scheduled task of SYSTEM's, and takes the publisher's app over.
 
     Attributes:
         account: Empty: the server runs as SYSTEM.
-        is_app_system: True: a person's Ollama here is the publisher's app.
     """
 
     account = ""
-    is_app_system = True
 
     def __init__(
         self,
@@ -120,6 +153,8 @@ class OllamaWindowsApplier:
         users_dir: str = "",
         join=ntpath.join,
         sleep=time.sleep,
+        run_command=run,
+        is_plain=is_plain_folder,
     ):
         """
         Args:
@@ -134,6 +169,9 @@ class OllamaWindowsApplier:
                 from ``PUBLIC``'s parent.
             join: Joins path parts, Windows' way unless told otherwise.
             sleep: Waits a number of seconds.
+            run_command: Runs one command as :func:`subprocess_run.run` does.
+            is_plain: Called with a folder; whether it and every folder
+                above it are no junction or link.
         """
         self._join = join
         self.module_dir = join(state_dir, OLLAMA_NAME)
@@ -157,6 +195,9 @@ class OllamaWindowsApplier:
             os.environ.get("PUBLIC", "C:\\Users\\Public")
         )
         self._sleep = sleep
+        self._run = run_command
+        self._is_plain = is_plain
+        self._kept_dir = join(self.module_dir, OLLAMA_KEPT_DIR_NAME)
 
     def person_unit_path(self) -> str:
         """Empty: a person's unit is Linux's."""
@@ -193,22 +234,96 @@ class OllamaWindowsApplier:
         return False
 
     def stop_person(self) -> None:
-        """Nothing: a person's app is the person's to stop."""
+        """Nothing: a person's unit is Linux's."""
 
     def restore_person(self, found: dict) -> None:
-        """Nothing: a person's app was never moved.
+        """Nothing: a person's unit is Linux's.
 
         Args:
             found: Unread.
         """
 
-    def app_path(self) -> str:
-        """The publisher's app in any profile, empty when none has it."""
-        pattern = self._join(
-            glob.escape(self._users_dir), "*", *OLLAMA_WINDOWS_APP_PARTS
-        )
-        found = sorted(glob.glob(pattern))
-        return found[0] if found else ""
+    def take_over_apps(self) -> list:
+        """Take the publisher's app of each profile over once: its Startup shortcut kept aside, its processes ended.
+
+        A profile already in the record is not taken again. A Startup
+        folder that is a junction, or under one, is left as it is.
+
+        Returns:
+            The profiles taken over now, by name.
+
+        Raises:
+            OSError: When the record or a shortcut cannot be moved.
+        """
+        record = self._join(self._kept_dir, OLLAMA_KEPT_RECORD_NAME)
+        records = read_kept(record)
+        running = {self._app_profile(pid) for pid in self._app_pids()}
+        taken = []
+        for name, profile in self._app_profiles():
+            if name in records:
+                continue
+            startup = self._join(profile, *OLLAMA_WINDOWS_STARTUP_PARTS)
+            shortcut = self._join(startup, OLLAMA_WINDOWS_STARTUP_NAME)
+            is_kept = os.path.isfile(shortcut) and self._is_plain(startup)
+            if is_kept:
+                kept = self._join(self._kept_dir, name)
+                os.makedirs(kept, exist_ok=True)
+                os.replace(shortcut, self._join(kept, OLLAMA_WINDOWS_STARTUP_NAME))
+            records[name] = {
+                "profile": profile,
+                "is_autostart_kept": is_kept,
+                "was_running": profile in running,
+            }
+            taken.append(name)
+        if taken:
+            write_kept(record, records)
+        self.stop_apps()
+        return taken
+
+    def stop_apps(self) -> list:
+        """End every process of the publisher's app in any profile.
+
+        Returns:
+            The processes ended.
+        """
+        pids = self._app_pids()
+        if pids:
+            self._processes.end(pids)
+        return pids
+
+    def give_back_apps(self) -> list:
+        """Move each kept Startup shortcut back, and open the app again as an account whose app ran.
+
+        A shortcut goes back only while no file of its name stands there.
+        The app is opened by a task of the account's, interactive only, so
+        it runs while the account is logged on and not otherwise.
+
+        Returns:
+            The profiles given back, by name.
+        """
+        records = read_kept(self._join(self._kept_dir, OLLAMA_KEPT_RECORD_NAME))
+        given = []
+        for name, held in sorted(records.items()):
+            profile = str(held.get("profile", "") or "")
+            startup = self._join(profile, *OLLAMA_WINDOWS_STARTUP_PARTS)
+            kept = self._join(self._kept_dir, name, OLLAMA_WINDOWS_STARTUP_NAME)
+            shortcut = self._join(startup, OLLAMA_WINDOWS_STARTUP_NAME)
+            if (
+                held.get("is_autostart_kept")
+                and os.path.isfile(kept)
+                and os.path.isdir(startup)
+                and not os.path.exists(shortcut)
+                and self._is_plain(startup)
+            ):
+                os.replace(kept, shortcut)
+            program = self._join(
+                profile, *OLLAMA_WINDOWS_APP_DIR_PARTS, OLLAMA_WINDOWS_APP_PROGRAM_NAME
+            )
+            if held.get("was_running") and os.path.isfile(program):
+                self._open_as(name, program)
+            given.append(name)
+        remove_tree(self._kept_dir)
+        return given
 
     def ensure_account(self, *, log=None) -> bool:
         """Make nothing: the server runs as SYSTEM.
@@ -296,6 +411,7 @@ class OllamaWindowsApplier:
         """
         self._end()
         self._powershell.call("task_remove", {"task": OLLAMA_WINDOWS_TASK})
+        self.give_back_apps()
         for _turn in range(OLLAMA_WINDOWS_REMOVE_TRIES):
             remove_tree(self.module_dir)
             if not os.path.exists(self.module_dir):
@@ -322,6 +438,72 @@ class OllamaWindowsApplier:
                 return
             self._processes.end(pids)
             self._sleep(OLLAMA_WINDOWS_STOP_RETRY_S)
+
+    def _app_profiles(self) -> list:
+        """Each profile that holds the publisher's app: ``(name, folder)``, by name."""
+        try:
+            names = sorted(os.listdir(self._users_dir))
+        except OSError:
+            return []
+        found = []
+        for name in names:
+            profile = self._join(self._users_dir, name)
+            program = self._join(
+                profile, *OLLAMA_WINDOWS_APP_DIR_PARTS, OLLAMA_WINDOWS_APP_PROGRAM_NAME
+            )
+            if os.path.isfile(program):
+                found.append((name, profile))
+        return found
+
+    def _app_pids(self) -> list:
+        """The processes started from the publisher's app in any profile."""
+        if self._processes is None or not self._app_profiles():
+            return []
+        try:
+            entries = self._processes.entries()
+        except OSError:
+            return []
+        return [
+            entry.pid for entry in entries if entry.pid and self._app_profile(entry.pid)
+        ]
+
+    def _app_profile(self, pid: int) -> str:
+        """The profile whose app a process was started from, empty for none."""
+        image = ntpath.normcase(self._processes.image_path(pid))
+        for _name, profile in self._app_profiles():
+            folder = ntpath.normcase(self._join(profile, *OLLAMA_WINDOWS_APP_DIR_PARTS))
+            if image.startswith(folder + ntpath.sep) or image.startswith(folder + "/"):
+                return profile
+        return ""
+
+    def _open_as(self, account: str, program: str) -> None:
+        """Open the app once as an account, interactive only, then delete the task."""
+        self._run(
+            [
+                "schtasks",
+                "/create",
+                "/tn",
+                OLLAMA_WINDOWS_OPEN_TASK,
+                "/tr",
+                f'"{program}"',
+                "/sc",
+                "once",
+                "/st",
+                "00:00",
+                "/ru",
+                account,
+                "/it",
+                "/f",
+            ],
+            is_checked=False,
+        )
+        self._run(
+            ["schtasks", "/run", "/tn", OLLAMA_WINDOWS_OPEN_TASK], is_checked=False
+        )
+        self._run(
+            ["schtasks", "/delete", "/tn", OLLAMA_WINDOWS_OPEN_TASK, "/f"],
+            is_checked=False,
+        )
 
     def _own_pids(self) -> list:
         """The processes started from the module's program folder."""

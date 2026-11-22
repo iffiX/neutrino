@@ -208,6 +208,7 @@ SURVIVING_MODULES = {
     "neutrino_agent.modules.ollama.config",
     "neutrino_agent.modules.ollama.constants",
     "neutrino_agent.modules.ollama.darwin_applier",
+    "neutrino_agent.modules.ollama.kept_apps",
     "neutrino_agent.modules.ollama.linux_applier",
     "neutrino_agent.modules.ollama.runner",
     "neutrino_agent.modules.ollama.windows_applier",

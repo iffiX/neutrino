@@ -9,9 +9,10 @@ Linux, a LaunchDaemon of the hidden account of that name on macOS, a
 scheduled task of SYSTEM's on Windows, each with the variables of the
 hub's settings. A person's own Ollama is adopted: on Linux its unit, which
 the module's Start and Stop drive, which takes the settings through a
-drop-in, and which its uninstall gives back as the first Start found it; on
-Windows and macOS the app that answers on the port, which the module
-neither starts nor stops. The models are the hub's to read and change
+drop-in, and which its uninstall gives back as the first Start found it. On
+Windows and macOS the publisher's app is taken over while the module is
+installed: its start at login kept aside and its processes ended at each
+configure and report, both given back at the uninstall. The models are the hub's to read and change
 through Ollama's own API; no report carries one.
 
 Not pure: drives Ollama through its applier.
@@ -32,7 +33,6 @@ import urllib.request
 
 from neutrino_agent.constants import (
     AGENT_ARTIFACT_KIND_TAR_ZST,
-    AGENT_MODULE_STATE_INSTALL_FAILED,
     AGENT_STEP_ACCOUNT,
     AGENT_STEP_ARTIFACT,
     AGENT_STEP_CONFIGURE,
@@ -43,8 +43,6 @@ from neutrino_agent.constants import (
 from neutrino_agent.exceptions import ModuleApplyError, PlatformUnsupportedError
 from neutrino_agent.modules.ollama.config import OllamaConfig
 from neutrino_agent.modules.ollama.constants import (
-    OLLAMA_CODE_FOUND,
-    OLLAMA_FOUND_APP,
     OLLAMA_FOUND_UNIT,
     OLLAMA_HOST,
     OLLAMA_MODELS_DIR_NAME,
@@ -207,17 +205,17 @@ class OllamaModuleRunner(ModuleRunner):
         self._answered_at = None
 
     def verify(self, recipe: dict) -> bool:
-        """Whether Ollama is on the machine, the module's own or a person's.
+        """Whether Ollama is on the machine: the module's own, or a person's unit on Linux.
 
-        Only a module the state does not name is judged by it.
+        Only a module the state does not name is judged by it. The
+        publisher's app on Windows and macOS counts as nothing installed.
 
         Args:
             recipe: The module's recipe, empty here.
 
         Returns:
             True when the module's program is there, or a person's unit on
-            Linux, or a person's app answers on its port on Windows and
-            macOS.
+            Linux.
         """
         return os.path.isfile(self._applier.program_path) or bool(self._found())
 
@@ -233,11 +231,10 @@ class OllamaModuleRunner(ModuleRunner):
         return {"OLLAMA_MODELS": join(self._applier.data_dir, OLLAMA_MODELS_DIR_NAME)}
 
     def install_steps(self, recipe: dict, steps: list) -> list:
-        """The install's steps: none that installs beside a person's Ollama.
+        """The install's steps: none that installs beside a person's unit on Linux.
 
-        On Linux with a person's unit the plan keeps its ``verify`` alone; on
-        Windows and macOS with the publisher's app on the machine its
-        ``artifact`` step refuses before anything is received.
+        On Linux with a person's unit the plan keeps its ``verify`` alone;
+        beside the publisher's app on Windows and macOS it is planned whole.
 
         Args:
             recipe: The module's recipe.
@@ -252,21 +249,7 @@ class OllamaModuleRunner(ModuleRunner):
                 for step in steps
                 if step.name not in (AGENT_STEP_PACKAGES, AGENT_STEP_ARTIFACT)
             ]
-        app = self._applier.app_path()
-        if not app:
-            return steps
-        return [
-            (
-                dataclasses.replace(
-                    step,
-                    run=functools.partial(_refuse_found, app),
-                    failed_state=AGENT_MODULE_STATE_INSTALL_FAILED,
-                )
-                if step.name == AGENT_STEP_ARTIFACT
-                else step
-            )
-            for step in steps
-        ]
+        return steps
 
     def install_artifact(self, recipe: dict, artifact: dict, path: str) -> None:
         """Put the release archive in place under ``ollama/``.
@@ -443,12 +426,9 @@ class OllamaModuleRunner(ModuleRunner):
         ]
 
     def is_active(self) -> bool:
-        """Whether the server runs: the module's service, a person's unit, or a person's app on its port."""
-        found = self._found()
-        if found == OLLAMA_FOUND_UNIT:
+        """Whether the server runs: the module's service, or a person's unit."""
+        if self._found() == OLLAMA_FOUND_UNIT:
             return bool(self._applier.person_unit_state().get("is_active"))
-        if found == OLLAMA_FOUND_APP:
-            return True
         return self._applier.is_active()
 
     def journal_units(self) -> list:
@@ -478,12 +458,20 @@ class OllamaModuleRunner(ModuleRunner):
         Args:
             recipe: The module's recipe.
 
+        While the module's program is installed, every process of the
+        publisher's app is ended first, so only the module's server holds
+        the port.
+
         Returns:
             ``{"is_running", "port", "version", "found",
             "has_package_mark"}``: ``found`` empty for the module's own
-            server, ``unit`` or ``app`` for a person's, and
-            ``has_package_mark`` false for a person's.
+            server and ``unit`` for a person's, and ``has_package_mark``
+            false for a person's.
         """
+        if os.path.isfile(self._applier.program_path):
+            ended = self._applier.stop_apps()
+            if ended:
+                self._log(f"ollama: ended the publisher's app, {len(ended)} processes")
         is_running = bool(self._is_listening())
         found = self._found()
         version = (self._server_version() or "") if is_running else ""
@@ -498,21 +486,15 @@ class OllamaModuleRunner(ModuleRunner):
         }
 
     def _found(self) -> str:
-        """What a person's own Ollama is here: ``unit``, ``app``, or empty for none.
+        """What a person's own Ollama is here: ``unit`` on Linux, or empty for none.
 
-        Neither while the module's own program is on the machine, whose
+        None while the module's own program is on the machine, whose
         service is then what answers on the port.
         """
         if os.path.isfile(self._applier.program_path):
             return ""
         if self._applier.person_unit_path():
             return OLLAMA_FOUND_UNIT
-        if (
-            self._applier.is_app_system
-            and self._is_listening()
-            and self._server_version() is not None
-        ):
-            return OLLAMA_FOUND_APP
         return ""
 
     def _server_version(self):
@@ -546,6 +528,11 @@ class OllamaModuleRunner(ModuleRunner):
                     self._wait_for_server()
                 self._log(f"ollama: the machine's own Ollama {note}")
                 return
+            taken = self._applier.take_over_apps()
+            if taken:
+                self._log(
+                    f"ollama: took the publisher's app over for {', '.join(taken)}"
+                )
             note = self._applier.apply(environment=environment, is_started=is_started)
         except (OSError, subprocess.SubprocessError) as error:
             raise ModuleApplyError(
@@ -635,12 +622,3 @@ class OllamaModuleRunner(ModuleRunner):
     def _forget_found_unit(self) -> None:
         """Drop what was kept of a person's unit."""
         self._records.write({"account": OLLAMA_RECORD_NAME})
-
-
-def _refuse_found(app: str, context) -> None:
-    """The ``artifact`` step beside the publisher's app: it refuses.
-
-    Raises:
-        ModuleApplyError: ``ollama_found {path}``.
-    """
-    raise ModuleApplyError(OLLAMA_CODE_FOUND, {"path": app})

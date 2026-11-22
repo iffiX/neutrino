@@ -7,9 +7,12 @@ leaves a running task with the same script alone, registers a changed one
 again after ending the old server, and under ``stopped`` disables a task it
 registered; a stop ends the task and every process of the module's
 program; an uninstall unregisters the task and deletes the program and
-keeps the data; the publisher's app is found in any profile. The settings'
-variables are set in the script, and a change of them registers the task
-again and restarts the server.
+keeps the data. The settings' variables are set in the script, and a change
+of them registers the task again and restarts the server. The publisher's
+app of every profile is taken over once: its Startup shortcut moved to
+``kept/``, a junction refused, its processes ended, at each report again;
+the uninstall moves each shortcut back and opens the app again, once, as an
+account whose app ran.
 """
 
 import ntpath
@@ -141,13 +144,111 @@ def test_an_uninstall_unregisters_the_task_and_keeps_the_data(tmp_path):
     assert (tmp_path / "ollama_data" / "models" / "blob").exists()
 
 
-def test_the_publisher_s_app_is_found_in_any_profile(tmp_path):
-    applier = _applier(tmp_path, FakeHost())
-    assert applier.app_path() == ""
-    app = tmp_path / "Users" / "ann" / "AppData" / "Local" / "Programs" / "Ollama"
+class FakeCommands:
+    def __init__(self):
+        self.commands: list = []
+
+    def run(self, command, *, is_checked=True, **kwargs):
+        self.commands.append(list(command))
+        return SimpleNamespace(exit_code=0, stdout="", stderr="", is_success=True)
+
+
+def _profile(tmp_path, name, *, is_started=True):
+    root = tmp_path / "Users" / name
+    app = root / "AppData" / "Local" / "Programs" / "Ollama"
     app.mkdir(parents=True)
-    (app / "ollama.exe").write_text("")
-    assert applier.app_path() == str(app / "ollama.exe")
+    (app / "ollama app.exe").write_text("")
+    startup = (
+        root
+        / "AppData"
+        / "Roaming"
+        / "Microsoft"
+        / "Windows"
+        / "Start Menu"
+        / "Programs"
+        / "Startup"
+    )
+    startup.mkdir(parents=True)
+    if is_started:
+        (startup / "Ollama.lnk").write_bytes(b"lnk of " + name.encode())
+    return app, startup
+
+
+def _taking_applier(tmp_path, processes, *, is_plain=None):
+    commands = FakeCommands()
+    applier = OllamaWindowsApplier(
+        state_dir=str(tmp_path / "state"),
+        powershell=FakeHost(),
+        processes=processes,
+        users_dir=str(tmp_path / "Users"),
+        join=os.path.join,
+        sleep=lambda seconds: None,
+        run_command=commands.run,
+        is_plain=is_plain or (lambda path: True),
+    )
+    return applier, commands
+
+
+def test_the_app_of_every_profile_is_taken_over_once(tmp_path):
+    app, startup = _profile(tmp_path, "ann")
+    _profile(tmp_path, "bob", is_started=False)
+    processes = FakeProcesses(
+        {
+            50: str(app / "ollama app.exe"),
+            51: str(app / "ollama.exe"),
+            52: "C:\\Windows\\explorer.exe",
+        }
+    )
+    applier, _commands = _taking_applier(tmp_path, processes)
+    assert applier.take_over_apps() == ["ann", "bob"]
+    kept = tmp_path / "state" / "ollama" / "kept" / "ann" / "Ollama.lnk"
+    assert kept.read_bytes() == b"lnk of ann"
+    assert not (startup / "Ollama.lnk").exists()
+    assert sorted(processes.ended) == [50, 51]
+    (startup / "Ollama.lnk").write_bytes(b"made again")
+    assert applier.take_over_apps() == []
+    assert (startup / "Ollama.lnk").read_bytes() == b"made again"
+
+
+def test_each_report_ends_an_app_opened_by_hand(tmp_path):
+    app, _startup = _profile(tmp_path, "ann")
+    processes = FakeProcesses({60: str(app / "ollama app.exe")})
+    applier, _commands = _taking_applier(tmp_path, processes)
+    assert applier.stop_apps() == [60]
+    assert applier.stop_apps() == []
+
+
+def test_a_startup_folder_that_is_a_junction_is_left(tmp_path):
+    _app, startup = _profile(tmp_path, "ann")
+    applier, _commands = _taking_applier(
+        tmp_path, FakeProcesses({}), is_plain=lambda path: False
+    )
+    assert applier.take_over_apps() == ["ann"]
+    assert (startup / "Ollama.lnk").exists()
+    applier.give_back_apps()
+    assert (startup / "Ollama.lnk").read_bytes() == b"lnk of ann"
+
+
+def test_the_uninstall_gives_each_start_back_and_opens_the_app_again(tmp_path):
+    app, startup = _profile(tmp_path, "ann")
+    _profile(tmp_path, "bob")
+    processes = FakeProcesses({70: str(app / "ollama app.exe")})
+    applier, commands = _taking_applier(tmp_path, processes)
+    applier.take_over_apps()
+    applier.uninstall()
+    assert (startup / "Ollama.lnk").read_bytes() == b"lnk of ann"
+    assert not (tmp_path / "state" / "ollama").exists()
+    opened = [command for command in commands.commands if "/create" in command]
+    assert len(opened) == 1
+    assert "/it" in opened[0] and opened[0][opened[0].index("/ru") + 1] == "ann"
+    assert opened[0][opened[0].index("/tr") + 1] == (
+        '"' + str(app / "ollama app.exe") + '"'
+    )
+    assert [command[1] for command in commands.commands] == [
+        "/create",
+        "/run",
+        "/delete",
+    ]
 
 
 def test_the_settings_variables_are_set_in_the_script_and_restart_the_server(

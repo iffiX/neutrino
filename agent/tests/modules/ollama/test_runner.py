@@ -3,8 +3,8 @@
 What these pin: the runner's own check finds the module's program, a
 person's unit on Linux and a person's app answering on its port on Windows
 and macOS; an install beside a person's unit keeps its ``verify`` alone, and
-one beside the publisher's app refuses ``ollama_found`` in its ``artifact``
-step before anything is received; the Linux ``tar_zst`` lands under
+one beside the publisher's app on Windows and macOS is planned whole, and
+that app no presence of Ollama; the Linux ``tar_zst`` lands under
 ``ollama/`` through the system's ``zstd``; the server's account is a step of
 its own before ``configure`` taking ``system_accounts``, none on Windows and
 none on a person's unit; a configure that runs the server waits until
@@ -53,11 +53,10 @@ class RecordingPlatform(AgentPlatform):
 class FakeApplier:
     """An applier of one system, recording what the runner asks."""
 
-    def __init__(self, root, *, account="neutrino_ollama", is_app_system=False):
+    def __init__(self, root, *, account="neutrino_ollama"):
         self.program_path = os.path.join(str(root), "ollama", "ollama", "bin", "ollama")
         self.data_dir = os.path.join(str(root), "ollama_data")
         self.account = account
-        self.is_app_system = is_app_system
         self.unit = ""
         self.app = ""
         self.unit_state = {"is_enabled": False, "is_active": False}
@@ -90,8 +89,13 @@ class FakeApplier:
     def restore_person(self, found):
         self.calls.append(("restore_person", dict(found)))
 
-    def app_path(self):
-        return self.app
+    def take_over_apps(self):
+        self.calls.append("take_over_apps")
+        return []
+
+    def stop_apps(self):
+        self.calls.append("stop_apps")
+        return []
 
     def ensure_account(self, *, log=None):
         self.calls.append("ensure_account")
@@ -148,7 +152,7 @@ def _step(name):
     return ModuleStep(name=name, run=lambda context: None)
 
 
-def test_the_own_check_finds_the_program_a_unit_and_an_answering_app(tmp_path):
+def test_the_own_check_finds_the_program_and_a_unit_and_no_app(tmp_path):
     applier = FakeApplier(tmp_path)
     answers = {"version": None}
     runner = _runner(tmp_path, applier, answers=answers)
@@ -159,13 +163,11 @@ def test_the_own_check_finds_the_program_a_unit_and_an_answering_app(tmp_path):
     _place_program(applier)
     assert runner.verify({}) is True
 
-    app = FakeApplier(tmp_path / "mac", account="neutrino_ollama", is_app_system=True)
+    app = FakeApplier(tmp_path / "mac", account="neutrino_ollama")
     runner = _runner(tmp_path / "mac", app, os_name="darwin", answers=answers)
-    assert runner.verify({}) is False
     answers["version"] = "0.40.16"
-    assert runner.verify({}) is True
-    assert runner.details({})["found"] == "app"
-    assert runner.details({})["has_package_mark"] is False
+    assert runner.verify({}) is False
+    assert runner.details({})["found"] == ""
 
 
 def test_an_install_beside_a_person_s_unit_keeps_its_verify_alone(tmp_path):
@@ -176,17 +178,30 @@ def test_an_install_beside_a_person_s_unit_keeps_its_verify_alone(tmp_path):
     assert [step.name for step in runner.install_steps({}, steps)] == ["verify"]
 
 
-def test_an_install_beside_the_publisher_s_app_refuses_in_its_artifact_step(tmp_path):
-    applier = FakeApplier(tmp_path, account="", is_app_system=True)
-    applier.app = "C:\\Users\\ann\\AppData\\Local\\Programs\\Ollama\\ollama.exe"
+def test_an_install_beside_the_publisher_s_app_is_planned_whole(tmp_path):
+    applier = FakeApplier(tmp_path, account="")
     runner = _runner(tmp_path, applier, os_name="windows")
-    steps = runner.install_steps({}, [_step("artifact"), _step("verify")])
-    assert [step.name for step in steps] == ["artifact", "verify"]
-    with pytest.raises(ModuleApplyError) as refused:
-        steps[0].run(None)
-    assert refused.value.code == "ollama_found"
-    assert refused.value.params == {"path": applier.app}
-    assert steps[0].failed_state == "install_failed"
+    steps = [_step("artifact"), _step("verify")]
+    assert runner.install_steps({}, steps) == steps
+
+
+def test_a_configure_takes_the_app_over_before_the_server_starts(tmp_path):
+    applier = FakeApplier(tmp_path, account="")
+    runner = _runner(tmp_path, applier, os_name="windows", answers={"version": "1"})
+    runner.apply({})
+    assert applier.calls == ["take_over_apps", ("apply", True)]
+    runner.apply_stopped({})
+    assert applier.calls[-2:] == ["take_over_apps", ("apply", False)]
+
+
+def test_each_report_ends_the_app_while_the_program_is_installed(tmp_path):
+    applier = FakeApplier(tmp_path, account="")
+    runner = _runner(tmp_path, applier, os_name="windows")
+    runner.details({})
+    assert "stop_apps" not in applier.calls
+    _place_program(applier)
+    runner.details({})
+    assert applier.calls == ["stop_apps"]
 
 
 def test_the_linux_archive_lands_under_ollama_through_zstd(tmp_path, monkeypatch):
@@ -237,7 +252,7 @@ def test_the_account_comes_before_configure_and_takes_system_accounts(tmp_path):
     assert runner.step_locks("uninstall") == (("system_accounts", "alone"),)
     assert runner.step_locks("configure") == ()
 
-    windows = FakeApplier(tmp_path / "w", account="", is_app_system=True)
+    windows = FakeApplier(tmp_path / "w", account="")
     runner = _runner(tmp_path / "w", windows, os_name="windows")
     steps = runner.configure_steps({}, "running", [_step("configure"), _step("start")])
     assert [step.name for step in steps] == ["configure", "start"]
@@ -248,7 +263,7 @@ def test_a_stopped_configure_writes_the_service_and_starts_nothing(tmp_path):
     runner = _runner(tmp_path, applier)
     steps = runner.configure_steps({}, "stopped", [_step("configure"), _step("stop")])
     steps[1].run(None)
-    assert applier.calls == [("apply", False)]
+    assert applier.calls == ["take_over_apps", ("apply", False)]
 
 
 def test_a_configure_waits_for_the_server_and_fails_when_it_never_answers(
@@ -423,7 +438,7 @@ def test_the_settings_are_checked_and_reach_the_module_s_own_service(tmp_path):
 
 
 def test_a_mac_s_service_takes_no_gpu_variable(tmp_path):
-    applier = FakeApplier(tmp_path, is_app_system=True)
+    applier = FakeApplier(tmp_path)
     runner = _runner(
         tmp_path, applier, os_name="darwin", answers={"version": "0.40.16"}
     )
