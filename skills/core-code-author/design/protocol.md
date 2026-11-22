@@ -1638,12 +1638,16 @@ macOS ([agent/modules/containers.md](agent/modules/containers.md)). Its
 configuration is `{containers, hub_containers, mirrors, machine}`.
 `hub_containers` is the list the hub composes from the `container` modules,
 each `{module, name, image, ports, volumes, environment, command,
-is_autostart, services, source_sets, after, page_port, stop_timeout_s}` with
+is_autostart, services, source_sets, after, page_port, local_ports,
+stop_timeout_s, stop_signal}` with
 `image` as `{digest, sources}`, and empty while no such module is installed:
 `source_sets` names the sets whose fastest source the agent writes into the
 container's environment, `after` the module's containers it starts after,
-`page_port` the container port the module's forwarder serves, and
-`stop_timeout_s` the seconds its stop waits before SIGKILL, 10 when absent
+`page_port` the container port the module's forwarder serves,
+`local_ports` the container ports published on `127.0.0.1` at the same
+number with no entry, `stop_timeout_s` the seconds its stop waits before
+SIGKILL, 10 when absent, and `stop_signal` the signal its stop sends,
+SIGTERM when absent
 ([agent/modules/containers.md](agent/modules/containers.md), "Hub
 containers"). Each container is
 `{name, image, ports, volumes, environment, command, is_autostart,
@@ -1700,8 +1704,8 @@ the report gives that container `image_pull_failed {name, image}` or
 `container_start_failed {name, image}` as its `code`
 ([agent/modules/containers.md](agent/modules/containers.md), "A container
 that does not start"). `machine`,
-its `default_memory_gib`, `services`, `detected`, `hub_containers`, each
-reported container's `module`, `code` and `params` and the code on an
+its `default_memory_gib`, `services`, `detected`, `hub_containers`, a hub
+container's `local_ports` and `stop_signal`, each reported container's `module`, `code` and `params` and the code on an
 `installing` row are added fields and keep `PROTOCOL`. The recipe's shape, `{runner, method, params, requires}`, and each
 module's `version` in the report come with 0.6.0, which no released agent
 read before, and keep `PROTOCOL` 4 ("Versioning").
@@ -1925,7 +1929,7 @@ source, device_id, device_name, local_name}`:
 | Gitea | `gitea_<device id>` | `Gitea` | `module` | `web`, and `ssh`, a TCP `port` entry for Gitea's own SSH server ([agent/modules/gitea.md](agent/modules/gitea.md)) |
 | Ollama | `ollama_<device id>` | `Ollama` | `module` | `api`, a TCP `port` entry for Ollama's API at 11434 ([agent/modules/ollama.md](agent/modules/ollama.md)) |
 | the SSH server | `ssh_server_<device id>` | `SSH` | `module` | one `ssh` entry per account the module enables, named by its account |
-| a container module, Hermes WebUI and Ayakaleaf among them | `<module>_<device id>` | the module's title | `module` | `web`, its forwarder's page, and for every other port its containers publish `<port>`, or `<port>_udp` for a UDP one |
+| a container module, Hermes WebUI and Ayakaleaf among them | `<module>_<device id>` | the module's title | `module` | `web`, its forwarder's page, and for every other port its containers publish, `local_ports` aside, `<port>`, or `<port>_udp` for a UDP one |
 | a container the Containers module declares | `podman_<device id>_<container>` | the container's name | `declared` | `<port>`, or `<port>_udp` for a UDP one |
 | a container a person started by hand | `podman_<device id>_<container>` | the container's name | `manual` | the same |
 | an app declared on the Services page | the declaration's `id` | its `name` | `declared` | `web_<port>` for a `web` entry, `port_<port>` for a TCP `port` entry, `port_<port>_udp` for a UDP one, `file_<slug of the share>` for a `file` entry |

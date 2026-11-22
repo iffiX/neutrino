@@ -879,7 +879,7 @@ protocol:
 | a VS Code, code-server, CloudCLI, Codeg or SiYuan instance is configured | the instance's port |
 | an instance of the SSH server runs | the instance's port |
 | a container module with a page, Hermes WebUI or Ayakaleaf, is configured | its forwarder's port |
-| a running Podman container publishes a host port, other than a hub container's `page_port` ([modules/containers.md](agent/modules/containers.md), "Hub containers") | that port on the protocol it is published on, dialled on the host address it is published on when it names one, and on Windows and macOS dialled on `127.0.0.1` whatever it names, since the Podman machine's ports reach the computer there; a stopped container's ports are not published, so a stream on one ends `port_not_published` within a second of the stop |
+| a running Podman container publishes a host port, other than a hub container's `page_port` and `local_ports` ([modules/containers.md](agent/modules/containers.md), "Hub containers") | that port on the protocol it is published on, dialled on the host address it is published on when it names one, and on Windows and macOS dialled on `127.0.0.1` whatever it names, since the Podman machine's ports reach the computer there; a stopped container's ports are not published, so a stream on one ends `port_not_published` within a second of the stop |
 
 Every other port in the table is published on TCP alone. Any other port,
 and a number published on the other protocol alone, is refused
