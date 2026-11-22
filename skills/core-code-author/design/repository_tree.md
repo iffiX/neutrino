@@ -132,7 +132,7 @@ agent/
                      windows_shell.py runs PowerShell on a pseudo console.
     modules/         What a machine can host: samba/, gitea/, podman/,
                      vscode/, cloudcli/, code_server/, codeg/, siyuan/,
-                     hermes_webui/, ayakaleaf/, terminal/ and remote_desktop/, with remote_desktop/rdp/ reading
+                     hermes_webui/, ayakaleaf/, astrbot/, terminal/ and remote_desktop/, with remote_desktop/rdp/ reading
                      who is at the screen and writing RustDesk's files;
                      shared/ what every runner shares: the package and
                      unpack machinery, the account service layer, the
