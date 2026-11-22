@@ -22,7 +22,7 @@
 
 来源是 **系统** 的软件由系统的软件包管理器升级和卸载，不管它是不是微子·中枢安装的。
 
-如果系统上已经有你自己安装的同名软件，微子·中枢直接接管它，没有单独的来源。系统加入中枢时，被控端只读取这些软件，不安装、不写文件、也不改服务。你第一次按这个模块的按钮时，被控端才开始管理它。Claude Code、Codex 和 OpenCode 例外：模块总是安装自己的副本，你勾选账户时可以选择是否换成这个副本，见 [Claude Code](/deploy/claude_code)、[Codex](/deploy/codex) 和 [OpenCode](/deploy/opencode)。Windows 和 macOS 上你自己安装的 Ollama 应用也例外：面板只管理它的模型，安装、启动和卸载仍由你自己负责，见 [Ollama](/deploy/ollama)。
+如果系统上已经有你自己安装的同名软件，微子·中枢直接接管它，没有单独的来源。系统加入中枢时，被控端只读取这些软件，不安装、不写文件、也不改服务。你第一次按这个模块的按钮时，被控端才开始管理它。Claude Code、Codex 和 OpenCode 例外：模块总是安装自己的副本，你勾选账户时可以选择是否换成这个副本，见 [Claude Code](/deploy/claude_code)、[Codex](/deploy/codex) 和 [OpenCode](/deploy/opencode)。Ollama 也不同：在 Windows 和 macOS 上，如果你安装过 Ollama 官方的 App，安装 Ollama 模块后，中枢停止这个 App，并关掉它的开机自动启动，卸载模块后恢复，见 [Ollama](/deploy/ollama)。
 
 ## 种类
 

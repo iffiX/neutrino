@@ -8,13 +8,11 @@ Each system runs one Ollama, and every account shares it and its models, so you 
 
 ## Supported systems
 
-| System            | Architecture         | First Neutrino Hub version | Download                                               |
-| ----------------- | -------------------- | -------------------------- | ------------------------------------------------------ |
-| Linux             | amd64, arm64         | 0.6.1                      | About 1.6 GB; the install adds the zstd system package |
-| Windows           | amd64                | 0.6.1                      | About 1.6 GB                                           |
-| macOS 14 or later | Apple silicon, Intel | 0.6.1                      | About 190 MB                                           |
-
-The hub downloads the archive from GitHub or SourceForge, whichever its speed test finds faster. No mirror in mainland China serves Ollama's archives, so the download speed depends on how fast the hub reaches these two sites.
+| System                   | Architecture         | First Neutrino Hub version |
+| ------------------------ | -------------------- | -------------------------- |
+| Linux                    | amd64, arm64         | 0.6.1                      |
+| Windows 10 1809 or later | amd64                | 0.6.1                      |
+| macOS 14 or later        | Apple silicon, Intel | 0.6.1                      |
 
 ## Install
 
@@ -35,14 +33,14 @@ The hub downloads the archive from GitHub or SourceForge, whichever its speed te
    ![The tab showing installing, with each step listed](/guide/en/deploy_ollama_06_installing.webp "Installing")
    ![The tab showing installed, with the Start button marked in red](/guide/en/deploy_ollama_07_installed.webp "Select Start")
 
-If you installed Ollama on this system yourself, the panel uses your copy:
+If you installed Ollama on this system yourself, the panel handles it by system:
 
-| System         | Your own Ollama                                                      | What the panel does                                                                                                                                                                           |
-| -------------- | -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Linux          | The `ollama.service` unit, from Ollama's install script or a package | The tab shows **installed**. Your first **Start** puts the unit under the agent's control. **Uninstall** returns the unit to the state your first **Start** found it in, and keeps your files |
-| Windows, macOS | The Ollama app, which starts when you sign in                        | While the app runs, the tab has only **Configure** and shows **The Ollama app installed on this machine serves here.** While the app is closed, **Install** fails                             |
+| System         | Your own Ollama                                                      | What the panel does                                                                                                                                                                                     |
+| -------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Linux          | The `ollama.service` unit, from Ollama's install script or a package | The tab shows **installed**. Your first **Start** puts the unit under the agent's control. **Uninstall** returns the unit to the state your first **Start** found it in, and keeps your files           |
+| Windows, macOS | Ollama's official app, which starts when you sign in                 | After you install this module, Neutrino Hub stops the app and turns off its start at sign-in. Do not open the app while the module runs. When you uninstall the module, the app starts at sign-in again |
 
-You update your own Ollama yourself, and the panel manages only its models. If the install fails, see [Troubleshooting](/en/reference/troubleshooting).
+On Linux, you update your own Ollama yourself, and the panel manages only its models. If the install fails, see [Troubleshooting](/en/reference/troubleshooting).
 
 ## Use
 
@@ -50,7 +48,7 @@ You update your own Ollama yourself, and the panel manages only its models. If t
 
 Ollama pulls models from its own library, such as `qwen2.5:7b`, and from GGUF repositories on Hugging Face and ModelScope. In mainland China, pull with a ModelScope name. The Ollama on this system downloads the model, so the system needs access to the model's source.
 
-1. On the **Ollama** tab, select **Configure**, and the **Models** area opens under it. With no models yet, the list shows **No models yet.**
+1. On the **Ollama** tab, select **Configure**, and the **Settings** and **Models** areas open under it. The top of **Models** shows the use of **System memory**, plus one line per GPU on a system with GPUs. With no models yet, the list shows **No models yet.**
 
    ![The tab showing running, with the Configure button marked in red](/guide/en/deploy_ollama_17_started.webp "Select Configure")
    ![The Models area with the name field marked in red](/guide/en/deploy_ollama_08_models_empty.webp "The Models area")
@@ -67,15 +65,17 @@ Ollama pulls models from its own library, such as `qwen2.5:7b`, and from GGUF re
 
    ![A model being pulled, with its progress bar and speed](/guide/en/deploy_ollama_10_pulling.webp)
 
-1. When the pull finishes, the row shows **Parameters**, **Quantization**, **Size** and **Modified**, and the top-right corner shows the number of models and their total size.
+1. When the pull finishes, the row shows **Parameters**, **Quantization**, **Size** and **Modified**. A name with a source in front takes two lines: the source on top, the model's own name under it. The top-right corner shows the number of models and their total size.
 
-   ![The pulled model, with 1 model shown in the top-right corner](/guide/en/deploy_ollama_11_pulled.webp)
+   ![Two pulled models, with a Load button marked in red](/guide/en/deploy_ollama_11_pulled.webp)
 
 **Cancel** stops a pull and keeps the parts already downloaded, so a later pull of the same name continues from them. A failed pull stays in the list with its reason until you select **Cancel**.
 
-While a program uses a model, Ollama loads it into memory, and the row shows **loaded** with the memory it takes. Select **Unload** to free the memory and keep the model's files. Select **Remove** and confirm in the dialog to delete the model from this system.
+Select **Load** on a model to load it into memory, where it stays until you select **Unload**. When Ollama restarts, the hub loads that model again. Models in memory come first in the list. Each shows how much memory it takes, and its share on the CPU and the GPU, such as **100% CPU**.
 
-![A loaded model, with the Unload button marked in red](/guide/en/deploy_ollama_12_loaded.webp "Select Unload")
+When a program uses a model that is not in memory, through the API or the AI gateway, Ollama loads it too. Ollama unloads that model after it stays idle for the **Idle unload time**. Select **Remove** and confirm in the dialog to delete a model from this system.
+
+![A model in memory, with the Unload button marked in red](/guide/en/deploy_ollama_12_loaded.webp "Select Unload")
 ![The dialog for removing a model, with the Remove button marked in red](/guide/en/deploy_ollama_13_remove_dialog.webp "Select Remove")
 
 ### Connect from a client
@@ -123,11 +123,18 @@ Ollama's cloud models are off, so this system runs only the models pulled to it.
 
 Apart from pulling models, the following settings can stay at their defaults:
 
-| Setting                                  | Where                                        | What it does                            |
-| ---------------------------------------- | -------------------------------------------- | --------------------------------------- |
-| **Models**                               | **Configure** on the Ollama tab              | Pulls, unloads and removes models       |
-| **Update**, **Install another version…** | Under the tab's state                        | Changes the version of Ollama           |
-| **Configure**                            | The Ollama row on the client's **Apps** page | Changes the local port on this computer |
+| Setting                                  | Where                                        | What it does                                                                                                                                                                                        |
+| ---------------------------------------- | -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Idle unload time**                     | **Settings** under **Configure**             | How long a model a program loaded stays in memory with no requests: **5 minutes**, **30 minutes** (the default), **1 hour**, **4 hours** or **Never**. A model loaded with **Load** stays in memory |
+| **GPUs**                                 | **Settings** under **Configure**             | The GPUs Ollama uses, all of them by default. The row shows only on a system with GPUs, and never on macOS                                                                                          |
+| **Models**                               | **Models** under **Configure**               | Pulls, loads, unloads and removes models                                                                                                                                                            |
+| **Update**, **Install another version…** | Under the tab's state                        | Changes the version of Ollama                                                                                                                                                                       |
+| **Configure**                            | The Ollama row on the client's **Apps** page | Changes the local port on this computer                                                                                                                                                             |
+
+After you change **Settings**, select **Apply settings**. Ollama restarts, every model leaves memory, and the models loaded with **Load** come back.
+
+![The Settings area with the Idle unload time choices open and 1 hour marked in red](/guide/en/deploy_ollama_14_settings.webp "Choose a time")
+![The Settings area with the restart warning and the Apply settings button marked in red](/guide/en/deploy_ollama_15_settings_apply.webp "Select Apply settings")
 
 The agent starts Ollama on `127.0.0.1:11434`, and keeps the models in these folders:
 
