@@ -24,6 +24,7 @@ from neutrino_hub.modules.services.device_shares import DeviceShareRegistry
 from tests.conftest import (
     StubHubForwards,
     StubOllamaGateway,
+    StubOllamaKeptModels,
     StubPublishedServices,
     unlock_vault,
 )
@@ -49,6 +50,7 @@ class ReportingRuntime:
         self.published_services = StubPublishedServices()
         self.hub_forwards = StubHubForwards()
         self.ollama_gateway = StubOllamaGateway()
+        self.ollama_kept = StubOllamaKeptModels()
         self.agent_sessions = ChannelSessionRegistry(CHANNEL_ROLE_AGENT)
         self.desired_states = DesiredStateStore()
         self.pushed: list = []

@@ -41,6 +41,7 @@ from tests.conftest import (
     StubDesiredStates,
     StubHubForwards,
     StubOllamaGateway,
+    StubOllamaKeptModels,
     StubPublishedServices,
 )
 
@@ -93,6 +94,7 @@ class FakeRuntime:
         self.published_services = StubPublishedServices()
         self.hub_forwards = StubHubForwards()
         self.ollama_gateway = StubOllamaGateway()
+        self.ollama_kept = StubOllamaKeptModels()
         self.desired_states = StubDesiredStates()
         self.agent_sessions = ChannelSessionRegistry(CHANNEL_ROLE_AGENT)
         self.web_share_guests = WebShareGuestSessions()

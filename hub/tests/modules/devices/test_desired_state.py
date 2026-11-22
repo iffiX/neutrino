@@ -22,6 +22,7 @@ import pytest
 from neutrino_hub.modules.devices import desired_state as desired_state_module
 from neutrino_hub.modules.devices.accounts import DeviceAccount, DeviceAccountStore
 from neutrino_hub.modules.devices.desired_state import (
+    ollama_agent_config,
     DesiredStateStore,
     smb_user,
     state_hash,
@@ -733,3 +734,14 @@ def test_forgetting_a_device_and_the_orphans_removes_their_directories(config):
     assert (config / "devices" / "device-two").is_dir()
     assert store.forget_orphans(set()) == ["device-two"]
     assert not (config / "devices" / "device-two").exists()
+
+
+def test_ollama_is_sent_its_settings_and_never_its_kept_models():
+    gpus = [{"vendor": "nvidia", "is_used": False}]
+    assert ollama_agent_config({}) == {"keep_alive": "30m"}
+    assert ollama_agent_config(
+        {"keep_alive": "4h", "gpus": gpus, "kept_models": ["a:1"]}
+    ) == {"keep_alive": "4h", "gpus": gpus}
+    assert ollama_agent_config({"keep_alive": "2h", "gpus": [{"vendor": 1}]}) == {
+        "keep_alive": "30m"
+    }

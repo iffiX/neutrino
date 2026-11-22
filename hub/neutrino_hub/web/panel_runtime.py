@@ -47,7 +47,11 @@ from neutrino_hub.modules.devices.desired_state import (
     DesiredStateStore,
     machine_apps,
 )
-from neutrino_hub.modules.devices.constants import DEVICE_OLLAMA_PORT
+from neutrino_hub.modules.devices.constants import (
+    DEVICE_OLLAMA_KEPT_MODELS_KEY,
+    DEVICE_OLLAMA_MODULE,
+    DEVICE_OLLAMA_PORT,
+)
 from neutrino_hub.modules.devices.module_releases import (
     ModuleReleaseStore,
     reported_newest_run,
@@ -56,6 +60,7 @@ from neutrino_hub.modules.devices.retry_marks import DeviceRetryMarks
 from neutrino_hub.modules.services.apps import app_slugs, machine_slugs
 from neutrino_hub.modules.services.constants import SERVICES_MACHINE_SLUG_FALLBACK
 from neutrino_hub.modules.devices.ollama_gateway import OllamaGatewayProviderTable
+from neutrino_hub.modules.devices.ollama_kept_models import OllamaKeptModelController
 from neutrino_hub.modules.devices.ollama_models import OllamaPullQueue
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.system.machine import machine_id
@@ -229,7 +234,8 @@ class PanelRuntime:
         # The forwards of the hub's transport on its loopback, each to a
         # port a machine publishes, and every machine's Ollama pulls, which
         # reach Ollama's API through them. The gateway's providers generated
-        # from each machine's Ollama follow both.
+        # from each machine's Ollama follow both, and the models a person
+        # loaded are loaded again through them.
         self.hub_forwards = HubForwardTable(channel=self.channel)
         self.ollama_gateway = OllamaGatewayProviderTable(
             on_change=self._ollama_providers_changed
@@ -237,6 +243,7 @@ class PanelRuntime:
         self.ollama_pulls = OllamaPullQueue(
             address_of=self.ollama_address, on_pulled=self.ollama_gateway.refresh
         )
+        self.ollama_kept = OllamaKeptModelController(kept_of=self._ollama_kept_models)
         # The scope each client's socket arrived from, settled at its hello;
         # its list and its gateway URL are resolved for it.
         self.client_scope: dict[str, HostScope] = {}
@@ -1080,6 +1087,20 @@ class PanelRuntime:
         """
         return self.hub_forwards.address(device_id, DEVICE_OLLAMA_PORT)
 
+    def _ollama_kept_models(self, device_id: str) -> list:
+        """The models one machine keeps in memory, as its ``ollama.json`` names them.
+
+        Args:
+            device_id: The machine.
+
+        Returns:
+            The names; empty while the file names none.
+        """
+        held = self.desired_states.read(device_id, DEVICE_OLLAMA_MODULE).get(
+            DEVICE_OLLAMA_KEPT_MODELS_KEY
+        )
+        return list(held) if isinstance(held, list) else []
+
     def _ollama_providers_changed(self) -> None:
         """Hand the gateway the changed Ollama providers in place, and tell the AI page."""
         apply_keys()
@@ -1110,6 +1131,7 @@ class PanelRuntime:
         self.device_shares.withdraw(key)
         self.hub_forwards.stop(key, DEVICE_OLLAMA_PORT)
         self.ollama_gateway.drop(key)
+        self.ollama_kept.drop(key)
         self.agent_sessions.refuse_from_thread(key, CHANNEL_CODE_BINDING_UNKNOWN)
         self.published_services.schedule_refresh()
 

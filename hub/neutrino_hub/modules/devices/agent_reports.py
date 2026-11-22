@@ -132,6 +132,9 @@ def record_report(
 def record_offline(runtime, device, *, is_control_lost: bool = False) -> None:
     """Take a socket ending: whatever the machine hosted stops with it.
 
+    The machine's kept Ollama models are checked no more until a report
+    follows them again.
+
     Args:
         runtime: The shared runtime.
         device: The device whose socket ended.
@@ -140,6 +143,7 @@ def record_offline(runtime, device, *, is_control_lost: bool = False) -> None:
             Ollama provider then.
     """
     record_desktop_share(runtime, device, {}, runtime.device_address.get(device.id, ""))
+    runtime.ollama_kept.drop(device.id)
     if not is_control_lost:
         runtime.ollama_gateway.drop(device.id)
 
@@ -327,8 +331,8 @@ def _adopt_modules(runtime, key: str, modules: dict) -> bool:
 def _follow_ollama(runtime, key: str, status) -> None:
     """Keep the hub's forward to the machine's Ollama while it answers, and stop it once it does not.
 
-    The gateway's Ollama providers follow the forward's address, empty
-    while there is none.
+    The gateway's Ollama providers and the kept models follow the forward's
+    address, empty while there is none.
     """
     details = status.get("details") if isinstance(status, dict) else None
     is_running = isinstance(details, dict) and details.get("is_running") is True
@@ -342,6 +346,7 @@ def _follow_ollama(runtime, key: str, status) -> None:
     except (AgentOfflineError, StreamRefusedError) as error:
         LOGGER.warning("device %s: no forward to its Ollama: %s", key, error)
     runtime.ollama_gateway.follow(key, address)
+    runtime.ollama_kept.follow(key, address)
 
 
 def _import(store, key: str, name: str, status: dict) -> bool:

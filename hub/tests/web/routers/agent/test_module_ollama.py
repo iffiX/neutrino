@@ -7,7 +7,12 @@ total size through Ollama's API while it runs, and says
 Ollama does not take and for a machine whose server does not run, and is
 otherwise queued and shown; a cancel of no such pull answers 404; a remove
 of a model the machine does not have answers 404, and a remove and an
-unload change what the next view lists.
+unload change what the next view lists. The settings: the view's defaults
+while none are stored and the machine's resources from its last report;
+``set`` storing them beside ``kept_models`` after the agent checked them
+without ``kept_models``, and refusing a value outside the choices. A load
+keeps a pulled model's name and starts its load, refuses a name the
+machine does not hold, and an unload and a remove take the name off.
 """
 
 import time
@@ -164,3 +169,113 @@ def test_a_remove_reads_the_machines_models_again_for_the_gateway(api):
         f"{BASE}/model/remove", json={"device_id": DEVICE, "name": "qwen2.5:0.5b"}
     )
     assert runtime.ollama_gateway.refreshed == [DEVICE]
+
+
+def _stored(runtime) -> dict:
+    return runtime.desired_states.read(DEVICE, "ollama")
+
+
+def test_the_view_carries_the_default_settings_and_the_machine_s_resources(api):
+    client, runtime, server = api
+    runtime.report(DEVICE, "ollama", state="running", is_running=True, port=11434)
+    held = view(client)
+    assert (held["keep_alive"], held["gpus"]) == ("30m", None)
+    assert held["resources"] == {
+        "gpus": [],
+        "memory_used_mb": None,
+        "memory_total_mb": None,
+    }
+    gpu = {"vendor": "nvidia", "name": "RTX 4090", "memory_used_mb": 2048}
+    runtime.device_metrics[DEVICE] = {
+        "memory_percent": 25.0,
+        "memory_total_mb": 16000,
+        "gpus": [dict(gpu, memory_total_mb=24564)],
+    }
+    resources = view(client)["resources"]
+    assert (resources["memory_used_mb"], resources["memory_total_mb"]) == (4000, 16000)
+    assert resources["gpus"][0]["name"] == "RTX 4090"
+    assert resources["gpus"][0]["memory_total_mb"] == 24564
+
+
+def test_set_stores_the_settings_beside_the_kept_models(api):
+    client, runtime, server = api
+    runtime.desired_states.write(DEVICE, "ollama", {"kept_models": ["a:1"]})
+    runtime.report(DEVICE, "ollama", state="running", is_running=True, port=11434)
+    gpus = [
+        {"vendor": "nvidia", "is_used": True},
+        {"vendor": "nvidia", "is_used": False},
+    ]
+    answer = client.post(
+        f"{BASE}/set", json={"device_id": DEVICE, "keep_alive": "1h", "gpus": gpus}
+    )
+    assert answer.status_code == 200
+    assert (answer.json()["keep_alive"], answer.json()["gpus"]) == ("1h", gpus)
+    assert _stored(runtime) == {
+        "kept_models": ["a:1"],
+        "keep_alive": "1h",
+        "gpus": gpus,
+    }
+    assert runtime.agent_sessions.validations[-1][2] == {
+        "keep_alive": "1h",
+        "gpus": gpus,
+    }
+    assert runtime.agent_sessions.pushes
+    answer = client.post(
+        f"{BASE}/set", json={"device_id": DEVICE, "keep_alive": "-1", "gpus": None}
+    )
+    assert answer.status_code == 200
+    assert _stored(runtime) == {"kept_models": ["a:1"], "keep_alive": "-1"}
+    assert runtime.agent_sessions.validations[-1][2] == {"keep_alive": "-1"}
+
+
+def test_set_refuses_a_value_outside_the_choices(api):
+    client, runtime, server = api
+    for body in (
+        {"keep_alive": "2h"},
+        {"keep_alive": "30m", "gpus": [{"vendor": "nvidia"}]},
+    ):
+        answer = client.post(f"{BASE}/set", json={"device_id": DEVICE, **body})
+        assert answer.status_code == 422
+    answer = client.post(f"{BASE}/set", json={"device_id": OFFLINE, "keep_alive": "5m"})
+    assert answer.json()["detail"]["code"] == "agent_offline"
+    assert _stored(runtime) == {}
+
+
+def test_a_load_keeps_a_pulled_model_and_starts_its_load(api):
+    client, runtime, server = api
+    server.models = [MODEL]
+    runtime.report(DEVICE, "ollama", state="running", is_running=True, port=11434)
+    runtime.ollama_kept.in_flight[DEVICE] = {"qwen2.5:0.5b"}
+    answer = client.post(
+        f"{BASE}/loaded/add", json={"device_id": DEVICE, "name": "qwen2.5:0.5b"}
+    )
+    assert answer.status_code == 200
+    assert answer.json()["models"][0]["is_loading"] is True
+    assert _stored(runtime) == {"kept_models": ["qwen2.5:0.5b"]}
+    assert runtime.ollama_kept.loads == [(DEVICE, server.address, "qwen2.5:0.5b")]
+    assert runtime.agent_sessions.pushes == []
+    answer = client.post(
+        f"{BASE}/loaded/add", json={"device_id": DEVICE, "name": "x:1"}
+    )
+    assert answer.status_code == 404
+    assert answer.json()["detail"]["code"] == "ollama_model_unknown"
+    runtime.report(DEVICE, "ollama", state="stopped", is_running=False, port=11434)
+    answer = client.post(
+        f"{BASE}/loaded/add", json={"device_id": DEVICE, "name": "qwen2.5:0.5b"}
+    )
+    assert answer.json()["detail"]["code"] == "ollama_not_running"
+
+
+def test_an_unload_and_a_remove_take_the_name_off(api):
+    client, runtime, server = api
+    server.models = [MODEL, dict(MODEL, name="a:1")]
+    runtime.desired_states.write(
+        DEVICE, "ollama", {"keep_alive": "5m", "kept_models": ["qwen2.5:0.5b", "a:1"]}
+    )
+    runtime.report(DEVICE, "ollama", state="running", is_running=True, port=11434)
+    client.post(f"{BASE}/loaded/remove", json={"device_id": DEVICE, "name": "a:1"})
+    assert _stored(runtime) == {"keep_alive": "5m", "kept_models": ["qwen2.5:0.5b"]}
+    client.post(
+        f"{BASE}/model/remove", json={"device_id": DEVICE, "name": "qwen2.5:0.5b"}
+    )
+    assert _stored(runtime) == {"keep_alive": "5m", "kept_models": []}

@@ -71,6 +71,7 @@ class FakeRuntime:
     def __init__(self, lans=()):
         self.hub_forwards = FakeForwards()
         self.ollama_gateway = FakeOllamaGateway()
+        self.ollama_kept = FakeOllamaGateway()
         self.device_metrics = {}
         self.device_modules = {}
         self.device_platform = {}
@@ -930,15 +931,18 @@ def test_a_report_follows_the_machines_ollama_for_the_gateway(box):
         ("follow", DEVICE, ""),
         ("follow", DEVICE, ""),
     ]
+    assert runtime.ollama_kept.asked == runtime.ollama_gateway.asked
 
 
 def test_a_socket_ending_takes_the_machines_ollama_out_of_the_gateway(box):
     runtime, device = box
     agent_reports.record_offline(runtime, device)
     assert runtime.ollama_gateway.asked == [("drop", DEVICE)]
+    assert runtime.ollama_kept.asked == [("drop", DEVICE)]
 
 
 def test_a_lost_control_connection_keeps_the_machines_ollama_in_the_gateway(box):
     runtime, device = box
     agent_reports.record_offline(runtime, device, is_control_lost=True)
     assert runtime.ollama_gateway.asked == []
+    assert runtime.ollama_kept.asked == [("drop", DEVICE)]

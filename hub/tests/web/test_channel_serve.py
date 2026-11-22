@@ -24,6 +24,7 @@ from tests.conftest import (
     StubDesiredStates,
     StubHubForwards,
     StubOllamaGateway,
+    StubOllamaKeptModels,
     StubPublishedServices,
 )
 
@@ -300,6 +301,7 @@ class AgentRuntime:
         self.published_services = StubPublishedServices()
         self.hub_forwards = StubHubForwards()
         self.ollama_gateway = StubOllamaGateway()
+        self.ollama_kept = StubOllamaKeptModels()
         self.desired_states = StubDesiredStates()
         self.device_shares = DeviceShareRegistry()
         self.device_metrics: dict = {}

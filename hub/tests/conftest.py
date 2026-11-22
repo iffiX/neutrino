@@ -919,6 +919,36 @@ class StubOllamaGateway:
         self.refreshed.append(device_id)
 
 
+class StubOllamaKeptModels:
+    """The kept models' loads, recording each load a press starts.
+
+    Attributes:
+        loads: Every load started, ``(device_id, address, name)``.
+        in_flight: The names loading now, by device id.
+        forgotten: How many times every machine was forgotten.
+    """
+
+    def __init__(self):
+        self.loads: list = []
+        self.in_flight: dict = {}
+        self.forgotten = 0
+
+    def follow(self, device_id, address) -> None:
+        return None
+
+    def drop(self, device_id) -> None:
+        return None
+
+    def forget_all(self) -> None:
+        self.forgotten += 1
+
+    def load(self, device_id, address, name) -> None:
+        self.loads.append((device_id, address, name))
+
+    def loading(self, device_id) -> set:
+        return set(self.in_flight.get(device_id, set()))
+
+
 class StubPublishedServices:
     """The published list as the paths that can move it reach for it.
 
@@ -974,10 +1004,12 @@ class FakeModuleRuntime:
         self.published_services = StubPublishedServices()
         self.hub_forwards = StubHubForwards()
         self.ollama_gateway = StubOllamaGateway()
+        self.ollama_kept = StubOllamaKeptModels()
         self.desired_states = DesiredStateStore()
         self.module_releases = ModuleReleaseStore(path=None)
         self.channel_replies = SessionReplyBook()
         self.device_modules: dict = {}
+        self.device_metrics: dict = {}
         self.device_platform: dict = {}
         self.device_hostname: dict = {}
         self.device_address: dict = {}

@@ -1,8 +1,9 @@
 """A machine's Ollama models through Ollama's own API, and the hub's pulls.
 
 What these pin: a model name the pull form takes and the ones it refuses;
-the pulled models joined with the ones in memory; the client's calls over
-real HTTP, a missing model a ``KeyError`` and an error line of a pull a
+the pulled models joined with the ones in memory, those listed first and a
+model being loaded marked; the client's calls over real HTTP, a load with
+``keep_alive`` -1, a missing model a ``KeyError`` and an error line of a pull a
 ``ConnectionError`` with Ollama's words; the queue running one pull at a time
 per machine in the order asked, its progress summed over every layer, a
 further pull waiting behind the running one, a cancel ending the running
@@ -79,18 +80,28 @@ def test_the_pulled_models_are_joined_with_the_ones_in_memory():
     }
     ps = {"models": [{"name": "qwen2.5:0.5b", "size": 486000000, "size_vram": 0}]}
     rows = model_rows(tags, ps)
-    assert [row["name"] for row in rows] == ["a:1", "qwen2.5:0.5b"]
-    assert rows[1] == {
+    assert [row["name"] for row in rows] == ["qwen2.5:0.5b", "a:1"]
+    assert rows[0] == {
         "name": "qwen2.5:0.5b",
         "parameter_size": "494.03M",
         "quantization": "Q4_K_M",
         "size_bytes": 397821319,
         "modified_at": "2026-11-14T08:00:00Z",
         "is_loaded": True,
+        "is_loading": False,
         "memory_bytes": 486000000,
         "vram_bytes": 0,
     }
-    assert rows[0]["is_loaded"] is False
+    assert rows[1]["is_loaded"] is False
+    assert rows[1]["is_loading"] is False
+
+
+def test_the_models_in_memory_come_first_and_a_load_in_flight_is_marked():
+    tags = {"models": [{"name": name} for name in ("c:1", "a:1", "b:1", "d:1")]}
+    ps = {"models": [{"name": "d:1"}, {"model": "b:1"}]}
+    rows = model_rows(tags, ps, loading={"a:1", "b:1"})
+    assert [row["name"] for row in rows] == ["b:1", "d:1", "a:1", "c:1"]
+    assert [row["is_loading"] for row in rows] == [False, False, True, False]
 
 
 def test_a_pull_s_progress_sums_every_layer():
@@ -110,10 +121,19 @@ def test_the_client_lists_removes_and_unloads_over_http(ollama):
         "/api/generate",
         {"model": "qwen2.5:0.5b", "keep_alive": 0, "stream": False},
     ) in ollama.requests
+    client.keep("qwen2.5:0.5b")
+    assert (
+        "POST",
+        "/api/generate",
+        {"model": "qwen2.5:0.5b", "keep_alive": -1, "stream": False},
+    ) in ollama.requests
+    assert [model["name"] for model in ollama.loaded] == ["qwen2.5:0.5b"]
     client.delete("qwen2.5:0.5b")
     assert ollama.models == []
     with pytest.raises(KeyError):
         client.delete("qwen2.5:0.5b")
+    with pytest.raises(KeyError):
+        client.keep("qwen2.5:0.5b")
 
 
 def test_a_client_that_reaches_nothing_raises_connection_error():

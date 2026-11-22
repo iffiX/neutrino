@@ -248,11 +248,26 @@ DEVICE_DISABLED_ACCOUNTS_KEY = "disabled"
 # The module whose configuration is the hub's own secrets and nothing the
 # machine can be read for.
 DEVICE_GITEA_MODULE = "gitea"
-# Ollama: its configuration is empty, and the hub reads and changes its
-# models through Ollama's own API at its port on the machine, reached by a
-# forward of the hub's transport on the hub's loopback.
+# Ollama: its configuration is its settings, and the hub reads and changes
+# its models through Ollama's own API at its port on the machine, reached by
+# a forward of the hub's transport on the hub's loopback.
 DEVICE_OLLAMA_MODULE = "ollama"
 DEVICE_OLLAMA_PORT = 11434
+# The settings: how long a model a request loaded stays in memory, as
+# ``OLLAMA_KEEP_ALIVE`` spells it with ``-1`` for never, and its default;
+# and the key of the GPUs the server uses. ``kept_models``, the models a
+# person loaded, stays in the file and never reaches the machine.
+DEVICE_OLLAMA_KEEP_ALIVE_CHOICES = ("5m", "30m", "1h", "4h", "-1")
+DEVICE_OLLAMA_KEEP_ALIVE_DEFAULT = "30m"
+DEVICE_OLLAMA_KEEP_ALIVE_KEY = "keep_alive"
+DEVICE_OLLAMA_GPUS_KEY = "gpus"
+DEVICE_OLLAMA_KEPT_MODELS_KEY = "kept_models"
+# How often a machine that keeps a model has its ``/api/ps`` read for one
+# its Ollama lost, how long a failed load waits before it is tried again,
+# and how long a load may take.
+DEVICE_OLLAMA_KEPT_READ_INTERVAL_S = 10.0
+DEVICE_OLLAMA_KEPT_RETRY_S = 300.0
+DEVICE_OLLAMA_LOAD_TIMEOUT_S = 600.0
 # A model's name as the pull form takes it: a letter or a digit first, then
 # letters, digits and ``._-:/``, 200 characters at most.
 DEVICE_OLLAMA_MODEL_NAME_PATTERN = r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}"

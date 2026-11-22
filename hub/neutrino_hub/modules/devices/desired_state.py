@@ -103,6 +103,11 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_INSTANCE_LOGIN_KEY,
     DEVICE_MODULE_KIND_COMMAND_LINE_PROGRAM,
     DEVICE_MODULES_FILE,
+    DEVICE_OLLAMA_GPUS_KEY,
+    DEVICE_OLLAMA_KEEP_ALIVE_CHOICES,
+    DEVICE_OLLAMA_KEEP_ALIVE_DEFAULT,
+    DEVICE_OLLAMA_KEEP_ALIVE_KEY,
+    DEVICE_OLLAMA_MODULE,
     DEVICE_PACKAGES_DIR_NAME,
     DEVICE_HUB_CONTAINERS_KEY,
     DEVICE_PODMAN_MACHINE_KEY,
@@ -498,6 +503,56 @@ def _public_key(private_key: str) -> str:
         return public_key_of(private_key)
     except ValueError:
         return ""
+
+
+def ollama_settings(stored: dict) -> dict:
+    """The Ollama module's settings as ``ollama.json`` holds them, the defaults where it names none. Pure.
+
+    Args:
+        stored: ``ollama.json``: the settings and ``kept_models``.
+
+    Returns:
+        ``{keep_alive, gpus}``: ``keep_alive`` one of the five choices,
+        ``30m`` for none or another value; ``gpus`` the stored list of
+        ``{vendor, is_used}``, None for every GPU and for a list of another
+        shape.
+    """
+    keep_alive = stored.get(DEVICE_OLLAMA_KEEP_ALIVE_KEY)
+    gpus = stored.get(DEVICE_OLLAMA_GPUS_KEY)
+    is_list = isinstance(gpus, list) and all(
+        isinstance(gpu, dict)
+        and isinstance(gpu.get("vendor"), str)
+        and isinstance(gpu.get("is_used"), bool)
+        for gpu in gpus
+    )
+    return {
+        DEVICE_OLLAMA_KEEP_ALIVE_KEY: (
+            keep_alive
+            if keep_alive in DEVICE_OLLAMA_KEEP_ALIVE_CHOICES
+            else DEVICE_OLLAMA_KEEP_ALIVE_DEFAULT
+        ),
+        DEVICE_OLLAMA_GPUS_KEY: (
+            [{"vendor": gpu["vendor"], "is_used": gpu["is_used"]} for gpu in gpus]
+            if is_list
+            else None
+        ),
+    }
+
+
+def ollama_agent_config(stored: dict) -> dict:
+    """What the agent is sent for the Ollama module. Pure.
+
+    Args:
+        stored: ``ollama.json``: the settings and ``kept_models``.
+
+    Returns:
+        ``{keep_alive}``, with ``gpus`` beside it while a list is stored;
+        ``kept_models`` stays on the hub.
+    """
+    settings = ollama_settings(stored)
+    if settings[DEVICE_OLLAMA_GPUS_KEY] is None:
+        settings.pop(DEVICE_OLLAMA_GPUS_KEY)
+    return settings
 
 
 def podman_agent_config(stored: dict, platform: dict, available: list) -> dict:
@@ -1467,7 +1522,8 @@ class DesiredStateStore:
             The configuration: an account-layer module as
             :func:`account_layer_agent_config` composes it, the file share
             with the networks its shares answer, Gitea with its address, the
-            secrets it signs with and its SSH entry's local port, Containers
+            secrets it signs with and its SSH entry's local port, Ollama
+            with its settings alone, Containers
             as :func:`podman_agent_config` composes it with the hub
             containers of the machine's container modules, and Hermes WebUI
             and Ayakaleaf with their secrets opened and their names, Hermes
@@ -1505,6 +1561,8 @@ class DesiredStateStore:
             config["ssh_port"] = local_port(
                 entry_id(f"{SERVICES_GITEA_ID}_{key}", SERVICES_ENTRY_SSH)
             )
+        elif name == DEVICE_OLLAMA_MODULE:
+            config = ollama_agent_config(config)
         elif name == DEVICE_PODMAN_MODULE:
             config = podman_agent_config(config, platform, available)
             config[DEVICE_HUB_CONTAINERS_KEY] = compose_hub_containers(

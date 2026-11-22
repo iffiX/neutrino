@@ -43,7 +43,12 @@ from neutrino_hub.web.events import PanelEventBus
 from neutrino_hub.web.shell_bridge import ShellSessionLedger
 from neutrino_hub.web.task_stream import TaskStreamRegistry
 from neutrino_hub.web.web_share_access import WebShareGuestSessions
-from tests.conftest import StubHubForwards, StubOllamaGateway, StubPublishedServices
+from tests.conftest import (
+    StubHubForwards,
+    StubOllamaGateway,
+    StubOllamaKeptModels,
+    StubPublishedServices,
+)
 from tests.web.fake_transport import SECRET, FakeTransport
 
 AGENT_KEY = "a1" * 32
@@ -67,6 +72,7 @@ class FakeRuntime:
         self.published_services = StubPublishedServices()
         self.hub_forwards = StubHubForwards()
         self.ollama_gateway = StubOllamaGateway()
+        self.ollama_kept = StubOllamaKeptModels()
         self.device_platform: dict = {}
         self.device_hostname: dict = {}
         self.device_address: dict = {}
@@ -711,9 +717,10 @@ def test_a_dropped_control_connection_ends_every_session_and_is_dialled_again(
             online_again = runtime.agent_sessions.is_online(device_id)
         finally:
             await stopped(fake, channel, task)
-        return offline, online_again, fake.control_count, runtime.ollama_gateway
+        return offline, online_again, fake.control_count, runtime
 
-    offline, online_again, count, gateway = asyncio.run(scenario())
+    offline, online_again, count, runtime = asyncio.run(scenario())
     assert (offline, online_again, count) == (True, True, 2)
     assert recorded["offline"] == [(device_id_of(recorded), True)]
-    assert gateway.forgotten == 2
+    assert runtime.ollama_gateway.forgotten == 2
+    assert runtime.ollama_kept.forgotten == 2

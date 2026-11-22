@@ -15,6 +15,8 @@ class FakeOllama:
         pull_lines: The lines a pull streams, by name; a name missing here
             streams an error line.
         gate: Set to let a pull stream past its first line.
+        load_gate: Set to let a load answer.
+        failing_loads: The names whose load answers an error.
     """
 
     def __init__(self):
@@ -24,6 +26,9 @@ class FakeOllama:
         self.pull_lines = {}
         self.gate = threading.Event()
         self.gate.set()
+        self.load_gate = threading.Event()
+        self.load_gate.set()
+        self.failing_loads = set()
         fake = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -70,10 +75,22 @@ class FakeOllama:
                 body = self._body()
                 fake.requests.append(("POST", self.path, body))
                 if self.path == "/api/generate":
+                    name = body.get("model")
+                    if name not in [model["name"] for model in fake.models]:
+                        self._answer(404, {"error": f"model '{name}' not found"})
+                        return
                     fake.loaded = [
-                        model for model in fake.loaded if model["name"] != body["model"]
+                        model for model in fake.loaded if model["name"] != name
                     ]
-                    self._answer(200, {"done": True, "done_reason": "unload"})
+                    if body.get("keep_alive") == 0:
+                        self._answer(200, {"done": True, "done_reason": "unload"})
+                        return
+                    fake.load_gate.wait(10)
+                    if name in fake.failing_loads:
+                        self._answer(500, {"error": "model requires more memory"})
+                        return
+                    fake.loaded.append({"name": name, "size": 100, "size_vram": 0})
+                    self._answer(200, {"done": True, "done_reason": "load"})
                     return
                 if self.path != "/api/pull":
                     self._answer(404, {"error": "not found"})

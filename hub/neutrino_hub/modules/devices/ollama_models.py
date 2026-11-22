@@ -3,7 +3,7 @@
 The hub reaches the API through a forward of its transport on its own
 loopback (``hub_forwards.py``) with a plain HTTP client: ``/api/tags`` and
 ``/api/ps`` list, ``/api/delete`` removes, ``/api/generate`` with
-``keep_alive`` 0 unloads, and ``/api/pull`` streams a pull's progress as
+``keep_alive`` -1 loads and 0 unloads, and ``/api/pull`` streams a pull's progress as
 JSON lines. A pull is a background task of the hub's: one at a time per
 machine, in the order asked, each further pull waiting behind the running
 one, its progress the sum of every layer's bytes. Nothing here is kept on
@@ -15,7 +15,6 @@ Not pure: holds connections and threads.
 
 import http.client
 import json
-import operator
 import re
 import threading
 import time
@@ -53,16 +52,19 @@ def is_model_name(name: str) -> bool:
     return bool(_NAME.match(name or "")) and ".." not in name
 
 
-def model_rows(tags: dict, ps: dict) -> list:
+def model_rows(tags: dict, ps: dict, loading=frozenset()) -> list:
     """The pulled models joined with the ones in memory. Pure.
 
     Args:
         tags: ``/api/tags``'s answer.
         ps: ``/api/ps``'s answer.
+        loading: The names the hub is loading now.
 
     Returns:
         ``{name, parameter_size, quantization, size_bytes, modified_at,
-        is_loaded, memory_bytes, vram_bytes}`` per model, by name.
+        is_loaded, is_loading, memory_bytes, vram_bytes}`` per model, the
+        ones in memory first, each by name; ``is_loading`` only for one not
+        in memory yet.
     """
     loaded = {}
     for model in ps.get("models") or []:
@@ -83,11 +85,30 @@ def model_rows(tags: dict, ps: dict) -> list:
                 "size_bytes": _bytes(model.get("size")),
                 "modified_at": str(model.get("modified_at", "") or ""),
                 "is_loaded": in_memory is not None,
+                "is_loading": in_memory is None and name in loading,
                 "memory_bytes": _bytes((in_memory or {}).get("size")),
                 "vram_bytes": _bytes((in_memory or {}).get("size_vram")),
             }
         )
-    return sorted(rows, key=operator.itemgetter("name"))
+    return sorted(rows, key=lambda row: (not row["is_loaded"], row["name"]))
+
+
+def model_names(answer: dict) -> set:
+    """The names ``/api/tags`` or ``/api/ps`` lists. Pure.
+
+    Args:
+        answer: The call's answer.
+
+    Returns:
+        Each model's ``name``, else its ``model``.
+    """
+    names = set()
+    for model in answer.get("models") or []:
+        if isinstance(model, dict):
+            name = str(model.get("name", "") or model.get("model", ""))
+            if name:
+                names.add(name)
+    return names
 
 
 def pull_progress(layers: dict) -> tuple:
@@ -147,6 +168,23 @@ class OllamaApiClient:
             ConnectionError: When the API does not answer.
         """
         self._call("DELETE", "/api/delete", {"model": name}, missing=name)
+
+    def keep(self, name: str) -> None:
+        """``/api/generate`` with ``keep_alive`` -1, which loads the model and keeps it in memory.
+
+        Args:
+            name: The model.
+
+        Raises:
+            KeyError: When the machine has no such model.
+            ConnectionError: When the API does not answer, or answers an error.
+        """
+        self._call(
+            "POST",
+            "/api/generate",
+            {"model": name, "keep_alive": -1, "stream": False},
+            missing=name,
+        )
 
     def unload(self, name: str) -> None:
         """``/api/generate`` with ``keep_alive`` 0, which takes the model out of memory.

@@ -332,6 +332,7 @@ def _start_samplers() -> None:
     runtime.link_sampler.start()
     runtime.address_sampler.start()
     runtime.ollama_gateway.start()
+    runtime.ollama_kept.start()
     runtime.release_sampler.start()
     runtime.enrollment_sweeper.start()
     runtime.web_share_sweeper.start()
