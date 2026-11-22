@@ -74,38 +74,52 @@ sends it down `package {module: ollama, artifact, digest}`.
 | No entry names the ROCm archive. | An AMD GPU runs on the main archive through Vulkan, and the ROCm archive adds 1 GB to every Linux install. |
 | Each archive passes through the hub's cache under its 2 GiB limit: 1.55 GB on Linux amd64, 1.60 GB on arm64, 1.62 GB on Windows and 186 MB on macOS for 0.40.16. | The cache refuses a larger file `module_fetch_too_large`. |
 
-**A person's own Ollama is adopted, never run beside**
+**A person's own Ollama never runs beside the module's**
 ([../../agent.md](../../agent.md), "Parallel, never take over"). Ollama is a
 server that holds one port and the GPU, so two copies cannot run on one
 machine.
 
-| | Linux: a person's unit | Windows and macOS: a person's app |
+A person's unit on Linux is adopted. A person's app on Windows and macOS is
+taken over while the module is installed, the way the remote desktop module
+takes a person's RustDesk over ([remote_desktop.md](remote_desktop.md), "The
+desktop is the hub's order"): only the module's own server runs.
+
+| | Linux: a person's unit | Windows and macOS: the publisher's app |
 | --- | --- | --- |
-| What is found | the unit `ollama.service`, whose file is `/etc/systemd/system/ollama.service`, where the publisher's `install.sh` puts it, or `/usr/lib/systemd/system/ollama.service` or `/lib/systemd/system/ollama.service`, where a distribution's package puts it | an Ollama the module did not start answering on `127.0.0.1:11434`: the per-user app the publisher's installer adds, which starts at the person's login |
-| Before a press | the row reads `installed`, `is_active` by the unit, and `details.found` is `unit` | the row reads `installed` while the port answers, `is_active` true, and `details.found` is `app`; with the port silent nothing is found |
-| Its port | published while the row reads `installed`, `stopped` or `running` | published while the row reads `installed` |
-| **Start** and **Stop** | the person's first **Start** adopts it: **Start** enables and starts `ollama.service`, **Stop** stops and disables it, and the first **Start** keeps whether the unit was enabled and active as `found_unit` in the module's record | none: the tab draws no **Install**, **Start**, **Stop** or **Uninstall**, and **Configure** opens the model list |
-| A `configure` | writes the drop-in `ollama.service.d/neutrino.conf` beside the unit's file under `/etc/systemd/system`, holding the settings' variables alone, and reloads systemd when it changed; under `running` a changed drop-in restarts the unit that runs. It writes nothing else of the person's: no unit, no other variable, no account | none runs |
-| **Uninstall** | deletes the drop-in, and its folder when nothing of the person's is in it, reloads systemd and restarts the unit if it runs, then puts the unit back as the first **Start** found it from `found_unit`; it removes nothing of the person's, and the module reads `absent` through the uninstalled mark `uninstalled/ollama` until the next **Install**, whose plan holds no artifact and whose `verify` deletes the mark | none |
-| The settings | the drop-in's | none: the tab draws no **Settings** panel |
-| Its version | the hub locks it: `details.has_package_mark` is false ([../module_install.md](../module_install.md), "Module versions") | the same |
-| The model list | managed the same way as the module's own | the same |
+| What is found | the unit `ollama.service`, whose file is `/etc/systemd/system/ollama.service`, where the publisher's `install.sh` puts it, or `/usr/lib/systemd/system/ollama.service` or `/lib/systemd/system/ollama.service`, where a distribution's package puts it | the app the publisher's installer adds: `AppData\Local\Programs\Ollama\` in any profile, `/Applications/Ollama.app` on a Mac. It counts as nothing installed |
+| Before a press | the row reads `installed`, `is_active` by the unit, and `details.found` is `unit` | the row reads as the module alone makes it |
+| **Install** | its plan holds no artifact | installs the module's own server, as on a machine with no app |
+| **Start** and **Stop** | the person's first **Start** adopts it: **Start** enables and starts `ollama.service`, **Stop** stops and disables it, and the first **Start** keeps whether the unit was enabled and active as `found_unit` in the module's record | the module's own server's |
+| A `configure` | writes the drop-in `ollama.service.d/neutrino.conf` beside the unit's file under `/etc/systemd/system`, holding the settings' variables alone, and reloads systemd when it changed; under `running` a changed drop-in restarts the unit that runs. It writes nothing else of the person's: no unit, no other variable, no account | takes every account's app over first: keeps aside its start at login, records whether the app ran, and ends the app and the server it started |
+| Each report | nothing more | while the module's program is installed, ends every process of the app, one a person opened by hand among them |
+| **Uninstall** | deletes the drop-in, and its folder when nothing of the person's is in it, reloads systemd and restarts the unit if it runs, then puts the unit back as the first **Start** found it from `found_unit`; it removes nothing of the person's, and the module reads `absent` through the uninstalled mark `uninstalled/ollama` until the next **Install**, whose plan holds no artifact and whose `verify` deletes the mark | after its own server is gone, puts each kept start at login back, and opens the app again for each account whose app ran when it was taken over and that is logged on now |
+| The settings | the drop-in's | the module's own server's |
+| Its version | the hub locks it: `details.has_package_mark` is false ([../module_install.md](../module_install.md), "Module versions") | the module's own |
+| The model list | managed the same way as the module's own | the module's server's models; the app's stay in the person's own folder, which the module's server does not read |
+
+| | Windows | macOS |
+| --- | --- | --- |
+| The app's processes | every process whose program is in `AppData\Local\Programs\Ollama\` of a profile: `ollama app.exe`, the `ollama.exe` it starts and its runners | every process whose program is in `/Applications/Ollama.app` |
+| Its start at login | the shortcut `Ollama.lnk` in the profile's Startup folder, `AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup`, which the app copies there at its first start | the login item the app registers with `SMAppService` from its bundle's `Contents/Library/LaunchAgents/com.ollama.ollama.plist`, the job `com.ollama.ollama` in each account's `gui` domain |
+| Kept aside | the shortcut moved to `ollama/kept/<profile>/Ollama.lnk` under the state root, its Startup folder refused when it is a junction | the job disabled with `launchctl disable gui/<uid>/com.ollama.ollama`, whether it was disabled before kept |
+| Given back | the shortcut moved back while no file of that name stands there | `launchctl enable` for a job that was not disabled before |
+| Opened again | `schtasks` runs the app once as the account, interactive only, then deletes the task | `launchctl asuser <uid> open` of the app, for the account at the console |
 
 | Rule | Reason |
 | --- | --- |
 | Every `verify` and every read of the program's version runs with `OLLAMA_MODELS` naming the module's `models` folder ([../module_install.md](../module_install.md), "One presence check"). | Ollama's `--version` stops with `$HOME is not defined` while neither names a folder, and the agent's LaunchDaemon on macOS has no `HOME`: on the lab Mac the first install ended `install_unconfirmed`. |
 | The Linux entries' `verify` is the module's program with `--version`, else a test that the person's unit file is in one of its three places. | The method's presence check is the one test that Ollama is there, whoever installed it ([../module_install.md](../module_install.md), "One presence check"), and a test of a file runs no program of the person's as root. |
-| An **Install** on Windows or macOS refuses `ollama_found {path}` while the publisher's app is on the machine, at `%LOCALAPPDATA%\Programs\Ollama\ollama.exe` of any profile or at `/Applications/Ollama.app`. | The app starts its own server at the person's login, and a second server would fight it for the port. |
 | The hub takes no Ollama over at a report. | A person's Ollama has no configuration to import, and the row's own state is enough to publish its port and list its models. |
 | A person's unit takes the settings through a drop-in of the module's own name, which holds nothing but their variables. | systemd reads every file of the unit's `.d` folder after the unit's own, so the person's unit file stays as the person wrote it, and the module's own file is all an **Uninstall** takes away. |
-| A person's app on Windows and macOS takes no setting. | The app starts its server with the environment of the person's login and adds its own settings to it. On Windows that is the account's own variables, which every program of the account reads, so `CUDA_VISIBLE_DEVICES` there would move every CUDA program of the person; on macOS it is what `launchctl setenv` gives the login's launchd, which a logout and a restart forget. Neither keeps the settings for Ollama alone. |
+| On Windows and macOS only the module's server runs while the module is installed, and the app's files, its models among them, are never changed or deleted. | The app starts its own server on 11434 at the person's login, and the module's server is the one the hub's settings, models and gateway reach. |
+| The app is ended again at each report, not only at the take-over. | A person can open the app by hand, and its server would take the port the moment the module's server restarts. |
 
 **What a report reads.** `details` is `{is_running, port, version, found,
 has_package_mark}`: `is_running` whether `GET /api/version` answers on
 `127.0.0.1:11434` within a second, `port` 11434, `version` the version the
 server answers, else the module's program's `--version`, read once per
-program file, `found` empty for the module's own copy and `unit` or `app`
-for a person's, and `has_package_mark` false for a person's. No report
+program file, `found` empty for the module's own copy and `unit` for a
+person's on Linux, and `has_package_mark` false for a person's. No report
 carries a model.
 
 **The port is the `api` entry of the Ollama app.** The hub publishes the app

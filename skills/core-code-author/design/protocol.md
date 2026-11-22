@@ -352,7 +352,6 @@ walk theirs. A new code and its wording are one change.
 | `ayakaleaf_guest_failed` | `{step, detail}` | a guest of the Ayakaleaf module in its `details.guests`, `step` being `admin_login`, `register`, `password` or `name` ([agent/modules/ayakaleaf.md](agent/modules/ayakaleaf.md), "The guest account") | added |
 | `op_unknown` | `{op}` | a `file` stream naming any `op` but `list` | added |
 | `result_too_large` | `{limit}` | a stream's close sent in place of one whose params do not fit one record, `limit` being `RecordBytesMax` in bytes, 65536 ([transport.md](transport.md), "The stream layer"); the panel shows it as the command's refusal | added |
-| `ollama_found` | `{path}` | the `code` of an `install_failed` `ollama` row on Windows or macOS, an install beside the publisher's app at `path` ([agent/modules/ollama.md](agent/modules/ollama.md)) | added |
 | `ollama_unreachable` | `{detail}` | the `code` of `GET /api/agent/module/ollama` and 502 of its model routes, a call through the hub's forward that did not reach Ollama | added |
 | `ollama_not_running`, `ollama_model_name_invalid`, `ollama_model_unknown`, `ollama_pull_unknown` | none, `{name}`, `{name}`, `{name}` | the model routes of `ollama`: a machine whose server does not run, a name outside the form a model's name takes, a model the machine does not have, and a pull the queue does not hold | added |
 | `ollama_pull_failed` | `{name, detail}` | a pull's `code` in `OllamaDeviceView.pulls`, with Ollama's own words | added |
@@ -1624,11 +1623,11 @@ that `packages` names, `zip` on Windows and `tar_gz` on macOS, whose entry
 names `min_version` 14; the agent opens `package {module: ollama, artifact,
 digest}` for it. `details` is `{is_running, port, version, found,
 has_package_mark}`, `found` empty for the module's own server and `unit`
-or `app` for a person's, which the module adopts and the hub locks at its
+for a person's on Linux, which the module adopts and the hub locks at its
 version. The server listens on `127.0.0.1:11434` alone, so its `api` entry
 is reached through the agent's `connect` stream ("The connect stream").
-An install on Windows or macOS beside the publisher's app refuses
-`ollama_found {path}`. The report carries no model: the hub reads and
+On Windows and macOS the publisher's app is taken over while the module is
+installed. The report carries no model: the hub reads and
 changes them through Ollama's own API.
 
 The `podman` module runs the declared containers on Linux, Windows and

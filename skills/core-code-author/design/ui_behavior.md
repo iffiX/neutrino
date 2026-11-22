@@ -1280,11 +1280,7 @@ field, the switch and the apply bar disabled, and no sentence added.
 
 The Ollama tab ([agent/modules/ollama.md](agent/modules/ollama.md)) draws
 the line `ui.ollama.owner_notice` over its state, its log and its buttons.
-On a row whose `details.found` is `app`, a person's Ollama app on Windows or
-macOS, it draws `ui.ollama.found_app` in its place and no **Install**,
-**Start**, **Stop** or **Uninstall**: **Configure** alone. **Configure**
-opens two panels, **Settings** and under it **Models**; a row whose
-`details.found` is `app` has **Models** alone.
+**Configure** opens two panels, **Settings** and under it **Models**.
 
 **Settings** (`ui.ollama.settings_title`) is one `settings_group` with its
 own apply bar, as the Containers tab's **Run settings**:
@@ -1325,7 +1321,7 @@ bar, each press acting at once, as the Containers tab's rows do:
 | --- | --- |
 | The tab reads `GET /api/agent/module/ollama` every 2 seconds while a pull runs or waits or a model loads, every 5 seconds otherwise, and again at each press; both panels draw that one view. | A person watches a pull, a load and the memory move ("Nothing asks for a refresh"), and the agent reports its readings every 5 seconds. |
 | A pull is the hub's task: leaving the page leaves it running, and the page draws the queue the view carries when it comes back. A further **Pull** waits behind the running one. | A model is gigabytes, and a page is closed long before. |
-| A person's Ollama, adopted on Linux or an app on Windows and macOS, has the same **Models** panel. | The model list is Ollama's API, whoever installed the server. |
+| A person's Ollama adopted on Linux has the same panels. | The model list is Ollama's API, whoever installed the server. |
 | Nothing for models is on a client. | The panel is where a machine's software is managed. |
 
 The tab holds no link to Ollama: a client forwards its `api` entry, and a

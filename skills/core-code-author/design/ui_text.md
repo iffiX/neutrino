@@ -683,7 +683,6 @@ other times.
 | --- | --- | --- |
 | `ui.module_catalog.ollama` | Language models on this machine, through Ollama's API. | 在这个系统上运行大语言模型，通过 Ollama 的 API 使用。 |
 | `ui.ollama.owner_notice` | You install Ollama, MIT-licensed, on this machine. | 你在这个系统上安装 Ollama，它以 MIT 许可发布。 |
-| `ui.ollama.found_app` | The Ollama app installed on this machine serves here. | 这里用的是这个系统上已安装的 Ollama 应用。 |
 | `ui.ollama.models_title` | Models | 模型 |
 | `ui.ollama.models_summary`, and `ui.ollama.models_summary_one` for one model | {count} models, {size}; 1 model, {size} | {count} 个模型，共 {size}；1 个模型，共 {size} |
 | `ui.ollama.pull` | Pull | 拉取 |
@@ -712,7 +711,6 @@ other times.
 | `ui.ollama.pull_preparing` | preparing | 准备中 |
 | `ui.ollama.cancel` | Cancel | 取消 |
 | `ui.services.description_ollama_module`, the Services page's provenance line of the `api` entry | published by the Ollama module on {host} | 由 {host} 上的 Ollama 模块发布 |
-| `code.ollama_found` | The Ollama app is already installed on this machine at {path}. | 这个系统上已经装有 Ollama 应用：{path}。 |
 | `code.ollama_unreachable` | Ollama on this machine did not answer: {detail} | 这个系统上的 Ollama 没有响应：{detail} |
 | `code.ollama_not_running` | Ollama is not running on this machine. | 这个系统上的 Ollama 没有运行。 |
 | `code.ollama_model_name_invalid` | {name} is not a model name. | {name} 不是模型名称。 |
