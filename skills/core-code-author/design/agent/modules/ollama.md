@@ -22,7 +22,8 @@ under `code`, after OpenCode ([../../ui_behavior.md](../../ui_behavior.md),
 **The environment is the module's.** The service starts `ollama serve` with
 `OLLAMA_HOST=127.0.0.1:11434`, `OLLAMA_MODELS` the `models` folder of the
 data directory and `OLLAMA_NO_CLOUD=1`, and on Linux and macOS `HOME` the
-data directory, where Ollama keeps its own key in `.ollama`.
+data directory, where Ollama keeps its own key in `.ollama`. Beside these it
+carries the variables of the hub's settings ("The settings are the hub's").
 
 | Rule | Reason |
 | --- | --- |
@@ -31,6 +32,26 @@ data directory, where Ollama keeps its own key in `.ollama`.
 | The models are in the module's own data directory, never in an account's home. | One server serves every account, and the models are the module's data. |
 | On Windows the server runs as a scheduled task of SYSTEM's, through the agent's PowerShell host, as `cmd.exe` running a script under the module's directory that sets the environment, with its output appended to the log. A **Stop** ends the task and every process of the module's program it started. | `ollama.exe` is no Windows service program, and the service control manager ends a program that does not answer it. A task of SYSTEM's needs no password, and Task Scheduler sets no environment of its own. |
 | A `configure` that runs the server waits until `GET /api/version` answers on `127.0.0.1:11434`, at most 60 seconds, and otherwise fails `apply_failed {detail}`, the detail naming the port and the last line of the server's output. | In the lab a restart answered in 0.11 seconds; a server that does not answer in a minute has failed. |
+
+**The settings are the hub's.** The module's configuration is
+`{keep_alive, gpus}`. The hub keeps it in
+`config/devices/<id>/ollama.json` and sends it as the module's `config` in
+the state ([../../protocol.md](../../protocol.md), "The modules section, one
+entry per module"), and the service starts with its variables:
+
+| Setting | Values | Variables |
+| --- | --- | --- |
+| `keep_alive`, how long a model a request loaded stays in memory after its last request | `5m`, `30m`, `1h`, `4h`, or `-1` for never; `30m` while the file names none | `OLLAMA_KEEP_ALIVE` |
+| `gpus`, the GPUs the server uses | absent for every GPU; otherwise the machine's GPUs in the order its last report lists them (`machine.metrics.gpus`), each `{vendor, is_used}` | `CUDA_VISIBLE_DEVICES` for the NVIDIA cards, with `CUDA_DEVICE_ORDER=PCI_BUS_ID`; `ROCR_VISIBLE_DEVICES` for the AMD cards; `GGML_VK_VISIBLE_DEVICES` for every card that is neither NVIDIA's nor Apple's, which Vulkan serves. Each names the places, counted from 0 among the cards of its group, of the cards used, `-1` when none of its group is, and is set only while a card of its group is not used |
+
+| Rule | Reason |
+| --- | --- |
+| A changed setting changes the unit, the LaunchDaemon or the task, and the `configure` restarts the server that runs. Models in memory leave it, and the kept ones are loaded again ("The model list is the hub's, through a forward of its own"). | Ollama reads its environment once, at its start. |
+| `keep_alive` is `30m` by default, not Ollama's own 5 minutes. | A model of several gigabytes takes longer to load again than a pause in a conversation lasts; half an hour keeps it through a session of work. |
+| A GPU's place in its group is its order in the report: `nvidia-smi`'s for NVIDIA cards, the PCI bus order that `CUDA_DEVICE_ORDER=PCI_BUS_ID` gives CUDA, and the order of `/sys/class/drm` for AMD cards on Linux. | The report is the one list of the machine's GPUs the hub has, and the person ticks the cards it shows. |
+| `gpus` lists every reported card with its tick, not the ticked ones alone. | Vulkan counts the cards of every vendor in one list, and the agent places a card in it only from the whole list. |
+| A card the stored list does not name, such as one added after the settings were saved, is not used while a list is stored, and the panel draws it unticked. | The variables name the cards to use, and the panel draws what the server does. |
+| macOS takes `keep_alive` alone: the agent sets no GPU variable there, and the panel draws no GPU. | A Mac's GPU is Apple's one GPU, which Ollama reaches through Metal. |
 
 **The archives come from the publisher's GitHub release.**
 `data/manifests/ollama.json` names one artifact, `ollama`, at one tested
@@ -64,8 +85,9 @@ machine.
 | Before a press | the row reads `installed`, `is_active` by the unit, and `details.found` is `unit` | the row reads `installed` while the port answers, `is_active` true, and `details.found` is `app`; with the port silent nothing is found |
 | Its port | published while the row reads `installed`, `stopped` or `running` | published while the row reads `installed` |
 | **Start** and **Stop** | the person's first **Start** adopts it: **Start** enables and starts `ollama.service`, **Stop** stops and disables it, and the first **Start** keeps whether the unit was enabled and active as `found_unit` in the module's record | none: the tab draws no **Install**, **Start**, **Stop** or **Uninstall**, and **Configure** opens the model list |
-| A `configure` | writes nothing of the person's: no unit, no environment, no account | none runs |
-| **Uninstall** | removes nothing of it, puts the unit back as the first **Start** found it from `found_unit`, and the module reads `absent` through the uninstalled mark `uninstalled/ollama` until the next **Install**, whose plan holds no artifact and whose `verify` deletes the mark | none |
+| A `configure` | writes the drop-in `ollama.service.d/neutrino.conf` beside the unit's file under `/etc/systemd/system`, holding the settings' variables alone, and reloads systemd when it changed; under `running` a changed drop-in restarts the unit that runs. It writes nothing else of the person's: no unit, no other variable, no account | none runs |
+| **Uninstall** | deletes the drop-in, reloads systemd and restarts the unit if it runs, then puts the unit back as the first **Start** found it from `found_unit`; it removes nothing of the person's, and the module reads `absent` through the uninstalled mark `uninstalled/ollama` until the next **Install**, whose plan holds no artifact and whose `verify` deletes the mark | none |
+| The settings | the drop-in's | none: the tab draws no **Settings** panel |
 | Its version | the hub locks it: `details.has_package_mark` is false ([../module_install.md](../module_install.md), "Module versions") | the same |
 | The model list | managed the same way as the module's own | the same |
 
@@ -75,6 +97,8 @@ machine.
 | The Linux entries' `verify` is the module's program with `--version`, else a test that the person's unit file is in one of its three places. | The method's presence check is the one test that Ollama is there, whoever installed it ([../module_install.md](../module_install.md), "One presence check"), and a test of a file runs no program of the person's as root. |
 | An **Install** on Windows or macOS refuses `ollama_found {path}` while the publisher's app is on the machine, at `%LOCALAPPDATA%\Programs\Ollama\ollama.exe` of any profile or at `/Applications/Ollama.app`. | The app starts its own server at the person's login, and a second server would fight it for the port. |
 | The hub takes no Ollama over at a report. | A person's Ollama has no configuration to import, and the row's own state is enough to publish its port and list its models. |
+| A person's unit takes the settings through a drop-in of the module's own name, which holds nothing but their variables. | systemd reads every file of the unit's `.d` folder after the unit's own, so the person's unit file stays as the person wrote it, and the module's own file is all an **Uninstall** takes away. |
+| A person's app on Windows and macOS takes no setting. | The app starts its server with the environment of the person's login and adds its own settings to it. On Windows that is the account's own variables, which every program of the account reads, so `CUDA_VISIBLE_DEVICES` there would move every CUDA program of the person; on macOS it is what `launchctl setenv` gives the login's launchd, which a logout and a restart forget. Neither keeps the settings for Ollama alone. |
 
 **What a report reads.** `details` is `{is_running, port, version, found,
 has_package_mark}`: `is_running` whether `GET /api/version` answers on
@@ -101,9 +125,9 @@ Python asks its own transport for a forward on the hub's loopback,
 ([../../transport.md](../../transport.md), "The hub's local channel"), and
 calls Ollama's own API through it with a plain HTTP client: `GET /api/tags`
 and `GET /api/ps` to list, `POST /api/pull` streamed to pull, `DELETE
-/api/delete` to remove, and `POST /api/generate` with `keep_alive` 0 to
-unload. The agent publishes the port and carries nothing else for the
-models: no verb and no field of the report.
+/api/delete` to remove, and `POST /api/generate` with `keep_alive` -1 to
+load and 0 to unload. The agent publishes the port and carries nothing else
+for the models: no verb and no field of the report.
 
 | Rule | Reason |
 | --- | --- |
@@ -113,6 +137,10 @@ models: no verb and no field of the report.
 | A pull that fails stays a row with its code, `ollama_pull_failed {name, detail}` and Ollama's own words, until the person dismisses it with **Cancel**. | The person reads why the model is not there. |
 | A name is any name Ollama takes: a library name such as `qwen2.5:7b`, `hf.co/<owner>/<repository>:<quantization>` or `modelscope.cn/<owner>/<repository>:<quantization>`. The hub refuses `ollama_model_name_invalid {name}` for a name that is empty, longer than 200 characters, or holds a character other than a letter, a digit, `.`, `_`, `-`, `:` and `/`. | ModelScope serves Ollama's registry protocol for its GGUF repositories, the way in mainland China. The hub keeps no catalog of models of its own. |
 | A call that does not reach Ollama answers `ollama_unreachable {detail}`. | The machine's row says whether the module runs; this code says the call itself failed. |
+| **Load** loads a model with `keep_alive` -1, which keeps it in memory until **Unload**, and the hub adds its name to `kept_models` in the machine's `ollama.json`. **Unload** and **Remove** take the name off. A request that names no `keep_alive`, as every request through the AI gateway, leaves a loaded model's time as it is, so a kept model stays and a model a request loaded leaves memory after the idle unload time. | Ollama sets a loaded model's time from a request that names one and keeps it otherwise. |
+| The hub loads every kept model the machine's `/api/ps` does not list: at once when its forward to the machine starts, and every 10 seconds for a machine that holds a kept model. A kept model is back within 10 seconds of a restart of the server, whoever restarted it, and at the machine's first report after a reboot, plus the time it takes to load. | A settings change, a person, a crash and a reboot each restart the server with nothing in memory, and `/api/ps` is where the hub sees it. One call through the forward every 10 seconds costs nothing beside a load. |
+| A load runs on a thread of its own, at most one per model. The press does not wait for it: the view marks the model `is_loading` until it ends. One that fails is tried again 5 minutes later, or at the next **Load**. A load that ends after its name was taken off unloads the model. | A large model takes minutes to load on a CPU, and one that does not fit in memory fails the same way each time. |
+| `kept_models` is the hub's alone: the module's `config` never carries it, and changing it pushes nothing to the machine. | A model the person keeps changes nothing the server starts with. |
 
 **Every machine's Ollama feeds the hub's AI gateway.** While the machine is
 online and its Ollama runs with at least one model, the hub adds an
