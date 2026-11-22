@@ -105,7 +105,7 @@ The startup file that gets the line depends on the login shell of this account:
 | fish         | `~/.config/fish/config.fish`, where the line loads `env.fish` next to `env.sh`                             |
 | Other shells | `~/.profile`                                                                                               |
 
-When you clear this account, the agent removes the program folder of Claude Code from `env.sh`, and on Windows, from the user PATH. [Codex](/en/deploy/codex) uses the same `env.sh` and the same line. When neither module has this account selected, the agent deletes the line and `env.sh`. The startup files of the account then return to their original state.
+When you clear this account, the agent removes the program folder of Claude Code from `env.sh`, and on Windows, from the user PATH. [Codex](/en/deploy/codex) and [OpenCode](/en/deploy/opencode) use the same `env.sh` and the same line. When none of these modules has this account selected, the agent deletes the line and `env.sh`. The startup files of the account then return to their original state.
 
 ## Uninstall
 

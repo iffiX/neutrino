@@ -84,6 +84,8 @@ export const sidebar: DefaultTheme.SidebarItem[] = [
           { text: "Hermes WebUI", link: "/deploy/hermes_webui" },
           { text: "Claude Code", link: "/deploy/claude_code" },
           { text: "Codex", link: "/deploy/codex" },
+          { text: "OpenCode", link: "/deploy/opencode" },
+          { text: "Ollama", link: "/deploy/ollama" },
         ],
       },
       {

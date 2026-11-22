@@ -17,7 +17,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 SKIP = {"index.md", "app.md", "README.md", "SOURCES.md", "layout_demo.md"}
-EXPECTED_PAGES = 59
+EXPECTED_PAGES = 61
 
 VALUE_MIN, VALUE_MAX = 10, 60
 TOP_LINES_MAX = 10
@@ -49,14 +49,14 @@ APP_PAGES = {
     f"deploy/{name}.md"
     for name in (
         "cloudcli codeg hermes_webui vscode code_server terminal ssh gitea "
-        "ayakaleaf siyuan remote_desktop file_share containers claude_code codex"
+        "ayakaleaf siyuan remote_desktop file_share containers claude_code codex opencode ollama"
     ).split()
 }
 APP_HEADINGS = ["支持的系统", "安装", "使用", "分享", "注意", "设置", "卸载"]
 
 BANNED_ALWAYS = [
     "VPN", "翻墙", "收费", "会员", "福瑞", "手搓", "内网穿透", "常开", "我们",
-    "—", "Jupyter", "Ollama", "模组", "来自：", "待核", "给谁看", "中微子",
+    "—", "Jupyter", "模组", "来自：", "待核", "给谁看", "中微子",
     "Web 分享", "网页分享", "设备页", "证书不匹配", "综上", "总之", "以上就是", "装上",
 ]
 # Words a page uses only inside a label quoted from the screen.

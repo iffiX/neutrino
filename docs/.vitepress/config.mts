@@ -1,6 +1,7 @@
 import { defineConfig, type HeadConfig } from "vitepress";
 import { GITHUB_URL, nav, navEn, sidebar, sidebarEn } from "./navigation.ts";
 import { shotsPlugin } from "./shots_plugin.ts";
+import { DEFAULT_DESCRIPTION, searchHead } from "./search_head.ts";
 
 /** Chinese needs a word segmenter; the default tokenizer splits on spaces. */
 function segmentChinese(text: string): string[] {
@@ -29,8 +30,7 @@ export default defineConfig({
   base: process.env.NEUTRINO_DOCS_BASE || "/",
   lang: "zh-CN",
   title: SEARCH_NAME,
-  description:
-    "把要用的软件安装到你自己的电脑上，手机和笔记本随时打开，还能发个链接给同学用。",
+  description: DEFAULT_DESCRIPTION.zh,
   cleanUrls: true,
   lastUpdated: false,
   srcExclude: ["README.md", "SOURCES.md"],
@@ -63,9 +63,8 @@ export default defineConfig({
       md.use(shotsPlugin);
     },
   },
-  transformPageData(pageData) {
-    pageData.title = forSearch(pageData.title);
-    pageData.description = forSearch(pageData.description);
+  transformPageData(pageData, { siteConfig }) {
+    searchHead(pageData, siteConfig.srcDir, forSearch);
   },
   themeConfig: {
     logo: { src: "/logo.png", alt: "微子·中枢" },
@@ -143,7 +142,7 @@ export default defineConfig({
       lang: "en",
       link: "/en/",
       title: "Neutrino Hub",
-      description: "Deploy apps in one click and use them anywhere.",
+      description: DEFAULT_DESCRIPTION.en,
       themeConfig: {
         logo: { src: "/logo.png", alt: "Neutrino Hub" },
         siteTitle: "Neutrino Hub",

@@ -103,7 +103,7 @@ Codex 没有网页，不能用[应用分享](/share/web_share)生成链接。如
 | fish       | `~/.config/fish/config.fish`，这一行载入 `env.sh` 旁边的 `env.fish`                               |
 | 其他 shell | `~/.profile`                                                                                      |
 
-取消勾选这个账户时，被控端从 `env.sh` 里去掉 Codex 的程序目录；在 Windows 上，从用户 PATH 里删除这个目录。[Claude Code](/deploy/claude_code) 也用同一个 `env.sh` 和同一行。这个账户的两个模块都不再勾选时，被控端删除这一行和 `env.sh`，账户的启动文件恢复原样。
+取消勾选这个账户时，被控端从 `env.sh` 里去掉 Codex 的程序目录；在 Windows 上，从用户 PATH 里删除这个目录。[Claude Code](/deploy/claude_code) 和 [OpenCode](/deploy/opencode) 也用这个 `env.sh`，也用这一行。这个账户的这几个模块都不再勾选时，被控端删除这一行和 `env.sh`，账户的启动文件恢复原样。
 
 ## 卸载
 

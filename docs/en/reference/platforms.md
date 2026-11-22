@@ -72,6 +72,8 @@ An app that a system cannot run appears grey in the **Add module** dialog.
 | SiYuan         | amd64, arm64                             | amd64                       | Apple silicon, Intel  |                                                                                    |
 | Claude Code    | amd64, arm64                             | amd64, arm64                | Apple silicon, Intel  | A regular program that runs in a terminal                                          |
 | Codex          | amd64, arm64                             | amd64, arm64                | Apple silicon, Intel  | A regular program that runs in a terminal                                          |
+| OpenCode       | amd64, arm64                             | amd64, arm64                | Apple silicon, Intel  | A regular program that runs in a terminal                                          |
+| Ollama         | amd64, arm64                             | amd64                       | Apple silicon, Intel  | On Linux the system's zstd is installed automatically; macOS 14 or later           |
 | Containers     | Debian, RHEL and Arch families           | amd64, build 19041 or later | 13 or later           | On Linux, the system's Podman 3.4 or later                                         |
 
 A Linux system outside these three families, such as Alpine, has no containers, so it cannot run Hermes WebUI or Ayakaleaf either.

@@ -52,6 +52,14 @@ If you have an AI subscription, sign in with the account one time to use it, wit
 
    ![The Sign in with Claude dialog with an address and an input box](/guide/en/hub_ai_gateway_17_sign_in_step.webp)
 
+## Ollama on your systems
+
+When a system with [Ollama](/en/deploy/ollama) is online and its Ollama runs with at least one model, the hub adds it to the AI gateway. You add no key. The provider list on the **AI** page then shows a read-only row **from my-computer's Ollama**. Select **Models** on that row to open the model list of Ollama on that system.
+
+![The provider list on the AI page, with the row from my-computer's Ollama boxed in red](/guide/en/hub_ai_gateway_30_ollama_row.webp)
+
+In the gateway these models keep the names they have in Ollama, with no system name in front. When two systems hold a model of the same name, the gateway takes turns between them. The row goes away while the system is offline, while Ollama is stopped or uninstalled, and while Ollama holds no model; the gateway then stops serving those models.
+
 ## Connect tools to the AI gateway
 
 The setup depends on the programs installed on the computer.
@@ -60,7 +68,7 @@ The setup depends on the programs installed on the computer.
 
 On a computer with only the client installed, turn on a switch in the client window:
 
-1. Open the client, go to its **AI** page, and select **The AI tools use this gateway**. The switch turns green, and the row shows **The tools point at the hub**. From then on, Claude Code, Codex and Gemini go through the gateway.
+1. Open the client, go to its **AI** page, and select **The AI tools use this gateway**. The switch turns green, and the row shows **The tools point at the hub**. From then on, Claude Code, Codex, Gemini and OpenCode go through the gateway.
 
    The client must keep running for the tools to connect to the gateway. When you turn the switch off, the tools return to their own settings.
 

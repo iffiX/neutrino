@@ -96,6 +96,8 @@ export const APP_GROUPS = [
         icon: "generic",
         link: "/en/deploy/hermes_webui",
       },
+      { name: "OpenCode", icon: "opencode", link: "/en/deploy/opencode" },
+      { name: "Ollama", icon: "ollama", link: "/en/deploy/ollama" },
     ],
   },
   {

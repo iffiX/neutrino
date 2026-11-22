@@ -46,10 +46,14 @@ Each row on the left of **Module configuration** is an app, and selecting it ope
 | **Remote desktop** | [Remote desktop](/en/deploy/remote_desktop) |
 | **File share**     | [File share](/en/deploy/file_share)         |
 | **Gitea**          | [Gitea](/en/deploy/gitea)                   |
+| **Ollama**         | [Ollama](/en/deploy/ollama)                 |
 | **VS Code**        | [VS Code](/en/deploy/vscode)                |
 | **code-server**    | [code-server](/en/deploy/code_server)       |
 | **CloudCLI**       | [CloudCLI](/en/deploy/cloudcli)             |
 | **Codeg**          | [Codeg](/en/deploy/codeg)                   |
+| **Claude Code**    | [Claude Code](/en/deploy/claude_code)       |
+| **Codex**          | [Codex](/en/deploy/codex)                   |
+| **OpenCode**       | [OpenCode](/en/deploy/opencode)             |
 | **SiYuan**         | [SiYuan](/en/deploy/siyuan)                 |
 | **Containers**     | [Containers](/en/deploy/containers)         |
 | **Hermes WebUI**   | [Hermes WebUI](/en/deploy/hermes_webui)     |

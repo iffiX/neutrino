@@ -178,6 +178,8 @@ export const APP_GROUPS = [
       { name: "CloudCLI", icon: "cloudcli", link: "/deploy/cloudcli" },
       { name: "Codeg", icon: "codeg", link: "/deploy/codeg" },
       { name: "Hermes WebUI", icon: "generic", link: "/deploy/hermes_webui" },
+      { name: "OpenCode", icon: "opencode", link: "/deploy/opencode" },
+      { name: "Ollama", icon: "ollama", link: "/deploy/ollama" },
     ],
   },
   {

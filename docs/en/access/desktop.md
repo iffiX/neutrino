@@ -48,7 +48,7 @@ Select **Configure** to change the local port the app uses; you rarely need to c
 
 ## AI
 
-On the **AI** page, set Claude Code, Codex and Gemini on this computer to use the hub's gateway:
+On the **AI** page, set Claude Code, Codex, Gemini and OpenCode on this computer to use the hub's gateway:
 
 1. Select **The AI tools use this gateway**. The switch turns green, and the row shows **The tools point at the hub**. The tools reach the gateway only while the client keeps running. One hub's gateway is on at a time.
 

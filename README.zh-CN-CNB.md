@@ -52,7 +52,7 @@
 | --- | --- |
 | 系统访问 | [远程桌面](https://neutrinohub.net/deploy/remote_desktop)、[文件共享](https://neutrinohub.net/deploy/file_share)、[终端](https://neutrinohub.net/deploy/terminal)、[SSH](https://neutrinohub.net/deploy/ssh) |
 | 写代码 | [VS Code](https://neutrinohub.net/deploy/vscode)、[code-server](https://neutrinohub.net/deploy/code_server) |
-| AI 工作流 | [Claude Code](https://neutrinohub.net/deploy/claude_code)、[Codex](https://neutrinohub.net/deploy/codex)、[CloudCLI](https://neutrinohub.net/deploy/cloudcli)、[Codeg](https://neutrinohub.net/deploy/codeg)、[Hermes WebUI](https://neutrinohub.net/deploy/hermes_webui) |
+| AI 工作流 | [Claude Code](https://neutrinohub.net/deploy/claude_code)、[Codex](https://neutrinohub.net/deploy/codex)、[OpenCode](https://neutrinohub.net/deploy/opencode)、[Ollama](https://neutrinohub.net/deploy/ollama)、[CloudCLI](https://neutrinohub.net/deploy/cloudcli)、[Codeg](https://neutrinohub.net/deploy/codeg)、[Hermes WebUI](https://neutrinohub.net/deploy/hermes_webui) |
 | 写论文 | [Ayakaleaf](https://neutrinohub.net/deploy/ayakaleaf) |
 | 记笔记 | [思源笔记](https://neutrinohub.net/deploy/siyuan) |
 | 放代码 | [Gitea](https://neutrinohub.net/deploy/gitea) |
@@ -217,6 +217,8 @@ Codeg、CloudCLI、Hermes WebUI 这类 agent 聚合工具是微子·中枢部署
 | [code-server](https://github.com/coder/code-server) | 开源的网页版 VS Code | [部署 code-server](https://neutrinohub.net/deploy/code_server) |
 | [Claude Code](https://github.com/anthropics/claude-code) | Anthropic 的命令行 AI 编程工具 | [部署 Claude Code](https://neutrinohub.net/deploy/claude_code) |
 | [Codex](https://github.com/openai/codex) | OpenAI 的命令行 AI 编程工具 | [部署 Codex](https://neutrinohub.net/deploy/codex) |
+| [OpenCode](https://github.com/anomalyco/opencode) | 开源的命令行 AI 编程工具 | [部署 OpenCode](https://neutrinohub.net/deploy/opencode) |
+| [Ollama](https://github.com/ollama/ollama) | 在自己电脑上运行大语言模型，模型也能通过 AI 网关使用 | [部署 Ollama](https://neutrinohub.net/deploy/ollama) |
 | [CloudCLI](https://github.com/siteboon/claudecodeui) | Claude Code 等 AI 编程工具的网页界面 | [部署 CloudCLI](https://neutrinohub.net/deploy/cloudcli) |
 | [Codeg](https://github.com/spacering-net/codeg) | AI 编程工作台，在一个网页里使用 Claude Code、Codex 和 Gemini | [部署 Codeg](https://neutrinohub.net/deploy/codeg) |
 | [Hermes WebUI](https://github.com/nesquena/hermes-webui) | AI 助手 Hermes Agent 的网页界面 | [部署 Hermes WebUI](https://neutrinohub.net/deploy/hermes_webui) |

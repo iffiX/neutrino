@@ -72,6 +72,8 @@ Windows 版只有 x86-64，RustDesk 和 cc-switch 都没有 ARM64 版。
 | 思源笔记     | amd64、arm64                 | amd64                        | Apple 芯片、Intel |                                                    |
 | Claude Code  | amd64、arm64                 | amd64、arm64                 | Apple 芯片、Intel | 普通程序，在终端里运行                             |
 | Codex        | amd64、arm64                 | amd64、arm64                 | Apple 芯片、Intel | 普通程序，在终端里运行                             |
+| OpenCode     | amd64、arm64                 | amd64、arm64                 | Apple 芯片、Intel | 普通程序，在终端里运行                             |
+| Ollama       | amd64、arm64                 | amd64                        | Apple 芯片、Intel | Linux 上自动安装系统的 zstd；macOS 14 及以上       |
 | 容器         | Debian、RHEL、Arch 三族      | amd64，内部版本 19041 及以上 | 13 及以上         | Linux 上系统的 Podman 3.4 及以上                   |
 
 不属于这三族的 Linux，比如 Alpine，没有容器，所以也不能运行 Hermes WebUI 和 Ayakaleaf。

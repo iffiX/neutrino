@@ -18,7 +18,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent / "en"
 SKIP = {"index.md", "app.md"}
-EXPECTED_PAGES = 59
+EXPECTED_PAGES = 61
 
 VALUE_MIN, VALUE_MAX = 6, 45
 TOP_LINES_MAX = 10
@@ -49,7 +49,7 @@ APP_PAGES = {
     f"deploy/{name}.md"
     for name in (
         "cloudcli codeg hermes_webui vscode code_server terminal ssh gitea "
-        "ayakaleaf siyuan remote_desktop file_share containers claude_code codex"
+        "ayakaleaf siyuan remote_desktop file_share containers claude_code codex opencode ollama"
     ).split()
 }
 APP_HEADINGS = ["Supported systems", "Install", "Use", "Share", "Risks and limits", "Settings", "Uninstall"]

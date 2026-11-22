@@ -46,10 +46,14 @@
 | **远程桌面**     | [远程桌面](/deploy/remote_desktop)   |
 | **文件共享**     | [文件共享](/deploy/file_share)       |
 | **Gitea**        | [Gitea](/deploy/gitea)               |
+| **Ollama**       | [Ollama](/deploy/ollama)             |
 | **VS Code**      | [VS Code](/deploy/vscode)            |
 | **code-server**  | [code-server](/deploy/code_server)   |
 | **CloudCLI**     | [CloudCLI](/deploy/cloudcli)         |
 | **Codeg**        | [Codeg](/deploy/codeg)               |
+| **Claude Code**  | [Claude Code](/deploy/claude_code)   |
+| **Codex**        | [Codex](/deploy/codex)               |
+| **OpenCode**     | [OpenCode](/deploy/opencode)         |
 | **思源笔记**     | [思源笔记](/deploy/siyuan)           |
 | **容器**         | [容器](/deploy/containers)           |
 | **Hermes WebUI** | [Hermes WebUI](/deploy/hermes_webui) |
