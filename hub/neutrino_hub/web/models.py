@@ -2321,8 +2321,8 @@ class DeviceModuleView(BaseModel):
     # method, user for a command line program running no copy of its own;
     # empty where the platform has no entry.
     source: str = ""
-    # The kind chip's word: program for a command line program, service for
-    # every other module.
+    # The kind chip's word: system_service, account_service or program, as
+    # the description table names it.
     kind: str = ""
     # Whether the manifest says the module's data moves forward only, which
     # shows the upgrade only chip.

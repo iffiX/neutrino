@@ -1264,8 +1264,8 @@ export interface DeviceModuleView {
   /** The source chip's word: `agent`, `system`, `upstream`, `container` or
    * `user`. */
   source: string;
-  /** The kind chip's word: `service`, or `program` for a command line
-   * program. */
+  /** The kind chip's word: `system_service`, `account_service` or
+   * `program`. */
   kind: string;
   /** Whether the module's data moves forward only: the upgrade only chip. */
   is_data_forward_only: boolean;

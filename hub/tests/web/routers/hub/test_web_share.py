@@ -227,6 +227,7 @@ def api(monkeypatch, tmp_path):
                 name="ayakaleaf",
                 kind="container",
                 config_file="ayakaleaf.json",
+                kind_chip="system_service",
                 description_code="ayakaleaf_module",
             ),
         ),

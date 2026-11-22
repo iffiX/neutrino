@@ -1,12 +1,13 @@
 """The description table: every device module the hub administers, one row each.
 
-A row names the module's kind, its configuration file under
-``config/devices/<id>/``, whether it runs one instance per enabled account
-(the account layer), the fields the vault seals in each account's record,
-the published entry's ``description_code`` and title, and the panel the
-machine page draws it with. The eleven account-layer modules share one
-router, one panel and one state composition, each driven by its row; every
-other kind has its own router and panel and reads its row for the rest.
+A row names the module's kind, the word of its kind chip, its configuration
+file under ``config/devices/<id>/``, whether it runs one instance per
+enabled account (the account layer), the fields the vault seals in each
+account's record, the published entry's ``description_code`` and title, and
+the panel the machine page draws it with. The eleven account-layer modules
+share one router, one panel and one state composition, each driven by its
+row; every other kind has its own router and panel and reads its row for the
+rest.
 """
 
 from dataclasses import dataclass
@@ -45,6 +46,9 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_HERMES_WEBUI_SECRET_AAD,
     DEVICE_HERMES_WEBUI_SECRET_BYTES,
     DEVICE_HERMES_WEBUI_SECRET_KEY,
+    DEVICE_KIND_ACCOUNT_SERVICE,
+    DEVICE_KIND_PROGRAM,
+    DEVICE_KIND_SYSTEM_SERVICE,
     DEVICE_MODULE_KIND_ACCOUNT_PROGRAM,
     DEVICE_MODULE_KIND_AGENT,
     DEVICE_MODULE_KIND_COMMAND_LINE_PROGRAM,
@@ -129,6 +133,8 @@ class DeviceModuleRow:
         name: The manifest name.
         kind: One of the six kinds, ``DEVICE_MODULE_KIND_*``.
         config_file: The module's file under ``config/devices/<id>/``.
+        kind_chip: The kind chip's word, ``DEVICE_KIND_*``: a system
+            service, an account service or a program.
         is_account_layer: Whether the module runs one instance per enabled
             account and keeps its enabled accounts in its file.
         sealed_fields: The fields the vault seals in each account's record,
@@ -164,6 +170,7 @@ class DeviceModuleRow:
     name: str
     kind: str
     config_file: str
+    kind_chip: str
     is_account_layer: bool = False
     sealed_fields: tuple = ()
     description_code: str = ""
@@ -208,6 +215,7 @@ DEVICE_MODULE_ROWS = (
     _row(
         DEVICE_TERMINAL_MODULE,
         DEVICE_MODULE_KIND_AGENT,
+        kind_chip=DEVICE_KIND_ACCOUNT_SERVICE,
         is_account_layer=True,
         panel=DEVICE_MODULE_PANEL_INSTANCES,
         is_in_picker=False,
@@ -216,6 +224,7 @@ DEVICE_MODULE_ROWS = (
     _row(
         DEVICE_SSH_SERVER_MODULE,
         DEVICE_MODULE_KIND_AGENT,
+        kind_chip=DEVICE_KIND_ACCOUNT_SERVICE,
         is_account_layer=True,
         sealed_fields=(
             SealedField(
@@ -232,10 +241,16 @@ DEVICE_MODULE_ROWS = (
         is_login_named=True,
         token_field=DEVICE_SSH_SERVER_KEY_KEY,
     ),
-    _row(DEVICE_REMOTE_DESKTOP_MODULE, DEVICE_MODULE_KIND_AGENT, is_in_picker=False),
+    _row(
+        DEVICE_REMOTE_DESKTOP_MODULE,
+        DEVICE_MODULE_KIND_AGENT,
+        kind_chip=DEVICE_KIND_SYSTEM_SERVICE,
+        is_in_picker=False,
+    ),
     _row(
         DEVICE_SAMBA_MODULE,
         DEVICE_MODULE_KIND_SYSTEM_PACKAGE,
+        kind_chip=DEVICE_KIND_SYSTEM_SERVICE,
         is_account_layer=True,
         sealed_fields=(
             SealedField(
@@ -252,18 +267,21 @@ DEVICE_MODULE_ROWS = (
     _row(
         DEVICE_GITEA_MODULE,
         DEVICE_MODULE_KIND_SERVICE_ACCOUNT,
+        kind_chip=DEVICE_KIND_SYSTEM_SERVICE,
         description_code=SERVICES_DESCRIPTION_GITEA_MODULE,
         entry_title=SERVICES_GITEA_TITLE,
     ),
     _row(
         DEVICE_OLLAMA_MODULE,
         DEVICE_MODULE_KIND_SERVICE_ACCOUNT,
+        kind_chip=DEVICE_KIND_SYSTEM_SERVICE,
         description_code=SERVICES_DESCRIPTION_OLLAMA_MODULE,
         entry_title=SERVICES_OLLAMA_TITLE,
     ),
     _row(
         DEVICE_VSCODE_MODULE,
         DEVICE_MODULE_KIND_ACCOUNT_PROGRAM,
+        kind_chip=DEVICE_KIND_ACCOUNT_SERVICE,
         is_account_layer=True,
         sealed_fields=(
             SealedField(
@@ -284,6 +302,7 @@ DEVICE_MODULE_ROWS = (
     _row(
         DEVICE_CODE_SERVER_MODULE,
         DEVICE_MODULE_KIND_ACCOUNT_PROGRAM,
+        kind_chip=DEVICE_KIND_ACCOUNT_SERVICE,
         is_account_layer=True,
         sealed_fields=(
             SealedField(
@@ -303,6 +322,7 @@ DEVICE_MODULE_ROWS = (
     _row(
         DEVICE_CLOUDCLI_MODULE,
         DEVICE_MODULE_KIND_ACCOUNT_PROGRAM,
+        kind_chip=DEVICE_KIND_ACCOUNT_SERVICE,
         is_account_layer=True,
         sealed_fields=(
             SealedField(
@@ -329,6 +349,7 @@ DEVICE_MODULE_ROWS = (
     _row(
         DEVICE_CODEG_MODULE,
         DEVICE_MODULE_KIND_ACCOUNT_PROGRAM,
+        kind_chip=DEVICE_KIND_ACCOUNT_SERVICE,
         is_account_layer=True,
         sealed_fields=(
             SealedField(
@@ -349,6 +370,7 @@ DEVICE_MODULE_ROWS = (
     _row(
         DEVICE_CLAUDE_CODE_MODULE,
         DEVICE_MODULE_KIND_COMMAND_LINE_PROGRAM,
+        kind_chip=DEVICE_KIND_PROGRAM,
         is_account_layer=True,
         panel=DEVICE_MODULE_PANEL_INSTANCES,
         is_login_named=True,
@@ -356,6 +378,7 @@ DEVICE_MODULE_ROWS = (
     _row(
         DEVICE_CODEX_MODULE,
         DEVICE_MODULE_KIND_COMMAND_LINE_PROGRAM,
+        kind_chip=DEVICE_KIND_PROGRAM,
         is_account_layer=True,
         panel=DEVICE_MODULE_PANEL_INSTANCES,
         is_login_named=True,
@@ -363,6 +386,7 @@ DEVICE_MODULE_ROWS = (
     _row(
         DEVICE_OPENCODE_MODULE,
         DEVICE_MODULE_KIND_COMMAND_LINE_PROGRAM,
+        kind_chip=DEVICE_KIND_PROGRAM,
         is_account_layer=True,
         panel=DEVICE_MODULE_PANEL_INSTANCES,
         is_login_named=True,
@@ -370,6 +394,7 @@ DEVICE_MODULE_ROWS = (
     _row(
         DEVICE_SIYUAN_MODULE,
         DEVICE_MODULE_KIND_ACCOUNT_PROGRAM,
+        kind_chip=DEVICE_KIND_ACCOUNT_SERVICE,
         is_account_layer=True,
         sealed_fields=(
             SealedField(
@@ -397,11 +422,13 @@ DEVICE_MODULE_ROWS = (
     _row(
         DEVICE_PODMAN_MODULE,
         DEVICE_MODULE_KIND_SYSTEM_PACKAGE,
+        kind_chip=DEVICE_KIND_SYSTEM_SERVICE,
         description_code=SERVICES_DESCRIPTION_CONTAINER,
     ),
     _row(
         DEVICE_HERMES_WEBUI_MODULE,
         DEVICE_MODULE_KIND_CONTAINER,
+        kind_chip=DEVICE_KIND_SYSTEM_SERVICE,
         sealed_fields=(
             SealedField(
                 key=DEVICE_HERMES_WEBUI_SECRET_KEY,
@@ -426,6 +453,7 @@ DEVICE_MODULE_ROWS = (
     _row(
         DEVICE_AYAKALEAF_MODULE,
         DEVICE_MODULE_KIND_CONTAINER,
+        kind_chip=DEVICE_KIND_SYSTEM_SERVICE,
         sealed_fields=(
             SealedField(
                 key=DEVICE_AYAKALEAF_SECRET_KEY,

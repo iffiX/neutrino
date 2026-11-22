@@ -1,7 +1,8 @@
 """The description table: one frozen row per module, read by name and by kind.
 
-What these pin: the rows come in the order the machine page lists them and
-every row's kind is one of the six; the account-layer rows are the ten
+What these pin: the rows come in the order the machine page lists them,
+every row's kind is one of the six and its kind chip the one
+module_install.md names for the module; the account-layer rows are the ten
 the shared router, the accounts form and the state composition are driven
 by, each with the fields it seals; the programs run as an account are five
 of them and the command line programs two, sealing nothing; a row's file and panel are named after the module unless the table
@@ -15,6 +16,9 @@ import pytest
 
 from neutrino_hub.modules.devices import module_table
 from neutrino_hub.modules.devices.constants import (
+    DEVICE_KIND_ACCOUNT_SERVICE,
+    DEVICE_KIND_PROGRAM,
+    DEVICE_KIND_SYSTEM_SERVICE,
     DEVICE_MODULE_KIND_ACCOUNT_PROGRAM,
     DEVICE_MODULE_KIND_AGENT,
     DEVICE_MODULE_KIND_COMMAND_LINE_PROGRAM,
@@ -87,6 +91,28 @@ def test_every_row_is_one_of_the_six_kinds():
         "podman": DEVICE_MODULE_KIND_SYSTEM_PACKAGE,
         "hermes_webui": DEVICE_MODULE_KIND_CONTAINER,
         "ayakaleaf": DEVICE_MODULE_KIND_CONTAINER,
+    }
+
+
+def test_every_row_names_the_kind_chip_of_its_module():
+    assert {row.name: row.kind_chip for row in DEVICE_MODULE_ROWS} == {
+        "terminal": DEVICE_KIND_ACCOUNT_SERVICE,
+        "ssh_server": DEVICE_KIND_ACCOUNT_SERVICE,
+        "remote_desktop": DEVICE_KIND_SYSTEM_SERVICE,
+        "samba": DEVICE_KIND_SYSTEM_SERVICE,
+        "gitea": DEVICE_KIND_SYSTEM_SERVICE,
+        "ollama": DEVICE_KIND_SYSTEM_SERVICE,
+        "vscode": DEVICE_KIND_ACCOUNT_SERVICE,
+        "code_server": DEVICE_KIND_ACCOUNT_SERVICE,
+        "cloudcli": DEVICE_KIND_ACCOUNT_SERVICE,
+        "codeg": DEVICE_KIND_ACCOUNT_SERVICE,
+        "claude_code": DEVICE_KIND_PROGRAM,
+        "codex": DEVICE_KIND_PROGRAM,
+        "opencode": DEVICE_KIND_PROGRAM,
+        "siyuan": DEVICE_KIND_ACCOUNT_SERVICE,
+        "podman": DEVICE_KIND_SYSTEM_SERVICE,
+        "hermes_webui": DEVICE_KIND_SYSTEM_SERVICE,
+        "ayakaleaf": DEVICE_KIND_SYSTEM_SERVICE,
     }
 
 

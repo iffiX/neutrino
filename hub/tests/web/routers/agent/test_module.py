@@ -32,6 +32,7 @@ from neutrino_hub.modules.devices.manifests import (
     load_module_manifests as shipped_manifests,
 )
 from neutrino_hub.modules.devices.module_releases import ModuleReleaseStore
+from neutrino_hub.modules.devices.module_table import module_row
 from neutrino_hub.web.channel_serve import module_task_label
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.models import ModuleDeviceFields
@@ -2343,8 +2344,7 @@ def test_each_row_reads_its_source_from_its_method_and_its_kind_from_the_table(
 
     assert {name: row["source"] for name, row in rows.items()} == sources
     assert {name: row["kind"] for name, row in rows.items()} == {
-        name: "program" if name in ("claude_code", "codex", "opencode") else "service"
-        for name in sources
+        name: module_row(name).kind_chip for name in sources
     }
 
 

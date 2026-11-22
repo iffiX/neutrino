@@ -14,8 +14,6 @@ import hashlib
 import json
 
 from neutrino_hub.modules.devices.constants import (
-    DEVICE_KIND_PROGRAM,
-    DEVICE_KIND_SERVICE,
     DEVICE_METHOD_AGENT,
     DEVICE_METHOD_BUILTIN,
     DEVICE_METHOD_CONTAINER,
@@ -26,7 +24,7 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_SOURCE_SYSTEM,
     DEVICE_SOURCE_UPSTREAM,
 )
-from neutrino_hub.modules.devices.module_table import command_line_program_names
+from neutrino_hub.modules.devices.module_table import module_row
 from neutrino_hub.modules.devices.manifests import (
     entry_method,
     entry_version,
@@ -98,12 +96,14 @@ def module_kind(module: str) -> str:
         module: The module.
 
     Returns:
-        ``program`` for a command line program, which has no Start or Stop;
-        ``service`` for every other module.
+        ``system_service``, ``account_service`` or ``program``, as the
+        module's row in the description table names it; empty for a module
+        the table does not hold.
     """
-    if module in command_line_program_names():
-        return DEVICE_KIND_PROGRAM
-    return DEVICE_KIND_SERVICE
+    try:
+        return module_row(module).kind_chip
+    except KeyError:
+        return ""
 
 
 def resolved_modules(platform: dict) -> dict:

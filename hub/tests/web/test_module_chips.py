@@ -5,8 +5,10 @@ table's order, the one ui_behavior.md names, and the page keeps it; the page
 reads the source chip from the row's ``source`` and the kind chip from its
 ``kind``, the words the hub sends, each word its own key and a word outside
 the table no chip; so every shipped module on Linux, Windows and macOS shows
-the chips ui_behavior.md gives it, Codex, Claude Code and OpenCode reading Program and
-Upstream whatever the machine reports of their copy; the two chips
+the chips ui_behavior.md gives it, its kind chip System service, Account
+service or Program as module_install.md names it, Codex, Claude Code and
+OpenCode reading Program and Upstream whatever the machine reports of their
+copy; the two chips
 sit between the title and the state; and the words say in both languages what
 ui_text.md writes.
 """
@@ -48,13 +50,34 @@ ORDER = [
 ]
 # The command line programs, whose kind chip reads Program.
 PROGRAMS = ("claude_code", "codex", "opencode")
+# Each module's kind chip, as module_install.md names it.
+KINDS = {
+    "terminal": "kind_account_service",
+    "ssh_server": "kind_account_service",
+    "remote_desktop": "kind_system_service",
+    "samba": "kind_system_service",
+    "gitea": "kind_system_service",
+    "ollama": "kind_system_service",
+    "vscode": "kind_account_service",
+    "code_server": "kind_account_service",
+    "cloudcli": "kind_account_service",
+    "codeg": "kind_account_service",
+    "claude_code": "kind_program",
+    "codex": "kind_program",
+    "opencode": "kind_program",
+    "siyuan": "kind_account_service",
+    "podman": "kind_system_service",
+    "hermes_webui": "kind_system_service",
+    "ayakaleaf": "kind_system_service",
+}
 WORDS = {
     "en": {
         "ui.modules.source_agent": "Built-in",
         "ui.modules.source_system": "System",
         "ui.modules.source_upstream": "Upstream",
         "ui.modules.source_container": "Container",
-        "ui.modules.kind_service": "Service",
+        "ui.modules.kind_system_service": "System service",
+        "ui.modules.kind_account_service": "Account service",
         "ui.modules.kind_program": "Program",
     },
     "zh-CN": {
@@ -62,12 +85,13 @@ WORDS = {
         "ui.modules.source_system": "系统",
         "ui.modules.source_upstream": "外部源",
         "ui.modules.source_container": "容器",
-        "ui.modules.kind_service": "服务",
+        "ui.modules.kind_system_service": "系统服务",
+        "ui.modules.kind_account_service": "账户服务",
         "ui.modules.kind_program": "普通程序",
     },
 }
 SOURCE_WORDS = ("agent", "system", "upstream", "container")
-KIND_WORDS = ("service", "program")
+KIND_WORDS = ("system_service", "account_service", "program")
 # Each module's source chip on Linux, Windows and macOS before the machine
 # reports it; None where the system has no entry for it.
 SOURCES = {
@@ -163,11 +187,7 @@ def test_each_module_shows_the_chips_of_the_hub_s_words(api, index, platform):
     runtime.device_platform[DEVICE] = platform
 
     assert chips_of(client) == {
-        name: (
-            chips[index],
-            "kind_program" if name in PROGRAMS else "kind_service",
-        )
-        for name, chips in SOURCES.items()
+        name: (chips[index], KINDS[name]) for name, chips in SOURCES.items()
     }
 
 

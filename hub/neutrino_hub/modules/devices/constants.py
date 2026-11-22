@@ -172,12 +172,14 @@ DEVICE_MODULE_KINDS = (
 # The words a module row's two chips read (module_install.md, "The source
 # chip and the kind chip"): who installs, updates and removes the software,
 # by the install method of the machine's entry, and whether the module runs
-# by itself until stopped or only when a person runs it.
+# once for the whole system, once for each enabled account, or only when a
+# person runs it.
 DEVICE_SOURCE_AGENT = "agent"
 DEVICE_SOURCE_SYSTEM = "system"
 DEVICE_SOURCE_UPSTREAM = "upstream"
 DEVICE_SOURCE_CONTAINER = "container"
-DEVICE_KIND_SERVICE = "service"
+DEVICE_KIND_SYSTEM_SERVICE = "system_service"
+DEVICE_KIND_ACCOUNT_SERVICE = "account_service"
 DEVICE_KIND_PROGRAM = "program"
 # The panel the Modules page draws every program run as an account with;
 # every other module is drawn by a panel named after it.

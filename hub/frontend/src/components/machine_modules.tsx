@@ -197,10 +197,12 @@ const SOURCE_KEYS: Record<string, string> = {
   container: "ui.modules.source_container",
 };
 
-/** The kind chip of each kind: a service, which Start and Stop run, or a
- * program, which a person runs. A word outside the table shows no chip. */
+/** The kind chip of each kind: one for the whole system, one for each
+ * enabled account, or a program a person runs. A word outside the table
+ * shows no chip. */
 const KIND_KEYS: Record<string, string> = {
-  service: "ui.modules.kind_service",
+  system_service: "ui.modules.kind_system_service",
+  account_service: "ui.modules.kind_account_service",
   program: "ui.modules.kind_program",
 };
 
