@@ -31,7 +31,8 @@ OpenCode is additive: cc-switch adds the hub's provider to its file beside
 the person's own and keeps no provider current, so its adoption is the list
 alone, its provider goes in whole as ``--config``, and the hub is current
 while cc-switch lists its provider. Its top-level ``model`` is written after
-the switch when the file names none, and the record keeps it.
+the switch when the file names none, and the record keeps it. The switch
+back takes away OpenCode's migration backup holding the hub's provider.
 
 One knob has no flag in cc-switch: Codex's reasoning effort, which is
 settled into ``config.toml`` after the switch when the person chose one.
@@ -80,6 +81,9 @@ OPENCODE_NPM = "@ai-sdk/openai-compatible"
 # OpenCode's top-level key naming the model it starts on, as
 # ``<provider>/<model>``. cc-switch writes none.
 OPENCODE_MODEL_KEY = "model"
+# OpenCode's copy of its file from before it moves TUI settings into
+# ``tui.json``, beside the file.
+OPENCODE_MIGRATION_BACKUP = "opencode.json.tui-migration.bak"
 # The directory cc-switch writes a tool's files into only once it is there,
 # and every file a switch may write in it, below the person's home: what is
 # kept aside before the first switch and put back after the switch back.
@@ -514,6 +518,8 @@ def _point_away(app: str) -> str:
     _use_store_of(record)
     previous = str(record.get("previous", "") or "")
     returned_to = _drop_provider(app, previous)
+    if app == "opencode":
+        _remove_migration_backup(app)
     kept = record.get("kept")
     if isinstance(kept, dict):
         _put_back(app, kept, record.get("kept_modes") or {})
@@ -559,6 +565,23 @@ def _put_back(app: str, kept: dict, modes: dict) -> None:
         mode = modes.get(name)
         if isinstance(mode, int) and _mode_of(path) != mode:
             _set_mode(path, mode)
+
+
+def _remove_migration_backup(app: str) -> None:
+    """Take away OpenCode's migration backup when it holds the hub's provider."""
+    path = _kept_path(app, OPENCODE_MIGRATION_BACKUP)
+    if os.path.isfile(path) and _has_hub_provider(_read_text_at(path)):
+        _remove_file(path)
+
+
+def _has_hub_provider(text: str) -> bool:
+    """Whether an OpenCode file's text names the hub's provider."""
+    try:
+        document = json.loads(text)
+    except ValueError:
+        return False
+    providers = document.get("provider") if isinstance(document, dict) else None
+    return isinstance(providers, dict) and SWITCHER_PROVIDER_ID in providers
 
 
 def _kept_path(app: str, name: str) -> str:

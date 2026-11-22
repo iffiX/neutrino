@@ -8,7 +8,8 @@ as ``--config`` beside the person's own, under cc-switch's name
 ``open-code``, and its ``.config`` made for the switch goes again. Its
 top-level ``model`` names the hub's model when the file names none, follows
 a changed model while it is the one written, and the person's own stays; a
-record without the wanted ``model`` is switched once more.
+record without the wanted ``model`` is switched once more, and the switch
+back takes away OpenCode's migration backup holding the hub's provider.
 """
 
 import json
@@ -1176,6 +1177,9 @@ def test_the_opencode_model_is_written_as_json_in_cc_switch_s_layout():
     assert switcher._with_opencode_model(merged, "neutrino/m5", "")[0] == merged
 
 
+BACKUP = ".config/opencode/opencode.json.tui-migration.bak"
+
+
 def test_an_opencode_record_without_the_wanted_model_is_switched_once_more(
     tmp_path, monkeypatch
 ):
@@ -1205,3 +1209,31 @@ def test_an_opencode_record_without_the_wanted_model_is_switched_once_more(
         switcher.activate(base_url="http://hub", api_key="k", tool_configs=configs)
         == ""
     )
+
+
+def test_the_switch_back_takes_away_the_migration_backup_holding_the_hub(
+    tmp_path, monkeypatch
+):
+    (tmp_path / "home").mkdir(exist_ok=True)
+    wire(monkeypatch, Cli())
+    switcher.activate(base_url="http://hub", api_key="k", tool_configs={})
+    live = tmp_path / "home" / OPENCODE
+    backup = tmp_path / "home" / BACKUP
+    backup.write_bytes(live.read_bytes())
+
+    switcher.deactivate()
+
+    assert not backup.exists()
+    assert not (tmp_path / "home" / ".config").exists()
+
+
+def test_a_migration_backup_without_the_hub_s_provider_stays(tmp_path, monkeypatch):
+    own = b'{\n  "theme": "tokyonight",\n  "provider": {"mine": {}}\n}'
+    backup = home_file(tmp_path, BACKUP, "")
+    backup.write_bytes(own)
+    wire(monkeypatch, Cli())
+
+    switcher.activate(base_url="http://hub", api_key="k", tool_configs={})
+    switcher.deactivate()
+
+    assert backup.read_bytes() == own
