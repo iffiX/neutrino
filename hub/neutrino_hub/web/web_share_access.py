@@ -35,6 +35,7 @@ from neutrino_hub.modules.clients.web_shares import (
     share_state,
 )
 from neutrino_hub.modules.devices.constants import (
+    DEVICE_ASTRBOT_USER,
     DEVICE_GUEST_LOGIN_APP,
     DEVICE_GUEST_LOGIN_RUN_ACCOUNT,
     DEVICE_HERMES_WEBUI_USER,
@@ -48,6 +49,7 @@ from neutrino_hub.modules.frp.constants import FRP_VENDORS
 from neutrino_hub.modules.overlay.direct_config import read_direct
 from neutrino_hub.modules.services.constants import (
     SERVICES_APP_SOURCE_ORDER,
+    SERVICES_DESCRIPTION_ASTRBOT_MODULE,
     SERVICES_DESCRIPTION_CONTAINER,
     SERVICES_DESCRIPTION_HERMES_WEBUI_MODULE,
     SERVICES_SOURCE_MODULE,
@@ -148,6 +150,8 @@ def visitor_account(entry: dict, guest_login: str) -> str:
         return ""
     if entry.get("description_code") == SERVICES_DESCRIPTION_HERMES_WEBUI_MODULE:
         return DEVICE_HERMES_WEBUI_USER
+    if entry.get("description_code") == SERVICES_DESCRIPTION_ASTRBOT_MODULE:
+        return DEVICE_ASTRBOT_USER
     params = entry.get("description_params") or {}
     return str(params.get("account", "") or "")
 

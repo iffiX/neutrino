@@ -438,6 +438,7 @@ def test_the_manifests_come_back_in_the_order_every_list_of_modules_shows():
         "podman",
         "hermes_webui",
         "ayakaleaf",
+        "astrbot",
     ]
 
 
@@ -502,6 +503,7 @@ def test_every_shipped_manifest_names_its_publisher():
         "siyuan": "siyuan-note/siyuan",
         "hermes_webui": "nesquena/hermes-webui and NousResearch/hermes-agent",
         "ayakaleaf": "ayaka-notes/ayakaleaf-pro",
+        "astrbot": "AstrBotDevs/AstrBot",
     }
 
 
@@ -644,7 +646,7 @@ def test_the_modules_whose_data_moves_forward_only_are_flagged():
         if manifest.get("is_data_forward_only") is True
     }
 
-    assert flagged == {"gitea", "ayakaleaf", "codeg", "cloudcli"}
+    assert flagged == {"gitea", "ayakaleaf", "astrbot", "codeg", "cloudcli"}
 
 
 def test_gitea_resolves_by_machine_and_refuses_the_rest():
@@ -1371,6 +1373,12 @@ SHIPPED_UNINSTALL_LINES = {
         True,
         "The papers and projects are deleted and cannot be recovered.",
         "论文和项目都会删除，无法恢复。",
+    ),
+    "astrbot": (
+        True,
+        "The bots, conversations, plugins and settings are deleted and cannot be "
+        "recovered.",
+        "机器人、对话、插件和设置都会删除，无法恢复。",
     ),
 }
 
@@ -2222,7 +2230,7 @@ def test_every_required_module_is_in_the_catalog_and_runs_where_it_is_required()
                 )
 
 
-@pytest.mark.parametrize("name", ["ayakaleaf", "hermes_webui"])
+@pytest.mark.parametrize("name", ["ayakaleaf", "hermes_webui", "astrbot"])
 def test_a_container_module_cannot_run_on_a_linux_of_no_family(name):
     manifests = load_module_manifests()
     platform = {"os": "linux", "family": "", "arch": "amd64"}
@@ -2400,6 +2408,7 @@ SHIPPED_GUEST_LOGINS = {
     "cloudcli": "run_account",
     "codeg": "run_account",
     "hermes_webui": "run_account",
+    "astrbot": "run_account",
     "siyuan": "run_account",
 }
 

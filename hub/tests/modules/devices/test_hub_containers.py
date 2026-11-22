@@ -139,6 +139,31 @@ def test_a_stop_timeout_and_exit_codes_are_composed_where_a_container_names_them
     assert (web["stop_timeout_s"], web["success_exit_codes"]) == (60, [2])
 
 
+def test_local_ports_and_a_stop_signal_are_composed_where_a_container_names_them(
+    store, monkeypatch
+):
+    store.set_want(DEVICE, "demo", "running")
+
+    def named(request):
+        return (
+            HubContainer(name="neutrino_demo_worker", image="worker"),
+            HubContainer(
+                name="neutrino_demo",
+                image="web",
+                local_ports=(6199,),
+                stop_signal="SIGINT",
+            ),
+        )
+
+    monkeypatch.setitem(HUB_CONTAINER_COMPOSERS, "demo", named)
+
+    worker, web = compose_hub_containers(store, DEVICE, LINUX)
+
+    assert "local_ports" not in worker
+    assert "stop_signal" not in worker
+    assert (web["local_ports"], web["stop_signal"]) == ([6199], "SIGINT")
+
+
 class ChosenReleases:
     """The feeds as read: a chosen version names its own digest for ``web``."""
 
@@ -256,6 +281,9 @@ def demo(**overrides) -> HubContainer:
         ((demo(stop_timeout_s=-1),), "out of range"),
         ((demo(stop_timeout_s=3601),), "out of range"),
         ((demo(success_exit_codes=(256,)),), "out of range"),
+        ((demo(local_ports=(0,)),), "no port of its own"),
+        ((demo(local_ports=(6199, 6199)),), "no port of its own"),
+        ((demo(stop_signal="INT"),), "is no signal"),
     ],
 )
 def test_a_composition_the_agent_could_not_run_is_refused(

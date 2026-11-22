@@ -605,3 +605,14 @@ def test_a_share_whose_app_stopped_is_unavailable_and_kept(api):
     assert f"code_server_{DEVICE}_alice_web" not in [
         entry["entry_id"] for entry in shown["web_share_entries"]
     ]
+
+
+@pytest.mark.parametrize(
+    "code, account",
+    [("hermes_webui_module", "hermeswebui"), ("astrbot_module", "astrbot")],
+)
+def test_a_visitor_of_a_container_module_s_page_uses_it_as_its_one_user(code, account):
+    entry = {"description_code": code, "description_params": {"host": "box"}}
+
+    assert web_share_access.visitor_account(entry, "run_account") == account
+    assert web_share_access.visitor_account(entry, "app") == ""

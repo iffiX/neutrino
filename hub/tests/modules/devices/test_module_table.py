@@ -62,6 +62,7 @@ def test_the_rows_come_in_the_order_every_list_of_modules_shows():
         "podman",
         "hermes_webui",
         "ayakaleaf",
+        "astrbot",
     ]
 
 
@@ -91,6 +92,7 @@ def test_every_row_is_one_of_the_six_kinds():
         "podman": DEVICE_MODULE_KIND_SYSTEM_PACKAGE,
         "hermes_webui": DEVICE_MODULE_KIND_CONTAINER,
         "ayakaleaf": DEVICE_MODULE_KIND_CONTAINER,
+        "astrbot": DEVICE_MODULE_KIND_CONTAINER,
     }
 
 
@@ -113,6 +115,7 @@ def test_every_row_names_the_kind_chip_of_its_module():
         "podman": DEVICE_KIND_SYSTEM_SERVICE,
         "hermes_webui": DEVICE_KIND_SYSTEM_SERVICE,
         "ayakaleaf": DEVICE_KIND_SYSTEM_SERVICE,
+        "astrbot": DEVICE_KIND_SYSTEM_SERVICE,
     }
 
 
@@ -208,8 +211,13 @@ def test_hermes_webui_seals_its_secret_and_its_password_and_mints_its_token():
         "siyuan",
         "hermes_webui",
         "ayakaleaf",
+        "astrbot",
     )
-    assert module_table.gateway_container_names() == ("hermes_webui", "ayakaleaf")
+    assert module_table.gateway_container_names() == (
+        "hermes_webui",
+        "ayakaleaf",
+        "astrbot",
+    )
     assert module_table.gateway_instance_names() == ("siyuan",)
 
 
@@ -225,6 +233,19 @@ def test_ayakaleaf_seals_four_secrets_and_mints_its_token():
     assert row.sealed_field("invite_secret_sealed").aad == (
         b"device_ayakaleaf:invite_secret"
     )
+    assert all(field.secret_bytes == 32 for field in row.sealed_fields)
+    assert (row.token_field, row.is_token_minted) == ("secret_sealed", True)
+    assert (row.is_gateway_used, row.has_forwarder) == (True, True)
+
+
+def test_astrbot_seals_its_secret_and_its_password_and_mints_its_token():
+    row = module_row("astrbot")
+
+    assert [(field.key, field.opened_key) for field in row.sealed_fields] == [
+        ("secret_sealed", "secret"),
+        ("password_sealed", "password"),
+    ]
+    assert row.sealed_field("password_sealed").aad == b"device_astrbot:password"
     assert all(field.secret_bytes == 32 for field in row.sealed_fields)
     assert (row.token_field, row.is_token_minted) == ("secret_sealed", True)
     assert (row.is_gateway_used, row.has_forwarder) == (True, True)
@@ -283,6 +304,7 @@ def test_each_row_names_its_published_entry():
         "podman": ("container", ""),
         "hermes_webui": ("hermes_webui_module", "Hermes WebUI"),
         "ayakaleaf": ("ayakaleaf_module", "Ayakaleaf"),
+        "astrbot": ("astrbot_module", "AstrBot"),
     }
 
 

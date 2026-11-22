@@ -2,7 +2,8 @@
 
 What these pin: each container is listed by its own state in the last
 report, whatever state Containers reads, while the hub asks Containers to
-run or to stop; a hub that asks nothing lists none.
+run or to stop; a hub container's ports, its ``local_ports`` among them, in
+no entry; a hub that asks nothing lists none.
 """
 
 import pytest
@@ -72,6 +73,36 @@ def test_each_container_is_listed_by_its_own_state_whatever_containers_reads(sta
     assert by_name["whoami"]["is_running"] is True
     assert by_name["whoami"]["bindings"] == [(8088, "tcp", "http")]
     assert by_name["ghost"]["is_running"] is False
+
+
+def test_a_hub_container_s_ports_its_local_ports_among_them_are_in_no_entry():
+    cache = PublishedServiceCache(
+        declared_probe=None,
+        served_models=None,
+        units=None,
+        desired_states=FakeDesiredStates("running"),
+    )
+    astrbot = {
+        "name": "neutrino_astrbot",
+        "image": "docker.io/soulter/astrbot@sha256:" + "a" * 64,
+        "module": "astrbot",
+        "is_running": True,
+        "host_bindings": [
+            {"address": "127.0.0.1", "port": 15000, "protocol": "tcp"},
+            {"address": "127.0.0.1", "port": 6199, "protocol": "tcp"},
+        ],
+    }
+    status = {
+        "state": "running",
+        "details": {"containers": [*DETAILS["containers"], astrbot]},
+    }
+
+    podman = cache._hosted(DEVICE, "podman", status, PLATFORM)
+
+    assert [container["name"] for container in podman["containers"]] == [
+        "whoami",
+        "ghost",
+    ]
 
 
 def test_a_hub_that_asks_containers_for_nothing_lists_none():

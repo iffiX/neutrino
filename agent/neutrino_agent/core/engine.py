@@ -86,6 +86,8 @@ from neutrino_agent.constants import (
 )
 from neutrino_agent.core.version import parse_version
 from neutrino_agent.exceptions import ModuleApplyError, PlatformUnsupportedError
+from neutrino_agent.modules.astrbot.constants import ASTRBOT_NAME
+from neutrino_agent.modules.astrbot.hooks import AstrbotHooks
 from neutrino_agent.modules.ayakaleaf.constants import AYAKALEAF_NAME
 from neutrino_agent.modules.ayakaleaf.hooks import AyakaleafHooks
 from neutrino_agent.modules.claude_code.hooks import ClaudeCodeHooks
@@ -185,6 +187,7 @@ OpencodeModuleRunner = functools.partial(
 # reads by module name.
 CONTAINER_MODULE_HOOKS[HERMES_WEBUI_NAME] = HermesWebuiHooks
 CONTAINER_MODULE_HOOKS[AYAKALEAF_NAME] = AyakaleafHooks
+CONTAINER_MODULE_HOOKS[ASTRBOT_NAME] = AstrbotHooks
 
 # The states a kept failure reads as: an install's, and every other step's.
 FAILURE_STATES = (AGENT_MODULE_STATE_INSTALL_FAILED, AGENT_MODULE_STATE_FAILED)

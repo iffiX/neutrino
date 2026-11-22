@@ -42,6 +42,8 @@ from neutrino_hub.modules.devices.source_sets import load_source_sets, placehold
 
 # A hub container's name, and a named volume of its module.
 NAME_PATTERN = r"[a-z0-9][a-z0-9_-]{0,63}"
+# A signal's name, as a hub container's stop names it.
+SIGNAL_PATTERN = r"SIG[A-Z][A-Z0-9]{1,9}"
 
 
 @dataclass(frozen=True)
@@ -62,8 +64,11 @@ class HubContainer:
         after: The module's containers it starts after, by name.
         page_port: The container's port the module's forwarder serves; 0
             for none.
+        local_ports: The container's ports published on ``127.0.0.1`` at
+            the same number, in no entry.
         stop_timeout_s: The seconds ``podman stop`` gives it before
             SIGKILL; 0 for Podman's own 10.
+        stop_signal: The signal its stop sends; empty for SIGTERM.
         success_exit_codes: The exit codes beside 143 its unit counts as a
             clean stop.
     """
@@ -77,7 +82,9 @@ class HubContainer:
     services: tuple = ()
     after: tuple = ()
     page_port: int = 0
+    local_ports: tuple = ()
     stop_timeout_s: int = 0
+    stop_signal: str = ""
     success_exit_codes: tuple = ()
 
 
@@ -160,8 +167,9 @@ def compose_hub_containers(
     Returns:
         ``{module, name, image: {digest, sources}, ports, volumes,
         environment, command, is_autostart, services, source_sets, after,
-        page_port}``, and ``stop_timeout_s`` and ``success_exit_codes``
-        where a container names them, for each container of each container
+        page_port}``, and ``local_ports``, ``stop_timeout_s``,
+        ``stop_signal`` and ``success_exit_codes`` where a container names
+        them, for each container of each container
         module the machine has with an entry for its platform, in
         ``modules.json``'s order and each module's own. Each image's digest is the one the recipe of the
         machine's chosen version names.
@@ -222,8 +230,12 @@ def compose_hub_containers(
                 "after": list(container.after),
                 "page_port": container.page_port,
             }
+            if container.local_ports:
+                held["local_ports"] = list(container.local_ports)
             if container.stop_timeout_s:
                 held["stop_timeout_s"] = container.stop_timeout_s
+            if container.stop_signal:
+                held["stop_signal"] = container.stop_signal
             if container.success_exit_codes:
                 held["success_exit_codes"] = list(container.success_exit_codes)
             composed.append(held)
@@ -256,8 +268,10 @@ def check_composition(module: str, containers: tuple, params: dict) -> None:
             module's named volumes, a placeholder naming a set the source
             sets do not define or the module's entry does not list, an
             ``after`` naming no other container of the module, a
-            ``page_port`` outside 0 to 65535, a ``stop_timeout_s`` outside 0
-            to 3600, or a success exit code outside 0 to 255.
+            ``page_port`` outside 0 to 65535, a local port outside 1 to
+            65535 or given twice, a ``stop_timeout_s`` outside 0 to 3600, a
+            ``stop_signal`` that is no signal's name, or a success exit code
+            outside 0 to 255.
     """
     prefix = DEVICE_HUB_CONTAINER_PREFIX + module
     images = {artifact.get("name") for artifact in params.get("artifacts") or []}
@@ -295,10 +309,17 @@ def check_composition(module: str, containers: tuple, params: dict) -> None:
                 raise ValueError(f"{where}: starts after no container, {other!r}")
         if not 0 <= container.page_port <= 65535:
             raise ValueError(f"{where}: page_port {container.page_port} is no port")
+        for port in container.local_ports:
+            if not 0 < port <= 65535 or container.local_ports.count(port) > 1:
+                raise ValueError(f"{where}: local port {port} is no port of its own")
         if not 0 <= container.stop_timeout_s <= DEVICE_HUB_CONTAINER_STOP_MAX_S:
             raise ValueError(
                 f"{where}: stop_timeout_s {container.stop_timeout_s} is out of range"
             )
+        if container.stop_signal and not re.fullmatch(
+            SIGNAL_PATTERN, container.stop_signal
+        ):
+            raise ValueError(f"{where}: {container.stop_signal!r} is no signal")
         for code in container.success_exit_codes:
             if not 0 <= code <= DEVICE_HUB_CONTAINER_EXIT_CODE_MAX:
                 raise ValueError(f"{where}: exit code {code} is out of range")

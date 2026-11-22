@@ -123,6 +123,7 @@ const DESCRIPTION_KEYS: Record<string, string> = {
   siyuan_module: "ui.services.description_siyuan_module",
   hermes_webui_module: "ui.services.description_hermes_webui_module",
   ayakaleaf_module: "ui.services.description_ayakaleaf_module",
+  astrbot_module: "ui.services.description_astrbot_module",
   ssh_server_module: "ui.services.description_ssh_server_module",
   ollama_module: "ui.services.description_ollama_module",
 };

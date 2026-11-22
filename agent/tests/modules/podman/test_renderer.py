@@ -803,6 +803,35 @@ def test_a_hub_container_s_stop_timeout_sets_its_stop_and_the_unit_s_wait():
     assert "SuccessExitStatus=143" in plain
 
 
+def test_a_hub_container_s_stop_signal_and_local_ports_reach_its_run():
+    hub = [
+        {**HUB_CONTAINERS[1], "stop_signal": "SIGINT", "local_ports": [6199]},
+        HUB_CONTAINERS[0],
+    ]
+    rendered = PodmanUnitRenderer(config=hub_config(hub=hub), context=HUB_CONTEXT)
+    named = exec_start(rendered.render()["neutrino_demo.service"])
+    plain = exec_start(rendered.render()["neutrino_demo_agent.service"])
+
+    assert " --stop-signal SIGINT " in named
+    assert " -p 127.0.0.1:40123:8787 -p 127.0.0.1:6199:6199 " in named
+    assert "--stop-signal" not in plain
+    assert "6199" not in plain
+
+
+def test_a_machine_unit_names_a_hub_container_s_stop_signal_and_local_ports():
+    hub = [
+        HUB_CONTAINERS[0],
+        {**HUB_CONTAINERS[1], "stop_signal": "SIGINT", "local_ports": [6199]},
+    ]
+    rendered = PodmanUnitRenderer(
+        config=hub_config(hub=hub), machine_os_name="windows", context=HUB_CONTEXT
+    ).render()
+    line = exec_start(rendered["neutrino_demo.service"])
+
+    assert " --stop-signal SIGINT " in line
+    assert " -p 127.0.0.1:6199:6199 " in line
+
+
 def test_a_declared_container_reaches_the_machine_at_its_network_s_gateway():
     rendered = PodmanUnitRenderer(
         config=hub_config([FULL], hub=[]), context=HUB_CONTEXT

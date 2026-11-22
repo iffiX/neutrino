@@ -370,6 +370,11 @@ AGENT_STEP_RENDER = "render"
 AGENT_STEP_TOOLS = "tools"
 AGENT_STEP_ACCOUNT = "account"
 AGENT_STEP_NPM = "npm"
+# AstrBot's settings step, which its install and its start both plan.
+AGENT_STEP_SETTINGS = "settings"
+# The steps a plan holds once: an install's own, and none of the configure
+# steps after it.
+AGENT_PLANNED_ONCE_STEPS = (AGENT_STEP_WAIT_MODULE, AGENT_STEP_SETTINGS)
 
 # The command line programs, in the order every Neutrino session's PATH
 # starts with the launcher folders of those an account is enabled in.
@@ -537,6 +542,8 @@ AGENT_FORWARD_HEAD_LIMIT_BYTES = 65536
 AGENT_FORWARD_CHUNK_BYTES = 65536
 AGENT_FORWARD_UPSTREAM_TIMEOUT_S = 10.0
 AGENT_FORWARD_IDLE_TIMEOUT_S = 3600.0
+# The largest body a forwarder reads whole for a module's rule to judge.
+AGENT_FORWARD_JUDGED_BODY_BYTES = 4 * 1024 * 1024
 # The connections a forwarder's listening socket queues before it accepts them.
 AGENT_FORWARD_LISTEN_QUEUE = 128
 # How often a forwarder asks whether its page answers yet, and how long a

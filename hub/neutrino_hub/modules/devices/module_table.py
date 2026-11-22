@@ -13,6 +13,12 @@ rest.
 from dataclasses import dataclass
 
 from neutrino_hub.modules.devices.constants import (
+    DEVICE_ASTRBOT_MODULE,
+    DEVICE_ASTRBOT_PASSWORD_AAD,
+    DEVICE_ASTRBOT_PASSWORD_KEY,
+    DEVICE_ASTRBOT_SECRET_AAD,
+    DEVICE_ASTRBOT_SECRET_BYTES,
+    DEVICE_ASTRBOT_SECRET_KEY,
     DEVICE_AYAKALEAF_INVITE_SECRET_AAD,
     DEVICE_AYAKALEAF_INVITE_SECRET_KEY,
     DEVICE_AYAKALEAF_MODULE,
@@ -80,7 +86,9 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_VSCODE_TOKEN_KEY,
 )
 from neutrino_hub.modules.services.constants import (
+    SERVICES_ASTRBOT_TITLE,
     SERVICES_AYAKALEAF_TITLE,
+    SERVICES_DESCRIPTION_ASTRBOT_MODULE,
     SERVICES_DESCRIPTION_AYAKALEAF_MODULE,
     SERVICES_DESCRIPTION_CLOUDCLI_MODULE,
     SERVICES_DESCRIPTION_CODE_SERVER_MODULE,
@@ -484,6 +492,31 @@ DEVICE_MODULE_ROWS = (
         entry_title=SERVICES_AYAKALEAF_TITLE,
         has_forwarder=True,
         token_field=DEVICE_AYAKALEAF_SECRET_KEY,
+        is_token_minted=True,
+        is_gateway_used=True,
+    ),
+    _row(
+        DEVICE_ASTRBOT_MODULE,
+        DEVICE_MODULE_KIND_CONTAINER,
+        kind_chip=DEVICE_KIND_SYSTEM_SERVICE,
+        sealed_fields=(
+            SealedField(
+                key=DEVICE_ASTRBOT_SECRET_KEY,
+                opened_key="secret",
+                aad=DEVICE_ASTRBOT_SECRET_AAD,
+                secret_bytes=DEVICE_ASTRBOT_SECRET_BYTES,
+            ),
+            SealedField(
+                key=DEVICE_ASTRBOT_PASSWORD_KEY,
+                opened_key="password",
+                aad=DEVICE_ASTRBOT_PASSWORD_AAD,
+                secret_bytes=DEVICE_ASTRBOT_SECRET_BYTES,
+            ),
+        ),
+        description_code=SERVICES_DESCRIPTION_ASTRBOT_MODULE,
+        entry_title=SERVICES_ASTRBOT_TITLE,
+        has_forwarder=True,
+        token_field=DEVICE_ASTRBOT_SECRET_KEY,
         is_token_minted=True,
         is_gateway_used=True,
     ),

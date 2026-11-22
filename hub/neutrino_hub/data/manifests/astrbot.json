@@ -1,0 +1,95 @@
+{
+  "_comment": "AstrBot (AstrBotDevs/AstrBot, AGPL-3.0), a platform for chat bots that answer with large language models, run as one image on the Containers module. The module's version is the image's tag without its v: the oci feed lists the vX.Y.Z tags on docker.io, and a version other than the tested one takes the digest the registry gives its tag. The digest is the publisher's OCI index digest, covering amd64 and arm64; docker.io is reached through the docker.io mirrors the Containers module names, then DaoCloud's mirror. AstrBot's pip reads the first ranked source of the pypi set from its settings file.", "_source_scan": "scan: allow",
+  "name": "astrbot",
+  "title": "AstrBot",
+  "description": "Chat bots that answer with the hub's AI models, set up in AstrBot's own page, opened from a client with a token",
+  "publisher": "AstrBotDevs/AstrBot",
+  "uninstall_data": {"is_deleted": true, "text": {"en": "The bots, conversations, plugins and settings are deleted and cannot be recovered.", "zh-CN": "机器人、对话、插件和设置都会删除，无法恢复。"}},
+  "web_share": {
+    "guest_login": "run_account"
+  },
+  "memory_mib": 1024,
+  "is_data_forward_only": true,
+  "platforms": {
+    "linux": {
+      "runner": "container",
+      "requires": ["podman"],
+      "install": {
+        "method": "container",
+        "params": {
+          "version": "4.29.4",
+          "releases": [{"kind": "oci", "sources": ["https://registry-1.docker.io"], "repository": "soulter/astrbot", "tag": "v{version}"}], "_releases_scan": "scan: allow",
+          "artifacts": [
+            {
+              "name": "astrbot",
+              "kind": "image",
+              "digest": "sha256:72f341f0ffcf6621ef820277642c5d63955f7beeac3683433ce09cac96379c78", "_digest_scan": "scan: allow",
+              "sources": ["docker.io/soulter/astrbot", "m.daocloud.io/docker.io/soulter/astrbot"]
+            }
+          ],
+          "source_sets": ["pypi"]
+        }
+      }
+    },
+    "windows-amd64": {
+      "runner": "container",
+      "requires": ["podman"],
+      "install": {
+        "method": "container",
+        "params": {
+          "version": "4.29.4",
+          "releases": [{"kind": "oci", "sources": ["https://registry-1.docker.io"], "repository": "soulter/astrbot", "tag": "v{version}"}], "_releases_scan": "scan: allow",
+          "artifacts": [
+            {
+              "name": "astrbot",
+              "kind": "image",
+              "digest": "sha256:72f341f0ffcf6621ef820277642c5d63955f7beeac3683433ce09cac96379c78", "_digest_scan": "scan: allow",
+              "sources": ["docker.io/soulter/astrbot", "m.daocloud.io/docker.io/soulter/astrbot"]
+            }
+          ],
+          "source_sets": ["pypi"]
+        }
+      }
+    },
+    "darwin-arm64": {
+      "runner": "container",
+      "requires": ["podman"],
+      "install": {
+        "method": "container",
+        "params": {
+          "version": "4.29.4",
+          "releases": [{"kind": "oci", "sources": ["https://registry-1.docker.io"], "repository": "soulter/astrbot", "tag": "v{version}"}], "_releases_scan": "scan: allow",
+          "artifacts": [
+            {
+              "name": "astrbot",
+              "kind": "image",
+              "digest": "sha256:72f341f0ffcf6621ef820277642c5d63955f7beeac3683433ce09cac96379c78", "_digest_scan": "scan: allow",
+              "sources": ["docker.io/soulter/astrbot", "m.daocloud.io/docker.io/soulter/astrbot"]
+            }
+          ],
+          "source_sets": ["pypi"]
+        }
+      }
+    },
+    "darwin-amd64": {
+      "runner": "container",
+      "requires": ["podman"],
+      "install": {
+        "method": "container",
+        "params": {
+          "version": "4.29.4",
+          "releases": [{"kind": "oci", "sources": ["https://registry-1.docker.io"], "repository": "soulter/astrbot", "tag": "v{version}"}], "_releases_scan": "scan: allow",
+          "artifacts": [
+            {
+              "name": "astrbot",
+              "kind": "image",
+              "digest": "sha256:72f341f0ffcf6621ef820277642c5d63955f7beeac3683433ce09cac96379c78", "_digest_scan": "scan: allow",
+              "sources": ["docker.io/soulter/astrbot", "m.daocloud.io/docker.io/soulter/astrbot"]
+            }
+          ],
+          "source_sets": ["pypi"]
+        }
+      }
+    }
+  }
+}

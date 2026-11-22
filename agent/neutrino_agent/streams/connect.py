@@ -31,7 +31,7 @@ INSTANCE_MODULES = ("vscode", "cloudcli", "code_server", "codeg", "siyuan")
 RUNNING_INSTANCE_MODULES = ("ssh_server",)
 # The container modules whose page the agent's forwarder serves at the port
 # their details report.
-FORWARDED_MODULES = ("hermes_webui", "ayakaleaf")
+FORWARDED_MODULES = ("hermes_webui", "ayakaleaf", "astrbot")
 # The module whose port is published while it reads present, a person's
 # Ollama among them, and the states that are present.
 OLLAMA_MODULE = "ollama"
@@ -64,7 +64,7 @@ def published_ports(
         module's forwarder, Ollama's port while its row reads present, and
         each port a running container publishes on TCP. On UDP: each port a running container publishes on UDP, and
         nothing else. The port a hub container's ``page_port`` is published
-        at is never one. A container's port goes to the one address it is
+        at, and each of its ``local_ports``, is never one. A container's port goes to the one address it is
         published on when it names one; every other to loopback. A binding
         that names no protocol is TCP.
     """
@@ -150,7 +150,8 @@ def dial_address(address: str) -> str:
 
 def _container_ports(modules: dict, desired_modules: dict, protocol: str) -> dict:
     """The ports the Podman module's running containers publish on one protocol,
-    the port a hub container's ``page_port`` is published at left out."""
+    the port a hub container's ``page_port`` is published at and its
+    ``local_ports`` left out."""
     ports: dict = {}
     podman = _configured(modules.get("podman"))
     pages = _page_ports(desired_modules)
@@ -170,27 +171,33 @@ def _container_ports(modules: dict, desired_modules: dict, protocol: str) -> dic
 
 
 def _page_ports(desired_modules: dict) -> dict:
-    """Each hub container's ``page_port`` the state names, by container name."""
+    """Each hub container's ``page_port`` and ``local_ports`` the state names, by container name."""
     entry = desired_modules.get("podman")
     config = entry.get("config") if isinstance(entry, dict) else None
     if not isinstance(config, dict):
         return {}
     pages = {}
     for container in config.get("hub_containers") or []:
-        if isinstance(container, dict) and _port(container.get("page_port")):
-            pages[str(container.get("name", ""))] = container["page_port"]
+        if not isinstance(container, dict):
+            continue
+        held = [_port(port) for port in container.get("local_ports") or []]
+        held.append(_port(container.get("page_port")))
+        held = [port for port in held if port]
+        if held:
+            pages[str(container.get("name", ""))] = held
     return pages
 
 
-def _page_hosts(container: dict, page_port) -> set:
-    """The host ports one reported container publishes its ``page_port`` at."""
-    if not page_port:
+def _page_hosts(container: dict, page_ports) -> set:
+    """The host ports one reported container publishes its ``page_port`` and ``local_ports`` at."""
+    if not page_ports:
         return set()
+    inner = {str(port) for port in page_ports}
     hosts = set()
     for mapping in container.get("ports") or []:
         host, _, rest = str(mapping).partition(":")
         inside = rest.partition("/")[0]
-        if host.isdigit() and inside == str(page_port):
+        if host.isdigit() and inside in inner:
             hosts.add(int(host))
     return hosts
 

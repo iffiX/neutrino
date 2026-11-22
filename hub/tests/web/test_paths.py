@@ -220,6 +220,7 @@ MODULE_NAMES = (
     "siyuan",
     "hermes_webui",
     "ayakaleaf",
+    "astrbot",
 )
 
 

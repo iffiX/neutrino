@@ -25,6 +25,7 @@ from neutrino_hub.modules.channel.constants import (
     CHANNEL_MODULE_STATE_RUNNING,
 )
 from neutrino_hub.modules.devices.constants import (
+    DEVICE_ASTRBOT_MODULE,
     DEVICE_AYAKALEAF_MODULE,
     DEVICE_HERMES_WEBUI_MODULE,
     DEVICE_MODULE_NAMES,
@@ -397,8 +398,8 @@ class PublishedServiceCache:
         """One device's module as the list needs it, None while not served.
 
         An instance of an account-layer module is listed only while the
-        device reports it running, at the port the agent took, Hermes WebUI
-        and Ayakaleaf only while the device reports the module running, and an SSH server
+        device reports it running, at the port the agent took, Hermes WebUI,
+        Ayakaleaf and AstrBot only while the device reports the module running, and an SSH server
         instance while the module enables its account. Gitea listens on the
         device's loopback alone, so its health is the device's word that
         the server runs. Each container of Containers is listed by its own
@@ -422,7 +423,11 @@ class PublishedServiceCache:
         details = (
             status.get("details") if isinstance(status.get("details"), dict) else {}
         )
-        if name in (DEVICE_HERMES_WEBUI_MODULE, DEVICE_AYAKALEAF_MODULE):
+        if name in (
+            DEVICE_HERMES_WEBUI_MODULE,
+            DEVICE_AYAKALEAF_MODULE,
+            DEVICE_ASTRBOT_MODULE,
+        ):
             if status.get("state") != CHANNEL_MODULE_STATE_RUNNING:
                 return None
             port = details.get("port")

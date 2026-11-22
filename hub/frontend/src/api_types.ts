@@ -1922,6 +1922,18 @@ export interface RemoteDesktopConfigUpdate {
   is_enabled: boolean;
 }
 
+/** One machine's AstrBot: the forwarder's port and where the module stands. */
+export interface AstrbotDeviceView extends ModuleDeviceState {
+  device_id: string;
+  host: string;
+  /** The forwarder's port as the machine reports it. */
+  port: number;
+  /** The version the machine reports; empty before it reports one. */
+  version: string;
+  /** What the machine last reported: `{version, port}`. */
+  details: Record<string, unknown>;
+}
+
 /** One machine's Hermes WebUI: the forwarder's port and where the module stands. */
 export interface HermesWebuiDeviceView extends ModuleDeviceState {
   device_id: string;

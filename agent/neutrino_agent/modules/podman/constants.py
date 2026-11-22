@@ -256,6 +256,10 @@ PODMAN_HOST_ALIAS = "host.containers.internal"
 PODMAN_CONTAINER_PULL_TIMEOUT_S = 3600
 # Where a hub container's page port is published on the machine.
 PODMAN_PAGE_ADDRESS = "127.0.0.1"
+# The shell a root script that reads or writes a named volume runs in on
+# Linux, and how long one such script may take.
+PODMAN_SHELL = "/bin/sh"
+PODMAN_VOLUME_SCRIPT_TIMEOUT_S = 120
 # An image's digest, as a hub container names it.
 PODMAN_DIGEST_PATTERN = r"sha256:[0-9a-f]{64}"
 # The type of a volume's mount, and the name podman gives an anonymous volume.

@@ -1183,6 +1183,21 @@ def test_the_module_s_journal_leaves_out_a_container_module_s_units(hub_runner):
     assert hub_runner.journal_units() == ["podman.socket", "web.service"]
 
 
+def test_a_hub_container_s_environment_is_the_state_s_before_any_apply(runner, system):
+    hub = dict(HUB_CONFIG["hub_containers"][0], environment=["NEUTRINO_GATEWAY_URL=u"])
+    runner.take_config(dict(HUB_CONFIG, hub_containers=[hub]))
+
+    assert runner.hub_environment("neutrino_demo") == ["NEUTRINO_GATEWAY_URL=u"]
+    assert runner.hub_environment("neutrino_other") == []
+
+
+def test_a_volume_script_runs_as_root_in_sh_on_its_input(runner, system):
+    done = runner.volume_script("echo written\n")
+
+    assert system.calls[-1] == ["/bin/sh", "-s"]
+    assert done.is_success
+
+
 def test_dropping_a_module_removes_its_units_and_forgets_it(hub_runner):
     hub_runner.apply(HUB_CONFIG)
 

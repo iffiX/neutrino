@@ -199,6 +199,7 @@ DEVICE_MODULE_NAMES = (
     "podman",
     "hermes_webui",
     "ayakaleaf",
+    "astrbot",
     "vscode",
     "code_server",
     "cloudcli",
@@ -523,6 +524,38 @@ DEVICE_AYAKALEAF_COOKIE_PREFIX = "ayakaleaf_sid_"
 DEVICE_AYAKALEAF_COOKIE_ID_CHARS = 12
 # The suffix the gateway's address takes in the app's ``AI_BASE_URL``.
 DEVICE_AYAKALEAF_AI_PATH = "/v1"
+# AstrBot: one hub container. Its file under the device's directory holds
+# two secrets the hub generates once and keeps sealed, the token secret and
+# the password of AstrBot's dashboard user, and the module's gateway key; the
+# forwarder's port is the agent's.
+DEVICE_ASTRBOT_MODULE = "astrbot"
+DEVICE_ASTRBOT_SECRET_KEY = "secret_sealed"  # scan: allow
+DEVICE_ASTRBOT_PASSWORD_KEY = "password_sealed"  # scan: allow
+DEVICE_ASTRBOT_SECRET_AAD = b"device_astrbot:secret"
+DEVICE_ASTRBOT_PASSWORD_AAD = b"device_astrbot:password"
+DEVICE_ASTRBOT_SECRET_BYTES = 32
+# AstrBot's rule for a dashboard password: at least 8 characters with an
+# upper-case letter, a lower-case letter and a digit.
+DEVICE_ASTRBOT_PASSWORD_MIN_CHARS = 8
+# Its container, the image it runs by artifact name, and what it mounts and
+# is given. Its 6185 is the port its forwarder serves, 6199 the OneBot port
+# a NapCat on the machine dials, and its stop sends SIGINT, the one signal
+# AstrBot handles.
+DEVICE_ASTRBOT_CONTAINER = "neutrino_astrbot"
+DEVICE_ASTRBOT_IMAGE = "astrbot"
+DEVICE_ASTRBOT_PAGE_PORT = 6185
+DEVICE_ASTRBOT_LOCAL_PORTS = (6199,)
+DEVICE_ASTRBOT_STOP_SIGNAL = "SIGINT"
+DEVICE_ASTRBOT_VOLUMES = ("neutrino_astrbot_data:/AstrBot/data",)
+# The container's fixed environment: the plugins' requirements go into the
+# volume. The gateway's variables are composed per device.
+DEVICE_ASTRBOT_ENVIRONMENT = (
+    "PIP_USER=1",
+    "PYTHONUSERBASE=/AstrBot/data/python_user",
+)
+# The user of AstrBot's dashboard, the one a visitor of an App share is
+# signed in as.
+DEVICE_ASTRBOT_USER = "astrbot"
 # Where a container comes from, by the owner rule: the label, the declared
 # names, else a person's own.
 DEVICE_CONTAINER_SOURCE_HUB = "hub"

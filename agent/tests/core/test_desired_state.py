@@ -1986,6 +1986,46 @@ def test_a_container_module_s_install_plan_waits_for_containers_once(tmp_path):
     assert names[-1] == "start"
 
 
+def test_an_install_plan_holds_one_settings_step_before_its_render(tmp_path):
+    """AstrBot's install plans ``settings`` before ``render``, and its start
+    plans one before ``start`` too; the plan keeps the install's alone."""
+    runners = {"podman": FakeRunner(), "demo": FakeRunner()}
+    engine = FakeEngine(runners, absent=("demo",))
+    install_steps = engine.install_steps
+    configure_steps = engine.configure_steps
+
+    def settings_step():
+        return ModuleStep(name="settings", run=lambda context: None)
+
+    def with_settings_install(name, entry):
+        steps = install_steps(name, entry)
+        if name != "demo":
+            return steps
+        return steps[:-1] + [settings_step()] + steps[-1:]
+
+    def with_settings_start(name, entry, want):
+        steps = configure_steps(name, entry, want)
+        if name != "demo":
+            return steps
+        return steps[:-1] + [settings_step()] + steps[-1:]
+
+    engine.install_steps = with_settings_install
+    engine.configure_steps = with_settings_start
+    held, _ = applier(runners, engine=engine, tmp_path=tmp_path)
+
+    run(held, container_state(demo="running"))
+
+    names = [step["name"] for step in engine.last("demo")[0]["steps"]]
+    assert names == [
+        "wait_module",
+        "packages",
+        "settings",
+        "render",
+        "configure",
+        "start",
+    ]
+
+
 def requiring_state(state_hash="h1", samba="running", vscode="running") -> dict:
     """A state whose VS Code recipe requires the file share."""
     document = state(state_hash, samba=samba, vscode=vscode)

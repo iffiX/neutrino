@@ -472,6 +472,11 @@ def test_a_hub_container_parses_and_survives_a_round_trip():
         ({"stop_timeout_s": "soon"}, "command_invalid"),
         ({"success_exit_codes": [256]}, "command_invalid"),
         ({"success_exit_codes": ["two"]}, "command_invalid"),
+        ({"stop_signal": "INT"}, "command_invalid"),
+        ({"stop_signal": "SIGINT; rm"}, "command_invalid"),
+        ({"local_ports": [0]}, "port_mapping_invalid"),
+        ({"local_ports": [70000]}, "port_mapping_invalid"),
+        ({"local_ports": [6199, 6199]}, "port_mapping_invalid"),
         ({"source_sets": ["PyPI"]}, "environment_invalid"),
     ],
 )
@@ -492,6 +497,21 @@ def test_a_stop_timeout_and_exit_codes_are_kept_where_a_hub_container_names_them
     assert "stop_timeout_s" not in plain
     assert "success_exit_codes" not in plain
     assert config.hub_containers[1].stop_timeout_s == 0
+
+
+def test_a_stop_signal_and_local_ports_are_kept_where_a_hub_container_names_them():
+    config = hub_with(
+        hub_container(stop_signal="SIGINT", local_ports=[6199]),
+        hub_container(name="neutrino_demo_db", page_port=0),
+    )
+
+    config.validate()
+
+    named, plain = config.to_dict()["hub_containers"]
+    assert (named["stop_signal"], named["local_ports"]) == ("SIGINT", [6199])
+    assert "stop_signal" not in plain
+    assert "local_ports" not in plain
+    assert PodmanConfig.from_dict(config.to_dict()).to_dict() == config.to_dict()
 
 
 def test_a_hub_container_cannot_share_a_declared_container_s_name():

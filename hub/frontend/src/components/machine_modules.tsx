@@ -232,6 +232,9 @@ const HERMES_MODULE = "hermes_webui";
 /** The module whose tab says the owner installs it and its two databases. */
 const AYAKALEAF_MODULE = "ayakaleaf";
 
+/** The module whose tab says the owner installs it under its licence, with its version. */
+const ASTRBOT_MODULE = "astrbot";
+
 /** The module whose tab says the owner installs it. */
 const OLLAMA_MODULE = "ollama";
 
@@ -781,6 +784,15 @@ export function MachineModules({
           )}
           {activeRow.name === AYAKALEAF_MODULE && (
             <p className="field_hint">{t("ui.ayakaleaf.owner_notice")}</p>
+          )}
+          {activeRow.name === ASTRBOT_MODULE && (
+            <p className="field_hint">
+              {activeRow.version === ""
+                ? t("ui.astrbot.owner_notice")
+                : t("ui.astrbot.owner_notice_version", {
+                    version: activeRow.version,
+                  })}
+            </p>
           )}
           {activeRow.name === OLLAMA_MODULE && (
             <p className="field_hint">{t("ui.ollama.owner_notice")}</p>

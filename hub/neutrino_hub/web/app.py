@@ -43,6 +43,7 @@ from neutrino_hub.web.routers.agent import (
     file,
     module,
     module_account,
+    module_astrbot,
     module_ayakaleaf,
     module_gitea,
     module_hermes_webui,
@@ -109,6 +110,7 @@ API_ROUTERS = (
     module_hermes_webui.router,
     module_ollama.router,
     module_ayakaleaf.router,
+    module_astrbot.router,
     *module_instances.ROUTERS.values(),
     module_vscode_terms.router,
 )

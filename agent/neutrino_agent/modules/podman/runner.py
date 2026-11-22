@@ -70,9 +70,11 @@ from neutrino_agent.modules.podman.constants import (
     PODMAN_RECORD_ACCOUNT,
     PODMAN_RECORD_FIELDS,
     PODMAN_RUNTIME,
+    PODMAN_SHELL,
     PODMAN_SOURCE_MANUAL,
     PODMAN_UNIT,
     PODMAN_UNIT_SUFFIX,
+    PODMAN_VOLUME_SCRIPT_TIMEOUT_S,
 )
 from neutrino_agent.modules.podman.found_units import PodmanFoundUnits
 from neutrino_agent.modules.podman.package_mark import PodmanPackageMark
@@ -85,7 +87,12 @@ from neutrino_agent.modules.podman.renderer import (
 from neutrino_agent.modules.podman.service_probe import PodmanServiceProbe
 from neutrino_agent.modules.shared.record_store import InstanceRecordStore
 from neutrino_agent.modules.shared.step_locks import CONTAINERS_ALONE_LOCKS
-from neutrino_agent.modules.shared.subprocess_run import command_detail, run, unit_state
+from neutrino_agent.modules.shared.subprocess_run import (
+    CommandResult,
+    command_detail,
+    run,
+    unit_state,
+)
 from neutrino_agent.modules.shared.system_package import SystemPackageModuleRunner
 
 
@@ -670,6 +677,43 @@ class PodmanModuleRunner(SystemPackageModuleRunner):
             The refused ports; empty on a system that reserves none.
         """
         return self._page_ports.refused_ports(module)
+
+    def hub_environment(self, name: str) -> list:
+        """The environment the state names for one hub container.
+
+        Args:
+            name: The hub container.
+
+        Returns:
+            Its ``KEY=value`` lines as the state names them, the source sets
+            not filled in; empty for a container the state does not name.
+        """
+        wanted = self._wanted if self._wanted is not None else self._config
+        for container in wanted.hub_containers if wanted is not None else []:
+            if container.name == name:
+                return list(container.environment)
+        return []
+
+    def volume_script(self, script: str) -> CommandResult:
+        """Run one root script that reads or writes a named volume.
+
+        Args:
+            script: The POSIX sh text, as :func:`volume_read_script` or
+                :func:`volume_write_script` writes it.
+
+        Returns:
+            What the script answered.
+
+        Raises:
+            OSError: When the shell cannot run.
+            subprocess.SubprocessError: When the script does not finish.
+        """
+        return run(
+            [PODMAN_SHELL, "-s"],
+            is_checked=False,
+            input_text=script,
+            timeout_s=PODMAN_VOLUME_SCRIPT_TIMEOUT_S,
+        )
 
     def _run_apply_stopped(self, config: dict, context) -> None:
         """The ``configure`` step under ``stopped``."""

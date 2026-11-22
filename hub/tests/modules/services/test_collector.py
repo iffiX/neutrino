@@ -327,6 +327,32 @@ def test_ayakaleaf_is_one_app_with_its_page_alone():
     assert app["local_name"] == "ayakaleaf.argon-box.localhost"
 
 
+def test_astrbot_is_one_app_with_its_page_alone():
+    held = collector(
+        device_modules=[
+            {
+                "device_id": DEVICE,
+                "host": HOST,
+                "astrbot": {"port": 6185, "is_healthy": True},
+            }
+        ]
+    )
+
+    (entry,) = held.render()
+    (app,) = held.apps()
+    assert entry["id"] == f"astrbot_{DEVICE}_web"
+    assert entry["payload"] == {
+        "url": f"http://{HOST}:6185/",
+        "is_token_required": True,
+    }
+    assert (entry["description_code"], entry["description_params"]) == (
+        "astrbot_module",
+        {"host": HOST},
+    )
+    assert app["title"] == "AstrBot"
+    assert app["local_name"] == "astrbot.argon-box.localhost"
+
+
 def test_a_declared_apps_entries_are_named_by_their_type_and_port():
     app = DeclaredApp(
         id="app1",

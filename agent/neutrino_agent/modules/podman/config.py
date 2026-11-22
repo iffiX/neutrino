@@ -59,6 +59,9 @@ IMAGE_SOURCE_PATTERN = re.compile(r"^[a-z0-9.-]+(:[0-9]+)?(/[a-z0-9._-]+)+\Z")
 # A source set's name, as a hub container lists it.
 SOURCE_SET_PATTERN = re.compile(r"^[a-z][a-z0-9_]*\Z")
 
+# A signal's name, as a hub container's stop names it.
+STOP_SIGNAL_PATTERN = re.compile(r"^SIG[A-Z][A-Z0-9]{1,9}\Z")
+
 
 def _tcp_only() -> list:
     """The protocols of a ``port`` service that names none."""
@@ -218,8 +221,11 @@ class PodmanHubContainer:
         after: The containers of its module it starts after, by name.
         page_port: The container's port its module's forwarder serves; 0
             for none.
+        local_ports: The container's ports published on ``127.0.0.1`` at
+            the same number.
         stop_timeout_s: The seconds ``podman stop`` gives it before
             SIGKILL; 0 for Podman's own 10.
+        stop_signal: The signal its stop sends; empty for SIGTERM.
         success_exit_codes: The exit codes beside 143 its unit counts as a
             clean stop.
     """
@@ -237,7 +243,9 @@ class PodmanHubContainer:
     source_sets: list = field(default_factory=list)
     after: list = field(default_factory=list)
     page_port: int = 0
+    local_ports: list = field(default_factory=list)
     stop_timeout_s: int = 0
+    stop_signal: str = ""
     success_exit_codes: list = field(default_factory=list)
 
     @classmethod
@@ -261,7 +269,9 @@ class PodmanHubContainer:
             source_sets=[str(name) for name in data.get("source_sets") or []],
             after=[str(name) for name in data.get("after") or []],
             page_port=_count(data.get("page_port", 0)),
+            local_ports=[_count(port) for port in data.get("local_ports") or []],
             stop_timeout_s=_count(data.get("stop_timeout_s", 0)),
+            stop_signal=str(data.get("stop_signal", "") or ""),
             success_exit_codes=[
                 _count(code) for code in data.get("success_exit_codes") or []
             ],
@@ -282,8 +292,12 @@ class PodmanHubContainer:
             "after": list(self.after),
             "page_port": self.page_port,
         }
+        if self.local_ports:
+            held["local_ports"] = list(self.local_ports)
         if self.stop_timeout_s:
             held["stop_timeout_s"] = self.stop_timeout_s
+        if self.stop_signal:
+            held["stop_signal"] = self.stop_signal
         if self.success_exit_codes:
             held["success_exit_codes"] = list(self.success_exit_codes)
         return held
@@ -624,7 +638,16 @@ class PodmanConfig:
                 "port_mapping_invalid",
                 {"name": name, "port": str(container.page_port)},
             )
+        for port in container.local_ports:
+            if not 0 < port <= 65535 or container.local_ports.count(port) > 1:
+                raise ModuleApplyError(
+                    "port_mapping_invalid", {"name": name, "port": str(port)}
+                )
         if not 0 <= container.stop_timeout_s <= PODMAN_STOP_TIMEOUT_MAX_S:
+            raise ModuleApplyError("command_invalid", {"name": name})
+        if container.stop_signal and not STOP_SIGNAL_PATTERN.match(
+            container.stop_signal
+        ):
             raise ModuleApplyError("command_invalid", {"name": name})
         for code in container.success_exit_codes:
             if not 0 <= code <= PODMAN_EXIT_CODE_MAX:

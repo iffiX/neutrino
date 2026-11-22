@@ -2848,6 +2848,39 @@ def test_a_container_module_plans_its_pulls_then_its_start_and_first_start(
     assert {step.failed_state for step in start[2:]} == {"install_failed"}
 
 
+def test_astrbot_plans_its_settings_before_the_render_and_its_first_start_after(
+    tmp_path,
+):
+    engine = ModuleEngine(
+        platform=StateRootPlatform(str(tmp_path)), configured_dir=str(tmp_path / "c")
+    )
+    config = {"secret": "s", "password": "Pass1word", "cookie_name": "neutrino_x"}
+    entry = {"want": "running", "config": config, "install": image_recipe("astrbot")}
+    with engine._lock:
+        engine._add_container_runner("astrbot", entry["install"])
+    engine.runner_of("astrbot").take_recipe(entry["install"])
+
+    install = engine.install_steps("astrbot", entry)
+    start = engine.configure_steps("astrbot", entry, "running")
+
+    assert planned(install) == [
+        ("wait_module", {"module": "podman"}, ()),
+        ("pull", {"image": "astrbot"}, (CONTAINERS_SHARED,)),
+        ("verify", {}, (CONTAINERS_SHARED,)),
+        ("settings", {}, (CONTAINERS_SHARED,)),
+        ("render", {}, ()),
+    ]
+    assert planned(start) == [
+        ("wait_module", {"module": "podman"}, ()),
+        ("settings", {}, (CONTAINERS_SHARED,)),
+        ("start", {}, (CONTAINERS_SHARED,)),
+        ("first_start", {}, ()),
+    ]
+    assert {step.failed_state for step in install[3:4] + start[1:2]} == {
+        "install_failed"
+    }
+
+
 # --- another version ---
 
 
@@ -3256,6 +3289,7 @@ STEP_NAMES = {
     "machine",
     "first_start",
     "update_check",
+    "settings",
     "replica_set",
     "wait_app",
     "admin",

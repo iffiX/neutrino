@@ -97,6 +97,7 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_GITEA_MODULE,
     DEVICE_GITEA_SECRET_NAMES,
     DEVICE_GITEA_SECRETS_FILE,
+    DEVICE_ASTRBOT_MODULE,
     DEVICE_AYAKALEAF_MODULE,
     DEVICE_HERMES_WEBUI_MODULE,
     DEVICE_INSTANCE_GATEWAY_FORWARD_URL,
@@ -122,7 +123,7 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_RDP_SEAT_PASSWORD_AAD,
     DEVICE_RDP_SEAT_PASSWORD_CHARS,
 )
-from neutrino_hub.modules.devices import ayakaleaf, hermes_webui
+from neutrino_hub.modules.devices import astrbot, ayakaleaf, hermes_webui
 from neutrino_hub.modules.devices.accounts import DeviceAccount
 from neutrino_hub.modules.devices.folder_shares import (
     folder_shares,
@@ -157,6 +158,8 @@ from neutrino_hub.modules.services.apps import (
     slug,
 )
 from neutrino_hub.modules.services.constants import (
+    SERVICES_ASTRBOT_ID,
+    SERVICES_ASTRBOT_TITLE,
     SERVICES_AYAKALEAF_ID,
     SERVICES_AYAKALEAF_TITLE,
     SERVICES_ENTRY_SSH,
@@ -249,8 +252,8 @@ def machine_apps(store: "DesiredStateStore", key: str) -> dict:
 
     The set the local names are told apart in: each enabled account's
     instance of a program run as an account, Gitea, Ollama, the SSH server,
-    Hermes WebUI, Ayakaleaf and the containers the Containers module
-    declares.
+    Hermes WebUI, Ayakaleaf, AstrBot and the containers the Containers
+    module declares.
 
     Args:
         store: The per-device store.
@@ -265,6 +268,7 @@ def machine_apps(store: "DesiredStateStore", key: str) -> dict:
         f"{SERVICES_SSH_SERVER_ID}_{key}": SERVICES_SSH_SERVER_TITLE,
         f"{SERVICES_HERMES_WEBUI_ID}_{key}": SERVICES_HERMES_WEBUI_TITLE,
         f"{SERVICES_AYAKALEAF_ID}_{key}": SERVICES_AYAKALEAF_TITLE,
+        f"{SERVICES_ASTRBOT_ID}_{key}": SERVICES_ASTRBOT_TITLE,
     }
     for row in account_layer_rows():
         if not row.entry_title or "{account}" not in row.entry_title:
@@ -1481,8 +1485,8 @@ class DesiredStateStore:
         Returns:
             True while an account's AI tools switch is on, a module that
             holds a gateway key per account enables an account, or the
-            Ayakaleaf or Hermes WebUI module, each reading its model from
-            the state, is installed.
+            Ayakaleaf, Hermes WebUI or AstrBot module, each reading its model
+            from the state, is installed.
         """
         modules = self.modules(key) if wanted is None else wanted
         return (
@@ -1491,7 +1495,11 @@ class DesiredStateStore:
             or any(
                 modules.get(name, {}).get("want", "")
                 not in ("", CHANNEL_MODULE_STATE_ABSENT)
-                for name in (DEVICE_AYAKALEAF_MODULE, DEVICE_HERMES_WEBUI_MODULE)
+                for name in (
+                    DEVICE_AYAKALEAF_MODULE,
+                    DEVICE_HERMES_WEBUI_MODULE,
+                    DEVICE_ASTRBOT_MODULE,
+                )
             )
         )
 
@@ -1535,7 +1543,7 @@ class DesiredStateStore:
                 title alone.
             ai_models: The names the gateway serves now, which a module that
                 holds a gateway key per account is sent, and which pick
-                Ayakaleaf's model and Hermes WebUI's.
+                Ayakaleaf's model, Hermes WebUI's and AstrBot's.
             releases: The publishers' feeds as last read, which name the
                 digest of a hub container's image at the version the machine
                 chose; None takes the tested digests.
@@ -1554,9 +1562,9 @@ class DesiredStateStore:
             secrets it signs with and its SSH entry's local port, Ollama
             with its settings alone, Containers
             as :func:`podman_agent_config` composes it with the hub
-            containers of the machine's container modules, and Hermes WebUI
-            and Ayakaleaf with their secrets opened and their names, Hermes
-            WebUI with the default model. A
+            containers of the machine's container modules, and Hermes
+            WebUI, Ayakaleaf and AstrBot with their secrets opened and their
+            names, Hermes WebUI and AstrBot with the default model. A
             module whose manifest's ``web_share`` names ``guest_login``
             ``guest_account`` also carries ``guests``, the guest account of
             each live App share of its page.
@@ -1618,6 +1626,15 @@ class DesiredStateStore:
             made = (app_slug_of or {}).get(app_id) or slug(SERVICES_AYAKALEAF_TITLE)
             config = ayakaleaf.agent_config(
                 config, key, local_name=local_name(made, machine_slug)
+            )
+        elif name == DEVICE_ASTRBOT_MODULE:
+            app_id = module_app_id(name, key)
+            made = (app_slug_of or {}).get(app_id) or slug(SERVICES_ASTRBOT_TITLE)
+            config = astrbot.agent_config(
+                config,
+                key,
+                local_name=local_name(made, machine_slug),
+                models=ai_models,
             )
         held = load_module_manifests() if manifests is None else manifests
         if guest_login_of(held, name) == DEVICE_GUEST_LOGIN_GUEST_ACCOUNT:

@@ -3336,6 +3336,17 @@ class HermesWebuiDeviceView(ModuleDeviceFields):
     details: dict = Field(default_factory=dict)
 
 
+class AstrbotDeviceView(ModuleDeviceFields):
+    """One device's AstrBot: the forwarder's port and where the module stands."""
+
+    # The forwarder's port as the machine reports it; 0 before it does.
+    port: int = 0
+    # The version the machine reports; empty before it reports one.
+    version: str = ""
+    # What the machine last reported: ``{version, port}``.
+    details: dict = Field(default_factory=dict)
+
+
 class OllamaModelView(BaseModel):
     """One model a machine's Ollama holds, from ``/api/tags`` and ``/api/ps``."""
 

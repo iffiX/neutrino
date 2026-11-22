@@ -47,6 +47,7 @@ ORDER = [
     "podman",
     "hermes_webui",
     "ayakaleaf",
+    "astrbot",
 ]
 # The command line programs, whose kind chip reads Program.
 PROGRAMS = ("claude_code", "codex", "opencode")
@@ -69,6 +70,7 @@ KINDS = {
     "podman": "kind_system_service",
     "hermes_webui": "kind_system_service",
     "ayakaleaf": "kind_system_service",
+    "astrbot": "kind_system_service",
 }
 WORDS = {
     "en": {
@@ -112,6 +114,7 @@ SOURCES = {
     "podman": ("source_system", "source_upstream", "source_upstream"),
     "hermes_webui": ("source_container",) * 3,
     "ayakaleaf": ("source_container",) * 3,
+    "astrbot": ("source_container",) * 3,
 }
 
 

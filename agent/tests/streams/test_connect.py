@@ -62,6 +62,7 @@ AYAKALEAF = {
     "state": "running",
     "details": {"version": "6.3.2", "port": 8900, "guests": []},
 }
+ASTRBOT = {"state": "running", "details": {"version": "4.29.4", "port": 6185}}
 DESKTOP = {"is_shared": True, "port": 21118}
 
 
@@ -74,6 +75,7 @@ def everything() -> dict:
         ssh_server=SSH_SERVER,
         hermes_webui=HERMES,
         ayakaleaf=AYAKALEAF,
+        astrbot=ASTRBOT,
     )
 
 
@@ -92,6 +94,7 @@ def test_every_kind_of_published_port_is_in_the_table():
         22000: "127.0.0.1",
         8787: "127.0.0.1",
         8900: "127.0.0.1",
+        6185: "127.0.0.1",
         5432: "192.168.1.5",
         8080: "127.0.0.1",
         8081: "127.0.0.1",
@@ -205,6 +208,44 @@ def test_the_port_a_hub_container_s_page_is_published_at_is_never_served():
         40123: "127.0.0.1",
         9000: "127.0.0.1",
     }
+
+
+def test_a_hub_container_s_local_ports_are_never_served():
+    podman = {
+        "state": "running",
+        "details": {
+            "containers": [
+                {
+                    "name": "neutrino_astrbot",
+                    "module": "astrbot",
+                    "is_running": True,
+                    "ports": ["15000:6185", "6199:6199", "9000:9000"],
+                    "host_bindings": [
+                        {"address": "127.0.0.1", "port": 15000},
+                        {"address": "127.0.0.1", "port": 6199},
+                        {"address": "", "port": 9000},
+                    ],
+                }
+            ]
+        },
+    }
+    desired = {
+        "podman": {
+            "want": "running",
+            "config": {
+                "hub_containers": [
+                    {
+                        "module": "astrbot",
+                        "name": "neutrino_astrbot",
+                        "page_port": 6185,
+                        "local_ports": [6199],
+                    }
+                ]
+            },
+        }
+    }
+
+    assert published_ports({"podman": podman}, desired, None) == {9000: "127.0.0.1"}
 
 
 def test_ollama_s_port_is_published_while_its_row_reads_present():

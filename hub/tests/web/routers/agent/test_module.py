@@ -892,6 +892,7 @@ SUPPORTED_OFF_LINUX = {
     "vscode": (True, True),
     "hermes_webui": (True, True),
     "ayakaleaf": (True, True),
+    "astrbot": (True, True),
 }
 WINDOWS = {"os": "windows", "family": "", "arch": "amd64", "version": "26100"}
 DARWIN = {"os": "darwin", "family": "", "arch": "arm64", "version": "15.3.1"}
@@ -2308,6 +2309,7 @@ def rows_by_name(client) -> dict:
                 "podman": "system",
                 "hermes_webui": "container",
                 "ayakaleaf": "container",
+                "astrbot": "container",
             },
         ),
         (
@@ -2330,6 +2332,7 @@ def rows_by_name(client) -> dict:
                 "podman": "upstream",
                 "hermes_webui": "container",
                 "ayakaleaf": "container",
+                "astrbot": "container",
             },
         ),
     ],

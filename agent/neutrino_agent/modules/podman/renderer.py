@@ -55,6 +55,9 @@ from neutrino_agent.modules.podman.constants import (
 )
 from neutrino_agent.modules.podman.machine_paths import split_volume, to_machine
 
+# The name a volume's file is written under before its rename into place.
+VOLUME_TEMPORARY_SUFFIX = ".neutrino_new"
+
 # What every root script begins with: where the files go, how a generated
 # file is told apart, and ``put``, which writes one file from its base64
 # text with a mode when it differs and prints ``changed:`` for it. A fourth
@@ -385,6 +388,62 @@ def machine_drive_script(names: list, action: str) -> str:
     return f"systemctl {action} {units}\n"
 
 
+def volume_read_script(volume: str, path: str) -> str:
+    """The root script that prints one file of a named volume.
+
+    Args:
+        volume: The volume, already checked against ``CONTAINER_NAME_PATTERN``.
+        path: The file's path inside the volume, with no ``..``.
+
+    Returns:
+        The POSIX sh text. It prints ``missing`` while the volume or the file
+        is missing, else ``present`` and the file in base64 on the next line.
+    """
+    return (
+        f"v={_shell_quoted(volume)}\n"
+        f'if ! {PODMAN_BINARY} volume exists "$v"; then echo missing; exit 0; fi\n'
+        f"m=$({PODMAN_BINARY} volume inspect --format '{{{{.Mountpoint}}}}' \"$v\")\n"
+        f'f="$m"/{_shell_quoted(path)}\n'
+        'if [ ! -f "$f" ]; then echo missing; exit 0; fi\n'
+        'echo present\nbase64 -w 0 "$f"\necho\n'
+    )
+
+
+def volume_write_script(volume: str, *, files: dict, folders=()) -> str:
+    """The root script that makes a named volume when missing, its folders, and writes its files.
+
+    Each file is written whole under a temporary name, mode 600, and renamed
+    into place.
+
+    Args:
+        volume: The volume, already checked against ``CONTAINER_NAME_PATTERN``.
+        files: Path inside the volume to its text, written in UTF-8.
+        folders: Paths inside the volume made with their parents.
+
+    Returns:
+        The POSIX sh text; it exits non-zero at the first command that fails.
+    """
+    lines = [
+        "set -e",
+        f"v={_shell_quoted(volume)}",
+        f'{PODMAN_BINARY} volume exists "$v" || '
+        f'{PODMAN_BINARY} volume create "$v" >/dev/null',
+        f"m=$({PODMAN_BINARY} volume inspect --format '{{{{.Mountpoint}}}}' \"$v\")",
+    ]
+    for folder in folders:
+        lines.append(f'mkdir -p "$m"/{_shell_quoted(folder)}')
+    for path, text in files.items():
+        encoded = base64.b64encode(text.encode("utf-8")).decode("ascii")
+        temporary = _shell_quoted(path + VOLUME_TEMPORARY_SUFFIX)
+        lines += [
+            f"printf '%s' {_shell_quoted(encoded)} | base64 -d > \"$m\"/{temporary}",
+            f'chmod 600 "$m"/{temporary}',
+            f'mv -f "$m"/{temporary} "$m"/{_shell_quoted(path)}',
+        ]
+    lines.append("echo written")
+    return "\n".join(lines) + "\n"
+
+
 def machine_journal_script(name: str, lines: int) -> str:
     """The root script that prints the tail of one container unit's journal.
 
@@ -439,7 +498,10 @@ class _RenderedContainer:
         network: The network it joins; empty for Podman's default.
         after: The units it requires and starts after.
         page_publish: ``127.0.0.1:<host>:<page_port>``; empty for none.
+        local_publish: ``127.0.0.1:<port>:<port>`` for each of its
+            ``local_ports``.
         stop_timeout_s: The seconds ``podman stop`` gives it.
+        stop_signal: The signal its stop sends; empty for Podman's SIGTERM.
         success_exit_codes: The exit codes its unit counts as a clean stop.
     """
 
@@ -451,7 +513,9 @@ class _RenderedContainer:
     network: str = ""
     after: tuple = ()
     page_publish: str = ""
+    local_publish: tuple = ()
     stop_timeout_s: int = PODMAN_STOP_TIMEOUT_S
+    stop_signal: str = ""
     success_exit_codes: tuple = (PODMAN_STOP_EXIT_CODE,)
 
 
@@ -551,7 +615,12 @@ class PodmanUnitRenderer:
                         if hub.page_port and page
                         else ""
                     ),
+                    local_publish=tuple(
+                        f"{PODMAN_PAGE_ADDRESS}:{port}:{port}"
+                        for port in hub.local_ports
+                    ),
                     stop_timeout_s=hub.stop_timeout_s or PODMAN_STOP_TIMEOUT_S,
+                    stop_signal=hub.stop_signal,
                     success_exit_codes=(
                         PODMAN_STOP_EXIT_CODE,
                         *hub.success_exit_codes,
@@ -648,10 +717,14 @@ class PodmanUnitRenderer:
             command += ["--network", held.network]
         if held.add_host:
             command += ["--add-host", f"{PODMAN_HOST_ALIAS}:{held.add_host}"]
+        if held.stop_signal:
+            command += ["--stop-signal", held.stop_signal]
         for port in container.publish_ports:
             command += ["-p", port]
         if held.page_publish:
             command += ["-p", held.page_publish]
+        for port in held.local_publish:
+            command += ["-p", port]
         for volume in volumes:
             command += ["-v", _unit_word(volume)]
         command += ["--env-file", environment_path(container.name)]

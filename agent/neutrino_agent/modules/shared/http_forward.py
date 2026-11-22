@@ -48,6 +48,7 @@ from neutrino_agent.constants import (
     AGENT_FORWARD_CHUNK_BYTES,
     AGENT_FORWARD_HEAD_LIMIT_BYTES,
     AGENT_FORWARD_IDLE_TIMEOUT_S,
+    AGENT_FORWARD_JUDGED_BODY_BYTES,
     AGENT_FORWARD_LISTEN_HOST,
     AGENT_FORWARD_LISTEN_QUEUE,
     AGENT_FORWARD_READY_POLL_S,
@@ -264,6 +265,25 @@ class ConnectionReader:
             target.sendall(piece)
             remaining -= len(piece)
         return True
+
+    def read_exact(self, size: int) -> "bytes | None":
+        """So many bytes, read whole.
+
+        Args:
+            size: How many.
+
+        Returns:
+            The bytes; None when this connection ended first.
+
+        Raises:
+            OSError: When the connection fails.
+        """
+        while len(self._buffer) < size:
+            if not self._fill():
+                return None
+        held = bytes(self._buffer[:size])
+        del self._buffer[:size]
+        return held
 
     def copy_to_end(self, target: socket.socket) -> None:
         """Copy every byte to another connection until this one ends.
@@ -850,8 +870,10 @@ class InstanceForwarder:
             record: The instance's record: ``account``, ``port``, the
                 secret its tokens are signed with, and what the hooks read.
             hooks: The module's hooks: ``on_first_start``, ``admit``,
-                ``connect`` and ``forwarder_fields``, and ``page_cookie``
-                where the page's login cookie has a fixed name of its own.
+                ``connect`` and ``forwarder_fields``, ``page_cookie``
+                where the page's login cookie has a fixed name of its own,
+                and ``is_body_judged`` and ``admit_body`` where a request's
+                body decides whether it passes.
             listen_host: The address the forwarder listens on.
             clock: The hub's time in seconds since the epoch, which a
                 token's expiry is judged by.
@@ -1022,9 +1044,8 @@ class InstanceForwarder:
         if refusal:
             answer(client, refusal)
             return _CLOSED
-        decision = self._hooks.admit(
-            self._request(method, target, headers), self.record
-        )
+        forwarded = self._request(method, target, headers)
+        decision = self._hooks.admit(forwarded, self.record)
         if decision.status:
             is_ending = has_body or is_closing(version, headers)
             answer(
@@ -1056,20 +1077,40 @@ class InstanceForwarder:
         except ValueError:
             answer(client, 411)
             return _CLOSED
+        body = None
+        if self._is_body_judged(forwarded):
+            if length > AGENT_FORWARD_JUDGED_BODY_BYTES:
+                answer(client, 401)
+                return _CLOSED
+            body = reader.read_exact(length)
+            if body is None:
+                return _CLOSED
+            decision = self._hooks.admit_body(forwarded, body, self.record)
+            if decision.status:
+                is_ending = is_closing(version, headers)
+                answer(
+                    client,
+                    decision.status,
+                    decision.body,
+                    content_type=decision.content_type,
+                    extra=list(decision.headers),
+                    is_closing=is_ending,
+                )
+                return _CLOSED if is_ending else kept
         is_reused = kept is not None
         if kept is None:
             kept = self._open_reader(opened)
             if kept is None:
                 answer(client, 502)
                 return _CLOSED
-        outcome = self._pass_on(kept, client, reader, head, length, method)
+        outcome = self._pass_on(kept, client, reader, head, length, method, body)
         if outcome is None and is_reused and length == 0:
             self._close_upstream(kept.socket, opened)
             kept = self._open_reader(opened)
             if kept is None:
                 answer(client, 502)
                 return _CLOSED
-            outcome = self._pass_on(kept, client, reader, head, length, method)
+            outcome = self._pass_on(kept, client, reader, head, length, method, body)
         if outcome is None:
             kept.socket.close()
             answer(client, 502)
@@ -1087,8 +1128,11 @@ class InstanceForwarder:
         head: bytes,
         length: int,
         method: str,
+        body: "bytes | None" = None,
     ):
         """Send one request to the page, its body cut at its length, and relay the answer.
+
+        A body the module's rule judged is sent as it was read.
 
         Returns:
             What :func:`relay_answer` returns; None as well when the page's
@@ -1099,13 +1143,18 @@ class InstanceForwarder:
                 after its answer began.
         """
         try:
-            upstream.socket.sendall(head)
+            upstream.socket.sendall(head if body is None else head + body)
         except OSError:
             return None
-        if not reader.copy_exact(length, upstream.socket):
+        if body is None and not reader.copy_exact(length, upstream.socket):
             raise ConnectionError("the browser ended its request early")
         rename = self._answer_head if self._cookie_names() else None
         return relay_answer(upstream, client, method, rename)
+
+    def _is_body_judged(self, request: ForwardRequest) -> bool:
+        """Whether the module's rule reads this request's body before it passes."""
+        judged = getattr(self._hooks, "is_body_judged", None)
+        return judged is not None and bool(judged(request))
 
     def _cookie_names(self) -> tuple:
         """``(page, kept)``: the page's own cookie name and the entry's, or empty when none is renamed."""

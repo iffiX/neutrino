@@ -66,8 +66,8 @@ from neutrino_agent.constants import (
     AGENT_LEAVING_KEY,
     AGENT_METHOD_CONTAINER,
     AGENT_MODULE_INSTALL_RECHECK_S,
+    AGENT_PLANNED_ONCE_STEPS,
     AGENT_PRESENT_WANTS,
-    AGENT_STEP_WAIT_MODULE,
     AGENT_TAKEN_OVER_KEY,
     AGENT_WAIT_CHECK,
     AGENT_WANT_ABSENT,
@@ -108,6 +108,7 @@ APPLY_ORDER = (
     "podman",
     "hermes_webui",
     "ayakaleaf",
+    "astrbot",
     "vscode",
     "code_server",
     "cloudcli",
@@ -606,7 +607,8 @@ class DesiredStateApplier:
         Windows and macOS and its ``runc`` on Linux, the version switch
         when a ``hub`` module's kept
         version differs from its recipe's, then the configure steps under
-        ``stopped`` and ``running``, less a second ``wait_module``. An entry
+        ``stopped`` and ``running``, less a second ``wait_module`` or
+        ``settings``. An entry
         that carries ``is_taken_over`` plans no install and no version
         switch, whatever the machine shows, and under ``stopped`` and
         ``running`` one ``configure`` step that checks the configuration
@@ -668,10 +670,12 @@ class DesiredStateApplier:
             steps += self._engine.switch_steps(name, entry)
         if want in CONFIGURING_WANTS:
             configuring = self._engine.configure_steps(name, entry, want)
-            if any(step.name == AGENT_STEP_WAIT_MODULE for step in steps):
-                configuring = [
-                    step for step in configuring if step.name != AGENT_STEP_WAIT_MODULE
-                ]
+            planned = {step.name for step in steps}
+            configuring = [
+                step
+                for step in configuring
+                if step.name not in AGENT_PLANNED_ONCE_STEPS or step.name not in planned
+            ]
             steps += configuring
         return kind, steps
 

@@ -18,6 +18,7 @@
     {"name": "siyuan", "category": "notes"},
     {"name": "samba", "category": "files"},
     {"name": "remote_desktop", "category": "remote"},
-    {"name": "podman", "category": "other"}
+    {"name": "podman", "category": "other"},
+    {"name": "astrbot", "category": "other"}
   ]
 }

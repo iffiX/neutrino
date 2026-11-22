@@ -166,6 +166,44 @@ class ContainerHooks:
             source_sets: ``{name: {probe, sources, variables}}``.
         """
 
+    def take_config(self, config: dict) -> None:
+        """Take the module's configuration the state names, before any task plans from it.
+
+        Args:
+            config: The module's configuration in the state.
+        """
+
+    def take_recipe(self, recipe: dict) -> None:
+        """Take the module's recipe the state names.
+
+        Args:
+            recipe: ``{runner, method, params}``.
+        """
+
+    def install_steps(self, version: str) -> list:
+        """The steps of the module's install before Containers renders its containers.
+
+        Args:
+            version: The version the recipe names.
+
+        Returns:
+            :class:`ModuleStep` each; none for a module with nothing to
+            prepare.
+        """
+        return []
+
+    def before_start_steps(self, config: dict) -> list:
+        """The steps before the module's ``start`` that its record does not hold.
+
+        Args:
+            config: The module's configuration the task's entry carries.
+
+        Returns:
+            :class:`ModuleStep` each; none for a module with nothing to
+            prepare.
+        """
+        return []
+
     def installed(self, version: str) -> None:
         """Note the version the recipe names, once an install pulled its images and at each start.
 
@@ -376,12 +414,39 @@ class ContainerModuleRunner(ModuleRunner):
         self._hooks.remove()
 
     def take_recipe(self, recipe: dict) -> None:
-        """Take the version the recipe names, which each start tells the hooks.
+        """Take the version the recipe names, which each start tells the hooks, and hand the recipe to them.
 
         Args:
             recipe: ``{runner, method, params}``.
         """
         self._version = str(params_of(recipe).get("version", "") or "")
+        self._hooks.take_recipe(dict(recipe))
+
+    def take_config(self, config: dict) -> None:
+        """Hand the module's configuration in the state to its hooks.
+
+        Args:
+            config: The module's configuration in the state.
+        """
+        self._hooks.take_config(dict(config))
+
+    def install_steps(self, recipe: dict, steps: list) -> list:
+        """The install method's steps, the hooks' own before ``render``.
+
+        Args:
+            recipe: The module's recipe.
+            steps: ``pull {image}`` per image, ``verify`` and ``render``.
+
+        Returns:
+            The steps.
+        """
+        version = str(params_of(recipe).get("version", "") or "")
+        planned = []
+        for step in steps:
+            if step.name == AGENT_STEP_RENDER:
+                planned += self._hooks.install_steps(version)
+            planned.append(step)
+        return planned
 
     def take_source_sets(self, source_sets: dict) -> None:
         """Hand the state's ``source_sets`` section to the module's hooks.
@@ -412,8 +477,9 @@ class ContainerModuleRunner(ModuleRunner):
 
         Returns:
             The steps; ``start`` hands the hooks the configuration before
-            it starts the containers, after a ``render`` while the system
-            refuses a port the module keeps.
+            it starts the containers, after the hooks' own steps before it
+            and a ``render`` while the system refuses a port the module
+            keeps.
         """
         planned = []
         for step in steps:
@@ -422,6 +488,7 @@ class ContainerModuleRunner(ModuleRunner):
             if step.name != AGENT_STEP_START:
                 planned.append(step)
                 continue
+            planned += self._hooks.before_start_steps(dict(config))
             if self._containers.refused_page_ports(self.name):
                 planned.append(ModuleStep(name=AGENT_STEP_RENDER, run=_run_render))
             planned.append(

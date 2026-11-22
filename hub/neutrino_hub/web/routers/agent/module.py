@@ -52,6 +52,7 @@ from neutrino_hub.modules.channel.constants import (
 )
 from neutrino_hub.modules.devices.constants import (
     DEVICE_AGENT_MODULES,
+    DEVICE_ASTRBOT_MODULE,
     DEVICE_AYAKALEAF_MODULE,
     DEVICE_HERMES_WEBUI_MODULE,
     DEVICE_METHOD_AGENT,
@@ -83,7 +84,7 @@ from neutrino_hub.modules.devices.catalog import (
     module_source,
     resolve_module,
 )
-from neutrino_hub.modules.devices import ayakaleaf, hermes_webui
+from neutrino_hub.modules.devices import astrbot, ayakaleaf, hermes_webui
 from neutrino_hub.modules.devices.machine_memory import memory_need
 from neutrino_hub.modules.devices.module_table import (
     account_layer_names,
@@ -1367,7 +1368,7 @@ def _want_required_running(runtime: PanelRuntime, key: str, required: list) -> N
 def _prepare_container_module(runtime: PanelRuntime, key: str, module: str) -> str:
     """Give a container module what its containers are composed from, ahead of its install or start.
 
-    Hermes WebUI and Ayakaleaf get the secrets their files hold none of,
+    Hermes WebUI, Ayakaleaf and AstrBot get the secrets their files hold none of,
     and a module that uses the AI gateway its own key. A locked vault leaves
     a secret or the key for a later press.
 
@@ -1387,6 +1388,7 @@ def _prepare_container_module(runtime: PanelRuntime, key: str, module: str) -> s
     ensure_config = {
         DEVICE_HERMES_WEBUI_MODULE: hermes_webui.ensure_config,
         DEVICE_AYAKALEAF_MODULE: ayakaleaf.ensure_config,
+        DEVICE_ASTRBOT_MODULE: astrbot.ensure_config,
     }.get(module)
     if ensure_config is not None:
         try:

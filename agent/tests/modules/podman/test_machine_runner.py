@@ -1630,6 +1630,31 @@ def test_a_hub_container_s_refused_start_names_the_first_one_down(rig):
     assert found.params["name"] == "neutrino_demo"
 
 
+def test_a_volume_script_runs_as_root_in_the_applied_machine(rig):
+    rig.keep_image()
+    rig.runner.apply(CONFIG)
+    rig.world.shell_answers = [(0, "present\nZm9v\n")]
+
+    done = rig.runner.volume_script("echo present\n")
+
+    assert (done.exit_code, done.stdout) == (0, "present\nZm9v\n")
+    assert rig.world.scripts[-1][2] == "echo present\n"
+
+
+def test_a_volume_script_with_no_machine_applied_is_unreachable(rig):
+    assert refusal(lambda: rig.runner.volume_script("true\n")).code == (
+        "machine_unreachable"
+    )
+
+
+def test_a_hub_container_s_environment_is_the_state_s(rig):
+    hub = dict(HUB_CONFIG["hub_containers"][0], environment=["NEUTRINO_GATEWAY_URL=u"])
+    rig.runner.take_config(dict(HUB_CONFIG, hub_containers=[hub]))
+
+    assert rig.runner.hub_environment(hub["name"]) == ["NEUTRINO_GATEWAY_URL=u"]
+    assert rig.runner.hub_environment("neutrino_other") == []
+
+
 def test_a_containers_journal_is_read_in_the_machine(rig):
     rig.keep_image()
     rig.runner.apply(CONFIG)

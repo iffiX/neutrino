@@ -197,6 +197,7 @@ SERVICES_PUBLISHED_MODULES = (
     "siyuan",
     "hermes_webui",
     "ayakaleaf",
+    "astrbot",
     "ssh_server",
 )
 
@@ -239,6 +240,7 @@ SERVICES_DESCRIPTION_CODEG_MODULE = "codeg_module"
 SERVICES_DESCRIPTION_SIYUAN_MODULE = "siyuan_module"
 SERVICES_DESCRIPTION_HERMES_WEBUI_MODULE = "hermes_webui_module"
 SERVICES_DESCRIPTION_AYAKALEAF_MODULE = "ayakaleaf_module"
+SERVICES_DESCRIPTION_ASTRBOT_MODULE = "astrbot_module"
 SERVICES_DESCRIPTION_SSH_SERVER_MODULE = "ssh_server_module"
 SERVICES_DESCRIPTION_CODES = (
     SERVICES_DESCRIPTION_AI_GATEWAY,
@@ -255,6 +257,7 @@ SERVICES_DESCRIPTION_CODES = (
     SERVICES_DESCRIPTION_SIYUAN_MODULE,
     SERVICES_DESCRIPTION_HERMES_WEBUI_MODULE,
     SERVICES_DESCRIPTION_AYAKALEAF_MODULE,
+    SERVICES_DESCRIPTION_ASTRBOT_MODULE,
     SERVICES_DESCRIPTION_SSH_SERVER_MODULE,
 )
 
@@ -284,3 +287,8 @@ SERVICES_HERMES_WEBUI_DESCRIPTION = "published by the hermes_webui module on {ho
 SERVICES_AYAKALEAF_ID = "ayakaleaf"
 SERVICES_AYAKALEAF_TITLE = "Ayakaleaf"
 SERVICES_AYAKALEAF_DESCRIPTION = "published by the ayakaleaf module on {host}"
+# AstrBot's one web entry per device, ``astrbot_<device id>``, opened the
+# same way.
+SERVICES_ASTRBOT_ID = "astrbot"
+SERVICES_ASTRBOT_TITLE = "AstrBot"
+SERVICES_ASTRBOT_DESCRIPTION = "published by the astrbot module on {host}"

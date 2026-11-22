@@ -40,10 +40,14 @@ from neutrino_hub.modules.services.constants import (
     SERVICES_AI_PROTOCOL,
     SERVICES_AI_TITLE,
     SERVICES_APP_ENTRY_TYPES,
+    SERVICES_ASTRBOT_DESCRIPTION,
+    SERVICES_ASTRBOT_ID,
+    SERVICES_ASTRBOT_TITLE,
     SERVICES_AYAKALEAF_DESCRIPTION,
     SERVICES_AYAKALEAF_ID,
     SERVICES_AYAKALEAF_TITLE,
     SERVICES_DESCRIPTION_AI_GATEWAY,
+    SERVICES_DESCRIPTION_ASTRBOT_MODULE,
     SERVICES_DESCRIPTION_AYAKALEAF_MODULE,
     SERVICES_DESCRIPTION_CONTAINER,
     SERVICES_DESCRIPTION_DECLARED,
@@ -137,6 +141,13 @@ FORWARDED_CONTAINER_MODULES = (
         SERVICES_AYAKALEAF_DESCRIPTION,
         SERVICES_DESCRIPTION_AYAKALEAF_MODULE,
     ),
+    (
+        "astrbot",
+        SERVICES_ASTRBOT_ID,
+        SERVICES_ASTRBOT_TITLE,
+        SERVICES_ASTRBOT_DESCRIPTION,
+        SERVICES_DESCRIPTION_ASTRBOT_MODULE,
+    ),
 )
 
 
@@ -179,7 +190,7 @@ class ServiceListCollector:
                 "is_healthy"}]}``, ``ssh_server: {"instances": [{"account",
                 "port", "is_healthy", "host_key_fingerprint",
                 "account_key_fingerprint"}]}``,
-                ``hermes_webui`` and ``ayakaleaf`` each as ``{"port",
+                ``hermes_webui``, ``ayakaleaf`` and ``astrbot`` each as ``{"port",
                 "is_healthy"}``, and ``podman:
                 {"containers": [{"name", "image", "is_running", "bindings",
                 "source"}]}``, ``bindings`` being ``(port, protocol,

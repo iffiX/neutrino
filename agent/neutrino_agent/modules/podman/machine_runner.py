@@ -128,7 +128,7 @@ from neutrino_agent.modules.shared.step_locks import (
     CONTAINERS_ALONE_LOCKS,
     PACKAGE_MANAGER_LOCKS,
 )
-from neutrino_agent.modules.shared.subprocess_run import command_detail
+from neutrino_agent.modules.shared.subprocess_run import CommandResult, command_detail
 from neutrino_agent.modules.shared.unpacked_tree import remove_tree
 
 
@@ -1283,6 +1283,47 @@ class PodmanMachineModuleRunner(ModuleRunner):
             The refused ports; empty on a system that reserves none.
         """
         return self._page_ports.refused_ports(module)
+
+    def hub_environment(self, name: str) -> list:
+        """The environment the state names for one hub container.
+
+        Args:
+            name: The hub container.
+
+        Returns:
+            Its ``KEY=value`` lines as the state names them, the source sets
+            not filled in; empty for a container the state does not name.
+        """
+        wanted = self._wanted if self._wanted is not None else self._config
+        for container in wanted.hub_containers if wanted is not None else []:
+            if container.name == name:
+                return list(container.environment)
+        return []
+
+    def volume_script(self, script: str) -> CommandResult:
+        """Run one root script that reads or writes a named volume, in the machine.
+
+        Args:
+            script: The POSIX sh text, as :func:`volume_read_script` or
+                :func:`volume_write_script` writes it.
+
+        Returns:
+            What the script answered.
+
+        Raises:
+            ModuleApplyError: ``machine_unreachable`` while no machine was
+                applied or it cannot be reached; ``credential_invalid`` when
+                Windows refuses the account's login.
+        """
+        record = self._record()
+        if not record:
+            raise ModuleApplyError(
+                "machine_unreachable", {"detail": "no machine was applied"}
+            )
+        done = self._machine_of_record(record).shell(script)
+        return CommandResult(
+            [], int(done.returncode), done.stdout or "", done.stderr or ""
+        )
 
     def _run_features(self, context) -> None:
         """The ``windows_features`` step."""
