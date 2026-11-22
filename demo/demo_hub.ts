@@ -1131,7 +1131,7 @@ export class DemoHub {
       title: spec.title,
       method: spec.method,
       source: DEMO_SOURCE[spec.method] ?? "upstream",
-      kind: spec.isProgram ? "program" : "service",
+      kind: spec.kind,
       want: held.want,
       state: held.state,
       is_active: held.state === "running",
@@ -1170,7 +1170,7 @@ export class DemoHub {
         has_package_mark: true,
       };
     }
-    if (spec.isProgram) {
+    if (spec.kind === "program") {
       return {
         has_module_copy: isPresent,
         version: isPresent ? spec.version : "",
@@ -1258,10 +1258,11 @@ export class DemoHub {
           share_path: "",
           user: DEMO_ACCOUNT,
           host_key_fingerprint: "SHA256:demo-host-key-of-a-made-up-system",
-          ai_tools: spec?.isProgram
-            ? { state: "switched", code: "", params: {} }
-            : null,
-          is_ai_tools_enabled: spec?.isProgram ? true : null,
+          ai_tools:
+            spec?.kind === "program"
+              ? { state: "switched", code: "", params: {} }
+              : null,
+          is_ai_tools_enabled: spec?.kind === "program" ? true : null,
         },
       ],
       is_terms_accepted: device.modules[name]?.isTermsAccepted ?? false,
@@ -1678,7 +1679,7 @@ export class DemoHub {
         spec,
         "installing",
         spec.installSteps,
-        spec.isProgram ? "running" : "installed",
+        spec.kind === "program" ? "running" : "installed",
       );
     } else if (action === "start" && held.state === "running") {
       held.want = "running";

@@ -42,8 +42,9 @@ export interface DemoModuleSpec {
   method: string;
   version: string;
   isCarried: boolean;
-  /** Whether it is a command line program, with no Start or Stop. */
-  isProgram: boolean;
+  /** The kind chip's word: `system_service`, `account_service`, or
+   * `program` for a command line program, with no Start or Stop. */
+  kind: string;
   requires: string[];
   installSteps: ModuleTaskStep[];
   uninstallData: ModuleUninstallData | null;
@@ -74,7 +75,7 @@ export const DEMO_MODULES: DemoModuleSpec[] = [
     method: "agent",
     version: "",
     isCarried: true,
-    isProgram: false,
+    kind: "account_service",
     requires: [],
     installSteps: [],
     uninstallData: null,
@@ -87,7 +88,7 @@ export const DEMO_MODULES: DemoModuleSpec[] = [
     method: "agent",
     version: "",
     isCarried: true,
-    isProgram: false,
+    kind: "account_service",
     requires: [],
     installSteps: [],
     uninstallData: null,
@@ -100,7 +101,7 @@ export const DEMO_MODULES: DemoModuleSpec[] = [
     method: "agent",
     version: "",
     isCarried: true,
-    isProgram: false,
+    kind: "system_service",
     requires: [],
     installSteps: [],
     uninstallData: null,
@@ -113,7 +114,7 @@ export const DEMO_MODULES: DemoModuleSpec[] = [
     method: "system",
     version: "4.19.5",
     isCarried: false,
-    isProgram: false,
+    kind: "system_service",
     requires: [],
     installSteps: [step("packages"), step("configure"), step("start")],
     uninstallData: uninstallKept(
@@ -129,7 +130,7 @@ export const DEMO_MODULES: DemoModuleSpec[] = [
     method: "hub",
     version: "1.24.6",
     isCarried: false,
-    isProgram: false,
+    kind: "system_service",
     requires: [],
     installSteps: [
       step("artifact", { name: "gitea" }),
@@ -157,7 +158,7 @@ export const DEMO_MODULES: DemoModuleSpec[] = [
     method: "hub",
     version: "0.40.16",
     isCarried: false,
-    isProgram: false,
+    kind: "system_service",
     requires: [],
     installSteps: [
       step("packages"),
@@ -177,7 +178,7 @@ export const DEMO_MODULES: DemoModuleSpec[] = [
     method: "hub",
     version: "1.105.1",
     isCarried: false,
-    isProgram: false,
+    kind: "account_service",
     requires: [],
     installSteps: [
       step("artifact", { name: "vscode" }),
@@ -205,7 +206,7 @@ export const DEMO_MODULES: DemoModuleSpec[] = [
     method: "hub",
     version: "4.104.3",
     isCarried: false,
-    isProgram: false,
+    kind: "account_service",
     requires: [],
     installSteps: [
       step("artifact", { name: "code_server" }),
@@ -233,7 +234,7 @@ export const DEMO_MODULES: DemoModuleSpec[] = [
     method: "hub",
     version: "1.8.4",
     isCarried: false,
-    isProgram: false,
+    kind: "account_service",
     requires: [],
     installSteps: [
       step("artifact", { name: "node" }),
@@ -261,7 +262,7 @@ export const DEMO_MODULES: DemoModuleSpec[] = [
     method: "hub",
     version: "0.9.2",
     isCarried: false,
-    isProgram: false,
+    kind: "account_service",
     requires: [],
     installSteps: [
       step("artifact", { name: "node" }),
@@ -289,7 +290,7 @@ export const DEMO_MODULES: DemoModuleSpec[] = [
     method: "hub",
     version: "1.19.5",
     isCarried: false,
-    isProgram: true,
+    kind: "program",
     requires: [],
     installSteps: [
       step("artifact", { name: "opencode" }),
@@ -310,7 +311,7 @@ export const DEMO_MODULES: DemoModuleSpec[] = [
     method: "hub",
     version: "3.3.5",
     isCarried: false,
-    isProgram: false,
+    kind: "account_service",
     requires: [],
     installSteps: [
       step("artifact", { name: "siyuan" }),
@@ -338,7 +339,7 @@ export const DEMO_MODULES: DemoModuleSpec[] = [
     method: "system",
     version: "5.6.2",
     isCarried: false,
-    isProgram: false,
+    kind: "system_service",
     requires: [],
     installSteps: [step("packages"), step("configure"), step("start")],
     uninstallData: uninstallKept(
@@ -354,7 +355,7 @@ export const DEMO_MODULES: DemoModuleSpec[] = [
     method: "container",
     version: "0.4.1",
     isCarried: false,
-    isProgram: false,
+    kind: "system_service",
     requires: ["podman"],
     installSteps: [
       step("wait_module", { module: "podman" }),
@@ -384,7 +385,7 @@ export const DEMO_MODULES: DemoModuleSpec[] = [
     method: "container",
     version: "2.1.0",
     isCarried: false,
-    isProgram: false,
+    kind: "system_service",
     requires: ["podman"],
     installSteps: [
       step("wait_module", { module: "podman" }),
