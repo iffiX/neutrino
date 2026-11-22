@@ -1323,7 +1323,7 @@ bar, each press acting at once, as the Containers tab's rows do:
 
 | Rule | Reason |
 | --- | --- |
-| The tab reads `GET /api/agent/module/ollama` every 2 seconds while a pull runs or waits, every 5 seconds otherwise, and again at each press; both panels draw that one view. | A person watches a pull, a load and the memory move ("Nothing asks for a refresh"), and the agent reports its readings every 5 seconds. |
+| The tab reads `GET /api/agent/module/ollama` every 2 seconds while a pull runs or waits or a model loads, every 5 seconds otherwise, and again at each press; both panels draw that one view. | A person watches a pull, a load and the memory move ("Nothing asks for a refresh"), and the agent reports its readings every 5 seconds. |
 | A pull is the hub's task: leaving the page leaves it running, and the page draws the queue the view carries when it comes back. A further **Pull** waits behind the running one. | A model is gigabytes, and a page is closed long before. |
 | A person's Ollama, adopted on Linux or an app on Windows and macOS, has the same **Models** panel. | The model list is Ollama's API, whoever installed the server. |
 | Nothing for models is on a client. | The panel is where a machine's software is managed. |
