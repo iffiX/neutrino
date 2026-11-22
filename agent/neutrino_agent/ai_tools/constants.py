@@ -22,6 +22,9 @@ AI_TOOLS_CC_SWITCH_APPS = {"opencode": "open-code"}
 AI_TOOLS_ADDITIVE_APPS = ("opencode",)
 # OpenCode's provider package for an endpoint of the OpenAI API.
 AI_TOOLS_OPENCODE_NPM = "@ai-sdk/openai-compatible"
+# OpenCode's top-level key naming the model it starts on, as
+# ``<provider>/<model>``. cc-switch writes none.
+AI_TOOLS_OPENCODE_MODEL_KEY = "model"
 # The directory cc-switch writes a tool's files into only once it is there,
 # and every file a switch may write in it, below the account's home: what
 # is kept aside before the first switch and put back after the switch back.

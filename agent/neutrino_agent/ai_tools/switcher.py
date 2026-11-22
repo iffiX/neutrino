@@ -26,7 +26,8 @@ back that cannot run cc-switch is a failure, and the records stay.
 OpenCode is additive: cc-switch adds the hub's provider to its file beside
 the account's own and keeps no provider current, so its adoption is the
 list alone, its provider goes in whole as ``--config``, and the hub is
-current while cc-switch lists its provider.
+current while cc-switch lists its provider. Its top-level ``model`` is
+written after the switch when the file names none, and the record keeps it.
 
 Activation is all or nothing: a tool that refuses has itself, once its
 record was started, and every tool switched before it put back, and the
@@ -65,6 +66,7 @@ from neutrino_agent.ai_tools.constants import (
     AI_TOOLS_ENDPOINT_SUFFIXES,
     AI_TOOLS_KEY_DIGEST_CHARS,
     AI_TOOLS_OFFICIAL_PROVIDERS,
+    AI_TOOLS_OPENCODE_MODEL_KEY,
     AI_TOOLS_OPENCODE_NPM,
     AI_TOOLS_PROVIDER_ID,
     AI_TOOLS_PROVIDER_NAME,
@@ -126,6 +128,53 @@ def provider_config(app: str, base_url: str, api_key: str, config: dict) -> str:
             "models": {model: {"name": model}} if model else {},
         }
     )
+
+
+def opencode_model(config: dict) -> str:
+    """OpenCode's top-level ``model`` naming the tool's model in the hub's provider.
+
+    Args:
+        config: The tool's choices.
+
+    Returns:
+        ``neutrino/<model>``, empty when the tool has no model.
+    """
+    model = str(config.get("model", "") or "")
+    return f"{AI_TOOLS_PROVIDER_ID}/{model}" if model else ""
+
+
+def with_opencode_model(text: str, model: str, written: str) -> "tuple[str, str]":
+    """OpenCode's file with its top-level ``model`` set to the hub's model.
+
+    A ``model`` the file names other than ``written`` is the account's own and
+    stays. The one written before follows ``model``, and goes when it is empty.
+
+    Args:
+        text: The file as cc-switch left it.
+        model: The ``model`` to write, empty for none.
+        written: The ``model`` written before, empty for none.
+
+    Returns:
+        The file's text, the same text when nothing changes, and the
+        ``model`` now written, empty for none.
+    """
+    try:
+        document = json.loads(text or "{}")
+    except ValueError:
+        return text, ""
+    if not isinstance(document, dict):
+        return text, ""
+    current = document.get(AI_TOOLS_OPENCODE_MODEL_KEY)
+    if AI_TOOLS_OPENCODE_MODEL_KEY in document and (not written or current != written):
+        return text, ""
+    if current == model or (current is None and not model):
+        return text, model
+    if model:
+        document[AI_TOOLS_OPENCODE_MODEL_KEY] = model
+    else:
+        document.pop(AI_TOOLS_OPENCODE_MODEL_KEY, None)
+    ending = "\n" if text.endswith("\n") else ""
+    return json.dumps(document, indent=2, ensure_ascii=False) + ending, model
 
 
 def wanted(app: str, base_url: str, api_key: str, config: dict) -> dict:
@@ -421,6 +470,17 @@ class AiToolsAccountSwitcher:
                         {AI_TOOLS_CODEX_EFFORT_KEY: effort},
                     ),
                 )
+        if app == "opencode":
+            path = self._app_file(app)
+            text = self._session.read_text(path)
+            merged, written = with_opencode_model(
+                text,
+                opencode_model(config),
+                str(record.get("written_model", "") or ""),
+            )
+            if merged != text:
+                self._session.write_text(path, merged)
+            record["written_model"] = written
         for name in AI_TOOLS_APP_KEY_FILES[app]:
             path = self._kept_path(app, name)
             if self._session.is_file(path):

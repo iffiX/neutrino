@@ -16,7 +16,9 @@ comes back byte for byte; Codex's and Gemini's files must name the hub; a
 switch back that cannot run cc-switch is a refusal that keeps the records
 and the files. OpenCode's provider goes in whole as ``--config`` beside the
 account's own, with no adoption step but the list, and its ``~/.config``
-made for the switch is taken away again.
+made for the switch is taken away again. OpenCode's top-level ``model``
+names the hub's model when the file names none, follows a changed model
+while it is the one written, and a ``model`` of the account's own stays.
 """
 
 import json
@@ -28,6 +30,7 @@ import pytest
 from neutrino_agent.ai_tools.switcher import (
     AiToolsAccountSwitcher,
     merge_toml_top_level,
+    with_opencode_model,
     without_own_keys,
 )
 from neutrino_agent.exceptions import ToolSwitchError
@@ -545,6 +548,7 @@ def test_opencode_gets_the_hub_s_provider_whole_beside_the_account_s_own(tmp_pat
     assert sorted(live["provider"]) == ["mine", "neutrino"]
     assert live["model"] == "mine/x" and live["mcp"] == {"fs": {"type": "local"}}
     assert switcher.read_record("opencode")["previous"] == ""
+    assert switcher.read_record("opencode")["written_model"] == ""
 
     switcher.deactivate()
 
@@ -604,6 +608,8 @@ def test_a_changed_opencode_model_replaces_the_hub_s_provider(tmp_path):
     ]
     live = json.loads(session.files[OPENCODE])
     assert live["provider"]["neutrino"]["models"] == {"m5": {"name": "m5"}}
+    assert live["model"] == "neutrino/m5"
+    assert switcher.read_record("opencode")["written_model"] == "neutrino/m5"
 
 
 def test_an_opencode_file_cc_switch_cannot_read_fails_the_switch(tmp_path):
@@ -617,3 +623,93 @@ def test_an_opencode_file_cc_switch_cannot_read_fails_the_switch(tmp_path):
 
     assert refused.value.params["detail"].startswith("opencode: Error: JSON")
     assert not switcher.has_records()
+
+
+def test_opencode_with_no_model_of_its_own_starts_on_the_hub_s_model(tmp_path):
+    cc_switch = FakeCcSwitch()
+    switcher, session = switcher_for(tmp_path, cc_switch)
+
+    activate(switcher)
+
+    live = json.loads(session.files[OPENCODE])
+    assert live["model"] == "neutrino/m4"
+    assert live["provider"]["neutrino"]["models"] == {"m4": {"name": "m4"}}
+    assert switcher.read_record("opencode")["written_model"] == "neutrino/m4"
+    written = session.file_calls.index(("write", OPENCODE))
+    assert session.file_calls.index(("set_mode", OPENCODE, 0o600)) > written
+    assert session.modes[OPENCODE] == 0o600
+
+    switcher.deactivate()
+
+    assert OPENCODE not in session.files
+
+
+def test_a_model_of_the_account_s_own_stays_when_the_model_changes(tmp_path):
+    own = json.dumps({"model": "mine/x", "provider": {"mine": {}}})
+    cc_switch = FakeCcSwitch()
+    switcher, session = switcher_for(tmp_path, cc_switch, {OPENCODE: own})
+    activate(switcher)
+
+    activate(switcher, {**CONFIGS, "opencode": {"model": "m5"}})
+
+    live = json.loads(session.files[OPENCODE])
+    assert live["model"] == "mine/x"
+    assert live["provider"]["neutrino"]["models"] == {"m5": {"name": "m5"}}
+    assert switcher.read_record("opencode")["written_model"] == ""
+    switcher.deactivate()
+    assert session.files[OPENCODE] == own
+
+
+def test_a_model_the_account_set_after_the_switch_is_its_own(tmp_path):
+    cc_switch = FakeCcSwitch()
+    switcher, session = switcher_for(tmp_path, cc_switch)
+    activate(switcher)
+    live = json.loads(session.files[OPENCODE])
+    live["model"] = "neutrino/m4-large"
+    session.files[OPENCODE] = json.dumps(live, indent=2)
+
+    activate(switcher, {**CONFIGS, "opencode": {"model": "m5"}})
+
+    assert json.loads(session.files[OPENCODE])["model"] == "neutrino/m4-large"
+    assert switcher.read_record("opencode")["written_model"] == ""
+
+
+def test_the_switch_back_takes_the_written_model_away_byte_for_byte(tmp_path):
+    own = '{\n  "$schema": "https://opencode.ai/config.json",\n  "theme": "é"\n}\n'
+    cc_switch = FakeCcSwitch()
+    switcher, session = switcher_for(tmp_path, cc_switch, {OPENCODE: own})
+    session.modes[OPENCODE] = 0o644
+
+    activate(switcher)
+    activate(switcher, {**CONFIGS, "opencode": {"model": "m5"}})
+    live = json.loads(session.files[OPENCODE])
+    assert live["model"] == "neutrino/m5" and live["theme"] == "é"
+    switcher.deactivate()
+
+    assert session.files[OPENCODE] == own
+    assert session.modes[OPENCODE] == 0o644
+
+
+def test_the_opencode_model_is_written_as_json_in_cc_switch_s_layout():
+    text = '{\n  "$schema": "s",\n  "provider": {\n    "neutrino": {}\n  }\n}'
+
+    merged, written = with_opencode_model(text, "neutrino/m4", "")
+
+    assert merged == (
+        '{\n  "$schema": "s",\n  "provider": {\n    "neutrino": {}\n  },\n'
+        '  "model": "neutrino/m4"\n}'
+    )
+    assert written == "neutrino/m4"
+    assert with_opencode_model(text + "\n", "neutrino/m4", "")[0] == merged + "\n"
+    assert with_opencode_model(merged, "neutrino/m4", "neutrino/m4") == (
+        merged,
+        "neutrino/m4",
+    )
+
+
+def test_the_written_opencode_model_goes_when_the_tool_has_no_model():
+    text = '{\n  "model": "neutrino/m4"\n}'
+
+    assert with_opencode_model(text, "", "neutrino/m4") == ("{}", "")
+    assert with_opencode_model(text, "", "") == (text, "")
+    assert with_opencode_model("{}", "", "") == ("{}", "")
