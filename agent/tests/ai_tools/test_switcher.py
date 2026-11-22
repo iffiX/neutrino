@@ -19,7 +19,8 @@ account's own, with no adoption step but the list, and its ``~/.config``
 made for the switch is taken away again. OpenCode's top-level ``model``
 names the hub's model when the file names none, follows a changed model
 while it is the one written, and a ``model`` of the account's own stays; a
-record without the wanted ``model`` is switched once more.
+record without the wanted ``model`` is switched once more, and the switch
+back takes away OpenCode's migration backup holding the hub's provider.
 """
 
 import json
@@ -716,6 +717,9 @@ def test_the_written_opencode_model_goes_when_the_tool_has_no_model():
     assert with_opencode_model("{}", "", "") == ("{}", "")
 
 
+BACKUP = "/home/ann/.config/opencode/opencode.json.tui-migration.bak"
+
+
 def test_an_opencode_record_without_the_wanted_model_is_switched_once_more(tmp_path):
     cc_switch = FakeCcSwitch()
     switcher, session = switcher_for(tmp_path, cc_switch)
@@ -744,3 +748,28 @@ def test_an_opencode_record_without_the_wanted_model_is_switched_once_more(tmp_p
     assert switcher.read_record("opencode")["added"]["model"] == "neutrino/m4"
     assert switcher.is_current(base_url=HUB, api_key=KEY, tool_configs=CONFIGS)
     assert activate(switcher) == []
+
+
+def test_the_switch_back_takes_away_the_migration_backup_holding_the_hub(tmp_path):
+    cc_switch = FakeCcSwitch(current="")
+    switcher, session = switcher_for(tmp_path, cc_switch)
+    activate(switcher)
+    session.files[BACKUP] = session.files[OPENCODE]
+
+    switcher.deactivate()
+
+    assert ("remove", BACKUP) in session.file_calls
+    assert BACKUP not in session.files
+    assert not session.has_dir("/home/ann/.config")
+
+
+def test_a_migration_backup_without_the_hub_s_provider_stays(tmp_path):
+    own = '{\n  "theme": "tokyonight",\n  "provider": {"mine": {}}\n}'
+    cc_switch = FakeCcSwitch()
+    switcher, session = switcher_for(tmp_path, cc_switch, {BACKUP: own})
+    activate(switcher)
+
+    switcher.deactivate()
+
+    assert session.files[BACKUP] == own
+    assert ("remove", BACKUP) not in session.file_calls

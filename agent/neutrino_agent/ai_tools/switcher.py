@@ -28,6 +28,8 @@ the account's own and keeps no provider current, so its adoption is the
 list alone, its provider goes in whole as ``--config``, and the hub is
 current while cc-switch lists its provider. Its top-level ``model`` is
 written after the switch when the file names none, and the record keeps it.
+The switch back takes away OpenCode's migration backup holding the hub's
+provider.
 
 Activation is all or nothing: a tool that refuses has itself, once its
 record was started, and every tool switched before it put back, and the
@@ -66,6 +68,7 @@ from neutrino_agent.ai_tools.constants import (
     AI_TOOLS_ENDPOINT_SUFFIXES,
     AI_TOOLS_KEY_DIGEST_CHARS,
     AI_TOOLS_OFFICIAL_PROVIDERS,
+    AI_TOOLS_OPENCODE_MIGRATION_BACKUP,
     AI_TOOLS_OPENCODE_MODEL_KEY,
     AI_TOOLS_OPENCODE_NPM,
     AI_TOOLS_PROVIDER_ID,
@@ -205,6 +208,16 @@ def wanted(app: str, base_url: str, api_key: str, config: dict) -> dict:
     if app == "opencode":
         settings[AI_TOOLS_OPENCODE_MODEL_KEY] = opencode_model(config)
     return settings
+
+
+def has_hub_provider(text: str) -> bool:
+    """Whether an OpenCode file's text names the hub's provider."""
+    try:
+        document = json.loads(text)
+    except ValueError:
+        return False
+    providers = document.get("provider") if isinstance(document, dict) else None
+    return isinstance(providers, dict) and AI_TOOLS_PROVIDER_ID in providers
 
 
 def without_own_keys(app: str, snippet: str) -> str:
@@ -580,6 +593,8 @@ class AiToolsAccountSwitcher:
             self._session.prepare_store()
         previous = str(record.get("previous", "") or "")
         returned_to = self._drop_provider(app, previous)
+        if app == "opencode":
+            self._remove_migration_backup(app)
         kept = record.get("kept")
         if isinstance(kept, dict):
             self._put_back(app, kept, record.get("kept_modes") or {})
@@ -617,6 +632,14 @@ class AiToolsAccountSwitcher:
             mode = modes.get(name)
             if isinstance(mode, int) and self._session.mode_of(path) != mode:
                 self._session.set_mode(path, mode)
+
+    def _remove_migration_backup(self, app: str) -> None:
+        """Take away OpenCode's migration backup when it holds the hub's provider."""
+        path = self._kept_path(app, AI_TOOLS_OPENCODE_MIGRATION_BACKUP)
+        if self._session.is_file(path) and has_hub_provider(
+            self._session.read_text(path)
+        ):
+            self._session.remove(path)
 
     def _kept_path(self, app: str, name: str) -> str:
         """One file a switch may write, below the account's home."""
