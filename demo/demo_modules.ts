@@ -411,6 +411,37 @@ export const DEMO_MODULES: DemoModuleSpec[] = [
       descriptionCode: "ayakaleaf_module",
     },
   },
+  {
+    name: "astrbot",
+    title: "AstrBot",
+    category: "other",
+    method: "container",
+    version: "4.29.4",
+    isCarried: false,
+    kind: "system_service",
+    requires: ["podman"],
+    installSteps: [
+      step("wait_module", { module: "podman" }),
+      step("pull", { image: "astrbot" }),
+      step("verify"),
+      step("settings"),
+      step("render"),
+      step("start"),
+      step("first_start"),
+    ],
+    uninstallData: uninstallDeleted(
+      "机器人、对话、插件和设置都会删除，无法恢复。",
+      "The bots, conversations, plugins and settings are deleted and cannot be recovered.",
+    ),
+    web: {
+      title: "AstrBot",
+      port: 8107,
+      isPerAccount: false,
+      isTokenRequired: true,
+      guestLogin: "run_account",
+      descriptionCode: "astrbot_module",
+    },
+  },
 ];
 
 /** The module of a name, or null for one the demo does not offer. */
