@@ -8,7 +8,10 @@ an uninstall removes the unit and the program and keeps the data directory;
 the account is made as a system account with no login shell in the GPU
 groups the machine has, and a data directory another uid owns is handed
 over; a person's unit is found in its three places, driven through
-``systemctl`` alone and put back as it was found.
+``systemctl`` alone and put back as it was found. The settings' variables
+go into the unit, a change of them restarts it, and on a person's unit they
+go into a drop-in of the module's own, which a changed write restarts the
+unit for and which its removal takes away with a restart of a running unit.
 """
 
 import os
@@ -174,8 +177,6 @@ def test_a_person_s_unit_is_found_driven_and_put_back(tmp_path, monkeypatch):
     assert applier.person_unit_path() == str(unit)
     system.units["ollama.service"] = "active"
     assert applier.person_unit_state() == {"is_enabled": True, "is_active": True}
-    applier.start_person()
-    assert system.commands[-1] == ["systemctl", "enable", "--now", "ollama.service"]
     applier.stop_person()
     assert system.commands[-1] == ["systemctl", "disable", "--now", "ollama.service"]
     system.commands.clear()
@@ -185,3 +186,66 @@ def test_a_person_s_unit_is_found_driven_and_put_back(tmp_path, monkeypatch):
         ["systemctl", "start", "ollama.service"],
     ]
     assert not any("useradd" in command for command in system.commands)
+
+
+def test_the_settings_variables_go_into_the_unit_and_restart_it(tmp_path, monkeypatch):
+    text = render_unit(
+        "/p/ollama",
+        "/data",
+        environment={"OLLAMA_KEEP_ALIVE": "-1", "CUDA_VISIBLE_DEVICES": "0,2"},
+    )
+    assert "Environment=OLLAMA_KEEP_ALIVE=-1\n" in text
+    assert "Environment=CUDA_VISIBLE_DEVICES=0,2\n" in text
+    system = FakeSystem()
+    applier = _applier(tmp_path, system, monkeypatch)
+    applier.apply(environment={"OLLAMA_KEEP_ALIVE": "30m"}, is_started=True)
+    system.units["neutrino_ollama.service"] = "active"
+    assert applier.apply(environment={"OLLAMA_KEEP_ALIVE": "30m"}) == "unchanged"
+    assert applier.apply(environment={"OLLAMA_KEEP_ALIVE": "5m"}) == "restarted"
+    unit = (tmp_path / "systemd" / "neutrino_ollama.service").read_text()
+    assert "Environment=OLLAMA_KEEP_ALIVE=5m\n" in unit
+
+
+def test_a_person_s_unit_takes_the_settings_through_a_drop_in(tmp_path, monkeypatch):
+    system = FakeSystem()
+    applier = _applier(tmp_path, system, monkeypatch)
+    drop_in = tmp_path / "systemd" / "ollama.service.d" / "neutrino.conf"
+    settings = {"OLLAMA_KEEP_ALIVE": "30m", "ROCR_VISIBLE_DEVICES": "1"}
+    assert applier.apply_person(environment=settings, is_started=False) == "written"
+    assert drop_in.read_text() == (
+        "[Service]\n"
+        "Environment=OLLAMA_KEEP_ALIVE=30m\n"
+        "Environment=ROCR_VISIBLE_DEVICES=1\n"
+    )
+    assert system.commands == [["systemctl", "daemon-reload"]]
+    system.commands.clear()
+    assert applier.apply_person(environment=settings, is_started=True) == "started"
+    assert system.commands == [["systemctl", "enable", "--now", "ollama.service"]]
+    system.units["ollama.service"] = "active"
+    system.commands.clear()
+    assert applier.apply_person(environment=settings) == "started"
+    assert system.commands == [["systemctl", "enable", "--now", "ollama.service"]]
+    system.commands.clear()
+    settings = {"OLLAMA_KEEP_ALIVE": "4h"}
+    assert applier.apply_person(environment=settings) == "restarted"
+    assert system.commands == [
+        ["systemctl", "daemon-reload"],
+        ["systemctl", "enable", "ollama.service"],
+        ["systemctl", "restart", "ollama.service"],
+    ]
+    assert not (tmp_path / "systemd" / "neutrino_ollama.service").exists()
+
+
+def test_the_drop_in_s_removal_restarts_a_running_unit(tmp_path, monkeypatch):
+    system = FakeSystem()
+    applier = _applier(tmp_path, system, monkeypatch)
+    assert applier.remove_person_settings() is False
+    assert system.commands == []
+    applier.apply_person(environment={"OLLAMA_KEEP_ALIVE": "1h"}, is_started=False)
+    system.commands.clear()
+    assert applier.remove_person_settings() is True
+    assert not (tmp_path / "systemd" / "ollama.service.d" / "neutrino.conf").exists()
+    assert system.commands == [
+        ["systemctl", "daemon-reload"],
+        ["systemctl", "try-restart", "ollama.service"],
+    ]

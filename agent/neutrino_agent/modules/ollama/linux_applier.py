@@ -6,8 +6,10 @@ mode 0700: root makes the folder in its own place and gives it on its open
 descriptor, a tree another uid owns is handed over by open descriptor
 following no link, and ``models`` inside it is made as the account. The unit
 ``neutrino_ollama.service`` runs ``ollama serve`` as the account with the
-module's environment. A person's own unit ``ollama.service`` is driven
-through ``systemctl`` alone and nothing of it is written.
+module's environment and the settings' variables. A person's own unit
+``ollama.service`` is driven through ``systemctl``, and takes the settings'
+variables through the drop-in ``ollama.service.d/neutrino.conf``, the one
+file of it the module writes.
 
 Not pure: writes under ``/etc/systemd/system`` and the state root, drives
 ``useradd``, ``usermod`` and ``systemctl``.
@@ -34,6 +36,7 @@ from neutrino_agent.modules.ollama.constants import (
     OLLAMA_LINUX_UNIT,
     OLLAMA_MODELS_DIR_NAME,
     OLLAMA_NAME,
+    OLLAMA_PERSON_DROP_IN_PARTS,
     OLLAMA_PERSON_UNIT,
     OLLAMA_PERSON_UNIT_PATHS,
     OLLAMA_PORT,
@@ -69,19 +72,46 @@ def service_environment(data_dir: str) -> dict:
     }
 
 
-def render_unit(program: str, data_dir: str) -> str:
+def environment_lines(environment: dict) -> str:
+    """One ``Environment=`` line per variable, by name. Pure.
+
+    Args:
+        environment: The variables by name.
+
+    Returns:
+        The lines, each ending in a newline.
+    """
+    return "".join(
+        f"Environment={shlex.quote(f'{name}={value}')}\n"
+        for name, value in sorted(environment.items())
+    )
+
+
+def render_drop_in(environment: dict) -> str:
+    """The drop-in that gives a person's unit the settings' variables. Pure.
+
+    Args:
+        environment: The settings' variables.
+
+    Returns:
+        The drop-in's text: its ``[Service]`` section and the variables.
+    """
+    return "[Service]\n" + environment_lines(environment)
+
+
+def render_unit(program: str, data_dir: str, environment: "dict | None" = None) -> str:
     """The server's systemd unit. Pure.
 
     Args:
         program: The ``ollama`` program.
         data_dir: The data directory.
+        environment: The settings' variables, beside the module's own.
 
     Returns:
         The unit's text.
     """
-    environment = "".join(
-        f"Environment={shlex.quote(f'{name}={value}')}\n"
-        for name, value in sorted(service_environment(data_dir).items())
+    environment = environment_lines(
+        {**(environment or {}), **service_environment(data_dir)}
     )
     command = " ".join(shlex.quote(part) for part in (program, *OLLAMA_SERVE_ARGUMENTS))
     return (
@@ -141,6 +171,7 @@ class OllamaLinuxApplier:
         self._platform = platform
         self._run = run_command
         self._unit_path = os.path.join(systemd_dir, OLLAMA_LINUX_UNIT)
+        self._drop_in_path = os.path.join(systemd_dir, *OLLAMA_PERSON_DROP_IN_PARTS)
         self._person_unit_paths = tuple(person_unit_paths)
 
     def person_unit_path(self) -> str:
@@ -168,13 +199,53 @@ class OllamaLinuxApplier:
             "is_active": unit_state(OLLAMA_PERSON_UNIT) == "active",
         }
 
-    def start_person(self) -> None:
-        """Enable a person's unit and start it.
+    def apply_person(
+        self, *, environment: "dict | None" = None, is_started: bool = True
+    ) -> str:
+        """Write the settings' drop-in for a person's unit; with ``is_started``, run the unit on it.
+
+        A changed drop-in restarts a unit that runs.
+
+        Args:
+            environment: The settings' variables.
+            is_started: Whether the unit is enabled and started.
+
+        Returns:
+            ``unchanged`` or ``written`` with ``is_started`` false, else
+            ``restarted`` or ``started``.
 
         Raises:
             subprocess.CalledProcessError: When systemd refuses.
+            OSError: When the drop-in cannot be written.
         """
+        os.makedirs(os.path.dirname(self._drop_in_path), exist_ok=True)
+        is_changed = write_if_changed(
+            self._drop_in_path, render_drop_in(environment or {}), 0o644
+        )
+        if is_changed:
+            self._run(["systemctl", "daemon-reload"])
+        if not is_started:
+            return "written" if is_changed else "unchanged"
+        if is_changed and unit_state(OLLAMA_PERSON_UNIT) == "active":
+            self._run(["systemctl", "enable", OLLAMA_PERSON_UNIT])
+            self._run(["systemctl", "restart", OLLAMA_PERSON_UNIT])
+            return "restarted"
         self._run(["systemctl", "enable", "--now", OLLAMA_PERSON_UNIT])
+        return "started"
+
+    def remove_person_settings(self) -> bool:
+        """Delete the settings' drop-in, and restart a person's unit that runs without it.
+
+        Returns:
+            Whether there was a drop-in.
+        """
+        try:
+            os.unlink(self._drop_in_path)
+        except FileNotFoundError:
+            return False
+        self._run(["systemctl", "daemon-reload"], is_checked=False)
+        self._run(["systemctl", "try-restart", OLLAMA_PERSON_UNIT], is_checked=False)
+        return True
 
     def stop_person(self) -> None:
         """Stop a person's unit and disable it."""
@@ -230,10 +301,13 @@ class OllamaLinuxApplier:
         self._prepare_data(account)
         return is_given
 
-    def apply(self, *, is_started: bool = True) -> str:
+    def apply(
+        self, *, environment: "dict | None" = None, is_started: bool = True
+    ) -> str:
         """Write the unit and run the server on it; with ``is_started`` false, write it alone.
 
         Args:
+            environment: The settings' variables.
             is_started: Whether the unit is enabled and started.
 
         Returns:
@@ -252,7 +326,9 @@ class OllamaLinuxApplier:
         except KeyError:
             pass
         is_changed = write_if_changed(
-            self._unit_path, render_unit(self.program_path, self.data_dir), 0o644
+            self._unit_path,
+            render_unit(self.program_path, self.data_dir, environment),
+            0o644,
         )
         if is_changed:
             self._run(["systemctl", "daemon-reload"])

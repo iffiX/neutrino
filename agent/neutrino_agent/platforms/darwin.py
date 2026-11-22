@@ -710,6 +710,8 @@ class DarwinHostMetricsReader:
         self._previous_cores: "dict[int, tuple[int, int]]" = {}
         self._temperature_c: "float | None" = None
         self._temperature_at: "float | None" = None
+        # The machine's memory as the last read found it; 0 while unread.
+        self._memory_total_bytes = 0
 
     def read(self) -> HostMetrics:
         """Take one sample.
@@ -718,10 +720,16 @@ class DarwinHostMetricsReader:
             The current metrics. Any source that cannot be read contributes
             its default rather than raising.
         """
+        memory_percent = self._read_memory_percent()
         return HostMetrics(
             cpu_percent=self._read_cpu_percent(),
             cpu_core_percents=self._read_core_percents(),
-            memory_percent=self._read_memory_percent(),
+            memory_percent=memory_percent,
+            memory_total_mb=(
+                self._memory_total_bytes // DARWIN_BYTES_PER_MB
+                if self._memory_total_bytes > 0
+                else None
+            ),
             disk_percent=self._read_disk_percent(),
             temperature_c=self._read_temperature_c(),
             uptime_s=self._read_uptime_s(),
@@ -825,10 +833,12 @@ class DarwinHostMetricsReader:
             return
 
     def _read_memory_percent(self) -> float:
+        self._memory_total_bytes = 0
         try:
             total = int(_run(["sysctl", "-n", "hw.memsize"]).strip())
         except ValueError:
             return 0.0
+        self._memory_total_bytes = max(0, total)
         printed = _run(["vm_stat"])
         page = DARWIN_VM_STAT_PAGE_SIZE.search(printed)
         if total <= 0 or page is None:

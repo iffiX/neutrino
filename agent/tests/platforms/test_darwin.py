@@ -209,6 +209,7 @@ def test_the_metrics_come_from_mach_vm_stat_and_sysctl(monkeypatch):
     assert second.cpu_percent == pytest.approx(50.0)
     available = (100000 + 150000 + 50000) * 16384
     assert second.memory_percent == pytest.approx(100.0 * (total - available) / total)
+    assert second.memory_total_mb == 16 * 1024
     assert second.uptime_s == 3600
     assert second.disk_percent == pytest.approx(25.0)
     assert second.load_average == [1.5, 1.0, 0.5]
@@ -231,6 +232,7 @@ def test_unreadable_sources_read_as_the_defaults(monkeypatch):
         0.0,
         0,
     )
+    assert metrics.memory_total_mb is None
 
 
 PS_SAMPLE = """  PID USER              %CPU %MEM COMM

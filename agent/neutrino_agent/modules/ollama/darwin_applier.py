@@ -8,7 +8,8 @@ two alone, by open descriptor following no link. The account is
 ``neutrino_ollama``, made with ``sysadminctl`` and read back before it
 counts, as Gitea's is. The LaunchDaemon ``com.neutrino.ollama`` runs
 ``ollama serve`` as that account with the module's environment. A person's
-Ollama here is the publisher's app, which the module never starts or stops.
+Ollama here is the publisher's app, which the module never starts or stops
+and gives no setting.
 
 Not pure: writes under ``/Library``, drives ``sysadminctl``, ``dscl`` and
 launchd.
@@ -65,12 +66,15 @@ except ImportError:  # Windows has no account database module.
 PLIST_SUFFIX = ".plist"
 
 
-def render_plist(*, program: str, data_dir: str) -> bytes:
+def render_plist(
+    *, program: str, data_dir: str, environment: "dict | None" = None
+) -> bytes:
     """The server's LaunchDaemon. Pure.
 
     Args:
         program: The ``ollama`` program.
         data_dir: The data directory, its home and where it runs.
+        environment: The settings' variables, beside the module's own.
 
     Returns:
         The plist, as XML.
@@ -81,6 +85,7 @@ def render_plist(*, program: str, data_dir: str) -> bytes:
             "UserName": OLLAMA_DARWIN_ACCOUNT,
             "ProgramArguments": [program, *OLLAMA_SERVE_ARGUMENTS],
             "EnvironmentVariables": {
+                **(environment or {}),
                 "HOME": data_dir,
                 "USER": OLLAMA_DARWIN_ACCOUNT,
                 "PATH": OLLAMA_DARWIN_PATH,
@@ -175,8 +180,27 @@ class OllamaDarwinApplier:
         """Nothing: there is no person's unit here."""
         return {}
 
-    def start_person(self) -> None:
-        """Nothing: a person's app is the person's to start."""
+    def apply_person(
+        self, *, environment: "dict | None" = None, is_started: bool = True
+    ) -> str:
+        """Nothing: a person's app takes no setting.
+
+        Args:
+            environment: Unread.
+            is_started: Unread.
+
+        Returns:
+            Empty.
+        """
+        return ""
+
+    def remove_person_settings(self) -> bool:
+        """Nothing: a person's app was given no setting.
+
+        Returns:
+            Always False.
+        """
+        return False
 
     def stop_person(self) -> None:
         """Nothing: a person's app is the person's to stop."""
@@ -229,10 +253,13 @@ class OllamaDarwinApplier:
         self._prepare_data(uid, gid)
         return is_given
 
-    def apply(self, *, is_started: bool = True) -> str:
+    def apply(
+        self, *, environment: "dict | None" = None, is_started: bool = True
+    ) -> str:
         """Write the LaunchDaemon and run the server on it; with ``is_started`` false, write it alone.
 
         Args:
+            environment: The settings' variables.
             is_started: Whether the job is enabled and loaded.
 
         Returns:
@@ -246,7 +273,9 @@ class OllamaDarwinApplier:
         """
         uid, gid = self._ensure_account()
         self._prepare_data(uid, gid)
-        plist = render_plist(program=self.program_path, data_dir=self.data_dir)
+        plist = render_plist(
+            program=self.program_path, data_dir=self.data_dir, environment=environment
+        )
         is_changed = write_if_changed(self._plist_path, plist.decode("utf-8"), 0o644)
         self._prepare_output(uid, gid)
         if not is_started:

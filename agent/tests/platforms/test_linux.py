@@ -589,3 +589,17 @@ def test_linux_steps_down_with_the_variables_it_is_given(monkeypatch):
 
     assert recorded["env"]["CC_SWITCH_CONFIG_DIR"] == "/home/alice/s"
     assert recorded["env"]["HOME"] == "/home/alice"
+
+
+def test_linux_metrics_carry_the_memory_total(monkeypatch, tmp_path):
+    meminfo = tmp_path / "meminfo"
+    meminfo.write_text(
+        "MemTotal:       16384000 kB\nMemFree:  1000 kB\nMemAvailable:    4096000 kB\n"
+    )
+    monkeypatch.setattr(linux_module, "PROC_MEMINFO_PATH", str(meminfo))
+    metrics = linux_module.HostMetricsReader().read()
+    assert metrics.memory_percent == pytest.approx(75.0)
+    assert metrics.memory_total_mb == 16000
+    assert metrics.to_dict()["memory_total_mb"] == 16000
+    monkeypatch.setattr(linux_module, "PROC_MEMINFO_PATH", str(tmp_path / "none"))
+    assert linux_module.HostMetricsReader().read().memory_total_mb is None

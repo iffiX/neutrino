@@ -42,8 +42,30 @@ OLLAMA_FOUND_APP = "app"
 OLLAMA_RECORD_NAME = "ollama"
 OLLAMA_RECORD_FIELDS = ("account", "found_unit")
 
-# The refusal of an install on Windows or macOS beside the publisher's app.
+# The refusal of an install on Windows or macOS beside the publisher's app,
+# and of a configuration outside the settings.
 OLLAMA_CODE_FOUND = "ollama_found"
+OLLAMA_CODE_CONFIG_INVALID = "config_invalid"
+
+# The settings: how long a model a request loaded stays in memory, as
+# ``OLLAMA_KEEP_ALIVE`` spells it, ``-1`` for never, and its default.
+OLLAMA_KEEP_ALIVE_CHOICES = ("5m", "30m", "1h", "4h", "-1")
+OLLAMA_KEEP_ALIVE_DEFAULT = "30m"
+OLLAMA_KEEP_ALIVE_VARIABLE = "OLLAMA_KEEP_ALIVE"
+# The GPU variables, each naming the cards of its group to use: the vendors
+# a group takes, or the vendors it leaves out. CUDA counts its cards in PCI
+# bus order beside its variable, the order ``nvidia-smi`` lists them in.
+OLLAMA_GPU_NVIDIA = "nvidia"
+OLLAMA_GPU_AMD = "amd"
+OLLAMA_GPU_APPLE = "apple"
+OLLAMA_GPU_CUDA_VARIABLE = "CUDA_VISIBLE_DEVICES"
+OLLAMA_GPU_ROCM_VARIABLE = "ROCR_VISIBLE_DEVICES"
+OLLAMA_GPU_VULKAN_VARIABLE = "GGML_VK_VISIBLE_DEVICES"
+OLLAMA_GPU_CUDA_ORDER = {"CUDA_DEVICE_ORDER": "PCI_BUS_ID"}
+OLLAMA_GPU_NONE = "-1"
+# The system whose server reaches its GPU through Metal and takes no GPU
+# variable.
+OLLAMA_GPU_FREE_OS = "darwin"
 
 # Linux: the system account, its mark, its shell, the groups that reach a
 # GPU, the unit, where it is written, and a person's unit with the places
@@ -56,6 +78,9 @@ OLLAMA_LINUX_UNIT = "neutrino_ollama.service"
 OLLAMA_LINUX_SYSTEMD_DIR = "/etc/systemd/system"
 OLLAMA_LINUX_PROGRAM_PARTS = ("bin", "ollama")
 OLLAMA_PERSON_UNIT = "ollama.service"
+# The drop-in that gives a person's unit the settings, under the systemd
+# folder: the unit's ``.d`` folder and the module's own file in it.
+OLLAMA_PERSON_DROP_IN_PARTS = ("ollama.service.d", "neutrino.conf")
 OLLAMA_PERSON_UNIT_PATHS = (
     "/etc/systemd/system/ollama.service",
     "/usr/lib/systemd/system/ollama.service",

@@ -157,6 +157,7 @@ def test_memory_uptime_and_disk_are_read_and_a_missing_source_is_empty(monkeypat
     ).read()
 
     assert metrics.memory_percent == pytest.approx(75.0)
+    assert metrics.memory_total_mb == 8192
     assert metrics.uptime_s == 90_061
     assert metrics.disk_percent == pytest.approx(25.0)
     assert seen == ["D:\\"]
@@ -494,6 +495,7 @@ def test_every_windows_field_is_filled_from_its_native_source(monkeypatch):
         # Core 0 moved busy 150 of 200, core 1 none of 200.
         "cpu_core_percents": [75.0, 0.0],
         "memory_percent": 75.0,
+        "memory_total_mb": 8192,
         "disk_percent": 25.0,
         "temperature_c": 50.0,
         "uptime_s": 90_061,

@@ -11,7 +11,9 @@ none on a person's unit; a configure that runs the server waits until
 ``/api/version`` answers and fails ``apply_failed`` when it never does; a
 person's unit is kept as found at the first start, started and stopped, and
 given back at the uninstall with nothing of it removed; the details name the
-port, the version and whose copy it is.
+port, the version and whose copy it is. The settings are checked, and the
+variables they give reach the module's own service and a person's unit,
+whose drop-in an uninstall removes before it gives the unit back.
 """
 
 import io
@@ -71,9 +73,15 @@ class FakeApplier:
     def person_unit_state(self):
         return dict(self.unit_state)
 
-    def start_person(self):
-        self.calls.append("start_person")
-        self.unit_state = {"is_enabled": True, "is_active": True}
+    def apply_person(self, *, environment=None, is_started=True):
+        self.calls.append(("apply_person", dict(environment or {}), is_started))
+        if is_started:
+            self.unit_state = {"is_enabled": True, "is_active": True}
+        return "started" if is_started else "written"
+
+    def remove_person_settings(self):
+        self.calls.append("remove_person_settings")
+        return True
 
     def stop_person(self):
         self.calls.append("stop_person")
@@ -89,8 +97,9 @@ class FakeApplier:
         self.calls.append("ensure_account")
         return False
 
-    def apply(self, *, is_started=True):
+    def apply(self, *, environment=None, is_started=True):
         self.calls.append(("apply", is_started))
+        self.environment = dict(environment or {})
         if is_started:
             self.is_running = True
         return "started" if is_started else "written"
@@ -276,9 +285,13 @@ def test_a_person_s_unit_is_kept_started_stopped_and_given_back(tmp_path):
     assert [step.name for step in steps] == ["configure", "start"]
 
     runner.apply_stopped({})
-    assert applier.calls == []
-    runner.apply({})
-    assert applier.calls == ["start_person"]
+    assert applier.calls == [
+        ("apply_person", {"OLLAMA_KEEP_ALIVE": "30m"}, False),
+    ]
+    assert runner._found_unit() == {}
+    applier.calls.clear()
+    runner.apply({"keep_alive": "5m"})
+    assert applier.calls == [("apply_person", {"OLLAMA_KEEP_ALIVE": "5m"}, True)]
     assert runner._found_unit() == {"is_enabled": True, "is_active": False}
     assert runner.is_active() is True
     assert runner.journal_units() == ["ollama.service"]
@@ -288,10 +301,10 @@ def test_a_person_s_unit_is_kept_started_stopped_and_given_back(tmp_path):
     assert runner._found_unit() == {"is_enabled": True, "is_active": False}
 
     runner.uninstall({})
-    assert applier.calls[-1] == (
-        "restore_person",
-        {"is_enabled": True, "is_active": False},
-    )
+    assert applier.calls[-2:] == [
+        "remove_person_settings",
+        ("restore_person", {"is_enabled": True, "is_active": False}),
+    ]
     assert "uninstall" not in applier.calls
     assert runner._found_unit() == {}
 
@@ -382,3 +395,45 @@ def test_the_verify_runs_with_the_module_s_models_folder(tmp_path):
     assert runner.verify_environment() == {
         "OLLAMA_MODELS": os.path.join(str(tmp_path), "ollama_data", "models")
     }
+
+
+def test_the_settings_are_checked_and_reach_the_module_s_own_service(tmp_path):
+    applier = FakeApplier(tmp_path)
+    runner = _runner(tmp_path, applier, answers={"version": "0.40.16"})
+    with pytest.raises(ModuleApplyError) as refused:
+        runner.validate({"keep_alive": "2h"})
+    assert refused.value.code == "config_invalid"
+    assert refused.value.params == {"field": "keep_alive"}
+    runner.validate(
+        {"keep_alive": "4h", "gpus": [{"vendor": "nvidia", "is_used": True}]}
+    )
+    gpus = [
+        {"vendor": "nvidia", "is_used": False},
+        {"vendor": "nvidia", "is_used": True},
+    ]
+    runner.apply({"keep_alive": "4h", "gpus": gpus})
+    assert applier.environment == {
+        "OLLAMA_KEEP_ALIVE": "4h",
+        "CUDA_VISIBLE_DEVICES": "1",
+        "CUDA_DEVICE_ORDER": "PCI_BUS_ID",
+    }
+    runner.apply_stopped({})
+    assert applier.calls[-1] == ("apply", False)
+    assert applier.environment == {"OLLAMA_KEEP_ALIVE": "30m"}
+
+
+def test_a_mac_s_service_takes_no_gpu_variable(tmp_path):
+    applier = FakeApplier(tmp_path, is_app_system=True)
+    runner = _runner(
+        tmp_path, applier, os_name="darwin", answers={"version": "0.40.16"}
+    )
+    runner.apply({"keep_alive": "1h", "gpus": [{"vendor": "apple", "is_used": False}]})
+    assert applier.environment == {"OLLAMA_KEEP_ALIVE": "1h"}
+
+
+def test_an_uninstall_with_nothing_kept_still_removes_the_drop_in(tmp_path):
+    applier = FakeApplier(tmp_path)
+    applier.unit = "/etc/systemd/system/ollama.service"
+    runner = _runner(tmp_path, applier)
+    runner.uninstall({})
+    assert applier.calls == ["remove_person_settings"]

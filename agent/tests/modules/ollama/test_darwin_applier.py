@@ -5,7 +5,9 @@ What these pin: the LaunchDaemon runs ``ollama serve`` as
 agent's log folder; an apply loads it and reloads it only on a change, and
 under ``stopped`` writes it alone; a stop disables and unloads it; an
 uninstall deletes the plist and the program and keeps the data directory
-and the account; the publisher's app is found in ``/Applications``.
+and the account; the publisher's app is found in ``/Applications``. The
+settings' variables join the job's environment, and a change of them
+reloads it.
 """
 
 import os
@@ -113,3 +115,22 @@ def test_the_publisher_s_app_is_found_in_applications(tmp_path):
     (tmp_path / "Applications" / "Ollama.app").mkdir(parents=True)
     assert applier.app_path() == str(tmp_path / "Applications" / "Ollama.app")
     assert applier.person_unit_path() == ""
+
+
+def test_the_settings_variables_join_the_job_and_reload_it(tmp_path):
+    job = plistlib.loads(
+        render_plist(
+            program="/s/ollama",
+            data_dir="/d",
+            environment={"OLLAMA_KEEP_ALIVE": "1h"},
+        )
+    )
+    assert job["EnvironmentVariables"]["OLLAMA_KEEP_ALIVE"] == "1h"
+    assert job["EnvironmentVariables"]["OLLAMA_HOST"] == "127.0.0.1:11434"
+    launchd = FakeLaunchd()
+    applier = _applier(tmp_path, launchd)
+    applier.apply(environment={"OLLAMA_KEEP_ALIVE": "30m"}, is_started=True)
+    assert applier.apply(environment={"OLLAMA_KEEP_ALIVE": "30m"}) == "unchanged"
+    assert applier.apply(environment={"OLLAMA_KEEP_ALIVE": "5m"}) == "restarted"
+    assert applier.apply_person(environment={"OLLAMA_KEEP_ALIVE": "5m"}) == ""
+    assert applier.remove_person_settings() is False

@@ -205,6 +205,7 @@ SURVIVING_MODULES = {
     "neutrino_agent.modules.codex.constants",
     "neutrino_agent.modules.codex.hooks",
     "neutrino_agent.modules.ollama",
+    "neutrino_agent.modules.ollama.config",
     "neutrino_agent.modules.ollama.constants",
     "neutrino_agent.modules.ollama.darwin_applier",
     "neutrino_agent.modules.ollama.linux_applier",

@@ -10,7 +10,7 @@ log. The task starts at boot and again a minute after it stops, and its
 description carries a digest of the script, so an unchanged task is left
 running. A stop ends the task and every process of the module's program. A
 person's Ollama here is the publisher's per-user app, which the module
-never starts or stops.
+never starts or stops and gives no setting.
 
 Not pure: writes under ``%ProgramData%``, drives the Task Scheduler and
 ends processes.
@@ -56,19 +56,23 @@ WINDOWS_SHELL = "cmd.exe"
 TASK_RUNNING = "Running"
 
 
-def render_script(*, program: str, data_dir: str, log: str) -> str:
+def render_script(
+    *, program: str, data_dir: str, log: str, environment: "dict | None" = None
+) -> str:
     """The script the task runs. Pure.
 
     Args:
         program: ``ollama.exe``.
         data_dir: The data directory.
         log: The file the server's output is appended to.
+        environment: The settings' variables, beside the module's own.
 
     Returns:
         The ``.cmd`` text, CRLF line ends: the environment set, then the
         server run with its output appended to the log.
     """
     environment = {
+        **(environment or {}),
         "OLLAMA_HOST": f"{OLLAMA_HOST}:{OLLAMA_PORT}",
         "OLLAMA_MODELS": ntpath.join(data_dir, OLLAMA_MODELS_DIR_NAME),
         **OLLAMA_ENVIRONMENT,
@@ -166,8 +170,27 @@ class OllamaWindowsApplier:
         """Nothing: there is no person's unit here."""
         return {}
 
-    def start_person(self) -> None:
-        """Nothing: a person's app is the person's to start."""
+    def apply_person(
+        self, *, environment: "dict | None" = None, is_started: bool = True
+    ) -> str:
+        """Nothing: a person's app takes no setting.
+
+        Args:
+            environment: Unread.
+            is_started: Unread.
+
+        Returns:
+            Empty.
+        """
+        return ""
+
+    def remove_person_settings(self) -> bool:
+        """Nothing: a person's app was given no setting.
+
+        Returns:
+            Always False.
+        """
+        return False
 
     def stop_person(self) -> None:
         """Nothing: a person's app is the person's to stop."""
@@ -198,13 +221,16 @@ class OllamaWindowsApplier:
         """
         return False
 
-    def apply(self, *, is_started: bool = True) -> str:
+    def apply(
+        self, *, environment: "dict | None" = None, is_started: bool = True
+    ) -> str:
         """Write the script and register the task; with ``is_started``, run it.
 
         A task whose description names another script is registered again,
         and a running one is stopped first.
 
         Args:
+            environment: The settings' variables.
             is_started: Whether the task is enabled and started.
 
         Returns:
@@ -217,7 +243,10 @@ class OllamaWindowsApplier:
         os.makedirs(self._join(self.data_dir, OLLAMA_MODELS_DIR_NAME), exist_ok=True)
         os.makedirs(ntpath.dirname(self.script_path), exist_ok=True)
         script = render_script(
-            program=self.program_path, data_dir=self.data_dir, log=self.log_path
+            program=self.program_path,
+            data_dir=self.data_dir,
+            log=self.log_path,
+            environment=environment,
         )
         write_if_changed(self.script_path, script, 0o644)
         description = task_description(script)

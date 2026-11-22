@@ -1182,6 +1182,11 @@ class WindowsHostMetricsReader:
             cpu_percent=cpu_percent,
             cpu_core_percents=core_percents,
             memory_percent=memory_percent,
+            memory_total_mb=(
+                self._memory_total_bytes // WINDOWS_BYTES_PER_MB
+                if self._memory_total_bytes > 0
+                else None
+            ),
             disk_percent=self._read_disk_percent(),
             temperature_c=self._read_temperature_c(),
             uptime_s=self._read_uptime_s(kernel32),

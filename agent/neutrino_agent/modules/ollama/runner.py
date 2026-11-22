@@ -6,12 +6,13 @@ Windows a zip and on macOS a tarball, each unpacked under ``ollama/`` in the
 module's directory. The system's applier runs it as a service of its own on
 ``127.0.0.1:11434``: a systemd unit of the account ``neutrino_ollama`` on
 Linux, a LaunchDaemon of the hidden account of that name on macOS, a
-scheduled task of SYSTEM's on Windows. A person's own Ollama is adopted:
-on Linux its unit, which the module's Start and Stop drive and its
-uninstall gives back as the first Start found it; on Windows and macOS the
-app that answers on the port, which the module neither starts nor stops.
-The models are the hub's to read and change through Ollama's own API; no
-report carries one.
+scheduled task of SYSTEM's on Windows, each with the variables of the
+hub's settings. A person's own Ollama is adopted: on Linux its unit, which
+the module's Start and Stop drive, which takes the settings through a
+drop-in, and which its uninstall gives back as the first Start found it; on
+Windows and macOS the app that answers on the port, which the module
+neither starts nor stops. The models are the hub's to read and change
+through Ollama's own API; no report carries one.
 
 Not pure: drives Ollama through its applier.
 """
@@ -40,6 +41,7 @@ from neutrino_agent.constants import (
     AGENT_WANT_STOPPED,
 )
 from neutrino_agent.exceptions import ModuleApplyError, PlatformUnsupportedError
+from neutrino_agent.modules.ollama.config import OllamaConfig
 from neutrino_agent.modules.ollama.constants import (
     OLLAMA_CODE_FOUND,
     OLLAMA_FOUND_APP,
@@ -324,6 +326,8 @@ class OllamaModuleRunner(ModuleRunner):
         """
         found = self._found_unit()
         if self.is_software_kept():
+            if self._applier.remove_person_settings():
+                self._log("ollama: took the settings off the machine's own Ollama")
             if found:
                 self._applier.restore_person(found)
                 self._log("ollama: gave the machine's own Ollama back as it was")
@@ -334,37 +338,41 @@ class OllamaModuleRunner(ModuleRunner):
             self._log(f"ollama: {note}")
 
     def validate(self, config: dict) -> None:
-        """Check a configuration: Ollama's is empty, so every one passes.
+        """Check the settings against their choices.
 
         Args:
-            config: The desired configuration.
+            config: The desired configuration, ``{keep_alive, gpus}``.
+
+        Raises:
+            ModuleApplyError: ``config_invalid {field}``.
         """
+        OllamaConfig.from_dict(config).validate()
 
     def apply(self, config: dict) -> None:
-        """Write the service and run the server, at most 60 seconds until it answers.
+        """Write the service with the settings and run the server, at most 60 seconds until it answers.
 
-        On a person's unit the unit is enabled and started, what it was kept
-        at the first such start.
+        On a person's unit the settings' drop-in is written and the unit is
+        enabled and started, what it was kept at the first such start.
 
         Args:
-            config: The desired configuration, empty.
+            config: The desired configuration, ``{keep_alive, gpus}``.
 
         Raises:
             ModuleApplyError: ``apply_failed {detail}`` when the service
                 cannot be written or the server does not answer in time.
         """
-        self._apply(is_started=True)
+        self._apply(config, is_started=True)
 
     def apply_stopped(self, config: dict) -> None:
-        """Write the service under ``stopped``, neither enabled nor started; nothing on a person's unit.
+        """Write the service under ``stopped``, neither enabled nor started; a person's unit its drop-in alone.
 
         Args:
-            config: The desired configuration, empty.
+            config: The desired configuration, ``{keep_alive, gpus}``.
 
         Raises:
             ModuleApplyError: As :meth:`apply` does.
         """
-        self._apply(is_started=False)
+        self._apply(config, is_started=False)
 
     def stop(self) -> None:
         """Take the server down and keep it from starting at boot, the models in place.
@@ -524,19 +532,21 @@ class OllamaModuleRunner(ModuleRunner):
             self._answered_at = now
         return self._answered
 
-    def _apply(self, *, is_started: bool) -> None:
-        """Write the service; with ``is_started`` run it and wait until it answers."""
-        if self.is_software_kept():
-            if not is_started:
-                return
-            if not self._found_unit():
-                self._keep_found_unit(self._applier.person_unit_state())
-            self._applier.start_person()
-            self._wait_for_server()
-            self._log("ollama: started the machine's own Ollama")
-            return
+    def _apply(self, config: dict, *, is_started: bool) -> None:
+        """Write the service with the settings; with ``is_started`` run it and wait until it answers."""
+        environment = OllamaConfig.from_dict(config).environment(self._platform.os_name)
         try:
-            note = self._applier.apply(is_started=is_started)
+            if self.is_software_kept():
+                if is_started and not self._found_unit():
+                    self._keep_found_unit(self._applier.person_unit_state())
+                note = self._applier.apply_person(
+                    environment=environment, is_started=is_started
+                )
+                if is_started:
+                    self._wait_for_server()
+                self._log(f"ollama: the machine's own Ollama {note}")
+                return
+            note = self._applier.apply(environment=environment, is_started=is_started)
         except (OSError, subprocess.SubprocessError) as error:
             raise ModuleApplyError(
                 "apply_failed", {"detail": command_detail(error)[:500]}

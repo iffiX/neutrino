@@ -233,6 +233,7 @@ class HostMetrics:
         cpu_percent: Processor load since the previous sample.
         cpu_core_percents: The same, per core, in core order.
         memory_percent: Share of memory in use.
+        memory_total_mb: The machine's memory, when readable.
         disk_percent: Share of the root filesystem in use.
         temperature_c: Highest thermal zone reading, when the device has one.
         uptime_s: Seconds since boot.
@@ -244,6 +245,7 @@ class HostMetrics:
     cpu_percent: float = 0.0
     cpu_core_percents: "list[float]" = field(default_factory=list)
     memory_percent: float = 0.0
+    memory_total_mb: "int | None" = None
     disk_percent: float = 0.0
     temperature_c: "float | None" = None
     uptime_s: int = 0
@@ -261,6 +263,7 @@ class HostMetrics:
             "cpu_percent": round(self.cpu_percent, 1),
             "cpu_core_percents": [round(value, 1) for value in self.cpu_core_percents],
             "memory_percent": round(self.memory_percent, 1),
+            "memory_total_mb": self.memory_total_mb,
             "disk_percent": round(self.disk_percent, 1),
             "temperature_c": _rounded(self.temperature_c, 1),
             "uptime_s": self.uptime_s,

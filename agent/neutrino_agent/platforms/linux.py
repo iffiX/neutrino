@@ -657,10 +657,14 @@ class HostMetricsReader:
             it can.
         """
         cpu_percent, core_percents = self._read_cpu_percents()
+        memory_percent = self._read_memory_percent()
         return HostMetrics(
             cpu_percent=cpu_percent,
             cpu_core_percents=core_percents,
-            memory_percent=self._read_memory_percent(),
+            memory_percent=memory_percent,
+            memory_total_mb=(
+                self._memory_total_kb // 1024 if self._memory_total_kb > 0 else None
+            ),
             disk_percent=self._read_disk_percent(),
             temperature_c=self._read_temperature_c(),
             uptime_s=self._read_uptime_s(),

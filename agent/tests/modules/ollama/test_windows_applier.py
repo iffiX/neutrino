@@ -7,7 +7,9 @@ leaves a running task with the same script alone, registers a changed one
 again after ending the old server, and under ``stopped`` disables a task it
 registered; a stop ends the task and every process of the module's
 program; an uninstall unregisters the task and deletes the program and
-keeps the data; the publisher's app is found in any profile.
+keeps the data; the publisher's app is found in any profile. The settings'
+variables are set in the script, and a change of them registers the task
+again and restarts the server.
 """
 
 import ntpath
@@ -146,3 +148,34 @@ def test_the_publisher_s_app_is_found_in_any_profile(tmp_path):
     app.mkdir(parents=True)
     (app / "ollama.exe").write_text("")
     assert applier.app_path() == str(app / "ollama.exe")
+
+
+def test_the_settings_variables_are_set_in_the_script_and_restart_the_server(
+    tmp_path,
+):
+    script = render_script(
+        program="C:\\o\\ollama.exe",
+        data_dir="C:\\d",
+        log="C:\\d\\ollama.log",
+        environment={"OLLAMA_KEEP_ALIVE": "4h", "CUDA_VISIBLE_DEVICES": "1"},
+    )
+    lines = script.split("\r\n")
+    assert 'set "OLLAMA_KEEP_ALIVE=4h"' in lines
+    assert 'set "CUDA_VISIBLE_DEVICES=1"' in lines
+    assert lines.index('set "OLLAMA_KEEP_ALIVE=4h"') < len(lines) - 2
+    host = FakeHost()
+    applier = _applier(tmp_path, host)
+    applier.apply(environment={"OLLAMA_KEEP_ALIVE": "30m"}, is_started=True)
+    host.calls.clear()
+    assert applier.apply(environment={"OLLAMA_KEEP_ALIVE": "30m"}) == "unchanged"
+    assert applier.apply(environment={"OLLAMA_KEEP_ALIVE": "-1"}) == "restarted"
+    with open(applier.script_path, encoding="utf-8") as stream:
+        assert 'set "OLLAMA_KEEP_ALIVE=-1"' in stream.read()
+
+
+def test_the_person_s_app_takes_no_setting(tmp_path):
+    host = FakeHost()
+    applier = _applier(tmp_path, host)
+    assert applier.apply_person(environment={"OLLAMA_KEEP_ALIVE": "5m"}) == ""
+    assert applier.remove_person_settings() is False
+    assert host.calls == []
