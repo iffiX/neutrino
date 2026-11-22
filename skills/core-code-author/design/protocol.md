@@ -793,8 +793,8 @@ to pick one.
 | `POST /api/agent/module/gitea/set` | `{device_id, ...}` | |
 | `POST /api/agent/module/gitea/admin/add` | `{device_id, ...}` | |
 | `POST /api/agent/module/gitea/admin/password/set` | `{device_id, username, password}` | |
-| `GET /api/agent/module/ollama` | `?device_id=` | `OllamaDeviceView`: the fields of every module view, `version` and `details` as last reported; `is_running`, the details' own; `keep_alive` and `gpus`, the stored settings, `keep_alive` `30m` and `gpus` null while none are stored; `resources`, the machine's last report, `{gpus, memory_used_mb, memory_total_mb}`, `gpus` its `machine.metrics.gpus` and the memory null while the report lacks it; and while the server runs, `models`, the ones in memory first, then by name, each `{name, parameter_size, quantization, size_bytes, modified_at, is_loaded, is_loading, memory_bytes, vram_bytes}` from Ollama's `/api/tags` and `/api/ps` through the hub's forward, `is_loading` while the hub's load of a kept model runs, `total_bytes` their sum, and `code` and `params` `ollama_unreachable {detail}` when that call fails; on every row `pulls`, the machine's pulls in order, each `{name, state, completed_bytes, total_bytes, speed_bytes, code, params}`, `state` `running`, `queued` or `failed` ([agent/modules/ollama.md](agent/modules/ollama.md), "The model list is the hub's, through a forward of its own") |
-| `POST /api/agent/module/ollama/set` | `{device_id, keep_alive, gpus}`, `keep_alive` one of `5m`, `30m`, `1h`, `4h` and `-1`, `gpus` null for every GPU or each GPU of the machine's report in its order as `{vendor, is_used}` | stores the settings in `config/devices/<id>/ollama.json`, keeping its `kept_models`, after the agent checks them, and pushes the state; the configure restarts the server ([agent/modules/ollama.md](agent/modules/ollama.md), "The settings are the hub's"); `OllamaDeviceView`; 400 `body_invalid` for a value outside those, and the agent's own code; 409 `agent_offline` |
+| `GET /api/agent/module/ollama` | `?device_id=` | `OllamaDeviceView`: the fields of every module view, `version` and `details` as last reported; `is_running`, the details' own; `keep_alive`, `context_length` and `gpus`, the stored settings, `keep_alive` `30m`, `context_length` 65536 and `gpus` null while none are stored; `resources`, the machine's last report, `{gpus, memory_used_mb, memory_total_mb}`, `gpus` its `machine.metrics.gpus` and the memory null while the report lacks it; and while the server runs, `models`, the ones in memory first, then by name, each `{name, parameter_size, quantization, size_bytes, modified_at, is_loaded, is_loading, memory_bytes, vram_bytes}` from Ollama's `/api/tags` and `/api/ps` through the hub's forward, `is_loading` while the hub's load of a kept model runs, `total_bytes` their sum, and `code` and `params` `ollama_unreachable {detail}` when that call fails; on every row `pulls`, the machine's pulls in order, each `{name, state, completed_bytes, total_bytes, speed_bytes, code, params}`, `state` `running`, `queued` or `failed` ([agent/modules/ollama.md](agent/modules/ollama.md), "The model list is the hub's, through a forward of its own") |
+| `POST /api/agent/module/ollama/set` | `{device_id, keep_alive, context_length, gpus}`, `keep_alive` one of `5m`, `30m`, `1h`, `4h` and `-1`, `context_length` a whole number of tokens, `gpus` null for every GPU or each GPU of the machine's report in its order as `{vendor, is_used}` | stores the settings in `config/devices/<id>/ollama.json`, keeping its `kept_models`, after the agent checks them, and pushes the state; the configure restarts the server ([agent/modules/ollama.md](agent/modules/ollama.md), "The settings are the hub's"); `OllamaDeviceView`; 400 `body_invalid` for a value outside those, `ollama_context_length_invalid {context_length, min, max}` for a length outside 4096 to 262144, and the agent's own code; 409 `agent_offline` |
 | `POST /api/agent/module/ollama/model/add` | `{device_id, name}` | puts a pull of `name` at the end of the machine's queue, a hub task that outlives the page; `OllamaDeviceView`; 400 `ollama_model_name_invalid {name}`; 409 `agent_offline`, and `ollama_not_running` while the details say the server does not run |
 | `POST /api/agent/module/ollama/pull/remove` | `{device_id, name}` | ends the running pull of `name` by closing its connection, or takes a waiting or failed one off the queue; `OllamaDeviceView`; 404 `ollama_pull_unknown {name}` |
 | `POST /api/agent/module/ollama/model/remove` | `{device_id, name}` | `DELETE /api/delete` for `name`, and takes `name` off `kept_models`; `OllamaDeviceView`; 404 `ollama_model_unknown {name}`; 409 `agent_offline` and `ollama_not_running`; 502 `ollama_unreachable {detail}` |
@@ -1609,14 +1609,17 @@ detail}` when the system will not make the server's account.
 
 The `ollama` module runs Ollama on Linux, macOS and Windows
 ([agent/modules/ollama.md](agent/modules/ollama.md)). Its configuration is
-`{keep_alive, gpus}`: `keep_alive` one of `5m`, `30m`, `1h`, `4h` and
-`-1`, `30m` while `config/devices/<id>/ollama.json` names none, and `gpus`
-null for every GPU or the machine's GPUs in the order of its report, each
-`{vendor, is_used}`. The file's `kept_models` stays on the hub. The agent
-refuses `config_invalid {field}` for a value outside these, and the
-service starts with their variables, on a person's Linux unit through a
-drop-in. Both fields, and `memory_total_mb`, the machine's memory in
-`machine.metrics`, are added and keep `PROTOCOL`. Its recipe names one
+`{keep_alive, context_length, gpus}`: `keep_alive` one of `5m`, `30m`,
+`1h`, `4h` and `-1`, `30m` while `config/devices/<id>/ollama.json` names
+none; `context_length` a whole number from 4096 to 262144, 65536 while the
+file names none; and `gpus` null for every GPU or the machine's GPUs in the
+order of its report, each `{vendor, is_used}`. The file's `kept_models`
+stays on the hub. The agent refuses `config_invalid {field}` for a value
+outside these, and the service starts with their variables, on a person's
+Linux unit through a drop-in. The three fields, and `memory_total_mb`, the
+machine's memory in `machine.metrics`, are added and keep `PROTOCOL`; an
+agent older than `context_length` leaves it unread, and its server keeps
+Ollama's own length. Its recipe names one
 artifact, `ollama`, the release archive of the version the machine runs, of
 kind `tar_zst` on Linux, which its runner unpacks with the system's `zstd`
 that `packages` names, `zip` on Windows and `tar_gz` on macOS, whose entry

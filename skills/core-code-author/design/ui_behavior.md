@@ -1288,6 +1288,7 @@ own apply bar, as the Containers tab's **Run settings**:
 | Control | Idiom |
 | --- | --- |
 | **Idle unload time** (`ui.ollama.keep_alive`) | the panel's picker over `ui.ollama.keep_alive_5m`, `_30m`, `_1h`, `_4h` and `_never`, the view's `keep_alive` chosen |
+| **Context length (tokens)** (`ui.ollama.context_length`) | a number field of whole tokens from 4096 to 262144 holding the view's `context_length`, with no hint. While it holds a number outside them or none, the field shows `code.ollama_context_length_invalid {min, max}` under it and the apply bar is disabled, as the Containers tab's **Disk limit (GiB)** does |
 | **GPUs** (`ui.ollama.gpus`) | one checkbox per GPU of the view's `resources.gpus`, in its order, with the GPU's name, or `ui.ollama.gpu_number {number}` for one the report names none; ticked while the view's `gpus` is null, else by the stored card at its place of the same vendor, a card it does not name unticked. No checkbox is required. The row is not drawn on macOS or while the report names no GPU |
 
 The bar's label is `ui.ollama.settings_apply` and its hint

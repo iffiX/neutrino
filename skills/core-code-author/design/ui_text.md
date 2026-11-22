@@ -701,6 +701,7 @@ other times.
 | `ui.ollama.settings_title` | Settings | 设置 |
 | `ui.ollama.keep_alive` | Idle unload time | 空闲多久后移出内存 |
 | `ui.ollama.keep_alive_5m`, `_30m`, `_1h`, `_4h`, `_never` | 5 minutes, 30 minutes, 1 hour, 4 hours, Never | 5 分钟、30 分钟、1 小时、4 小时、从不 |
+| `ui.ollama.context_length`, a number field, its unit in the label as **Memory (GiB)** has it | Context length (tokens) | 上下文长度（token） |
 | `ui.ollama.gpus` | GPUs | GPU |
 | `ui.ollama.settings_apply` | Apply settings | 应用设置 |
 | `ui.ollama.settings_apply_hint` | Restarts Ollama with these settings. | 用这些设置重启 Ollama。 |
@@ -715,6 +716,7 @@ other times.
 | `code.ollama_unreachable` | Ollama on this machine did not answer: {detail} | 这个系统上的 Ollama 没有响应：{detail} |
 | `code.ollama_not_running` | Ollama is not running on this machine. | 这个系统上的 Ollama 没有运行。 |
 | `code.ollama_model_name_invalid` | {name} is not a model name. | {name} 不是模型名称。 |
+| `code.ollama_context_length_invalid` | The context length must be between {min} and {max} tokens. | 非法上下文长度：要在 {min} 到 {max} 个 token 之间。 |
 | `code.ollama_model_unknown` | This machine has no model named {name}. | 这个系统上没有叫 {name} 的模型。 |
 | `code.ollama_pull_unknown` | No pull of {name} is waiting or running. | 没有在等待或进行中的 {name} 拉取。 |
 | `code.ollama_pull_failed` | Ollama could not pull {name}: {detail} | Ollama 没能拉取 {name}：{detail} |
