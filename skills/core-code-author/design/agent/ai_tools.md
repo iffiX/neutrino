@@ -118,7 +118,9 @@ record keeps `kept_modes`, each kept file's own mode; on Windows a profile's
 files are its owner's by their access list and no mode is set or kept. The
 switch back, once cc-switch has switched away and deleted the hub's
 provider, writes each kept file back as it was with its own mode, takes
-away each that was absent, and takes away a directory the switch made once
+away each that was absent, takes away, as the account, OpenCode's
+`opencode.json.tui-migration.bak` when its `provider` names `neutrino`
+([modules/opencode.md](modules/opencode.md)), and takes away a directory the switch made once
 it is empty, OpenCode's `~/.config` among them. A switch back that
 cannot run cc-switch, or cannot read its list of providers, is the
 account's `failed` with `switch_failed {account, detail}`, and the records,
@@ -143,7 +145,7 @@ environment ("Running as an account" in the platform table,
 [agent.md](../agent.md), "The platform layer"), and so does each file step of
 the client's sequence: reading a tool's file, writing Codex's effort into
 `config.toml` and OpenCode's `model` into `opencode.json`, removing a file
-cc-switch made. An account can replace any
+cc-switch made or OpenCode's migration backup. An account can replace any
 file in its home with a link to a file only root reads, so a read made as
 root would hand that file to cc-switch and through it back to the account. On
 Linux and macOS the file steps are `cat`, `test -f`, `sh -c` writing what

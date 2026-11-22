@@ -87,7 +87,13 @@ settings file: both copies read the account's
 `~/.config/opencode/opencode.json`, to which the setting adds the hub as the
 provider `neutrino` when the account's switch is on, and the top-level
 `model`, `neutrino/<model>`, when the file names no `model`, so either copy
-starts on the account's model ([../ai_tools.md](../ai_tools.md)).
+starts on the account's model ([../ai_tools.md](../ai_tools.md)). OpenCode
+1.19.5, starting on a file that holds TUI settings such as `theme`, moves
+them into `tui.json` and keeps the file as it was in
+`opencode.json.tui-migration.bak` beside it, with the account's own file
+mask, mode 664 on Ubuntu 22.04. While the switch is on, that backup holds
+the hub's provider with the gateway key, and the switch back takes it away
+as the account. A backup without the hub's provider stays.
 
 **CloudCLI and Codeg do not reach the module's copy.** The `PATH` of each
 one's service names no launcher folder ([cloudcli.md](cloudcli.md), "The

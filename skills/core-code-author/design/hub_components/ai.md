@@ -251,6 +251,7 @@ current one, so nothing of the person's has to pass through its stores:
 | When the tool's model changes, a `model` equal to `written_model` is set to the new `neutrino/<model>`, and taken away when the tool has no model. A `model` the person wrote stays. | The `model` the client wrote stands for the tool's model. Left as it was, it names a model the hub's provider no longer lists. |
 | The client reads the file as JSON and writes it back as JSON with two-space indentation, every other key's value as cc-switch left it. | cc-switch writes the file that way, and it refuses a file it cannot read as JSON at its next run. |
 | OpenCode's `added` also holds `model`, the top-level `model` the client wants, `neutrino/<model>` or empty. | A record whose `added` lacks it does not carry the wanted settings, so its tool is switched once more and its file gets the `model`. |
+| The switch back takes away `opencode.json.tui-migration.bak` beside the file when its `provider` names `neutrino`, and leaves one that does not. | OpenCode 1.19.5, starting on an `opencode.json` that holds TUI settings such as `theme`, moves them into `tui.json` and keeps the file as it was in that backup, with the person's own file mask, mode 664 on Ubuntu 22.04. While the tool is switched, the file it keeps holds the hub's provider with the gateway key. A backup without the hub's provider is the person's own. |
 | The provider goes in whole as `--config`. | cc-switch 5.10.4 refuses `--base-url`, `--api-key` and `--model` for OpenCode: "provider add for opencode requires raw config via --config or --config-file". |
 | For OpenCode the hub is current while cc-switch lists its provider. | `provider current` fails for OpenCode, with "Current provider '' not found". |
 | A file cc-switch cannot read as JSON fails the switch. | OpenCode accepts comments in `opencode.json`, and cc-switch refuses a file holding one. |
@@ -294,7 +295,8 @@ file mask, so every file that then holds the gateway key, Claude Code's
 `opencode.json`, is set to mode 600 outside Windows. Deactivating switches back to the recorded provider, deletes the
 hub's entry, then writes each kept file back byte for byte with its own
 mode, takes away each
-that was absent, and takes away a directory the switch made once it is
+that was absent, takes away OpenCode's `opencode.json.tui-migration.bak`
+that holds the hub's provider, and takes away a directory the switch made once it is
 empty, OpenCode's `~/.config` among them; cc-switch's own switch back re-writes a file in its own layout, so
 its result is never what is left. A switch back that cannot run cc-switch,
 or cannot read its list of providers, fails and keeps the records, so the
