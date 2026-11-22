@@ -157,6 +157,7 @@ function pulledFacts(name: string): {
 
 export class DemoOllama {
   keepAlive = "30m";
+  contextLength = 65536;
   gpus: OllamaGpuSetting[] | null = null;
   private readonly machineGpus: DeviceGpuInfo[];
   private readonly memoryTotalMb: number;
@@ -196,6 +197,7 @@ export class DemoOllama {
       details: row.details,
       is_running: row.isRunning,
       keep_alive: this.keepAlive,
+      context_length: this.contextLength,
       gpus: this.gpus,
       resources: this.resources(row.metrics),
       models,

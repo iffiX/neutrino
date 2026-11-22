@@ -1482,6 +1482,9 @@ export class DemoHub {
     const device = this.device(textField(body, "device_id"));
     const ollama = this.ollamaOf(device);
     ollama.keepAlive = textField(body, "keep_alive") || ollama.keepAlive;
+    if (typeof body.context_length === "number") {
+      ollama.contextLength = body.context_length;
+    }
     ollama.gpus = Array.isArray(body.gpus)
       ? (structuredClone(body.gpus) as OllamaGpuSetting[])
       : null;
