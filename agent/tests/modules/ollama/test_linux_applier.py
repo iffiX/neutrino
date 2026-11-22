@@ -9,8 +9,8 @@ the account is made as a system account with no login shell in the GPU
 groups the machine has, and a data directory another uid owns is handed
 over; a person's unit is found in its three places, driven through
 ``systemctl`` alone and put back as it was found. The settings' variables
-go into the unit, a change of them restarts it, and on a person's unit they
-go into a drop-in of the module's own, which a changed write restarts the
+go into the unit, the default context length among them, a change of them
+restarts it, and on a person's unit they go into a drop-in of the module's own, which a changed write restarts the
 unit for and which its removal takes away with a restart of a running unit,
 with its folder when nothing of the person's is in it.
 """
@@ -19,6 +19,7 @@ import os
 from types import SimpleNamespace
 
 from neutrino_agent.modules.ollama import linux_applier
+from neutrino_agent.modules.ollama.config import OllamaConfig
 from neutrino_agent.modules.ollama.linux_applier import (
     OllamaLinuxApplier,
     render_unit,
@@ -205,6 +206,19 @@ def test_the_settings_variables_go_into_the_unit_and_restart_it(tmp_path, monkey
     assert applier.apply(environment={"OLLAMA_KEEP_ALIVE": "5m"}) == "restarted"
     unit = (tmp_path / "systemd" / "neutrino_ollama.service").read_text()
     assert "Environment=OLLAMA_KEEP_ALIVE=5m\n" in unit
+
+
+def test_the_default_context_length_reaches_the_unit_and_the_drop_in(
+    tmp_path, monkeypatch
+):
+    environment = OllamaConfig.from_dict({}).environment("linux")
+    text = render_unit("/p/ollama", "/data", environment=environment)
+    assert "Environment=OLLAMA_CONTEXT_LENGTH=65536\n" in text
+    assert "Environment=OLLAMA_KEEP_ALIVE=30m\n" in text
+    applier = _applier(tmp_path, FakeSystem(), monkeypatch)
+    applier.apply_person(environment=environment, is_started=False)
+    drop_in = tmp_path / "systemd" / "ollama.service.d" / "neutrino.conf"
+    assert "Environment=OLLAMA_CONTEXT_LENGTH=65536\n" in drop_in.read_text()
 
 
 def test_a_person_s_unit_takes_the_settings_through_a_drop_in(tmp_path, monkeypatch):

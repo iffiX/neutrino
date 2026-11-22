@@ -324,7 +324,7 @@ class OllamaModuleRunner(ModuleRunner):
         """Check the settings against their choices.
 
         Args:
-            config: The desired configuration, ``{keep_alive, gpus}``.
+            config: The desired configuration, ``{keep_alive, context_length, gpus}``.
 
         Raises:
             ModuleApplyError: ``config_invalid {field}``.
@@ -338,7 +338,7 @@ class OllamaModuleRunner(ModuleRunner):
         enabled and started, what it was kept at the first such start.
 
         Args:
-            config: The desired configuration, ``{keep_alive, gpus}``.
+            config: The desired configuration, ``{keep_alive, context_length, gpus}``.
 
         Raises:
             ModuleApplyError: ``apply_failed {detail}`` when the service
@@ -350,7 +350,7 @@ class OllamaModuleRunner(ModuleRunner):
         """Write the service under ``stopped``, neither enabled nor started; a person's unit its drop-in alone.
 
         Args:
-            config: The desired configuration, ``{keep_alive, gpus}``.
+            config: The desired configuration, ``{keep_alive, context_length, gpus}``.
 
         Raises:
             ModuleApplyError: As :meth:`apply` does.

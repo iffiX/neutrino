@@ -54,6 +54,12 @@ OLLAMA_CODE_CONFIG_INVALID = "config_invalid"
 OLLAMA_KEEP_ALIVE_CHOICES = ("5m", "30m", "1h", "4h", "-1")
 OLLAMA_KEEP_ALIVE_DEFAULT = "30m"
 OLLAMA_KEEP_ALIVE_VARIABLE = "OLLAMA_KEEP_ALIVE"
+# The most tokens a loaded model holds: its least and most value, its
+# default and its variable.
+OLLAMA_CONTEXT_LENGTH_MIN = 4096
+OLLAMA_CONTEXT_LENGTH_MAX = 262144
+OLLAMA_CONTEXT_LENGTH_DEFAULT = 65536
+OLLAMA_CONTEXT_LENGTH_VARIABLE = "OLLAMA_CONTEXT_LENGTH"
 # The GPU variables, each naming the cards of its group to use: the vendors
 # a group takes, or the vendors it leaves out. CUDA counts its cards in PCI
 # bus order beside its variable, the order ``nvidia-smi`` lists them in.

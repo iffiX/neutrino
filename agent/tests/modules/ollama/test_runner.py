@@ -301,12 +301,22 @@ def test_a_person_s_unit_is_kept_started_stopped_and_given_back(tmp_path):
 
     runner.apply_stopped({})
     assert applier.calls == [
-        ("apply_person", {"OLLAMA_KEEP_ALIVE": "30m"}, False),
+        (
+            "apply_person",
+            {"OLLAMA_KEEP_ALIVE": "30m", "OLLAMA_CONTEXT_LENGTH": "65536"},
+            False,
+        ),
     ]
     assert runner._found_unit() == {}
     applier.calls.clear()
-    runner.apply({"keep_alive": "5m"})
-    assert applier.calls == [("apply_person", {"OLLAMA_KEEP_ALIVE": "5m"}, True)]
+    runner.apply({"keep_alive": "5m", "context_length": 16384})
+    assert applier.calls == [
+        (
+            "apply_person",
+            {"OLLAMA_KEEP_ALIVE": "5m", "OLLAMA_CONTEXT_LENGTH": "16384"},
+            True,
+        )
+    ]
     assert runner._found_unit() == {"is_enabled": True, "is_active": False}
     assert runner.is_active() is True
     assert runner.journal_units() == ["ollama.service"]
@@ -419,6 +429,9 @@ def test_the_settings_are_checked_and_reach_the_module_s_own_service(tmp_path):
         runner.validate({"keep_alive": "2h"})
     assert refused.value.code == "config_invalid"
     assert refused.value.params == {"field": "keep_alive"}
+    with pytest.raises(ModuleApplyError) as refused:
+        runner.validate({"keep_alive": "4h", "context_length": 2048})
+    assert refused.value.params == {"field": "context_length"}
     runner.validate(
         {"keep_alive": "4h", "gpus": [{"vendor": "nvidia", "is_used": True}]}
     )
@@ -426,15 +439,19 @@ def test_the_settings_are_checked_and_reach_the_module_s_own_service(tmp_path):
         {"vendor": "nvidia", "is_used": False},
         {"vendor": "nvidia", "is_used": True},
     ]
-    runner.apply({"keep_alive": "4h", "gpus": gpus})
+    runner.apply({"keep_alive": "4h", "context_length": 131072, "gpus": gpus})
     assert applier.environment == {
         "OLLAMA_KEEP_ALIVE": "4h",
+        "OLLAMA_CONTEXT_LENGTH": "131072",
         "CUDA_VISIBLE_DEVICES": "1",
         "CUDA_DEVICE_ORDER": "PCI_BUS_ID",
     }
     runner.apply_stopped({})
     assert applier.calls[-1] == ("apply", False)
-    assert applier.environment == {"OLLAMA_KEEP_ALIVE": "30m"}
+    assert applier.environment == {
+        "OLLAMA_KEEP_ALIVE": "30m",
+        "OLLAMA_CONTEXT_LENGTH": "65536",
+    }
 
 
 def test_a_mac_s_service_takes_no_gpu_variable(tmp_path):
@@ -443,7 +460,10 @@ def test_a_mac_s_service_takes_no_gpu_variable(tmp_path):
         tmp_path, applier, os_name="darwin", answers={"version": "0.40.16"}
     )
     runner.apply({"keep_alive": "1h", "gpus": [{"vendor": "apple", "is_used": False}]})
-    assert applier.environment == {"OLLAMA_KEEP_ALIVE": "1h"}
+    assert applier.environment == {
+        "OLLAMA_KEEP_ALIVE": "1h",
+        "OLLAMA_CONTEXT_LENGTH": "65536",
+    }
 
 
 def test_an_uninstall_with_nothing_kept_still_removes_the_drop_in(tmp_path):

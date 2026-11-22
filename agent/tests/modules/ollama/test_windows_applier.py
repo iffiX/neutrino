@@ -7,18 +7,19 @@ leaves a running task with the same script alone, registers a changed one
 again after ending the old server, and under ``stopped`` disables a task it
 registered; a stop ends the task and every process of the module's
 program; an uninstall unregisters the task and deletes the program and
-keeps the data. The settings' variables are set in the script, and a change
-of them registers the task again and restarts the server. The publisher's
-app of every profile is taken over once: its Startup shortcut moved to
-``kept/``, a junction refused, its processes ended, at each report again;
-the uninstall moves each shortcut back and opens the app again, once, as an
-account whose app ran.
+keeps the data. The settings' variables, the default context length among
+them, are set in the script, and a change of them registers the task again
+and restarts the server. The publisher's app of every profile is taken
+over once: its Startup shortcut moved to ``kept/``, a junction refused, its
+processes ended, at each report again; the uninstall moves each shortcut
+back and opens the app again, once, as an account whose app ran.
 """
 
 import ntpath
 import os
 from types import SimpleNamespace
 
+from neutrino_agent.modules.ollama.config import OllamaConfig
 from neutrino_agent.modules.ollama.windows_applier import (
     OllamaWindowsApplier,
     render_script,
@@ -272,6 +273,18 @@ def test_the_settings_variables_are_set_in_the_script_and_restart_the_server(
     assert applier.apply(environment={"OLLAMA_KEEP_ALIVE": "-1"}) == "restarted"
     with open(applier.script_path, encoding="utf-8") as stream:
         assert 'set "OLLAMA_KEEP_ALIVE=-1"' in stream.read()
+
+
+def test_the_default_context_length_is_set_in_the_script():
+    script = render_script(
+        program="C:\\o\\ollama.exe",
+        data_dir="C:\\d",
+        log="C:\\d\\ollama.log",
+        environment=OllamaConfig.from_dict({}).environment("windows"),
+    )
+    lines = script.split("\r\n")
+    assert 'set "OLLAMA_CONTEXT_LENGTH=65536"' in lines
+    assert lines.index('set "OLLAMA_CONTEXT_LENGTH=65536"') < len(lines) - 2
 
 
 def test_the_person_s_app_takes_no_setting(tmp_path):

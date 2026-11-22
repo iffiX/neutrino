@@ -1,10 +1,11 @@
-"""The Ollama module's settings: how long a model stays in memory, which GPUs.
+"""The Ollama module's settings: the idle unload time, the context length, the GPUs.
 
 The hub keeps them and sends them as the module's configuration,
-``{keep_alive, gpus}``. ``keep_alive`` is one of five durations as Ollama
-spells them; ``gpus`` is absent for every GPU, or the machine's GPUs in the
-order its report lists them, each ``{vendor, is_used}``. They become
-variables of the server's environment.
+``{keep_alive, context_length, gpus}``. ``keep_alive`` is one of five
+durations as Ollama spells them; ``context_length`` a whole number of
+tokens within its bounds; ``gpus`` is absent for every GPU, or the
+machine's GPUs in the order its report lists them, each ``{vendor,
+is_used}``. They become variables of the server's environment.
 
 Pure: parsing, checking and the variables only.
 """
@@ -18,6 +19,10 @@ from dataclasses import dataclass
 from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.ollama.constants import (
     OLLAMA_CODE_CONFIG_INVALID,
+    OLLAMA_CONTEXT_LENGTH_DEFAULT,
+    OLLAMA_CONTEXT_LENGTH_MAX,
+    OLLAMA_CONTEXT_LENGTH_MIN,
+    OLLAMA_CONTEXT_LENGTH_VARIABLE,
     OLLAMA_GPU_AMD,
     OLLAMA_GPU_APPLE,
     OLLAMA_GPU_CUDA_ORDER,
@@ -87,11 +92,13 @@ class OllamaConfig:
     Attributes:
         keep_alive: How long a model a request loaded stays in memory after
             its last request, as ``OLLAMA_KEEP_ALIVE`` spells it.
+        context_length: The most tokens a loaded model holds.
         gpus: The machine's GPUs, each ``{vendor, is_used}``; None for
             every GPU.
     """
 
     keep_alive: object = OLLAMA_KEEP_ALIVE_DEFAULT
+    context_length: object = OLLAMA_CONTEXT_LENGTH_DEFAULT
     gpus: object = None
 
     @classmethod
@@ -102,10 +109,12 @@ class OllamaConfig:
             data: The configuration.
 
         Returns:
-            The settings, the default duration where none is named.
+            The settings, the default duration and length where none is
+            named.
         """
         return cls(
             keep_alive=data.get("keep_alive", OLLAMA_KEEP_ALIVE_DEFAULT),
+            context_length=data.get("context_length", OLLAMA_CONTEXT_LENGTH_DEFAULT),
             gpus=data.get("gpus"),
         )
 
@@ -114,11 +123,22 @@ class OllamaConfig:
 
         Raises:
             ModuleApplyError: ``config_invalid {field}`` for a duration
-                outside the five, or a ``gpus`` that is not a list of
+                outside the five, a length that is not a whole number
+                within its bounds, or a ``gpus`` that is not a list of
                 ``{vendor, is_used}``.
         """
         if self.keep_alive not in OLLAMA_KEEP_ALIVE_CHOICES:
             raise ModuleApplyError(OLLAMA_CODE_CONFIG_INVALID, {"field": "keep_alive"})
+        if (
+            not isinstance(self.context_length, int)
+            or isinstance(self.context_length, bool)
+            or not OLLAMA_CONTEXT_LENGTH_MIN
+            <= self.context_length
+            <= OLLAMA_CONTEXT_LENGTH_MAX
+        ):
+            raise ModuleApplyError(
+                OLLAMA_CODE_CONFIG_INVALID, {"field": "context_length"}
+            )
         if self.gpus is None:
             return
         if not isinstance(self.gpus, list) or not all(
@@ -137,10 +157,13 @@ class OllamaConfig:
                 GPU variable.
 
         Returns:
-            ``OLLAMA_KEEP_ALIVE``, and the GPU variables of
-            :func:`gpu_environment`.
+            ``OLLAMA_KEEP_ALIVE`` and ``OLLAMA_CONTEXT_LENGTH``, and the GPU
+            variables of :func:`gpu_environment`.
         """
-        environment = {OLLAMA_KEEP_ALIVE_VARIABLE: str(self.keep_alive)}
+        environment = {
+            OLLAMA_KEEP_ALIVE_VARIABLE: str(self.keep_alive),
+            OLLAMA_CONTEXT_LENGTH_VARIABLE: str(self.context_length),
+        }
         if os_name != OLLAMA_GPU_FREE_OS and isinstance(self.gpus, list):
             environment.update(gpu_environment(self.gpus))
         return environment

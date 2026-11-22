@@ -1,9 +1,11 @@
 """The Ollama module's settings: their check and the variables they give.
 
 What these pin: ``keep_alive`` is one of the five choices, ``30m`` while the
-configuration names none; ``gpus`` is absent or a list of ``{vendor,
-is_used}``; anything else is refused ``config_invalid {field}``. The
-variables: ``OLLAMA_KEEP_ALIVE`` always; for each group of cards,
+configuration names none; ``context_length`` a whole number from 4096 to
+262144, 65536 while the configuration names none; ``gpus`` is absent or a
+list of ``{vendor, is_used}``; anything else is refused ``config_invalid
+{field}``. The variables: ``OLLAMA_KEEP_ALIVE`` and
+``OLLAMA_CONTEXT_LENGTH`` always, on every system; for each group of cards,
 ``CUDA_VISIBLE_DEVICES`` for NVIDIA's with ``CUDA_DEVICE_ORDER``,
 ``ROCR_VISIBLE_DEVICES`` for AMD's and ``GGML_VK_VISIBLE_DEVICES`` for every
 card that is neither NVIDIA's nor Apple's, the places of the used cards
@@ -21,10 +23,21 @@ def _gpu(vendor, is_used=True):
     return {"vendor": vendor, "is_used": is_used}
 
 
-def test_an_empty_configuration_keeps_models_for_thirty_minutes():
+@pytest.mark.parametrize("os_name", ["linux", "windows", "darwin"])
+def test_an_empty_configuration_keeps_models_for_thirty_minutes_at_64k(os_name):
     config = OllamaConfig.from_dict({})
     config.validate()
-    assert config.environment("linux") == {"OLLAMA_KEEP_ALIVE": "30m"}
+    assert config.environment(os_name) == {
+        "OLLAMA_KEEP_ALIVE": "30m",
+        "OLLAMA_CONTEXT_LENGTH": "65536",
+    }
+
+
+@pytest.mark.parametrize("context_length", [4096, 8192, 65536, 100000, 262144])
+def test_a_context_length_within_the_bounds_is_taken_as_a_number(context_length):
+    config = OllamaConfig.from_dict({"context_length": context_length})
+    config.validate()
+    assert config.environment("linux")["OLLAMA_CONTEXT_LENGTH"] == str(context_length)
 
 
 @pytest.mark.parametrize("keep_alive", ["5m", "30m", "1h", "4h", "-1"])
@@ -39,6 +52,13 @@ def test_each_choice_is_taken_as_ollama_spells_it(keep_alive):
     [
         ({"keep_alive": "10m"}, "keep_alive"),
         ({"keep_alive": 300}, "keep_alive"),
+        ({"context_length": 4095}, "context_length"),
+        ({"context_length": 262145}, "context_length"),
+        ({"context_length": 0}, "context_length"),
+        ({"context_length": "65536"}, "context_length"),
+        ({"context_length": 65536.0}, "context_length"),
+        ({"context_length": True}, "context_length"),
+        ({"context_length": None}, "context_length"),
         ({"gpus": "all"}, "gpus"),
         ({"gpus": [{"vendor": "nvidia"}]}, "gpus"),
         ({"gpus": [{"vendor": "nvidia", "is_used": "yes"}]}, "gpus"),
@@ -93,15 +113,19 @@ def test_an_unnamed_vendor_counts_among_the_vulkan_cards():
     assert gpu_environment(gpus) == {"GGML_VK_VISIBLE_DEVICES": "0"}
 
 
-def test_macos_takes_the_idle_time_alone():
+def test_macos_takes_the_idle_time_and_the_context_length_alone():
     config = OllamaConfig.from_dict(
-        {"keep_alive": "1h", "gpus": [_gpu("apple", False)]}
+        {"keep_alive": "1h", "context_length": 32768, "gpus": [_gpu("apple", False)]}
     )
     config.validate()
-    assert config.environment("darwin") == {"OLLAMA_KEEP_ALIVE": "1h"}
+    assert config.environment("darwin") == {
+        "OLLAMA_KEEP_ALIVE": "1h",
+        "OLLAMA_CONTEXT_LENGTH": "32768",
+    }
     linux = OllamaConfig.from_dict({"keep_alive": "-1", "gpus": [_gpu("amd", False)]})
     assert linux.environment("linux") == {
         "OLLAMA_KEEP_ALIVE": "-1",
+        "OLLAMA_CONTEXT_LENGTH": "65536",
         "ROCR_VISIBLE_DEVICES": "-1",
         "GGML_VK_VISIBLE_DEVICES": "-1",
     }

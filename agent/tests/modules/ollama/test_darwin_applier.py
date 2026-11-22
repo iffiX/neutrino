@@ -5,17 +5,19 @@ What these pin: the LaunchDaemon runs ``ollama serve`` as
 agent's log folder; an apply loads it and reloads it only on a change, and
 under ``stopped`` writes it alone; a stop disables and unloads it; an
 uninstall deletes the plist and the program and keeps the data directory
-and the account. The settings' variables join the job's environment, and a
-change of them reloads it. The publisher's app is taken over once per
-account: its login job ``com.ollama.ollama`` disabled, whether it was
-disabled before kept, its processes ended, at each report again; the
-uninstall enables what was enabled and opens the app again for the account
-at the console whose app ran.
+and the account. The settings' variables join the job's environment, the
+default context length among them, and a change of them reloads it. The
+publisher's app is taken over once per account: its login job
+``com.ollama.ollama`` disabled, whether it was disabled before kept, its
+processes ended, at each report again; the uninstall enables what was
+enabled and opens the app again for the account at the console whose app
+ran.
 """
 
 import os
 import plistlib
 
+from neutrino_agent.modules.ollama.config import OllamaConfig
 from neutrino_agent.modules.ollama.darwin_applier import (
     OllamaDarwinApplier,
     render_plist,
@@ -213,6 +215,18 @@ def test_the_uninstall_enables_what_was_enabled_and_opens_the_app_again(tmp_path
         launchd.app,
     ] in launchd.commands
     assert not os.path.exists(applier.module_dir)
+
+
+def test_the_default_context_length_joins_the_job():
+    job = plistlib.loads(
+        render_plist(
+            program="/s/ollama",
+            data_dir="/d",
+            environment=OllamaConfig.from_dict({}).environment("darwin"),
+        )
+    )
+    assert job["EnvironmentVariables"]["OLLAMA_CONTEXT_LENGTH"] == "65536"
+    assert job["EnvironmentVariables"]["OLLAMA_KEEP_ALIVE"] == "30m"
 
 
 def test_the_settings_variables_join_the_job_and_reload_it(tmp_path):
