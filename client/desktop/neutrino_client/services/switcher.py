@@ -459,15 +459,18 @@ def _wanted(app: str, base_url: str, api_key: str, config: dict) -> dict:
         config: The tool's staged choices.
 
     Returns:
-        The endpoint, a digest of the key, and the flags; the key itself
-        is never written down.
+        The endpoint, a digest of the key, the flags, Codex's effort and
+        OpenCode's top-level ``model``; the key itself is never written down.
     """
-    return {
+    settings = {
         "base_url": _endpoint_for(app, base_url),
         "key_digest": hashlib.sha256(api_key.encode("utf-8")).hexdigest()[:16],
         "flags": _model_flags(app, config),
         "effort": str(config.get(CODEX_EFFORT_KEY, "") or "") if app == "codex" else "",
     }
+    if app == "opencode":
+        settings[OPENCODE_MODEL_KEY] = _opencode_model(config)
+    return settings
 
 
 def _verify(app: str, base_url: str, api_key: str, config: dict) -> None:

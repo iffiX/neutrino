@@ -7,7 +7,8 @@ every call the switcher made, in order. OpenCode's provider goes in whole
 as ``--config`` beside the person's own, under cc-switch's name
 ``open-code``, and its ``.config`` made for the switch goes again. Its
 top-level ``model`` names the hub's model when the file names none, follows
-a changed model while it is the one written, and the person's own stays.
+a changed model while it is the one written, and the person's own stays; a
+record without the wanted ``model`` is switched once more.
 """
 
 import json
@@ -1173,3 +1174,34 @@ def test_the_opencode_model_is_written_as_json_in_cc_switch_s_layout():
         '{\n  "provider": {\n    "neutrino": {}\n  }\n}'
     )
     assert switcher._with_opencode_model(merged, "neutrino/m5", "")[0] == merged
+
+
+def test_an_opencode_record_without_the_wanted_model_is_switched_once_more(
+    tmp_path, monkeypatch
+):
+    (tmp_path / "home").mkdir(exist_ok=True)
+    cli = Cli()
+    wire(monkeypatch, cli)
+    configs = {"opencode": {"model": "m4"}}
+    switcher.activate(base_url="http://hub", api_key="k", tool_configs=configs)
+    record = switcher._read_record("opencode")
+    del record["added"]["model"]
+    del record["written_model"]
+    switcher._write_record("opencode", record)
+    live = tmp_path / "home" / OPENCODE
+    document = json.loads(live.read_text())
+    del document["model"]
+    live.write_text(json.dumps(document, indent=2))
+    cli.calls.clear()
+
+    switched = switcher.activate(
+        base_url="http://hub", api_key="k", tool_configs=configs
+    )
+
+    assert switched == "opencode"
+    assert "provider add" in cli.made("opencode")
+    assert json.loads(live.read_text())["model"] == "neutrino/m4"
+    assert (
+        switcher.activate(base_url="http://hub", api_key="k", tool_configs=configs)
+        == ""
+    )
