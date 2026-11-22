@@ -387,7 +387,7 @@ the agent group follows, then the panel's live sockets.
 | `/api/hub/credential` | The secrets the box keeps for somebody, SSH keys, logins and tokens, and the ones it generated for the machines |
 | `/api/hub/setting` | The panel's own: its two ports, its scheme and certificate authority, password, hub name, backup, restore, version, and updating the hub itself from its newest release |
 | `/api/agent/file` | A machine's directory listing, for the panel's path window |
-| `/api/agent/module` | The machine page `/agents/<id>`: the modules a device hosts through its agent, observed state, install, start, stop, uninstall, versions and the catalog; `account`, the machine's available accounts; and under it one block per module, `samba`, `terminal`, `ssh_server`, `remote_desktop`, `gitea`, `ollama`, `podman`, `vscode`, `code_server`, `cloudcli`, `codeg`, `siyuan`, `codex`, `claude_code`, `opencode`, `hermes_webui`, `ayakaleaf`, each setting what it is to have and `gitea` and `podman` importing what the machine already has |
+| `/api/agent/module` | The machine page `/agents/<id>`: the modules a device hosts through its agent, observed state, install, start, stop, uninstall, versions and the catalog; `account`, the machine's available accounts; and under it one block per module, `samba`, `terminal`, `ssh_server`, `remote_desktop`, `gitea`, `ollama`, `podman`, `vscode`, `code_server`, `cloudcli`, `codeg`, `siyuan`, `codex`, `claude_code`, `opencode`, `hermes_webui`, `ayakaleaf`, `astrbot`, each setting what it is to have and `gitea` and `podman` importing what the machine already has |
 | `/ws` | The panel's live sockets, grouped the same way: `/ws/hub/event` (cache invalidation, site-wide), `/ws/hub/dashboard/stat`, `/ws/hub/dashboard/dns_log`, `/ws/hub/task`; `/ws/agent/terminal` |
 
 The machine page `/agents/<id>` reads `/api/agent/module?device_id=...`
@@ -805,6 +805,7 @@ to pick one.
 | `GET /api/agent/module/hermes_webui` | `?device_id=` | `HermesWebuiDeviceView`: `port`, the forwarder's port as the machine reports it, and `state`, `version` and `details` as last reported |
 | `GET /api/agent/module/ayakaleaf` | `?device_id=` | `AyakaleafDeviceView`: `port`, the forwarder's port as the machine reports it; `model`, the stored one, empty for the default model; `models`, the names the gateway serves, for the picker; `is_gateway_serving`; and `state`, `version` and `details` as last reported |
 | `POST /api/agent/module/ayakaleaf/set` | `{device_id, model}`, `model` empty for the default model | stores `model` in `config/devices/<id>/ayakaleaf.json` and pushes the state, whose new environment restarts the app; `AyakaleafDeviceView`; 409 `agent_offline` |
+| `GET /api/agent/module/astrbot` | `?device_id=` | `AstrbotDeviceView`: `port`, the forwarder's port as the machine reports it, and `state`, `version` and `details` as last reported |
 | `GET /api/agent/module/podman` | `?device_id=` | `PodmanDeviceView`: the declared `containers`, each with its `services`; `hub_containers`, the hub containers the modules compose, read only; the `mirrors`; `running`, each container as last reported with its `module`, its `source`, its `host_bindings` and their `detected`, and its `code` and `params`, `source` being `hub`, `declared` or `manual` by the owner rule of [agent/modules/containers.md](agent/modules/containers.md), "Hub containers"; and on Windows and macOS `machine`, the stored Run settings, the machine as last reported (`details.machine`), the machine's available accounts, and `memory_need` as the module list carries it |
 | `POST /api/agent/module/podman/import` | `{device_id}` | |
 | `POST /api/agent/module/podman/container/set` | `{device_id, containers}` | replaces the declared containers, each with its `services`; 400 `container_name_reserved {name}` for a new name that starts with `neutrino_`; the agent's own refusals as 400, `service_invalid {name, port}`, `service_protocol_none {port}`, on Windows and macOS `volume_not_shared {name, volume}` and on Windows `udp_not_forwarded {name, port}` among them |
@@ -888,7 +889,7 @@ None of them is keyed by the peer's address.
 | Directory | Files |
 | --- | --- |
 | `web/routers/hub/` | `setup.py`, `auth.py`, `display.py`, `dashboard.py`, `network.py`, `overlay.py` with `overlay_direct.py`, `overlay_netbird.py`, `overlay_easytier.py`, `overlay_relay.py`, `overlay_sakurafrp.py` and `overlay_openfrp.py`, `proxy.py` with `proxy_node.py`, `ai.py` with `ai_gateway.py`, `device.py`, `client.py`, `service.py`, `credential.py`, `setting.py` |
-| `web/routers/agent/` | `file.py`, `module.py` with `module_account.py`, `module_instances.py` (Terminal, the file share, the SSH server, VS Code, code-server, CloudCLI, Codeg and SiYuan) with `module_vscode_terms.py`, `module_samba.py` (its status), `module_remote_desktop.py`, `module_gitea.py`, `module_ollama.py`, `module_podman.py`, `module_hermes_webui.py` and `module_ayakaleaf.py` |
+| `web/routers/agent/` | `file.py`, `module.py` with `module_account.py`, `module_instances.py` (Terminal, the file share, the SSH server, VS Code, code-server, CloudCLI, Codeg and SiYuan) with `module_vscode_terms.py`, `module_samba.py` (its status), `module_remote_desktop.py`, `module_gitea.py`, `module_ollama.py`, `module_podman.py`, `module_hermes_webui.py`, `module_ayakaleaf.py` and `module_astrbot.py` |
 | `web/` | `ws.py`, both socket groups |
 
 Each router's test is `hub/tests/web/routers/{hub,agent}/test_<page>.py`
@@ -1768,6 +1769,27 @@ made or tried, `code` empty once made and `ayakaleaf_guest_failed {step,
 detail}` while a step fails; an App share of the app reads its state from it
 ("App shares").
 
+The `astrbot` module runs AstrBot as one hub container
+([agent/modules/astrbot.md](agent/modules/astrbot.md)). Its configuration
+is `{secret, password, cookie_name, local_name, model}`: the token secret;
+the password of AstrBot's dashboard user; the name of the forwarder's login
+cookie, `neutrino_` and the first 12 hex characters of the SHA-256 of the
+entry's id; the app's local name; and the default model
+([hub_components/ai.md](hub_components/ai.md), "The default model"),
+empty while the gateway serves none, which the agent writes into
+AstrBot's settings file before the first start. The agent takes the
+forwarder's port itself, from 6185 up. The hub generates both secrets the
+first time the module is installed, keeps them sealed in
+`config/devices/<id>/astrbot.json` beside the module's gateway key, and
+sends them opened inside the state. Its manifest names one `image`
+artifact, `astrbot`, one `oci` feed in `releases`, `source_sets:
+["pypi"]` and `is_data_forward_only`. Its hub container names
+`page_port` 6185, `local_ports` `[6199]` and `stop_signal` `SIGINT`. It
+reads `running` while the container runs and `GET /` returns 200 at its
+published port, and `installing` from the install, or a version change,
+until the first such read. `details` is `{version, port}`, `port` the
+forwarder's.
+
 Package bytes come to the agent down a `package {module, artifact, digest}`
 stream it opens, `artifact` naming the artifact and `digest` the bytes
 wanted, the same stream that serves its own upgrade. A package asked
@@ -1811,7 +1833,7 @@ the hub generated for each, sealed under the vault's data key:
 | --- | --- |
 | The share's `path` is the account row's `share_path`, and the hub writes the account's `home` from the machine's `account_details` for an empty one. An enabled account whose `share_path` is empty while the machine reports an empty `home` for it is left out of `shares`, `users` and `passwords` until a report brings its home, and its row on the module's page carries `account_home_unknown {account}`; the hub composes no path from a home it has not been told. `shell_path` goes as the row holds it, and the agent starts the account's login shell, PowerShell on Windows, for an empty one. `password` is the account's login, sent to a Windows machine alone. | One form per account holds them ("The two layers and the accounts" there), and each side fills in the default it knows. An account that never signed in on Windows has no profile folder; a folder the hub makes under the expected name first makes Windows put the profile beside it under another name. |
 | The hub generates a module's secret for an account the first time that account is enabled, and keeps it when the account is disabled and enabled again; removing the available account deletes it. SiYuan's gateway key alone is voided when the account is disabled, and a new one is generated when it is enabled again. | A browser's login, a mounted share's password and a key a client wrote stay valid across a toggle. |
-| Every instance with a forwarder in front of it, code-server's, CloudCLI's, Codeg's and SiYuan's, also carries `local_name`, its app's, and `cookie_name`, its entry's, `neutrino_` and the first 12 hex characters of the SHA-256 of the entry's id ([agent/module_template.md](agent/module_template.md), "The run"); the Hermes WebUI and Ayakaleaf modules carry `local_name` beside their own `cookie_name`. | The forwarder accepts a `Host` of `127.0.0.1`, `[::1]`, `localhost` or `local_name`, and names its login cookie `cookie_name`. |
+| Every instance with a forwarder in front of it, code-server's, CloudCLI's, Codeg's and SiYuan's, also carries `local_name`, its app's, and `cookie_name`, its entry's, `neutrino_` and the first 12 hex characters of the SHA-256 of the entry's id ([agent/module_template.md](agent/module_template.md), "The run"); the Hermes WebUI and Ayakaleaf modules carry `local_name` beside their own `cookie_name`, and the AstrBot module carries both, its `cookie_name` the forwarder's by the same rule. | The forwarder accepts a `Host` of `127.0.0.1`, `[::1]`, `localhost` or `local_name`, and names its login cookie `cookie_name`. |
 | No instance names a port. The agent takes a free port on `127.0.0.1` for each instance at its first start, from the module's base port in its `constants.py` up, keeps it in the instance's root-only record under its state root, across a disable and an enable, and reports it in `details`, the port a `connect` reaches, the forwarder's where the module has one; the hub publishes the entry at the reported port. A kept port another program holds at a start is replaced by the next free one and reported. | A port the person never sees needs no field, and the machine is the one that knows which ports are free. |
 | An account that is not available, or is not one the machine reports, is not composed into any module; the agent's own `validate` refuses an account the machine does not have with `account_unknown {account}`. | A module never starts a process for an account the machine page does not list. |
 
@@ -1825,7 +1847,7 @@ what the entry's `payload` names:
 
 | `type` | `payload` | An entry is in the list while |
 | --- | --- | --- |
-| `web` | `{url, is_token_required}`, `is_token_required` present and true only on a VS Code, code-server, CloudCLI, Codeg or SiYuan instance and on Hermes WebUI and Ayakaleaf, whose page opens with a token the `service` frame hands | a device's Gitea module reports a URL, a device's VS Code, code-server, CloudCLI, Codeg or SiYuan module runs an instance, a device's Hermes WebUI or Ayakaleaf module reads `running`, a device's Podman container publishes a TCP port whose service is web, chosen or detected (`http` or `https` under `auto`), with `url` `<scheme>://<host>:<port>/`, or a declared app names a `web` entry |
+| `web` | `{url, is_token_required}`, `is_token_required` present and true only on a VS Code, code-server, CloudCLI, Codeg or SiYuan instance and on Hermes WebUI, Ayakaleaf and AstrBot, whose page opens with a token the `service` frame hands | a device's Gitea module reports a URL, a device's VS Code, code-server, CloudCLI, Codeg or SiYuan module runs an instance, a device's Hermes WebUI, Ayakaleaf or AstrBot module reads `running`, a device's Podman container publishes a TCP port whose service is web, chosen or detected (`http` or `https` under `auto`), with `url` `<scheme>://<host>:<port>/`, or a declared app names a `web` entry |
 | `port` | `{host, port, protocol}`, `protocol` being `tcp` or `udp`, `tcp` when absent. One entry has one protocol, so a number published on both is two entries | a device's Podman container publishes a host port whose service is port, chosen or under `auto` on a TCP binding detected `tcp` or not yet detected and on every UDP binding, one entry for each item of its `host_bindings` (a report with no `host_bindings`, from an agent before 0.5.0, gives each `host_ports` number as `tcp`), or a declared app names a `port` entry |
 | `ssh` | `{host, port, account, host_key_fingerprint, account_key_fingerprint}`: `port` the loopback port the account's instance of the machine's SSH server listens on, `account` the account it runs as, `host_key_fingerprint` the host key of the account's instance and `account_key_fingerprint` the account's key the hub made, each as `SHA256:<base64>` | a device's SSH server module enables that account ([agent/modules/ssh_server.md](agent/modules/ssh_server.md)); the hub lists a machine's `ssh` entries in the order the module enables the accounts |
 | `ai` | `{endpoint, protocol, models, model}`, `protocol` being `openai` and `model` the default model ([hub_components/ai.md](hub_components/ai.md), "The default model") | the AI gateway is installed and enabled |
@@ -1885,6 +1907,7 @@ its own language:
 | `siyuan_module` | `{host, account}`; the same |
 | `hermes_webui_module` | `{host}`; the entry exists only while the device reports the module `running` |
 | `ayakaleaf_module` | `{host}`; the same |
+| `astrbot_module` | `{host}`; the same |
 | `ssh_server_module` | `{host, account}`; the entry exists while the module enables the account |
 
 A declared app whose person wrote a line of their own gets that line on each
@@ -2087,7 +2110,7 @@ first that fails gives the reply its code; the panel's are
 | `service_unknown` | the id names no entry in the list resolved for this client |
 | `permission_denied` | the client's permission does not allow the entry: `is_permitted` refuses its type, its device and its row (`/api/hub/client`) |
 | `rdp_not_shared` | the entry is an `rdp` one and its machine has stopped reporting the share |
-| `vault_locked` | the entry is the `ai` one and the vault is locked, so this client's gateway key cannot be opened or generated; or it is a VS Code instance whose token does not open, a code-server, CloudCLI, Codeg or SiYuan instance, Hermes WebUI or Ayakaleaf whose secret does not open, an `ssh` entry whose key does not open, or a `file` entry whose password does not open |
+| `vault_locked` | the entry is the `ai` one and the vault is locked, so this client's gateway key cannot be opened or generated; or it is a VS Code instance whose token does not open, a code-server, CloudCLI, Codeg or SiYuan instance, Hermes WebUI, Ayakaleaf or AstrBot whose secret does not open, an `ssh` entry whose key does not open, or a `file` entry whose password does not open |
 | `control_unavailable` | the hub's Python did not answer the transport within `ControlQuestionTimeout` |
 
 `service_unknown` and `rdp_not_shared` put the id in `params` as
@@ -2102,7 +2125,7 @@ type:
 | `rdp` | `{password}`: the seat password of the machine sharing the desktop |
 | `ai` | `{api_key, model}`: this client's own gateway key, which the gateway checks on every request, and the default model |
 | `web` with `description_code` `vscode_module` | `{token}`: the instance's connection token |
-| `web` with `description_code` `code_server_module`, `cloudcli_module`, `codeg_module`, `siyuan_module`, `hermes_webui_module` or `ayakaleaf_module` | `{token}`: `base64url(expiry \|\| nonce \|\| HMAC-SHA256(secret, expiry \|\| nonce))`, minted by the hub for this answer alone with `expiry` 60 seconds ahead by the hub's clock and `secret` the instance's own, or the container module's ([agent/module_template.md](agent/module_template.md), "The run"); it works once, and the agent judges its expiry by the hub's time ("The control stream") |
+| `web` with `description_code` `code_server_module`, `cloudcli_module`, `codeg_module`, `siyuan_module`, `hermes_webui_module`, `ayakaleaf_module` or `astrbot_module` | `{token}`: `base64url(expiry \|\| nonce \|\| HMAC-SHA256(secret, expiry \|\| nonce))`, minted by the hub for this answer alone with `expiry` 60 seconds ahead by the hub's clock and `secret` the instance's own, or the container module's ([agent/module_template.md](agent/module_template.md), "The run"); it works once, and the agent judges its expiry by the hub's time ("The control stream") |
 | `ssh` | `{account, private_key, host_key}`: the private half of the key the hub made for that account on that machine, in OpenSSH form, and the public host key of that account's instance in OpenSSH form, which the client writes into Neutrino's own known_hosts ([agent/modules/ssh_server.md](agent/modules/ssh_server.md), "Keys") |
 | `file` of a device's Samba module | `{user, password}`: the SMB user of the entry's account, the Home share's own account or a folder share entry's `account`, and the password the hub generated for it ([agent.md](agent.md), "The file share's accounts"), which the client mounts with and asks the person nothing |
 | `web` with no token, `port`, a declared `file` | empty: the entry's `payload` is already everything the client needs; a declared share's login is the person's, typed on the client |
@@ -2278,7 +2301,8 @@ an entry of another type has none. For `run_account` the entry's
 instance's account for code-server, VS Code, Codeg, CloudCLI and SiYuan, and
 `hermeswebui`, the user its webui runs as, for Hermes WebUI, which runs as
 no account of the machine ([agent/modules/hermes_webui.md](agent/modules/hermes_webui.md),
-"The containers"). No share offers a
+"The containers"), and `astrbot`, its dashboard's one user, for AstrBot
+([agent/modules/astrbot.md](agent/modules/astrbot.md), "App shares"). No share offers a
 terminal, a file share, an SSH server, a remote desktop, a port, the AI
 gateway or the panel; a file is shared as an app whose page serves it.
 

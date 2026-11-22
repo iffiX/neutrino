@@ -147,7 +147,7 @@ before it runs and lets them go when it ends ("Step locks"). A newer entry
 for a module whose task runs replaces the plan at the next step boundary.
 `APPLY_ORDER` is the order tasks are made in and rows and the state error
 are read in: the file share, Terminal, the SSH server, Gitea, Ollama, Containers,
-Hermes WebUI, Ayakaleaf, VS Code, code-server, CloudCLI, Codeg, Claude Code,
+Hermes WebUI, Ayakaleaf, AstrBot, VS Code, code-server, CloudCLI, Codeg, Claude Code,
 Codex, OpenCode, SiYuan, Remote desktop. A module whose task has not run its first step, since that
 step waits for a step lock, reads `queued` with the lock's code. A module
 whose task installs it or switches its version reads `installing` until the
@@ -462,7 +462,8 @@ the first failure in `APPLY_ORDER`.
 | `windows_features`, `restart` | Containers on Windows: the two Windows features turned on with dism, and the restart they owe | `install_failed` |
 | `machine` | Containers on Windows and macOS: the Podman machine made or taken over, sized and started, and the wait until it answers | `failed` |
 | `command_line_tools` | Gitea on macOS with no usable `git`: Apple's Command Line Tools installed with `softwareupdate` ([modules/gitea.md](agent/modules/gitea.md), "Gitea brings its git on macOS and Windows") | `install_failed` |
-| `first_start`, `update_check` | Hermes WebUI's first start and its one read of the update setting ([modules/hermes_webui.md](agent/modules/hermes_webui.md), "The first start") | `install_failed` |
+| `first_start`, `update_check` | Hermes WebUI's first start and its one read of the update setting ([modules/hermes_webui.md](agent/modules/hermes_webui.md), "The first start"); `first_start` also AstrBot's first start ([modules/astrbot.md](agent/modules/astrbot.md), "The first start") | `install_failed` |
+| `settings` | AstrBot's settings file and its plugins' requirements folder written into its empty volume before the container's first start ([modules/astrbot.md](agent/modules/astrbot.md), "The settings file") | `install_failed` |
 | `replica_set`, `wait_app`, `admin`, `tex`, `guests` | Ayakaleaf's first start ([modules/ayakaleaf.md](agent/modules/ayakaleaf.md), "The first start") | `install_failed` |
 | `tools {account}` | the `ai_tools` section's switch of one account ([ai_tools.md](agent/ai_tools.md)) | the account's own result |
 
@@ -482,6 +483,7 @@ that can pass 30 seconds by the lab's times:
 | Containers on macOS | `artifact podman`, `artifact image`, `verify`, `machine`, `configure`, `start` | `machine` |
 | Hermes WebUI | `wait_module podman`, `pull webui`, `pull agent`, `verify`, `render`, `start`, `first_start`, `update_check` | `pull agent` 73 seconds, `first_start` 30 to 38 seconds |
 | Ayakaleaf | `wait_module podman`, `pull app`, `pull mongo`, `pull redis`, `verify`, `render`, `start`, `replica_set`, `wait_app`, `admin`, `tex`, `guests` | `pull app` 84 to 135 seconds, `tex` 4 to 5 minutes |
+| AstrBot | `wait_module podman`, `pull astrbot`, `verify`, `settings`, `render`, `start`, `first_start` | `pull astrbot` 77 seconds on Linux and 198 on Windows, `first_start` 50 seconds on Windows |
 | VS Code, code-server, Codeg, SiYuan | `artifact <name>` per archive, `verify`, `configure`, then `account {account}` per enabled account | an archive, up to 42 seconds for Codeg's |
 | CloudCLI | the same, with `npm {account}` before each `account {account}` | `npm`, 2 to 3.5 minutes on Linux |
 | Codex, Claude Code, OpenCode | `artifact <name>` and `verify` while the module's copy is missing, `configure`, then `account {account}` per enabled account | the tarball, 127 MiB for Claude Code, 164 MiB for Codex and 75.5 MiB for OpenCode on Linux amd64; an `account` step, up to 5 seconds for the account's login shell |
@@ -542,6 +544,7 @@ sends the state, and each module is planned again from what the machine shows:
 | `switch` | `swap_in` removes a stale `.old` first, and the kept version is written only after success |
 | `verify`, `configure`, `start`, `stop`, `uninstall`, `pull`, `render`, `machine` | each makes the machine match and changes nothing that already matches |
 | Ayakaleaf's first-start steps | each step done is kept in the module's record, and a death between the administrator's registration and the record's write makes `admin` fail `ayakaleaf_setup_failed {step: admin}`. `replica_set`, `tex` and `wait_app`, and Hermes WebUI's `first_start`, write nothing in the record once the agent began to stop, since their commands run in a container the stop's signal reaches. `admin`, `guests` and Hermes WebUI's `update_check` call the app over HTTP, which the stop does not end, and keep what they did |
+| AstrBot's `settings` and `first_start` | `settings` writes only into a volume that holds no `cmd_config.json`, the file whole under a temporary name and then renamed; `first_start` only reads `GET /` |
 | `npm {account}` on Linux | the transient service of that name outlives the agent, and the step waits for it, at most the install's 30 minutes, before it starts one ([modules/cloudcli.md](agent/modules/cloudcli.md), "npm cannot take the agent down") |
 
 A self-update takes `package_manager` before it launches, so it never cuts
@@ -577,7 +580,7 @@ lets them go when it ends. A task holds no step lock between steps.
 
 | Lock | What it guards | The steps that take it | Reason |
 | --- | --- | --- | --- |
-| `containers` | Containers' engine: its Podman on Linux or its Podman machine, its rendered files and units, its record and in-memory configuration, its page ports | alone: every step of Containers' own task, and a container module's `uninstall`; shared: a container module's `pull`, `verify`, `start`, `replica_set` and `tex`, Hermes WebUI's key write in `first_start`, and Containers' `control` verb | A pull or a `tlmgr` run must not meet a Containers apply that restarts units, resizes the machine or runs `wsl --shutdown`, and two pulls, or a pull and an exec, on one Podman are safe together. |
+| `containers` | Containers' engine: its Podman on Linux or its Podman machine, its rendered files and units, its record and in-memory configuration, its page ports | alone: every step of Containers' own task, and a container module's `uninstall`; shared: a container module's `pull`, `verify`, `start`, `replica_set` and `tex`, Hermes WebUI's key write in `first_start`, AstrBot's `settings`, and Containers' `control` verb | A pull or a `tlmgr` run must not meet a Containers apply that restarts units, resizes the machine or runs `wsl --shutdown`, and two pulls, or a pull and an exec, on one Podman are safe together. |
 | `package_manager` | the system's installer: apt and dpkg, dnf, yum and rpm, pacman, msiexec and dism, macOS `installer` | `packages`, an `artifact` of kind `msi` or `pkg`, `windows_features`, an `uninstall` that removes system packages or an msi, and the self-update before it launches | One package manager runs on a machine at a time, and apt and dnf 5 fail at once on a lock another run holds. dism and msiexec share Windows servicing. |
 | `system_accounts` | the machine's account database: `useradd` and `userdel` on Linux, `sysadminctl` and `dscl` on macOS, local accounts on Windows | the file share's `configure`, Gitea's and Ollama's `account`, and their `uninstall` | `useradd` fails at once with `cannot lock /etc/passwd` while another one runs. On Windows the PowerShell host already runs one request at a time, so the lock costs nothing there and keeps one rule. |
 
@@ -737,7 +740,7 @@ linked from the table.
 | software the module configures | [File share](agent/modules/file_share.md), [Containers](agent/modules/containers.md) | `system`; on Windows and macOS the file share's SMB server is `builtin`, and Containers is `hub` | the module's own applier; for Containers on Windows and macOS, inside a Podman machine of one account |
 | a service with a system account of its own | [Gitea](agent/modules/gitea.md), [Ollama](agent/modules/ollama.md) | `hub` | the account and the service the module makes, in the publisher's layout on every system |
 | a program run as a person's account | [VS Code](agent/modules/vscode.md), [code-server](agent/modules/code_server.md), [CloudCLI](agent/modules/cloudcli.md), [Codeg](agent/modules/codeg.md), [SiYuan](agent/modules/siyuan.md) | `hub`, each archive unpacked and sealed under `agent/<module>/<directory>/` | one account service per enabled account, the forwarder in front of it, one app per running instance |
-| container images | [Hermes WebUI](agent/modules/hermes_webui.md), [Ayakaleaf](agent/modules/ayakaleaf.md) | `container`, pulled by the Containers module's Podman | hub containers on the Containers module, which the module needs |
+| container images | [Hermes WebUI](agent/modules/hermes_webui.md), [Ayakaleaf](agent/modules/ayakaleaf.md), [AstrBot](agent/modules/astrbot.md) | `container`, pulled by the Containers module's Podman | hub containers on the Containers module, which the module needs |
 | a command line program per account | [Codex](agent/modules/codex.md), [Claude Code](agent/modules/claude_code.md), [OpenCode](agent/modules/opencode.md) | `hub`, the module's own copy unpacked and sealed under `agent/<module>/<directory>/` | nothing runs until a person runs the program: each enabled account's `PATH` reaches the module's copy first |
 
 A command line program is a module with no service, no port and no page.
@@ -878,7 +881,7 @@ protocol:
 | the Ollama module reads `installed`, `stopped` or `running` and its details name its port, the module's own server or a person's ([modules/ollama.md](agent/modules/ollama.md)) | 11434 |
 | a VS Code, code-server, CloudCLI, Codeg or SiYuan instance is configured | the instance's port |
 | an instance of the SSH server runs | the instance's port |
-| a container module with a page, Hermes WebUI or Ayakaleaf, is configured | its forwarder's port |
+| a container module with a page, Hermes WebUI, Ayakaleaf or AstrBot, is configured | its forwarder's port |
 | a running Podman container publishes a host port, other than a hub container's `page_port` and `local_ports` ([modules/containers.md](agent/modules/containers.md), "Hub containers") | that port on the protocol it is published on, dialled on the host address it is published on when it names one, and on Windows and macOS dialled on `127.0.0.1` whatever it names, since the Podman machine's ports reach the computer there; a stopped container's ports are not published, so a stream on one ends `port_not_published` within a second of the stop |
 
 Every other port in the table is published on TCP alone. Any other port,
@@ -924,7 +927,7 @@ connection"), and each also answers the agent's dial on loopback:
 | VS Code | `127.0.0.1` alone |
 | the CloudCLI, code-server, Codeg and SiYuan forwarders | `127.0.0.1` alone, in front of CloudCLI, Codeg and SiYuan on loopback and code-server on its account's socket |
 | SiYuan's kernel | `127.0.0.1` alone, at the port the agent picks and at 6806 while that is free, both behind its access code ([modules/siyuan.md](agent/modules/siyuan.md)) |
-| the Hermes WebUI and Ayakaleaf forwarders | `127.0.0.1` alone, each in front of its page's port published on loopback ([modules/hermes_webui.md](agent/modules/hermes_webui.md), [modules/ayakaleaf.md](agent/modules/ayakaleaf.md)) |
+| the Hermes WebUI, Ayakaleaf and AstrBot forwarders | `127.0.0.1` alone, each in front of its page's port published on loopback ([modules/hermes_webui.md](agent/modules/hermes_webui.md), [modules/ayakaleaf.md](agent/modules/ayakaleaf.md), [modules/astrbot.md](agent/modules/astrbot.md)) |
 
 ## The AI gateway forward
 
@@ -1543,15 +1546,18 @@ each relay with a firewall rule scoped to that interface; anything inside
 WSL on the computer reaches the adapter's address as a container does. On
 macOS gvproxy gives every container in the Podman machine every port on the
 Mac's loopback, the agent's listeners and every other program's loopback
-service alike. The CloudCLI, code-server, Codeg, SiYuan, Hermes WebUI and
-Ayakaleaf forwarders answer 401 to a request holding neither a token the hub
+service alike. The CloudCLI, code-server, Codeg, SiYuan, Hermes WebUI,
+Ayakaleaf and AstrBot forwarders answer 401 to a request holding neither a token the hub
 generated nor a login the forwarder set, so neither the account, nor a
 website in their browser, nor a process in a container reaches an instance
-through them. Hermes WebUI's own password and Ayakaleaf's own login guard
-the port each page is published at behind its forwarder, and SiYuan's access
-code guards its kernel's two ports; any account on the machine can still end
+through them. Hermes WebUI's own password and Ayakaleaf's and AstrBot's own
+logins guard the port each page is published at behind its forwarder, and
+SiYuan's access code guards its kernel's two ports; any account on the machine can still end
 a SiYuan instance, which its service starts again
-([modules/siyuan.md](agent/modules/siyuan.md), "The service"). The AI gateway forward passes a request to the gateway, which
+([modules/siyuan.md](agent/modules/siyuan.md), "The service"). AstrBot's OneBot port,
+`127.0.0.1:6199`, admits a program on the machine with the adapter's token,
+which is empty until the person sets one in AstrBot's page
+([modules/astrbot.md](agent/modules/astrbot.md), "Chat platforms"). The AI gateway forward passes a request to the gateway, which
 answers it only with a key it knows: the device's, held in the tool files of
 the accounts the setting names, a container module's, held in that
 module's containers, or a SiYuan instance's, held in its account's SiYuan

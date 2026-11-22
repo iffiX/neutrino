@@ -44,7 +44,7 @@ turns it off and when the device is removed; every account of the device
 holds the same key. No module's state holds it: the device's `ai_tools`
 section does ("How a managed machine's tools are pointed at the gateway").
 
-A container module that uses the gateway, Hermes WebUI or Ayakaleaf, has a
+A container module that uses the gateway, Hermes WebUI, Ayakaleaf or AstrBot, has a
 key of its own on each device. The hub generates it, seals it in that module's
 `config/devices/<id>/<module>.json`, registers it under the device and the
 module, and voids it at the module's uninstall. The renderer writes it into
@@ -184,7 +184,8 @@ the AI page"), and the hub keeps the pick as `default_model` in
 `config/cliproxyapi/cliproxyapi.json`, empty until a person picks one. Its
 readers are the unchosen models of the AI tools, on a managed machine and on
 a client; Ayakaleaf's model while its tab names none; Hermes WebUI's `model`;
-and SiYuan's `model`.
+AstrBot's `model`, which the agent writes into AstrBot's settings file before
+its first start; and SiYuan's `model`.
 
 | Rule | Reason |
 | --- | --- |

@@ -1083,7 +1083,7 @@ counts as a first install: a row whose `task` runs and whose plan holds no
 `queued` with `npm {account}` in its plan and no instance in
 `details.instances` reading `is_running`, or reads `installed`, `installing`
 or `queued` with both `replica_set` and `tex` in its plan; Hermes WebUI's
-`first_start` holds neither and has no **Cancel**.
+and AstrBot's `first_start` hold neither and have no **Cancel**.
 Every module has this one behaviour:
 
 | Rule | Reason |
@@ -1215,7 +1215,7 @@ version on the version line.
 The rows of the module list, each a tab, come in one order, the modules
 every system runs first: Terminal, the SSH server, Remote desktop, File
 share, Gitea, Ollama, VS Code, code-server, CloudCLI, Codeg, Claude Code, Codex, OpenCode, SiYuan,
-Containers, Hermes WebUI, Ayakaleaf. The order is the row order of the hub's description table
+Containers, Hermes WebUI, Ayakaleaf, AstrBot. The order is the row order of the hub's description table
 ([agent/module_template.md](agent/module_template.md), "The hub side"), in
 which `GET /api/agent/module` sends the rows, and the page keeps it. The
 eleven modules of the account layer are drawn by one `instances_panel.tsx`
@@ -1259,6 +1259,12 @@ one configurable `settings_group` with its own apply bar,
 While the module's `want` is `running`, the bar's warning on a dirty group is
 `ui.ayakaleaf.apply_warning`, and the bar stays busy after its press until the
 machine reports the module `running` again, at most two minutes.
+
+The AstrBot tab draws the line `ui.astrbot.owner_notice`, or
+`ui.astrbot.owner_notice_version` once the machine reports the version,
+over its state, its log and its buttons, as the Hermes WebUI tab does. It
+has no panel, since the agent takes its port, and holds no link to its
+page ([agent/modules/astrbot.md](agent/modules/astrbot.md), "The page").
 
 The path window is the one the account form's **Browse…** opens
 (`directory_picker_modal.tsx`); its file mode opens at the field's path, or

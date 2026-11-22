@@ -192,13 +192,14 @@ Chinese: SiYuan is 思源笔记.
 | `opencode` | OpenCode | OpenCode |
 | `hermes_webui` | Hermes WebUI | Hermes WebUI |
 | `ayakaleaf` | Ayakaleaf | Ayakaleaf |
+| `astrbot` | AstrBot | AstrBot |
 | `siyuan` | SiYuan | 思源笔记 |
 | `cc_switch` | cc-switch | cc-switch |
 
 ## Software the owner installs
 
 Gitea, Ollama, VS Code, code-server, CloudCLI, Codeg, SiYuan, Hermes WebUI,
-Ayakaleaf, Codex, Claude Code and OpenCode are programs the machine's owner installs on their own machine through a module. The text
+Ayakaleaf, AstrBot, Codex, Claude Code and OpenCode are programs the machine's owner installs on their own machine through a module. The text
 rules follow from that:
 
 | Rule | Example |
@@ -206,7 +207,7 @@ rules follow from that:
 | A module page that names third-party software says that the owner installs it on that machine. | `You install VS Code Server on this machine under Microsoft's license terms.` |
 | A module page names the publisher's terms only where the publisher asks for acceptance; VS Code is the one such module ([ui_behavior.md](ui_behavior.md), "Terms before a module opens"). CloudCLI's, Codeg's and SiYuan's pages carry no licence line. | |
 | No surface says the hub downloads, provides, bundles or distributes third-party software, in either language (代为下载, 提供, 自带). A sentence about the mechanism, in a standard page or a code comment, makes the module's installer its subject. The source chip's 自带 marks the modules the agent carries alone, and never one of these programs ("The machine page's words"). | `The module's installer fetches the archive.`, never `The hub downloads VS Code.` |
-| The **About** card on the Settings page credits only the components the hub's own package carries on that system and in that edition, such as xray, CLIProxyAPI, NetBird, EasyTier, frp and tun2socks. Gitea, Ollama, VS Code, code-server, CloudCLI, Codeg, SiYuan, Hermes WebUI, Ayakaleaf, Codex, Claude Code and OpenCode are never on it. | |
+| The **About** card on the Settings page credits only the components the hub's own package carries on that system and in that edition, such as xray, CLIProxyAPI, NetBird, EasyTier, frp and tun2socks. Gitea, Ollama, VS Code, code-server, CloudCLI, Codeg, SiYuan, Hermes WebUI, Ayakaleaf, AstrBot, Codex, Claude Code and OpenCode are never on it. | |
 
 The VS Code notice and its button:
 
@@ -514,6 +515,7 @@ sentences.
 | `ui.modules.step.restart` | Wait for the restart | 等待重启 |
 | `ui.modules.step.machine` | Set up the Podman machine | 准备 Podman 虚拟机 |
 | `ui.modules.step.command_line_tools` | Install Apple's Command Line Tools | 安装 Apple 命令行工具 |
+| `ui.modules.step.settings` | Write the first settings | 写入初始设置 |
 | `ui.modules.step.first_start` | First start | 首次启动 |
 | `ui.modules.step.update_check` | Read the update setting | 读取更新设置 |
 | `ui.modules.step.replica_set` | Set up the database | 初始化数据库 |
@@ -600,6 +602,7 @@ machine's system.
 | `siyuan` | no | Each account's notes stay in {data_dir}. | 每个账户的笔记留在 {data_dir}。 |
 | `hermes_webui` | yes | The conversations, settings and workspace files are deleted and cannot be recovered. | 对话、设置和工作区里的文件都会删除，无法恢复。 |
 | `ayakaleaf` | yes | The papers and projects are deleted and cannot be recovered. | 论文和项目都会删除，无法恢复。 |
+| `astrbot` | yes | The bots, conversations, plugins and settings are deleted and cannot be recovered. | 机器人、对话、插件和设置都会删除，无法恢复。 |
 
 ## The Cancel of a first install's words
 
@@ -748,6 +751,18 @@ are in `locales/<language>/modules.json`, and the code's in `codes.json`.
 | `ui.ayakaleaf.apply_warning` | Ayakaleaf restarts, and open editors connect again. | Ayakaleaf 会重启，打开着的编辑器会重新连接。 |
 | `code.ayakaleaf_setup_failed` | Ayakaleaf's first start stopped at {step}: {detail} | Ayakaleaf 首次启动停在 {step} 这一步：{detail} |
 | `code.ayakaleaf_guest_failed`, under an App share's row | Ayakaleaf could not make the guest account at {step}: {detail} | Ayakaleaf 在 {step} 这一步没能建好访客账户：{detail} |
+
+## The AstrBot tab's words
+
+[ui_behavior.md](ui_behavior.md), "The machine page", places them. The keys
+are in `locales/<language>/modules.json`, and the Services page's line in
+`devices.json`.
+
+| Key | English | Chinese |
+| --- | --- | --- |
+| `ui.astrbot.owner_notice` | You install AstrBot, AGPL-3.0-licensed, on this machine. | 你在这个系统上安装 AstrBot，它以 AGPL-3.0 许可发布。 |
+| `ui.astrbot.owner_notice_version` | You install AstrBot, AGPL-3.0-licensed, on this machine. Installed: {version}. | 你在这个系统上安装 AstrBot，它以 AGPL-3.0 许可发布。已安装：{version}。 |
+| `ui.services.description_astrbot_module`, the Services page's provenance line of the `web` entry | published by the AstrBot module on {host} | 由 {host} 上的 AstrBot 模块发布 |
 
 ## The Containers tab's words
 
