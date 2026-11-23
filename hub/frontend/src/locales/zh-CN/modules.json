@@ -314,7 +314,7 @@
   "ui.list.empty": "没有条目；全部走代理。",
   "ui.list.remove": "移除 {name}",
   "ui.module_catalog.ayakaleaf": "在浏览器里一起写 LaTeX 论文。",
-  "ui.module_catalog.astrbot": "用中枢的 AI 模型回复消息的聊天助手。",
+  "ui.module_catalog.astrbot": "用中枢的 AI 模型回复消息的聊天机器人。",
   "ui.module_catalog.category_all": "全部",
   "ui.module_catalog.category_code": "写代码",
   "ui.module_catalog.category_files": "文件",
