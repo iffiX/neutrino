@@ -692,6 +692,7 @@ other times.
 | `ui.ollama.memory_gpu`, a model all on a GPU | {percent}% GPU | {percent}% GPU |
 | `ui.ollama.memory_cpu`, a model all in system memory | {percent}% CPU | {percent}% CPU |
 | `ui.ollama.memory_split`, a model split between the two, as `ollama ps` words it | {cpu}%/{gpu}% CPU/GPU | {cpu}%/{gpu}% CPU/GPU |
+| `ui.ollama.memory_context`, the tokens a model in memory holds, under its memory | Context {tokens} | 上下文 {tokens} |
 | `ui.ollama.loading` | loading | 载入中 |
 | `ui.ollama.load` | Load | 载入内存 |
 | `ui.ollama.unload` | Unload | 移出内存 |
