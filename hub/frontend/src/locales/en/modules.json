@@ -612,6 +612,7 @@
   "ui.ollama.memory_gpu": "{percent}% GPU",
   "ui.ollama.memory_cpu": "{percent}% CPU",
   "ui.ollama.memory_split": "{cpu}%/{gpu}% CPU/GPU",
+  "ui.ollama.memory_context": "Context {tokens}",
   "ui.ollama.loading": "loading",
   "ui.ollama.load": "Load",
   "ui.ollama.system_memory": "System memory",

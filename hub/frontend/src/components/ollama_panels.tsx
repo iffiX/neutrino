@@ -494,8 +494,9 @@ function ModelRow({
 }
 
 /** A model's memory: for one in memory a bar of its GPU part and its
- * system part, its total and its share as `ollama ps` words it; `loading`
- * while the hub loads it; nothing otherwise. */
+ * system part, its total and its share as `ollama ps` words it, and under
+ * them the tokens it holds; `loading` while the hub loads it; nothing
+ * otherwise. */
 function MemoryCell({ model }: { model: OllamaModel }) {
   if (!model.is_loaded) {
     return (
@@ -523,6 +524,11 @@ function MemoryCell({ model }: { model: OllamaModel }) {
         <span>{formatBytes(total)}</span>
         <span className="faint">{memoryShare(total, gpu)}</span>
       </span>
+      {model.context_length > 0 && (
+        <span className="ollama_memory_context faint">
+          {t("ui.ollama.memory_context", { tokens: model.context_length })}
+        </span>
+      )}
     </span>
   );
 }

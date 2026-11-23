@@ -62,9 +62,10 @@ def model_rows(tags: dict, ps: dict, loading=frozenset()) -> list:
 
     Returns:
         ``{name, parameter_size, quantization, size_bytes, modified_at,
-        is_loaded, is_loading, memory_bytes, vram_bytes}`` per model, the
-        ones in memory first, each by name; ``is_loading`` only for one not
-        in memory yet.
+        is_loaded, is_loading, memory_bytes, vram_bytes, context_length}``
+        per model, the ones in memory first, each by name; ``is_loading``
+        only for one not in memory yet; ``context_length`` the tokens a model
+        in memory holds, 0 for one not in memory.
     """
     loaded = {}
     for model in ps.get("models") or []:
@@ -88,6 +89,7 @@ def model_rows(tags: dict, ps: dict, loading=frozenset()) -> list:
                 "is_loading": in_memory is None and name in loading,
                 "memory_bytes": _bytes((in_memory or {}).get("size")),
                 "vram_bytes": _bytes((in_memory or {}).get("size_vram")),
+                "context_length": _bytes((in_memory or {}).get("context_length")),
             }
         )
     return sorted(rows, key=lambda row: (not row["is_loaded"], row["name"]))

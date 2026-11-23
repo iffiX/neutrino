@@ -3351,6 +3351,9 @@ class OllamaModelView(BaseModel):
     is_loading: bool = False
     memory_bytes: int = 0
     vram_bytes: int = 0
+    # The tokens a model in memory holds, as ``/api/ps`` names it; 0 for one
+    # not in memory.
+    context_length: int = 0
 
 
 class OllamaPullView(BaseModel):

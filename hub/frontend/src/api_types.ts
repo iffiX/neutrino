@@ -1948,6 +1948,9 @@ export interface OllamaModel {
   is_loading: boolean;
   memory_bytes: number;
   vram_bytes: number;
+  /** The tokens a model in memory holds, as `/api/ps` names it; 0 for one
+   * not in memory. */
+  context_length: number;
 }
 
 /** One GPU of a machine's report in the Ollama settings, and whether the

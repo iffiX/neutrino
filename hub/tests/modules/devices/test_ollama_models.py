@@ -1,8 +1,9 @@
 """A machine's Ollama models through Ollama's own API, and the hub's pulls.
 
 What these pin: a model name the pull form takes and the ones it refuses;
-the pulled models joined with the ones in memory, those listed first and a
-model being loaded marked; the client's calls over real HTTP, a load with
+the pulled models joined with the ones in memory, those listed first, each
+in memory with the context length ``/api/ps`` names, and a model being
+loaded marked; the client's calls over real HTTP, a load with
 ``keep_alive`` -1, a missing model a ``KeyError`` and an error line of a pull a
 ``ConnectionError`` with Ollama's words; the queue running one pull at a time
 per machine in the order asked, its progress summed over every layer, a
@@ -78,7 +79,16 @@ def test_the_pulled_models_are_joined_with_the_ones_in_memory():
             {"name": "a:1", "size": 10},
         ]
     }
-    ps = {"models": [{"name": "qwen2.5:0.5b", "size": 486000000, "size_vram": 0}]}
+    ps = {
+        "models": [
+            {
+                "name": "qwen2.5:0.5b",
+                "size": 486000000,
+                "size_vram": 0,
+                "context_length": 32768,
+            }
+        ]
+    }
     rows = model_rows(tags, ps)
     assert [row["name"] for row in rows] == ["qwen2.5:0.5b", "a:1"]
     assert rows[0] == {
@@ -91,9 +101,11 @@ def test_the_pulled_models_are_joined_with_the_ones_in_memory():
         "is_loading": False,
         "memory_bytes": 486000000,
         "vram_bytes": 0,
+        "context_length": 32768,
     }
     assert rows[1]["is_loaded"] is False
     assert rows[1]["is_loading"] is False
+    assert rows[1]["context_length"] == 0
 
 
 def test_the_models_in_memory_come_first_and_a_load_in_flight_is_marked():

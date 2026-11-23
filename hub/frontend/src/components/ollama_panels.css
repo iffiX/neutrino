@@ -187,6 +187,11 @@
   font-variant-numeric: tabular-nums;
 }
 
+.ollama_memory_context {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
 .ollama_row_actions {
   display: flex;
   justify-content: flex-end;

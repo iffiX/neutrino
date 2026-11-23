@@ -2,7 +2,8 @@
 
 What these pin: the view lists no model while the machine reports the
 server not running or the machine is offline, and the models with their
-total size through Ollama's API while it runs, and says
+total size through Ollama's API while it runs, a model in memory with the
+context length ``/api/ps`` names, and says
 ``ollama_unreachable`` when the call fails; a pull is refused for a name
 Ollama does not take and for a machine whose server does not run, and is
 otherwise queued and shown; a cancel of no such pull answers 404; a remove
@@ -66,7 +67,9 @@ def test_no_model_is_listed_while_the_server_does_not_run(api):
 def test_the_models_and_their_total_are_listed_while_it_runs(api):
     client, runtime, server = api
     server.models = [MODEL, dict(MODEL, name="a:1", size=3)]
-    server.loaded = [{"name": "a:1", "size": 7, "size_vram": 2}]
+    server.loaded = [
+        {"name": "a:1", "size": 7, "size_vram": 2, "context_length": 32768}
+    ]
     runtime.report(
         DEVICE,
         "ollama",
@@ -82,6 +85,8 @@ def test_the_models_and_their_total_are_listed_while_it_runs(api):
     assert held["total_bytes"] == 397821322
     assert held["models"][0]["is_loaded"] is True
     assert held["models"][0]["vram_bytes"] == 2
+    assert held["models"][0]["context_length"] == 32768
+    assert held["models"][1]["context_length"] == 0
     assert held["code"] == ""
 
 
