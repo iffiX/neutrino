@@ -193,6 +193,13 @@ export class DemoOllama {
     return this.models.map((model) => model.name);
   }
 
+  /** The tokens one model was trained for; 0 for a model it does not hold. */
+  trainedContextOf(name: string): number {
+    return (
+      this.models.find((model) => model.name === name)?.trainedContext ?? 0
+    );
+  }
+
   /** The view the panel's Ollama tab draws. */
   view(row: DemoOllamaRow): OllamaDeviceView {
     const models = row.isRunning ? this.modelRows() : [];

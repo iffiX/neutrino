@@ -150,6 +150,25 @@ export const DEMO_AI_ACCOUNTS: CliproxyApiAccountsResponse = {
   login_kinds: ["anthropic", "codex", "antigravity", "kimi", "xai"],
 };
 
+/** The names each sample account serves, by its token file. */
+export const DEMO_AI_ACCOUNT_MODELS: Record<string, string[]> = {
+  "codex-xiaoming@example.com.json": ["gpt-5-codex"],
+};
+
+/** Each sample cloud name's default context length, as the hub's table and
+ * the gateway's catalog give it, and the length of a name neither names. */
+export const DEMO_CONTEXT_DEFAULTS: Record<string, number> = {
+  "deepseek-chat": 1000000,
+  "qwen-max": 1000000,
+  "gpt-5-codex": 272000,
+};
+export const DEMO_CONTEXT_FALLBACK = 200000;
+
+/** The context lengths a person set, by cloud name. */
+export const DEMO_CONTEXT_SAVED: Record<string, number> = {
+  "qwen-max": 131072,
+};
+
 export const DEMO_AI_JOURNAL_LINES = [
   "gateway listening on 127.0.0.1:8317",
   "loaded 2 providers and 1 account",

@@ -9,10 +9,14 @@ import type { DemoModuleSpec } from "./demo_modules";
 import { demoWord } from "./demo_words";
 import type { DemoWordKey } from "./demo_words";
 import {
+  DEMO_AI_ACCOUNT_MODELS,
   DEMO_AI_ACCOUNTS,
   DEMO_AI_JOURNAL_LINES,
   DEMO_AI_PROVIDERS,
   DEMO_AI_STATUS,
+  DEMO_CONTEXT_DEFAULTS,
+  DEMO_CONTEXT_FALLBACK,
+  DEMO_CONTEXT_SAVED,
   DEMO_DIRECT,
   DEMO_EASYTIER,
   DEMO_GENERATED_CREDENTIALS,
@@ -51,6 +55,10 @@ import {
 } from "./demo_traffic";
 import type { DemoFrameReadings } from "./demo_traffic";
 import type {
+  AiCloudContextView,
+  AiContextResponse,
+  AiContextSourceView,
+  AiOllamaContextView,
   AiOllamaProvidersResponse,
   AiUsageRange,
   AppEntryView,
@@ -213,6 +221,8 @@ const DEFAULT_PERMISSION = PERMISSION_KINDS.filter((kind) => kind !== "panel");
 const ROW_KINDS = ["web", "port", "ssh", "file", "rdp", "terminal"];
 const OLLAMA_MODULE = "ollama";
 const OLLAMA_PORT = 11434;
+// The laptop's Ollama context length setting, under the default.
+const LAPTOP_CONTEXT_LENGTH = 16384;
 // The Ollama app's one entry, the API, and the states it is published in.
 const OLLAMA_ENTRY = "api";
 const OLLAMA_PUBLISHED_STATES = ["installed", "stopped", "running"];
@@ -417,6 +427,8 @@ export class DemoHub {
   private readonly writes: Record<string, DemoRoute>;
   private settings: SettingsView = { ...DEMO_SETTINGS };
   private defaultModel = DEMO_AI_STATUS.default_model ?? "";
+  /** The context lengths a visitor set, by cloud name. */
+  private contextLengths: Record<string, number> = { ...DEMO_CONTEXT_SAVED };
   private currentEdition: DemoEdition = "cn";
   private defaultPermission = [...DEFAULT_PERMISSION];
   private defaultPermissionDevices: Record<string, string[]> = {};
@@ -773,6 +785,7 @@ export class DemoHub {
       "/hub/ai/gateway/account": () => DEMO_AI_ACCOUNTS,
       "/hub/ai/gateway/journal": () => ({ lines: DEMO_AI_JOURNAL_LINES }),
       "/hub/ai/ollama": () => this.ollamaProviders(),
+      "/hub/ai/context": () => this.aiContext(),
       "/hub/overlay": () => this.overlayChoice(),
       "/hub/overlay/netbird": () => DEMO_NETBIRD,
       "/hub/overlay/easytier": () => DEMO_EASYTIER,
@@ -892,6 +905,7 @@ export class DemoHub {
         this.removeDeclaredApp(body),
       "/hub/setting/release/scan": () => DEMO_RELEASE_SCAN,
       "/hub/setting/set": (_query, body) => this.setSettings(body),
+      "/hub/ai/context/set": (_query, body) => this.setAiContext(body),
       "/hub/ai/gateway/set": (_query, body) => {
         const picked = (body as { default_model?: unknown }).default_model;
         this.defaultModel = typeof picked === "string" ? picked : "";
@@ -1097,6 +1111,94 @@ export class DemoHub {
       this.ollamaProviders().providers.flatMap((provider) => provider.models),
     );
     return [...(DEMO_AI_STATUS.served_models ?? []), ...[...local].sort()];
+  }
+
+  /** Every served name's context length: each cloud name with the length a
+   * visitor set or its default, and each Ollama name with the smallest of
+   * each machine's setting and the model's trained length. */
+  private aiContext(): AiContextResponse {
+    const cloud: AiCloudContextView[] = [
+      ...(DEMO_AI_STATUS.served_models ?? []),
+    ]
+      .sort((a, b) => a.localeCompare(b))
+      .map((model) => ({
+        model,
+        sources: this.contextSources(model),
+        context_length: this.contextLengths[model] ?? null,
+        default_context_length:
+          DEMO_CONTEXT_DEFAULTS[model] ?? DEMO_CONTEXT_FALLBACK,
+      }));
+    const names = new Set(
+      this.ollamaProviders().providers.flatMap((provider) => provider.models),
+    );
+    const ollama: AiOllamaContextView[] = [...names]
+      .sort((a, b) => a.localeCompare(b))
+      .map((model) => {
+        const machines = this.devices
+          .filter((device) => device.modules[OLLAMA_MODULE] !== undefined)
+          .filter((device) => this.ollamaOf(device).trainedContextOf(model) > 0)
+          .map((device) => ({
+            device_id: device.id,
+            name: device.name,
+            setting_context_length: this.ollamaOf(device).contextLength,
+            trained_context_length:
+              this.ollamaOf(device).trainedContextOf(model),
+          }))
+          .sort((a, b) => a.name.localeCompare(b.name));
+        return {
+          model,
+          machines,
+          sources: [],
+          cloud_context_length: 0,
+          context_length: Math.min(
+            ...machines.map((machine) =>
+              Math.min(
+                machine.setting_context_length,
+                machine.trained_context_length,
+              ),
+            ),
+          ),
+        };
+      });
+    return { cloud, ollama };
+  }
+
+  /** The sample account and providers that serve a cloud name. */
+  private contextSources(model: string): AiContextSourceView[] {
+    const accounts = DEMO_AI_ACCOUNTS.accounts
+      .filter((account) =>
+        (DEMO_AI_ACCOUNT_MODELS[account.name] ?? []).includes(model),
+      )
+      .map((account) => ({
+        origin: "account" as const,
+        id: account.name,
+        name: account.provider,
+      }));
+    const providers = DEMO_AI_PROVIDERS.providers
+      .filter((provider) =>
+        provider.models.some((entry) => (entry.alias || entry.name) === model),
+      )
+      .map((provider) => ({
+        origin: "provider" as const,
+        id: provider.id,
+        name: provider.name,
+      }));
+    return [...accounts, ...providers];
+  }
+
+  /** Keeps the lengths a visitor applied; a null takes a name back to its
+   * default. */
+  private setAiContext(body: DemoBody): AiContextResponse {
+    const lengths = (body as { lengths?: Record<string, unknown> }).lengths;
+    for (const [model, length] of Object.entries(lengths ?? {})) {
+      if (typeof length === "number") {
+        this.contextLengths[model] = length;
+      } else {
+        delete this.contextLengths[model];
+      }
+    }
+    this.publish("config", "ai");
+    return this.aiContext();
   }
 
   /** One provider per online machine whose Ollama runs and holds a model,
@@ -1414,7 +1516,8 @@ export class DemoHub {
   }
 
   /** The desktop's Ollama: one model in memory, two on disk, one with a
-   * source in front, and a pull; the laptop's: two models on disk. */
+   * source in front, and a pull; the laptop's: two models on disk, one of
+   * them the desktop's too, under a shorter context length setting. */
   private addSampleOllamas(): void {
     this.addOllama(
       this.device("dev_desktop"),
@@ -1448,7 +1551,7 @@ export class DemoHub {
       ],
       [samplePull("qwen3:8b", 0.38)],
     );
-    this.addOllama(
+    const laptop = this.addOllama(
       this.device("dev_laptop"),
       [
         sampleModel(DEMO_OPENCODE_MODEL, "7.6B", "Q4_K_M", 4_683_087_332, 9),
@@ -1464,6 +1567,7 @@ export class DemoHub {
       ],
       [],
     );
+    laptop.contextLength = LAPTOP_CONTEXT_LENGTH;
   }
 
   /** A machine's sample report, its GPUs holding its Ollama's models. */
