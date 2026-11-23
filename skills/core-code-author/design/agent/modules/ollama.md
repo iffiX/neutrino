@@ -145,7 +145,8 @@ Python asks its own transport for a forward on the hub's loopback,
 `127.0.0.1:0` and `open` `{kind: connect, port: 11434, protocol: tcp}`
 ([../../transport.md](../../transport.md), "The hub's local channel"), and
 calls Ollama's own API through it with a plain HTTP client: `GET /api/tags`
-and `GET /api/ps` to list, `POST /api/pull` streamed to pull, `DELETE
+and `GET /api/ps` to list, `POST /api/show` for a model's trained length,
+`POST /api/pull` streamed to pull, `DELETE
 /api/delete` to remove, and `POST /api/generate` with `keep_alive` -1 to
 load and 0 to unload. The agent publishes the port and carries nothing else
 for the models: no verb and no field of the report.
@@ -175,6 +176,15 @@ name on two machines rotates between both. The provider goes while the
 machine is offline and when its Ollama stops, is uninstalled or holds no
 model. The AI page lists it as a read-only row that links to this tab's
 **Models** panel. The agent carries nothing more for it.
+
+The AI tools of every machine and client are given each of these models'
+context length: the smaller of this tab's `context_length` and the model's
+trained length, which the hub reads with `POST /api/show`, and the smallest
+over the machines that serve the name. The AI page's **Context length**
+panel shows the length, each machine's setting and the trained length, and
+links each machine's name to this tab
+([../../hub_components/ai.md](../../hub_components/ai.md), "Each model's
+context length").
 
 **Uninstall takes what the module added and keeps the models**: the unit,
 the LaunchDaemon or the task, its script and the program go; the data

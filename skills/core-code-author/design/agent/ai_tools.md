@@ -27,8 +27,12 @@ For each account the state names, the agent runs the client's steps as that
 account with the account's own `tool_configs`, with the copy of cc-switch the agent fetched
 from the hub ([hub_components/ai.md](../hub_components/ai.md), "How a client
 points its tools at the gateway", and "How a managed machine's tools are
-pointed at the gateway" for what differs). An account whose records already
-carry the wanted settings is not run again. An account is switched back by
+pointed at the gateway" for what differs). Each tool is given its model's
+length from the section's `context_lengths`: OpenCode's `limit` inside the
+hub's provider, Codex's `model_context_window` and Claude Code's
+`CLAUDE_CODE_MAX_CONTEXT_TOKENS` ([hub_components/ai.md](../hub_components/ai.md),
+"Each model's context length"). An account whose records already
+carry the wanted settings, the lengths among them, is not run again. An account is switched back by
 the same steps as the client's deactivation:
 
 - when its switch goes off, so the state names it no longer, or when the
@@ -143,8 +147,10 @@ service that waited on the lock finds none and switches nothing.
 cc-switch runs as the account, with the account's home and its own
 environment ("Running as an account" in the platform table,
 [agent.md](../agent.md), "The platform layer"), and so does each file step of
-the client's sequence: reading a tool's file, writing Codex's effort into
-`config.toml` and OpenCode's `model` into `opencode.json`, removing a file
+the client's sequence: reading a tool's file, writing Codex's effort and
+`model_context_window` into `config.toml`, Claude Code's
+`CLAUDE_CODE_MAX_CONTEXT_TOKENS` into `settings.json` and OpenCode's `model`
+into `opencode.json`, removing a file
 cc-switch made or OpenCode's migration backup. An account can replace any
 file in its home with a link to a file only root reads, so a read made as
 root would hand that file to cc-switch and through it back to the account. On

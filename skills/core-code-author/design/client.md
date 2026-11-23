@@ -531,7 +531,10 @@ A model left at `ui.gateway_default` is the hub's default model, the
 client fills each such model with it before it hands the configuration to
 cc-switch, and sends the frame again at each state the exit hub sends, so a
 new default model switches each tool whose model it fills, and leaves a
-model the person picked as it is.
+model the person picked as it is. Each tool is given its model's length from
+the `ai` entry's `context_lengths`, and a changed length switches the tool
+again ([hub_components/ai.md](hub_components/ai.md), "Each model's context
+length").
 
 Under the controls is the line `ui.ai_needs_client`: the tools reach the
 gateway only while this client runs.

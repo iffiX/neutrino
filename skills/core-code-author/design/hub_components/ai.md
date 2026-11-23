@@ -110,7 +110,8 @@ the gateway. The hub probes the gateway at most
 once in 10 seconds, and every page of this standard that names the
 models the gateway serves means this list. Its readers are SiYuan's
 `models`, the AI tools' setting, the default model ("The default model"),
-and the model pickers of the machine page. The `ai` entry of the published list holds no model
+the context lengths ("Each model's context length"), and the model pickers
+of the machine page. The `ai` entry of the published list holds no model
 while the gateway's unit is stopped. The probe line on Activity and the
 **Default model** picker of Access read a probe of their own at each read
 of the page.
@@ -193,6 +194,154 @@ AstrBot's `model`; and SiYuan's `model`.
 | The pick is written by `POST /api/hub/ai/gateway/set {default_model}`, which restarts nothing. The hub then sends its state to every online machine and client whose state changes, a client's through its `ai` entry, which carries the default model; a client sends its `service` frame again at each state ([../protocol.md](../protocol.md), "The service frame"). | The gateway serves every name the same with any pick. What changes is the model the readers are sent. |
 | A model chosen for one account's tool, in one Ayakaleaf tab, or as AstrBot's default in its own page, stays. | The default model fills only what nobody chose. |
 
+## Each model's context length
+
+A model's context length is the most tokens one request to it can hold: the
+prompt, the conversation and the answer. The hub computes a length for every
+name of the served list and writes it into the AI tools, on a managed machine
+and on a client alike, so a tool compacts a conversation before it outgrows
+the model. A tool given no length assumes one: OpenCode 200000 tokens for a
+name it does not know, and Claude Code from 2.1.323 1000000. A request past
+the real window fails at the vendor and the tool sends it again, and Ollama
+cuts the prompt with no error ([../agent/modules/ollama.md](../agent/modules/ollama.md),
+"The settings are the hub's").
+
+A name a generated Ollama provider lists is an Ollama name ("Every machine's
+Ollama"). Every other name of the served list is a cloud name, served by
+accounts and stored providers.
+
+### A cloud name's length
+
+A cloud name's length is the one a person set on the **Context length**
+panel of the AI page ([../ui_behavior.md](../ui_behavior.md), "The Context
+length panel of the AI page"), and otherwise its default. The default comes
+from the name's sources: each signed-in account and each stored provider
+turned on with a key that serves the name.
+
+| Rule | Reason |
+| --- | --- |
+| A length is `{context_length, input_limit, output_limit}`: the window, the longest prompt where the vendor states one apart from the window, and the longest answer. `input_limit` and `output_limit` are 0 where nothing names them. | OpenAI and Qwen state a window and a smaller longest prompt: `gpt-6.2-astra` takes 1050000 tokens with at most 922000 of prompt. OpenCode takes all three, and a tool with one number takes the smaller of the window and the prompt. |
+| Each source gives a length: the hub's table of known models when it names the source's name, else the gateway's catalog when its entry names a window, else 200000 with no `input_limit` or `output_limit`. | The table holds the numbers the vendors state, and it wins where the catalog's are too high: the catalog gives `grok-4.20-0309-reasoning` 2000000 where xAI states 1000000, and Antigravity's `gemini-4-neon-xhigh` 1048576 where Google states 512000 for Antigravity. The catalog follows the account names that arrive between hub releases. 200000 is OpenCode's own length for a name it does not know, and every current model under it on the vendors' pages of 2026-11-22 is in the table or the catalog. |
+| The default is, for each of the three numbers, the smallest its sources give, 0 counting as none. | A name an account and a provider both serve is one pool ("How a request routes"), and a request goes to either. |
+| A source's name is the served name, or for a provider's alias the upstream name its entry maps in `providers.json` (`{name, alias}`). The hub matches a name whole and compared without case. | The upstream decides the window, whatever the alias. CLIProxyAPI treats two names that differ in case as one alias. |
+| An account's length from the table is the row's **Through an account** numbers where the row has them, else the row's own; a provider's is the row's own. | A login can serve a model with a smaller window than an API key: `claude-opus-4-6` takes 200000 tokens through a Claude login and 1000000 through the API, and `gpt-6.2-astra` 272000 through a Codex login. |
+| Where a window depends on the plan, the table names the smallest plan's window. A person raises it on the panel. | A window too large overflows, and the vendor rejects the request: Kimi's Plus plan answers 403 above 256K for `kimi-k3.1-pro`, which Pro serves at 1048576. A window too small only compacts early. |
+| A length a person set replaces `context_length` alone, and `input_limit` and `output_limit` stay the default's. The hub keeps it in `config/ai/context_lengths.json`, `{lengths: {<name>: <tokens>}}`, by served name, and keeps a length whose name the gateway no longer serves. | The panel has one number per name. The length is in force again when its name comes back, as when its account signs in again. |
+| A set length is a whole number from 4096 to 10000000. | 4096 is the floor of Ollama's setting, below which no coding tool's first request fits: OpenCode's alone is about 7300 tokens. 10000000 is ten times the largest window a vendor states, 1050000: it leaves room for larger models and refuses a window typed with two digits too many. |
+
+The catalog is CLIProxyAPI's own. The binary starts with one built in,
+downloads a new one from `router-for-me/models` at its start and every 3
+hours (`internal/registry/model_updater.go`), and serves it on the
+management API. The hub runs it with `--config` alone, so the download runs.
+
+| Rule | Reason |
+| --- | --- |
+| The hub reads `GET /v0/management/model-definitions/<channel>` for each channel a source has: `claude` for a Claude login and an `anthropic` provider, `codex` for a Codex login and an `openai` provider, `gemini` for a `gemini` provider, and `antigravity`, `kimi` and `xai` for those logins. A `custom` provider has no channel. | `/v1/models` leaves the lengths out of each name, and these routes return them. |
+| An entry's window is its `context_length`, else its `inputTokenLimit`, and its `output_limit` is its `max_completion_tokens`, else its `outputTokenLimit`. The catalog gives no `input_limit`. | The Gemini channels state a window the way Google's API does. |
+| An account's names are what `GET /v0/management/auth-files/models?name=<file>` returns for its token file. A provider's are the aliases its `models` list serves; a provider with no list serves the names of its kind's channel, and a `custom` one with no list serves none. | These are the names 7.2.146 registers for each credential (`registerModelsForAuth` in `sdk/cliproxy/service_models.go`). |
+| The `codex` channel returns the Pro plan's models, and the table names each Codex model whose Pro window is larger than the other plans'. | 7.2.146 answers `codex` with `GetCodexProModels`, which gives `gpt-5.6-sol` 921000 where a Codex login starts at 272000. |
+| The hub reads the channels and each account's names at the panel's start once the gateway serves, at each change of the served list, when an account is signed in or removed, and every 3 hours. It stores the last read in `cliproxyapi/model_catalog.json` under the state root, and every computation reads that file. | The catalog changes at the gateway's download, every 3 hours, and an account's names change with the account. A restarted panel computes the same lengths before the gateway serves, so no tool is switched twice. The read is what the gateway last served and no person's decision, so it stays out of `config/`. |
+| A read that fails, the management API off included, keeps the stored read as it was. With none stored, a name's default is the smallest window its table row names, or 200000. | Without the account's names the hub cannot tell a login's name from an API key's, and the smaller window is the one that does not overflow. |
+
+### The table of known models
+
+The table is `data/context_lengths.json` in the hub's package,
+`{models: [{names, context_length, input_limit, output_limit, account}]}`,
+`account` being `{context_length, input_limit, output_limit}` on a row whose
+numbers through a login differ. It holds exactly the rows below, read from
+the vendors' pages on 2026-11-22.
+
+| Rule | Reason |
+| --- | --- |
+| A developer updates the table with a hub release, the file and this page in one change; the hub never downloads one. | Neutrino runs no server of its own, and the catalog follows the account names that arrive between releases. |
+| A row lists each name it covers, and no name is a pattern. | A pattern such as `gemini-4-*` gives a new model of the family a window its vendor never stated. |
+
+| Names | Context | Input | Output | Through an account |
+| --- | --- | --- | --- | --- |
+| `claude-fable-5-2`, `claude-fable-5-1`, `claude-fable-5`, `claude-opus-5-5`, `claude-opus-5`, `claude-opus-4-8`, `claude-opus-4-7`, `claude-sonnet-5-5`, `claude-sonnet-5`, `claude-haiku-5-5` | 1000000 | | 128000 | |
+| `claude-opus-4-6`, `claude-sonnet-4-6` | 1000000 | | 128000 | 200000, output 64000 |
+| `claude-opus-4-6-thinking`, `claude-opus-5-5-high`, `claude-sonnet-5-5-high` | 200000 | | 64000 | |
+| `claude-opus-4-5-20251101`, `claude-sonnet-4-5-20250929`, `claude-haiku-4-5-20251001`, `claude-sonnet-4-20250514` | 200000 | | 64000 | |
+| `claude-opus-4-1-20250805`, `claude-opus-4-20250514` | 200000 | | 32000 | |
+| `gpt-6.2-astra` | 1050000 | 922000 | 128000 | 272000, output 128000 |
+| `gpt-6.2-sol`, `gpt-6.1-sol` | 1050000 | 922000 | 128000 | 500000, output 128000 |
+| `gpt-6.1-terra` | 500000 | | 128000 | |
+| `gpt-6-astra`, `gpt-6-sol`, `gpt-6-luna`, `gpt-6-chat-thinking`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `codex-auto-review` | 272000 | | 128000 | |
+| `gpt-5.5`, `gpt-5.4` | 1050000 | 922000 | 128000 | |
+| `gpt-5.4-mini` | 400000 | 272000 | 128000 | |
+| `gemini-4-neon-xhigh` | 512000 | | 65536 | |
+| `gemini-4-carbon-high`, `gemini-4-argon-high`, `gemini-4-hydrogen-xhigh`, `gemini-4-carbon`, `gemini-4-neon`, `gemini-4-hydrogen`, `gemini-4-argon`, `gemini-3.8-flash-high`, `gemini-3.8-flash-tiered`, `gemini-3.8-flash`, `gemini-3.6-flash`, `gemini-3.5-flash-lite`, `gemini-3.1-flash-lite`, `gemini-3.1-pro-preview`, `gemini-3-flash-preview`, `gemini-3-flash`, `gemini-2.5-pro`, `gemini-2.5-flash` | 1048576 | | 65536 | |
+| `gpt-oss-120b-medium` | 114000 | | 32768 | |
+| `kimi-k3.1-pro`, `kimi-k3` | 1048576 | | 131072 | 262144, output 65536 |
+| `kimi-k3-256k`, `kimi-k2.7-code`, `kimi-k2.7-code-highspeed`, `kimi-k2.6` | 262144 | | 65536 | |
+| `kimi-k3.1-pro-highspeed`, `kimi-k2.8`, `kimi-k2.8-code` | 1048576 | | 65536 | |
+| `grok-4.7`, `grok-4.6`, `grok-4.5`, `grok-build-0.1` | 500000 | | 65536 | 256000, output 65536 |
+| `grok-4.7-build-fast` | 256000 | | 65536 | |
+| `grok-4.3`, `grok-4.20-0309-reasoning`, `grok-4.20-0309-non-reasoning`, `grok-4.20-multi-agent-0309` | 1000000 | | 65536 | |
+| `grok-composer-2.5-fast` | 200000 | | 32768 | |
+| `deepseek-flash`, `deepseek-v4-flash`, `deepseek-v4-pro` | 1000000 | | 65536 | |
+| `qwen4-max`, `qwen3.7-plus`, `qwen3.8-flash` | 1000000 | 983616 | 131072 | |
+| `qwen3-coder-flash` | 1000000 | 997952 | 65536 | |
+| `qwen3.6-35b-a3b` | 262144 | 258048 | 65536 | |
+| `glm-5.3`, `glm-5.3-flash`, `glm-5.3-flashx`, `glm-5.2` | 1000000 | | 131072 | |
+| `glm-5.1`, `glm-5`, `glm-4.7` | 200000 | | 131072 | |
+| `MiniMax-M3.1-Flash`, `MiniMax-M3` | 1000000 | | 131072 | |
+| `doubao-seed-evolving`, `doubao-seed-2-1-pro-260915`, `doubao-seed-2-1-lite-260915` | 1024000 | | 65536 | |
+| `ark-code-latest`, `doubao-seed-2-1-turbo-260628` | 256000 | | 65536 | |
+| `doubao-seed-2-0-lite-260428`, `doubao-seed-2-0-mini-260428` | 256000 | 224000 | 65536 | |
+| `mistral-large-4`, `mistral-large-4-0`, `mistral-large-latest` | 1000000 | | 32000 | |
+| `mistral-small-2603`, `ministral-14b-2512`, `mistral-medium-3-5`, `devstral-2512` | 256000 | | 32000 | |
+| `codestral-2508`, `codestral-latest`, `magistral-medium-2509`, `magistral-medium-latest` | 128000 | | 32000 | |
+
+A vendor's "1M" is 1000000 and Volcengine's "1024K" 1024000. An output
+limit is the vendor's largest, or the smaller one its own coding-tool guide
+sets where the largest is a batch or a long-answer mode.
+
+### An Ollama name's length
+
+| Rule | Reason |
+| --- | --- |
+| On one machine an Ollama name's length is the smaller of the machine's `context_length` setting ([../agent/modules/ollama.md](../agent/modules/ollama.md), "The settings are the hub's") and the model's trained length. The name's `context_length` is the smallest over the machines whose generated provider lists it now, and its `input_limit` and `output_limit` are 0. | Ollama loads a model at the setting, or at the trained length when that is shorter. The gateway rotates a name between every machine that serves it, so a request can reach any of them. Ollama answers until the window is full and states no longest answer. |
+| The trained length is the `<architecture>.context_length` of `model_info` in the answer of `POST /api/show {model}`, `<architecture>` being its `general.architecture`. The hub reads it through the machine's forward, on the thread of the `/api/tags` reads, for each name `/api/tags` lists under a digest the hub has not read for it. | `/api/show` reads the model's file, and a name keeps its trained length until a pull of a new version changes its digest. |
+| The hub stores each machine's trained lengths beside its models in `cliproxyapi/ollama_providers.json`, `trained: {<model>: {digest, context_length}}`, and drops a model's entry when `/api/tags` no longer lists it. | A restarted panel computes the same lengths before it reads any machine again. |
+| A model whose trained length the hub has not read, or whose `model_info` names none, counts with the machine's setting alone. | The setting is the longest Ollama loads a model at. |
+| A machine that leaves the pool, offline, stopped or without the model, leaves the name's length to the machines that still serve it, and the length can rise. It falls again when the machine is back. | A request reaches only a machine that serves the name now. |
+
+### What each tool is given
+
+| Tool | Where | The number |
+| --- | --- | --- |
+| OpenCode | `limit` on the model of the hub's provider in `opencode.json`, `{context, input, output}` | `context` the model's `context_length`; `input` its `input_limit` and `output` its `output_limit`, each left out while 0 |
+| Codex | the top-level `model_context_window` of `config.toml` | the model's `context_length`, or its `input_limit` when that is smaller and not 0 |
+| Claude Code | `CLAUDE_CODE_MAX_CONTEXT_TOKENS` in the `env` of `settings.json` | the smallest, over the models of its four slots whose name does not start with `claude-`, of each one's `context_length` or smaller `input_limit`; absent while every slot names a `claude-` model |
+| Gemini | nothing | |
+
+| Rule | Reason |
+| --- | --- |
+| OpenCode's `limit` goes in with the hub's provider, inside `--config`. | OpenCode compacts when a conversation reaches its window less 15%, at least 16000 tokens free, takes the smaller of `input` and `context` as the window, and asks for at most `output` (`packages/core/src/session/compaction.ts`). Without a `limit` it assumes 200000 and 32000. |
+| Codex's `model_context_window` and Claude Code's variable are written into the tool's file after `use`, as Codex's reasoning effort is. | cc-switch 5.10.4 has no flag for either. |
+| A tool with one number gets the longest prompt where the vendor states one. | The vendor rejects a prompt longer than that inside the window, and Aliyun's own Claude Code guide sets 983616 for `qwen4-max`. |
+| Claude Code's variable is one number for its four slots. A `claude-` name gets no number of its own. | The variable applies to a model ID Claude Code does not recognize; a name it recognizes resolves to that Claude model, whose window it knows, and ignores the variable unless compaction is turned off (code.claude.com/docs/en/model-config, "Which IDs `CLAUDE_CODE_MAX_CONTEXT_TOKENS` applies to"). From 2.1.323 a name it does not know counts as 1000000. |
+| Each tool's `added` in its record also holds the lengths the switch writes: OpenCode's `limit`, Codex's `model_context_window` and Claude Code's `max_context_tokens`, 0 or empty for none. A record whose `added` lacks them does not carry the wanted settings. | A changed length differs from the record, so the tool is switched again, as a changed model is. A tool switched by an earlier build is switched once more and gets its lengths. |
+| Every tool named as switched has its length read back from its file. | cc-switch writes OpenCode's `limit` as part of a provider it is given whole, and a key it drops leaves the tool on its own assumption with no sign. |
+| The switch back writes no length of its own. | It writes each kept file back byte for byte, and cc-switch's `provider delete` takes OpenCode's `limit` with the hub's provider. |
+
+A tool that runs keeps the length it started with, and its next start reads
+the new one.
+
+### How a length reaches the tools
+
+| | On a person's computer | On a managed machine |
+| --- | --- | --- |
+| The lengths | `context_lengths` in the `ai` entry's payload, `{<name>: {context_length, input_limit, output_limit}}` for every name of its `models` ([../protocol.md](../protocol.md), "The services section, one entry per published service") | `context_lengths` in the `ai_tools` section, the same shape for every model the section's `tool_configs` name ([../protocol.md](../protocol.md), "The sections") |
+| Who writes them | the client, in each tool's switch | the agent, as each account, in each tool's switch |
+
+| Rule | Reason |
+| --- | --- |
+| The hub computes the lengths again at each change of what they come from: the served list, the stored catalog read, a stored provider, `config/ai/context_lengths.json`, a machine's Ollama setting, a generated provider, a trained length read, and the table at the panel's start. When a length changed, it sends its state to every online machine and client whose state changes, as at a new default model, and publishes `ai_usage`. | The lengths are a reader of the served list like the default model, and nothing is switched while no length a tool uses changed. |
+| A managed machine is sent the lengths of the models its accounts use, a client those of every served name. | An account's models are known to the hub, and a client picks its models in its own **Configure** dialog. |
+| `GET /api/hub/ai/context` returns every length with where it comes from, and `POST /api/hub/ai/context/set {lengths}` writes the lengths a person set, a null taking a name back to its default ([../protocol.md](../protocol.md), "`/api/hub/ai`"). The write restarts nothing. | The gateway serves every name the same with any length. What changes is what the tools are sent. |
+
 ## What each panel surface owns
 
 | Surface | Owns |
@@ -200,6 +349,7 @@ AstrBot's `model`; and SiYuan's `model`.
 | Activity | Status dots, today's counters, the probe line (`/v1/models` as served), journal, and the chip-switched usage tables |
 | Providers | API-key provider records, their aliases, their serving order, enable/disable — staged behind the panel's apply, with the gateway-behind signal; and a read-only row for each provider generated from a machine's Ollama ("Every machine's Ollama") |
 | Accounts | Subscription sign-in (redirect flows finish by pasting the dead callback page's address; device flows show a pairing code; a timeout keeps the dialog open, [../ui_behavior.md](../ui_behavior.md), "Account sign-in on the AI page"), status, revocation — immediate, never staged |
+| Context length | The length every served name gives the AI tools ("Each model's context length"): a cloud name's set length, staged behind the panel's own apply; an Ollama name's computed length, read-only, with each machine's setting and the model's trained length |
 | Access | Keys for a tool on the hub's machine or one using an SSH tunnel to it, plus the endpoint line, which names the gateway on the hub's loopback, and the default model, staged behind the panel's apply while a key's generate and revoke write at once; a managed device is keyed when the first of its accounts turns its AI tools switch on, on the machine page, and its key reaches it over the agent channel. The hub holds a key of its own beside them, minted on the first apply and shown nowhere: it is what the hub probes `/v1/models` with, and it keeps the gateway's key list from ever being empty, since CLIProxyAPI with no key configured asks nobody for one |
 | Gateway port | `listen_port`, staged behind its own apply |
 
@@ -239,7 +389,7 @@ current one, so nothing of the person's has to pass through its stores:
 
 | Step | cc-switch command | What it writes |
 | --- | --- | --- |
-| The hub | `provider add --config` with the whole provider, `{npm: "@ai-sdk/openai-compatible", name, options: {baseURL, apiKey}, models: {<model>: {name}}}`, then `use` | `provider.neutrino` in the file, every other key's value as it was |
+| The hub | `provider add --config` with the whole provider, `{npm: "@ai-sdk/openai-compatible", name, options: {baseURL, apiKey}, models: {<model>: {name, limit}}}`, `limit` the model's context length ("Each model's context length"), then `use` | `provider.neutrino` in the file, every other key's value as it was |
 | The model | none: the client writes the file itself after `use` | the top-level `model`, `neutrino/<model>`, when the file names no `model` |
 | Switching back | `provider delete` | the file without `provider.neutrino` |
 
@@ -261,9 +411,12 @@ extract counts the provider's own model as shared for Gemini (`GEMINI_MODEL`)
 and, defensively, Codex (`model`); the client takes those keys out of the
 snippet before saving it, or the snippet would override the hub's choice.
 
-Three things stay the client's own. Codex's reasoning effort has no flag in
-cc-switch's `provider add`, so a chosen effort is set as a top-level key of
-`config.toml` after the switch. OpenCode's top-level `model` has none
+Four things stay the client's own. Codex's reasoning effort and its
+`model_context_window` have no flag in cc-switch's `provider add`, so a
+chosen effort and the model's context length are set as top-level keys of
+`config.toml` after the switch. Claude Code's `CLAUDE_CODE_MAX_CONTEXT_TOKENS`
+has none either, so the client sets it in the `env` of `settings.json`
+after the switch while the tool is given one. OpenCode's top-level `model` has none
 either, so the client writes it after `use` as the rules above say. The
 switch back writes the kept file back byte for byte, so no `model` the
 client wrote stays. And cc-switch's `provider delete` asks
@@ -337,6 +490,7 @@ sections").
 | A tool works | while the client runs and its channel to the hub is up | while the agent runs and its channel to the hub is up |
 | The key | the client's own, from the `service` frame | the device's own, from the `ai_tools` section |
 | The unchosen models | the default model ("The default model"), from the `service` frame | the default model, filled in by the hub before the state is sent |
+| The context lengths | the `ai` entry's `context_lengths`, from the state ("Each model's context length") | the section's `context_lengths`, for the models its accounts use |
 | The cc-switch | the copy the client's package carries | the copy the agent fetches from the hub into `ai_tools/bin/` under its state root, the same pinned version |
 | The record per tool | `original/<tool>.json` under the client's configuration | `ai_tools/<account>/<tool>.json` under the agent's state root, never in the account's home ([../agent/ai_tools.md](../agent/ai_tools.md)) |
 | Switched back | when the chip goes off | when the account's switch goes off, when the account is removed from the machine page, before `nagent service uninstall`, and when the machine leaves the hub |

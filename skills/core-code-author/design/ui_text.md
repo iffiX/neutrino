@@ -341,8 +341,8 @@ link's `app.title`.
 
 ## The AI page's words
 
-The **Access** panel, the **Gateway port** field and the Ollama rows of
-the **Providers** panel of the AI page
+The **Access** panel, the **Context length** panel, the **Gateway port**
+field and the Ollama rows of the **Providers** panel of the AI page
 ([hub_components/ai.md](hub_components/ai.md), "What each panel surface
 owns"). `ui.ai.endpoint`'s line shows `http://127.0.0.1:<port>`, since the
 gateway listens on the hub's loopback alone.
@@ -362,6 +362,16 @@ gateway listens on the hub's loopback alone.
 | `code.model_not_served` | The gateway does not serve {model}. | 网关不提供 {model}。 |
 | `ui.ai.ollama_provider`, the name of a provider generated from a machine's Ollama ([ui_behavior.md](ui_behavior.md), "The Ollama rows of the Providers panel") | from {machine}'s Ollama | 来自 {machine} 的 Ollama |
 | `ui.ai.ollama_models`, that row's link to the machine's **Models** panel | Models | 模型 |
+| `ui.ai.context_title`, the Context length panel ([ui_behavior.md](ui_behavior.md), "The Context length panel of the AI page") | Context length | 上下文长度 |
+| `ui.ai.context_col_model`, `ui.ai.context_col_source`, `ui.ai.context_col_tokens`, its head row | Model, From, Tokens | 模型、来源、Tokens |
+| `ui.ai.context_length_of`, a cloud name's field's label for a screen reader | Context length of {model} | {model} 的上下文长度 |
+| `ui.ai.context_reset`, `{length}` being the name's default | Reset to {length} | 恢复为 {length} |
+| `ui.ai.context_setting`, a machine's Ollama setting under an Ollama name | setting {length} | 设置 {length} |
+| `ui.ai.context_trained`, the model's trained length beside it | model max {length} | 模型上限 {length} |
+| `ui.ai.context_empty` | No models served yet | 还没有在服务的模型 |
+| `ui.ai.context_apply`, the panel's apply bar | Apply context lengths | 应用上下文长度 |
+| `ui.ai.context_apply_hint` | Writes the lengths into every machine's AI tools. | 把这些长度写进每个系统的 AI 工具。 |
+| `code.context_length_invalid`, under a cloud name's field and as the refusal of `ai/context/set` | The context length must be between {min} and {max} tokens. | 非法上下文长度：要在 {min} 到 {max} 个 token 之间。 |
 
 ## The machine page's words
 

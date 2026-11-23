@@ -1442,6 +1442,35 @@ gateway reports the flow `complete` or `failed`.
 | When the hub's session for the flow ends before the gateway reports either, the route returns `login_expired`, and the dialog stays open on the screen it was showing, with the code's words under it. It never resets to its first screen. | A person who sees the first screen again cannot tell a timeout from a click that did nothing. |
 | A flow that ends `failed` shows the gateway's own reason, the view's `message`, under the code's words when the gateway sent one. | The gateway's reason names the provider's refusal, which the code alone cannot. |
 
+## The Context length panel of the AI page
+
+The **Context length** panel (`ui.ai.context_title`) of the AI page comes
+after **Accounts** and before **Access**. It has one row for each name the
+gateway serves, the cloud names by name and then the Ollama names by name,
+each with the length the AI tools are given for it
+([hub_components/ai.md](hub_components/ai.md), "Each model's context
+length"). It reads `GET /api/hub/ai/context`, and reads it again at each
+`ai_usage` and each `config` event.
+
+| Part | Idiom |
+| --- | --- |
+| The head row | `ui.ai.context_col_model`, `ui.ai.context_col_source` and `ui.ai.context_col_tokens`, faint, over the one grid every row shares: the name takes the room the sources and the length leave |
+| **Model** | the served name, mono, cut with an ellipsis, with the whole name as its title |
+| **From** of a cloud name | one chip per source, its accounts and then its providers: an account's chip is the service name the **Accounts** panel shows for its login kind, a provider's its name |
+| **From** of an Ollama name | one chip, `ui.module_title.ollama` |
+| **Tokens** of a cloud name | a number field of whole tokens holding the length in force, the set one or the default, with `ui.ai.context_length_of {model}` as its label for a screen reader; while it holds another number than the default, `ui.ai.context_reset {length}` with the default, a ghost `button--small` at its left that puts the default in the field |
+| **Tokens** of an Ollama name | the name's length, mono and read-only, where a field's digits stand; under the row one line per machine of the name, by the machine's name: the name as a link to `/agents/<device id>?module=ollama&configure=1`, the machine page on its Ollama tab with its panels open, then `ui.ai.context_setting {length}` and `ui.ai.context_trained {length}`, each bright while it equals the name's length and faint otherwise. `ui.ai.context_trained` is left out while the view's `trained_context_length` is 0 |
+| The empty state | `ui.ai.context_empty`, one line, while the gateway serves no name |
+| The apply bar | **Apply context lengths** (`ui.ai.context_apply`), its hint `ui.ai.context_apply_hint` |
+
+| Rule | Reason |
+| --- | --- |
+| The cloud fields are the panel's draft. A typed number lights the frame and the bar, and the bar writes every changed name with `POST /api/hub/ai/context/set`, a number equal to the default as null. | A name set back to its default follows the table and the catalog again when a hub release or the gateway changes them. |
+| The bar lights while a field holds other text than the length in force, and goes dark when each holds it again. | Typing the saved length back changes nothing the hub sends. |
+| A field that holds no whole number from 4096 to 10000000 shows `code.context_length_invalid {min, max}` under it, and the bar is disabled, as the Ollama tab's **Context length (tokens)** does. | One kind of field has one idiom and one sentence on every page ("An interaction this document does not cover"). |
+| An Ollama row has no field and belongs to no draft. Its setting changes on the machine's Ollama tab, which the machine's name links to. | The length is computed from each machine's setting and the model, and a new setting restarts that machine's Ollama ([agent/modules/ollama.md](agent/modules/ollama.md), "The settings are the hub's"). |
+| Under 640 px the **From** head is not drawn, each row's chips go under its name, and the length keeps the end of the first line; an Ollama row's machine lines start at the left. | Three columns leave a phone's model names a few characters wide. |
+
 ## The Access panel of the AI page
 
 The **Access** panel of the AI page holds the endpoint line, then the
