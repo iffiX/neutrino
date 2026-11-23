@@ -51,6 +51,7 @@ neutrino_hub = [
     "data/manifests/*.json",
     "data/module_catalog.json",
     "data/source_sets.json",
+    "data/context_lengths.json",
     "data/examples/*/*.json",
     "data/examples/*/*/*.json",
     "data/frontend/**/*",

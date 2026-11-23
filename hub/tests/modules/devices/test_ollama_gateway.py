@@ -9,7 +9,11 @@ the provider; a follow at the same address reading nothing; the 30-second
 read finding a model pulled on the machine and taking out a stored provider
 no report followed; a new control connection keeping every provider and
 following none; a refresh of a machine it does not follow reading
-nothing; and the thread settling a follow by itself.
+nothing; and the thread settling a follow by itself. Beside the providers:
+``/api/show`` read once per digest, its trained length and its Modelfile's
+``num_ctx`` stored in ``cliproxyapi/ollama_lengths.json``, a new digest read
+again, a model kept while its machine is dropped, taken out once a read no
+longer lists it, and a machine taken out by :meth:`forget_lengths`.
 """
 
 import json
@@ -253,3 +257,99 @@ def test_the_thread_settles_a_follow_by_itself(state, ollama):
         assert [held["device_id"] for held in table.providers()] == ["dev"]
     finally:
         table.stop()
+
+
+# --- the models' lengths, beside the providers ---
+
+QWEN_SHOWN = {
+    "parameters": 'stop                           "<|im_end|>"',
+    "model_info": {"general.architecture": "qwen2", "qwen2.context_length": 32768},
+}
+QWEN_8K_SHOWN = {
+    "parameters": 'num_ctx                        8192\nstop "x"',
+    "model_info": {"general.architecture": "qwen2", "qwen2.context_length": 32768},
+}
+
+
+def _lengths(state) -> dict:
+    path = state / "cliproxyapi" / "ollama_lengths.json"
+    held = json.loads(path.read_text(encoding="utf-8"))["machines"]
+    return {machine["device_id"]: machine["models"] for machine in held}
+
+
+def _show_reads(server) -> list:
+    return [body["model"] for _, path, body in server.requests if path == "/api/show"]
+
+
+def test_each_model_s_lengths_are_read_once_per_digest_and_stored(state, ollama):
+    ollama.models = [dict(QWEN, digest="d1"), {"name": "qwen-8k", "digest": "d2"}]
+    ollama.shown = {"qwen2.5:0.5b": QWEN_SHOWN, "qwen-8k": QWEN_8K_SHOWN}
+    lengths_changes = Changes()
+    table = OllamaGatewayProviderTable(
+        on_change=Changes(), on_lengths_change=lengths_changes
+    )
+    table.follow("dev", ollama.address)
+    table.settle()
+
+    assert _lengths(state) == {
+        "dev": {
+            "qwen2.5:0.5b": {
+                "digest": "d1",
+                "trained_context_length": 32768,
+                "modelfile_context_length": 0,
+            },
+            "qwen-8k": {
+                "digest": "d2",
+                "trained_context_length": 32768,
+                "modelfile_context_length": 8192,
+            },
+        }
+    }
+    assert lengths_changes.count == 1
+
+    table.settle(is_tick=True)
+    assert sorted(_show_reads(ollama)) == ["qwen-8k", "qwen2.5:0.5b"]
+    assert lengths_changes.count == 1
+
+    ollama.models = [dict(QWEN, digest="d3"), {"name": "qwen-8k", "digest": "d2"}]
+    table.settle(is_tick=True)
+    assert sorted(_show_reads(ollama)) == ["qwen-8k", "qwen2.5:0.5b", "qwen2.5:0.5b"]
+    assert _lengths(state)["dev"]["qwen2.5:0.5b"]["digest"] == "d3"
+
+
+def test_a_dropped_machine_keeps_its_models_until_a_read_no_longer_lists_one(
+    state, ollama
+):
+    ollama.models = [dict(QWEN, digest="d1"), dict(SMOLLM, digest="d2")]
+    ollama.shown = {"qwen2.5:0.5b": QWEN_SHOWN}
+    table = OllamaGatewayProviderTable(on_change=Changes())
+    table.follow("dev", ollama.address)
+    table.settle()
+
+    table.drop("dev")
+    table.settle(is_tick=True)
+    assert table.providers() == []
+    assert sorted(_lengths(state)["dev"]) == ["qwen2.5:0.5b", "smollm2:135m"]
+    assert _lengths(state)["dev"]["smollm2:135m"]["trained_context_length"] == 0
+
+    ollama.models = [dict(QWEN, digest="d1")]
+    table.follow("dev", ollama.address)
+    table.settle()
+    assert sorted(_lengths(state)["dev"]) == ["qwen2.5:0.5b"]
+
+
+def test_a_forgotten_machine_leaves_the_stored_lengths(state, ollama):
+    ollama.models = [dict(QWEN, digest="d1")]
+    ollama.shown = {"qwen2.5:0.5b": QWEN_SHOWN}
+    lengths_changes = Changes()
+    table = OllamaGatewayProviderTable(
+        on_change=Changes(), on_lengths_change=lengths_changes
+    )
+    table.follow("dev", ollama.address)
+    table.settle()
+
+    table.forget_lengths("dev")
+    table.forget_lengths("dev")
+
+    assert _lengths(state) == {}
+    assert lengths_changes.count == 2

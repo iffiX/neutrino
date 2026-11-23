@@ -279,10 +279,12 @@ def test_a_served_list_that_moved_is_worth_telling(collector, monkeypatch, tmp_p
     )
     served = StubServedModels(["gpt-5"])
     changes = ChangeCounter()
+    served_changes = ChangeCounter()
     watcher = PanelUsageCollector(
         store=CliproxyApiUsageStore(path=tmp_path / "usage.json"),
         served_models=served,
         on_change=changes,
+        on_served_change=served_changes,
     )
 
     assert watcher.sample_once() is False
@@ -292,9 +294,9 @@ def test_a_served_list_that_moved_is_worth_telling(collector, monkeypatch, tmp_p
     served.names = ["gpt-5", "claude-opus"]
 
     assert watcher.sample_once() is True
-    assert changes.count == 1
+    assert (changes.count, served_changes.count) == (1, 1)
     assert watcher.sample_once() is False
-    assert changes.count == 1
+    assert (changes.count, served_changes.count) == (1, 1)
 
 
 def test_a_gateway_that_stops_or_starts_answering_is_worth_telling(

@@ -41,13 +41,29 @@ from neutrino_hub.modules.router.controller import (
 from neutrino_hub.modules.channel.port_guard import ChannelPortGuard
 from neutrino_hub.modules.channel.tickets import ChannelTicketRegistry
 from neutrino_hub.modules.cliproxyapi.ops import CliproxyApiServedModelCache
+from neutrino_hub.modules.cliproxyapi.model_catalog import read_model_catalog
+from neutrino_hub.modules.cliproxyapi.ops import read_ollama_providers
+from neutrino_hub.modules.ai.context_lengths import (
+    AiContextLengthResolver,
+    is_context_length_input,
+    load_known_models,
+    read_set_lengths,
+)
+from neutrino_hub.modules.ai.registry import AiProviderRegistry
 from neutrino_hub.modules.devices.catalog import DeviceCatalogCache
 from neutrino_hub.modules.clients.ai_keys import apply_keys, gateway_models
 from neutrino_hub.modules.devices.desired_state import (
     DesiredStateStore,
     machine_apps,
+    ollama_settings,
+)
+from neutrino_hub.modules.devices.ollama_lengths import (
+    ollama_wants,
+    pool_machines,
+    read_ollama_lengths,
 )
 from neutrino_hub.modules.devices.constants import (
+    DEVICE_OLLAMA_CONTEXT_LENGTH_KEY,
     DEVICE_OLLAMA_KEPT_MODELS_KEY,
     DEVICE_OLLAMA_MODULE,
     DEVICE_OLLAMA_PORT,
@@ -124,6 +140,7 @@ from neutrino_hub.web.channel_addresses import channel_urls, own_agent_urls
 from neutrino_hub.web.events import PanelEventBus
 from neutrino_hub.web.link_sampler import PanelLinkSampler
 from neutrino_hub.web.enrollment_sweep import PanelEnrollmentSweeper
+from neutrino_hub.web.model_catalog_sampler import PanelModelCatalogSampler
 from neutrino_hub.web.release_sampler import PanelReleaseSampler
 from neutrino_hub.web.web_share_access import (
     PanelWebShareSweeper,
@@ -238,7 +255,15 @@ class PanelRuntime:
         # loaded are loaded again through them.
         self.hub_forwards = HubForwardTable(channel=self.channel)
         self.ollama_gateway = OllamaGatewayProviderTable(
-            on_change=self._ollama_providers_changed
+            on_change=self._ollama_providers_changed,
+            on_lengths_change=self.note_context_lengths,
+        )
+        # The context lengths last handed on, None until the first
+        # computation; and the reads of the gateway's catalog they come from.
+        self._context_lengths: "dict | None" = None
+        self._context_lock = threading.Lock()
+        self.model_catalog = PanelModelCatalogSampler(
+            on_change=self.note_context_lengths
         )
         self.ollama_pulls = OllamaPullQueue(
             address_of=self.ollama_address, on_pulled=self.ollama_gateway.refresh
@@ -274,6 +299,7 @@ class PanelRuntime:
             device_names=self.device_names,
             hub_name=hub_name,
             on_fingerprint_change=self._services_changed,
+            context_lengths_of=self.context_lengths,
         )
         self.device_catalog = DeviceCatalogCache(services=self.published_services)
         # The hub's own agent packages, seeded by its package and topped up
@@ -940,13 +966,15 @@ class PanelRuntime:
         with CONFIG_WRITE_LOCK:
             wanted = self.desired_states.modules(key)
             marks = DeviceRetryMarks().marks(key)
+        models = self._gateway_models_for(key, wanted=wanted)
         desired, state_hash = self.desired_states.compose(
             key,
             self.device_platform.get(key, {}),
             address=self.device_address.get(key, ""),
             urls=self._device_urls(key),
             is_hub_machine=self.is_hub_machine(key),
-            ai_models=self._gateway_models_for(key, wanted=wanted),
+            ai_models=models,
+            ai_lengths=self.context_lengths(models),
             retry_marks=marks,
             wanted=wanted,
             account_details=self.account_details(key),
@@ -1008,6 +1036,7 @@ class PanelRuntime:
         Raises:
             VaultLockedError: When a sealed token or login cannot be opened.
         """
+        models = self._gateway_models_for(key)
         return self.desired_states.agent_config(
             key,
             name,
@@ -1018,7 +1047,8 @@ class PanelRuntime:
             account_details=self.account_details(key),
             machine_slug=self.machine_slug(key),
             app_slug_of=app_slugs(machine_apps(self.desired_states, key)),
-            ai_models=self._gateway_models_for(key),
+            ai_models=models,
+            ai_lengths=self.context_lengths(models),
             releases=self.module_releases,
             newest_runs=self.newest_runs(key),
         )
@@ -1102,9 +1132,96 @@ class PanelRuntime:
         return list(held) if isinstance(held, list) else []
 
     def _ollama_providers_changed(self) -> None:
-        """Hand the gateway the changed Ollama providers in place, and tell the AI page."""
+        """Hand the gateway the changed Ollama providers in place, tell the AI page, and compute the context lengths again."""
         apply_keys()
         self.publish_ai_usage()
+        self.note_context_lengths()
+
+    def context_lengths(self, models: "list | None" = None) -> dict:
+        """Each served name's context length (hub_components/ai.md, "Each model's context length").
+
+        Args:
+            models: The served list; None reads it.
+
+        Returns:
+            Name to ``{context_length, input_limit, output_limit}``.
+        """
+        served = gateway_models(self.served_models) if models is None else models
+        if not served:
+            return {}
+        return self._context_resolver().lengths(served)
+
+    def context_view(self) -> dict:
+        """Every served name's context length with where it comes from.
+
+        Returns:
+            ``{cloud, ollama}``, as ``GET /api/hub/ai/context`` answers.
+        """
+        return self._context_resolver().view(gateway_models(self.served_models))
+
+    def note_context_lengths(self) -> None:
+        """Compute the context lengths again, and hand them on where one changed.
+
+        Call from a thread other than a state's compose.
+        """
+        lengths = self.context_lengths()
+        with self._context_lock:
+            is_changed = (
+                self._context_lengths is not None and lengths != self._context_lengths
+            )
+            self._context_lengths = lengths
+        if is_changed:
+            self.hand_on_gateway_change()
+            self.publish_ai_usage()
+
+    def hand_on_gateway_change(self) -> None:
+        """Hand every online machine its state where it changed, and compose the published list again.
+
+        The ``ai`` entry of the published list carries the change to the
+        clients.
+        """
+        for session in self.agent_sessions.sessions():
+            try:
+                channel_state.offer_agent_state(self, session, session.offered_hash)
+            except (AgentOfflineError, StreamRefusedError):
+                continue
+        self.published_services.schedule_refresh()
+
+    def _context_resolver(self) -> AiContextLengthResolver:
+        """The resolver over what the context lengths come from, as stored now."""
+        try:
+            providers = [
+                provider
+                for provider in AiProviderRegistry().list_records()
+                if provider.is_enabled and provider.secret_id
+            ]
+        except ValueError:
+            providers = []
+        generated = read_ollama_providers()
+        stored = read_ollama_lengths()
+        names = self.device_names()
+        machines = pool_machines(
+            stored,
+            generated,
+            names=names,
+            settings={
+                key: ollama_settings(
+                    self.desired_states.read(key, DEVICE_OLLAMA_MODULE)
+                )[DEVICE_OLLAMA_CONTEXT_LENGTH_KEY]
+                for key in names
+            },
+            wants=ollama_wants(self.desired_states, names),
+        )
+        return AiContextLengthResolver(
+            known_models=load_known_models(),
+            catalog=read_model_catalog(),
+            providers=providers,
+            set_lengths=read_set_lengths(),
+            ollama_machines=machines,
+            ollama_names={
+                name for provider in generated for name in provider["models"]
+            },
+        )
 
     def forget_device(self, device_id: str) -> None:
         """Drop everything held in memory about one device.
@@ -1131,6 +1248,7 @@ class PanelRuntime:
         self.device_shares.withdraw(key)
         self.hub_forwards.stop(key, DEVICE_OLLAMA_PORT)
         self.ollama_gateway.drop(key)
+        self.ollama_gateway.forget_lengths(key)
         self.ollama_kept.drop(key)
         self.agent_sessions.refuse_from_thread(key, CHANNEL_CODE_BINDING_UNKNOWN)
         self.published_services.schedule_refresh()
@@ -1161,6 +1279,11 @@ class PanelRuntime:
     def publish_ai_usage(self) -> None:
         """Say the AI gateway's counters or served list moved."""
         self.events.publish(WEB_EVENT_AI_USAGE)
+
+    def served_models_changed(self) -> None:
+        """Read the gateway's catalog again and compute the context lengths again, after the served list moved."""
+        self.model_catalog.wake()
+        self.note_context_lengths()
 
     def _dnsmasq_config(self, network_resolvers: list[dict]) -> str:
         """The dnsmasq configuration every apply path installs.
@@ -1276,8 +1399,19 @@ class PanelRuntime:
         ).start()
 
     def _publish_config_write(self, relative_path: str) -> None:
-        """Say one file under ``config/`` was written."""
+        """Say one file under ``config/`` was written, and compute the context lengths again after a file they come from.
+
+        The computation runs on a thread of its own. A write can come from
+        a state's compose, under a push lock that a push on the same thread
+        would wait on for good.
+        """
         self.events.publish(WEB_EVENT_CONFIG, relative_path)
+        if is_context_length_input(relative_path):
+            threading.Thread(
+                target=self.note_context_lengths,
+                name="context_lengths",
+                daemon=True,
+            ).start()
 
     def _publish_task(self, task_id: str) -> None:
         """Say a background job started or finished."""

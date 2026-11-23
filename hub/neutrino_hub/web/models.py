@@ -757,6 +757,55 @@ class AiOllamaProviderListView(BaseModel):
     providers: list[AiOllamaProviderView]
 
 
+class AiContextSourceView(BaseModel):
+    """An account or a stored provider that serves a name."""
+
+    origin: str
+    id: str
+    name: str
+
+
+class AiCloudContextView(BaseModel):
+    """A cloud name's context length: the one a person set, or its default."""
+
+    model: str
+    sources: list[AiContextSourceView]
+    context_length: int | None = None
+    default_context_length: int
+
+
+class AiOllamaContextMachineView(BaseModel):
+    """One machine of an Ollama name's pool."""
+
+    device_id: str
+    name: str
+    setting_context_length: int
+    trained_context_length: int
+
+
+class AiOllamaContextView(BaseModel):
+    """An Ollama name's context length, computed from its pool and its cloud sources."""
+
+    model: str
+    machines: list[AiOllamaContextMachineView]
+    sources: list[AiContextSourceView]
+    cloud_context_length: int
+    context_length: int
+
+
+class AiContextView(BaseModel):
+    """The context length of every name the gateway serves."""
+
+    cloud: list[AiCloudContextView]
+    ollama: list[AiOllamaContextView]
+
+
+class AiContextUpdate(BaseModel):
+    """The lengths a person set, by cloud name; a null takes a name back to its default."""
+
+    lengths: dict[str, StrictInt | None]
+
+
 class AiProviderCreate(BaseModel):
     """A provider to store; ``secret_id`` names a vault token, or nothing."""
 
@@ -1980,6 +2029,9 @@ class ChannelAiToolsState(BaseModel):
     base_url: str = ""
     api_key: str = ""
     accounts: list[ChannelAiToolsAccount] = Field(default_factory=list)
+    # Each model the accounts' tool configurations name, to its
+    # ``{context_length, input_limit, output_limit}``.
+    context_lengths: dict = Field(default_factory=dict)
     cc_switch_version: str = ""
     # The cc-switch artifact for the machine's platform, ``{name, kind,
     # digest}``, which the agent asks the package stream for.

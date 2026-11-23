@@ -16,6 +16,7 @@ the gateway's file, which names the default model.
 
 import secrets
 
+from neutrino_hub.modules.ai.context_lengths import one_numbers
 from neutrino_hub.modules.clients.ai_keys import gateway_default_model, module_key
 from neutrino_hub.modules.credentials.vault import seal_bytes, unseal_bytes
 from neutrino_hub.modules.devices.constants import (
@@ -112,7 +113,12 @@ def ensure_config(store, key: str) -> dict:
 
 
 def agent_config(
-    stored: dict, key: str, *, local_name: str = "", models: "list | tuple" = ()
+    stored: dict,
+    key: str,
+    *,
+    local_name: str = "",
+    models: "list | tuple" = (),
+    context_lengths: "dict | None" = None,
 ) -> dict:
     """What the agent is sent for AstrBot.
 
@@ -122,12 +128,16 @@ def agent_config(
         local_name: The app's local name, which the forwarder checks the
             ``Host`` against.
         models: The names the gateway serves now.
+        context_lengths: Each served name's ``{context_length, input_limit,
+            output_limit}``; None names none.
 
     Returns:
-        ``{secret, password, cookie_name, local_name, model}``, each secret
-        opened, empty when the file holds none or the vault cannot open it;
-        ``cookie_name`` the entry's, and ``model`` the default model, empty
-        while no name is served.
+        ``{secret, password, cookie_name, local_name, model,
+        context_length}``, each secret opened, empty when the file holds
+        none or the vault cannot open it; ``cookie_name`` the entry's,
+        ``model`` the default model, empty while no name is served, and
+        ``context_length`` the default model's one number, 0 while there is
+        no model.
     """
     config = {}
     for sealed in module_row(DEVICE_ASTRBOT_MODULE).sealed_fields:
@@ -137,6 +147,9 @@ def agent_config(
     )
     config["local_name"] = local_name
     config["model"] = gateway_default_model(models)
+    config["context_length"] = one_numbers([config["model"]], context_lengths).get(
+        config["model"], 0
+    )
     return config
 
 

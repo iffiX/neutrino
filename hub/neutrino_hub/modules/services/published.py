@@ -104,6 +104,7 @@ class PublishedServiceCache:
         hub_name=None,
         on_fingerprint_change=None,
         executor=None,
+        context_lengths_of=None,
     ):
         """
         Args:
@@ -133,6 +134,9 @@ class PublishedServiceCache:
                 when a refresh composes a different list; None tells nobody.
             executor: The single-thread executor a scheduled recompose runs
                 on; None builds one.
+            context_lengths_of: Returns each served name's context length
+                for the served list it is given, which the ``ai`` entry
+                carries; None gives none.
         """
         self._declared_probe = declared_probe
         self._served_models = served_models
@@ -151,6 +155,7 @@ class PublishedServiceCache:
         self._device_names = device_names
         self._hub_name = hub_name
         self._on_fingerprint_change = on_fingerprint_change
+        self._context_lengths_of = context_lengths_of
         self._executor = (
             executor
             if executor is not None
@@ -291,6 +296,11 @@ class PublishedServiceCache:
             ai_port=ai_port,
             ai_models=ai_models,
             ai_model=ai_model,
+            ai_lengths=(
+                self._context_lengths_of(ai_models)
+                if self._context_lengths_of is not None and ai_models
+                else {}
+            ),
             is_ai_healthy=is_ai_healthy,
             device_modules=self._device_modules(),
             declared_apps=declared,

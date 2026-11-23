@@ -39,6 +39,7 @@ class PanelUsageCollector:
         poll_interval_s: float = CLIPROXYAPI_USAGE_POLL_INTERVAL_S,
         served_models=None,
         on_change=None,
+        on_served_change=None,
     ):
         """
         Args:
@@ -51,11 +52,14 @@ class PanelUsageCollector:
             on_change: Called with nothing when a tick moved the counters,
                 the served list or whether the probe succeeded; None tells
                 nobody.
+            on_served_change: Called with nothing after ``on_change`` when a
+                tick moved the served list; None tells nobody.
         """
         self._store = store or CliproxyApiUsageStore()
         self._poll_interval_s = poll_interval_s
         self._served_models = served_models
         self._on_change = on_change
+        self._on_served_change = on_served_change
         # Whether the probe succeeded and the served list, at the last tick.
         # None until the first tick, so starting the panel is not itself a
         # change anybody is told about.
@@ -169,16 +173,20 @@ class PanelUsageCollector:
             whether the probe succeeded.
         """
         is_changed = False
+        is_served_changed = False
         try:
             is_changed = self.poll_once() > 0
         except Exception:  # noqa: BLE001 - the loop must outlive one poll
             LOGGER.exception("usage poll failed")
         try:
-            is_changed = self._note_served_models() or is_changed
+            is_served_changed = self._note_served_models()
         except Exception:  # noqa: BLE001 - the loop must outlive one read
             LOGGER.exception("served model read failed")
+        is_changed = is_changed or is_served_changed
         if is_changed and self._on_change is not None:
             self._on_change()
+        if is_served_changed and self._on_served_change is not None:
+            self._on_served_change()
         return is_changed
 
     def _loop(self) -> None:

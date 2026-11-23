@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from neutrino_hub.modules.cliproxyapi.accounts import (
+    LOGIN_COMPLETE,
     CliproxyApiAccount,
     CliproxyApiAccountClient,
 )
@@ -313,18 +314,8 @@ def update_settings(
     if request.listen_port is not None:
         _apply_quietly()
     if model is not None:
-        _hand_on_default_model(runtime)
+        runtime.hand_on_gateway_change()
     return _status()
-
-
-def _hand_on_default_model(runtime: PanelRuntime) -> None:
-    """Hand every online machine its state where it changed, and compose the published list again."""
-    for session in runtime.agent_sessions.sessions():
-        try:
-            channel_state.offer_agent_state(runtime, session, session.offered_hash)
-        except (AgentOfflineError, StreamRefusedError):
-            continue
-    runtime.published_services.schedule_refresh()
 
 
 @router.post("/gateway/apply", response_model=ApplyResult)
@@ -375,11 +366,16 @@ def read_accounts() -> CliproxyApiAccountsView:
 
 
 @router.post("/gateway/account/remove", response_model=CliproxyApiAccountsView)
-def delete_account(request: CliproxyApiAccountRequest) -> CliproxyApiAccountsView:
+def delete_account(
+    request: CliproxyApiAccountRequest, runtime: PanelRuntime = Depends(get_runtime)
+) -> CliproxyApiAccountsView:
     """Sign an account out; whatever it was serving stops now.
+
+    The gateway's catalog is read again for the context lengths.
 
     Args:
         request: The account's token file, as the list reports it.
+        runtime: The shared runtime, whose catalog reader is woken.
 
     Returns:
         The accounts after the change.
@@ -389,6 +385,7 @@ def delete_account(request: CliproxyApiAccountRequest) -> CliproxyApiAccountsVie
             ``gateway_unreachable``.
     """
     _account_call(lambda client: client.delete_account(request.name))
+    runtime.model_catalog.wake()
     return read_accounts()
 
 
@@ -411,11 +408,17 @@ def start_login(request: CliproxyApiLoginStart) -> CliproxyApiLoginView:
 
 
 @router.get("/gateway/account_login", response_model=CliproxyApiLoginStateView)
-def read_login(state: str) -> CliproxyApiLoginStateView:
+def read_login(
+    state: str, runtime: PanelRuntime = Depends(get_runtime)
+) -> CliproxyApiLoginStateView:
     """Ask where a login has got to.
+
+    A login that completed has the gateway's catalog read again for the
+    context lengths.
 
     Args:
         state: The handle the start returned.
+        runtime: The shared runtime, whose catalog reader is woken.
 
     Returns:
         ``pending`` while it is open, then ``complete`` or ``failed``.
@@ -424,15 +427,18 @@ def read_login(state: str) -> CliproxyApiLoginStateView:
         HTTPException: 404 with ``login_expired`` when the gateway's session
             for the flow ended first, 502 with ``gateway_unreachable``.
     """
-    return CliproxyApiLoginStateView(
-        **vars(_account_call(lambda client: client.read_login(state)))
-    )
+    login = _account_call(lambda client: client.read_login(state))
+    if login.status == LOGIN_COMPLETE:
+        runtime.model_catalog.wake()
+    return CliproxyApiLoginStateView(**vars(login))
 
 
 @router.post(
     "/gateway/account_login/code/set", response_model=CliproxyApiLoginStateView
 )
-def submit_login_code(request: CliproxyApiLoginCode) -> CliproxyApiLoginStateView:
+def submit_login_code(
+    request: CliproxyApiLoginCode, runtime: PanelRuntime = Depends(get_runtime)
+) -> CliproxyApiLoginStateView:
     """Hand back the code a redirect flow's browser came away with.
 
     The gateway exchanges it behind the call, so the answer is the flow's
@@ -441,6 +447,7 @@ def submit_login_code(request: CliproxyApiLoginCode) -> CliproxyApiLoginStateVie
     Args:
         request: The handle the start returned, and the code, or the whole
             address the browser was sent to.
+        runtime: The shared runtime, as :func:`read_login` takes it.
 
     Returns:
         Where the login has got to right now.
@@ -450,7 +457,7 @@ def submit_login_code(request: CliproxyApiLoginCode) -> CliproxyApiLoginStateVie
             holds the flow, 502 with ``gateway_unreachable``.
     """
     _account_call(lambda client: client.submit_code(request.state, request.code))
-    return read_login(request.state)
+    return read_login(request.state, runtime)
 
 
 @router.post("/gateway/account_login/stop", status_code=status.HTTP_204_NO_CONTENT)

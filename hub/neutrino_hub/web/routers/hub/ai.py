@@ -5,24 +5,37 @@ names a ``token`` the Credentials page holds, the gateway's own renderer
 resolves it, and a device's Dev Setup is pointed at what the providers
 serve. No key material passes through these routes in either direction.
 The providers the hub generates from each machine's Ollama are read here
-and written by nobody.
+and written by nobody. Each served name's context length is read here, and
+the lengths a person set are written here.
 """
 
 import operator
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from neutrino_hub.modules.ai.constants import AI_PROVIDER_KINDS
+from neutrino_hub.modules.ai.constants import (
+    AI_CONTEXT_LENGTH_MAX,
+    AI_CONTEXT_LENGTH_MIN,
+    AI_PROVIDER_KINDS,
+)
+from neutrino_hub.modules.ai.context_lengths import (
+    read_set_lengths,
+    write_set_lengths,
+)
 from neutrino_hub.modules.ai.registry import (
     AiProviderRecord,
     AiProviderRegistry,
 )
+from neutrino_hub.modules.clients.ai_keys import gateway_models
 from neutrino_hub.modules.cliproxyapi.ops import read_ollama_providers
 from neutrino_hub.modules.credentials.vault import SecretVault
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.shell_bridge import device_name
+from neutrino_hub.utils.json_file import CONFIG_WRITE_LOCK
 from neutrino_hub.web.models import (
+    AiContextUpdate,
+    AiContextView,
     AiOllamaProviderListView,
     AiOllamaProviderView,
     AiProviderCreate,
@@ -81,6 +94,80 @@ def list_ollama_providers(runtime=Depends(get_runtime)) -> AiOllamaProviderListV
     return AiOllamaProviderListView(
         providers=sorted(rows, key=operator.attrgetter("name", "device_id"))
     )
+
+
+@router.get("/context", response_model=AiContextView)
+def read_context_lengths(runtime=Depends(get_runtime)) -> AiContextView:
+    """Read every served name's context length with where it comes from.
+
+    Args:
+        runtime: The shared runtime, whose served list and machines the
+            lengths come from.
+
+    Returns:
+        The cloud names and then the Ollama names, each by name.
+    """
+    return AiContextView(**runtime.context_view())
+
+
+@router.post("/context/set", response_model=AiContextView)
+def update_context_lengths(
+    request: AiContextUpdate, runtime=Depends(get_runtime)
+) -> AiContextView:
+    """Store the lengths a person set; a null takes a name back to its default.
+
+    Nothing restarts: every online machine and client whose state changes is
+    handed its state.
+
+    Args:
+        request: Lengths by cloud name.
+        runtime: The shared runtime, whose machines and clients are told.
+
+    Returns:
+        Every served name's context length after the change.
+
+    Raises:
+        HTTPException: 400 ``context_length_invalid {model, context_length,
+            min, max}`` for a number outside 4096 to 10000000, and
+            ``model_not_served {model}`` for a number whose name is no
+            cloud name the gateway serves.
+    """
+    served = gateway_models(runtime.served_models)
+    ollama = {
+        name for provider in read_ollama_providers() for name in provider["models"]
+    }
+    cloud = set(served) - ollama
+    for model, length in request.lengths.items():
+        if length is None:
+            continue
+        if not AI_CONTEXT_LENGTH_MIN <= length <= AI_CONTEXT_LENGTH_MAX:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "code": "context_length_invalid",
+                    "params": {
+                        "model": model,
+                        "context_length": length,
+                        "min": AI_CONTEXT_LENGTH_MIN,
+                        "max": AI_CONTEXT_LENGTH_MAX,
+                    },
+                },
+            )
+        if model not in cloud:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"code": "model_not_served", "params": {"model": model}},
+            )
+    with CONFIG_WRITE_LOCK:
+        lengths = read_set_lengths()
+        for model, length in request.lengths.items():
+            if length is None:
+                lengths.pop(model, None)
+            else:
+                lengths[model] = length
+        write_set_lengths(lengths)
+    runtime.note_context_lengths()
+    return AiContextView(**runtime.context_view())
 
 
 @router.post("/provider/order/set", response_model=AiProviderListView)

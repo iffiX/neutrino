@@ -54,6 +54,7 @@ from neutrino_hub.modules.channel.constants import (
     CHANNEL_MODULE_STATE_STOPPED,
     CHANNEL_MODULE_WANTS,
 )
+from neutrino_hub.modules.ai.context_lengths import one_numbers
 from neutrino_hub.modules.clients.ai_keys import (
     device_gateway,
     gateway_default_model,
@@ -74,6 +75,7 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_GUEST_LOGIN_GUEST_ACCOUNT,
     DEVICE_GUESTS_KEY,
     DEVICE_ACCOUNTS_NAME,
+    DEVICE_AI_REASONING_EFFORT_KEY,
     DEVICE_AI_SWITCHER_NAME,
     DEVICE_AGENT_MODULES,
     DEVICE_AI_TOOLS_NAME,
@@ -296,6 +298,7 @@ def account_layer_agent_config(
     app_slug_of: "dict | None" = None,
     gateway_url: str = "",
     models: "list | tuple" = (),
+    context_lengths: "dict | None" = None,
     programs_of: "dict | None" = None,
 ) -> dict:
     """What the agent is sent for one account-layer module.
@@ -318,6 +321,8 @@ def account_layer_agent_config(
             reaches the gateway on the machine.
         models: The names the gateway serves, for such a module, which
             also give the default model it is sent.
+        context_lengths: Each served name's context length, as
+            :func:`one_number` reads it for such a module; None names none.
         programs_of: Account to the command line programs it is enabled in,
             which the Terminal's accounts and the SSH server's instances
             carry; None names none.
@@ -330,8 +335,9 @@ def account_layer_agent_config(
         password, local_name, cookie_name}]}``, the last two on a module
         with a forwarder and ``password`` on a Windows machine alone; a
         module that holds a gateway key per account adds each instance's
-        ``gateway_key`` and ``{gateway_url, models, model}`` beside the
-        instances, ``model`` the default model.
+        ``gateway_key`` and ``{gateway_url, models, model, context_lengths}``
+        beside the instances, ``model`` the default model and
+        ``context_lengths`` each name of ``models`` to its one number.
     """
     is_windows = platform.get("os") == DEVICE_PASSWORD_OS
     by_name = {account.account: account for account in available}
@@ -400,6 +406,7 @@ def account_layer_agent_config(
         config["gateway_url"] = gateway_url
         config["models"] = [str(name) for name in models]
         config["model"] = gateway_default_model(models)
+        config["context_lengths"] = one_numbers(models, context_lengths)
     return config
 
 
@@ -637,6 +644,7 @@ def ai_tools_agent_config(
     is_hub_machine: bool = False,
     is_gateway_module: bool = False,
     listen_port: int = 0,
+    context_lengths: "dict | None" = None,
 ) -> dict:
     """What the agent is sent for the machine's AI tools.
 
@@ -657,6 +665,8 @@ def ai_tools_agent_config(
             is installed on the device.
         listen_port: The gateway's own port, which the hub's own machine
             relays to its containers while such a module is installed there.
+        context_lengths: Each served name's ``{context_length,
+            input_limit, output_limit}``; None names none.
 
     Returns:
         ``{is_enabled: false, is_forwarded, gateway_port,
@@ -664,10 +674,11 @@ def ai_tools_agent_config(
         is on, the gateway serves no model, or the device has no key for
         it, the version and the artifact each left out when none is given;
         else ``{is_enabled, is_forwarded, gateway_port, base_url, api_key,
-        accounts: [{account, password, tool_configs}], cc_switch_version,
-        cc_switch_artifact}``, every model filled with the default model
-        where none was chosen and ``password`` sent to a Windows
-        machine alone.
+        accounts: [{account, password, tool_configs}], context_lengths,
+        cc_switch_version, cc_switch_artifact}``, every model filled with
+        the default model where none was chosen, ``password`` sent to a
+        Windows machine alone, and ``context_lengths`` the length of each
+        model the tool configurations name that has one.
     """
     base_url = str(gateway.get("gateway_url", "") or "")
     api_key = str(gateway.get("gateway_key", "") or "")
@@ -692,12 +703,23 @@ def ai_tools_agent_config(
             account.tool_configs, default_model
         )
         sent_accounts.append(sent)
+    lengths = context_lengths or {}
+    named = {
+        str(model)
+        for sent in sent_accounts
+        for config in sent["tool_configs"].values()
+        for knob, model in config.items()
+        if knob != DEVICE_AI_REASONING_EFFORT_KEY and model
+    }
     section = {
         "is_enabled": True,
         **forward,
         "base_url": base_url,
         "api_key": api_key,
         "accounts": sent_accounts,
+        "context_lengths": {
+            model: dict(lengths[model]) for model in sorted(named) if model in lengths
+        },
         "cc_switch_version": switcher_version,
     }
     if switcher_artifact:
@@ -1516,6 +1538,7 @@ class DesiredStateStore:
         machine_slug: str = SERVICES_MACHINE_SLUG_FALLBACK,
         app_slug_of: "dict | None" = None,
         ai_models: "list | tuple" = (),
+        ai_lengths: "dict | None" = None,
         releases: "ModuleReleaseStore | None" = None,
         manifests: "dict | None" = None,
         wanted: "dict | None" = None,
@@ -1544,6 +1567,9 @@ class DesiredStateStore:
             ai_models: The names the gateway serves now, which a module that
                 holds a gateway key per account is sent, and which pick
                 Ayakaleaf's model, Hermes WebUI's and AstrBot's.
+            ai_lengths: Each served name's ``{context_length, input_limit,
+                output_limit}``, which SiYuan, Hermes WebUI and AstrBot are
+                sent; None names none.
             releases: The publishers' feeds as last read, which name the
                 digest of a hub container's image at the version the machine
                 chose; None takes the tested digests.
@@ -1590,6 +1616,7 @@ class DesiredStateStore:
                     else ""
                 ),
                 models=ai_models,
+                context_lengths=ai_lengths,
                 programs_of=self.programs_of(key, wanted),
             )
         elif name == DEVICE_GITEA_MODULE:
@@ -1620,6 +1647,7 @@ class DesiredStateStore:
                 key,
                 local_name=local_name(made, machine_slug),
                 models=ai_models,
+                context_lengths=ai_lengths,
             )
         elif name == DEVICE_AYAKALEAF_MODULE:
             app_id = module_app_id(name, key)
@@ -1635,6 +1663,7 @@ class DesiredStateStore:
                 key,
                 local_name=local_name(made, machine_slug),
                 models=ai_models,
+                context_lengths=ai_lengths,
             )
         held = load_module_manifests() if manifests is None else manifests
         if guest_login_of(held, name) == DEVICE_GUEST_LOGIN_GUEST_ACCOUNT:
@@ -1650,6 +1679,7 @@ class DesiredStateStore:
         urls: "list | tuple" = (),
         is_hub_machine: bool = False,
         ai_models: "list | tuple" = (),
+        ai_lengths: "dict | None" = None,
         retry_marks: "dict | None" = None,
         wanted: "dict | None" = None,
         account_details: "dict | None" = None,
@@ -1682,6 +1712,8 @@ class DesiredStateStore:
                 agent's forward.
             ai_models: The names the gateway serves now; none sends the AI
                 tools setting as off.
+            ai_lengths: Each served name's ``{context_length, input_limit,
+                output_limit}``; None names none.
             retry_marks: Module name, or ``ai_tools``, to the mark the last
                 press on it after a failure left; each goes into its entry
                 as ``retry_mark``, the AI tools' only while they are on.
@@ -1711,6 +1743,7 @@ class DesiredStateStore:
             "machine_slug": machine_slug,
             "app_slug_of": slugs,
             "ai_models": tuple(ai_models),
+            "ai_lengths": dict(ai_lengths or {}),
             "releases": releases,
             "manifests": load_module_manifests(),
             "wanted": wanted,
@@ -1779,6 +1812,7 @@ class DesiredStateStore:
                 listen_port=(
                     gateway_port() if is_hub_machine and is_gateway_container else 0
                 ),
+                context_lengths=ai_lengths,
             ),
         }
         if marks.get(DEVICE_AI_TOOLS_NAME):

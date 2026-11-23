@@ -446,7 +446,15 @@ def test_siyuan_carries_its_code_its_key_the_gateways_address_and_its_models(
     store.set_want(DEVICE, "siyuan", "running")
 
     managed, _ = store.compose(
-        DEVICE, PLATFORM, machine_slug="argon", ai_models=["m1", "m2"]
+        DEVICE,
+        PLATFORM,
+        machine_slug="argon",
+        ai_models=["m1", "m2"],
+        ai_lengths={
+            "m1": {"context_length": 1050000, "input_limit": 922000},
+            "m2": {"context_length": 16384},
+            "m3": {"context_length": 8192},
+        },
     )
     own, _ = store.compose(DEVICE, PLATFORM, is_hub_machine=True, ai_models=["m1"])
 
@@ -461,6 +469,8 @@ def test_siyuan_carries_its_code_its_key_the_gateways_address_and_its_models(
     assert instance["local_name"] == "siyuan-ann.argon.localhost"
     assert config["gateway_url"] == "http://127.0.0.1:8317"
     assert config["models"] == ["m1", "m2"]
+    assert config["context_lengths"] == {"m1": 922000, "m2": 16384}
+    assert own["modules"]["siyuan"]["config"]["context_lengths"] == {}
     assert own["modules"]["siyuan"]["config"]["gateway_url"] == (
         "http://127.0.0.1:18317"
     )

@@ -5,9 +5,12 @@ least one model: its address the hub's forward to the machine's Ollama port,
 its models the names ``/api/tags`` returns (hub_components/ai.md, "Every
 machine's Ollama"). The table follows each machine by its reports, reads
 ``/api/tags`` through the forward on a thread of its own, and stores the
-list under the state root, where every render of the gateway reads it.
+list under the state root, where every render of the gateway reads it. On
+the same thread it reads ``/api/show`` for each model listed under a digest
+it has not read, and stores each machine's models with their lengths, which
+outlive the machine's provider while it is offline.
 
-Not pure: holds a thread, calls Ollama's API and writes the stored list.
+Not pure: holds a thread, calls Ollama's API and writes the stored lists.
 """
 
 import logging
@@ -21,6 +24,12 @@ from neutrino_hub.modules.cliproxyapi.ops import (
 from neutrino_hub.modules.devices.constants import (
     DEVICE_OLLAMA_GATEWAY_READ_INTERVAL_S,
 )
+from neutrino_hub.modules.devices.ollama_lengths import (
+    read_ollama_lengths,
+    shown_lengths,
+    tag_digests,
+    write_ollama_lengths,
+)
 from neutrino_hub.modules.devices.ollama_models import OllamaApiClient
 
 LOGGER = logging.getLogger(__name__)
@@ -33,16 +42,20 @@ class OllamaGatewayProviderTable:
         self,
         *,
         on_change,
+        on_lengths_change=None,
         client_class=OllamaApiClient,
         period_s: float = DEVICE_OLLAMA_GATEWAY_READ_INTERVAL_S,
     ):
         """
         Args:
             on_change: Called after the stored list changed.
+            on_lengths_change: Called after the stored models and lengths
+                changed; None tells nobody.
             client_class: Makes the client for an address.
             period_s: How often every followed machine is read again.
         """
         self._on_change = on_change
+        self._on_lengths_change = on_lengths_change
         self._client_class = client_class
         self._period_s = period_s
         self._lock = threading.Lock()
@@ -58,6 +71,9 @@ class OllamaGatewayProviderTable:
         # The providers served now, by device id. None until the stored list
         # is read.
         self._providers: "dict | None" = None
+        # Each machine's models with their lengths, by device id. None until
+        # the stored list is read.
+        self._lengths: "dict | None" = None
         # When the next periodic read is due, on the monotonic clock.
         self._next_tick_at = time.monotonic() + period_s
 
@@ -116,6 +132,19 @@ class OllamaGatewayProviderTable:
             self._pending.clear()
             self._next_tick_at = time.monotonic() + self._period_s
 
+    def forget_lengths(self, device_id: str) -> None:
+        """Take a machine's models out of the stored lengths: its Ollama uninstalled, or the machine removed.
+
+        Args:
+            device_id: The machine.
+        """
+        with self._lock:
+            lengths = dict(self._load_lengths())
+            if lengths.pop(device_id, None) is None:
+                return
+            self._lengths = lengths
+        self._store_lengths(lengths)
+
     def providers(self) -> list:
         """The providers served now.
 
@@ -164,27 +193,46 @@ class OllamaGatewayProviderTable:
             reads = set(self._pending) | (set(self._followed) if is_tick else set())
             self._pending.clear()
             asked = {key: self._followed[key] for key in reads if key in self._followed}
-        found = {key: self._models(address) for key, address in asked.items()}
+        found = {key: self._digests(address) for key, address in asked.items()}
         with self._lock:
-            for device_id, models in found.items():
+            known = dict(self._load_lengths())
+        read = {
+            key: self._read_lengths(asked[key], digests, known.get(key) or {})
+            for key, digests in found.items()
+            if digests is not None
+        }
+        with self._lock:
+            lengths = dict(self._load_lengths())
+            for device_id, digests in found.items():
                 address = asked[device_id]
                 if self._followed.get(device_id) != address:
                     continue
-                if models is None:
+                if digests is None:
                     held = providers.get(device_id)
                     if held is not None:
                         providers[device_id] = dict(held, address=address)
-                elif models:
+                    continue
+                if read[device_id]:
+                    lengths[device_id] = read[device_id]
+                else:
+                    lengths.pop(device_id, None)
+                if digests:
                     providers[device_id] = {
                         "device_id": device_id,
                         "address": address,
-                        "models": models,
+                        "models": sorted(digests),
                     }
                 else:
                     providers.pop(device_id, None)
-            if providers == self._load():
-                return False
+            is_lengths_changed = lengths != self._load_lengths()
+            if is_lengths_changed:
+                self._lengths = lengths
+            is_changed = providers != self._load()
             stored = [dict(providers[key]) for key in sorted(providers)]
+        if is_lengths_changed:
+            self._store_lengths(lengths)
+        if not is_changed:
+            return False
         write_ollama_providers(stored)
         with self._lock:
             self._providers = providers
@@ -220,17 +268,54 @@ class OllamaGatewayProviderTable:
             }
         return self._providers
 
-    def _models(self, address: str) -> "list | None":
-        """The names one machine's ``/api/tags`` lists, sorted; None when the read fails."""
+    def _load_lengths(self) -> dict:
+        """Each machine's models with their lengths, read from the stored list the first time.
+
+        Call with the lock held.
+        """
+        if self._lengths is None:
+            self._lengths = read_ollama_lengths()
+        return self._lengths
+
+    def _store_lengths(self, lengths: dict) -> None:
+        """Write the models with their lengths, and say they changed; a failed write is a line in the log."""
+        try:
+            write_ollama_lengths(lengths)
+        except OSError as error:
+            LOGGER.warning("the Ollama models' lengths were not stored: %s", error)
+        if self._on_lengths_change is not None:
+            self._on_lengths_change()
+
+    def _digests(self, address: str) -> "dict | None":
+        """The names one machine's ``/api/tags`` lists with their digests; None when the read fails."""
         try:
             tags = self._client_class(address).tags()
         except (ConnectionError, OSError, ValueError) as error:
             LOGGER.info("Ollama at %s was not read: %s", address, error)
             return None
-        names = set()
-        for model in tags.get("models") or []:
-            if isinstance(model, dict):
-                name = str(model.get("name", "") or model.get("model", ""))
-                if name:
-                    names.add(name)
-        return sorted(names)
+        return tag_digests(tags)
+
+    def _read_lengths(self, address: str, digests: dict, known: dict) -> dict:
+        """One machine's models with their lengths, ``/api/show`` read for each digest not read before.
+
+        A model whose read fails is kept with no lengths, and read again
+        at the next read of the machine.
+        """
+        models = {}
+        for name, digest in digests.items():
+            held = known.get(name)
+            if held is not None and held.get("digest") == digest and digest:
+                models[name] = dict(held)
+                continue
+            try:
+                shown = shown_lengths(self._client_class(address).show(name))
+            except (ConnectionError, KeyError, OSError, ValueError) as error:
+                LOGGER.info("Ollama at %s did not show %s: %s", address, name, error)
+                models[name] = {
+                    "digest": "",
+                    "trained_context_length": 0,
+                    "modelfile_context_length": 0,
+                }
+                continue
+            models[name] = {"digest": digest, **shown}
+        return models

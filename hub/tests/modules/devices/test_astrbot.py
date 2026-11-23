@@ -107,6 +107,7 @@ def test_the_state_carries_both_secrets_opened_the_cookie_and_the_local_name(sto
         "cookie_name": COOKIE_NAME,
         "local_name": "astrbot.argon.localhost",
         "model": "",
+        "context_length": 0,
     }
 
 
@@ -119,6 +120,25 @@ def test_the_state_carries_the_default_model_and_none_while_none_is_served(store
 
     assert served["modules"]["astrbot"]["config"]["model"] == "m1"
     assert none["modules"]["astrbot"]["config"]["model"] == ""
+
+
+def test_the_state_carries_the_default_model_s_one_number(store):
+    stored = astrbot.ensure_config(store, DEVICE)
+    store.set_want(DEVICE, "astrbot", "running")
+    lengths = {
+        "m1": {"context_length": 1000000, "input_limit": 983616},
+        "m2": {"context_length": 4096},
+    }
+
+    served, _ = store.compose(DEVICE, LINUX, ai_models=["m1", "m2"], ai_lengths=lengths)
+    none, _ = store.compose(DEVICE, LINUX, ai_models=[], ai_lengths=lengths)
+
+    assert served["modules"]["astrbot"]["config"]["context_length"] == 983616
+    assert none["modules"]["astrbot"]["config"]["context_length"] == 0
+    config = astrbot.agent_config(
+        stored, DEVICE, models=("m2", "m1"), context_lengths=lengths
+    )
+    assert (config["model"], config["context_length"]) == ("m2", 4096)
 
 
 def test_a_machine_with_astrbot_reads_the_gateway_s_models_until_it_goes(store):

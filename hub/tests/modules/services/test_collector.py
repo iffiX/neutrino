@@ -533,4 +533,20 @@ def test_the_ai_entry_carries_the_served_names_and_the_default_model():
         "protocol": "openai",
         "models": ["m1", "m2"],
         "model": "m2",
+        "context_lengths": {},
     }
+
+
+def test_the_ai_entry_carries_the_length_of_each_served_name():
+    m1 = {"context_length": 1050000, "input_limit": 922000, "output_limit": 128000}
+    entries = by_id(
+        collector(
+            is_ai_served=True,
+            ai_models=["m1", "m2"],
+            ai_model="m2",
+            is_ai_healthy=True,
+            ai_lengths={"m1": m1, "gone": {"context_length": 4096}},
+        ).render()
+    )
+
+    assert entries["ai"]["payload"]["context_lengths"] == {"m1": m1}

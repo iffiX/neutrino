@@ -58,6 +58,7 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_METHOD_AGENT,
     DEVICE_METHOD_CONTAINER,
     DEVICE_MODULE_CATALOG_PATH,
+    DEVICE_OLLAMA_MODULE,
     DEVICE_PODMAN_MACHINE_KEY,
     DEVICE_PODMAN_MODULE,
     DEVICE_VSCODE_MODULE,
@@ -681,10 +682,13 @@ def uninstall_module(
             {modules}`` while an installed module requires the module.
 
     Note:
-        A container module's gateway key is voided.
+        A container module's gateway key is voided, and Ollama's models
+        leave the context lengths' pools.
     """
     listed = _set_want(runtime, request, CHANNEL_MODULE_STATE_ABSENT)
     end_device_shares(runtime, request.device_id, request.module)
+    if request.module == DEVICE_OLLAMA_MODULE:
+        runtime.ollama_gateway.forget_lengths(request.device_id)
     return listed
 
 

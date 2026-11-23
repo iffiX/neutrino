@@ -18,6 +18,7 @@ the gateway's file, which names the default model.
 
 import secrets
 
+from neutrino_hub.modules.ai.context_lengths import one_numbers
 from neutrino_hub.modules.clients.ai_keys import (
     gateway_default_model,
     gateway_port,
@@ -94,7 +95,12 @@ def cookie_name(key: str) -> str:
 
 
 def agent_config(
-    stored: dict, key: str, *, local_name: str = "", models: "list | tuple" = ()
+    stored: dict,
+    key: str,
+    *,
+    local_name: str = "",
+    models: "list | tuple" = (),
+    context_lengths: "dict | None" = None,
 ) -> dict:
     """What the agent is sent for Hermes WebUI.
 
@@ -104,11 +110,15 @@ def agent_config(
         local_name: The app's local name, which the forwarder checks the
             ``Host`` against.
         models: The names the gateway serves now.
+        context_lengths: Each served name's ``{context_length, input_limit,
+            output_limit}``; None names none.
 
     Returns:
-        ``{secret, password, cookie_name, local_name, model}``, each secret
-        opened, empty when the file holds none or the vault cannot open it;
-        ``model`` the default model, empty while no name is served.
+        ``{secret, password, cookie_name, local_name, model,
+        context_lengths}``, each secret opened, empty when the file holds
+        none or the vault cannot open it; ``model`` the default model, empty
+        while no name is served, and ``context_lengths`` every served name's
+        one number.
     """
     config = {}
     for sealed in module_row(DEVICE_HERMES_WEBUI_MODULE).sealed_fields:
@@ -116,6 +126,7 @@ def agent_config(
     config["cookie_name"] = cookie_name(key)
     config["local_name"] = local_name
     config["model"] = gateway_default_model(models)
+    config["context_lengths"] = one_numbers(models, context_lengths)
     return config
 
 

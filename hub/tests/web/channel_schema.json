@@ -574,6 +574,11 @@
               "title": "Accounts",
               "type": "array"
             },
+            "context_lengths": {
+              "additionalProperties": true,
+              "title": "Context Lengths",
+              "type": "object"
+            },
             "cc_switch_version": {
               "default": "",
               "title": "Cc Switch Version",
@@ -846,6 +851,11 @@
           },
           "title": "Accounts",
           "type": "array"
+        },
+        "context_lengths": {
+          "additionalProperties": true,
+          "title": "Context Lengths",
+          "type": "object"
         },
         "cc_switch_version": {
           "default": "",

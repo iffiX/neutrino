@@ -82,6 +82,7 @@ class StubRuntime:
         self.ollama_gateway = StubLinkSampler()
         self.ollama_kept = StubLinkSampler()
         self.release_sampler = StubLinkSampler()
+        self.model_catalog = StubLinkSampler()
         self.traffic_history = StubLinkSampler()
         self.enrollment_sweeper = StubExitController()
         self.web_share_sweeper = StubExitController()
@@ -93,6 +94,12 @@ class StubRuntime:
         }
 
     def publish_ai_usage(self) -> None:
+        return None
+
+    def served_models_changed(self) -> None:
+        return None
+
+    def note_context_lengths(self) -> None:
         return None
 
 

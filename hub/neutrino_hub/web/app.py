@@ -11,6 +11,7 @@ websocket, or a real file falls through to ``index.html``.
 import logging
 import shutil
 import subprocess
+import threading
 
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
@@ -316,10 +317,10 @@ def _retire_update_job() -> None:
 def _start_samplers() -> None:
     """The process-wide background readers, started with the panel application.
 
-    Each watches something no write announces: what the gateway metered, what
-    the interfaces are doing, what each module's publisher released, the
-    models of each machine's Ollama, and, with the proxy, what every exit
-    node measures. Each publishes an event when its reading moves, so no page
+    Each watches something no write announces: what the gateway metered and
+    its model catalog, what the interfaces are doing, what each module's
+    publisher released, the models of each machine's Ollama, and, with the
+    proxy, what every exit node measures. Each publishes an event when its reading moves, so no page
     has to ask on a timer. The traffic history counts every interface's bytes
     beside them.
     """
@@ -329,8 +330,13 @@ def _start_samplers() -> None:
         _usage_collector = PanelUsageCollector(
             served_models=runtime.served_models,
             on_change=runtime.publish_ai_usage,
+            on_served_change=runtime.served_models_changed,
         )
         _usage_collector.start()
+    threading.Thread(
+        target=runtime.note_context_lengths, name="context_lengths", daemon=True
+    ).start()
+    runtime.model_catalog.start()
     runtime.link_sampler.start()
     runtime.address_sampler.start()
     runtime.ollama_gateway.start()

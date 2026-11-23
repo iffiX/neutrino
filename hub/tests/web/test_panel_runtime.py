@@ -678,3 +678,136 @@ def test_on_linux_an_engine_the_converge_did_not_record_rides_its_own_device(
     assert panel.overlay_networks()["netbird"] == ["100.64.0.5/16"]
     assert panel.interface_networks() == ["192.168.1.5/24"]
     assert SlowEnginePart.asked == 0
+
+
+# --- the context lengths: computed again, handed on where one changed ---
+
+
+class CountedCalls:
+    """A callable that counts its calls."""
+
+    def __init__(self):
+        self.count = 0
+
+    def __call__(self, *args, **kwargs):
+        self.count += 1
+
+
+def test_a_changed_length_hands_the_states_on_once_and_tells_the_ai_page(
+    monkeypatch,
+):
+    panel = object.__new__(PanelRuntime)
+    panel._context_lengths = None
+    panel._context_lock = threading.Lock()
+    computed = [{"m": {"context_length": 16384}}] * 2 + [
+        {"m": {"context_length": 8192}}
+    ]
+    monkeypatch.setattr(
+        panel, "context_lengths", lambda models=None: computed.pop(0), raising=False
+    )
+    handed = CountedCalls()
+    published = CountedCalls()
+    monkeypatch.setattr(panel, "hand_on_gateway_change", handed, raising=False)
+    monkeypatch.setattr(panel, "publish_ai_usage", published, raising=False)
+
+    panel.note_context_lengths()
+    panel.note_context_lengths()
+    assert (handed.count, published.count) == (0, 0)
+
+    panel.note_context_lengths()
+    assert (handed.count, published.count) == (1, 1)
+
+
+def test_a_gateway_change_offers_each_machine_its_state_and_composes_the_list_again(
+    monkeypatch,
+):
+    panel = object.__new__(PanelRuntime)
+    sessions = [
+        type("Session", (), {"offered_hash": "h0"})(),
+        type("Session", (), {"offered_hash": "h1"})(),
+    ]
+    panel.agent_sessions = type(
+        "Sessions", (), {"sessions": lambda self: list(sessions)}
+    )()
+    refreshes = CountedCalls()
+    panel.published_services = type(
+        "Published", (), {"schedule_refresh": lambda self: refreshes()}
+    )()
+    offered: list = []
+    monkeypatch.setattr(
+        runtime_module.channel_state,
+        "offer_agent_state",
+        lambda runtime, session, held: offered.append(held),
+    )
+
+    panel.hand_on_gateway_change()
+
+    assert offered == ["h0", "h1"]
+    assert refreshes.count == 1
+
+
+def test_a_write_of_a_file_the_lengths_come_from_computes_them_again(monkeypatch):
+    panel = object.__new__(PanelRuntime)
+    panel.events = type("Events", (), {"publish": lambda self, *args: None})()
+    noted = threading.Event()
+    monkeypatch.setattr(panel, "note_context_lengths", noted.set, raising=False)
+
+    panel._publish_config_write("devices/dev-1/siyuan.json")
+    assert not noted.wait(0.2)
+
+    panel._publish_config_write("devices/dev-1/ollama.json")
+    assert noted.wait(5)
+
+
+def test_the_lengths_come_from_the_stored_files_an_offline_machine_among_them(
+    monkeypatch, tmp_path
+):
+    """Two machines hold qwen, the second offline with a smaller setting, and
+    a stored provider aliases a table name; the second machine's
+    uninstall takes it out of the pool."""
+    from neutrino_hub.modules.ai.registry import AiProviderRegistry
+    from neutrino_hub.modules.devices.ollama_lengths import write_ollama_lengths
+
+    monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", tmp_path)
+    monkeypatch.setattr(desired_state_module, "UTILS_CONFIG_DIR", tmp_path)
+    unlock_vault(monkeypatch, tmp_path)
+    store = DesiredStateStore()
+    for key, setting in (("one", 65536), ("two", 16384)):
+        store.set_want(key, "ollama", "running")
+        store.write(key, "ollama", {"context_length": setting})
+    shown = {
+        "digest": "d",
+        "trained_context_length": 32768,
+        "modelfile_context_length": 0,
+    }
+    write_ollama_lengths({"one": {"qwen": dict(shown)}, "two": {"qwen": dict(shown)}})
+    cliproxyapi_ops.write_ollama_providers(
+        [{"device_id": "one", "address": "127.0.0.1:1", "models": ["qwen"]}]
+    )
+    AiProviderRegistry().add(
+        name="lab",
+        kind="custom",
+        base_url="http://127.0.0.1:11434/v1",
+        secret_id="token-1",
+        models=[{"name": "gpt-5.4-mini", "alias": "lab-mini"}],
+    )
+    catalog = tmp_path / "state" / "cliproxyapi" / "model_catalog.json"
+    catalog.write_text(json.dumps({"channels": {}, "accounts": []}))
+    panel = object.__new__(PanelRuntime)
+    panel.desired_states = store
+    monkeypatch.setattr(
+        panel, "device_names", lambda: {"one": "One", "two": "Two"}, raising=False
+    )
+
+    assert panel.context_lengths(["lab-mini", "qwen"]) == {
+        "lab-mini": {
+            "context_length": 400000,
+            "input_limit": 272000,
+            "output_limit": 128000,
+        },
+        "qwen": {"context_length": 16384, "input_limit": 0, "output_limit": 0},
+    }
+
+    store.set_want("two", "ollama", "absent")
+
+    assert panel.context_lengths(["qwen"])["qwen"]["context_length"] == 32768

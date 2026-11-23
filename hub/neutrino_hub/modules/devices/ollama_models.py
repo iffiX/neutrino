@@ -2,7 +2,7 @@
 
 The hub reaches the API through a forward of its transport on its own
 loopback (``hub_forwards.py``) with a plain HTTP client: ``/api/tags`` and
-``/api/ps`` list, ``/api/delete`` removes, ``/api/generate`` with
+``/api/ps`` list, ``/api/show`` reads a model's file, ``/api/delete`` removes, ``/api/generate`` with
 ``keep_alive`` -1 loads and 0 unloads, and ``/api/pull`` streams a pull's progress as
 JSON lines. A pull is a background task of the hub's: one at a time per
 machine, in the order asked, each further pull waiting behind the running
@@ -158,6 +158,18 @@ class OllamaApiClient:
             ConnectionError: When the API does not answer.
         """
         return self._call("GET", "/api/ps")
+
+    def show(self, name: str) -> dict:
+        """``/api/show`` for one model: its parameters and what its file holds.
+
+        Args:
+            name: The model.
+
+        Raises:
+            KeyError: When the machine has no such model.
+            ConnectionError: When the API does not answer.
+        """
+        return self._call("POST", "/api/show", {"model": name}, missing=name)
 
     def delete(self, name: str) -> None:
         """``/api/delete`` for one model.

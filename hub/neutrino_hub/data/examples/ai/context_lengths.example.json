@@ -1,0 +1,4 @@
+{
+  "_comment": "The context lengths a person set on the AI page's Context length panel, by the name the gateway serves: a whole number of tokens from 4096 to 10000000, which replaces the name's default window. A name absent here has its default, from the hub's table of known models, the gateway's catalog, or 200000. A length stays while its name is not served. The list ships empty; the panel fills it.",
+  "lengths": {}
+}

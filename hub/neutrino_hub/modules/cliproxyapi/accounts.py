@@ -18,10 +18,12 @@ import httpx
 from neutrino_hub.exceptions import AiAccountRefusedError
 from neutrino_hub.modules.cliproxyapi.constants import (
     CLIPROXYAPI_ACCOUNT_TIMEOUT_S,
+    CLIPROXYAPI_AUTH_FILE_MODELS_PATH,
     CLIPROXYAPI_AUTH_FILES_PATH,
     CLIPROXYAPI_AUTH_STATUS_PATH,
     CLIPROXYAPI_AUTH_URL_PATH,
     CLIPROXYAPI_LOGIN_KINDS,
+    CLIPROXYAPI_MODEL_DEFINITIONS_PATH,
     CLIPROXYAPI_OAUTH_CALLBACK_PATH,
     CLIPROXYAPI_OAUTH_SESSION_PATH,
 )
@@ -145,6 +147,61 @@ class CliproxyApiAccountClient:
         """
         payload = self._call("GET", CLIPROXYAPI_AUTH_FILES_PATH)
         return [_account(entry) for entry in payload.get("files") or []]
+
+    def model_definitions(self, channel: str) -> list:
+        """One channel's entries in the gateway's model catalog.
+
+        Args:
+            channel: ``claude``, ``codex``, ``gemini``, ``antigravity``,
+                ``kimi`` or ``xai``.
+
+        Returns:
+            The catalog's entries, each as the gateway keeps it.
+
+        Raises:
+            AiAccountRefusedError: ``gateway_unreachable`` if the gateway
+                does not answer, or answers with no list of models.
+        """
+        payload = self._call(
+            "GET", CLIPROXYAPI_MODEL_DEFINITIONS_PATH.format(channel=channel)
+        )
+        models = payload.get("models")
+        if not isinstance(models, list):
+            raise AiAccountRefusedError(
+                "gateway_unreachable", reason=f"no models for {channel}"
+            )
+        return [entry for entry in models if isinstance(entry, dict)]
+
+    def account_models(self, name: str) -> list:
+        """The names the gateway serves through one account.
+
+        Args:
+            name: The account's token file.
+
+        Returns:
+            The names, as the gateway registers them for the account.
+
+        Raises:
+            AiAccountRefusedError: ``unknown_account`` when the gateway does
+                not have it, ``gateway_unreachable`` when it does not answer.
+        """
+        payload = self._call(
+            "GET",
+            CLIPROXYAPI_AUTH_FILE_MODELS_PATH,
+            params={"name": name},
+            missing_code="unknown_account",
+            missing_params={"name": name},
+        )
+        names = []
+        for entry in payload.get("models") or []:
+            found = (
+                entry.get("id") or entry.get("name")
+                if isinstance(entry, dict)
+                else entry
+            )
+            if isinstance(found, str) and found:
+                names.append(found)
+        return names
 
     def delete_account(self, name: str) -> None:
         """Delete one account's token file; whatever it served stops now.

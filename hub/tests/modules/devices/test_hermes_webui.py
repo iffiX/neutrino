@@ -82,6 +82,27 @@ def test_the_state_carries_both_secrets_opened_and_the_local_name(store):
         "cookie_name": "hermes_session_dev-1",
         "local_name": "hermes-webui.argon.localhost",
         "model": "",
+        "context_lengths": {},
+    }
+
+
+def test_the_state_carries_every_served_name_s_one_number(store):
+    stored = hermes_webui.ensure_config(store, DEVICE)
+    store.set_want(DEVICE, "hermes_webui", "running")
+
+    served, _ = store.compose(
+        DEVICE,
+        LINUX,
+        ai_models=["m1", "m2"],
+        ai_lengths={
+            "m1": {"context_length": 1050000, "input_limit": 922000},
+            "m2": {"context_length": 32768},
+        },
+    )
+
+    assert served["modules"]["hermes_webui"]["config"]["context_lengths"] == {
+        "m1": 922000,
+        "m2": 32768,
     }
 
 
@@ -131,6 +152,7 @@ def test_a_file_with_nothing_sealed_sends_empty_secrets():
         "cookie_name": "hermes_session_dev-1",
         "local_name": "",
         "model": "",
+        "context_lengths": {},
     }
 
 

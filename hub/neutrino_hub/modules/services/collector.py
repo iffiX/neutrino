@@ -171,6 +171,7 @@ class ServiceListCollector:
         device_ids_by_address: "dict | None" = None,
         device_names: "dict | None" = None,
         ai_model: str = "",
+        ai_lengths: "dict | None" = None,
     ):
         """
         Args:
@@ -213,12 +214,16 @@ class ServiceListCollector:
                 a declared app at that address belongs to.
             device_names: Device id to what the hub calls the machine.
             ai_model: The default model, which the ``ai`` entry carries.
+            ai_lengths: Each served name's ``{context_length, input_limit,
+                output_limit}``, which the ``ai`` entry carries for each of
+                ``ai_models``; None names none.
         """
         self._hub_host = hub_host
         self._is_ai_served = is_ai_served
         self._ai_port = ai_port
         self._ai_models = ai_models
         self._ai_model = ai_model
+        self._ai_lengths = dict(ai_lengths or {})
         self._is_ai_healthy = is_ai_healthy
         self._device_modules = list(device_modules)
         self._declared_apps = declared_apps
@@ -572,6 +577,11 @@ class ServiceListCollector:
                     "protocol": SERVICES_AI_PROTOCOL,
                     "models": list(self._ai_models),
                     "model": self._ai_model,
+                    "context_lengths": {
+                        name: dict(self._ai_lengths[name])
+                        for name in self._ai_models
+                        if name in self._ai_lengths
+                    },
                 },
                 is_healthy=self._is_ai_healthy,
                 description=SERVICES_AI_DESCRIPTION,

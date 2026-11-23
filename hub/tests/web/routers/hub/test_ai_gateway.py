@@ -186,44 +186,31 @@ def test_a_locked_vault_refuses_rather_than_serving_a_blank_key(
 
 
 class DefaultModelRuntime(KeysRuntime):
-    """The keys' runtime, one machine online and the published list counted."""
+    """The keys' runtime, its hand-ons of a gateway change counted."""
 
-    refreshes: list = []
+    handed: list = []
 
     def __init__(self):
         super().__init__()
         self.served_models = None
-        self.agent_sessions = type(
-            "Sessions",
-            (),
-            {"sessions": lambda self: [type("Session", (), {"offered_hash": "h0"})()]},
-        )()
-        self.published_services = type(
-            "Published",
-            (),
-            {"schedule_refresh": lambda self: DefaultModelRuntime.refreshes.append(1)},
-        )()
+
+    def hand_on_gateway_change(self) -> None:
+        DefaultModelRuntime.handed.append(1)
 
 
 @pytest.fixture
 def model_client(keys_client, monkeypatch):
     """The gateway routes with the gateway serving m1 and m2, its applies and
     the states offered counted."""
-    DefaultModelRuntime.refreshes = []
+    DefaultModelRuntime.handed = []
     applied: list = []
-    offered: list = []
     keys_client.app.dependency_overrides[get_runtime] = DefaultModelRuntime
     monkeypatch.setattr(
         cliproxyapi_router, "gateway_models", lambda served: ["m1", "m2"]
     )
     monkeypatch.setattr(cliproxyapi_router, "_apply_quietly", lambda: applied.append(1))
-    monkeypatch.setattr(
-        cliproxyapi_router.channel_state,
-        "offer_agent_state",
-        lambda runtime, session, held: offered.append(held),
-    )
     keys_client.applied = applied
-    keys_client.offered = offered
+    keys_client.handed = DefaultModelRuntime.handed
     return keys_client
 
 
@@ -240,8 +227,7 @@ def test_a_default_model_is_saved_and_handed_on_with_no_gateway_apply(
     assert _stored(tmp_path)["default_model"] == "m2"
     assert model_client.get("/api/hub/ai/gateway").json()["default_model"] == "m2"
     assert model_client.applied == []
-    assert model_client.offered == ["h0"]
-    assert DefaultModelRuntime.refreshes == [1]
+    assert model_client.handed == [1]
 
 
 def test_a_model_the_gateway_does_not_serve_is_refused_and_nothing_is_written(
@@ -257,20 +243,20 @@ def test_a_model_the_gateway_does_not_serve_is_refused_and_nothing_is_written(
         "params": {"model": "m9"},
     }
     assert not (tmp_path / CONFIG_RELATIVE).exists()
-    assert model_client.offered == []
+    assert model_client.handed == []
 
 
 def test_a_port_change_applies_the_gateway_and_keeps_the_default_model(
     model_client, tmp_path
 ):
     model_client.post("/api/hub/ai/gateway/set", json={"default_model": "m2"})
-    model_client.offered.clear()
+    model_client.handed.clear()
 
     response = model_client.post("/api/hub/ai/gateway/set", json={"listen_port": 9317})
 
     assert response.status_code == 200
     assert model_client.applied == [1]
-    assert model_client.offered == []
+    assert model_client.handed == []
     assert _stored(tmp_path)["listen_port"] == 9317
     assert _stored(tmp_path)["default_model"] == "m2"
 
@@ -443,12 +429,25 @@ def accounts_gateway(monkeypatch, tmp_path):
     return stub
 
 
+class AccountsRuntime:
+    """Only what an account's change reaches for: the catalog reader, its wakes counted."""
+
+    wakes: list = []
+
+    def __init__(self):
+        self.model_catalog = type(
+            "Catalog", (), {"wake": lambda self: AccountsRuntime.wakes.append(1)}
+        )()
+
+
 @pytest.fixture
 def accounts_client(accounts_gateway):
     del accounts_gateway
+    AccountsRuntime.wakes = []
     app = FastAPI()
     app.include_router(cliproxyapi_router.router)
     app.dependency_overrides[require_session] = lambda: None
+    app.dependency_overrides[get_runtime] = AccountsRuntime
     with TestClient(app) as test_client:
         yield test_client
 
@@ -492,6 +491,7 @@ def test_deleting_an_account_signs_it_out(accounts_client, accounts_gateway):
     assert answer.status_code == 200
     assert answer.json()["accounts"] == []
     assert accounts_gateway.files == []
+    assert AccountsRuntime.wakes == [1]
 
 
 def test_deleting_an_account_the_gateway_lacks_is_404(accounts_client):
@@ -543,8 +543,10 @@ def test_polling_reports_pending_then_complete(accounts_client, accounts_gateway
     accounts_gateway.login_status = [{"status": "wait"}, {"status": "ok"}]
     first = accounts_client.get(LOGIN_PATH, params={"state": state}).json()
     assert first["status"] == "pending"
+    assert AccountsRuntime.wakes == []
     second = accounts_client.get(LOGIN_PATH, params={"state": state}).json()
     assert second["status"] == "complete"
+    assert AccountsRuntime.wakes == [1]
 
 
 def test_submitting_the_code_reports_the_flow_state(accounts_client, accounts_gateway):

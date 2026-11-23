@@ -1,0 +1,378 @@
+{
+  "_comment": "The context lengths the vendors state for the models the gateway can serve, read from the vendors' pages on 2026-11-22: the window, the longest prompt where it is stated apart from it, and the longest answer, 0 where none is named. account holds the numbers through a login where they differ. These rows are exactly the table of skills/core-code-author/design/hub_components/ai.md, \"The table of known models\", and change with it in one hub release.",
+  "models": [
+    {
+      "names": [
+        "claude-fable-5-2",
+        "claude-fable-5-1",
+        "claude-fable-5",
+        "claude-opus-5-5",
+        "claude-opus-5",
+        "claude-opus-4-8",
+        "claude-opus-4-7",
+        "claude-sonnet-5-5",
+        "claude-sonnet-5",
+        "claude-haiku-5-5"
+      ],
+      "context_length": 1000000,
+      "input_limit": 0,
+      "output_limit": 128000
+    },
+    {
+      "names": [
+        "claude-opus-4-6",
+        "claude-sonnet-4-6"
+      ],
+      "context_length": 1000000,
+      "input_limit": 0,
+      "output_limit": 128000,
+      "account": {
+        "context_length": 200000,
+        "input_limit": 0,
+        "output_limit": 64000
+      }
+    },
+    {
+      "names": [
+        "claude-opus-4-6-thinking",
+        "claude-opus-5-5-high",
+        "claude-sonnet-5-5-high"
+      ],
+      "context_length": 200000,
+      "input_limit": 0,
+      "output_limit": 64000
+    },
+    {
+      "names": [
+        "claude-opus-4-5-20251101",
+        "claude-sonnet-4-5-20250929",
+        "claude-haiku-4-5-20251001",
+        "claude-sonnet-4-20250514"
+      ],
+      "context_length": 200000,
+      "input_limit": 0,
+      "output_limit": 64000
+    },
+    {
+      "names": [
+        "claude-opus-4-1-20250805",
+        "claude-opus-4-20250514"
+      ],
+      "context_length": 200000,
+      "input_limit": 0,
+      "output_limit": 32000
+    },
+    {
+      "names": [
+        "gpt-6.2-astra"
+      ],
+      "context_length": 1050000,
+      "input_limit": 922000,
+      "output_limit": 128000,
+      "account": {
+        "context_length": 272000,
+        "input_limit": 0,
+        "output_limit": 128000
+      }
+    },
+    {
+      "names": [
+        "gpt-6.2-sol",
+        "gpt-6.1-sol"
+      ],
+      "context_length": 1050000,
+      "input_limit": 922000,
+      "output_limit": 128000,
+      "account": {
+        "context_length": 500000,
+        "input_limit": 0,
+        "output_limit": 128000
+      }
+    },
+    {
+      "names": [
+        "gpt-6.1-terra"
+      ],
+      "context_length": 500000,
+      "input_limit": 0,
+      "output_limit": 128000
+    },
+    {
+      "names": [
+        "gpt-6-astra",
+        "gpt-6-sol",
+        "gpt-6-luna",
+        "gpt-6-chat-thinking",
+        "gpt-5.6-sol",
+        "gpt-5.6-terra",
+        "gpt-5.6-luna",
+        "codex-auto-review"
+      ],
+      "context_length": 272000,
+      "input_limit": 0,
+      "output_limit": 128000
+    },
+    {
+      "names": [
+        "gpt-5.5",
+        "gpt-5.4"
+      ],
+      "context_length": 1050000,
+      "input_limit": 922000,
+      "output_limit": 128000
+    },
+    {
+      "names": [
+        "gpt-5.4-mini"
+      ],
+      "context_length": 400000,
+      "input_limit": 272000,
+      "output_limit": 128000
+    },
+    {
+      "names": [
+        "gemini-4-neon-xhigh"
+      ],
+      "context_length": 512000,
+      "input_limit": 0,
+      "output_limit": 65536
+    },
+    {
+      "names": [
+        "gemini-4-carbon-high",
+        "gemini-4-argon-high",
+        "gemini-4-hydrogen-xhigh",
+        "gemini-4-carbon",
+        "gemini-4-neon",
+        "gemini-4-hydrogen",
+        "gemini-4-argon",
+        "gemini-3.8-flash-high",
+        "gemini-3.8-flash-tiered",
+        "gemini-3.8-flash",
+        "gemini-3.6-flash",
+        "gemini-3.5-flash-lite",
+        "gemini-3.1-flash-lite",
+        "gemini-3.1-pro-preview",
+        "gemini-3-flash-preview",
+        "gemini-3-flash",
+        "gemini-2.5-pro",
+        "gemini-2.5-flash"
+      ],
+      "context_length": 1048576,
+      "input_limit": 0,
+      "output_limit": 65536
+    },
+    {
+      "names": [
+        "gpt-oss-120b-medium"
+      ],
+      "context_length": 114000,
+      "input_limit": 0,
+      "output_limit": 32768
+    },
+    {
+      "names": [
+        "kimi-k3.1-pro",
+        "kimi-k3"
+      ],
+      "context_length": 1048576,
+      "input_limit": 0,
+      "output_limit": 131072,
+      "account": {
+        "context_length": 262144,
+        "input_limit": 0,
+        "output_limit": 65536
+      }
+    },
+    {
+      "names": [
+        "kimi-k3-256k",
+        "kimi-k2.7-code",
+        "kimi-k2.7-code-highspeed",
+        "kimi-k2.6"
+      ],
+      "context_length": 262144,
+      "input_limit": 0,
+      "output_limit": 65536
+    },
+    {
+      "names": [
+        "kimi-k3.1-pro-highspeed",
+        "kimi-k2.8",
+        "kimi-k2.8-code"
+      ],
+      "context_length": 1048576,
+      "input_limit": 0,
+      "output_limit": 65536
+    },
+    {
+      "names": [
+        "grok-4.7",
+        "grok-4.6",
+        "grok-4.5",
+        "grok-build-0.1"
+      ],
+      "context_length": 500000,
+      "input_limit": 0,
+      "output_limit": 65536,
+      "account": {
+        "context_length": 256000,
+        "input_limit": 0,
+        "output_limit": 65536
+      }
+    },
+    {
+      "names": [
+        "grok-4.7-build-fast"
+      ],
+      "context_length": 256000,
+      "input_limit": 0,
+      "output_limit": 65536
+    },
+    {
+      "names": [
+        "grok-4.3",
+        "grok-4.20-0309-reasoning",
+        "grok-4.20-0309-non-reasoning",
+        "grok-4.20-multi-agent-0309"
+      ],
+      "context_length": 1000000,
+      "input_limit": 0,
+      "output_limit": 65536
+    },
+    {
+      "names": [
+        "grok-composer-2.5-fast"
+      ],
+      "context_length": 200000,
+      "input_limit": 0,
+      "output_limit": 32768
+    },
+    {
+      "names": [
+        "deepseek-flash",
+        "deepseek-v4-flash",
+        "deepseek-v4-pro"
+      ],
+      "context_length": 1000000,
+      "input_limit": 0,
+      "output_limit": 65536
+    },
+    {
+      "names": [
+        "qwen4-max",
+        "qwen3.7-plus",
+        "qwen3.8-flash"
+      ],
+      "context_length": 1000000,
+      "input_limit": 983616,
+      "output_limit": 131072
+    },
+    {
+      "names": [
+        "qwen3-coder-flash"
+      ],
+      "context_length": 1000000,
+      "input_limit": 997952,
+      "output_limit": 65536
+    },
+    {
+      "names": [
+        "qwen3.6-35b-a3b"
+      ],
+      "context_length": 262144,
+      "input_limit": 258048,
+      "output_limit": 65536
+    },
+    {
+      "names": [
+        "glm-5.3",
+        "glm-5.3-flash",
+        "glm-5.3-flashx",
+        "glm-5.2"
+      ],
+      "context_length": 1000000,
+      "input_limit": 0,
+      "output_limit": 131072
+    },
+    {
+      "names": [
+        "glm-5.1",
+        "glm-5",
+        "glm-4.7"
+      ],
+      "context_length": 200000,
+      "input_limit": 0,
+      "output_limit": 131072
+    },
+    {
+      "names": [
+        "MiniMax-M3.1-Flash",
+        "MiniMax-M3"
+      ],
+      "context_length": 1000000,
+      "input_limit": 0,
+      "output_limit": 131072
+    },
+    {
+      "names": [
+        "doubao-seed-evolving",
+        "doubao-seed-2-1-pro-260915",
+        "doubao-seed-2-1-lite-260915"
+      ],
+      "context_length": 1024000,
+      "input_limit": 0,
+      "output_limit": 65536
+    },
+    {
+      "names": [
+        "ark-code-latest",
+        "doubao-seed-2-1-turbo-260628"
+      ],
+      "context_length": 256000,
+      "input_limit": 0,
+      "output_limit": 65536
+    },
+    {
+      "names": [
+        "doubao-seed-2-0-lite-260428",
+        "doubao-seed-2-0-mini-260428"
+      ],
+      "context_length": 256000,
+      "input_limit": 224000,
+      "output_limit": 65536
+    },
+    {
+      "names": [
+        "mistral-large-4",
+        "mistral-large-4-0",
+        "mistral-large-latest"
+      ],
+      "context_length": 1000000,
+      "input_limit": 0,
+      "output_limit": 32000
+    },
+    {
+      "names": [
+        "mistral-small-2603",
+        "ministral-14b-2512",
+        "mistral-medium-3-5",
+        "devstral-2512"
+      ],
+      "context_length": 256000,
+      "input_limit": 0,
+      "output_limit": 32000
+    },
+    {
+      "names": [
+        "codestral-2508",
+        "codestral-latest",
+        "magistral-medium-2509",
+        "magistral-medium-latest"
+      ],
+      "context_length": 128000,
+      "input_limit": 0,
+      "output_limit": 32000
+    }
+  ]
+}

@@ -6,10 +6,12 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
 class FakeOllama:
-    """Ollama's API over real HTTP: tags, ps, delete, generate and a streamed pull.
+    """Ollama's API over real HTTP: tags, ps, show, delete, generate and a streamed pull.
 
     Attributes:
         models: The pulled models, as ``/api/tags`` lists them.
+        shown: What ``/api/show`` answers, by name; a name missing here is
+            404.
         loaded: The models in memory, as ``/api/ps`` lists them.
         requests: Each request taken, ``(method, path, body)``.
         pull_lines: The lines a pull streams, by name; a name missing here
@@ -21,6 +23,7 @@ class FakeOllama:
 
     def __init__(self):
         self.models = []
+        self.shown = {}
         self.loaded = []
         self.requests = []
         self.pull_lines = {}
@@ -74,6 +77,13 @@ class FakeOllama:
             def do_POST(self):
                 body = self._body()
                 fake.requests.append(("POST", self.path, body))
+                if self.path == "/api/show":
+                    name = body.get("model")
+                    if name not in fake.shown:
+                        self._answer(404, {"error": f"model '{name}' not found"})
+                        return
+                    self._answer(200, fake.shown[name])
+                    return
                 if self.path == "/api/generate":
                     name = body.get("model")
                     if name not in [model["name"] for model in fake.models]:

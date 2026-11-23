@@ -51,6 +51,12 @@ CLIPROXYAPI_OAUTH_CALLBACK_PATH = f"{CLIPROXYAPI_MANAGEMENT_PREFIX}/oauth-callba
 CLIPROXYAPI_AUTH_STATUS_PATH = f"{CLIPROXYAPI_MANAGEMENT_PREFIX}/get-auth-status"
 CLIPROXYAPI_OAUTH_SESSION_PATH = f"{CLIPROXYAPI_MANAGEMENT_PREFIX}/oauth-session"
 CLIPROXYAPI_AUTH_URL_PATH = CLIPROXYAPI_MANAGEMENT_PREFIX + "/{kind}-auth-url"
+# The catalog: each channel's model definitions, and the names the gateway
+# registers for one account's token file.
+CLIPROXYAPI_MODEL_DEFINITIONS_PATH = (
+    CLIPROXYAPI_MANAGEMENT_PREFIX + "/model-definitions/{channel}"
+)
+CLIPROXYAPI_AUTH_FILE_MODELS_PATH = f"{CLIPROXYAPI_MANAGEMENT_PREFIX}/auth-files/models"
 CLIPROXYAPI_ACCOUNT_TIMEOUT_S = 15
 # The flows 7.2.146 starts, each named after the route that starts it. Gemini
 # is absent because the binary carries no Gemini OAuth flow: a Google model is
@@ -78,6 +84,15 @@ CLIPROXYAPI_SERVED_MODELS_RELATIVE = "cliproxyapi/served_models.json"
 # The providers the hub generates from each machine's Ollama, beside the
 # usage store. Every render of the gateway reads it.
 CLIPROXYAPI_OLLAMA_PROVIDERS_RELATIVE = "cliproxyapi/ollama_providers.json"
+# The last catalog read, and each machine's Ollama models with their
+# lengths, beside the usage store. Every context length computation reads
+# both.
+CLIPROXYAPI_MODEL_CATALOG_RELATIVE = "cliproxyapi/model_catalog.json"
+CLIPROXYAPI_OLLAMA_LENGTHS_RELATIVE = "cliproxyapi/ollama_lengths.json"
+# How often the catalog is read again, as the gateway downloads a new one.
+CLIPROXYAPI_CATALOG_INTERVAL_S = 3 * 3600
+# How soon a catalog read that failed at the panel's start is tried again.
+CLIPROXYAPI_CATALOG_RETRY_S = 10
 # A generated provider's name before its device id, and the path of
 # Ollama's OpenAI-compatible API after its forward's address.
 CLIPROXYAPI_OLLAMA_PROVIDER_PREFIX = "ollama-"
