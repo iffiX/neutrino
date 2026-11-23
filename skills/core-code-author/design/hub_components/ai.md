@@ -199,16 +199,17 @@ AstrBot's `model`; and SiYuan's `model`.
 A model's context length is the most tokens one request to it can hold: the
 prompt, the conversation and the answer. The hub computes a length for every
 name of the served list and writes it into the AI tools, on a managed machine
-and on a client alike, so a tool compacts a conversation before it outgrows
-the model. A tool given no length assumes one: OpenCode 200000 tokens for a
+and on a client alike, and into the apps that use the gateway, so a tool
+compacts a conversation before it outgrows the model. A tool given no length assumes one: OpenCode 200000 tokens for a
 name it does not know, and Claude Code from 2.1.323 1000000. A request past
 the real window fails at the vendor and the tool sends it again, and Ollama
 cuts the prompt with no error ([../agent/modules/ollama.md](../agent/modules/ollama.md),
 "The settings are the hub's").
 
 A name a generated Ollama provider lists is an Ollama name ("Every machine's
-Ollama"). Every other name of the served list is a cloud name, served by
-accounts and stored providers.
+Ollama"), whether or not an account or a stored provider serves it too.
+Every other name of the served list is a cloud name, served by accounts and
+stored providers.
 
 ### A cloud name's length
 
@@ -301,20 +302,29 @@ sets where the largest is a batch or a long-answer mode.
 
 | Rule | Reason |
 | --- | --- |
-| On one machine an Ollama name's length is the smaller of the machine's `context_length` setting ([../agent/modules/ollama.md](../agent/modules/ollama.md), "The settings are the hub's") and the model's trained length. The name's `context_length` is the smallest over the machines whose generated provider lists it now, and its `input_limit` and `output_limit` are 0. | Ollama loads a model at the setting, or at the trained length when that is shorter. The gateway rotates a name between every machine that serves it, so a request can reach any of them. Ollama answers until the window is full and states no longest answer. |
-| The trained length is the `<architecture>.context_length` of `model_info` in the answer of `POST /api/show {model}`, `<architecture>` being its `general.architecture`. The hub reads it through the machine's forward, on the thread of the `/api/tags` reads, for each name `/api/tags` lists under a digest the hub has not read for it. | `/api/show` reads the model's file, and a name keeps its trained length until a pull of a new version changes its digest. |
-| The hub stores each machine's trained lengths beside its models in `cliproxyapi/ollama_providers.json`, `trained: {<model>: {digest, context_length}}`, and drops a model's entry when `/api/tags` no longer lists it. | A restarted panel computes the same lengths before it reads any machine again. |
-| A model whose trained length the hub has not read, or whose `model_info` names none, counts with the machine's setting alone. | The setting is the longest Ollama loads a model at. |
-| A machine that leaves the pool, offline, stopped or without the model, leaves the name's length to the machines that still serve it, and the length can rise. It falls again when the machine is back. | A request reaches only a machine that serves the name now. |
+| On one machine an Ollama name's length is the smaller of the model's setting and its trained length. The setting is the `num_ctx` its Modelfile sets, and the machine's `context_length` setting ([../agent/modules/ollama.md](../agent/modules/ollama.md), "The settings are the hub's") while the Modelfile sets none. | Ollama starts a model with the server's length, then the Modelfile's own parameters, then the request's, each one replacing the one before (`server/routes.go` of 0.40.16), and lowers a length above the trained one to it. A request through the gateway names no length. |
+| The name's pool is every machine whose Ollama holds the model while its Ollama module is installed, online or not: from the first `/api/tags` read that lists the model until a read no longer lists it, an **Uninstall** of the module, or the machine's removal from the hub. The name's `context_length` is the smallest over the pool, and its `input_limit` and `output_limit` are 0. | The gateway rotates a name between every machine that serves it, so a request can reach any of them. A machine that sleeps comes back into the rotation within seconds of its report, before the tools could be switched again, and a pool of the machines online now raises the length while a small machine sleeps and switches every account twice for each sleep. Ollama answers until the window is full and states no longest answer. |
+| A name an account or a stored provider also serves is an Ollama row on the panel, with no field. Each of its three numbers is the smaller of the Ollama pool's and the cloud default's ("A cloud name's length"), 0 counting as none, and a length a person set for the name does not apply. | A request for the name goes to the cloud sources or to the machines, since they are one pool. A number set on the panel can exceed what the machines load the model at. |
+| The hub reads `POST /api/show {model}` through the machine's forward, on the thread of the `/api/tags` reads, for each name `/api/tags` lists under a digest the hub has not read for it. The trained length is the `<architecture>.context_length` of `model_info`, `<architecture>` being its `general.architecture`, and the Modelfile's length is the `num_ctx` line of `parameters`. | `/api/show` reads the model's file, and both numbers stay until a pull of a new version changes the digest. |
+| The hub stores the read in `cliproxyapi/ollama_lengths.json` under the state root, `{machines: [{device_id, models: {<model>: {digest, trained_context_length, modelfile_context_length}}}]}`, each number 0 where the answer names none, for every machine whose Ollama module is installed, offline machines among them. | The pool counts machines that are offline, which the generated providers no longer list. A restarted panel computes the same lengths before it reads any machine again. The read is what the machines last reported and no person's decision, so it stays out of `config/`. |
+| A model whose answer the hub has not read, or names no trained length, counts with its setting alone. | The setting is the longest Ollama loads a model at. |
 
-### What each tool is given
+### What each tool and app is given
 
-| Tool | Where | The number |
+A tool or an app that takes one number per model gets the model's
+`context_length`, or its `input_limit` when that is smaller and not 0: the
+model's one number.
+
+| Tool or app | Where | The number |
 | --- | --- | --- |
 | OpenCode | `limit` on the model of the hub's provider in `opencode.json`, `{context, input, output}` | `context` the model's `context_length`; `input` its `input_limit` and `output` its `output_limit`, each left out while 0 |
-| Codex | the top-level `model_context_window` of `config.toml` | the model's `context_length`, or its `input_limit` when that is smaller and not 0 |
-| Claude Code | `CLAUDE_CODE_MAX_CONTEXT_TOKENS` in the `env` of `settings.json` | the smallest, over the models of its four slots whose name does not start with `claude-`, of each one's `context_length` or smaller `input_limit`; absent while every slot names a `claude-` model |
+| Codex | the top-level `model_context_window` of `config.toml` | the model's one number |
+| Claude Code | `CLAUDE_CODE_MAX_CONTEXT_TOKENS` in the `env` of `settings.json` | the smallest one number of the models of its four slots whose name does not start with `claude-`; absent while every slot names a `claude-` model |
 | Gemini | nothing | |
+| Hermes WebUI | `model_overrides.custom` in Hermes's `config.yaml`, `{<name>: {context_window}}` ([../agent/modules/hermes_webui.md](../agent/modules/hermes_webui.md), "The gateway") | every served name's one number |
+| SiYuan | `contextLength` on each model of the module's provider in the account's `conf.json` ([../agent/modules/siyuan.md](../agent/modules/siyuan.md), "The gateway") | each model's one number |
+| AstrBot | `max_context_tokens` of the agent's provider, `neutrino_gateway/<model>` ([../agent/modules/astrbot.md](../agent/modules/astrbot.md), "The gateway") | the default model's one number |
+| Ayakaleaf | nothing | |
 
 | Rule | Reason |
 | --- | --- |
@@ -326,21 +336,29 @@ sets where the largest is a batch or a long-answer mode.
 | Every tool named as switched has its length read back from its file. | cc-switch writes OpenCode's `limit` as part of a provider it is given whole, and a key it drops leaves the tool on its own assumption with no sign. |
 | The switch back writes no length of its own. | It writes each kept file back byte for byte, and cc-switch's `provider delete` takes OpenCode's `limit` with the hub's provider. |
 
+| Rule | Reason |
+| --- | --- |
+| Hermes WebUI is given a window for every served name, in `model_overrides.custom`. | Hermes takes a model's window from `model_overrides.<provider>.<model>.context_window` before any probe, `custom` being the provider of a bare custom endpoint (`get_model_context_length` in `agent/model_metadata.py` of v2026.9.24). Without it Hermes asks the endpoint's `/models`, which the gateway answers with no window, then its own table, then 256000. Its `model.context_length` describes `model.default` alone and is dropped for a model a person picks in a chat. |
+| SiYuan is given a window on each model of the module's provider. | SiYuan's agent takes a model's `contextLength` before models.dev and its built-in table (`ResolveModelContextLimit` in `kernel/agent/modelmeta.go` of 3.8.8), and compacts a conversation that outgrows it less an answer's room. |
+| AstrBot is given a window on the agent's provider alone. A provider the person made keeps its own. | AstrBot compresses a conversation that passes the chat provider's `max_context_tokens`, and fills a 0 from models.dev, else 128000 (`astrbot/core/astr_main_agent.py` and `astrbot/core/agent/context/manager.py` of 4.29.4). The agent changes only the provider it made ([../agent/modules/astrbot.md](../agent/modules/astrbot.md), "The gateway"). |
+| Ayakaleaf is given no length. | Ayakaleaf 6.3.2 reads no context length: its AI settings are `AI_ENABLED`, `AI_BASE_URL`, `AI_API_KEY`, `AI_MODEL`, `AI_IMAGE_MODEL`, `AI_MAX_STEPS`, `AI_PROXY_URL`, `AI_TOKEN_QUOTA` and `AI_TOKEN_QUOTA_PERIOD` (`services/web/modules/workbench/index.mjs`), and it sends the whole conversation with each request. |
+
 A tool that runs keeps the length it started with, and its next start reads
 the new one.
 
-### How a length reaches the tools
+### How a length reaches the tools and apps
 
-| | On a person's computer | On a managed machine |
-| --- | --- | --- |
-| The lengths | `context_lengths` in the `ai` entry's payload, `{<name>: {context_length, input_limit, output_limit}}` for every name of its `models` ([../protocol.md](../protocol.md), "The services section, one entry per published service") | `context_lengths` in the `ai_tools` section, the same shape for every model the section's `tool_configs` name ([../protocol.md](../protocol.md), "The sections") |
-| Who writes them | the client, in each tool's switch | the agent, as each account, in each tool's switch |
+| | On a person's computer | On a managed machine | An app that uses the gateway |
+| --- | --- | --- | --- |
+| The lengths | `context_lengths` in the `ai` entry's payload, `{<name>: {context_length, input_limit, output_limit}}` for every name of its `models` ([../protocol.md](../protocol.md), "The services section, one entry per published service") | `context_lengths` in the `ai_tools` section, the same shape for every model the section's `tool_configs` name ([../protocol.md](../protocol.md), "The sections") | the module's configuration in the machine's state: Hermes WebUI's and SiYuan's `context_lengths`, `{<name>: <tokens>}` with every served name's one number, and AstrBot's `context_length`, its default model's one number ([../protocol.md](../protocol.md), "The modules section, one entry per module") |
+| Who writes them | the client, in each tool's switch | the agent, as each account, in each tool's switch | the agent, by each module's own way of writing its settings |
 
 | Rule | Reason |
 | --- | --- |
-| The hub computes the lengths again at each change of what they come from: the served list, the stored catalog read, a stored provider, `config/ai/context_lengths.json`, a machine's Ollama setting, a generated provider, a trained length read, and the table at the panel's start. When a length changed, it sends its state to every online machine and client whose state changes, as at a new default model, and publishes `ai_usage`. | The lengths are a reader of the served list like the default model, and nothing is switched while no length a tool uses changed. |
-| A managed machine is sent the lengths of the models its accounts use, a client those of every served name. | An account's models are known to the hub, and a client picks its models in its own **Configure** dialog. |
-| `GET /api/hub/ai/context` returns every length with where it comes from, and `POST /api/hub/ai/context/set {lengths}` writes the lengths a person set, a null taking a name back to its default ([../protocol.md](../protocol.md), "`/api/hub/ai`"). The write restarts nothing. | The gateway serves every name the same with any length. What changes is what the tools are sent. |
+| The hub computes the lengths again at each change of what they come from: the served list, the stored catalog read, a stored provider, `config/ai/context_lengths.json`, a machine's Ollama setting, a generated provider, a read of `/api/show`, a model leaving a machine's `/api/tags`, an Ollama module's **Uninstall**, a machine's removal, and the table at the panel's start. When a length changed, it sends its state to every online machine and client whose state changes, as at a new default model, and publishes `ai_usage`. | The lengths are a reader of the served list like the default model, and nothing is switched or written while no length a tool or an app uses changed. |
+| A managed machine's `ai_tools` section has the lengths of the models its accounts use; a client, Hermes WebUI and SiYuan have those of every served name; AstrBot has its default model's. | An account's models are known to the hub. A client picks its models in its own **Configure** dialog, and Hermes WebUI and SiYuan list every served name in their own pickers. AstrBot's agent provider names the default model alone. |
+| The lengths in the `ai_tools` section, in the `ai` entry and in the three modules' configurations are added fields and keep `PROTOCOL`. An agent or a client that predates them writes no length. | A peer reads tolerantly and ignores a field it does not know ([../protocol.md](../protocol.md), "Versioning"). |
+| `GET /api/hub/ai/context` returns every length with where it comes from, and `POST /api/hub/ai/context/set {lengths}` writes the lengths a person set, a null taking a name back to its default ([../protocol.md](../protocol.md), "`/api/hub/ai`"). The write restarts nothing. | The gateway serves every name the same with any length. What changes is what the tools and apps are sent. |
 
 ## What each panel surface owns
 

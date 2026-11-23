@@ -10,11 +10,12 @@ module's software is container images, installed by the `container` method
 `agent/neutrino_agent/modules/hermes_webui/` holds `config.py`,
 `constants.py` and `hooks.py`: the forwarder's login, the gateway keys and the
 health read, which the `container` runner calls. The configuration is
-`{secret, password, cookie_name, local_name, model}`: the token secret, the
-webui's password, the name of the webui's login cookie ("The page"), the app's
-local name, which the forwarder checks the `Host` against
-([../module_template.md](../module_template.md), "The run"), and the
-default model, empty while the gateway serves none ("The gateway"). The hub
+`{secret, password, cookie_name, local_name, model, context_lengths}`: the
+token secret, the webui's password, the name of the webui's login cookie
+("The page"), the app's local name, which the forwarder checks the `Host`
+against ([../module_template.md](../module_template.md), "The run"), the
+default model, empty while the gateway serves none, and each served name's
+context length ("The gateway"). The hub
 generates the secret and the password the first time the module is
 installed, and seals both in
 `config/devices/<id>/hermes_webui.json`, beside the module's gateway key. The
@@ -124,7 +125,7 @@ shares").
 
 ## The gateway
 
-The agent points Hermes at the hub's AI gateway by writing five keys into
+The agent points Hermes at the hub's AI gateway by writing six keys into
 `config.yaml` in `home`:
 
 | Key | Value |
@@ -134,12 +135,14 @@ The agent points Hermes at the hub's AI gateway by writing five keys into
 | `model.key_env` | `NEUTRINO_GATEWAY_KEY` |
 | `model.api_key` | `${NEUTRINO_GATEWAY_KEY}`: the variable's name in the reference form Hermes expands, and never the key |
 | `model.default` | the configuration's `model`: the default model, the one every AI tool defaults to ([../../hub_components/ai.md](../../hub_components/ai.md), "The default model") |
+| `model_overrides.custom` | `{<name>: {context_window: <tokens>}}` for every name of the configuration's `context_lengths`, `{<name>: <tokens>}`: each served name's one number ([../../hub_components/ai.md](../../hub_components/ai.md), "Each model's context length") |
 
 | Rule | Reason |
 | --- | --- |
 | The agent writes each key with `podman exec -u hermes -e HERMES_HOME=/opt/data neutrino_hermes_webui_agent hermes config set <key> <value>`. | Hermes reads a custom endpoint from `config.yaml` alone; `OPENAI_BASE_URL` picks no custom endpoint. `hermes config set` keeps every other line of the person's file. |
 | The first four keys are written after the install, when `config.yaml` exists in `home`, and again whenever the base URL differs from the one the module's record holds. | The agent image writes `config.yaml` at its first start, about 5 seconds in. The base URL changes with the gateway's `listen_port` on the hub's own machine. |
 | `model.default` is written once the other four keys hold the current base URL, and again whenever the configuration's `model` differs from the one the module's record holds; the record keeps the model written. While the configuration holds no model, nothing is written and the record keeps the last one. | A new chat opens on `model.default`, and the agent image's own, `anthropic/claude-opus-4.6`, is a model the gateway does not serve. The default model is the one every AI tool of the hub defaults to. |
+| `model_overrides.custom` is written once the first four keys hold the current base URL, and again whenever the configuration's `context_lengths` differ from the ones the module's record holds; the record keeps the lengths written. The agent writes the whole section as one JSON value, `hermes config set model_overrides.custom '<json>'`, and an entry a person wrote under `custom` is replaced. While the configuration holds no length, nothing is written. | Hermes takes a model's window from `model_overrides.<provider>.<model>.context_window` before any probe, and `custom` is the gateway's provider in this `config.yaml`. `hermes config set` parses a value that reads as a JSON mapping into one, and one value spares the dots of names such as `gpt-6.2-astra`, which a dotted key splits. Hermes reads the section from the file at each lookup, with no restart. |
 | A default the person saves in the page's settings stays until the hub's default model changes, and a model the person picks in a chat stays that chat's. | The webui saves its settings' default into `model.default` with `POST /api/default-model`, keeps a chat's pick in that chat with `POST /api/session/update`, and reads `config.yaml` again whenever the file changes. In the lab a `model.default` the agent wrote reached the next new chat with no restart. |
 | `model.api_key` names the variable beside `model.key_env`. | The webui lists a bare `custom` provider's models from the gateway's `/v1/models` with `model.api_key` alone. In the lab, with `model.key_env` alone, the page listed only the image's own `model.default`, which the gateway does not serve, and a chat ended `unknown provider for model`; with both, it listed the gateway's models and a chat reached the provider. |
 | The key is in the containers' environment alone, and `config.yaml` names only its variable. | The hub rewrites the environment at every apply, so a new or voided key reaches Hermes with no edit of the person's file. |

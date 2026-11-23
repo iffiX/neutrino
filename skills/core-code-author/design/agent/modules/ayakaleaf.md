@@ -231,6 +231,7 @@ other in the page. The tab's **AI model** field holds it, `model` in
 | `AI_MODEL` is the field's model, or the default model ([../../hub_components/ai.md](../../hub_components/ai.md), "The default model") while the field is empty. The hub writes the four `AI_` variables while the gateway serves a model, and none while it serves none. | The app shows its AI features only with all four set. |
 | A new model rewrites the app's environment, which restarts the app. | The app reads the model at its start alone. |
 | The app calls the gateway itself, at `host.containers.internal`, with the module's key. | In the lab a stand-in gateway logged the app container as the caller of the editor's AI chat. |
+| The hub gives the app no context length. | Ayakaleaf 6.3.2 reads none: its AI settings are `AI_ENABLED`, `AI_BASE_URL`, `AI_API_KEY`, `AI_MODEL`, `AI_IMAGE_MODEL`, `AI_MAX_STEPS`, `AI_PROXY_URL`, `AI_TOKEN_QUOTA` and `AI_TOKEN_QUOTA_PERIOD` (`services/web/modules/workbench/index.mjs`), and it sends the whole conversation with each request ([../../hub_components/ai.md](../../hub_components/ai.md), "Each model's context length"). |
 | `DOCS_MCP_URL` is empty, and the web search stays off. | Its default is `https://docs.overleaf.com/~gitbook/mcp`, a call to another host. The web search needs a Tavily key, which the module does not set. |
 
 ## Memory and disk

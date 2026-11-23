@@ -178,9 +178,11 @@ model. The AI page lists it as a read-only row that links to this tab's
 **Models** panel. The agent carries nothing more for it.
 
 The AI tools of every machine and client are given each of these models'
-context length: the smaller of this tab's `context_length` and the model's
-trained length, which the hub reads with `POST /api/show`, and the smallest
-over the machines that serve the name. The AI page's **Context length**
+context length: the smaller of the model's setting and its trained length,
+which the hub reads with `POST /api/show`, the setting being the `num_ctx`
+its Modelfile sets and this tab's `context_length` while it sets none, and
+the smallest over every machine whose Ollama holds the model while the
+module is installed, online or not. The AI page's **Context length**
 panel shows the length, each machine's setting and the trained length, and
 links each machine's name to this tab
 ([../../hub_components/ai.md](../../hub_components/ai.md), "Each model's
