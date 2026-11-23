@@ -551,7 +551,7 @@ DEVICE_ASTRBOT_VOLUMES = ("neutrino_astrbot_data:/AstrBot/data",)
 # volume. The gateway's variables are composed per device.
 DEVICE_ASTRBOT_ENVIRONMENT = (
     "PIP_USER=1",
-    "PYTHONUSERBASE=/AstrBot/data/python_user",
+    "PYTHONUSERBASE=/AstrBot/data/python_user",  # scan: allow
 )
 # The user of AstrBot's dashboard, the one a visitor of an App share is
 # signed in as.

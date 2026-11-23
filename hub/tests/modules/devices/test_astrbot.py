@@ -145,7 +145,7 @@ def test_the_container_is_composed_as_the_module_s_page_lists_it(store):
             "volumes": ["neutrino_astrbot_data:/AstrBot/data"],
             "environment": [
                 "PIP_USER=1",
-                "PYTHONUSERBASE=/AstrBot/data/python_user",
+                "PYTHONUSERBASE=/AstrBot/data/python_user",  # scan: allow
                 "NEUTRINO_GATEWAY_URL=http://host.containers.internal:8317",
                 f"NEUTRINO_GATEWAY_KEY={key}",
             ],
