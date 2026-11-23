@@ -21,6 +21,12 @@ names the hub's model when the file names none, follows a changed model
 while it is the one written, and a ``model`` of the account's own stays; a
 record without the wanted ``model`` is switched once more, and the switch
 back takes away OpenCode's migration backup holding the hub's provider.
+Codex is given its model's one number as ``model_context_window`` and Claude
+Code the smallest one number of its slots that name no ``claude-`` model as
+``CLAUDE_CODE_MAX_CONTEXT_TOKENS``, none while every slot names one, each
+read back from its file; a changed length switches the tool again, a record
+whose ``added`` lacks the lengths is switched once more, and no length is
+left after the switch back.
 """
 
 import json
@@ -29,9 +35,11 @@ import stat
 
 import pytest
 
+from neutrino_agent.ai_tools import switcher as switcher_module
 from neutrino_agent.ai_tools.switcher import (
     AiToolsAccountSwitcher,
     merge_toml_top_level,
+    tool_window,
     with_opencode_model,
     without_own_keys,
 )
@@ -773,3 +781,128 @@ def test_a_migration_backup_without_the_hub_s_provider_stays(tmp_path):
 
     assert session.files[BACKUP] == own
     assert ("remove", BACKUP) not in session.file_calls
+
+
+# --- each tool's context length ---
+
+CODEX_FILE = "/home/ann/.codex/config.toml"
+WIDE = {"context_length": 400000, "input_limit": 272000, "output_limit": 128000}
+SMALL = {"context_length": 16384, "input_limit": 0, "output_limit": 0}
+LENGTH_CONFIGS = {
+    "claude": {"default": "lab-mini", "opus": "claude-opus-4-6", "haiku": "qwen"},
+    "codex": {"model": "lab-mini", "model_reasoning_effort": "high"},
+    "gemini": {"model": "qwen"},
+    "opencode": {"model": "qwen"},
+}
+LENGTHS = {"lab-mini": WIDE, "qwen": SMALL, "claude-opus-4-6": dict(SMALL)}
+
+
+def activate_with(switcher, lengths, configs=LENGTH_CONFIGS):
+    return switcher.activate(
+        base_url=HUB, api_key=KEY, tool_configs=configs, context_lengths=lengths
+    )
+
+
+def claude_env(session) -> dict:
+    return json.loads(session.files[SETTINGS]).get("env", {})
+
+
+def test_codex_and_claude_code_get_their_one_number_after_the_switch(tmp_path):
+    cc_switch = FakeCcSwitch()
+    switcher, session = switcher_for(tmp_path, cc_switch)
+
+    activate_with(switcher, LENGTHS)
+
+    toml = session.files[CODEX_FILE]
+    assert "model_context_window = 272000\n" in toml
+    assert 'model_reasoning_effort = "high"\n' in toml
+    assert claude_env(session)["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] == "16384"
+    assert switcher.read_record("codex")["added"]["model_context_window"] == 272000
+    assert switcher.read_record("claude")["added"]["max_context_tokens"] == 16384
+    assert "model_context_window" not in switcher.read_record("gemini")["added"]
+    assert switcher.is_current(
+        base_url=HUB,
+        api_key=KEY,
+        tool_configs=LENGTH_CONFIGS,
+        context_lengths=LENGTHS,
+    )
+
+
+def test_claude_code_gets_no_variable_while_every_slot_names_a_claude_model(tmp_path):
+    cc_switch = FakeCcSwitch()
+    switcher, session = switcher_for(tmp_path, cc_switch)
+    configs = {**LENGTH_CONFIGS, "claude": {"default": "claude-opus-4-6"}}
+
+    activate_with(switcher, LENGTHS, configs)
+
+    assert "CLAUDE_CODE_MAX_CONTEXT_TOKENS" not in claude_env(session)
+    assert switcher.read_record("claude")["added"]["max_context_tokens"] == 0
+
+
+def test_the_variable_is_the_smallest_of_the_slots_that_name_no_claude_model():
+    lengths = {"a": {"context_length": 100000}, "b": WIDE, "claude-x": SMALL}
+    config = {"default": "a", "opus": "claude-x", "sonnet": "b", "haiku": "none"}
+
+    assert tool_window("claude", config, lengths) == 100000
+    assert tool_window("codex", {"model": "b"}, lengths) == 272000
+    assert tool_window("codex", {"model": "none"}, lengths) == 0
+    assert tool_window("gemini", {"model": "a"}, lengths) == 0
+
+
+def test_a_changed_length_switches_the_tool_again(tmp_path):
+    cc_switch = FakeCcSwitch()
+    switcher, session = switcher_for(tmp_path, cc_switch)
+    activate_with(switcher, LENGTHS)
+    changed = {**LENGTHS, "lab-mini": {"context_length": 100000}}
+
+    assert not switcher.is_current(
+        base_url=HUB, api_key=KEY, tool_configs=LENGTH_CONFIGS, context_lengths=changed
+    )
+    assert activate_with(switcher, changed) == ["codex"]
+    assert "model_context_window = 100000\n" in session.files[CODEX_FILE]
+
+    smaller = {**changed, "qwen": {"context_length": 8192}}
+    assert activate_with(switcher, smaller) == ["claude"]
+    assert claude_env(session)["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] == "8192"
+
+
+def test_a_record_whose_added_lacks_the_lengths_is_switched_once_more(tmp_path):
+    cc_switch = FakeCcSwitch()
+    switcher, session = switcher_for(tmp_path, cc_switch)
+    activate_with(switcher, LENGTHS)
+    for app, key in (
+        ("codex", "model_context_window"),
+        ("claude", "max_context_tokens"),
+    ):
+        path = tmp_path / "ai_tools" / "ann" / f"{app}.json"
+        record = json.loads(path.read_text())
+        del record["added"][key]
+        path.write_text(json.dumps(record))
+
+    assert activate_with(switcher, LENGTHS) == ["claude", "codex"]
+    assert activate_with(switcher, LENGTHS) == []
+
+
+def test_a_length_the_file_did_not_take_fails_the_switch(tmp_path, monkeypatch):
+    cc_switch = FakeCcSwitch()
+    switcher, _session = switcher_for(tmp_path, cc_switch)
+    monkeypatch.setattr(switcher_module, "with_claude_window", lambda text, n: text)
+
+    with pytest.raises(ToolSwitchError) as caught:
+        activate_with(switcher, LENGTHS)
+
+    assert "did not take the context length" in caught.value.params["detail"]
+
+
+def test_no_length_is_left_after_the_switch_back(tmp_path):
+    cc_switch = FakeCcSwitch()
+    own_toml = 'model = "own"\n'
+    switcher, session = switcher_for(
+        tmp_path, cc_switch, {CODEX_FILE: own_toml, SETTINGS: '{"env": {}}'}
+    )
+    activate_with(switcher, LENGTHS)
+
+    switcher.deactivate()
+
+    assert session.files[CODEX_FILE] == own_toml
+    assert session.files[SETTINGS] == '{"env": {}}'

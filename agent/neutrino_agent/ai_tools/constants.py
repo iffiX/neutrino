@@ -62,6 +62,15 @@ AI_TOOLS_CLAUDE_SLOT_FLAGS = {
 }
 # Codex's one knob cc-switch has no flag for, a top-level key of config.toml.
 AI_TOOLS_CODEX_EFFORT_KEY = "model_reasoning_effort"
+# The context length each tool is given where cc-switch has no flag for it:
+# Codex's top-level key of config.toml, and Claude Code's variable in the
+# ``env`` of settings.json, written only while a slot names a model whose
+# name does not start with ``claude-``. Each is kept in the record's
+# ``added`` under its key.
+AI_TOOLS_CODEX_WINDOW_KEY = "model_context_window"
+AI_TOOLS_CLAUDE_WINDOW_VARIABLE = "CLAUDE_CODE_MAX_CONTEXT_TOKENS"
+AI_TOOLS_CLAUDE_WINDOW_KEY = "max_context_tokens"
+AI_TOOLS_CLAUDE_OWN_PREFIX = "claude-"
 # Codex asks for ``<base>/responses`` and OpenCode for
 # ``<base>/chat/completions``; the gateway serves both under ``/v1``. Claude
 # Code and Gemini add their own versioned paths.

@@ -33,9 +33,11 @@ provider.
 
 Activation is all or nothing: a tool that refuses has itself, once its
 record was started, and every tool switched before it put back, and the
-refusal is the answer. Codex's reasoning effort
-has no flag in cc-switch and is settled into ``config.toml`` after the
-switch.
+refusal is the answer. Codex's reasoning effort and its
+``model_context_window`` have no flag in cc-switch and are settled into
+``config.toml`` after the switch, and so is Claude Code's
+``CLAUDE_CODE_MAX_CONTEXT_TOKENS`` into the ``env`` of ``settings.json``
+while a slot names a model whose name does not start with ``claude-``.
 
 Not pure: runs cc-switch as the account and writes the records.
 """
@@ -59,9 +61,13 @@ from neutrino_agent.ai_tools.constants import (
     AI_TOOLS_APP_KEY_FILES,
     AI_TOOLS_KEY_FILE_MODE,
     AI_TOOLS_APPS,
+    AI_TOOLS_CLAUDE_OWN_PREFIX,
     AI_TOOLS_CLAUDE_SLOT_FLAGS,
+    AI_TOOLS_CLAUDE_WINDOW_KEY,
+    AI_TOOLS_CLAUDE_WINDOW_VARIABLE,
     AI_TOOLS_CODE_SWITCH_FAILED,
     AI_TOOLS_CODEX_EFFORT_KEY,
+    AI_TOOLS_CODEX_WINDOW_KEY,
     AI_TOOLS_COMMON_OWN_KEYS,
     AI_TOOLS_DELETE_ANSWER,
     AI_TOOLS_DELETE_PROMPT,
@@ -180,7 +186,111 @@ def with_opencode_model(text: str, model: str, written: str) -> "tuple[str, str]
     return json.dumps(document, indent=2, ensure_ascii=False) + ending, model
 
 
-def wanted(app: str, base_url: str, api_key: str, config: dict) -> dict:
+def one_number(length) -> int:
+    """A model's one number: its window, or its longest prompt where that is smaller.
+
+    Args:
+        length: ``{context_length, input_limit, output_limit}``.
+
+    Returns:
+        ``context_length``, or ``input_limit`` when it is smaller and not 0;
+        0 for anything that names neither.
+    """
+    if not isinstance(length, dict):
+        return 0
+    window = _count(length.get("context_length"))
+    prompt = _count(length.get("input_limit"))
+    if prompt and (not window or prompt < window):
+        return prompt
+    return window
+
+
+def tool_window(app: str, config: dict, lengths: "dict | None") -> int:
+    """The context length a tool with one number is given.
+
+    Args:
+        app: Which tool, in cc-switch's vocabulary.
+        config: The tool's choices.
+        lengths: Each model's ``{context_length, input_limit,
+            output_limit}``; None names none.
+
+    Returns:
+        Codex's model's one number; for Claude Code the smallest one number
+        of its slots' models whose names do not start with ``claude-``;
+        0 for none and for every other tool.
+    """
+    held = lengths if isinstance(lengths, dict) else {}
+    if app == "codex":
+        return one_number(held.get(str(config.get("model", "") or "")))
+    if app != "claude":
+        return 0
+    numbers = []
+    for slot in AI_TOOLS_CLAUDE_SLOT_FLAGS:
+        model = str(config.get(slot, "") or "")
+        if model and not model.startswith(AI_TOOLS_CLAUDE_OWN_PREFIX):
+            number = one_number(held.get(model))
+            if number:
+                numbers.append(number)
+    return min(numbers) if numbers else 0
+
+
+def with_claude_window(text: str, window: int) -> str:
+    """Claude Code's settings with ``CLAUDE_CODE_MAX_CONTEXT_TOKENS`` in their ``env``.
+
+    Args:
+        text: The file as cc-switch left it.
+        window: The tokens; 0 leaves the text as it is.
+
+    Returns:
+        The file's text, written as JSON with two-space indentation; the
+        same text when nothing changes or it does not read as an object.
+    """
+    if not window:
+        return text
+    try:
+        document = json.loads(text or "{}")
+    except ValueError:
+        return text
+    if not isinstance(document, dict):
+        return text
+    env = document.get("env")
+    env = dict(env) if isinstance(env, dict) else {}
+    if env.get(AI_TOOLS_CLAUDE_WINDOW_VARIABLE) == str(window):
+        return text
+    env[AI_TOOLS_CLAUDE_WINDOW_VARIABLE] = str(window)
+    document["env"] = env
+    ending = "\n" if text.endswith("\n") else ""
+    return json.dumps(document, indent=2, ensure_ascii=False) + ending
+
+
+def toml_top_level(text: str, key: str) -> str:
+    """One top-level key's value in a TOML text, as written.
+
+    Args:
+        text: The file as it stands.
+        key: The key.
+
+    Returns:
+        What follows ``=`` on the key's line before any section, stripped;
+        empty when the key is not there.
+    """
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("["):
+            return ""
+        name, separator, value = stripped.partition("=")
+        if separator and name.strip() == key:
+            return value.strip()
+    return ""
+
+
+def wanted(
+    app: str,
+    base_url: str,
+    api_key: str,
+    config: dict,
+    lengths: "dict | None" = None,
+) -> dict:
     """What the hub's provider should carry, as the record remembers it.
 
     Args:
@@ -188,10 +298,14 @@ def wanted(app: str, base_url: str, api_key: str, config: dict) -> dict:
         base_url: The gateway's endpoint.
         api_key: The device's gateway key.
         config: The tool's choices.
+        lengths: Each model's ``{context_length, input_limit,
+            output_limit}``; None names none.
 
     Returns:
         The endpoint, a digest of the key, the flags, Codex's effort and
-        OpenCode's top-level ``model``; the key itself is never written down.
+        ``model_context_window``, Claude Code's ``max_context_tokens``, 0
+        for none, and OpenCode's top-level ``model``; the key itself is
+        never written down.
     """
     settings = {
         "base_url": endpoint_for(app, base_url),
@@ -205,6 +319,10 @@ def wanted(app: str, base_url: str, api_key: str, config: dict) -> dict:
             else ""
         ),
     }
+    if app == "codex":
+        settings[AI_TOOLS_CODEX_WINDOW_KEY] = tool_window(app, config, lengths)
+    if app == "claude":
+        settings[AI_TOOLS_CLAUDE_WINDOW_KEY] = tool_window(app, config, lengths)
     if app == "opencode":
         settings[AI_TOOLS_OPENCODE_MODEL_KEY] = opencode_model(config)
     return settings
@@ -261,7 +379,7 @@ def merge_toml_top_level(text: str, values: dict) -> str:
 
     Args:
         text: The file as it stands.
-        values: Key to string value.
+        values: Key to a string value, written quoted, or a whole number.
 
     Returns:
         The merged text.
@@ -277,7 +395,10 @@ def merge_toml_top_level(text: str, values: dict) -> str:
             if key in values:
                 continue
         kept.append(line)
-    head = [f'{key} = "{value}"' for key, value in values.items()]
+    head = [
+        f"{key} = {value}" if isinstance(value, int) else f'{key} = "{value}"'
+        for key, value in values.items()
+    ]
     merged = "\n".join(head + kept)
     return merged.rstrip("\n") + "\n"
 
@@ -303,6 +424,13 @@ def console_words(printed: str) -> str:
     return words[-AI_TOOLS_WORDS_LIMIT:] if words else "it printed nothing"
 
 
+def _count(value) -> int:
+    """A token count as an int, 0 for anything that is not a positive whole number."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        return 0
+    return value if value > 0 else 0
+
+
 class AiToolsAccountSwitcher:
     """Points one account's tools at the hub and back, keeping a record per tool."""
 
@@ -316,13 +444,21 @@ class AiToolsAccountSwitcher:
         self._session = session
         self._record_dir = record_dir
 
-    def is_current(self, *, base_url: str, api_key: str, tool_configs: dict) -> bool:
+    def is_current(
+        self,
+        *,
+        base_url: str,
+        api_key: str,
+        tool_configs: dict,
+        context_lengths: "dict | None" = None,
+    ) -> bool:
         """Whether every tool's record already carries the wanted settings.
 
         Args:
             base_url: The gateway's endpoint.
             api_key: The device's gateway key.
             tool_configs: Each tool's choices.
+            context_lengths: Each model's length; None names none.
 
         Returns:
             True when nothing would change; nothing is run to answer.
@@ -331,18 +467,26 @@ class AiToolsAccountSwitcher:
             record = self.read_record(app)
             config = tool_configs.get(app) or {}
             if record is None or record.get("added") != wanted(
-                app, base_url, api_key, config
+                app, base_url, api_key, config, context_lengths
             ):
                 return False
         return True
 
-    def activate(self, *, base_url: str, api_key: str, tool_configs: dict) -> list:
+    def activate(
+        self,
+        *,
+        base_url: str,
+        api_key: str,
+        tool_configs: dict,
+        context_lengths: "dict | None" = None,
+    ) -> list:
         """Register the hub in the account's cc-switch and switch every tool to it.
 
         Args:
             base_url: The gateway's endpoint.
             api_key: The device's gateway key.
             tool_configs: Each tool's choices.
+            context_lengths: Each model's length; None names none.
 
         Returns:
             The tools switched this time; empty when every tool already
@@ -364,7 +508,11 @@ class AiToolsAccountSwitcher:
         for app in AI_TOOLS_APPS:
             try:
                 if self._point_at_hub(
-                    app, base_url, api_key, tool_configs.get(app) or {}
+                    app,
+                    base_url,
+                    api_key,
+                    tool_configs.get(app) or {},
+                    context_lengths,
                 ):
                     switched.append(app)
             except ToolSwitchError as error:
@@ -424,7 +572,12 @@ class AiToolsAccountSwitcher:
         return record if isinstance(record, dict) and record else None
 
     def _point_at_hub(
-        self, app: str, base_url: str, api_key: str, config: dict
+        self,
+        app: str,
+        base_url: str,
+        api_key: str,
+        config: dict,
+        lengths: "dict | None" = None,
     ) -> bool:
         """Make the hub one tool's provider, the account's own settings kept.
 
@@ -440,9 +593,10 @@ class AiToolsAccountSwitcher:
         self._session.is_own_store = record is None or bool(record.get("is_own_store"))
         if record is None:
             record = self._adopt_once(app)
-        settings = wanted(app, base_url, api_key, config)
+        settings = wanted(app, base_url, api_key, config, lengths)
+        window = tool_window(app, config, lengths)
         if record.get("added") == settings and self._is_active_for(app):
-            self._verify(app, base_url, api_key, config)
+            self._verify(app, base_url, api_key, config, window)
             return False
 
         self._drop_provider(app, record.get("previous", ""))
@@ -477,15 +631,23 @@ class AiToolsAccountSwitcher:
 
         if app == "codex":
             effort = str(config.get(AI_TOOLS_CODEX_EFFORT_KEY, "") or "")
+            values = {}
             if effort:
+                values[AI_TOOLS_CODEX_EFFORT_KEY] = effort
+            if window:
+                values[AI_TOOLS_CODEX_WINDOW_KEY] = window
+            if values:
                 path = self._app_file(app)
                 self._session.write_text(
                     path,
-                    merge_toml_top_level(
-                        self._session.read_text(path),
-                        {AI_TOOLS_CODEX_EFFORT_KEY: effort},
-                    ),
+                    merge_toml_top_level(self._session.read_text(path), values),
                 )
+        if app == "claude" and window:
+            path = self._app_file(app)
+            text = self._session.read_text(path)
+            merged = with_claude_window(text, window)
+            if merged != text:
+                self._session.write_text(path, merged)
         if app == "opencode":
             path = self._app_file(app)
             text = self._session.read_text(path)
@@ -501,7 +663,7 @@ class AiToolsAccountSwitcher:
             path = self._kept_path(app, name)
             if self._session.is_file(path):
                 self._session.set_mode(path, AI_TOOLS_KEY_FILE_MODE)
-        self._verify(app, base_url, api_key, config)
+        self._verify(app, base_url, api_key, config, window)
         record["added"] = settings
         self._write_record(app, record)
         return True
@@ -546,19 +708,30 @@ class AiToolsAccountSwitcher:
         self._write_record(app, record)
         return record
 
-    def _verify(self, app: str, base_url: str, api_key: str, config: dict) -> None:
+    def _verify(
+        self, app: str, base_url: str, api_key: str, config: dict, window: int = 0
+    ) -> None:
         """Read a tool's file back and refuse when it does not name the hub.
 
         Raises:
             ToolSwitchError: When Claude Code's settings do not carry the
                 hub's endpoint, key and model, or Codex's or Gemini's file
-                does not name the hub's endpoint.
+                does not name the hub's endpoint, or Codex's or Claude
+                Code's does not hold the context length given.
         """
         if app != "claude":
             text = self._session.read_text(self._app_file(app))
             if endpoint_for(app, base_url) not in text:
                 raise self._session.failure(
                     "the settings file did not take the hub's endpoint"
+                )
+            if (
+                app == "codex"
+                and window
+                and toml_top_level(text, AI_TOOLS_CODEX_WINDOW_KEY) != str(window)
+            ):
+                raise self._session.failure(
+                    "the settings file did not take the context length"
                 )
             return
         try:
@@ -575,6 +748,10 @@ class AiToolsAccountSwitcher:
         ):
             raise self._session.failure(
                 "the settings file did not take the hub's endpoint"
+            )
+        if window and env.get(AI_TOOLS_CLAUDE_WINDOW_VARIABLE) != str(window):
+            raise self._session.failure(
+                "the settings file did not take the context length"
             )
 
     def _point_away(self, app: str) -> str:

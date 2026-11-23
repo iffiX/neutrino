@@ -366,15 +366,23 @@ class AiToolsApplier:
         base_url = str(section.get("base_url", "") or "")
         api_key = str(section.get("api_key", "") or "")
         configs = tool_configs
+        lengths = section.get("context_lengths")
+        lengths = lengths if isinstance(lengths, dict) else {}
         if switcher.is_current(
-            base_url=base_url, api_key=api_key, tool_configs=configs
+            base_url=base_url,
+            api_key=api_key,
+            tool_configs=configs,
+            context_lengths=lengths,
         ):
             return result(account, AI_TOOLS_STATE_SWITCHED)
         if password:
             self._write_login(account, password)
         try:
             switched = switcher.activate(
-                base_url=base_url, api_key=api_key, tool_configs=configs
+                base_url=base_url,
+                api_key=api_key,
+                tool_configs=configs,
+                context_lengths=lengths,
             )
         except ToolSwitchError as error:
             self._drop_unswitched(account)

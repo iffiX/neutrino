@@ -25,6 +25,7 @@ no artifact ``no_platform_build``; an unreachable hub is
 """
 
 import io
+import json
 import os
 import stat
 import tarfile
@@ -116,6 +117,22 @@ def test_each_account_is_switched_with_its_own_models(tmp_path, binary):
 
     assert "--model=m1" in platform.store("ann").added["claude"]
     assert "--model=m9" in platform.store("bob").added["claude"]
+
+
+def test_each_account_s_tools_get_the_section_s_lengths(tmp_path, binary):
+    applier, platform = make(tmp_path, binary)
+    lengths = {"m1": {"context_length": 16384}, "m2": {"context_length": 272000}}
+    configs = {"claude": {"default": "m1"}, "codex": {"model": "m2"}, "gemini": {}}
+
+    applier.apply(
+        {**section("ann", configs={"ann": configs}), "context_lengths": lengths}, "h1"
+    )
+
+    assert states(applier) == {"ann": ("switched", "")}
+    toml = platform.files["/home/ann/.codex/config.toml"]
+    assert "model_context_window = 272000\n" in toml
+    settings = json.loads(platform.files["/home/ann/.claude/settings.json"])
+    assert settings["env"]["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] == "16384"
 
 
 def test_nothing_runs_when_nothing_changed_and_a_state_is_applied_once(
