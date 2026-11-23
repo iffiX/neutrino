@@ -760,6 +760,7 @@ are in `locales/<language>/modules.json`, and the Services page's line in
 
 | Key | English | Chinese |
 | --- | --- | --- |
+| `ui.module_catalog.astrbot`, AstrBot's line in the **Add module** dialog | Chat bots that answer with the hub's AI models. | 用中枢的 AI 模型回复消息的聊天机器人。 |
 | `ui.astrbot.owner_notice` | You install AstrBot, AGPL-3.0-licensed, on this machine. | 你在这个系统上安装 AstrBot，它以 AGPL-3.0 许可发布。 |
 | `ui.astrbot.owner_notice_version` | You install AstrBot, AGPL-3.0-licensed, on this machine. Installed: {version}. | 你在这个系统上安装 AstrBot，它以 AGPL-3.0 许可发布。已安装：{version}。 |
 | `ui.services.description_astrbot_module`, the Services page's provenance line of the `web` entry | published by the AstrBot module on {host} | 由 {host} 上的 AstrBot 模块发布 |
