@@ -96,6 +96,11 @@ connection"), with no call to the hub, and spends it once. The module's one rule
 token into a login, a cookie of the forwarder's own, the page's own login
 state or a value in the browser's storage, is its hook, and every module's
 forwarder answers 401 to a request carrying neither a token nor the login.
+A module whose rule reads a request's body adds two hooks: `is_body_judged`,
+true for a request the forwarder reads whole before it passes it on, and
+`admit_body`, the rule for that request and its body. The forwarder reads at
+most 4 MiB of such a body and answers 401 to a longer one
+([modules/astrbot.md](modules/astrbot.md), "The page").
 A module whose page admits the browser by a token of its own, VS Code,
 names no rule, and its server takes the token itself. A hook that signs in
 to the page's own login sends the page what a program sends: one request
