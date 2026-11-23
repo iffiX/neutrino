@@ -475,6 +475,21 @@ def test_the_module_reads_installing_until_its_page_answers(box):
     ]
 
 
+def test_a_model_served_after_the_settings_file_reaches_astrbot_at_its_first_start(
+    box,
+):
+    box.hooks.take_config(CONFIG)
+    (settings,) = box.hooks.install_steps("4.29.4")
+    settings.run(box.context)
+
+    box.start({**CONFIG, "model": "m1"})
+
+    assert "provider" not in box.containers.settings()
+    assert box.astrbot.provider_ids() == ["neutrino_gateway/m1"]
+    assert box.astrbot.default_provider() == "neutrino_gateway/m1"
+    assert (box.record()["model"], box.record()["is_ready"]) == ("m1", True)
+
+
 def test_the_steps_are_planned_with_their_locks_and_states(box):
     (settings,) = box.hooks.install_steps("4.29.4")
     (first,) = box.hooks.start_steps(CONFIG, "4.29.4")

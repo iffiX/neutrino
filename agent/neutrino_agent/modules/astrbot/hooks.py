@@ -23,9 +23,10 @@ is 401.
 
 From the install, after a version change and after a new password, the
 module reads ``installing`` until AstrBot's ``/`` first answers 200: the
-step ``first_start`` checks every 30 seconds meanwhile. At each later start
-the agent gives AstrBot a new gateway address or a new default model
-through AstrBot's API, and leaves a default the person picked as it is.
+step ``first_start`` checks every 30 seconds meanwhile. Once it has ended,
+and at each later start, the agent gives AstrBot a new gateway address or a
+new default model through AstrBot's API, and leaves a default the person
+picked as it is.
 
 Not pure: runs podman, opens sockets, writes the record.
 """
@@ -895,7 +896,7 @@ class AstrbotHooks(ContainerHooks):
         self._log(f"{self._name}: {ASTRBOT_CONFIG_FILE} is written")
 
     def _run_first_start(self, context) -> None:
-        """The ``first_start`` step: ``/`` waited for.
+        """The ``first_start`` step: ``/`` waited for, then a model or an address the settings file missed given through the API.
 
         Raises:
             ModuleInstallPending: Until ``/`` has answered 200 once.
@@ -910,10 +911,11 @@ class AstrbotHooks(ContainerHooks):
             raise ModuleInstallPending(ASTRBOT_PENDING)
         if self._is_stopping(context, "is_ready"):
             return
-        self._keep({**record, "is_ready": True})
+        record = self._keep({**record, "is_ready": True})
         self._log(f"{self._name}: the first start has ended")
         with self._lock:
             self._is_starting = False
+        self._gateway_synced(record)
 
     def _gateway_synced(self, record: dict) -> dict:
         """The record after AstrBot is given a new gateway address and a new default model through its API.
