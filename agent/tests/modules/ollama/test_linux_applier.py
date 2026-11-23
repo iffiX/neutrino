@@ -1,7 +1,8 @@
 """Ollama on Linux: the unit, the account, the data directory, a person's unit.
 
 What these pin: the unit runs ``ollama serve`` as ``neutrino_ollama`` with
-``HOME``, ``OLLAMA_HOST``, ``OLLAMA_MODELS`` and ``OLLAMA_NO_CLOUD``; an
+``HOME``, ``OLLAMA_HOST``, ``OLLAMA_MODELS`` and ``OLLAMA_NO_CLOUD``, and
+``OOMPolicy=continue``, which a person's drop-in never carries; an
 apply writes it only when it differs, enables and starts it, restarts it
 only on a change, and under ``stopped`` writes it alone; a stop disables it;
 an uninstall removes the unit and the program and keeps the data directory;
@@ -85,6 +86,7 @@ def test_the_unit_runs_ollama_serve_with_the_module_s_environment(tmp_path):
     assert "Environment=OLLAMA_MODELS=/data/models\n" in text
     assert "Environment=OLLAMA_NO_CLOUD=1\n" in text
     assert "Restart=always\n" in text
+    assert "OOMPolicy=continue\n" in text
     assert "WantedBy=multi-user.target\n" in text
 
 

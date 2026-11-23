@@ -128,6 +128,9 @@ def render_unit(program: str, data_dir: str, environment: "dict | None" = None) 
         f"{environment}"
         "Restart=always\n"
         "RestartSec=3\n"
+        # A runner the kernel ends for memory ends alone; the server keeps
+        # its other models.
+        "OOMPolicy=continue\n"
         "\n"
         "[Install]\n"
         "WantedBy=multi-user.target\n"
