@@ -41,6 +41,8 @@ const QUANT_BITS: [RegExp, string, number][] = [
 const DEFAULT_QUANT = "Q4_K_M";
 const DEFAULT_QUANT_BITS = 4.85;
 const DEFAULT_BILLIONS = 4;
+/** The tokens a sample model was trained for, where its sample names none. */
+const DEFAULT_TRAINED_CONTEXT = 32768;
 
 /** A pulled model as the demo holds it. */
 export interface DemoOllamaModel {
@@ -54,6 +56,8 @@ export interface DemoOllamaModel {
   /** Whether a Load keeps it, so a restart loads it again. */
   isKept: boolean;
   vramBytes: number;
+  /** The tokens it was trained for; it loads at no more. */
+  trainedContext: number;
 }
 
 /** A pull in the queue, as the demo holds it. */
@@ -89,7 +93,8 @@ interface DemoOllamaOptions {
   onModelsChange: () => void;
 }
 
-/** One sample model, pulled `days` ago, in memory when `isLoaded`. */
+/** One sample model, pulled `days` ago, in memory when `isLoaded`,
+ * trained for `trainedContext` tokens. */
 export function sampleModel(
   name: string,
   parameterSize: string,
@@ -97,6 +102,7 @@ export function sampleModel(
   sizeBytes: number,
   days: number,
   isLoaded: boolean = false,
+  trainedContext: number = DEFAULT_TRAINED_CONTEXT,
 ): DemoOllamaModel {
   return {
     name,
@@ -108,6 +114,7 @@ export function sampleModel(
     isLoading: false,
     isKept: isLoaded,
     vramBytes: isLoaded ? memoryOf(sizeBytes) : 0,
+    trainedContext,
   };
 }
 
@@ -392,6 +399,9 @@ export class DemoOllama {
         is_loading: model.isLoading,
         memory_bytes: model.isLoaded ? memoryOf(model.sizeBytes) : 0,
         vram_bytes: model.isLoaded ? model.vramBytes : 0,
+        context_length: model.isLoaded
+          ? Math.min(this.contextLength, model.trainedContext)
+          : 0,
       }))
       .sort(
         (a, b) =>
