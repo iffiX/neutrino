@@ -8,9 +8,10 @@ the root-only environment and on no command line, under ``umask 077``; the
 workspace is made as the account when it is not there; the record keeps the
 kernel's port and what was last written; the settings are written as the
 account, with the kernel stopped and started again after, once the kernel
-answers and has made them, pointing at the hub's default model, again when
-the key, the address or the models change, and left alone otherwise, a new
-default model alone included; the forwarder trades a token for the
+answers and has made them, pointing at the hub's default model and holding
+each model's ``contextLength``, again when the key, the address, the models
+or their lengths change, and left alone otherwise, a new default model alone
+included; the forwarder trades a token for the
 kernel's own login, asked with the browser's ``Host`` and no ``Origin``, and
 sets the kernel's cookie under the entry's name, passes a request holding
 that cookie, and answers 401 to the login path, to a token that does not
@@ -110,7 +111,7 @@ def hooks_for(tmp_path, os_name="linux", **kwargs):
     return hooks, entry, recorder, platform, reapplied
 
 
-def config(model: str = "", **changes) -> SiyuanConfig:
+def config(model: str = "", context_lengths=None, **changes) -> SiyuanConfig:
     instance = {
         "account": "ann",
         "secret": SECRET,
@@ -126,6 +127,7 @@ def config(model: str = "", **changes) -> SiyuanConfig:
             "gateway_url": URL,
             "models": ["m1", "m2"],
             "model": model,
+            "context_lengths": context_lengths or {},
         }
     )
 
@@ -443,6 +445,39 @@ def test_settings_already_written_are_left_alone_and_a_new_key_writes_them_again
     assert len(recorder.calls) == 2
     assert reapplied[-1][1]["settings_written"] == settings_digest(
         record["gateway_key"], URL, ["m1", "m2"]
+    )
+
+
+def test_each_model_s_length_is_written_and_new_lengths_write_the_settings_again(
+    tmp_path,
+):
+    hooks, entry, recorder, _platform, reapplied = hooks_for(tmp_path)
+    listener = socket.socket()
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(8)
+    parsed = config(context_lengths={"m1": 32768, "m2": 16384})
+    record = hooks.record(parsed, parsed.instances[0], {"port": 6810})
+    record["kernel_port"] = listener.getsockname()[1]
+    path = write_conf(entry, {"ai": {"providers": []}})
+    with listener:
+        with pytest.raises(OSError, match="starts again"):
+            hooks.on_first_start(record)
+        record["settings_written"] = reapplied[-1][1]["settings_written"]
+        assert hooks.on_first_start(record) == ""
+        calls = len(recorder.calls)
+
+        record["context_lengths"] = {"m1": 8192, "m2": 16384}
+        with pytest.raises(OSError, match="starts again"):
+            hooks.on_first_start(record)
+
+    with open(path, encoding="utf-8") as stream:
+        written = json.load(stream)
+    models = written["ai"]["providers"][0]["models"]
+    assert [model.get("contextLength") for model in models] == [8192, 16384]
+    assert len(recorder.calls) == calls + 2
+    assert "context_lengths" in hooks.forwarder_fields
+    assert reapplied[-1][1]["settings_written"] == settings_digest(
+        KEY, URL, ["m1", "m2"], {"m1": 8192, "m2": 16384}
     )
 
 

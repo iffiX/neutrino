@@ -8,8 +8,8 @@ the record, with its workspace and its own files in the account's data
 directory, which the hook makes as the account, and its access code in a
 root-only environment. Before the forwarder listens the hook writes the
 module's provider into the workspace's ``conf.json`` as the account, with
-the kernel stopped, whenever the key, the gateway's address or the models
-differ from what the record says was written. The forwarder trades the
+the kernel stopped, whenever the key, the gateway's address, the models or
+their context lengths differ from what the record says was written. The forwarder trades the
 hub's token for the kernel's own login, which it asks for itself, and the
 browser keeps the kernel's cookie under the entry's ``cookie_name``.
 
@@ -405,6 +405,7 @@ class SiyuanHooks(InstanceHooks):
             "gateway_url": parsed.gateway_url,
             "models": list(parsed.models),
             "model": parsed.model,
+            "context_lengths": dict(parsed.context_lengths),
             "settings_written": str(held.get("settings_written") or ""),
         }
 
@@ -453,9 +454,9 @@ class SiyuanHooks(InstanceHooks):
         """Write the module's provider into the kernel's settings once the kernel answers.
 
         The settings are written as the account with the kernel stopped and
-        started again after, when the key, the gateway's address or the
-        models differ from what the record says was written, and the record
-        then keeps what was written.
+        started again after, when the key, the gateway's address, the
+        models or their context lengths differ from what the record says was
+        written, and the record then keeps what was written.
 
         Args:
             record: The instance's record.
@@ -477,6 +478,7 @@ class SiyuanHooks(InstanceHooks):
             str(record.get("gateway_key", "") or ""),
             str(record.get("gateway_url", "") or ""),
             [str(name) for name in record.get("models") or []],
+            _record_lengths(record),
         )
         if wanted in (record.get("settings_written"), self._written.get(account)):
             return ""
@@ -605,6 +607,7 @@ class SiyuanHooks(InstanceHooks):
             gateway_url=str(record.get("gateway_url", "") or ""),
             models=[str(name) for name in record.get("models") or []],
             model=str(record.get("model", "") or ""),
+            context_lengths=_record_lengths(record),
         )
         text = json.dumps(settings, indent=2, ensure_ascii=False) + "\n"
         try:
@@ -679,6 +682,12 @@ class SiyuanHooks(InstanceHooks):
                 "apply_failed",
                 {"detail": f"could not act as {instance.account}: {error}"},
             ) from error
+
+
+def _record_lengths(record: dict) -> dict:
+    """The context lengths an instance's record holds."""
+    held = record.get("context_lengths")
+    return dict(held) if isinstance(held, dict) else {}
 
 
 def _said(result) -> str:

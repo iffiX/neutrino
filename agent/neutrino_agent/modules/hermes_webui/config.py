@@ -1,11 +1,12 @@
-"""The Hermes WebUI module's configuration: two secrets, the login cookie's name, the app's local name and the hub's default model.
+"""The Hermes WebUI module's configuration: two secrets, the login cookie's name, the app's local name, the hub's default model and each model's context length.
 
-The hub sends ``{secret, password, cookie_name, local_name, model}``: the
-secret the page's tokens are signed with, the webui's own password, which the
-forwarder signs in with, the name the webui's login cookie has on this
-device, the app's local name, a ``Host`` the forwarder accepts, and the
-hub's default model, empty while the gateway serves none. The forwarder's
-port is the agent's own, kept in the module's record.
+The hub sends ``{secret, password, cookie_name, local_name, model,
+context_lengths}``: the secret the page's tokens are signed with, the webui's
+own password, which the forwarder signs in with, the name the webui's login
+cookie has on this device, the app's local name, a ``Host`` the forwarder
+accepts, the hub's default model, empty while the gateway serves none, and
+each served name's context length. The forwarder's port is the agent's own,
+kept in the module's record.
 
 Pure: parsing.
 """
@@ -14,7 +15,7 @@ Pure: parsing.
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from neutrino_agent.modules.hermes_webui.constants import HERMES_WEBUI_COOKIE
 
@@ -30,6 +31,8 @@ class HermesWebuiConfig:
         local_name: The app's local name, a ``Host`` the forwarder accepts.
         model: The hub's default model, empty while the gateway serves
             none.
+        context_lengths: Each served name to its context length in tokens;
+            empty from a hub that sends none.
     """
 
     secret: str = ""
@@ -37,22 +40,33 @@ class HermesWebuiConfig:
     cookie_name: str = HERMES_WEBUI_COOKIE
     local_name: str = ""
     model: str = ""
+    context_lengths: dict = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, data: dict) -> "HermesWebuiConfig":
         """Read the configuration the state carries.
 
         Args:
-            data: ``{secret, password, cookie_name, local_name, model}``;
-                a missing cookie name is the webui's default.
+            data: ``{secret, password, cookie_name, local_name, model,
+                context_lengths}``; a missing cookie name is the webui's
+                default, and a length that is no positive whole number is
+                left out.
 
         Returns:
             The configuration.
         """
+        held = data.get("context_lengths")
         return cls(
             secret=str(data.get("secret", "") or ""),
             password=str(data.get("password", "") or ""),
             cookie_name=str(data.get("cookie_name", "") or "") or HERMES_WEBUI_COOKIE,
             local_name=str(data.get("local_name", "") or ""),
             model=str(data.get("model", "") or ""),
+            context_lengths={
+                str(name): length
+                for name, length in (held if isinstance(held, dict) else {}).items()
+                if isinstance(length, int)
+                and not isinstance(length, bool)
+                and length > 0
+            },
         )

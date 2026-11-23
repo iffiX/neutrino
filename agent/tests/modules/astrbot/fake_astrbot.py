@@ -1,4 +1,4 @@
-"""A stand-in for AstrBot on loopback: its page, its login, its providers, its sources and its default profile.
+"""A stand-in for AstrBot on loopback: its page, its login, its providers, one provider read and written back, its sources and its default profile.
 
 It keeps what the routes the hooks use change: the providers, the sources,
 the default profile, and every request it was sent.
@@ -131,6 +131,22 @@ class FakeAstrbotHandler(BaseHTTPRequestHandler):
         elif path.startswith("/api/v1/providers/") and method == "DELETE":
             gone = urllib.parse.unquote(path[len("/api/v1/providers/") :])
             server.providers = [held for held in server.providers if held["id"] != gone]
+            self._ok({})
+        elif path.startswith("/api/v1/providers/") and method == "GET":
+            asked = urllib.parse.unquote(path[len("/api/v1/providers/") :])
+            held = [
+                provider for provider in server.providers if provider["id"] == asked
+            ]
+            if not held:
+                self._answer(200, {"status": "error", "message": "no such provider"})
+                return
+            self._ok({"provider": dict(held[0]), "model_metadata": {}})
+        elif path.startswith("/api/v1/providers/") and method == "PUT":
+            asked = urllib.parse.unquote(path[len("/api/v1/providers/") :])
+            server.providers = [
+                dict(sent["config"]) if provider["id"] == asked else provider
+                for provider in server.providers
+            ]
             self._ok({})
         else:
             self._answer(200, {"status": "ok", "data": {"path": path}})

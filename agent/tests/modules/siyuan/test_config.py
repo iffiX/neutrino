@@ -7,8 +7,9 @@ written after the person's own and replaced whole by its id, taken out with
 no key; the agent's and the editor's model point at the hub's default
 model, or the first model while it is not among the models, only while they
 name no model the settings hold; the background installer
-download is off; and the digest of what was written follows the key, the
-address and the models.
+download is off; each model holds its ``contextLength`` where the hub sends
+one; and the digest of what was written follows the key, the address, the
+models and their lengths, the same as before while there are none.
 """
 
 import hashlib
@@ -175,3 +176,32 @@ def test_the_models_point_at_the_default_model_while_the_models_hold_it():
     assert chosen("m2") == (model_id("m2"), model_id("m2"))
     assert chosen("m9") == (model_id("m1"), model_id("m1"))
     assert chosen("") == (model_id("m1"), model_id("m1"))
+
+
+def test_each_model_holds_its_context_length_where_the_hub_sends_one():
+    settings = with_module_settings(
+        {"ai": {}},
+        gateway_key=KEY,
+        gateway_url=URL,
+        models=["m1", "m2"],
+        context_lengths={"m1": 922000},
+    )
+
+    assert settings["ai"]["providers"][0]["models"] == [
+        {"id": model_id("m1"), "enabled": True, "name": "m1", "contextLength": 922000},
+        {"id": model_id("m2"), "enabled": True, "name": "m2"},
+    ]
+    parsed = SiyuanConfig.from_dict(
+        {"context_lengths": {"m1": 922000, "m2": 0, "m3": True, "m4": "5"}}
+    )
+    assert parsed.context_lengths == {"m1": 922000}
+
+
+def test_the_digest_follows_the_lengths_and_none_keeps_the_earlier_one():
+    first = settings_digest(KEY, URL, ["m1"])
+
+    assert settings_digest(KEY, URL, ["m1"], {}) == first
+    assert settings_digest(KEY, URL, ["m1"], {"m1": 32768}) != first
+    assert settings_digest(KEY, URL, ["m1"], {"m1": 32768}) != settings_digest(
+        KEY, URL, ["m1"], {"m1": 16384}
+    )

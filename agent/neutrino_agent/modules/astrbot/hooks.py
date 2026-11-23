@@ -24,9 +24,9 @@ is 401.
 From the install, after a version change and after a new password, the
 module reads ``installing`` until AstrBot's ``/`` first answers 200: the
 step ``first_start`` checks every 30 seconds meanwhile. Once it has ended,
-and at each later start, the agent gives AstrBot a new gateway address or a
-new default model through AstrBot's API, and leaves a default the person
-picked as it is.
+and at each later start, the agent gives AstrBot a new gateway address, a
+new default model or a new context length of the agent's provider through
+AstrBot's API, and leaves a default the person picked as it is.
 
 Not pure: runs podman, opens sockets, writes the record.
 """
@@ -99,6 +99,7 @@ from neutrino_agent.modules.astrbot.constants import (
     ASTRBOT_USER_SITE,
     ASTRBOT_USERNAME,
     ASTRBOT_VOLUME,
+    ASTRBOT_WINDOW_KEY,
 )
 from neutrino_agent.modules.podman.applier import stored_reference
 from neutrino_agent.modules.podman.container_runner import (
@@ -182,22 +183,27 @@ def gateway_source(base_url: str) -> dict:
     }
 
 
-def gateway_provider(model: str) -> dict:
+def gateway_provider(model: str, context_length: int = 0) -> dict:
     """The chat provider of one model on the gateway's source.
 
     Args:
         model: The model's name.
+        context_length: The model's context length, written as
+            ``max_context_tokens``; 0 writes none.
 
     Returns:
         The provider as AstrBot keeps it in ``provider``.
     """
-    return {
+    provider = {
         "id": provider_id(model),
         "model": model,
         "enable": True,
         "provider_type": "chat_completion",
         "provider_source_id": ASTRBOT_SOURCE_ID,
     }
+    if context_length > 0:
+        provider[ASTRBOT_WINDOW_KEY] = context_length
+    return provider
 
 
 def dashboard_keys(
@@ -232,7 +238,13 @@ def dashboard_keys(
 
 
 def settings_document(
-    *, password: str, base_url: str, model: str, index_url: str, **hashing
+    *,
+    password: str,
+    base_url: str,
+    model: str,
+    index_url: str,
+    context_length: int = 0,
+    **hashing,
 ) -> dict:
     """The settings file the agent writes into an empty volume.
 
@@ -242,6 +254,7 @@ def settings_document(
         model: The default model; empty while the gateway serves none.
         index_url: The first ranked source of the ``pypi`` set; empty
             leaves AstrBot's own.
+        context_length: The default model's context length; 0 for none.
         **hashing: ``salt`` and ``jwt_secret``, as :func:`dashboard_keys`
             takes them.
 
@@ -255,7 +268,7 @@ def settings_document(
         "provider_sources": [gateway_source(base_url)],
     }
     if model:
-        document["provider"] = [gateway_provider(model)]
+        document["provider"] = [gateway_provider(model, context_length)]
         document["agent_runner"] = {
             "runner_type": "local",
             "config": {"model": {"provider_id": provider_id(model)}},
@@ -513,7 +526,8 @@ class AstrbotHooks(ContainerHooks):
         """Take the configuration the state names, which the step ``settings`` writes.
 
         Args:
-            config: ``{secret, password, cookie_name, local_name, model}``.
+            config: ``{secret, password, cookie_name, local_name, model,
+                context_length}``.
         """
         self._config = AstrbotConfig.from_dict(config)
 
@@ -580,7 +594,7 @@ class AstrbotHooks(ContainerHooks):
             self._keep({**record, "version": version, "is_ready": False})
 
     def start(self) -> None:
-        """Serve the page, and once the first start has ended give AstrBot a new gateway address or a new default model.
+        """Serve the page, and once the first start has ended give AstrBot a new gateway address, a new default model or a new context length.
 
         Raises:
             ModuleApplyError: When the Containers runner cannot keep
@@ -876,6 +890,7 @@ class AstrbotHooks(ContainerHooks):
             base_url=base_url,
             model=config.model,
             index_url=self._index_url(),
+            context_length=config.context_length,
         )
         self._write_volume({ASTRBOT_CONFIG_FILE: _settings_json(document)}, (folder,))
         if self._is_stopping(context, "written_password"):
@@ -887,6 +902,7 @@ class AstrbotHooks(ContainerHooks):
                 "python": python,
                 "base_url": base_url,
                 "model": config.model,
+                "context_length": config.context_length if config.model else 0,
                 "provider": provider_id(config.model) if config.model else "",
                 "is_provider_own": bool(config.model),
                 "added_provider": "",
@@ -918,7 +934,7 @@ class AstrbotHooks(ContainerHooks):
         self._gateway_synced(record)
 
     def _gateway_synced(self, record: dict) -> dict:
-        """The record after AstrBot is given a new gateway address and a new default model through its API.
+        """The record after AstrBot is given a new gateway address, a new default model and a new context length through its API.
 
         A call that fails is a line in the log, and the record keeps what it
         held, so the next start tries again.
@@ -933,7 +949,7 @@ class AstrbotHooks(ContainerHooks):
         base_url = self._base_url()
         is_new_url = bool(base_url) and base_url != record.get("base_url")
         is_new_model = bool(config.model) and config.model != record.get("model")
-        if not is_new_url and not is_new_model:
+        if not is_new_url and not is_new_model and not _is_new_length(record, config):
             return record
         port = int(record.get("upstream_port", 0) or 0)
         token = self._api_token(port, str(record.get("written_password", "") or ""))
@@ -952,21 +968,29 @@ class AstrbotHooks(ContainerHooks):
             record = self._keep({**record, "base_url": base_url})
             self._log(f"{self._name}: the gateway's source names {base_url}")
         if is_new_model:
-            record = self._model_synced(record, config.model, port, token)
+            record = self._model_synced(record, config, port, token)
+        if _is_new_length(record, config):
+            record = self._length_synced(record, config.context_length, port, token)
         return record
 
-    def _model_synced(self, record: dict, model: str, port: int, token: str) -> dict:
+    def _model_synced(
+        self, record: dict, config: AstrbotConfig, port: int, token: str
+    ) -> dict:
         """The record after the agent's provider follows a new default model.
+
+        A provider the agent adds holds the model's context length.
 
         Args:
             record: The module's record.
-            model: The configuration's model.
+            config: The configuration, with its model.
             port: AstrBot's published port.
             token: AstrBot's login token.
 
         Returns:
             The record, with the new model and provider once every call took.
         """
+        model = config.model
+        length = int(record.get("context_length", 0) or 0)
         new = provider_id(model)
         earlier = str(record.get("provider", "") or "")
         held = self._provider_ids(port, token)
@@ -979,10 +1003,11 @@ class AstrbotHooks(ContainerHooks):
                 port,
                 "POST",
                 ASTRBOT_SOURCE_PROVIDERS_PATH,
-                {"config": gateway_provider(model)},
+                {"config": gateway_provider(model, config.context_length)},
                 token,
             ):
                 return record
+            length = config.context_length
             record = self._keep({**record, "added_provider": new})
         if not self._default_followed(port, token, earlier, new):
             return record
@@ -1001,11 +1026,48 @@ class AstrbotHooks(ContainerHooks):
             {
                 **record,
                 "model": model,
+                "context_length": length,
                 "provider": new,
                 "is_provider_own": is_own,
                 "added_provider": "",
             }
         )
+
+    def _length_synced(self, record: dict, length: int, port: int, token: str) -> dict:
+        """The record after the agent's provider holds a new context length.
+
+        The provider as AstrBot returns it is written back with its
+        ``max_context_tokens`` changed, and AstrBot loads it at once.
+
+        Args:
+            record: The module's record, the agent's provider its own.
+            length: The configuration's context length.
+            port: AstrBot's published port.
+            token: AstrBot's login token.
+
+        Returns:
+            The record, with the new length once both calls took.
+        """
+        held = str(record.get("provider", "") or "")
+        path = ASTRBOT_PROVIDERS_PATH + "/" + urllib.parse.quote(held, safe="/:")
+        status, document = self._api(port, "GET", path, None, token)
+        data = document.get("data") if is_ok(status, document) else None
+        provider = data.get("provider") if isinstance(data, dict) else None
+        if not isinstance(provider, dict):
+            self._log(f"{self._name}: provider {held} was not read: {status}")
+            return record
+        changed = {**provider, ASTRBOT_WINDOW_KEY: length}
+        if not self._took(
+            f"the context length of provider {held}",
+            port,
+            "PUT",
+            path,
+            {"config": changed},
+            token,
+        ):
+            return record
+        self._log(f"{self._name}: provider {held} holds {length} tokens")
+        return self._keep({**record, "context_length": length})
 
     def _default_followed(self, port: int, token: str, earlier: str, new: str) -> bool:
         """Whether the ``default`` profile's provider names the new provider, or a provider the person picked.
@@ -1334,6 +1396,17 @@ class AstrbotHooks(ContainerHooks):
             forwarder, self._forwarder = self._forwarder, None
         if forwarder is not None:
             forwarder.close()
+
+
+def _is_new_length(record: dict, config: AstrbotConfig) -> bool:
+    """Whether the agent's own provider of the record's model holds another context length than the configuration's."""
+    return (
+        bool(config.model)
+        and config.context_length > 0
+        and record.get("model") == config.model
+        and bool(record.get("is_provider_own"))
+        and int(record.get("context_length", 0) or 0) != config.context_length
+    )
 
 
 def _settings_failed(detail: str) -> ModuleApplyError:

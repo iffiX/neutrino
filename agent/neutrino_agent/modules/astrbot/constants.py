@@ -43,6 +43,9 @@ ASTRBOT_LOGIN_PATH = "/api/auth/login"
 ASTRBOT_SOURCES_PATH = "/api/v1/provider-sources"
 ASTRBOT_SOURCE_PROVIDERS_PATH = "/api/v1/provider-sources/neutrino_gateway/providers"
 ASTRBOT_PROVIDERS_PATH = "/api/v1/providers"
+# The key of a chat provider that holds the window AstrBot compresses a
+# conversation at.
+ASTRBOT_WINDOW_KEY = "max_context_tokens"
 ASTRBOT_PROFILE_PATH = "/api/v1/config-profiles/default"
 # How long a call to AstrBot's API may take, and how long a start waits for
 # AstrBot to answer before it changes the gateway's provider.
@@ -98,8 +101,9 @@ ASTRBOT_DASHBOARD_HOST = "0.0.0.0"
 # secrets, the login cookie's name, the app's local name, the loopback port
 # AstrBot is published at, the version it last installed, the password
 # written into the settings file, the Python version whose requirements
-# folder was made, the gateway's address and model AstrBot was given, the
-# agent's provider and whether the agent wrote or added it, a provider the
+# folder was made, the gateway's address, model and the model's context
+# length AstrBot was given, the agent's provider and whether the agent wrote
+# or added it, a provider the
 # agent added whose default has not taken yet, whether the first start has
 # ended, and whether it was stopped.
 ASTRBOT_RECORD_FIELDS = (
@@ -115,6 +119,7 @@ ASTRBOT_RECORD_FIELDS = (
     "python",
     "base_url",
     "model",
+    "context_length",
     "provider",
     "is_provider_own",
     "added_provider",

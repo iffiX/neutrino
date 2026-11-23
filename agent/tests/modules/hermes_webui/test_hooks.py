@@ -8,7 +8,10 @@ a request with neither; two devices' pages open in one browser keeping both
 logins; the four gateway keys written with ``hermes config set``
 once ``config.yaml`` exists and again when the base URL changes;
 ``model.default`` written after them once, again when the model the state
-sends changes, and never while it sends none; ``installing`` until the keys
+sends changes, and never while it sends none; ``model_overrides.custom``
+written whole as one JSON value with each served name's ``context_window``
+once those keys hold, again when the lengths change, and not while none are
+named; ``installing`` until the keys
 and ``/health`` hold, the
 step ``first_start`` waiting meanwhile; the webui's own update check saved
 off in the step ``update_check`` once the first start has ended, each step
@@ -374,6 +377,72 @@ def test_no_model_is_written_while_the_state_sends_none(box):
 
     assert model_sets(box) == ["deepseek-flash"]
     assert box.record()["model"] == "deepseek-flash"
+
+
+def override_sets(box) -> list:
+    return [
+        json.loads(call[-1])
+        for call in box.podman.config_sets()
+        if "model_overrides.custom" in call
+    ]
+
+
+def test_the_lengths_are_written_whole_as_one_json_value_after_the_keys(box):
+    box.podman.has_config = True
+    box.status = 200
+    box.hooks.installed("0.52.492")
+    lengths = {"gpt-6.2-astra": 922000, "qwen2.5:0.5b": 32768}
+    box.hooks.apply({**CONFIG, "model": "qwen2.5:0.5b", "context_lengths": lengths})
+
+    box.start()
+    box.start()
+
+    sets = box.podman.config_sets()
+    assert [call[-2] for call in sets][-2:] == [
+        "model.default",
+        "model_overrides.custom",
+    ]
+    assert override_sets(box) == [
+        {
+            "gpt-6.2-astra": {"context_window": 922000},
+            "qwen2.5:0.5b": {"context_window": 32768},
+        }
+    ]
+    assert box.record()["context_lengths"] == lengths
+
+
+def test_changed_lengths_are_written_again_and_none_writes_nothing(box):
+    box.podman.has_config = True
+    box.status = 200
+    box.hooks.installed("0.52.492")
+    box.hooks.apply({**CONFIG, "context_lengths": {"m": 65536}})
+    box.start()
+
+    box.hooks.apply({**CONFIG, "context_lengths": {"m": 16384}})
+    box.start()
+    box.hooks.apply({**CONFIG, "context_lengths": {}})
+    box.start()
+
+    assert override_sets(box) == [
+        {"m": {"context_window": 65536}},
+        {"m": {"context_window": 16384}},
+    ]
+    assert box.record()["context_lengths"] == {"m": 16384}
+
+
+def test_no_lengths_are_written_before_the_keys_hold_the_base_url(box):
+    box.hooks.installed("0.52.492")
+    box.hooks.apply({**CONFIG, "context_lengths": {"m": 65536}})
+
+    with pytest.raises(ModuleInstallPending):
+        box.start()
+    box.podman.has_config = True
+    box.podman.is_running = False
+    with pytest.raises(ModuleInstallPending):
+        box.start()
+
+    assert override_sets(box) == []
+    assert not box.record().get("context_lengths")
 
 
 def test_no_model_is_written_before_the_keys_hold_the_base_url(box):

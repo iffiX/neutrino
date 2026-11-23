@@ -102,6 +102,7 @@ SIYUAN_RECORD_FIELDS = (
     "gateway_key",
     "gateway_url",
     "models",
+    "context_lengths",
     "model",
     "settings_written",
 )

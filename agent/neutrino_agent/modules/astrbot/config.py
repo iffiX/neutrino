@@ -1,12 +1,12 @@
-"""The AstrBot module's configuration: two secrets, the login cookie's name, the app's local name and the hub's default model.
+"""The AstrBot module's configuration: two secrets, the login cookie's name, the app's local name, the hub's default model and its context length.
 
-The hub sends ``{secret, password, cookie_name, local_name, model}``: the
-secret the page's tokens are signed with, the password of AstrBot's
-dashboard user, which the forwarder signs in with, the name of the
-forwarder's login cookie on this device, the app's local name, a ``Host``
-the forwarder accepts, and the hub's default model, empty while the gateway
-serves none. The forwarder's port is the agent's own, kept in the module's
-record.
+The hub sends ``{secret, password, cookie_name, local_name, model,
+context_length}``: the secret the page's tokens are signed with, the
+password of AstrBot's dashboard user, which the forwarder signs in with, the
+name of the forwarder's login cookie on this device, the app's local name, a
+``Host`` the forwarder accepts, the hub's default model, empty while the
+gateway serves none, and that model's context length. The forwarder's port
+is the agent's own, kept in the module's record.
 
 Pure: parsing.
 """
@@ -47,6 +47,8 @@ class AstrbotConfig:
         local_name: The app's local name, a ``Host`` the forwarder accepts.
         model: The hub's default model, empty while the gateway serves
             none.
+        context_length: The default model's context length in tokens, 0
+            while there is no model and from a hub that sends none.
     """
 
     secret: str = ""
@@ -54,21 +56,32 @@ class AstrbotConfig:
     cookie_name: str = ""
     local_name: str = ""
     model: str = ""
+    context_length: int = 0
 
     @classmethod
     def from_dict(cls, data: dict) -> "AstrbotConfig":
         """Read the configuration the state carries.
 
         Args:
-            data: ``{secret, password, cookie_name, local_name, model}``.
+            data: ``{secret, password, cookie_name, local_name, model,
+                context_length}``; a length that is no positive whole number
+                is 0.
 
         Returns:
             The configuration.
         """
+        length = data.get("context_length")
         return cls(
             secret=str(data.get("secret", "") or ""),
             password=str(data.get("password", "") or ""),
             cookie_name=str(data.get("cookie_name", "") or ""),
             local_name=str(data.get("local_name", "") or ""),
             model=str(data.get("model", "") or ""),
+            context_length=(
+                length
+                if isinstance(length, int)
+                and not isinstance(length, bool)
+                and length > 0
+                else 0
+            ),
         )

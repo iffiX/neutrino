@@ -33,6 +33,10 @@ HERMES_WEBUI_GATEWAY_KEY_REFERENCE = "${NEUTRINO_GATEWAY_KEY}"
 HERMES_WEBUI_BASE_URL_SUFFIX = "/v1"
 HERMES_WEBUI_PROVIDER = "custom"
 HERMES_WEBUI_MODEL_KEY = "model.default"
+# Each served name's context window, written as one JSON mapping
+# ``{<name>: {context_window}}`` for the gateway's bare custom endpoint.
+HERMES_WEBUI_OVERRIDES_KEY = "model_overrides.custom"
+HERMES_WEBUI_WINDOW_KEY = "context_window"
 # How long one podman call the hooks make may take; ``hermes config set``
 # starts a Python program in the container.
 HERMES_WEBUI_PODMAN_TIMEOUT_S = 120
@@ -55,7 +59,8 @@ HERMES_WEBUI_UPDATE_CHECK_OFF = {"check_for_updates": False}
 # What the module keeps, root-only, in its record: the forwarder's port and
 # secrets, the login cookie's name, the app's local name, the loopback port
 # the webui is published at, the pair it last installed, the base URL the keys were written with,
-# the model last written into ``model.default``, whether its first start has
+# the model last written into ``model.default``, the context lengths last
+# written into ``model_overrides.custom``, whether its first start has
 # ended, whether the webui's update check is off, and whether it was stopped.
 HERMES_WEBUI_RECORD_FIELDS = (
     "account",
@@ -68,6 +73,7 @@ HERMES_WEBUI_RECORD_FIELDS = (
     "version",
     "base_url",
     "model",
+    "context_lengths",
     "is_ready",
     "is_update_check_off",
     "is_stopped",

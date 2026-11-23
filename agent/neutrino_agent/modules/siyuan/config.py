@@ -6,8 +6,8 @@ each instance's token secret, which signs the one-time tokens a client opens
 the instance with; its access code, the kernel's own login; its key to the
 AI gateway; the app's local name the forwarder accepts as a ``Host``; and
 the forwarder's cookie name. Beside the instances it sends the gateway's
-address on the machine, the models the gateway serves and the hub's default
-model. On Windows an
+address on the machine, the models the gateway serves, the hub's default
+model and each model's context length. On Windows an
 instance also carries the account's password, from the login the hub holds
 for it.
 
@@ -72,18 +72,29 @@ def model_id(name: str) -> str:
     return siyuan_id(SIYUAN_MODEL_SEED_PREFIX + name)
 
 
-def settings_digest(gateway_key: str, gateway_url: str, models: list) -> str:
+def settings_digest(
+    gateway_key: str,
+    gateway_url: str,
+    models: list,
+    context_lengths: "dict | None" = None,
+) -> str:
     """What the kernel's settings were last written from, as one value.
 
     Args:
         gateway_key: The instance's key to the gateway.
         gateway_url: The gateway's address on the machine.
         models: The model names.
+        context_lengths: Each model's context length; None or empty for a
+            hub that sends none.
 
     Returns:
-        The SHA-256, in hex, of the three as JSON.
+        The SHA-256, in hex, of the three as JSON, and of the lengths after
+        them while there are any.
     """
-    material = json.dumps([gateway_key, gateway_url, list(models)])
+    parts = [gateway_key, gateway_url, list(models)]
+    if context_lengths:
+        parts.append(dict(sorted(context_lengths.items())))
+    material = json.dumps(parts)
     return hashlib.sha256(material.encode("utf-8")).hexdigest()
 
 
@@ -94,6 +105,7 @@ def with_module_settings(
     gateway_url: str,
     models: list,
     model: str = "",
+    context_lengths: "dict | None" = None,
 ) -> dict:
     """The kernel's settings with the module's provider and its own settings written in.
 
@@ -111,6 +123,8 @@ def with_module_settings(
             it in the provider's address.
         models: The names the gateway serves, one model each.
         model: The hub's default model; empty takes the first of ``models``.
+        context_lengths: Each name's context length, written as the
+            model's ``contextLength``; a name it does not hold has none.
 
     Returns:
         A new settings document; ``conf`` is left as it was.
@@ -136,7 +150,7 @@ def with_module_settings(
                 "protocol": SIYUAN_PROVIDER_PROTOCOL,
                 "requestTimeout": SIYUAN_PROVIDER_TIMEOUT_S,
                 "models": [
-                    {"id": model_id(name), "enabled": True, "name": name}
+                    _module_model(name, (context_lengths or {}).get(name))
                     for name in models
                 ],
             }
@@ -164,6 +178,14 @@ def with_module_settings(
         settings["system"] = system
     system["downloadInstallPkg"] = False
     return settings
+
+
+def _module_model(name: str, context_length) -> dict:
+    """One model of the module's provider, with its ``contextLength`` where it has one."""
+    entry = {"id": model_id(name), "enabled": True, "name": name}
+    if isinstance(context_length, int) and context_length > 0:
+        entry["contextLength"] = context_length
+    return entry
 
 
 @dataclass
@@ -218,12 +240,15 @@ class SiyuanConfig:
         gateway_url: Where the gateway is reached on this machine.
         models: The names the gateway serves.
         model: The hub's default model; empty from a hub that sends none.
+        context_lengths: Each name of ``models`` to its context length in
+            tokens; empty from a hub that sends none.
     """
 
     instances: list = field(default_factory=list)
     gateway_url: str = ""
     models: list = field(default_factory=list)
     model: str = ""
+    context_lengths: dict = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, data: dict) -> "SiyuanConfig":
@@ -242,6 +267,7 @@ class SiyuanConfig:
                 if isinstance(name, str) and name
             ],
             model=str(data.get("model", "") or ""),
+            context_lengths=_lengths(data.get("context_lengths")),
         )
 
     def validate(self, *, os_name: str = "linux") -> None:
@@ -272,3 +298,12 @@ class SiyuanConfig:
                 raise ModuleApplyError(
                     "credential_missing", {"account": instance.account}
                 )
+
+
+def _lengths(held) -> dict:
+    """The context lengths the state sends, each a positive whole number."""
+    return {
+        str(name): length
+        for name, length in (held if isinstance(held, dict) else {}).items()
+        if isinstance(length, int) and not isinstance(length, bool) and length > 0
+    }

@@ -17,7 +17,9 @@ naming the key's variable, with ``hermes config set`` in the agent container, an
 record holds. Once they hold the current base URL it writes
 ``model.default`` with the model the state sends, again whenever that model
 differs from the one the record holds, and nothing while the state sends
-none. From the install, and after a version change, the module
+none; and ``model_overrides.custom`` with each served name's context length
+as one JSON mapping, again whenever the lengths differ from the ones the
+record holds, and nothing while the state sends none. From the install, and after a version change, the module
 reads ``installing`` until the keys hold the current base URL and the
 webui's ``/health`` first answers 200: the step ``first_start`` of the
 module's task checks every 30 seconds meanwhile. Then the step
@@ -67,6 +69,7 @@ from neutrino_agent.modules.hermes_webui.constants import (
     HERMES_WEBUI_HEALTH_TIMEOUT_S,
     HERMES_WEBUI_LOGIN_PATH,
     HERMES_WEBUI_MODEL_KEY,
+    HERMES_WEBUI_OVERRIDES_KEY,
     HERMES_WEBUI_PENDING,
     HERMES_WEBUI_PODMAN_TIMEOUT_S,
     HERMES_WEBUI_PROVIDER,
@@ -77,6 +80,7 @@ from neutrino_agent.modules.hermes_webui.constants import (
     HERMES_WEBUI_UPDATE_CHECK_OFF,
     HERMES_WEBUI_UPSTREAM_HOST,
     HERMES_WEBUI_WEBUI_CONTAINER,
+    HERMES_WEBUI_WINDOW_KEY,
 )
 from neutrino_agent.modules.podman.container_runner import (
     ContainerHooks,
@@ -322,7 +326,8 @@ class HermesWebuiHooks(ContainerHooks):
         """Take the module's configuration.
 
         Args:
-            config: ``{secret, password, cookie_name, local_name, model}``.
+            config: ``{secret, password, cookie_name, local_name, model,
+                context_lengths}``.
         """
         self._config = HermesWebuiConfig.from_dict(config)
 
@@ -349,7 +354,7 @@ class HermesWebuiHooks(ContainerHooks):
             )
 
     def start(self) -> None:
-        """Serve the page, and once the first start has ended write the gateway keys again for a new base URL and ``model.default`` for a new model.
+        """Serve the page, and once the first start has ended write the gateway keys again for a new base URL, ``model.default`` for a new model and ``model_overrides.custom`` for new lengths.
 
         Raises:
             ModuleApplyError: When the Containers runner cannot keep the
@@ -578,7 +583,8 @@ class HermesWebuiHooks(ContainerHooks):
                 record = self._keep({**record, "base_url": base_url})
         if not base_url or record.get("base_url") != base_url:
             return record
-        return self._model_written(record, context=context)
+        record = self._model_written(record, context=context)
+        return self._lengths_written(record, context=context)
 
     def _model_written(self, record: dict, *, context=None) -> dict:
         """The record after ``model.default`` is written with the configuration's model, when the record holds another.
@@ -601,6 +607,33 @@ class HermesWebuiHooks(ContainerHooks):
         if context is not None and self._is_stopping(context, "model"):
             return record
         return self._keep({**record, "model": model})
+
+    def _lengths_written(self, record: dict, *, context=None) -> dict:
+        """The record after ``model_overrides.custom`` is written with the configuration's lengths, when the record holds others.
+
+        Args:
+            record: The module's record, its keys holding the current base
+                URL.
+            context: As :meth:`_keys_written` takes it.
+
+        Returns:
+            The record, with the lengths ``model_overrides.custom`` holds;
+            unchanged while the configuration holds no length.
+        """
+        lengths = self._config.context_lengths if self._config is not None else {}
+        if not lengths or lengths == record.get("context_lengths"):
+            return record
+        overrides = {
+            name: {HERMES_WEBUI_WINDOW_KEY: lengths[name]} for name in sorted(lengths)
+        }
+        if not self._set_key(HERMES_WEBUI_OVERRIDES_KEY, json.dumps(overrides)):
+            return record
+        self._log(
+            f"{self._name}: {HERMES_WEBUI_OVERRIDES_KEY} holds {len(lengths)} models"
+        )
+        if context is not None and self._is_stopping(context, "context_lengths"):
+            return record
+        return self._keep({**record, "context_lengths": dict(lengths)})
 
     def _turn_update_check_off(self, record: dict) -> None:
         """Save the webui's ``check_for_updates`` off once; a failure is a line in the log."""

@@ -14,7 +14,11 @@ the ``default`` profile's provider moved to it only while it names the
 agent's provider or none, the agent's earlier provider deleted only when the
 agent added it, a provider and a default of the person's left as they are,
 nothing changed while no model is named, and a failed call retried at the
-next start; a new password in the state stopping the container, writing the
+next start; the agent's provider holding ``max_context_tokens``, in the file
+and in the provider it adds, a changed length on the same model written
+through ``PUT /api/v1/providers/<id>`` with every other key of its ``GET``
+kept, a provider of the person's left as it is, and a failed ``PUT`` retried
+at the next start; a new password in the state stopping the container, writing the
 ``dashboard`` keys with a new ``jwt_secret`` and every other key kept, and
 starting it; the requirements folder named by the image's Python made at a
 version change; ``installing`` until ``GET /`` returns 200; the forwarder's
@@ -920,3 +924,90 @@ def test_the_forwarder_takes_the_first_free_port_from_6185_and_keeps_it(box):
     assert box.record()["is_stopped"] is True
     box.hooks.remove()
     assert not os.path.exists(box.record_dir)
+
+
+# --- the context length of the agent's provider ---
+
+
+def provider_of(box, provider_id: str) -> dict:
+    return next(held for held in box.astrbot.providers if held["id"] == provider_id)
+
+
+def test_the_agent_s_provider_holds_the_length_in_the_file_and_in_a_provider_it_adds(
+    box,
+):
+    box.install({**CONFIG, "model": "m1", "context_length": 32768})
+
+    (provider,) = box.containers.settings()["provider"]
+    assert provider["max_context_tokens"] == 32768
+    assert box.record()["context_length"] == 32768
+
+    box.start({**CONFIG, "model": "m2", "context_length": 16384})
+
+    assert provider_of(box, "neutrino_gateway/m2")["max_context_tokens"] == 16384
+    assert box.record()["context_length"] == 16384
+    assert "PUT" not in [
+        method
+        for method, path, _, _ in box.astrbot.requests
+        if path.startswith("/api/v1/providers/")
+    ]
+
+
+def test_a_changed_length_on_the_same_model_is_written_back_with_every_other_key(box):
+    box.install({**CONFIG, "model": "m1", "context_length": 32768})
+    box.astrbot.providers = [
+        {
+            "id": "neutrino_gateway/m1",
+            "model": "m1",
+            "provider_source_id": "neutrino_gateway",
+            "max_context_tokens": 32768,
+            "temperature": 0.3,
+        }
+    ]
+
+    box.start({**CONFIG, "model": "m1", "context_length": 8192})
+    box.start({**CONFIG, "model": "m1", "context_length": 8192})
+
+    assert box.astrbot.providers == [
+        {
+            "id": "neutrino_gateway/m1",
+            "model": "m1",
+            "provider_source_id": "neutrino_gateway",
+            "max_context_tokens": 8192,
+            "temperature": 0.3,
+        }
+    ]
+    assert box.astrbot.paths("PUT") == ["/api/v1/providers/neutrino_gateway/m1"]
+    assert box.record()["context_length"] == 8192
+
+
+def test_a_provider_of_the_person_s_own_keeps_its_length(box):
+    box.install()
+    own = {
+        "id": "neutrino_gateway/m1",
+        "provider_source_id": "x",
+        "max_context_tokens": 5,
+    }
+    box.astrbot.providers = [dict(own)]
+
+    box.start({**CONFIG, "model": "m1", "context_length": 32768})
+    box.start({**CONFIG, "model": "m1", "context_length": 16384})
+
+    assert box.astrbot.providers == [own]
+    assert not [path for path in box.astrbot.paths("PUT") if "providers" in path]
+
+
+def test_a_failed_write_of_the_length_is_tried_again_at_the_next_start(box):
+    box.install({**CONFIG, "model": "m1", "context_length": 32768})
+    box.astrbot.providers = [{"id": "neutrino_gateway/m1", "max_context_tokens": 32768}]
+    box.astrbot.failing.add(("PUT", "/api/v1/providers/neutrino_gateway/m1"))
+
+    box.start({**CONFIG, "model": "m1", "context_length": 8192})
+
+    assert box.record()["context_length"] == 32768
+    assert any("did not take" in line for line in box.lines)
+    box.astrbot.failing.clear()
+    box.start({**CONFIG, "model": "m1", "context_length": 8192})
+
+    assert box.astrbot.providers[0]["max_context_tokens"] == 8192
+    assert box.record()["context_length"] == 8192
