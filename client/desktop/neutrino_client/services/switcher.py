@@ -34,8 +34,11 @@ while cc-switch lists its provider. Its top-level ``model`` is written after
 the switch when the file names none, and the record keeps it. The switch
 back takes away OpenCode's migration backup holding the hub's provider.
 
-One knob has no flag in cc-switch: Codex's reasoning effort, which is
-settled into ``config.toml`` after the switch when the person chose one.
+Three knobs have no flag in cc-switch: Codex's reasoning effort and its
+``model_context_window``, settled into ``config.toml`` after the switch, and
+Claude Code's ``CLAUDE_CODE_MAX_CONTEXT_TOKENS``, settled into the ``env``
+of ``settings.json`` while a slot names a model whose name does not start
+with ``claude-``.
 
 Not pure: runs the binary and edits the person's configuration.
 """
@@ -131,6 +134,15 @@ CLAUDE_SLOT_FLAGS = {
 
 # Codex's one knob cc-switch has no flag for, a top-level key of config.toml.
 CODEX_EFFORT_KEY = "model_reasoning_effort"
+# The context length each tool is given where cc-switch has no flag for it:
+# Codex's top-level key of config.toml, and Claude Code's variable in the
+# ``env`` of settings.json, written only while a slot names a model whose
+# name does not start with ``claude-``. Each is kept in the record's
+# ``added`` under its key.
+CODEX_WINDOW_KEY = "model_context_window"
+CLAUDE_WINDOW_VARIABLE = "CLAUDE_CODE_MAX_CONTEXT_TOKENS"
+CLAUDE_WINDOW_KEY = "max_context_tokens"
+CLAUDE_OWN_PREFIX = "claude-"
 # Codex asks for ``<base>/responses`` and OpenCode for
 # ``<base>/chat/completions``; the gateway serves both under ``/v1``. Claude
 # Code and Gemini add their own versioned paths.
@@ -202,7 +214,13 @@ def is_installed() -> bool:
     return find_cli() is not None
 
 
-def activate(*, base_url: str, api_key: str, tool_configs: "dict | None" = None) -> str:
+def activate(
+    *,
+    base_url: str,
+    api_key: str,
+    tool_configs: "dict | None" = None,
+    context_lengths: "dict | None" = None,
+) -> str:
     """Register the hub in cc-switch and switch every tool to it.
 
     Args:
@@ -212,6 +230,8 @@ def activate(*, base_url: str, api_key: str, tool_configs: "dict | None" = None)
             ``codex`` model and reasoning effort, ``gemini`` and
             ``opencode`` model. None or a missing key leaves that choice to
             cc-switch.
+        context_lengths: Each model's ``{context_length, input_limit,
+            output_limit}``, from the ``ai`` entry; None names none.
 
     Returns:
         The tools switched this time, comma separated; empty when every
@@ -226,7 +246,9 @@ def activate(*, base_url: str, api_key: str, tool_configs: "dict | None" = None)
     switched = []
     for app in SWITCHER_APPS:
         try:
-            if _point_at_hub(app, base_url, api_key, configs.get(app) or {}):
+            if _point_at_hub(
+                app, base_url, api_key, configs.get(app) or {}, context_lengths
+            ):
                 switched.append(app)
         except ToolSwitchError as error:
             undone = []
@@ -312,7 +334,61 @@ def is_active_for(app: str) -> bool:
     return _current_provider(app) == SWITCHER_PROVIDER_ID
 
 
-def _point_at_hub(app: str, base_url: str, api_key: str, config: dict) -> bool:
+def one_number(length) -> int:
+    """A model's one number: its window, or its longest prompt where that is smaller.
+
+    Args:
+        length: ``{context_length, input_limit, output_limit}``.
+
+    Returns:
+        ``context_length``, or ``input_limit`` when it is smaller and not 0;
+        0 for anything that names neither.
+    """
+    if not isinstance(length, dict):
+        return 0
+    window = _count(length.get("context_length"))
+    prompt = _count(length.get("input_limit"))
+    if prompt and (not window or prompt < window):
+        return prompt
+    return window
+
+
+def tool_window(app: str, config: dict, lengths: "dict | None") -> int:
+    """The context length a tool with one number is given.
+
+    Args:
+        app: Which tool, in cc-switch's vocabulary.
+        config: The tool's staged choices.
+        lengths: Each model's ``{context_length, input_limit,
+            output_limit}``; None names none.
+
+    Returns:
+        Codex's model's one number; for Claude Code the smallest one number
+        of its slots' models whose names do not start with ``claude-``;
+        0 for none and for every other tool.
+    """
+    held = lengths if isinstance(lengths, dict) else {}
+    if app == "codex":
+        return one_number(held.get(str(config.get("model", "") or "")))
+    if app != "claude":
+        return 0
+    numbers = []
+    for slot in CLAUDE_SLOT_FLAGS:
+        model = str(config.get(slot, "") or "")
+        if model and not model.startswith(CLAUDE_OWN_PREFIX):
+            number = one_number(held.get(model))
+            if number:
+                numbers.append(number)
+    return min(numbers) if numbers else 0
+
+
+def _point_at_hub(
+    app: str,
+    base_url: str,
+    api_key: str,
+    config: dict,
+    lengths: "dict | None" = None,
+) -> bool:
     """Make the hub one tool's provider, the person's own settings kept.
 
     Args:
@@ -320,6 +396,7 @@ def _point_at_hub(app: str, base_url: str, api_key: str, config: dict) -> bool:
         base_url: The hub's AI endpoint.
         api_key: This person's gateway key.
         config: The tool's staged choices.
+        lengths: Each model's length; None names none.
 
     Returns:
         True when the tool was switched; False when it already stood on
@@ -334,9 +411,10 @@ def _point_at_hub(app: str, base_url: str, api_key: str, config: dict) -> bool:
     record = _read_record(app)
     if record is None:
         record = _adopt_once(app)
-    wanted = _wanted(app, base_url, api_key, config)
+    wanted = _wanted(app, base_url, api_key, config, lengths)
+    window = tool_window(app, config, lengths)
     if record.get("added") == wanted and is_active_for(app):
-        _verify(app, base_url, api_key, config)
+        _verify(app, base_url, api_key, config, window)
         return False
 
     _drop_provider(app, record.get("previous", ""))
@@ -374,11 +452,18 @@ def _point_at_hub(app: str, base_url: str, api_key: str, config: dict) -> bool:
 
     if app == "codex":
         effort = str(config.get(CODEX_EFFORT_KEY, "") or "")
+        values = {}
         if effort:
-            _write_text(
-                relative,
-                _merge_toml_top_level(_read_text(relative), {CODEX_EFFORT_KEY: effort}),
-            )
+            values[CODEX_EFFORT_KEY] = effort
+        if window:
+            values[CODEX_WINDOW_KEY] = window
+        if values:
+            _write_text(relative, _merge_toml_top_level(_read_text(relative), values))
+    if app == "claude" and window:
+        text = _read_text(relative)
+        merged = _with_claude_window(text, window)
+        if merged != text:
+            _write_text(relative, merged)
     if app == "opencode":
         text = _read_text(relative)
         merged, written = _with_opencode_model(
@@ -391,7 +476,7 @@ def _point_at_hub(app: str, base_url: str, api_key: str, config: dict) -> bool:
         path = _kept_path(app, name)
         if os.path.isfile(path):
             _set_mode(path, SWITCHER_KEY_FILE_MODE)
-    _verify(app, base_url, api_key, config)
+    _verify(app, base_url, api_key, config, window)
     record["added"] = wanted
     _write_record(app, record)
     return True
@@ -453,7 +538,13 @@ def _adopt_once(app: str) -> dict:
     return record
 
 
-def _wanted(app: str, base_url: str, api_key: str, config: dict) -> dict:
+def _wanted(
+    app: str,
+    base_url: str,
+    api_key: str,
+    config: dict,
+    lengths: "dict | None" = None,
+) -> dict:
     """What the hub's provider should carry, as the record remembers it.
 
     Args:
@@ -461,10 +552,13 @@ def _wanted(app: str, base_url: str, api_key: str, config: dict) -> dict:
         base_url: The hub's AI endpoint.
         api_key: This person's gateway key.
         config: The tool's staged choices.
+        lengths: Each model's length; None names none.
 
     Returns:
         The endpoint, a digest of the key, the flags, Codex's effort and
-        OpenCode's top-level ``model``; the key itself is never written down.
+        ``model_context_window``, Claude Code's ``max_context_tokens``, 0
+        for none, and OpenCode's top-level ``model``; the key itself is
+        never written down.
     """
     settings = {
         "base_url": _endpoint_for(app, base_url),
@@ -472,12 +566,18 @@ def _wanted(app: str, base_url: str, api_key: str, config: dict) -> dict:
         "flags": _model_flags(app, config),
         "effort": str(config.get(CODEX_EFFORT_KEY, "") or "") if app == "codex" else "",
     }
+    if app == "codex":
+        settings[CODEX_WINDOW_KEY] = tool_window(app, config, lengths)
+    if app == "claude":
+        settings[CLAUDE_WINDOW_KEY] = tool_window(app, config, lengths)
     if app == "opencode":
         settings[OPENCODE_MODEL_KEY] = _opencode_model(config)
     return settings
 
 
-def _verify(app: str, base_url: str, api_key: str, config: dict) -> None:
+def _verify(
+    app: str, base_url: str, api_key: str, config: dict, window: int = 0
+) -> None:
     """Read the tool's own file back and refuse when it does not name the hub.
 
     Args:
@@ -485,20 +585,33 @@ def _verify(app: str, base_url: str, api_key: str, config: dict) -> None:
         base_url: The hub's AI endpoint.
         api_key: This person's gateway key.
         config: The tool's staged choices.
+        window: The context length the tool was given; 0 for none.
 
     Raises:
         ToolSwitchError: When Claude Code's settings do not carry the hub's
             endpoint, key and model, or Codex's or Gemini's file does not
-            name the hub's endpoint.
+            name the hub's endpoint, or Codex's or Claude Code's does not
+            hold the context length given.
     """
     if app != "claude":
-        if _endpoint_for(app, base_url) not in _read_text(SWITCHER_APP_FILES[app]):
+        text = _read_text(SWITCHER_APP_FILES[app])
+        if _endpoint_for(app, base_url) not in text:
             raise ToolSwitchError("the settings file did not take the hub's endpoint")
+        if (
+            app == "codex"
+            and window
+            and _toml_top_level(text, CODEX_WINDOW_KEY) != str(window)
+        ):
+            raise ToolSwitchError("the settings file did not take the context length")
         return
     if not is_active(
         base_url=base_url, api_key=api_key, model=str(config.get("default", ""))
     ):
         raise ToolSwitchError("the settings file did not take the hub's endpoint")
+    env = _read_json(SWITCHER_APP_FILES["claude"]).get("env", {})
+    env = env if isinstance(env, dict) else {}
+    if window and env.get(CLAUDE_WINDOW_VARIABLE) != str(window):
+        raise ToolSwitchError("the settings file did not take the context length")
 
 
 def _point_away(app: str) -> str:
@@ -991,7 +1104,7 @@ def _merge_toml_top_level(text: str, values: dict) -> str:
 
     Args:
         text: The file as it stands.
-        values: Key to string value.
+        values: Key to a string value, written quoted, or a whole number.
 
     Returns:
         The merged text.
@@ -1007,9 +1120,49 @@ def _merge_toml_top_level(text: str, values: dict) -> str:
             if key in values:
                 continue
         kept.append(line)
-    head = [f'{key} = "{value}"' for key, value in values.items()]
+    head = [
+        f"{key} = {value}" if isinstance(value, int) else f'{key} = "{value}"'
+        for key, value in values.items()
+    ]
     merged = "\n".join(head + kept)
     return merged.rstrip("\n") + "\n"
+
+
+def _toml_top_level(text: str, key: str) -> str:
+    """One top-level key's value in a TOML text, as written; empty when it is not there."""
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("["):
+            return ""
+        name, separator, value = stripped.partition("=")
+        if separator and name.strip() == key:
+            return value.strip()
+    return ""
+
+
+def _with_claude_window(text: str, window: int) -> str:
+    """Claude Code's settings with ``CLAUDE_CODE_MAX_CONTEXT_TOKENS`` in their ``env``, as JSON with two-space indentation; the same text when nothing changes."""
+    try:
+        document = json.loads(text or "{}")
+    except ValueError:
+        return text
+    if not isinstance(document, dict):
+        return text
+    env = document.get("env")
+    env = dict(env) if isinstance(env, dict) else {}
+    if env.get(CLAUDE_WINDOW_VARIABLE) == str(window):
+        return text
+    env[CLAUDE_WINDOW_VARIABLE] = str(window)
+    document["env"] = env
+    ending = "\n" if text.endswith("\n") else ""
+    return json.dumps(document, indent=2, ensure_ascii=False) + ending
+
+
+def _count(value) -> int:
+    """A token count as an int, 0 for anything that is not a positive whole number."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        return 0
+    return value if value > 0 else 0
 
 
 def _run(arguments: list, app: str, *, is_checked: bool = True) -> str:

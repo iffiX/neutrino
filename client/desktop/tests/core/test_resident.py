@@ -422,7 +422,9 @@ class QuietSwitcher:
     def is_active_for(self, app: str) -> bool:
         return False
 
-    def activate(self, *, base_url, api_key, tool_configs=None) -> str:
+    def activate(
+        self, *, base_url, api_key, tool_configs=None, context_lengths=None
+    ) -> str:
         self.calls.append("activate")
         self.base_urls.append(base_url)
         return "claude"

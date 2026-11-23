@@ -118,6 +118,7 @@ class FakeSwitcher:
         self.active = None
         self.has_cli = True
         self.calls = []
+        self.lengths = []
         self.activate_error = None
         self.deactivate_error = None
         self.active_apps = set()
@@ -136,10 +137,11 @@ class FakeSwitcher:
     def is_active(self, *, base_url, api_key="", model=""):
         return self.active == (base_url, api_key, model)
 
-    def activate(self, *, base_url, api_key, tool_configs=None):
+    def activate(self, *, base_url, api_key, tool_configs=None, context_lengths=None):
         if self.activate_error is not None:
             raise self.activate_error
         self.calls.append(("activate", base_url, api_key, tool_configs))
+        self.lengths.append(context_lengths)
         if "claude" not in self.records:
             self.records["claude"] = {"previous": self.provider}
         self.provider = "neutrino"
@@ -782,3 +784,17 @@ def test_the_gate_goes_away_with_the_agent(subject):
     assert outcome == {}
     assert handler.state()["ai"]["is_managed"] is False
     assert len(activations(fake)) == 1
+
+
+def test_each_tool_is_given_the_entry_s_lengths_and_a_new_length_reaches_it(subject):
+    handler, _store, fake, _hub = subject
+    lengths = {"m1": {"context_length": 32768, "input_limit": 0, "output_limit": 0}}
+    entry = {**ENTRY, "payload": {**ENTRY["payload"], "context_lengths": lengths}}
+
+    handler.act(entries=[entry], body={"is_enabled": True})
+    changed = {"m1": {"context_length": 16384, "input_limit": 0, "output_limit": 0}}
+    handler.refresh(
+        entries=[{**entry, "payload": {**entry["payload"], "context_lengths": changed}}]
+    )
+
+    assert fake.lengths == [lengths, changed]

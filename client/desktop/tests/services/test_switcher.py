@@ -10,6 +10,8 @@ top-level ``model`` names the hub's model when the file names none, follows
 a changed model while it is the one written, and the person's own stays; a
 record without the wanted ``model`` is switched once more, and the switch
 back takes away OpenCode's migration backup holding the hub's provider.
+Codex and Claude Code get their model's length as the agent gives it, and a
+changed length or a record without it switches the tool again.
 """
 
 import json
@@ -708,7 +710,7 @@ def test_activation_is_all_or_nothing(monkeypatch):
     switched = []
     put_back = []
 
-    def refuse_codex(app, base_url, api_key, config):
+    def refuse_codex(app, base_url, api_key, config, lengths=None):
         if app == "codex":
             raise switcher.ToolSwitchError("no store")
         switched.append(app)
@@ -725,7 +727,7 @@ def test_activation_is_all_or_nothing(monkeypatch):
 
 
 def test_a_rollback_that_fails_is_named_in_the_refusal(monkeypatch):
-    def refuse_codex(app, base_url, api_key, config):
+    def refuse_codex(app, base_url, api_key, config, lengths=None):
         if app == "codex":
             raise switcher.ToolSwitchError("no store")
 
@@ -1237,3 +1239,72 @@ def test_a_migration_backup_without_the_hub_s_provider_stays(tmp_path, monkeypat
     switcher.deactivate()
 
     assert backup.read_bytes() == own
+
+
+# --- each tool's context length, as the agent gives it ---
+
+WIDE = {"context_length": 400000, "input_limit": 272000, "output_limit": 128000}
+SMALL = {"context_length": 16384, "input_limit": 0, "output_limit": 0}
+LENGTH_CONFIGS = {
+    "claude": {"default": "lab-mini", "opus": "claude-opus-4-6", "haiku": "qwen"},
+    "codex": {"model": "lab-mini"},
+    "gemini": {"model": "qwen"},
+    "opencode": {"model": "qwen"},
+}
+LENGTHS = {"lab-mini": WIDE, "qwen": SMALL, "claude-opus-4-6": SMALL}
+
+
+def activate_with(lengths, configs=LENGTH_CONFIGS):
+    return switcher.activate(
+        base_url="http://hub",
+        api_key="k",
+        tool_configs=configs,
+        context_lengths=lengths,
+    )
+
+
+def test_codex_and_claude_code_get_their_one_number_after_the_switch(
+    tmp_path, monkeypatch
+):
+    (tmp_path / "home").mkdir(exist_ok=True)
+    wire(monkeypatch, Cli())
+
+    activate_with(LENGTHS)
+
+    toml = (tmp_path / "home" / ".codex/config.toml").read_text()
+    assert "model_context_window = 272000\n" in toml
+    settings = json.loads((tmp_path / "home" / ".claude/settings.json").read_text())
+    assert settings["env"]["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] == "16384"
+    assert switcher._read_record("codex")["added"]["model_context_window"] == 272000
+    assert switcher._read_record("claude")["added"]["max_context_tokens"] == 16384
+
+
+def test_claude_code_gets_no_variable_while_every_slot_names_a_claude_model(
+    tmp_path, monkeypatch
+):
+    (tmp_path / "home").mkdir(exist_ok=True)
+    wire(monkeypatch, Cli())
+
+    activate_with(LENGTHS, {**LENGTH_CONFIGS, "claude": {"default": "claude-x"}})
+
+    settings = json.loads((tmp_path / "home" / ".claude/settings.json").read_text())
+    assert "CLAUDE_CODE_MAX_CONTEXT_TOKENS" not in settings.get("env", {})
+
+
+def test_a_changed_length_switches_the_tool_again_and_an_old_record_once_more(
+    tmp_path, monkeypatch
+):
+    (tmp_path / "home").mkdir(exist_ok=True)
+    wire(monkeypatch, Cli())
+    activate_with(LENGTHS)
+
+    assert activate_with({**LENGTHS, "lab-mini": {"context_length": 100000}}) == "codex"
+    toml = (tmp_path / "home" / ".codex/config.toml").read_text()
+    assert "model_context_window = 100000\n" in toml
+
+    record = switcher._read_record("claude")
+    del record["added"]["max_context_tokens"]
+    switcher._write_record("claude", record)
+    assert (
+        activate_with({**LENGTHS, "lab-mini": {"context_length": 100000}}) == "claude"
+    )

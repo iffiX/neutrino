@@ -12,7 +12,8 @@ hub and endpoint the last activation granted, are this run's own and go
 with it.
 
 The staged choices are what each tool is pointed with; the grant's ``model``
-is only the prefill default for a slot nobody has chosen. A change of exit
+is only the prefill default for a slot nobody has chosen. Each tool is given
+its model's context length from the entry's ``context_lengths``. A change of exit
 is one activation at the new hub, never a deactivation first. Deactivation
 uses the endpoint activation recorded, because by then the hub may no
 longer name it.
@@ -239,11 +240,12 @@ class AiServiceHandler(ServiceTypeHandler):
         self._log = log
         self._switcher = switcher_module if switcher_module is not None else switcher
         self._lock = threading.Lock()
-        # The exit hub, its ai entry and that entry's endpoint, as of the
-        # last apply or refresh.
+        # The exit hub, its ai entry, that entry's endpoint and its context
+        # lengths, as of the last apply or refresh.
         self._hub_id = ""
         self._entry_id = ""
         self._endpoint = ""
+        self._context_lengths: dict = {}
         self._is_enabled = False
         # What the last activation pointed the tools at: hub_id, entry_id,
         # base_url and the default model.
@@ -444,13 +446,16 @@ class AiServiceHandler(ServiceTypeHandler):
         return False
 
     def _aim(self, entries: list) -> None:
-        """Take the exit hub, its ai entry and the endpoint from the merged list."""
+        """Take the exit hub, its ai entry, the endpoint and the context lengths from the merged list."""
         hub_id = str(self._exit_hub_id() or "")
         entry = ai_entry(entries, hub_id)
+        payload = entry.get("payload") or {}
+        lengths = payload.get("context_lengths")
         with self._lock:
             self._hub_id = hub_id
             self._entry_id = str(entry.get("id", "") or "")
-            self._endpoint = str((entry.get("payload") or {}).get("endpoint", ""))
+            self._endpoint = str(payload.get("endpoint", ""))
+            self._context_lengths = dict(lengths) if isinstance(lengths, dict) else {}
 
     def _activate(self, hub_id: str, entry_id: str) -> dict:
         if not entry_id:
@@ -466,6 +471,7 @@ class AiServiceHandler(ServiceTypeHandler):
             return self._no_endpoint()
         with self._lock:
             endpoint = self._endpoint
+            lengths = dict(self._context_lengths)
         try:
             port = self._forwards.ensure(
                 hub_id=hub_id,
@@ -493,7 +499,10 @@ class AiServiceHandler(ServiceTypeHandler):
         # Every tool is looked at each time: one whose provider must change
         # is switched, the others are left as they stand.
         switched = self._switcher.activate(
-            base_url=base_url, api_key=api_key, tool_configs=resolved
+            base_url=base_url,
+            api_key=api_key,
+            tool_configs=resolved,
+            context_lengths=lengths,
         )
         if switched:
             self._log(f"ai service: pointed {switched} at the hub")
