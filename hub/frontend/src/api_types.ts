@@ -766,6 +766,64 @@ export interface AiOllamaProvidersResponse {
   providers: AiOllamaProviderView[];
 }
 
+/** An account or a stored provider that serves a name. */
+export interface AiContextSourceView {
+  origin: "account" | "provider";
+  /** The account's token file, or the provider's id. */
+  id: string;
+  /** The account's login kind, or the provider's name. */
+  name: string;
+}
+
+/** A cloud name the gateway serves, with the context length the AI tools
+ * are given for it. */
+export interface AiCloudContextView {
+  model: string;
+  /** Its accounts and then its providers, by name. */
+  sources: AiContextSourceView[];
+  /** The length a person set; null while none is stored. */
+  context_length: number | null;
+  /** The length the name has while a person sets none. */
+  default_context_length: number;
+}
+
+/** One machine of an Ollama name's pool, online or not. */
+export interface AiOllamaContextMachineView {
+  device_id: string;
+  /** The machine's name. */
+  name: string;
+  /** The `num_ctx` the model's Modelfile sets, else the machine's Ollama
+   * setting. */
+  setting_context_length: number;
+  /** The model's trained length; 0 while the hub has read none. */
+  trained_context_length: number;
+}
+
+/** An Ollama name the gateway serves: every machine of its pool, and the
+ * length the AI tools are given for it. */
+export interface AiOllamaContextView {
+  model: string;
+  machines: AiOllamaContextMachineView[];
+  /** The accounts and stored providers that also serve the name. */
+  sources: AiContextSourceView[];
+  /** Their default; 0 while there are none. */
+  cloud_context_length: number;
+  /** The smallest of each machine's smaller number and the cloud default. */
+  context_length: number;
+}
+
+/** `GET /api/hub/ai/context`: every served name's context length. */
+export interface AiContextResponse {
+  cloud: AiCloudContextView[];
+  ollama: AiOllamaContextView[];
+}
+
+/** `POST /api/hub/ai/context/set`: lengths by cloud name; a null takes a
+ * name back to its default. */
+export interface AiContextUpdate {
+  lengths: Record<string, number | null>;
+}
+
 /** The serving order write: every provider id, in the order tried. */
 export interface AiProviderOrderUpdate {
   provider_ids: string[];

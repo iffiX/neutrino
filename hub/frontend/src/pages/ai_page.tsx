@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { AiAccessPanel } from "../components/ai_access_panel";
 import { AiAccountsPanel } from "../components/ai_accounts_panel";
+import { AiContextPanel } from "../components/ai_context_panel";
 import { AiJournalPanel } from "../components/ai_journal_panel";
 import { AiProvidersSection } from "../components/ai_providers_section";
 import { AiUsageKeys } from "../components/ai_usage_keys";
@@ -340,6 +341,8 @@ export function AiPage() {
       />
 
       <AiAccountsPanel />
+
+      <AiContextPanel />
 
       <AiAccessPanel
         endpoint={endpoint}

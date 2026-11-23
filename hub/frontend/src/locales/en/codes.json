@@ -367,6 +367,7 @@
   "code.module_in_use": "First uninstall what requires this module: {modules}.",
   "code.container_hub_owned": "{name} is run by a module of the hub; change it in that module's tab.",
   "code.containers_not_applied": "Containers did not apply the containers of this module; fix the error on the Containers tab, then press Start here.",
+  "code.context_length_invalid": "The context length must be between {min} and {max} tokens.",
   "code.page_silent": "The page at port {port} does not respond. Check what else listens on that port.",
   "code.image_pull_failed": "The image {image} of {name} could not be pulled. Check its tag and the registry mirrors.",
   "code.container_start_failed": "The container {name} did not start from {image}. Its journal names the reason.",

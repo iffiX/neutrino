@@ -4,6 +4,7 @@ import { DialogLayer } from "./dialog_layer";
 import { ErrorPanel } from "./error_panel";
 import { Icon } from "./icon";
 import { StatusDot } from "./status_dot";
+import { providerLabel } from "../ai_provider_labels";
 import { ApiError, apiGet, apiPost, describeError } from "../api_client";
 import { copyText } from "../copy_text";
 import { formatDuration } from "../format_duration";
@@ -46,22 +47,6 @@ const COPIED_CLEAR_MS = 1600;
 
 /** The one `status` a working account reports. */
 const ACCOUNT_STATUS_ACTIVE = "active";
-
-/**
- * What each service is called on this page.
- *
- * A login kind is the protocol the gateway speaks, an account's provider the
- * file it was written to, and the two spell one service differently; both
- * spellings are worded here. Anything else shows the name the gateway used.
- */
-const PROVIDER_LABELS: Record<string, string> = {
-  anthropic: "Claude",
-  claude: "Claude",
-  codex: "ChatGPT",
-  antigravity: "Google",
-  kimi: "Kimi",
-  xai: "xAI",
-};
 
 /** The sentence keying each error code the accounts endpoints return. */
 const ERROR_KEYS: Record<string, string> = {
@@ -598,11 +583,6 @@ async function discardLogin(state: string): Promise<void> {
   } catch {
     // Nothing on screen waits on the cancel being accepted.
   }
-}
-
-/** The name one service goes by, or the gateway's own where none is worded. */
-function providerLabel(name: string): string {
-  return PROVIDER_LABELS[name] ?? name;
 }
 
 /** What names an account here: its label, else its email, else its file. */
