@@ -115,9 +115,10 @@ def test_every_sentence_fills_the_same_placeholders(language, name):
 @pytest.mark.parametrize("name", catalog_names())
 def test_chinese_names_a_computer_joined_to_the_hub_only_as_a_system(name):
     """Chinese writes 系统 for it and never 机器, 设备 or 电脑 (ui_text.md, "Names
-    that are fixed"). A kept key names another device."""
+    that are fixed"). 机器人, a chat bot, is another word, and a kept key names
+    another device."""
     for key, sentence in catalog("zh-CN", name).items():
-        assert "机器" not in sentence, key
+        assert "机器" not in sentence.replace("机器人", ""), key
         if key not in KEYS_KEEPING_DEVICE_WORDS:
             assert "设备" not in sentence and "电脑" not in sentence, key
 
