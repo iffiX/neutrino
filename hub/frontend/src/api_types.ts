@@ -771,7 +771,8 @@ export interface AiContextSourceView {
   origin: "account" | "provider";
   /** The account's token file, or the provider's id. */
   id: string;
-  /** The account's login kind, or the provider's name. */
+  /** The gateway's provider name of the account's login (`claude`,
+   * `codex`, …), or the provider's name. */
   name: string;
 }
 
