@@ -317,7 +317,7 @@ model's one number.
 
 | Tool or app | Where | The number |
 | --- | --- | --- |
-| OpenCode | `limit` on the model of the hub's provider in `opencode.json`, `{context, input, output}` | `context` the model's `context_length`; `input` its `input_limit` and `output` its `output_limit`, each left out while 0 |
+| OpenCode | `limit` on the model of the hub's provider in `opencode.json`, `{context, output}` | `context` the model's one number; `output` its `output_limit`, or, where that is 0, the smaller of 32000 and half of `context` |
 | Codex | the top-level `model_context_window` of `config.toml` | the model's one number |
 | Claude Code | `CLAUDE_CODE_MAX_CONTEXT_TOKENS` in the `env` of `settings.json` | the smallest one number of the models of its four slots whose name does not start with `claude-`; absent while every slot names a `claude-` model |
 | Gemini | nothing | |
@@ -329,11 +329,13 @@ model's one number.
 | Rule | Reason |
 | --- | --- |
 | OpenCode's `limit` goes in with the hub's provider, inside `--config`. | OpenCode compacts when a conversation reaches its window less 15%, at least 16000 tokens free, takes the smaller of `input` and `context` as the window, and asks for at most `output` (`packages/core/src/session/compaction.ts`). Without a `limit` it assumes 200000 and 32000. |
+| OpenCode's `limit` holds `context` and `output` and no `input`, `context` being the model's one number. | cc-switch 5.10.4 drops `limit.input` from the provider it is given when it writes the live file at `add`, and the one number already takes the longest prompt where the vendor states one. |
+| OpenCode's `limit` always holds an `output`. Where the model states no longest answer, `output` is the smaller of 32000 and half of `context`. | OpenCode 1.19.5 refuses a `limit` with no `output`, and the whole `opencode.json` goes invalid. An Ollama name states no longest answer. 32000 is OpenCode's own `output` without a `limit`, and half of `context` leaves the rest of a small window to the conversation. |
 | Codex's `model_context_window` and Claude Code's variable are written into the tool's file after `use`, as Codex's reasoning effort is. | cc-switch 5.10.4 has no flag for either. |
 | A tool with one number gets the longest prompt where the vendor states one. | The vendor rejects a prompt longer than that inside the window, and Aliyun's own Claude Code guide sets 983616 for `qwen4-max`. |
 | Claude Code's variable is one number for its four slots. A `claude-` name gets no number of its own. | The variable applies to a model ID Claude Code does not recognize; a name it recognizes resolves to that Claude model, whose window it knows, and ignores the variable unless compaction is turned off (code.claude.com/docs/en/model-config, "Which IDs `CLAUDE_CODE_MAX_CONTEXT_TOKENS` applies to"). From 2.1.323 a name it does not know counts as 1000000. |
 | Each tool's `added` in its record also holds the lengths the switch writes: OpenCode's `limit`, Codex's `model_context_window` and Claude Code's `max_context_tokens`, 0 or empty for none. A record whose `added` lacks them does not carry the wanted settings. | A changed length differs from the record, so the tool is switched again, as a changed model is. A tool switched by an earlier build is switched once more and gets its lengths. |
-| Every tool named as switched has its length read back from its file. | cc-switch writes OpenCode's `limit` as part of a provider it is given whole, and a key it drops leaves the tool on its own assumption with no sign. |
+| Every tool named as switched has its length read back from its file: OpenCode's `context` and `output`, Codex's `model_context_window` and Claude Code's variable. | cc-switch writes OpenCode's `limit` as part of a provider it is given whole, and a key it drops leaves the tool on its own assumption with no sign. |
 | The switch back writes no length of its own. | It writes each kept file back byte for byte, and cc-switch's `provider delete` takes OpenCode's `limit` with the hub's provider. |
 
 | Rule | Reason |
@@ -407,7 +409,7 @@ current one, so nothing of the person's has to pass through its stores:
 
 | Step | cc-switch command | What it writes |
 | --- | --- | --- |
-| The hub | `provider add --config` with the whole provider, `{npm: "@ai-sdk/openai-compatible", name, options: {baseURL, apiKey}, models: {<model>: {name, limit}}}`, `limit` the model's context length ("Each model's context length"), then `use` | `provider.neutrino` in the file, every other key's value as it was |
+| The hub | `provider add --config` with the whole provider, `{npm: "@ai-sdk/openai-compatible", name, options: {baseURL, apiKey}, models: {<model>: {name, limit}}}`, `limit` the model's `{context, output}` ("Each model's context length"), then `use` | `provider.neutrino` in the file, every other key's value as it was |
 | The model | none: the client writes the file itself after `use` | the top-level `model`, `neutrino/<model>`, when the file names no `model` |
 | Switching back | `provider delete` | the file without `provider.neutrino` |
 
