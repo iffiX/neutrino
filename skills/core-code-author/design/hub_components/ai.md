@@ -317,7 +317,7 @@ model's one number.
 
 | Tool or app | Where | The number |
 | --- | --- | --- |
-| OpenCode | `limit` on the model of the hub's provider in `opencode.json`, `{context, output}` | `context` the model's one number; `output` its `output_limit`, or, where that is 0, the smaller of 32000 and half of `context` |
+| OpenCode | `limit` on the model of the hub's provider in `opencode.json`, `{context, output}` | `context` the model's one number; `output` the smaller of its `output_limit` and half of `context`, or, where `output_limit` is 0, the smaller of 32000 and half of `context` |
 | Codex | the top-level `model_context_window` of `config.toml` | the model's one number |
 | Claude Code | `CLAUDE_CODE_MAX_CONTEXT_TOKENS` in the `env` of `settings.json` | the smallest one number of the models of its four slots whose name does not start with `claude-`; absent while every slot names a `claude-` model |
 | Gemini | nothing | |
@@ -331,6 +331,7 @@ model's one number.
 | OpenCode's `limit` goes in with the hub's provider, inside `--config`. | OpenCode compacts when a conversation reaches its window less 15%, at least 16000 tokens free, takes the smaller of `input` and `context` as the window, and asks for at most `output` (`packages/core/src/session/compaction.ts`). Without a `limit` it assumes 200000 and 32000. |
 | OpenCode's `limit` holds `context` and `output` and no `input`, `context` being the model's one number. | cc-switch 5.10.4 drops `limit.input` from the provider it is given when it writes the live file at `add`, and the one number already takes the longest prompt where the vendor states one. |
 | OpenCode's `limit` always holds an `output`. Where the model states no longest answer, `output` is the smaller of 32000 and half of `context`. | OpenCode 1.19.5 refuses a `limit` with no `output`, and the whole `opencode.json` goes invalid. An Ollama name states no longest answer. 32000 is OpenCode's own `output` without a `limit`, and half of `context` leaves the rest of a small window to the conversation. |
+| OpenCode's `output` is never more than half of `context`, a vendor's longest answer above it included. | A length a person sets can be smaller than the vendor's longest answer: `lab-mini` set to 100000 got 128000 in the lab, more than the window. OpenCode asks for at most `output`, and an answer that size leaves no room for the conversation in the window. |
 | Codex's `model_context_window` and Claude Code's variable are written into the tool's file after `use`, as Codex's reasoning effort is. | cc-switch 5.10.4 has no flag for either. |
 | A tool with one number gets the longest prompt where the vendor states one. | The vendor rejects a prompt longer than that inside the window, and Aliyun's own Claude Code guide sets 983616 for `qwen4-max`. |
 | Claude Code's variable is one number for its four slots. A `claude-` name gets no number of its own. | The variable applies to a model ID Claude Code does not recognize; a name it recognizes resolves to that Claude model, whose window it knows, and ignores the variable unless compaction is turned off (code.claude.com/docs/en/model-config, "Which IDs `CLAUDE_CODE_MAX_CONTEXT_TOKENS` applies to"). From 2.1.323 a name it does not know counts as 1000000. |
