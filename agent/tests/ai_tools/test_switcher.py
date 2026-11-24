@@ -25,8 +25,8 @@ Codex is given its model's one number as ``model_context_window`` and Claude
 Code the smallest one number of its slots that name no ``claude-`` model as
 ``CLAUDE_CODE_MAX_CONTEXT_TOKENS``, none while every slot names one, and
 OpenCode its model's ``limit`` ``{context, output}`` inside ``--config``
-with no ``input``, ``output`` the smaller of 32000 and half of ``context``
-where the model states none, each read back from its file; a changed length switches the tool again, a record
+with no ``input``, ``output`` never more than half of ``context`` and the
+smaller of 32000 and half of ``context`` where the model states none, each read back from its file; a changed length switches the tool again, a record
 whose ``added`` lacks the lengths is switched once more, and no length is
 left after the switch back.
 """
@@ -982,3 +982,14 @@ def test_opencode_s_limit_goes_with_its_provider_at_the_switch_back(tmp_path):
     switcher.deactivate()
 
     assert session.files[OPENCODE] == own
+
+
+def test_opencode_s_output_is_never_more_than_half_its_context():
+    vendor = {"output_limit": 128000, "input_limit": 0}
+
+    assert opencode_limit(
+        {"model": "m"}, {"m": dict(vendor, context_length=100000)}
+    ) == {"context": 100000, "output": 50000}
+    assert opencode_limit(
+        {"model": "m"}, {"m": dict(vendor, context_length=1000000)}
+    ) == {"context": 1000000, "output": 128000}
