@@ -11,8 +11,9 @@ a changed model while it is the one written, and the person's own stays; a
 record without the wanted ``model`` is switched once more, and the switch
 back takes away OpenCode's migration backup holding the hub's provider.
 Codex, Claude Code and OpenCode get their model's length as the agent gives
-it, OpenCode's ``limit`` as ``{context, output}`` with no ``input``, and a
-changed length or a record without it switches the tool again.
+it, OpenCode's ``limit`` as ``{context, output}`` with no ``input`` and
+``output`` never more than half of ``context``, and a changed length or a
+record without it switches the tool again.
 """
 
 import json
@@ -1365,3 +1366,14 @@ def test_an_opencode_limit_the_file_did_not_keep_fails_the_switch(
         activate_with(LENGTHS)
 
     assert "did not take the context length" in str(caught.value)
+
+
+def test_opencode_s_output_is_never_more_than_half_its_context():
+    vendor = {"output_limit": 128000, "input_limit": 0}
+
+    assert switcher.opencode_limit(
+        {"model": "m"}, {"m": dict(vendor, context_length=100000)}
+    ) == {"context": 100000, "output": 50000}
+    assert switcher.opencode_limit(
+        {"model": "m"}, {"m": dict(vendor, context_length=1000000)}
+    ) == {"context": 1000000, "output": 128000}

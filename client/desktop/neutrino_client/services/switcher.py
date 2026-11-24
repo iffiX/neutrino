@@ -398,18 +398,17 @@ def opencode_limit(config: dict, lengths: "dict | None") -> dict:
 
     Returns:
         ``{context, output}``: ``context`` the model's one number,
-        ``output`` its ``output_limit``, or the smaller of 32000 and half of
-        ``context`` where that is 0; empty for a model with no length.
+        ``output`` the smaller of its ``output_limit`` and half of
+        ``context``, or of 32000 and half of ``context`` where
+        ``output_limit`` is 0; empty for a model with no length.
     """
     held = lengths if isinstance(lengths, dict) else {}
     length = held.get(str(config.get("model", "") or ""))
     context = one_number(length)
     if not context:
         return {}
-    output = _count(length.get("output_limit"))
-    if not output:
-        output = min(OPENCODE_OUTPUT_MAX, context // 2)
-    return {"context": context, "output": output}
+    output = _count(length.get("output_limit")) or OPENCODE_OUTPUT_MAX
+    return {"context": context, "output": min(output, context // 2)}
 
 
 def _point_at_hub(
