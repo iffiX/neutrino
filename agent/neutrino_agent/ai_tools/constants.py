@@ -25,6 +25,12 @@ AI_TOOLS_OPENCODE_NPM = "@ai-sdk/openai-compatible"
 # OpenCode's top-level key naming the model it starts on, as
 # ``<provider>/<model>``. cc-switch writes none.
 AI_TOOLS_OPENCODE_MODEL_KEY = "model"
+# The key of the hub's model in OpenCode's provider holding its window and
+# its longest answer, ``{context, output}``, kept in the record's ``added``
+# under the same name; and the most ``output`` a model that states no
+# longest answer is given, OpenCode's own without a ``limit``.
+AI_TOOLS_OPENCODE_LIMIT_KEY = "limit"
+AI_TOOLS_OPENCODE_OUTPUT_MAX = 32000
 # OpenCode's copy of its file from before it moves TUI settings into
 # ``tui.json``, beside the file.
 AI_TOOLS_OPENCODE_MIGRATION_BACKUP = "opencode.json.tui-migration.bak"

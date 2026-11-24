@@ -23,8 +23,10 @@ record without the wanted ``model`` is switched once more, and the switch
 back takes away OpenCode's migration backup holding the hub's provider.
 Codex is given its model's one number as ``model_context_window`` and Claude
 Code the smallest one number of its slots that name no ``claude-`` model as
-``CLAUDE_CODE_MAX_CONTEXT_TOKENS``, none while every slot names one, each
-read back from its file; a changed length switches the tool again, a record
+``CLAUDE_CODE_MAX_CONTEXT_TOKENS``, none while every slot names one, and
+OpenCode its model's ``limit`` ``{context, output}`` inside ``--config``
+with no ``input``, ``output`` the smaller of 32000 and half of ``context``
+where the model states none, each read back from its file; a changed length switches the tool again, a record
 whose ``added`` lacks the lengths is switched once more, and no length is
 left after the switch back.
 """
@@ -39,6 +41,7 @@ from neutrino_agent.ai_tools import switcher as switcher_module
 from neutrino_agent.ai_tools.switcher import (
     AiToolsAccountSwitcher,
     merge_toml_top_level,
+    opencode_limit,
     tool_window,
     with_opencode_model,
     without_own_keys,
@@ -862,7 +865,7 @@ def test_a_changed_length_switches_the_tool_again(tmp_path):
     assert "model_context_window = 100000\n" in session.files[CODEX_FILE]
 
     smaller = {**changed, "qwen": {"context_length": 8192}}
-    assert activate_with(switcher, smaller) == ["claude"]
+    assert activate_with(switcher, smaller) == ["claude", "opencode"]
     assert claude_env(session)["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] == "8192"
 
 
@@ -906,3 +909,76 @@ def test_no_length_is_left_after_the_switch_back(tmp_path):
 
     assert session.files[CODEX_FILE] == own_toml
     assert session.files[SETTINGS] == '{"env": {}}'
+
+
+def opencode_provider(session) -> dict:
+    return json.loads(session.files[OPENCODE])["provider"]["neutrino"]
+
+
+def test_opencode_gets_its_model_s_limit_of_context_and_output_and_no_input(tmp_path):
+    cc_switch = FakeCcSwitch()
+    switcher, session = switcher_for(tmp_path, cc_switch)
+    configs = {**LENGTH_CONFIGS, "opencode": {"model": "lab-mini"}}
+
+    activate_with(switcher, LENGTHS, configs)
+
+    given = json.loads(
+        next(a for a in cc_switch.added["opencode"] if a.startswith("--config="))[9:]
+    )
+    assert given["models"]["lab-mini"]["limit"] == {"context": 272000, "output": 128000}
+    assert opencode_provider(session)["models"]["lab-mini"] == {
+        "name": "lab-mini",
+        "limit": {"context": 272000, "output": 128000},
+    }
+    assert switcher.read_record("opencode")["added"]["limit"] == {
+        "context": 272000,
+        "output": 128000,
+    }
+
+
+def test_a_model_stating_no_longest_answer_gets_32000_or_half_its_window():
+    small = {"context_length": 16384, "input_limit": 0, "output_limit": 0}
+    large = {"context_length": 131072, "input_limit": 0, "output_limit": 0}
+
+    assert opencode_limit({"model": "s"}, {"s": small}) == {
+        "context": 16384,
+        "output": 8192,
+    }
+    assert opencode_limit({"model": "l"}, {"l": large}) == {
+        "context": 131072,
+        "output": 32000,
+    }
+    assert opencode_limit({"model": "none"}, {"s": small}) == {}
+    assert opencode_limit({}, None) == {}
+
+
+def test_an_opencode_model_with_no_length_gets_no_limit(tmp_path):
+    cc_switch = FakeCcSwitch()
+    switcher, session = switcher_for(tmp_path, cc_switch)
+
+    activate_with(switcher, {}, LENGTH_CONFIGS)
+
+    assert opencode_provider(session)["models"]["qwen"] == {"name": "qwen"}
+    assert switcher.read_record("opencode")["added"]["limit"] == {}
+
+
+def test_a_limit_the_file_did_not_keep_fails_the_switch(tmp_path):
+    cc_switch = FakeCcSwitch()
+    cc_switch.dropped_limit_keys = ("input", "output")
+    switcher, _session = switcher_for(tmp_path, cc_switch)
+
+    with pytest.raises(ToolSwitchError) as caught:
+        activate_with(switcher, LENGTHS)
+
+    assert "did not take the context length" in caught.value.params["detail"]
+
+
+def test_opencode_s_limit_goes_with_its_provider_at_the_switch_back(tmp_path):
+    cc_switch = FakeCcSwitch()
+    own = '{"provider": {"mine": {"name": "Mine"}}}'
+    switcher, session = switcher_for(tmp_path, cc_switch, {OPENCODE: own})
+    activate_with(switcher, LENGTHS)
+
+    switcher.deactivate()
+
+    assert session.files[OPENCODE] == own

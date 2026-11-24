@@ -8,7 +8,8 @@ real one does, the store writes a tool's files on ``use`` only into a tool
 directory that is there, and switching to another provider writes that
 provider's settings laid out its own way. OpenCode is additive as in
 cc-switch: no provider is current, ``provider add`` takes the provider whole
-as ``--config`` and writes it into the live file beside what is there, and
+as ``--config`` and writes it into the live file beside what is there, with
+each model's ``limit.input`` dropped as 5.10.4 drops it, and
 ``provider delete`` takes it out again.
 """
 
@@ -74,6 +75,8 @@ class FakeCcSwitch:
         self.added: dict = {}
         self.refusals: dict = {}
         self.is_delete_kept = False
+        # The keys of a model's ``limit`` the live file loses at an add.
+        self.dropped_limit_keys = ("input",)
 
     def answer(self, session, arguments, app) -> tuple:
         """``(returncode, stdout, stderr)`` for one call, as the account."""
@@ -166,9 +169,11 @@ class FakeCcSwitch:
                 document = json.loads(session.files.get(live, "") or "{}")
             except ValueError:
                 return 1, "", f"Error: JSON parse error: {live}: key must be a string"
-            document.setdefault("provider", {})[identifier] = json.loads(
-                given["--config"]
-            )
+            provider = json.loads(given["--config"])
+            for entry in (provider.get("models") or {}).values():
+                for dropped in self.dropped_limit_keys:
+                    entry.get("limit", {}).pop(dropped, None)
+            document.setdefault("provider", {})[identifier] = provider
             session.files[live] = json.dumps(document, indent=2)
             self.providers[app].add(identifier)
             self.added[app] = key

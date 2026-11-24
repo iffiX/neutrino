@@ -38,6 +38,7 @@ refusal is the answer. Codex's reasoning effort and its
 ``config.toml`` after the switch, and so is Claude Code's
 ``CLAUDE_CODE_MAX_CONTEXT_TOKENS`` into the ``env`` of ``settings.json``
 while a slot names a model whose name does not start with ``claude-``.
+OpenCode's ``limit`` goes in with its provider.
 
 Not pure: runs cc-switch as the account and writes the records.
 """
@@ -74,9 +75,11 @@ from neutrino_agent.ai_tools.constants import (
     AI_TOOLS_ENDPOINT_SUFFIXES,
     AI_TOOLS_KEY_DIGEST_CHARS,
     AI_TOOLS_OFFICIAL_PROVIDERS,
+    AI_TOOLS_OPENCODE_LIMIT_KEY,
     AI_TOOLS_OPENCODE_MIGRATION_BACKUP,
     AI_TOOLS_OPENCODE_MODEL_KEY,
     AI_TOOLS_OPENCODE_NPM,
+    AI_TOOLS_OPENCODE_OUTPUT_MAX,
     AI_TOOLS_PROVIDER_ID,
     AI_TOOLS_PROVIDER_NAME,
     AI_TOOLS_RECORD_SUFFIX,
@@ -115,7 +118,13 @@ def model_flags(app: str, config: dict) -> list:
     return flags
 
 
-def provider_config(app: str, base_url: str, api_key: str, config: dict) -> str:
+def provider_config(
+    app: str,
+    base_url: str,
+    api_key: str,
+    config: dict,
+    lengths: "dict | None" = None,
+) -> str:
     """OpenCode's provider whole, as ``provider add --config`` takes it.
 
     Args:
@@ -123,20 +132,76 @@ def provider_config(app: str, base_url: str, api_key: str, config: dict) -> str:
         base_url: The gateway's endpoint.
         api_key: The device's gateway key.
         config: The tool's choices.
+        lengths: Each model's ``{context_length, input_limit,
+            output_limit}``; None names none.
 
     Returns:
         JSON of ``{npm, name, options: {baseURL, apiKey}, models}``, the
-        models naming the tool's one model.
+        models naming the tool's one model with its ``limit`` where it has
+        a length.
     """
     model = str(config.get("model", "") or "")
+    entry = {"name": model}
+    limit = opencode_limit(config, lengths)
+    if limit:
+        entry[AI_TOOLS_OPENCODE_LIMIT_KEY] = limit
     return json.dumps(
         {
             "npm": AI_TOOLS_OPENCODE_NPM,
             "name": AI_TOOLS_PROVIDER_NAME,
             "options": {"baseURL": endpoint_for(app, base_url), "apiKey": api_key},
-            "models": {model: {"name": model}} if model else {},
+            "models": {model: entry} if model else {},
         }
     )
+
+
+def opencode_limit(config: dict, lengths: "dict | None") -> dict:
+    """OpenCode's ``limit`` for the tool's model: its window and its longest answer.
+
+    Args:
+        config: The tool's choices.
+        lengths: Each model's ``{context_length, input_limit,
+            output_limit}``; None names none.
+
+    Returns:
+        ``{context, output}``: ``context`` the model's one number,
+        ``output`` its ``output_limit``, or the smaller of 32000 and half of
+        ``context`` where that is 0; empty for a model with no length.
+    """
+    held = lengths if isinstance(lengths, dict) else {}
+    length = held.get(str(config.get("model", "") or ""))
+    context = one_number(length)
+    if not context:
+        return {}
+    output = _count(length.get("output_limit"))
+    if not output:
+        output = min(AI_TOOLS_OPENCODE_OUTPUT_MAX, context // 2)
+    return {"context": context, "output": output}
+
+
+def opencode_limit_of(text: str, model: str) -> dict:
+    """The ``limit`` an OpenCode file gives the hub's model.
+
+    Args:
+        text: The file as it stands.
+        model: The hub's model.
+
+    Returns:
+        The model's ``limit`` in the hub's provider; empty when the file
+        does not read or holds none.
+    """
+    try:
+        document = json.loads(text or "{}")
+    except ValueError:
+        return {}
+    providers = document.get("provider") if isinstance(document, dict) else None
+    provider = (
+        providers.get(AI_TOOLS_PROVIDER_ID) if isinstance(providers, dict) else None
+    )
+    models = provider.get("models") if isinstance(provider, dict) else None
+    entry = models.get(model) if isinstance(models, dict) else None
+    limit = entry.get(AI_TOOLS_OPENCODE_LIMIT_KEY) if isinstance(entry, dict) else None
+    return limit if isinstance(limit, dict) else {}
 
 
 def opencode_model(config: dict) -> str:
@@ -304,8 +369,8 @@ def wanted(
     Returns:
         The endpoint, a digest of the key, the flags, Codex's effort and
         ``model_context_window``, Claude Code's ``max_context_tokens``, 0
-        for none, and OpenCode's top-level ``model``; the key itself is
-        never written down.
+        for none, and OpenCode's top-level ``model`` and ``limit``, empty
+        for none; the key itself is never written down.
     """
     settings = {
         "base_url": endpoint_for(app, base_url),
@@ -325,6 +390,7 @@ def wanted(
         settings[AI_TOOLS_CLAUDE_WINDOW_KEY] = tool_window(app, config, lengths)
     if app == "opencode":
         settings[AI_TOOLS_OPENCODE_MODEL_KEY] = opencode_model(config)
+        settings[AI_TOOLS_OPENCODE_LIMIT_KEY] = opencode_limit(config, lengths)
     return settings
 
 
@@ -595,8 +661,9 @@ class AiToolsAccountSwitcher:
             record = self._adopt_once(app)
         settings = wanted(app, base_url, api_key, config, lengths)
         window = tool_window(app, config, lengths)
+        limit = opencode_limit(config, lengths) if app == "opencode" else {}
         if record.get("added") == settings and self._is_active_for(app):
-            self._verify(app, base_url, api_key, config, window)
+            self._verify(app, base_url, api_key, config, window, limit)
             return False
 
         self._drop_provider(app, record.get("previous", ""))
@@ -610,7 +677,7 @@ class AiToolsAccountSwitcher:
         ]
         if app in AI_TOOLS_ADDITIVE_APPS:
             arguments.append(
-                "--config=" + provider_config(app, base_url, api_key, config)
+                "--config=" + provider_config(app, base_url, api_key, config, lengths)
             )
         else:
             arguments += [
@@ -663,7 +730,7 @@ class AiToolsAccountSwitcher:
             path = self._kept_path(app, name)
             if self._session.is_file(path):
                 self._session.set_mode(path, AI_TOOLS_KEY_FILE_MODE)
-        self._verify(app, base_url, api_key, config, window)
+        self._verify(app, base_url, api_key, config, window, limit)
         record["added"] = settings
         self._write_record(app, record)
         return True
@@ -709,15 +776,22 @@ class AiToolsAccountSwitcher:
         return record
 
     def _verify(
-        self, app: str, base_url: str, api_key: str, config: dict, window: int = 0
+        self,
+        app: str,
+        base_url: str,
+        api_key: str,
+        config: dict,
+        window: int = 0,
+        limit: "dict | None" = None,
     ) -> None:
         """Read a tool's file back and refuse when it does not name the hub.
 
         Raises:
             ToolSwitchError: When Claude Code's settings do not carry the
-                hub's endpoint, key and model, or Codex's or Gemini's file
-                does not name the hub's endpoint, or Codex's or Claude
-                Code's does not hold the context length given.
+                hub's endpoint, key and model, or Codex's, Gemini's or
+                OpenCode's file does not name the hub's endpoint, or Codex's
+                or Claude Code's does not hold the context length given, or
+                OpenCode's the ``context`` and ``output`` of its ``limit``.
         """
         if app != "claude":
             text = self._session.read_text(self._app_file(app))
@@ -733,6 +807,12 @@ class AiToolsAccountSwitcher:
                 raise self._session.failure(
                     "the settings file did not take the context length"
                 )
+            if app == "opencode" and limit:
+                held = opencode_limit_of(text, str(config.get("model", "") or ""))
+                if any(held.get(key) != limit[key] for key in ("context", "output")):
+                    raise self._session.failure(
+                        "the settings file did not take the context length"
+                    )
             return
         try:
             settings = json.loads(self._session.read_text(self._app_file(app)) or "{}")
