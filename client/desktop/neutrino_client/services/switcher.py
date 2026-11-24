@@ -38,7 +38,7 @@ Three knobs have no flag in cc-switch: Codex's reasoning effort and its
 ``model_context_window``, settled into ``config.toml`` after the switch, and
 Claude Code's ``CLAUDE_CODE_MAX_CONTEXT_TOKENS``, settled into the ``env``
 of ``settings.json`` while a slot names a model whose name does not start
-with ``claude-``.
+with ``claude-``. OpenCode's ``limit`` goes in with its provider.
 
 Not pure: runs the binary and edits the person's configuration.
 """
@@ -84,6 +84,12 @@ OPENCODE_NPM = "@ai-sdk/openai-compatible"
 # OpenCode's top-level key naming the model it starts on, as
 # ``<provider>/<model>``. cc-switch writes none.
 OPENCODE_MODEL_KEY = "model"
+# The key of the hub's model in OpenCode's provider holding its window and
+# its longest answer, ``{context, output}``, kept in the record's ``added``
+# under the same name; and the most ``output`` a model that states no
+# longest answer is given, OpenCode's own without a ``limit``.
+OPENCODE_LIMIT_KEY = "limit"
+OPENCODE_OUTPUT_MAX = 32000
 # OpenCode's copy of its file from before it moves TUI settings into
 # ``tui.json``, beside the file.
 OPENCODE_MIGRATION_BACKUP = "opencode.json.tui-migration.bak"
@@ -382,6 +388,30 @@ def tool_window(app: str, config: dict, lengths: "dict | None") -> int:
     return min(numbers) if numbers else 0
 
 
+def opencode_limit(config: dict, lengths: "dict | None") -> dict:
+    """OpenCode's ``limit`` for the tool's model: its window and its longest answer.
+
+    Args:
+        config: The tool's staged choices.
+        lengths: Each model's ``{context_length, input_limit,
+            output_limit}``; None names none.
+
+    Returns:
+        ``{context, output}``: ``context`` the model's one number,
+        ``output`` its ``output_limit``, or the smaller of 32000 and half of
+        ``context`` where that is 0; empty for a model with no length.
+    """
+    held = lengths if isinstance(lengths, dict) else {}
+    length = held.get(str(config.get("model", "") or ""))
+    context = one_number(length)
+    if not context:
+        return {}
+    output = _count(length.get("output_limit"))
+    if not output:
+        output = min(OPENCODE_OUTPUT_MAX, context // 2)
+    return {"context": context, "output": output}
+
+
 def _point_at_hub(
     app: str,
     base_url: str,
@@ -413,8 +443,9 @@ def _point_at_hub(
         record = _adopt_once(app)
     wanted = _wanted(app, base_url, api_key, config, lengths)
     window = tool_window(app, config, lengths)
+    limit = opencode_limit(config, lengths) if app == "opencode" else {}
     if record.get("added") == wanted and is_active_for(app):
-        _verify(app, base_url, api_key, config, window)
+        _verify(app, base_url, api_key, config, window, limit)
         return False
 
     _drop_provider(app, record.get("previous", ""))
@@ -429,7 +460,9 @@ def _point_at_hub(
     # Values joined with "=": a key or a model name may begin with a
     # hyphen, which cc-switch would otherwise read as an option.
     if app in SWITCHER_ADDITIVE_APPS:
-        arguments.append("--config=" + _provider_config(app, base_url, api_key, config))
+        arguments.append(
+            "--config=" + _provider_config(app, base_url, api_key, config, lengths)
+        )
     else:
         arguments += [
             "--base-url=" + _endpoint_for(app, base_url),
@@ -476,7 +509,7 @@ def _point_at_hub(
         path = _kept_path(app, name)
         if os.path.isfile(path):
             _set_mode(path, SWITCHER_KEY_FILE_MODE)
-    _verify(app, base_url, api_key, config, window)
+    _verify(app, base_url, api_key, config, window, limit)
     record["added"] = wanted
     _write_record(app, record)
     return True
@@ -557,8 +590,8 @@ def _wanted(
     Returns:
         The endpoint, a digest of the key, the flags, Codex's effort and
         ``model_context_window``, Claude Code's ``max_context_tokens``, 0
-        for none, and OpenCode's top-level ``model``; the key itself is
-        never written down.
+        for none, and OpenCode's top-level ``model`` and ``limit``, empty
+        for none; the key itself is never written down.
     """
     settings = {
         "base_url": _endpoint_for(app, base_url),
@@ -572,11 +605,17 @@ def _wanted(
         settings[CLAUDE_WINDOW_KEY] = tool_window(app, config, lengths)
     if app == "opencode":
         settings[OPENCODE_MODEL_KEY] = _opencode_model(config)
+        settings[OPENCODE_LIMIT_KEY] = opencode_limit(config, lengths)
     return settings
 
 
 def _verify(
-    app: str, base_url: str, api_key: str, config: dict, window: int = 0
+    app: str,
+    base_url: str,
+    api_key: str,
+    config: dict,
+    window: int = 0,
+    limit: "dict | None" = None,
 ) -> None:
     """Read the tool's own file back and refuse when it does not name the hub.
 
@@ -586,12 +625,15 @@ def _verify(
         api_key: This person's gateway key.
         config: The tool's staged choices.
         window: The context length the tool was given; 0 for none.
+        limit: OpenCode's ``limit`` the tool was given; None or empty for
+            none.
 
     Raises:
         ToolSwitchError: When Claude Code's settings do not carry the hub's
-            endpoint, key and model, or Codex's or Gemini's file does not
-            name the hub's endpoint, or Codex's or Claude Code's does not
-            hold the context length given.
+            endpoint, key and model, or Codex's, Gemini's or OpenCode's file
+            does not name the hub's endpoint, or Codex's or Claude Code's
+            does not hold the context length given, or OpenCode's the
+            ``context`` and ``output`` of its ``limit``.
     """
     if app != "claude":
         text = _read_text(SWITCHER_APP_FILES[app])
@@ -603,6 +645,12 @@ def _verify(
             and _toml_top_level(text, CODEX_WINDOW_KEY) != str(window)
         ):
             raise ToolSwitchError("the settings file did not take the context length")
+        if app == "opencode" and limit:
+            held = _opencode_limit_of(text, str(config.get("model", "") or ""))
+            if any(held.get(key) != limit[key] for key in ("context", "output")):
+                raise ToolSwitchError(
+                    "the settings file did not take the context length"
+                )
         return
     if not is_active(
         base_url=base_url, api_key=api_key, model=str(config.get("default", ""))
@@ -1007,7 +1055,13 @@ def _cc_switch_app(app: str) -> str:
     return SWITCHER_CC_SWITCH_APPS.get(app, app)
 
 
-def _provider_config(app: str, base_url: str, api_key: str, config: dict) -> str:
+def _provider_config(
+    app: str,
+    base_url: str,
+    api_key: str,
+    config: dict,
+    lengths: "dict | None" = None,
+) -> str:
     """OpenCode's provider whole, as ``provider add --config`` takes it.
 
     Args:
@@ -1015,20 +1069,42 @@ def _provider_config(app: str, base_url: str, api_key: str, config: dict) -> str
         base_url: The hub's AI endpoint.
         api_key: This person's gateway key.
         config: The tool's staged choices.
+        lengths: Each model's length; None names none.
 
     Returns:
         JSON of ``{npm, name, options: {baseURL, apiKey}, models}``, the
-        models naming the tool's one model.
+        models naming the tool's one model with its ``limit`` where it has
+        a length.
     """
     model = str(config.get("model", "") or "")
+    entry = {"name": model}
+    limit = opencode_limit(config, lengths)
+    if limit:
+        entry[OPENCODE_LIMIT_KEY] = limit
     return json.dumps(
         {
             "npm": OPENCODE_NPM,
             "name": SWITCHER_PROVIDER_NAME,
             "options": {"baseURL": _endpoint_for(app, base_url), "apiKey": api_key},
-            "models": {model: {"name": model}} if model else {},
+            "models": {model: entry} if model else {},
         }
     )
+
+
+def _opencode_limit_of(text: str, model: str) -> dict:
+    """The ``limit`` an OpenCode file gives the hub's model; empty when it holds none."""
+    try:
+        document = json.loads(text or "{}")
+    except ValueError:
+        return {}
+    providers = document.get("provider") if isinstance(document, dict) else None
+    provider = (
+        providers.get(SWITCHER_PROVIDER_ID) if isinstance(providers, dict) else None
+    )
+    models = provider.get("models") if isinstance(provider, dict) else None
+    entry = models.get(model) if isinstance(models, dict) else None
+    limit = entry.get(OPENCODE_LIMIT_KEY) if isinstance(entry, dict) else None
+    return limit if isinstance(limit, dict) else {}
 
 
 def _opencode_model(config: dict) -> str:

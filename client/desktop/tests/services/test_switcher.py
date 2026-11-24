@@ -10,7 +10,8 @@ top-level ``model`` names the hub's model when the file names none, follows
 a changed model while it is the one written, and the person's own stays; a
 record without the wanted ``model`` is switched once more, and the switch
 back takes away OpenCode's migration backup holding the hub's provider.
-Codex and Claude Code get their model's length as the agent gives it, and a
+Codex, Claude Code and OpenCode get their model's length as the agent gives
+it, OpenCode's ``limit`` as ``{context, output}`` with no ``input``, and a
 changed length or a record without it switches the tool again.
 """
 
@@ -167,7 +168,8 @@ class Cli:
 
     OpenCode is additive as in cc-switch 5.10.4: no provider is current,
     ``provider add`` takes the provider whole as ``--config`` and writes it
-    into the live file beside what is there, and the delete takes it out.
+    into the live file beside what is there, each model's ``limit.input``
+    dropped, and the delete takes it out.
     """
 
     HEADER = "Common Config Snippet\n=====\nApp: {app}\n"
@@ -187,6 +189,8 @@ class Cli:
         self.writes_claude = writes_claude
         self.added = {}
         self.refusals = {}
+        # The keys of a model's ``limit`` the live file loses at an add.
+        self.dropped_limit_keys = ("input",)
 
     def __call__(self, arguments, app, *, is_checked=True):
         key = tuple(arguments)
@@ -296,9 +300,11 @@ class Cli:
                 raise subprocess.CalledProcessError(
                     1, ["cc-switch"], stderr="Error: JSON parse error"
                 )
-            document.setdefault("provider", {})[identifier] = json.loads(
-                given["--config"]
-            )
+            provider = json.loads(given["--config"])
+            for entry in (provider.get("models") or {}).values():
+                for dropped in self.dropped_limit_keys:
+                    entry.get("limit", {}).pop(dropped, None)
+            document.setdefault("provider", {})[identifier] = provider
             switcher._write_text(OPENCODE, json.dumps(document, indent=2))
             self.providers[app].add(identifier)
             self.added[app] = key
@@ -1308,3 +1314,54 @@ def test_a_changed_length_switches_the_tool_again_and_an_old_record_once_more(
     assert (
         activate_with({**LENGTHS, "lab-mini": {"context_length": 100000}}) == "claude"
     )
+
+
+def test_opencode_gets_its_model_s_limit_of_context_and_output_and_no_input(
+    tmp_path, monkeypatch
+):
+    (tmp_path / "home").mkdir(exist_ok=True)
+    cli = Cli()
+    wire(monkeypatch, cli)
+
+    activate_with(LENGTHS, {**LENGTH_CONFIGS, "opencode": {"model": "lab-mini"}})
+
+    given = json.loads(flag_values(cli.added["opencode"])["--config"])
+    assert given["models"]["lab-mini"]["limit"] == {"context": 272000, "output": 128000}
+    written = json.loads((tmp_path / "home" / OPENCODE).read_text())
+    assert written["provider"]["neutrino"]["models"]["lab-mini"]["limit"] == {
+        "context": 272000,
+        "output": 128000,
+    }
+    assert switcher._read_record("opencode")["added"]["limit"] == {
+        "context": 272000,
+        "output": 128000,
+    }
+
+
+def test_an_ollama_model_s_limit_takes_the_smaller_of_32000_and_half_its_window():
+    small = {"context_length": 16384, "input_limit": 0, "output_limit": 0}
+    large = {"context_length": 131072, "input_limit": 0, "output_limit": 0}
+
+    assert switcher.opencode_limit({"model": "s"}, {"s": small}) == {
+        "context": 16384,
+        "output": 8192,
+    }
+    assert switcher.opencode_limit({"model": "l"}, {"l": large}) == {
+        "context": 131072,
+        "output": 32000,
+    }
+    assert switcher.opencode_limit({"model": "x"}, {"s": small}) == {}
+
+
+def test_an_opencode_limit_the_file_did_not_keep_fails_the_switch(
+    tmp_path, monkeypatch
+):
+    (tmp_path / "home").mkdir(exist_ok=True)
+    cli = Cli()
+    cli.dropped_limit_keys = ("input", "output")
+    wire(monkeypatch, cli)
+
+    with pytest.raises(switcher.ToolSwitchError) as caught:
+        activate_with(LENGTHS)
+
+    assert "did not take the context length" in str(caught.value)
