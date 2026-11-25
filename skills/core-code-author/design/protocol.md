@@ -1681,8 +1681,7 @@ for `web`, and `protocols` a list of `tcp` and `udp` for `port`; a host
 port the list does not name is `auto`. `machine` is `{account, cpus,
 memory_gib, disk_gib}`: the Run settings' three numbers, a 0 being the
 default except a Windows `disk_gib`, which is 1 or more, and `account` the
-machine's default account, the account the stored Run settings name while
-it has none, with `password`, that account's login, added for a Windows
+machine's default account, with `password`, that account's login, added for a Windows
 machine ([agent/accounts.md](agent/accounts.md), "The default account"). The hub sends `machine` to a Windows or macOS machine
 alone, and a Linux state never names it. The Linux recipe's runner is
 `podman` and its method `system`; the Windows and macOS recipe's runner is
