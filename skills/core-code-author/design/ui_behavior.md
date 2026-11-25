@@ -1152,21 +1152,19 @@ since its own step only waits.
 required modules that are absent listed one to a line, the question
 `ui.modules.install_requires_question`, and the buttons `ui.confirm.yes` and
 `ui.confirm.no`. **Install** on any other module acts at once, with no
-dialog, except for the account below.
+dialog, except for the numbers below.
 
 **Install** on Containers or on a module that requires it, on a Windows or
-macOS machine whose Run settings name no account, asks for the account and the
-machine's numbers before anything installs
+macOS machine whose Run settings the hub does not hold yet, asks for the
+numbers of the default account's Podman machine before anything installs
 (`components/containers_account_modal.tsx`). The **Yes** of the dialog above
-opens it; Containers itself opens it alone. An account already named asks
+opens it; Containers itself opens it alone. Run settings already held ask
 nothing, and Linux never asks.
 
 | Part | Idiom |
 | --- | --- |
-| Title | `ui.containers.account_title` |
-| **Account** | a picker with one choice among the accounts the machine reports (`system_accounts`), and `ui.containers.account_empty` in an empty list |
-| **Password** | on a Windows machine alone, while the chosen account has no stored login or Windows refused the stored one: the **Available accounts** form's field, with its words |
-| **CPUs**, **Memory (GiB)**, **Disk limit (GiB)** | one row, the Run settings' three fields with their least values, words and refusals (`components/containers_machine_fields.tsx`), each filled with the number `podman/new_machine` reads: half the CPUs, the default memory, and the disk the account's machine has with `ui.containers.run_disk_hint` under it, or else 100 GiB |
+| Title | `ui.containers.run_title` |
+| **CPUs**, **Memory (GiB)**, **Disk limit (GiB)** | one row, the Run settings' three fields with their least values, words and refusals (`components/containers_machine_fields.tsx`), each filled with the number `podman/new_machine` reads: half the CPUs, the default memory, and the disk the default account's machine has with `ui.containers.run_disk_hint` under it, or else 100 GiB |
 | The memory hint | `ui.containers.run_memory_need {need}` under **Memory (GiB)** while `need_gib`, which counts the module being installed, passes the field, or the default memory while the field is 0 |
 | Buttons | `ui.confirm.cancel` and `ui.modules.install` |
 
@@ -1175,17 +1173,12 @@ costs: `ui.containers.run_default_hint`, `ui.containers.run_restart_warning` and
 `ui.containers.run_wsl_warning`.
 
 **Cancel**, Escape and the backdrop write nothing and install nothing, and
-the first dialog's **Yes** counts for nothing. **Install** sends, in order, on
-Windows `account/password/test` with the password typed, empty for the stored
-login; then `account/add` for an account not yet available (`account/set` for an
-available one with no login or a refused one), `machine/set` with the numbers
-shown, and the press itself. A refusal shows in the dialog and installs nothing:
-the test writes nothing, and an account already added stays available.
-`credential_invalid` on a stored login shows the **Password** field, and the
-next **Install** replaces the login. A `podman/new_machine` read that fails
-shows `ErrorPanel` with its retry in place of the fields, and **Install** stays
-disabled. On Windows one press is one logon on the machine
-([agent/modules/containers.md](agent/modules/containers.md), "The account and its machine").
+the first dialog's **Yes** counts for nothing. **Install** sends `machine/set`
+with the numbers shown, then the press itself, and a refusal shows in the
+dialog and installs nothing. A `podman/new_machine` read that fails shows
+`ErrorPanel` with its retry in place of the fields, and **Install** stays
+disabled ([agent/modules/containers.md](agent/modules/containers.md), "The
+account and its machine").
 
 **Stop** on the File share asks through `useConfirm` first, with the title
 `ui.samba.stop_title`, the body `ui.samba.stop_body`, and the buttons
@@ -1374,9 +1367,8 @@ On Linux the tab has no Run settings, since root runs Podman there
 
 | Control | Idiom |
 | --- | --- |
-| **Account** | a picker over the machine's available accounts, `ui.accounts.empty` in an empty list; on Windows the account's login is the one its form holds |
 | **CPUs**, **Memory (GiB)** | number fields, 0 for the default, `ui.containers.run_default_hint` under them on macOS and `ui.containers.run_default_hint_windows` on Windows; under **Memory (GiB)** `ui.containers.run_memory_need {need}` while the view's `memory_need` is set and the field holds less than its `need_gib` |
-| **Disk limit (GiB)** | a number field whose least value is the disk's size now, as the machine reported it, and on Windows at least 1, with `ui.containers.run_disk_hint` under it; it follows Podman Desktop's **Edit** form for a machine, where the disk size only grows. On Windows the field starts at 100 while the stored Run settings name no account. The apply bar is disabled, and the field shows the code's words in place of the hint, while the value is below 1 on Windows, `code.machine_disk_invalid`, or above 0 and below the disk's size now, `code.machine_disk_shrink` |
+| **Disk limit (GiB)** | a number field whose least value is the disk's size now, as the machine reported it, and on Windows at least 1, with `ui.containers.run_disk_hint` under it; it follows Podman Desktop's **Edit** form for a machine, where the disk size only grows. On Windows the field starts at 100 while the hub holds no Run settings. The apply bar is disabled, and the field shows the code's words in place of the hint, while the value is below 1 on Windows, `code.machine_disk_invalid`, or above 0 and below the disk's size now, `code.machine_disk_shrink` |
 
 The group is one `settings_group` with its own apply bar,
 `ui.containers.run_apply`. The bar's hint is `ui.containers.run_apply_hint`,
@@ -1384,18 +1376,17 @@ and `ui.modules.stopped_hint` while the module's `want` is not `running`.
 Such an apply keeps the settings for the next **Start**
 ([agent/modules/containers.md](agent/modules/containers.md)). While it is dirty, the bar's warning is
 `ui.containers.run_restart_warning` when the CPUs, the memory or the disk
-changed on a machine that exists, one the report names for the draft's
+changed on a machine that exists, one the report names for the default
 account (`machine_state.account`), followed on Windows by
-`ui.containers.run_wsl_warning`; and `ui.containers.run_account_warning`
-when the account changed. Until the stored Run settings name an account,
-the three panels under it draw `ui.containers.run_needed` in place of their
-content, and their apply bars are disabled.
+`ui.containers.run_wsl_warning`. The Podman machine is the default
+account's, and no control names another
+([agent/accounts.md](agent/accounts.md), "The default account").
 
 Each apply bar of the tab, Run settings, mirrors and containers, stays busy
 after its press until the machine reports the module where its `want` asks,
 at most two minutes, as `instances_panel.tsx` waits. Under `running` that is
 `running` or `stopped` on Linux, and on Windows and macOS `running` with the
-stored account's machine running; under `stopped` it is `stopped`; under any
+default account's machine running; under `stopped` it is `stopped`; under any
 other `want` the bar waits for no state.
 `ui.api.applied` shows only then, and a failure shows under its step. A failure
 reported at the press belongs to the run before it, and ends the wait only when

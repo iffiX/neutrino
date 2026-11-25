@@ -1023,8 +1023,8 @@ command line programs the account is enabled in at the front of its
 pseudo-terminal the agent makes; on Windows the agent logs the account on
 with its password (`LogonUserW`) and starts the shell or the command under
 that token, on a pseudo console of its own. The fifth is Containers on Windows and
-macOS, whose Podman machine is the default machine of the account the Run
-settings name: every `podman machine` and `wsl` command, and the root
+macOS, whose Podman machine is `podman-machine-default` of the machine's
+default account ([agent/accounts.md](agent/accounts.md)): every `podman machine` and `wsl` command, and the root
 script that writes into the machine, run as that account through
 `run_as_account`; the
 keeper that starts the machine at boot is an account service; and the

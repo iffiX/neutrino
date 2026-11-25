@@ -793,8 +793,6 @@ the agent's `cli/wording.py` words the same codes in English.
 | Key | English | Chinese |
 | --- | --- | --- |
 | `ui.containers.run_title` | Run settings | 运行设置 |
-| `ui.containers.run_account` | Account | 账户 |
-| `ui.containers.run_account_hint` | The available account whose Podman machine runs the containers; on Windows it starts at boot with the account's login. | 用这个可用账户的 Podman 虚拟机运行容器；Windows 上开机时用这个账户的登录启动。 |
 | `ui.containers.run_cpus` | CPUs | CPU 数 |
 | `ui.containers.run_memory` | Memory (GiB) | 内存（GiB） |
 | `ui.containers.run_disk` | Disk limit (GiB) | 磁盘上限（GiB） |
@@ -804,13 +802,9 @@ the agent's `cli/wording.py` words the same codes in English.
 | `ui.modules.memory_need`, on a container module's tab | The Podman machine has {memory} GiB of memory; set {need} GiB under Containers, Run settings. | Podman 虚拟机现有 {memory} GiB 内存；请在“容器”的“运行设置”里设为 {need} GiB。 |
 | `ui.containers.run_disk_hint` | The disk only grows. It is {current} GiB now. | 磁盘只能改大，现在是 {current} GiB。 |
 | `ui.containers.run_apply` | Apply run settings | 应用运行设置 |
-| `ui.containers.run_apply_hint` | Starts this account's Podman machine, and creates it the first time. | 启动这个账户的 Podman 虚拟机，第一次会先新建。 |
+| `ui.containers.run_apply_hint` | Starts the default account's Podman machine, and creates it the first time. | 启动默认账户的 Podman 虚拟机，第一次会先新建。 |
 | `ui.containers.run_restart_warning` | The machine restarts, and its containers stop for a moment. | 虚拟机会重启，容器会停一会儿。 |
 | `ui.containers.run_wsl_warning` | Every WSL system of this account restarts with the new settings. | 这个账户下的所有 WSL 系统都会重启并使用新设置。 |
-| `ui.containers.run_account_warning` | The old account's machine stops; its images and named volumes stay there. | 旧账户的虚拟机会停下，里面的镜像和命名卷留在原处。 |
-| `ui.containers.run_needed` | Choose an account under Run settings first. | 先在“运行设置”里选一个账户。 |
-| `ui.containers.account_title`, the dialog before an **Install** | Choose the account that runs the containers | 选择运行容器的账户 |
-| `ui.containers.account_empty` | This machine reports no account. | 这个系统没有上报账户。 |
 | `ui.containers.browse` | Browse… | 浏览… |
 | `ui.containers.volume_placeholder_linux`, `ui.containers.volume_placeholder_windows`, `ui.containers.volume_placeholder_darwin` | `/srv/share:/data`, `C:\data:/data`, `/Users/me/data:/data` | `/srv/share:/data`、`C:\data:/data`、`/Users/me/data:/data` |
 | `ui.containers.services` | Services | 服务 |
@@ -841,7 +835,7 @@ the agent's `cli/wording.py` words the same codes in English.
 | `code.mirror_invalid` | The mirror {mirror} needs a registry host, with an optional port and path and no http://, such as mirror.ccs.tencentyun.com. | 非法镜像源：{mirror} 要写成镜像仓库的主机名，可带端口和路径，不带 http://，例如 mirror.ccs.tencentyun.com。 |
 | `code.windows_feature_failed` | Windows could not turn on {feature} (exit code {exit_code}). | Windows 没能打开 {feature}（退出码 {exit_code}）。 |
 | `code.podman_install_failed` | The {artifact} installer failed (exit code {exit_code}). | {artifact} 安装包没能装上（退出码 {exit_code}）。 |
-| `code.machine_account_missing` | Choose the account that runs the containers. | 选一个运行容器的账户。 |
+| `code.machine_account_missing` | Set this machine's default account first. | 先设置这个系统的默认账户。 |
 | `code.machine_cpus_invalid` | CPUs must be between 0 and {max}. | 非法 CPU 数：要在 0 到 {max} 之间。 |
 | `code.machine_memory_invalid` | Memory must be between 0 and {max} GiB. | 非法内存大小：要在 0 到 {max} GiB 之间。 |
 | `code.machine_disk_shrink` | The disk is {current_gib} GiB and only grows; {disk_gib} GiB is smaller. | 磁盘现在是 {current_gib} GiB，只能改大，{disk_gib} GiB 比它小。 |
@@ -861,6 +855,11 @@ the agent's `cli/wording.py` words the same codes in English.
 | `code.page_silent` | The page at port {port} does not respond. Check what else listens on that port. | 端口 {port} 上的页面没有响应。请检查这个端口上还有什么程序在监听。 |
 | `code.image_pull_failed` | The image {image} of {name} could not be pulled. Check its tag and the registry mirrors. | 容器 {name} 的镜像 {image} 拉取失败。请检查镜像标签和镜像源。 |
 | `code.container_start_failed` | The container {name} did not start from {image}. Its journal names the reason. | 容器 {name} 没能用镜像 {image} 启动，原因见它的日志。 |
+
+`ui.containers.run_account`, `ui.containers.run_account_hint`,
+`ui.containers.run_account_warning`, `ui.containers.run_needed`,
+`ui.containers.account_title` and `ui.containers.account_empty` go: the
+Podman machine is the default account's.
 
 ## The Services page's health words
 
