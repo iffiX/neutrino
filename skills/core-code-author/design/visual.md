@@ -40,7 +40,7 @@ colours in both themes.
 - **ok (green)** — installed, running, healthy; also the affirmative half of
   a destructive pair (`button--ok` beside `button--danger`)
 - **warn (amber)** — a step in flight, unsaved changes, a refusal that can be
-  overridden
+  overridden, a machine whose setup is incomplete
 - **error (red)** — failed, stopped, and the destructive action itself
 
 A button that removes something is red-outlined whether it says Uninstall,

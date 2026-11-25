@@ -238,6 +238,7 @@ that page, its count or its sidebar entry as a device changes with it:
 | `ui.install_agent.running_label`, the dot over the install output while it runs | installing | 安装中 |
 | `ui.install_agent.done_label`, the dot once the output ends with `[exit N]` | exit {code} | 退出码 {code} |
 | `ui.task.stream_closed`, the dot when the output ends with no such line | The task ended without a result | 任务没有返回结果就中断了 |
+| `state.incomplete`, a machine with no default account in the sidebar's machine group, the Agents table and the machine page's header | incomplete | 未完成 |
 | `code.key_passphrase_not_stored`, the install dialog's refusal of an encrypted key stored with no passphrase | This key is passphrase-protected and the hub cannot open it. Add it on the Credentials page with its passphrase. | 这个密钥有口令保护，中枢打不开它。请在凭据页带上口令添加这个密钥。 |
 
 The keys of the LAN scan and of unmanaged devices, `ui.devices.scan`,
@@ -416,6 +417,14 @@ where they fit.
 | `ui.accounts.remove_title` | Remove {account} | 移除 {account} |
 | `ui.accounts.remove_body` | What runs as {account} stops: {modules}. Its AI tools go back to their own settings. | {modules} 不再以 {account} 运行，它的 AI 工具改回原来的设置。 |
 | `ui.accounts.remove_body_none` | {account} leaves this machine's accounts, and its AI tools go back to their own settings. | {account} 从这个系统的可用账户里移除，它的 AI 工具改回原来的设置。 |
+| `ui.accounts.default`, the chip of the default account's row | Default | 默认 |
+| `ui.accounts.make_default` | Make default | 设为默认 |
+| `ui.accounts.default_title` | Make {account} the default account | 把 {account} 设为默认账户 |
+| `ui.accounts.default_body` | {account} becomes this machine's default account and cannot be changed later. | {account} 会成为这个系统的默认账户，之后不能更改。 |
+| `ui.modules.default_needed`, every apply bar's reason on a machine with no default account | Set this machine's default account under Available accounts first. | 先在“可用账户”里设置这个系统的默认账户。 |
+| `code.account_is_default` | {account} is this machine's default account. | {account} 是这个系统的默认账户。 |
+| `code.default_account_missing` | This machine has no default account yet. | 这个系统还没有默认账户。 |
+| `code.default_account_exists` | This machine's default account is {account}, and it cannot be changed. | 这个系统的默认账户是 {account}，不能更改。 |
 | `ui.machine.version`, `ui.machine.platform`, `ui.machine.hostname`, `ui.machine.last_report` | Version, Platform, Host name, Last report | 版本、平台、主机名、最后上报 |
 | `ui.machine.uptime`, `ui.machine.load`, `ui.machine.disk`, `ui.machine.temperature` | Uptime, Load 1/5/15 min, Disk, Temperature | 运行时间、负载 1/5/15 分钟、磁盘、温度 |
 | `ui.machine.not_found` | This machine is not on record. | 没有这个系统的记录。 |
@@ -427,7 +436,6 @@ where they fit.
 | `ui.modules.log_title` | Log · last 200 lines | 日志 · 最后 200 行 |
 | `ui.modules.config_title` | Configuration | 配置 |
 | `ui.modules.enabled_accounts` | Enabled accounts | 启用的账户 |
-| `ui.modules.no_accounts` | Add an account under Available accounts first. | 先在“可用账户”里添加账户。 |
 | `ui.samba.home_shares`, `ui.samba.folder_shares`, the File share tab's two panels | Home shares, Folder shares | 主目录共享、文件夹共享 |
 | `ui.samba.home_shares_hint` | One share for each checked account, named after it, at its share path. | 每个勾选的账户一个共享，以账户命名，位置是它的文件共享路径。 |
 | `ui.samba.folder_shares_hint` | A folder you name, shared with the accounts you check. Each account's files are written as that account. | 你命名的一个文件夹，共享给勾选的账户。每个账户写入的文件都归它自己。 |
@@ -479,6 +487,8 @@ where they fit.
 | `code.version_locked` | The version of {module} follows the system or the agent and cannot be chosen. | {module} 的版本跟随系统或被控端，不能选择。 |
 | `code.version_older_than_run` | {module} has run {newest_run} on this machine and moved its data forward, so it cannot install the older {version}. | {module} 在这个系统上运行过 {newest_run}，数据已经往前迁移，不能安装更旧的 {version}。 |
 | `ui.modules.stopped_hint`, the hint of every apply bar of a module's panel while its module's `want` is not `running`, and under the file share's folder shares. The panels of the modules the agent carries keep their own hint | The module is stopped; these settings take effect at the next Start. | 模块已停止，这些设置在下次启动时生效。 |
+
+`ui.modules.no_accounts` goes.
 
 A module tab's chips hold one short label each. What each label says and which
 install method reads as which source is
