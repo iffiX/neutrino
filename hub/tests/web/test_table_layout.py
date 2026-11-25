@@ -33,7 +33,7 @@ GRIDS = {
         ["hostname platform", "version status", "seen ."],
     ],
 }
-NARROWER = {"devices": [718, 510, 408], "clients": [624, 380]}
+NARROWER = {"devices": [734, 510, 408], "clients": [624, 380]}
 # The action groups each page measures: a row being renamed shows Save and
 # Cancel alone on Agents and is left out.
 ACTIONS_SELECTOR = {

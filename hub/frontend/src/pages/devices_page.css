@@ -38,7 +38,7 @@
 }
 
 .devices_col--seen {
-  width: 88px;
+  width: 104px;
 }
 
 .devices_table th {
@@ -187,7 +187,7 @@
     "actions actions actions actions actions";
   grid-template-columns:
     minmax(112px, 1fr) minmax(134px, 1fr) minmax(192px, 1fr)
-    minmax(72px, 1fr) minmax(88px, 1fr);
+    minmax(72px, 1fr) minmax(104px, 1fr);
   gap: var(--space-3) var(--space-5);
   height: auto;
   padding: var(--space-3);
@@ -280,7 +280,7 @@
    columns; under 510 px the rings on a track of their own, with the version
    and the last seen side by side in the room right of them; and under 408 px,
    where those two labels no longer fit there in either language, in two. */
-@container devices_table (max-width: 717px) {
+@container devices_table (max-width: 733px) {
   .devices_table_box--cards .devices_row {
     grid-template-areas:
       "name name name"
