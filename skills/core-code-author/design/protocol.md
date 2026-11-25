@@ -319,6 +319,7 @@ walk theirs. A new code and its wording are one change.
 | `ticket_spent`, `role_mismatch`, `admission_paused` | `{}`, `{}`, `{retry_after_s}` | the `refused` answering a `join` frame | kept, now frames |
 | `terminal_account_missing` | none | a `shell` or an `exec` on a machine whose Terminal module enables no account | added |
 | `account_not_enabled` | `{account}` | a `shell` or an `exec` naming an account the Terminal module does not enable | added |
+| `account_unknown` | `{account}` | also the `code` of an instance's or an account's row in a module's `details`: an enabled account the machine does not report, whose instance alone fails while the others run ([agent/accounts.md](agent/accounts.md), "An account the system no longer has") | widened to one account's row; no longer a refusal of the whole apply |
 | `account_home_unknown` | `{account}` | the `code` of a `samba` row of `GET /api/agent/module/samba`, an enabled account with no `share_path` whose machine reports no home for it ("The account layer in the state") | added |
 | `account_is_default` | `{account}` | 400 of `account/remove` naming the machine's default account, and of `<name>/set` with a list that leaves it out ([agent/accounts.md](agent/accounts.md), "The default account") | added |
 | `default_account_missing` | none | 409 of every write of the machine page but the account routes, while the machine has no default account or its default is gone ([agent/accounts.md](agent/accounts.md), "A machine with no default") | added |
@@ -1518,8 +1519,9 @@ is_running, code}]}`, `version` the one the CLI prints, `port` the one the agent
 token, and `code` `credential_invalid` for a Windows task that cannot sign
 its account in. An apply refuses `account_invalid`, `account_duplicate`,
 `token_missing` and, on Windows, `credential_missing`, all naming the
-`account`; `account_unknown {account}` for an
-account a Linux machine or a Mac does not have; on Windows
+`account`; an account a Linux machine or a Mac does not have fails its
+own instance alone, `account_unknown {account}` as its `code` ("The account
+layer in the state"); on Windows
 `account_no_profile {account}` for an account that never signed in; and
 `credential_invalid {account}` when Windows refuses the login.
 
@@ -1563,8 +1565,9 @@ digest}` for. `details` is `{has_module_copy, version, accounts: [{account,
 code, params}]}`, `version` being the module's own copy's, empty while it
 has none, and an account's `code` being empty, `copy_runs_first {account,
 path, version}`, `copy_unreached {account}` or on Windows
-`copy_in_system_path {account, path, version}`. An apply refuses `account_unknown
-{account}`, and on Windows `account_no_profile {account}`,
+`copy_in_system_path {account, path, version}`, or `account_unknown {account}`
+for an account the machine does not have, which fails alone. An apply
+refuses on Windows `account_no_profile {account}`,
 `credential_missing {account}` and `credential_invalid {account}`. The
 fields are added and keep `PROTOCOL` 4.
 
@@ -1599,8 +1602,9 @@ machine runs, which the agent opens `package {module: code_server,
 artifact, digest}` for. `details` is `{version,
 instances: [{account, port, is_running, code}]}`, `version` being the
 release installed. An apply refuses `account_invalid`,
-`account_duplicate` and `secret_missing`, each naming the `account`, and
-`account_unknown {account}` for an account the machine does not have.
+`account_duplicate` and `secret_missing`, each naming the `account`, and an
+account the machine does not have fails its own instance alone, with
+`account_unknown {account}` as its `code`.
 
 The `ssh_server` module runs the agent's own SSH server once per enabled
 account ([agent/modules/ssh_server.md](agent/modules/ssh_server.md)). Like
@@ -1881,7 +1885,7 @@ the hub generated for each, sealed under the vault's data key:
 | The hub generates a module's secret for an account the first time that account is enabled, and keeps it when the account is disabled and enabled again; removing the available account deletes it. SiYuan's gateway key alone is voided when the account is disabled or its AI switch turns off, and a new one is generated when both hold again. | A browser's login, a mounted share's password and a key a client wrote stay valid across a toggle. |
 | Every instance with a forwarder in front of it, code-server's, CloudCLI's, Codeg's and SiYuan's, also carries `local_name`, its app's, and `cookie_name`, its entry's, `neutrino_` and the first 12 hex characters of the SHA-256 of the entry's id ([agent/module_template.md](agent/module_template.md), "The run"); the Hermes WebUI and Ayakaleaf modules carry `local_name` beside their own `cookie_name`, and the AstrBot module carries both, its `cookie_name` the forwarder's by the same rule. | The forwarder accepts a `Host` of `127.0.0.1`, `[::1]`, `localhost` or `local_name`, and names its login cookie `cookie_name`. |
 | No instance names a port. The agent takes a free port on `127.0.0.1` for each instance at its first start, from the module's base port in its `constants.py` up, keeps it in the instance's root-only record under its state root, across a disable and an enable, and reports it in `details`, the port a `connect` reaches, the forwarder's where the module has one; the hub publishes the entry at the reported port. A kept port another program holds at a start is replaced by the next free one and reported. | A port the person never sees needs no field, and the machine is the one that knows which ports are free. |
-| An account that is not available, or is not one the machine reports, is not composed into any module; the agent's own `validate` refuses an account the machine does not have with `account_unknown {account}`. | A module never starts a process for an account the machine page does not list. |
+| An account that is not available is not composed into any module. An available account the machine does not report is composed as any other, and the agent fails that account's own instance alone, with `account_unknown {account}` as its row's `code`, while the other accounts' instances run ([agent/accounts.md](agent/accounts.md), "An account the system no longer has"). | A module never starts a process for an account the machine page does not list, and one account the system lost stops no other account's instance. |
 
 The `ai_tools` section is the same layer's: it names the available accounts
 whose switch is on ("The sections").

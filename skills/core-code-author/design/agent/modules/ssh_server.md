@@ -16,7 +16,7 @@ are, and no client's Apps page and not the panel's Services page shows it.
 | --- | --- |
 | The server is `neutrino_ssh_server`, one Go program of `agent/sshserver/` built static for each platform the agent ships on, with `golang.org/x/crypto/ssh` and `github.com/pkg/sftp`. The agent's package carries it under its program directory, `bin/neutrino_ssh_server`, `bin\neutrino_ssh_server.exe` on Windows, as it carries RustDesk; the agent itself stays pure standard library. | A server the agent carries works the same on every machine, and the agent's own code installs on a machine with no Python. |
 | Its platform entries name the method `agent` with empty `params`, so it installs nothing, is a tab on every machine, is locked checked in the module catalog, and takes none of the four presses, which are refused `module_not_optional {name}` ([../module_install.md](../module_install.md), "Install methods"). | The binary is in the agent's package, as Terminal's code is. |
-| Its one setting is its enabled accounts ([../accounts.md](../accounts.md), "Available accounts"). The module reads `running` while every enabled account's instance runs, and `stopped` while it enables none. | A server runs only for an account the person chose. |
+| Its one setting is its enabled accounts ([../accounts.md](../accounts.md), "Available accounts"). The module reads `running` while the instance of every enabled account the machine reports runs, and `stopped` while it enables none; an account the machine does not report fails its own instance alone ([../accounts.md](../accounts.md), "An account the system no longer has"). | A server runs only for an account the person chose, and one account the system lost stops no other's. |
 | Each instance runs as its account through the account service layer: the unit `neutrino_ssh_server@<account>.service` with `User=<account>` on Linux, the LaunchDaemon `com.neutrino.ssh_server.<account>` with `UserName` on macOS, and the scheduled task `neutrino_ssh_server_<account>` under the account's login on Windows ([../module_template.md](../module_template.md), "The run"). | The process is the account, so a shell, a command and an sftp session need no change of identity and reach exactly what the account reaches. |
 | An instance listens on `127.0.0.1` alone, at a port the agent takes from 22000 up at the instance's first start and keeps in the instance's record. The module opens no port in any firewall. | The hub reaches it through the agent's `connect` stream, and nothing on the LAN reaches it at all. |
 
@@ -84,10 +84,11 @@ line programs the account is enabled in ([../../protocol.md](../../protocol.md),
 port, is_running, code, host_key, host_key_fingerprint}]}`, `host_key` the
 instance's public host key in OpenSSH form and `host_key_fingerprint` its
 `SHA256:<base64>`, both empty before the key is made. An apply refuses `account_invalid`,
-`account_duplicate`, `key_missing`, each naming the `account`, and
-`account_unknown {account}`; on Windows `account_no_profile {account}` for an
-account that never signed in, `credential_missing {account}` and
-`credential_invalid {account}`.
+`account_duplicate`, `key_missing`, each naming the `account`; on Windows
+`account_no_profile {account}` for an account that never signed in,
+`credential_missing {account}` and `credential_invalid {account}`. An account
+the machine does not have fails its own instance alone, with
+`account_unknown {account}` as its `code`.
 
 Each account the module enables is one `ssh` entry, named by its account,
 of the row `ssh_server_<device id>` in `apps`, which no page shows

@@ -106,9 +106,10 @@ Code installed outside this module."
 `details` is `{has_module_copy, version, accounts: [{account, code,
 params}]}`, `version` being the module's copy's, empty while it has none, and
 an account's `code` the copy its shell runs before the module's
-([../module_template.md](../module_template.md), "The find"). An apply refuses
-`account_unknown {account}` for an account the machine does not have, and
-on Windows `account_no_profile {account}`, `credential_missing {account}`
-and `credential_invalid {account}`, as Codeg's does. Its journal is the
+([../module_template.md](../module_template.md), "The find"), or
+`account_unknown {account}` for an account the machine does not have, which
+fails alone. An apply refuses on Windows `account_no_profile {account}`,
+`credential_missing {account}` and `credential_invalid {account}`, as
+Codeg's does. Its journal is the
 agent's lines that name the module ([../../agent.md](../../agent.md), "Which
 modules each system runs").

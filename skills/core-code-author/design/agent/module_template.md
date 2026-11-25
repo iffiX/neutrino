@@ -35,8 +35,10 @@ publish" do not reach it; "The launcher and the account's `PATH`" holds what
 it puts on the machine.
 
 One instance runs per enabled account of the module, an available account of
-the machine ([accounts.md](accounts.md), "Available accounts"). The
-account service layer, `modules/shared/account_service/` with one file per system, writes
+the machine ([accounts.md](accounts.md), "Available accounts"), and an
+enabled account the machine does not report fails its own instance alone,
+with `account_unknown {account}` on its row ([accounts.md](accounts.md), "An
+account the system no longer has"). The account service layer, `modules/shared/account_service/` with one file per system, writes
 the service definition, starts, stops, disables, enables, removes and
 queries it:
 
