@@ -41,6 +41,7 @@ ASTRBOT_HEALTH_PATH = "/"
 ASTRBOT_HEALTH_TIMEOUT_S = 3.0
 ASTRBOT_LOGIN_PATH = "/api/auth/login"
 ASTRBOT_SOURCES_PATH = "/api/v1/provider-sources"
+ASTRBOT_SOURCE_PATH = "/api/v1/provider-sources/neutrino_gateway"
 ASTRBOT_SOURCE_PROVIDERS_PATH = "/api/v1/provider-sources/neutrino_gateway/providers"
 ASTRBOT_PROVIDERS_PATH = "/api/v1/providers"
 # The key of a chat provider that holds the window AstrBot compresses a

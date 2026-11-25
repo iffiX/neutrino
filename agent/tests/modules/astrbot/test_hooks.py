@@ -20,7 +20,13 @@ through ``PUT /api/v1/providers/<id>`` with every other key of its ``GET``
 kept, a provider of the person's left as it is, and a failed ``PUT`` retried
 at the next start; a new password in the state stopping the container, writing the
 ``dashboard`` keys with a new ``jwt_secret`` and every other key kept, and
-starting it; the requirements folder named by the image's Python made at a
+starting it; with ``is_gateway_used`` false, a first settings file holding
+no source, no provider and no ``agent_runner``, the default reset only
+while it names the agent's provider, only the agent's own provider deleted,
+the source deleted only while no provider of the person's is on it, the
+record cleared, and a failed call retried at the next start; with it true
+again, the source and the provider added and the person's default kept;
+the requirements folder named by the image's Python made at a
 version change; ``installing`` until ``GET /`` returns 200; the forwarder's
 ``?tkn=`` setting its own cookie under ``cookie_name`` and redirecting to
 ``/neutrino_login``, that page signing in with ``POST /api/auth/login`` and
@@ -130,6 +136,8 @@ class FakeContainers:
 
     def hub_environment(self, name):
         assert name == "neutrino_astrbot"
+        if not self.url:
+            return ["PIP_USER=1"]
         return [
             "PIP_USER=1",
             f"NEUTRINO_GATEWAY_URL={self.url}",
@@ -652,6 +660,177 @@ def test_an_astrbot_that_never_answers_leaves_the_record_as_it_was(box, monkeypa
 
     assert box.record()["model"] == "m1"
     assert any("did not answer" in line for line in box.lines)
+
+
+# --- the gateway off ---
+
+OFF = {**CONFIG, "model": "m1", "is_gateway_used": False}
+AGENT_PROVIDER = {"id": "neutrino_gateway/m1", "provider_source_id": "neutrino_gateway"}
+PERSON_PROVIDER = {"id": "deepseek/chat", "provider_source_id": "deepseek"}
+
+
+def wired(box) -> None:
+    """AstrBot on the gateway with the agent's provider as the default, a provider of the person's beside it; then the switch off and the variables gone."""
+    box.install({**CONFIG, "model": "m1"})
+    box.astrbot.sources = [
+        {"id": "neutrino_gateway", "api_base": URL + "/v1"},
+        {"id": "deepseek"},
+    ]
+    box.astrbot.providers = [dict(AGENT_PROVIDER), dict(PERSON_PROVIDER)]
+    box.astrbot.profile = {
+        "agent_runner": {"config": {"model": {"provider_id": "neutrino_gateway/m1"}}},
+        "persona": "kept",
+    }
+    box.containers.url = ""
+    box.astrbot.requests.clear()
+
+
+def test_off_a_first_settings_file_holds_no_source_provider_or_runner(box):
+    box.containers.url = ""
+
+    box.install(OFF)
+
+    settings = box.containers.settings()
+    assert "provider_sources" not in settings
+    assert "provider" not in settings
+    assert "agent_runner" not in settings
+    assert settings["dashboard"]["username"] == "astrbot"
+    record = box.record()
+    assert (record["base_url"], record["model"], record["provider"]) == ("", "", "")
+    assert [path for path in box.astrbot.paths() if path != "/"] == []
+
+
+def test_off_the_default_is_reset_the_agent_s_provider_and_the_source_deleted(box):
+    wired(box)
+
+    box.start(OFF)
+
+    assert box.astrbot.default_provider() == ""
+    assert box.astrbot.profile["persona"] == "kept"
+    assert box.astrbot.provider_ids() == ["deepseek/chat"]
+    assert box.astrbot.source_ids() == ["deepseek"]
+    assert ("DELETE", "/api/v1/provider-sources/neutrino_gateway") in [
+        (method, path) for method, path, _, _ in box.astrbot.requests
+    ]
+    record = box.record()
+    assert {key: record[key] for key in ("base_url", "model", "provider")} == {
+        "base_url": "",
+        "model": "",
+        "provider": "",
+    }
+    assert (record["is_provider_own"], record["added_provider"]) == (False, "")
+    assert record["context_length"] == 0
+
+
+def test_off_a_default_the_person_picked_stays(box):
+    wired(box)
+    box.astrbot.profile = {
+        "agent_runner": {"config": {"model": {"provider_id": "deepseek/chat"}}}
+    }
+
+    box.start(OFF)
+
+    assert box.astrbot.default_provider() == "deepseek/chat"
+    assert box.astrbot.paths("PUT") == []
+    assert box.astrbot.provider_ids() == ["deepseek/chat"]
+
+
+def test_off_a_provider_of_the_person_s_on_the_source_keeps_the_source(box):
+    wired(box)
+    box.astrbot.providers.append(
+        {"id": "neutrino_gateway/mine", "provider_source_id": "neutrino_gateway"}
+    )
+
+    box.start(OFF)
+
+    assert box.astrbot.provider_ids() == ["deepseek/chat", "neutrino_gateway/mine"]
+    assert box.astrbot.source_ids() == ["neutrino_gateway", "deepseek"]
+    assert box.astrbot.paths("DELETE") == ["/api/v1/providers/neutrino_gateway/m1"]
+    assert box.record()["base_url"] == ""
+
+
+def test_off_a_provider_the_agent_did_not_make_is_never_deleted(box):
+    wired(box)
+    record = box.record()
+    box.hooks._keep({**record, "is_provider_own": False, "added_provider": ""})
+
+    box.start(OFF)
+
+    assert box.astrbot.paths("DELETE") == []
+    assert box.astrbot.default_provider() == "neutrino_gateway/m1"
+    assert box.astrbot.source_ids() == ["neutrino_gateway", "deepseek"]
+
+
+def test_off_a_source_already_gone_counts_as_done(box):
+    wired(box)
+    box.astrbot.sources = [{"id": "deepseek"}]
+
+    box.start(OFF)
+
+    assert "/api/v1/provider-sources/neutrino_gateway" not in box.astrbot.paths(
+        "DELETE"
+    )
+    assert box.record()["base_url"] == ""
+
+
+def test_off_a_failed_call_keeps_the_record_and_the_next_start_tries_again(box):
+    wired(box)
+    box.astrbot.failing.add(("DELETE", "/api/v1/providers/neutrino_gateway/m1"))
+
+    box.start(OFF)
+
+    assert box.record()["base_url"] == URL + "/v1"
+    assert any("did not take" in line for line in box.lines)
+    box.astrbot.failing.clear()
+    box.start(OFF)
+
+    assert box.astrbot.provider_ids() == ["deepseek/chat"]
+    assert box.astrbot.source_ids() == ["deepseek"]
+    assert box.record()["base_url"] == ""
+
+
+def test_off_a_record_with_no_base_url_calls_nothing(box):
+    wired(box)
+    box.start(OFF)
+    box.astrbot.requests.clear()
+
+    box.start(OFF)
+
+    assert [path for path in box.astrbot.paths() if path != "/"] == []
+
+
+def test_on_again_the_source_and_the_provider_are_added_and_the_default_follows(
+    box,
+):
+    wired(box)
+    box.start(OFF)
+    box.containers.url = URL
+
+    box.start({**CONFIG, "model": "m1"})
+
+    assert box.astrbot.source_ids() == ["deepseek", "neutrino_gateway"]
+    assert box.astrbot.provider_ids() == ["deepseek/chat", "neutrino_gateway/m1"]
+    assert box.astrbot.default_provider() == "neutrino_gateway/m1"
+    record = box.record()
+    assert (record["base_url"], record["model"], record["is_provider_own"]) == (
+        URL + "/v1",
+        "m1",
+        True,
+    )
+
+
+def test_on_again_a_default_the_person_picked_in_between_stays(box):
+    wired(box)
+    box.start(OFF)
+    box.astrbot.profile = {
+        "agent_runner": {"config": {"model": {"provider_id": "deepseek/chat"}}}
+    }
+    box.containers.url = URL
+
+    box.start({**CONFIG, "model": "m1"})
+
+    assert box.astrbot.default_provider() == "deepseek/chat"
+    assert box.astrbot.provider_ids() == ["deepseek/chat", "neutrino_gateway/m1"]
 
 
 # --- the forwarder ---

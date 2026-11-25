@@ -1,7 +1,8 @@
-"""A stand-in for AstrBot on loopback: its page, its login, its providers, one provider read and written back, its sources and its default profile.
+"""A stand-in for AstrBot on loopback: its page, its login, its providers, one provider read and written back, its sources, a source's providers and its deletion, and its default profile.
 
 It keeps what the routes the hooks use change: the providers, the sources,
-the default profile, and every request it was sent.
+the default profile, and every request it was sent. Deleting a source
+deletes every provider on it, as AstrBot 4.29.4 does.
 """
 
 import json
@@ -45,6 +46,9 @@ class FakeAstrbot(ThreadingHTTPServer):
 
     def provider_ids(self) -> list:
         return [provider["id"] for provider in self.providers]
+
+    def source_ids(self) -> list:
+        return [source["id"] for source in self.sources]
 
     def default_provider(self) -> str:
         runner = self.profile.get("agent_runner") or {}
@@ -114,6 +118,8 @@ class FakeAstrbotHandler(BaseHTTPRequestHandler):
         sent = json.loads(body) if body else {}
         if path == "/api/v1/providers" and method == "GET":
             self._ok({"providers": list(server.providers)})
+        elif path == "/api/v1/provider-sources" and method == "GET":
+            self._ok({"provider_sources": list(server.sources)})
         elif path == "/api/v1/provider-sources" and method == "POST":
             source = sent["config"]
             server.sources = [
@@ -121,7 +127,27 @@ class FakeAstrbotHandler(BaseHTTPRequestHandler):
             ] + [source]
             self._ok({})
         elif path == "/api/v1/provider-sources/neutrino_gateway/providers":
+            if method == "GET":
+                on_source = [
+                    provider
+                    for provider in server.providers
+                    if provider.get("provider_source_id") == "neutrino_gateway"
+                ]
+                self._ok({"providers": on_source, "model_metadata": {}})
+                return
             server.providers.append(dict(sent["config"]))
+            self._ok({})
+        elif path.startswith("/api/v1/provider-sources/") and method == "DELETE":
+            gone = urllib.parse.unquote(path[len("/api/v1/provider-sources/") :])
+            if gone not in self.server.source_ids():
+                self._answer(200, {"status": "error", "message": "not found"})
+                return
+            server.sources = [held for held in server.sources if held["id"] != gone]
+            server.providers = [
+                held
+                for held in server.providers
+                if held.get("provider_source_id") != gone
+            ]
             self._ok({})
         elif path == "/api/v1/config-profiles/default" and method == "GET":
             self._ok({"config": server.profile, "metadata": {}})

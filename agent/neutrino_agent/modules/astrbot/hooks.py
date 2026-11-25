@@ -5,8 +5,9 @@ install or a version change, and before ``start`` while the record holds
 another password than the state's. It makes the volume when it is missing,
 writes ``cmd_config.json`` into a volume that holds none, with the dashboard
 user's password, a new ``jwt_secret``, the gateway's source, the default
-model's provider and the default, ``pypi_index_url`` and metrics off, and
-makes the requirements folder of the image's Python. A volume that holds the
+model's provider and the default while the gateway is used,
+``pypi_index_url`` and metrics off, and makes the requirements folder of the
+image's Python. A volume that holds the
 file keeps it, apart from the ``dashboard`` keys after a new password, which
 are written with the container stopped. Each file is written whole under a
 temporary name and renamed into place.
@@ -26,7 +27,11 @@ module reads ``installing`` until AstrBot's ``/`` first answers 200: the
 step ``first_start`` checks every 30 seconds meanwhile. Once it has ended,
 and at each later start, the agent gives AstrBot a new gateway address, a
 new default model or a new context length of the agent's provider through
-AstrBot's API, and leaves a default the person picked as it is.
+AstrBot's API, and leaves a default the person picked as it is. While the
+state's ``is_gateway_used`` is false it takes the gateway out through the
+same API: the default reset while it names the agent's provider, that
+provider deleted, and the source deleted while no provider of the person's
+is on it.
 
 Not pure: runs podman, opens sockets, writes the record.
 """
@@ -88,6 +93,7 @@ from neutrino_agent.modules.astrbot.constants import (
     ASTRBOT_RECORD_FIELDS,
     ASTRBOT_REFUSED_PATHS,
     ASTRBOT_SOURCE_ID,
+    ASTRBOT_SOURCE_PATH,
     ASTRBOT_SOURCE_PROVIDERS_PATH,
     ASTRBOT_SOURCE_TIMEOUT_S,
     ASTRBOT_SOURCES_PATH,
@@ -244,6 +250,7 @@ def settings_document(
     model: str,
     index_url: str,
     context_length: int = 0,
+    is_gateway_used: bool = True,
     **hashing,
 ) -> dict:
     """The settings file the agent writes into an empty volume.
@@ -255,19 +262,20 @@ def settings_document(
         index_url: The first ranked source of the ``pypi`` set; empty
             leaves AstrBot's own.
         context_length: The default model's context length; 0 for none.
+        is_gateway_used: Whether AstrBot uses the gateway; false writes no
+            source, no provider and no ``agent_runner``.
         **hashing: ``salt`` and ``jwt_secret``, as :func:`dashboard_keys`
             takes them.
 
     Returns:
-        ``dashboard``, ``provider_sources``, and ``provider`` and
-        ``agent_runner`` while a model is named, ``pypi_index_url`` and
-        ``disable_metrics``.
+        ``dashboard``, ``provider_sources`` while the gateway is used, and
+        ``provider`` and ``agent_runner`` while a model is named as well,
+        ``pypi_index_url`` and ``disable_metrics``.
     """
-    document = {
-        "dashboard": dashboard_keys(password, **hashing),
-        "provider_sources": [gateway_source(base_url)],
-    }
-    if model:
+    document = {"dashboard": dashboard_keys(password, **hashing)}
+    if is_gateway_used:
+        document["provider_sources"] = [gateway_source(base_url)]
+    if is_gateway_used and model:
         document["provider"] = [gateway_provider(model, context_length)]
         document["agent_runner"] = {
             "runner_type": "local",
@@ -527,7 +535,7 @@ class AstrbotHooks(ContainerHooks):
 
         Args:
             config: ``{secret, password, cookie_name, local_name, model,
-                context_length}``.
+                context_length, is_gateway_used}``.
         """
         self._config = AstrbotConfig.from_dict(config)
 
@@ -551,7 +559,8 @@ class AstrbotHooks(ContainerHooks):
         """Take the module's configuration.
 
         Args:
-            config: ``{secret, password, cookie_name, local_name, model}``.
+            config: ``{secret, password, cookie_name, local_name, model,
+                context_length, is_gateway_used}``.
         """
         self._config = AstrbotConfig.from_dict(config)
 
@@ -594,7 +603,7 @@ class AstrbotHooks(ContainerHooks):
             self._keep({**record, "version": version, "is_ready": False})
 
     def start(self) -> None:
-        """Serve the page, and once the first start has ended give AstrBot a new gateway address, a new default model or a new context length.
+        """Serve the page, and once the first start has ended give AstrBot a new gateway address, a new default model or a new context length, or take the gateway out while it is not used.
 
         Raises:
             ModuleApplyError: When the Containers runner cannot keep
@@ -878,19 +887,22 @@ class AstrbotHooks(ContainerHooks):
 
         Raises:
             ModuleApplyError: ``install_failed {detail}`` when the state
-                names no gateway address or the volume's script fails.
+                names no gateway address while the gateway is used, or the
+                volume's script fails.
         """
-        base_url = self._base_url()
-        if not base_url:
+        base_url = self._base_url() if config.is_gateway_used else ""
+        if config.is_gateway_used and not base_url:
             raise _settings_failed(
                 f"the state names no {ASTRBOT_GATEWAY_URL_VARIABLE} for {ASTRBOT_CONTAINER}"
             )
+        model = config.model if config.is_gateway_used else ""
         document = settings_document(
             password=config.password,
             base_url=base_url,
-            model=config.model,
+            model=model,
             index_url=self._index_url(),
             context_length=config.context_length,
+            is_gateway_used=config.is_gateway_used,
         )
         self._write_volume({ASTRBOT_CONFIG_FILE: _settings_json(document)}, (folder,))
         if self._is_stopping(context, "written_password"):
@@ -901,10 +913,10 @@ class AstrbotHooks(ContainerHooks):
                 "written_password": config.password,
                 "python": python,
                 "base_url": base_url,
-                "model": config.model,
-                "context_length": config.context_length if config.model else 0,
-                "provider": provider_id(config.model) if config.model else "",
-                "is_provider_own": bool(config.model),
+                "model": model,
+                "context_length": config.context_length if model else 0,
+                "provider": provider_id(model) if model else "",
+                "is_provider_own": bool(model),
                 "added_provider": "",
                 "is_ready": False,
             }
@@ -946,6 +958,8 @@ class AstrbotHooks(ContainerHooks):
             The record as it stands afterwards.
         """
         config = self._config or AstrbotConfig()
+        if not config.is_gateway_used:
+            return self._gateway_taken_out(record)
         base_url = self._base_url()
         is_new_url = bool(base_url) and base_url != record.get("base_url")
         is_new_model = bool(config.model) and config.model != record.get("model")
@@ -972,6 +986,124 @@ class AstrbotHooks(ContainerHooks):
         if _is_new_length(record, config):
             record = self._length_synced(record, config.context_length, port, token)
         return record
+
+    def _gateway_taken_out(self, record: dict) -> dict:
+        """The record after AstrBot is taken off the gateway through its API, while the record holds a base URL.
+
+        The default is reset while it names the agent's provider, the
+        agent's own providers are deleted, and the source is deleted while
+        no provider of the person's is on it. A call that fails is a line in
+        the log, and the record keeps what it held, so the next start tries
+        again.
+
+        Args:
+            record: The module's record, its first start ended.
+
+        Returns:
+            The record, with no address, model or provider once every call
+            took.
+        """
+        if not record.get("base_url"):
+            return record
+        port = int(record.get("upstream_port", 0) or 0)
+        token = self._api_token(port, str(record.get("written_password", "") or ""))
+        if not token:
+            return record
+        own = _own_providers(record)
+        if not self._default_reset(port, token, own):
+            return record
+        held = self._provider_ids(port, token)
+        if held is None:
+            return record
+        for provider in own:
+            if provider in held and not self._took(
+                f"the deletion of provider {provider}",
+                port,
+                "DELETE",
+                ASTRBOT_PROVIDERS_PATH + "/" + urllib.parse.quote(provider, safe="/:"),
+                None,
+                token,
+            ):
+                return record
+        if not self._source_dropped(port, token):
+            return record
+        self._log(f"{self._name}: the gateway is out of AstrBot")
+        return self._keep(
+            {
+                **record,
+                "base_url": "",
+                "model": "",
+                "context_length": 0,
+                "provider": "",
+                "is_provider_own": False,
+                "added_provider": "",
+            }
+        )
+
+    def _default_reset(self, port: int, token: str, own: list) -> bool:
+        """Whether the ``default`` profile's provider names none of the agent's providers, after it is set to empty where it did.
+
+        Returns:
+            False when a call fails.
+        """
+        status, document = self._api(port, "GET", ASTRBOT_PROFILE_PATH, None, token)
+        data = document.get("data") if is_ok(status, document) else None
+        profile = data.get("config") if isinstance(data, dict) else None
+        if not isinstance(profile, dict):
+            self._log(f"{self._name}: the default profile was not read: {status}")
+            return False
+        if _nested(profile, ASTRBOT_PROFILE_PROVIDER_PATH) not in own:
+            return True
+        changed = copy.deepcopy(profile)
+        _set_nested(changed, ASTRBOT_PROFILE_PROVIDER_PATH, "")
+        return self._took(
+            "the default model's reset",
+            port,
+            "PUT",
+            ASTRBOT_PROFILE_PATH,
+            changed,
+            token,
+        )
+
+    def _source_dropped(self, port: int, token: str) -> bool:
+        """Whether the gateway's source is gone or kept for the person's providers on it, after it is deleted where none is.
+
+        Returns:
+            False when a call fails.
+        """
+        status, document = self._api(
+            port, "GET", ASTRBOT_SOURCE_PROVIDERS_PATH, None, token
+        )
+        data = document.get("data") if is_ok(status, document) else None
+        providers = data.get("providers") if isinstance(data, dict) else None
+        if not isinstance(providers, list):
+            self._log(f"{self._name}: the source's providers were not read: {status}")
+            return False
+        if providers:
+            self._log(
+                f"{self._name}: the gateway's source stays for {len(providers)} "
+                "providers of the person's"
+            )
+            return True
+        status, document = self._api(port, "GET", ASTRBOT_SOURCES_PATH, None, token)
+        data = document.get("data") if is_ok(status, document) else None
+        sources = data.get("provider_sources") if isinstance(data, dict) else None
+        if not isinstance(sources, list):
+            self._log(f"{self._name}: the sources were not read: {status}")
+            return False
+        if not any(
+            isinstance(source, dict) and source.get("id") == ASTRBOT_SOURCE_ID
+            for source in sources
+        ):
+            return True
+        return self._took(
+            "the deletion of the gateway's source",
+            port,
+            "DELETE",
+            ASTRBOT_SOURCE_PATH,
+            None,
+            token,
+        )
 
     def _model_synced(
         self, record: dict, config: AstrbotConfig, port: int, token: str
@@ -1396,6 +1528,14 @@ class AstrbotHooks(ContainerHooks):
             forwarder, self._forwarder = self._forwarder, None
         if forwarder is not None:
             forwarder.close()
+
+
+def _own_providers(record: dict) -> list:
+    """The providers the record says the agent wrote or added, each once. Pure."""
+    held = [str(record.get("added_provider", "") or "")]
+    if record.get("is_provider_own"):
+        held.insert(0, str(record.get("provider", "") or ""))
+    return [provider for provider in dict.fromkeys(held) if provider]
 
 
 def _is_new_length(record: dict, config: AstrbotConfig) -> bool:

@@ -1,11 +1,12 @@
-"""The AstrBot module's configuration: two secrets, the login cookie's name, the app's local name, the hub's default model and its context length.
+"""The AstrBot module's configuration: two secrets, the login cookie's name, the app's local name, the hub's default model, its context length and whether the gateway is used.
 
 The hub sends ``{secret, password, cookie_name, local_name, model,
-context_length}``: the secret the page's tokens are signed with, the
-password of AstrBot's dashboard user, which the forwarder signs in with, the
-name of the forwarder's login cookie on this device, the app's local name, a
-``Host`` the forwarder accepts, the hub's default model, empty while the
-gateway serves none, and that model's context length. The forwarder's port
+context_length, is_gateway_used}``: the secret the page's tokens are signed
+with, the password of AstrBot's dashboard user, which the forwarder signs in
+with, the name of the forwarder's login cookie on this device, the app's
+local name, a ``Host`` the forwarder accepts, the hub's default model, empty
+while the gateway serves none, that model's context length, and the default
+account's AI switch. The forwarder's port
 is the agent's own, kept in the module's record.
 
 Pure: parsing.
@@ -49,6 +50,8 @@ class AstrbotConfig:
             none.
         context_length: The default model's context length in tokens, 0
             while there is no model and from a hub that sends none.
+        is_gateway_used: Whether AstrBot uses the gateway; true from a hub
+            that sends none.
     """
 
     secret: str = ""
@@ -57,6 +60,7 @@ class AstrbotConfig:
     local_name: str = ""
     model: str = ""
     context_length: int = 0
+    is_gateway_used: bool = True
 
     @classmethod
     def from_dict(cls, data: dict) -> "AstrbotConfig":
@@ -64,8 +68,9 @@ class AstrbotConfig:
 
         Args:
             data: ``{secret, password, cookie_name, local_name, model,
-                context_length}``; a length that is no positive whole number
-                is 0.
+                context_length, is_gateway_used}``; a length that is no
+                positive whole number is 0, and anything but ``false`` uses
+                the gateway.
 
         Returns:
             The configuration.
@@ -84,4 +89,5 @@ class AstrbotConfig:
                 and length > 0
                 else 0
             ),
+            is_gateway_used=data.get("is_gateway_used") is not False,
         )
