@@ -1073,7 +1073,7 @@ and platform, which change between releases.
 | `urls` | `["tcp://<address>:<port>", ...]` | | the same list | |
 | `ssh_relay_url`, `sakurafrp_url`, `openfrp_url` | | | the member of `urls` that is the SSH relay's address, SakuraFrp's and OpenFrp's, each empty while its way in adds none; a client ranks a candidate's path by them ([client.md](client.md), "A network change starts a round") | |
 | `overlays` | | | `[{provider, ...}]`: what the client joins each of the hub's overlays with, the preferred first | |
-| `terminals` | | | `[{device_id, name, is_online, accounts, sessions}]`: the managed machines its permission allows under `terminal`, where it opens a `shell` or an `exec`, each with the Terminal module's enabled accounts, the first being the default, and the sessions this client sees there | |
+| `terminals` | | | `[{device_id, name, is_online, accounts, sessions}]`: the managed machines its permission allows under `terminal`, where it opens a `shell` or an `exec`, each with the Terminal module's enabled accounts, the first being the machine's default account ([agent/accounts.md](agent/accounts.md), "The default account"), and the sessions this client sees there | |
 | `is_panel_allowed` | | | bool: the client is allowed to open the hub's panel through `connect {is_panel: true}` | |
 | `reached_through` | | | `lan`, `netbird`, `easytier`, `ssh_relay`, `direct`, `sakurafrp` or `openfrp`: the way this client's session reached the hub | |
 | `error` | | `{code, params}` | | |

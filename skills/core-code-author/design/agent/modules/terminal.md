@@ -5,7 +5,9 @@ The `terminal` module is one of the modules the agent's package carries
 enabled accounts: the available accounts of the machine a `shell` or an
 `exec` stream runs as ([../accounts.md](../accounts.md), "Available
 accounts"). A stream names the account it runs as, and one that names none
-runs as the first enabled account.
+runs as the first enabled account, the machine's default account, which the
+module always enables ([../accounts.md](../accounts.md), "The default
+account").
 
 | Rule | Reason |
 | --- | --- |
