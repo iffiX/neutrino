@@ -177,10 +177,10 @@ the width of its own box, and a column header shows whole in either layout:
 
 | Box | Layout |
 | --- | --- |
-| As wide as every column with each row's actions on one line | A table. Each column is at least as wide as its header's words in either language, and the actions cell takes the room the other columns leave, its buttons on one line. With the panel's fonts the Agents table needs about 1017 px in Chinese and 1136 px in English, the Clients table about 980 px and 1074 px, so a 1280 px window shows both as cards. |
+| As wide as every column with each row's actions on one line | A table. Each column is at least as wide as its header's words in either language, and the actions cell takes the room the other columns leave, its buttons on one line. With the panel's fonts the Agents table needs about 1033 px in Chinese and 1152 px in English, the Clients table about 980 px and 1074 px, so a 1280 px window shows both as cards. |
 | Narrower | Each row is a card over two or more lines: the name line; the other fields as label and value pairs on one grid every card shares, each label its column's header, whole in either language, each track holding its field's longest value and stretching to the card's, except in a box under 408 px, where a long value such as a MAC may wrap; then the row's actions on a line of their own, at the card's right edge. A rename, a press's outcome line and a client's permission form keep their places in the row. |
 
-An Agents card puts its fields in five tracks, in three under 718 px, and
+An Agents card puts its fields in five tracks, in three under 734 px, and
 under 510 px gives the rings a track of their own, five rings wide, with the
 version and the last seen side by side in two equal tracks to their right.
 Under 408 px, where those two labels no longer fit there in either language,
@@ -573,6 +573,7 @@ alike: an offline machine's row keeps its grey dot and its offline time.
 | Rule | Reason |
 | --- | --- |
 | The table's word goes in the last seen cell, and the dot beside the name stays bare. | The name column is 148 px wide, and a word beside the dot left no room for the name. |
+| The last seen column is 104 px wide. | It holds `incomplete` and an offline time such as `7h 00m ago` whole; at 88 px both were cut. |
 
 The page has no filter chips, no legend, no search box, no scan and no drawer.
 Its title carries `<n> agents, <m> online`, and its header holds two primary
