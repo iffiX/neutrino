@@ -50,7 +50,7 @@ VERB_REINSTALL = "reinstall"
 VERB_KILL = "kill"
 VERB_REMOTE_DESKTOP_READ = "remote_desktop_read"
 VERB_REMOTE_DESKTOP_PASSWORD_SET = "remote_desktop_password_set"  # scan: allow
-VERB_ACCOUNT_PASSWORD_TEST = "account_password_test"  # scan: allow
+VERB_ACCOUNT_TEST = "account_test"
 
 # The verbs a ``command {module: agent}`` names.
 AGENT_VERBS = (
@@ -60,7 +60,7 @@ AGENT_VERBS = (
     VERB_KILL,
     VERB_REMOTE_DESKTOP_READ,
     VERB_REMOTE_DESKTOP_PASSWORD_SET,
-    VERB_ACCOUNT_PASSWORD_TEST,
+    VERB_ACCOUNT_TEST,
 )
 # The verbs the platform's power action carries out, by its own word.
 POWER_VERBS = {VERB_REBOOT: "reboot", VERB_SHUTDOWN: "poweroff"}
@@ -196,8 +196,8 @@ class DeviceOperator:
             return self._kill_process(args)
         if verb in (VERB_REMOTE_DESKTOP_READ, VERB_REMOTE_DESKTOP_PASSWORD_SET):
             return self._remote_desktop_verb(verb, args)
-        if verb == VERB_ACCOUNT_PASSWORD_TEST:
-            return self._test_account_password(args)
+        if verb == VERB_ACCOUNT_TEST:
+            return self._test_account(args)
         return _refused("verb_unknown", module=AGENT_COMMAND_MODULE, verb=verb)
 
     def _module_verb(
@@ -315,16 +315,14 @@ class DeviceOperator:
             params=dict(outcome.get("params") or {}),
         )
 
-    def _test_account_password(self, args: dict) -> CommandOutcome:
-        """Test an account's password with one logon.
+    def _test_account(self, args: dict) -> CommandOutcome:
+        """Test that an account can log in: one logon with its password on Windows, its login shell and its home elsewhere.
 
         The outcome and the agent's log hold no password.
         """
         account = str(args.get("account", ""))
         try:
-            self._platform.check_account_password(
-                account, str(args.get("password", ""))
-            )
+            self._platform.check_account(account, str(args.get("password", "")))
         except PlatformUnsupportedError:
             return _refused("unsupported_platform")
         except ModuleApplyError as error:

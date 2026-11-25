@@ -138,6 +138,9 @@ CLI_CODE_WORDS = {
     "account_invalid": "{account} is not a usable account name",
     "account_duplicate": "{account} is named for two servers",
     "account_unknown": "this machine has no account {account}",
+    "account_no_login": (
+        "{account} cannot log in on this machine: it has no login shell or no home"
+    ),
     "account_no_profile": (
         "{account} has never signed in on this machine; sign in as {account} "
         "once, then try again"

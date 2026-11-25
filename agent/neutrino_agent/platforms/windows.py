@@ -557,7 +557,7 @@ class WindowsPlatform(AgentPlatform):
         """
         return account_home(account, advapi32=self._advapi32, kernel32=self._kernel32)
 
-    def check_account_password(self, account: str, password: str) -> None:
+    def check_account(self, account: str, password: str) -> None:
         """Check an account's password with one network logon, closed at once.
 
         Args:

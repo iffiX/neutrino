@@ -9,7 +9,7 @@ that raises answers ``agent_internal`` and never drops the stream, the power and
 ``resize`` reaches the shell stream it names, a process is ended with a
 term and then a kill against a real child and through the platform on
 Windows, never one of the protected pids, the remote desktop verbs reach
-their reader with the status riding the result, and the password test closes
+their reader with the status riding the result, and the account test closes
 with the platform's answer and never the password.
 """
 
@@ -27,7 +27,7 @@ from neutrino_agent.core.commands import (
     DeviceOperator,
     is_reading_command,
 )
-from neutrino_agent.exceptions import ModuleApplyError
+from neutrino_agent.exceptions import ModuleApplyError, PlatformUnsupportedError
 from neutrino_agent.modules.shared.base import ModuleRunner
 from neutrino_agent.modules.shared.step_locks import StepLocks
 from neutrino_agent.platforms.base import AgentPlatform
@@ -86,7 +86,7 @@ def test_the_agent_verbs_are_the_seven_the_protocol_names():
         "kill",
         "remote_desktop_read",
         "remote_desktop_password_set",
-        "account_password_test",
+        "account_test",
     )
 
 
@@ -223,7 +223,7 @@ def test_the_journal_reads_while_a_state_is_still_applying():
         ("gitea", "password", False),
         ("agent", "reboot", False),
         ("agent", "remote_desktop_password_set", False),
-        ("agent", "account_password_test", False),
+        ("agent", "account_test", False),
         ("agent", "journal", False),
         ("podman", "machine_read", True),
         ("samba", "folder", True),
@@ -382,25 +382,32 @@ def test_remote_desktop_password_set_reaches_the_reader_and_not_the_output():
 
 
 class PasswordPlatform(PowerPlatform):
-    """A platform whose password check raises what it is given."""
+    """A platform whose account test raises what it is given."""
 
     def __init__(self, error=None):
         self.calls: list = []
         self.error = error
 
-    def check_account_password(self, account, password):
+    def check_account(self, account, password):
         self.calls.append((account, password))
         if self.error is not None:
             raise self.error
 
 
+class NoAccountsPlatform(PowerPlatform):
+    """A platform with no account database."""
+
+    def check_account(self, account, password):
+        raise PlatformUnsupportedError("no account database here")
+
+
 def run_password_test(platform) -> CommandOutcome:
     return DeviceOperator(platform=platform, remote_desktop=NoRemoteDesktop()).run(
-        "agent", "account_password_test", {"account": "lab", "password": "pw-1"}
+        "agent", "account_test", {"account": "lab", "password": "pw-1"}
     )
 
 
-def test_a_password_the_platform_takes_closes_with_nothing_said():
+def test_an_account_the_platform_takes_closes_with_nothing_said():
     platform = PasswordPlatform()
 
     outcome = run_password_test(platform)
@@ -430,8 +437,17 @@ def test_a_logon_refused_otherwise_closes_with_the_systems_sentence():
     assert "pw-1" not in repr(outcome)
 
 
-def test_a_system_with_no_account_password_refuses_the_test():
-    outcome = run_password_test(PowerPlatform())
+def test_an_account_that_cannot_log_in_closes_account_no_login():
+    outcome = run_password_test(
+        PasswordPlatform(ModuleApplyError("account_no_login", {"account": "lab"}))
+    )
+
+    assert (outcome.exit_code, outcome.code) == (1, "account_no_login")
+    assert outcome.params == {"account": "lab"}
+
+
+def test_a_system_with_no_account_database_refuses_the_test():
+    outcome = run_password_test(NoAccountsPlatform())
 
     assert (outcome.exit_code, outcome.code) == (1, "unsupported_platform")
 

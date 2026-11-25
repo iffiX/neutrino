@@ -37,7 +37,7 @@ from neutrino_agent.constants import (
     AGENT_STEP_DOWN_TIMEOUT_S,
     AGENT_VAR_DIR,
 )
-from neutrino_agent.exceptions import PlatformUnsupportedError
+from neutrino_agent.exceptions import ModuleApplyError, PlatformUnsupportedError
 
 try:
     import pwd
@@ -46,6 +46,8 @@ except ImportError:  # Windows has no account database module.
 
 # What ends the word after a name's prefix.
 ADDED_NAME_WORD_END = re.compile(r"[_.@-]")
+# The login shells no person logs in with, by their last path part.
+NO_LOGIN_SHELLS = ("nologin", "false")
 
 
 def login_shell_of(account: str) -> str:
@@ -64,6 +66,22 @@ def login_shell_of(account: str) -> str:
         return str(pwd.getpwnam(account).pw_shell or "")
     except KeyError:
         return ""
+
+
+def is_login_account(shell: str, home: str) -> bool:
+    """Whether an account can log in: a login shell that is neither ``nologin`` nor ``false``, and a home that exists.
+
+    Args:
+        shell: The account's login shell, by its path.
+        home: The account's home.
+
+    Returns:
+        True when both hold.
+    """
+    name = posixpath.basename(str(shell or ""))
+    if not name or name in NO_LOGIN_SHELLS:
+        return False
+    return bool(home) and os.path.isdir(home)
 
 
 def launcher_folders(var_dir: str, os_name: str, modules) -> list:
@@ -307,21 +325,27 @@ class AgentPlatform:
         """
         raise PlatformUnsupportedError("cannot resolve an account home here")
 
-    def check_account_password(self, account: str, password: str) -> None:
-        """Check an account's password with one logon that leaves nothing behind.
+    def check_account(self, account: str, password: str) -> None:
+        """Check that an account can log in: its login shell is neither ``nologin`` nor ``false``, and its home exists.
 
         Args:
             account: The account.
-            password: Its password.
+            password: Its password; unused where the hub sends none.
 
         Raises:
-            PlatformUnsupportedError: On a system whose accounts take no
-                password from the hub.
-            ModuleApplyError: ``credential_invalid {account}`` when the
-                system refuses the password.
-            OSError: When the system refuses the logon for another reason.
+            PlatformUnsupportedError: Where there is no account database.
+            ModuleApplyError: ``account_unknown {account}`` when the account
+                database has no such account, and ``account_no_login
+                {account}`` when it cannot log in.
         """
-        raise PlatformUnsupportedError("no account password to check here")
+        if pwd is None:
+            raise PlatformUnsupportedError("no account database here")
+        try:
+            entry = pwd.getpwnam(account)
+        except KeyError:
+            raise ModuleApplyError("account_unknown", {"account": account}) from None
+        if not is_login_account(entry.pw_shell, entry.pw_dir):
+            raise ModuleApplyError("account_no_login", {"account": account})
 
     def control_socket_path(self) -> str:
         """Where the agent's control socket lives on this platform.

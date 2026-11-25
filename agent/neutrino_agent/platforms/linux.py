@@ -41,7 +41,11 @@ from neutrino_agent.core.metrics import (
 )
 from neutrino_agent.modules.shared.system_package import run_package_manager
 from neutrino_agent.platforms.answered_run import run_on_pty
-from neutrino_agent.platforms.base import AgentPlatform, is_added_name
+from neutrino_agent.platforms.base import (
+    AgentPlatform,
+    is_added_name,
+    is_login_account,
+)
 from neutrino_agent.platforms.linux_relay import LinuxRelayFirewall, read_bridges
 
 try:
@@ -52,7 +56,6 @@ except ImportError:  # Windows has no account database module.
 # Accounts below this uid are the system's, not people's.
 LINUX_HUMAN_UID_FLOOR = 1000
 LINUX_NOBODY_UID = 65534
-LINUX_NO_LOGIN_SHELLS = ("nologin", "false")
 
 PROC_PATH = "/proc"
 PROC_STAT_PATH = "/proc/stat"
@@ -184,10 +187,7 @@ class LinuxPlatform(AgentPlatform):
                 continue
             if entry.pw_uid == LINUX_NOBODY_UID:
                 continue
-            shell = entry.pw_shell or ""
-            if not shell or os.path.basename(shell) in LINUX_NO_LOGIN_SHELLS:
-                continue
-            if not entry.pw_dir or not os.path.isdir(entry.pw_dir):
+            if not is_login_account(entry.pw_shell, entry.pw_dir):
                 continue
             accounts.append(entry.pw_name)
         return sorted(accounts)

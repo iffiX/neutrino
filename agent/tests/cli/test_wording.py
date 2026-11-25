@@ -90,6 +90,7 @@ MODULE_CODES = (
     "account_invalid",
     "account_duplicate",
     "account_unknown",
+    "account_no_login",
     "account_no_profile",
     "terminal_account_missing",
     "account_not_enabled",

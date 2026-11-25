@@ -1024,6 +1024,20 @@ def test_off_windows_no_account_is_listed():
     assert WindowsPlatform().human_accounts() == []
 
 
+def test_the_account_test_is_one_network_logon_with_the_password(monkeypatch):
+    seen = []
+
+    def check_password(account, password, *, advapi32=None, kernel32=None):
+        seen.append((account, password, advapi32, kernel32))
+
+    monkeypatch.setattr(windows_module, "check_password", check_password)
+    advapi32, kernel32 = object(), object()
+
+    WindowsPlatform(advapi32=advapi32, kernel32=kernel32).check_account("ann", "pw")
+
+    assert seen == [("ann", "pw", advapi32, kernel32)]
+
+
 def test_an_account_home_is_what_the_profile_list_names(monkeypatch):
     seen = []
 

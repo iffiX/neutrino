@@ -2,8 +2,13 @@
 
 A platform says what it has; invoking what it lacks answers
 ``unsupported_platform``, never a guess. The capability table is asserted
-complete, so a new contract method without a capability fails here.
+complete, so a new contract method without a capability fails here. An
+account can log in on Linux and macOS with a login shell that is neither
+``nologin`` nor ``false`` and a home that exists, and the account test
+answers ``account_unknown`` or ``account_no_login`` otherwise.
 """
+
+import collections
 
 import pytest
 
@@ -13,8 +18,8 @@ from neutrino_agent.constants import (
     AGENT_PACKAGE_DIR,
     AGENT_STATE_PATH,
 )
-from neutrino_agent.exceptions import PlatformUnsupportedError
-from neutrino_agent.platforms.base import AgentPlatform
+from neutrino_agent.exceptions import ModuleApplyError, PlatformUnsupportedError
+from neutrino_agent.platforms.base import AgentPlatform, is_login_account
 from neutrino_agent.platforms.darwin import DarwinPlatform
 from neutrino_agent.platforms.linux import LinuxPlatform
 from neutrino_agent.platforms.windows import WindowsPlatform
@@ -35,7 +40,6 @@ CONTRACT_CALLS = {
     ),
     "account_process": ("account_shell", ("alice", ["id"]), {}),
     "as_account": ("act_as", ("alice", len, "x"), {"password": "pw"}),
-    "check_account_password": ("act_as", ("alice", "pw"), {}),
     "install_system_packages": ("system_packages", (["cifs-utils"],), {}),
     "remove_system_packages": ("system_packages", (["cifs-utils"],), {}),
     "read_agent_service_state": ("agent_service", (), {}),
@@ -74,6 +78,7 @@ BASE_IMPLEMENTED = {
     "agent_bin_dir": "",
     "account_details": "accounts",
     "has_account": "accounts",
+    "check_account": "accounts",
     "agent_data_dir": "",
     "agent_var_dir": "",
     "agent_service_start_hint": "agent_service",
@@ -274,3 +279,88 @@ def test_account_details_name_each_account_with_its_home_and_shell(monkeypatch):
 def test_the_base_platform_reads_no_account_details():
     with pytest.raises(PlatformUnsupportedError):
         AgentPlatform().account_details()
+
+
+PwdEntry = collections.namedtuple("PwdEntry", "pw_name pw_shell pw_dir")
+
+
+@pytest.mark.parametrize(
+    ("shell", "is_home_made", "is_login"),
+    [
+        ("/bin/bash", True, True),
+        ("/usr/bin/zsh", True, True),
+        ("/usr/sbin/nologin", True, False),
+        ("/sbin/nologin", True, False),
+        ("/bin/false", True, False),
+        ("/usr/bin/false", True, False),
+        ("", True, False),
+        ("/bin/bash", False, False),
+    ],
+)
+def test_an_account_logs_in_with_a_login_shell_and_a_home_that_exists(
+    tmp_path, shell, is_home_made, is_login
+):
+    home = tmp_path / "home"
+    if is_home_made:
+        home.mkdir()
+
+    assert is_login_account(shell, str(home)) is is_login
+
+
+def test_an_account_with_no_home_named_cannot_log_in():
+    assert is_login_account("/bin/bash", "") is False
+
+
+class FakePwd:
+    def __init__(self, entries):
+        self._entries = {entry.pw_name: entry for entry in entries}
+
+    def getpwnam(self, name):
+        if name not in self._entries:
+            raise KeyError(name)
+        return self._entries[name]
+
+
+def account_test(monkeypatch, tmp_path, account):
+    home = tmp_path / "ann"
+    home.mkdir(exist_ok=True)
+    entries = [
+        PwdEntry("ann", "/bin/bash", str(home)),
+        PwdEntry("svc", "/usr/sbin/nologin", str(home)),
+        PwdEntry("gone", "/bin/bash", str(tmp_path / "missing")),
+    ]
+    monkeypatch.setattr(base_module, "pwd", FakePwd(entries))
+    return AgentPlatform().check_account(account, "ignored")
+
+
+def test_the_account_test_passes_an_account_that_can_log_in(monkeypatch, tmp_path):
+    assert account_test(monkeypatch, tmp_path, "ann") is None
+
+
+@pytest.mark.parametrize(
+    ("account", "code"),
+    [
+        ("svc", "account_no_login"),
+        ("gone", "account_no_login"),
+        ("ghost", "account_unknown"),
+    ],
+)
+def test_the_account_test_refuses_each_account_that_cannot_log_in(
+    monkeypatch, tmp_path, account, code
+):
+    with pytest.raises(ModuleApplyError) as refused:
+        account_test(monkeypatch, tmp_path, account)
+
+    assert (refused.value.code, refused.value.params) == (code, {"account": account})
+
+
+def test_the_account_test_needs_an_account_database(monkeypatch):
+    monkeypatch.setattr(base_module, "pwd", None)
+
+    with pytest.raises(PlatformUnsupportedError):
+        AgentPlatform().check_account("ann", "")
+
+
+@pytest.mark.parametrize("platform_class", (LinuxPlatform, DarwinPlatform))
+def test_linux_and_macos_test_an_account_as_the_contract_does(platform_class):
+    assert platform_class.check_account is AgentPlatform.check_account
