@@ -873,8 +873,10 @@ list, the panel add of "Inline forms", lit with the accent frame:
 | **Shell** | a text field showing the account's login shell as its placeholder, PowerShell on Windows, with **Browse…** opening the path window in its file mode; left empty, it sends empty |
 | **AI tools use the hub's gateway** | a switch, off by default; turned on, it shows the model rows: Claude Code's four slots, Codex's model and its effort, Gemini's model and OpenCode's model, each picker's first choice `ui.ai_tools.gateway_default` |
 
-**Cancel** and **Save** sit at the form's bottom right. A row shows the
-account's name, and while its AI tools switch is on the result as a
+**Cancel** and **Save** sit at the form's bottom right. **Save** of a new
+account, or of a new Windows password, has the agent test the account first,
+and a refused test keeps the form open with the words of its code under it.
+A row shows the account's name, and while its AI tools switch is on the result as a
 `StatusDot` with a word, with **Edit** and **Remove** at its right, its
 content centred; **Edit** opens the same form in the row's place. **Remove**
 asks through `useConfirm`, the body naming the modules that lose the
@@ -1529,7 +1531,7 @@ first screen set ([ui_text.md](ui_text.md), "Localization").
 | The review names the mode by `ui.setup.mode_<mode>`, the word its mode screen showed. | The mode's key, such as `server`, is the configuration's word. |
 | A step's row holds its name, `ui.setup.step_<id>`, and its dot. The note a step reports stays in the terminal and in the setup log. | A note is the terminal's English or a program's own output, such as xray's version line, and the dot already shows how the step ended. |
 | Under 480 px the review's names take their own width, and the values the rest. | A name column of 190 px left the values a few characters at 360 px. |
-| The account screen, `ui.setup.screen_account`, comes after the proxy screen and before **Ready**, with `ui.setup.account_lead` under its title: **Account** (`ui.setup.account`), the panel's picker over the context's `accounts`, starting at its `default_account`, and on Windows **Password** (`ui.setup.account_password`), a password field. **Next** is disabled while the Windows password is empty. A context with no account leaves the screen out. | The default account is asked once, at the setup that makes the machine a hub, and cannot be changed later, as the vault passphrase cannot ([agent/accounts.md](agent/accounts.md), "The default account"). |
+| The account screen, `ui.setup.screen_account`, comes after the proxy screen and before **Ready**, with `ui.setup.account_lead` under its title: **Account** (`ui.setup.account`), the panel's picker over the context's `accounts`, starting at its `default_account`, and on Windows **Password** (`ui.setup.account_password`), a password field. **Next** is disabled while the Windows password is empty, and tests the account through `POST /api/hub/setup/account/test` before the next screen; a refusal keeps the screen with its code's words under the fields. A context with no account leaves the screen out. | The default account is asked once, at the setup that makes the machine a hub, and cannot be changed later, as the vault passphrase cannot ([agent/accounts.md](agent/accounts.md), "The default account"). |
 | The review names the account under `ui.setup.review_account`, and `—` with no account. | The review shows every answer the steps write. |
 
 ## The hub's faces

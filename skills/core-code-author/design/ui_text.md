@@ -422,6 +422,7 @@ where they fit.
 | `ui.accounts.default_title` | Make {account} the default account | 把 {account} 设为默认账户 |
 | `ui.accounts.default_body` | {account} becomes this machine's default account and cannot be changed later. | {account} 会成为这个系统的默认账户，之后不能更改。 |
 | `ui.modules.default_needed`, every apply bar's reason on a machine with no default account | Set this machine's default account under Available accounts first. | 先在“可用账户”里设置这个系统的默认账户。 |
+| `code.account_no_login` | {account} cannot log in on this machine: it has no login shell or no home. | {account} 不能在这个系统上登录：它没有登录 shell 或家目录。 |
 | `code.account_is_default` | {account} is this machine's default account. | {account} 是这个系统的默认账户。 |
 | `code.default_account_missing` | This machine has no default account yet. | 这个系统还没有默认账户。 |
 | `code.default_account_exists` | This machine's default account is {account}, and it cannot be changed. | 这个系统的默认账户是 {account}，不能更改。 |
