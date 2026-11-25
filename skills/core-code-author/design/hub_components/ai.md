@@ -45,23 +45,26 @@ holds the same key. No module's state holds it: the device's `ai_tools`
 section does ("How a managed machine's tools are pointed at the gateway").
 
 A container module that uses the gateway, Hermes WebUI, Ayakaleaf or AstrBot, has a
-key of its own on each device. The hub generates it, seals it in that module's
+key of its own on each device while the default account's AI switch is on,
+`is_gateway_used` in the module's configuration
+([../agent/accounts.md](../agent/accounts.md), "The AI switch and what
+follows it"). The hub generates it then, seals it in that module's
 `config/devices/<id>/<module>.json`, registers it under the device and the
-module, and voids it at the module's uninstall. The renderer writes it into
-`api-keys` beside the keys of `cliproxyapi.json`, reading every such module
-file. It does not follow the device's AI tools setting, and the module's
-containers receive it in their environment
+module, and voids it when that switch turns off and at the module's
+uninstall. The renderer writes it into `api-keys` beside the keys of
+`cliproxyapi.json`, reading every such module file, and the module's
+containers receive it in their environment while it exists
 ([../agent/modules/containers.md](../agent/modules/containers.md),
 "Reaching the machine"). Its usage is a row of its own, under the device and
 the module.
 
 SiYuan, a program run as each enabled account, has a key of its own for each
-account it enables. The hub generates it when the account is enabled, seals
-it in `config/devices/<id>/siyuan.json`, registers it under the device, the
-module and the account, and voids it when the account is disabled or removed
-and at the module's uninstall; the renderer writes it into `api-keys` as it
-writes a container module's. The agent writes it into the account's own
-SiYuan settings, and it does not follow the device's AI tools setting
+account it enables while that account's AI switch is on. The hub generates
+it then, seals it in `config/devices/<id>/siyuan.json`, registers it under
+the device, the module and the account, and voids it when the account is
+disabled or removed, when its switch turns off, and at the module's
+uninstall; the renderer writes it into `api-keys` as it writes a container
+module's. The agent writes it into the account's own SiYuan settings
 ([../agent/modules/siyuan.md](../agent/modules/siyuan.md), "The gateway").
 Its usage is a row of its own under the device, the module and the account.
 
@@ -500,7 +503,10 @@ picker's first choice being the gateway's default. It is off on a new
 account. The hub keeps it on the account's row in
 `config/devices/<id>/accounts.json` and sends it in the device's `ai_tools`
 section ([../protocol.md](../protocol.md), "The
-sections").
+sections"). The same switch decides the account's SiYuan instance, and the
+default account's switch decides Hermes WebUI, Ayakaleaf and AstrBot on the
+machine ([../agent/accounts.md](../agent/accounts.md), "The AI switch and
+what follows it").
 
 | | On a person's computer | On a managed machine |
 | --- | --- | --- |

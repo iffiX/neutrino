@@ -126,14 +126,17 @@ host. The kernel needs no address of its own.
 ## The gateway
 
 Each instance calls the hub's AI gateway with a key of its own, written into
-the account's SiYuan settings. The hub generates the key when the account is
-enabled, seals it in `siyuan.json`, registers it under the device, the module
-and the account, and voids it when the account is disabled or removed and at
-the module's uninstall ([../../hub_components/ai.md](../../hub_components/ai.md),
-"A key per device as well as per client"). `gateway_url` is
-`http://127.0.0.1:8317` on a managed machine, the agent's AI gateway forward,
-which is open while the module is installed ([../../agent.md](../../agent.md),
-"The AI gateway forward"), and the gateway's `listen_port` in place of 8317 on
+the account's SiYuan settings, while that account's AI switch is on
+([../accounts.md](../accounts.md), "The AI switch and what follows it"). The
+hub generates the key while the account is enabled and its switch is on,
+seals it in `siyuan.json`, registers it under the device, the module and the
+account, and voids it when the account is disabled or removed, when its
+switch turns off, and at the module's uninstall
+([../../hub_components/ai.md](../../hub_components/ai.md), "A key per device
+as well as per client"). `gateway_url` is `http://127.0.0.1:8317` on a
+managed machine, the agent's AI gateway forward, which is open while the
+account's switch is on ([../../agent.md](../../agent.md), "The AI gateway
+forward"), and the gateway's `listen_port` in place of 8317 on
 the hub's own machine. `models` is the hub's served list
 ([../../hub_components/ai.md](../../hub_components/ai.md), "The served
 list"): every name the gateway serves, the models of the accounts signed in
@@ -161,10 +164,13 @@ The hook writes into the workspace's `conf/conf.json`, as the account:
 | The provider's id and each model's id have the form of SiYuan's own ids, `20000101000000-` and seven hex characters, from the SHA-256 of `neutrino` for the provider and of `neutrino/<name>` for a model. | A fixed id finds the module's provider again among the person's own, and the kernel gives its AI entries ids of that form. |
 | The key is written as it is, and the kernel encrypts it with a key built into SiYuan when it next saves the file, within seconds of its start. The hub's keys are 32 characters of base64url. | The kernel decrypts every stored key that reads as hex: keys of 32, 48 and 64 hex characters stopped the kernel at every start while the file held them, with `crypto/cipher: input not full blocks`, and a key that reads as no hex is taken as written. |
 | The key is in the person's file, not only in the service's environment as Hermes WebUI's is. | SiYuan reads its providers from `conf.json` alone. |
+| With an empty `gateway_key`, the hook writes `conf.json` with the module's provider taken out, and empties `ai.agent.modelId` and `ai.editing.modelId` where they name a model of that provider. A model id that names a provider of the person's stays. | The provider is found by its fixed id, and a model id left behind names a model the file no longer holds. |
 | `system.downloadInstallPkg` is false. | The kernel downloads each new desktop installer in the background by default, and the module's version moves in the hub. |
 
 A disabled account's `conf.json` keeps its voided key, which the gateway no
-longer accepts, and the next enable writes a new one.
+longer accepts, and the next enable writes a new one. An enabled account
+whose switch turns off gets the empty key, and its next write takes the
+provider out.
 
 In the lab a new workspace pointed at a stand-in gateway answered
 `POST /api/ai/chatGPT`, and the stand-in logged the kernel's key and model.

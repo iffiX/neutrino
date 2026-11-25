@@ -21,7 +21,10 @@ person's own copy read the same `~/.codex/config.toml`,
 setting points either copy at the gateway, and installing any of the three
 changes no account's switch ([modules/codex.md](modules/codex.md),
 [modules/claude_code.md](modules/claude_code.md),
-[modules/opencode.md](modules/opencode.md)).
+[modules/opencode.md](modules/opencode.md)). The same switch decides the
+account's SiYuan instance, and the default account's switch decides Hermes
+WebUI, Ayakaleaf and AstrBot on the machine ([accounts.md](accounts.md),
+"The AI switch and what follows it").
 
 For each account the state names, the agent runs the client's steps as that
 account with the account's own `tool_configs`, with the copy of cc-switch the agent fetched
@@ -46,8 +49,8 @@ the same steps as the client's deactivation:
 the hub's loopback alone, so while the section is on the agent listens on
 `127.0.0.1:8317`, the AI gateway forward, and relays each connection made
 there to the hub over its channel ([agent.md](../agent.md), "The AI gateway
-forward"). The forward is also open while a module that uses the gateway, a
-container module or SiYuan, is installed, for that module's own keys. The endpoint the switch writes into each tool is that port. A
+forward"). The forward is also open while a container module is installed
+with `is_gateway_used` true, for that module's own key. The endpoint the switch writes into each tool is that port. A
 tool reaches the gateway while the agent runs and its channel to the hub is
 up. On the hub's own machine the agent opens no forward, and the endpoint is
 the gateway's own loopback port.

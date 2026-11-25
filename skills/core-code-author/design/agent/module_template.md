@@ -226,7 +226,7 @@ each from that table; VS Code's terms acceptance stays in
 `module_vscode_terms.py`. Their secrets, each enabled account's token secret,
 CloudCLI's password and SiYuan's access code, are generated the first time the account is enabled
 and kept sealed under the vault's data key in
-`config/devices/<id>/<module>.json`, and the state carries them opened. SiYuan's gateway key per enabled account is generated with them, and voided when the account is disabled ([modules/siyuan.md](modules/siyuan.md), "The gateway"). A command line program generates no secret. The panel draws the eight with one `instances_panel.tsx`
+`config/devices/<id>/<module>.json`, and the state carries them opened. SiYuan's gateway key per enabled account is generated while the account's AI switch is on, and voided when the account is disabled or its switch turns off ([modules/siyuan.md](modules/siyuan.md), "The gateway"). A command line program generates no secret. The panel draws the eight with one `instances_panel.tsx`
 ([ui_behavior.md](../ui_behavior.md), "The machine page").
 
 ## Guest accounts of an App share

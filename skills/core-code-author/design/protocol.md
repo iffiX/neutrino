@@ -513,7 +513,7 @@ moved. Its steps and their order are [network.md](hub_components/network.md),
 | `GET /api/hub/ai/ollama` | | the providers the hub generates from each machine's Ollama ([hub_components/ai.md](hub_components/ai.md), "Every machine's Ollama"), `{providers: [{device_id, name, models}]}` by the machine's name, `name` the machine's and `models` the names its Ollama lists; read-only, no route writes them |
 | `GET /api/hub/ai/context` | | `AiContextView`, the context length of every name the gateway serves ([hub_components/ai.md](hub_components/ai.md), "Each model's context length"): `cloud`, the cloud names by name, each `{model, sources, context_length, default_context_length}`, `sources` its accounts and then its providers by name, each `{origin, id, name}`, an account's `origin` `account` with its token file as `id` and the gateway's provider name of its login (`claude`, `codex`, …) as `name`, a provider's `origin` `provider` with its own `id` and `name`, `context_length` the length a person set and null while none is stored, and `default_context_length` the default; and `ollama`, the Ollama names by name, each `{model, machines, sources, cloud_context_length, context_length}`, `machines` the name's pool, every machine whose Ollama holds the model while its module is installed, online or not, by name, each `{device_id, name, setting_context_length, trained_context_length}`, `setting_context_length` the `num_ctx` the model's Modelfile sets or else the machine's setting, `trained_context_length` 0 while the hub has read none, `sources` the accounts and stored providers that also serve the name, as a cloud name's, `cloud_context_length` their default and 0 while there are none, and `context_length` the name's length, the smallest of each machine's smaller number and the cloud default |
 | `POST /api/hub/ai/context/set` | `{lengths: {<name>: <tokens>}}`, a null in place of a number taking the name back to its default | stores each number in `config/ai/context_lengths.json` and removes each name sent with null, restarts nothing, and hands every online machine and client its state where the state changed; `AiContextView`; 400 `body_invalid` for a value that is neither a whole number nor null, `context_length_invalid {model, context_length, min, max}` for a number outside 4096 to 10000000, and `model_not_served {model}` for a number whose name is no cloud name the gateway serves |
-| `GET /api/hub/ai/gateway` | | the gateway's settings, `default_model` among them: the saved pick of the default model, empty while none is saved, and kept while the gateway no longer serves it ([hub_components/ai.md](hub_components/ai.md), "The default model"); and `has_ayakaleaf_on_default`, true while a machine's `modules.json` names Ayakaleaf with a `want` other than `absent` and its `ayakaleaf.json` names no `model`, so a new default model restarts that app |
+| `GET /api/hub/ai/gateway` | | the gateway's settings, `default_model` among them: the saved pick of the default model, empty while none is saved, and kept while the gateway no longer serves it ([hub_components/ai.md](hub_components/ai.md), "The default model"); and `has_ayakaleaf_on_default`, true while a machine's `modules.json` names Ayakaleaf with a `want` other than `absent`, its `ayakaleaf.json` names no `model` and its `is_gateway_used` is true, so a new default model restarts that app |
 | `POST /api/hub/ai/gateway/set` | its settings, `{listen_port}` or `{default_model}`, each written only when it is sent | a `listen_port` renders and restarts the gateway; a `default_model` restarts nothing and hands every online machine and client its state where the state changed; 400 `model_not_served {model}` for a `default_model` the gateway does not serve |
 | `POST /api/hub/ai/gateway/apply` | | renders and applies the gateway |
 | `GET /api/hub/ai/gateway/usage` | | what it metered, per key id: the hub's, each client's and each device's |
@@ -781,7 +781,7 @@ to pick one.
 | `POST /api/agent/module/<name>/apply` | `{device_id}` | pushes the device's state again, for every module alike, with a fresh `retry_mark` on a module whose last report is `failed` or `install_failed`, or `absent`, `installed`, `stopped` or `running` other than its `want`, ends the module's `is_taken_over`, and writes `want: running` on a module with no `want` that reads `running`; 409 `agent_offline` |
 | `GET /api/agent/module/account` | `?device_id=` | `AccountListView`: `default_account`, the machine's default account, empty while it has none; `is_default_account_missing`, as the device row has it; `accounts`, the available accounts in the order they were added, each `{account, has_login, share_path, shell_path, is_ai_tools_enabled, tool_configs, modules, ai_tools}`, `modules` the module names that enable it and `ai_tools` its last AI tools result as reported, `{state, code, params}`, `state` empty before the machine reported it; `system_accounts`, the machine's `account_details` for the form's picker and its defaults; `platform_os`; `models`, the names the gateway serves, for the model pickers; and `is_gateway_serving` |
 | `POST /api/agent/module/account/add` | `{device_id, account, password, share_path, shell_path, is_ai_tools_enabled, tool_configs}`, `password` on a Windows machine alone, `share_path` and `shell_path` empty for the defaults, each `tool_configs` slot empty for the gateway's default | adds the account: on Windows stores `password` as a vault login and names it `login_id`, turns the AI tools on for it when asked, and pushes the state; on a machine with no default, or whose default is gone, the account becomes the default with the writes and the refusals of `account/default/set`; `AccountListView`; 400 `account_unknown {account}` for an account the machine does not report, `account_duplicate {account}`, `credential_missing {account}` for a Windows account with no password, `path_invalid {path}` for a path that is not absolute, the agent's own `shell_program_unusable {path}`, `share_path_missing {name, path}` and `share_path_link {name, path}` for a `share_path` the agent's `folder` verb reads as no real folder, `name` the account, `vault_locked`; 409 `gateway_not_serving` for the AI tools turned on while the gateway serves no model, `agent_offline` |
-| `POST /api/agent/module/account/set` | the fields of `add`, `password` empty to keep the login | replaces the account's row; a new password is a new login and the old one is deleted; an AI tools switch turned on mints the device's gateway key when it has none, and the last one turned off revokes it; `AccountListView`; the refusals of `add`, the `folder` verb asked also of the account's home for an empty `share_path` while the file share enables the account |
+| `POST /api/agent/module/account/set` | the fields of `add`, `password` empty to keep the login | replaces the account's row; a new password is a new login and the old one is deleted; an AI tools switch turned on mints the device's gateway key when it has none, and the last one turned off revokes it; a switch changed also settles the account's SiYuan key, and on the default account the container modules' keys and `is_gateway_used`; `AccountListView`; the refusals of `add`, the `folder` verb asked also of the account's home for an empty `share_path` while the file share enables the account |
 | `POST /api/agent/module/account/default/set` | `{device_id, account}` | writes `default_account`, and enables the account first in Terminal, the SSH server and every module of the account layer whose `want` is neither empty nor `absent`, generating its secrets, an earlier default staying enabled after it; on Windows and macOS Containers' Podman machine becomes the account's, and Hermes WebUI, Ayakaleaf and AstrBot follow its AI switch ([agent/accounts.md](agent/accounts.md), "The default account"); the agent checks each changed module's section first, and nothing is written on a refusal; pushes the state; `AccountListView`; 400 `account_unknown {account}` for an account that is not available or that the machine does not report, `share_path_missing {name, path}` and `share_path_link {name, path}` while the file share is installed, the agent's own refusals as 400; 409 `default_account_exists {account}` while the machine has a default its last report lists, `agent_offline`; `vault_locked` |
 | `POST /api/agent/module/account/password/test` | `{device_id, account, password}`, `password` empty for the login the account has | writes nothing; the Windows machine's agent tests the password with one logon, `account_password_test`; `AccountListView`; 400 `unsupported_platform` for a machine that is not Windows, `account_unknown {account}` for an account the machine does not report, `credential_missing {account}` with no password and no login, the agent's `credential_invalid {account}` and `account_logon_refused {account, detail}`; 409 `agent_offline` |
 | `POST /api/agent/module/account/remove` | `{device_id, account}` | removes the account from every module that enables it and from every folder share, switches its AI tools back, deletes its login and the secrets its modules generated, and pushes the state; `AccountListView`; 400 `account_is_default {account}` for the machine's default account |
@@ -1220,10 +1220,10 @@ true while at least one account's switch is on and the gateway serves a
 model. `is_forwarded` says
 whether the agent opens its AI gateway forward ([agent.md](agent.md), "The
 AI gateway forward"): true on a managed machine while `is_enabled` is true
-or a module that uses the gateway, a container module or SiYuan, is
-installed, and false on the hub's own machine. `gateway_port` is the gateway's `listen_port` on the
-hub's own machine while a container module that uses the gateway is
-installed there, the port the
+or a container module is installed whose `is_gateway_used` is true, and
+false on the hub's own machine. `gateway_port` is the gateway's `listen_port` on the
+hub's own machine while a container module is installed there whose
+`is_gateway_used` is true, the port the
 agent relays on the Podman bridges, and 0 otherwise. With `is_enabled` true,
 `base_url` is `http://127.0.0.1:8317` on a managed machine, the forward, and
 `http://127.0.0.1:<listen-port>` on the hub's own machine, the gateway
@@ -1573,7 +1573,7 @@ macOS and Windows ([agent/modules/siyuan.md](agent/modules/siyuan.md)). Its
 configuration is `{instances: [{account, secret, access_code, gateway_key,
 password}], gateway_url, models, model, context_lengths}`: `secret` the instance's token secret,
 `access_code` the kernel's own login, and `gateway_key` the instance's key
-to the AI gateway, each generated by the hub, kept sealed in
+to the AI gateway, empty while the account's AI switch is off, each generated by the hub, kept sealed in
 `config/devices/<id>/siyuan.json` and sent opened inside the state;
 `password` the login of a Windows account, as VS Code's; `gateway_url` the
 gateway's address on the machine, `http://127.0.0.1:8317` on a managed
@@ -1750,7 +1750,7 @@ images and the named volumes `neutrino_<module>_<volume>`.
 The `hermes_webui` module runs Hermes WebUI as two hub containers, the
 agent's gateway and the webui ([agent/modules/hermes_webui.md](agent/modules/hermes_webui.md)).
 Its configuration is `{secret, password, cookie_name, local_name, model,
-context_lengths}`: the token secret; the webui's password; the name of the webui's login cookie,
+context_lengths, is_gateway_used}`: the token secret; the webui's password; the name of the webui's login cookie,
 `hermes_session_` and the first 12 characters of the device id, which the hub
 also sets in the webui's environment; the app's local name, which its
 forwarder checks the `Host` against; and the default model
@@ -1759,8 +1759,12 @@ empty while the gateway serves none, which the agent writes into Hermes's
 `model.default` when it differs from the one it last wrote; and
 `context_lengths`, `{<name>: <tokens>}`, every served name's one number,
 which the agent writes into Hermes's `model_overrides.custom` when they
-differ from the ones it last wrote. The agent takes the forwarder's port
-itself, from 8787 up. The hub generates both secrets the first time the
+differ from the ones it last wrote; and `is_gateway_used`, the default
+account's AI switch, true while the machine has no default
+([agent/accounts.md](agent/accounts.md), "The AI switch and what follows
+it"), with which the agent writes its keys into `config.yaml` or takes them
+out ([agent/modules/hermes_webui.md](agent/modules/hermes_webui.md), "The
+gateway"). The agent takes the forwarder's port itself, from 8787 up. The hub generates both secrets the first time the
 module is installed, keeps them sealed in
 `config/devices/<id>/hermes_webui.json` beside the module's gateway key, and
 sends them opened inside the state, as it sends CloudCLI's. Its manifest
@@ -1772,14 +1776,16 @@ version change, until the first such read. `details` is `{version, port}`,
 
 The `ayakaleaf` module runs Ayakaleaf as three hub containers, the app,
 MongoDB and Redis ([agent/modules/ayakaleaf.md](agent/modules/ayakaleaf.md)).
-Its configuration is `{secret, password, cookie_name, local_name, guests}`:
+Its configuration is `{secret, password, cookie_name, local_name, guests, is_gateway_used}`:
 the token secret; the password of the administrator the module makes; the
 name of the app's session cookie, `ayakaleaf_sid_` and the first 12
 characters of the device id, which the hub also sets in the app's
 `COOKIE_NAME`; the app's local name; and `guests`, `[{account, email,
 password, secret}]`, the guest account of each live App share of the app,
 opened from the share's record ([agent/modules/ayakaleaf.md](agent/modules/ayakaleaf.md),
-"The guest account"). The agent takes the forwarder's port itself, from 8900 up. The
+"The guest account"); and `is_gateway_used`, as Hermes WebUI's, which also
+decides the gateway's variables the hub composes into the app's environment
+([agent/modules/ayakaleaf.md](agent/modules/ayakaleaf.md), "The model"). The agent takes the forwarder's port itself, from 8900 up. The
 hub generates the secret, the password and the app's session and invitation
 secrets the first time the module is installed, keeps them sealed in
 `config/devices/<id>/ayakaleaf.json` beside the module's gateway key and the
@@ -1798,7 +1804,7 @@ detail}` while a step fails; an App share of the app reads its state from it
 
 The `astrbot` module runs AstrBot as one hub container
 ([agent/modules/astrbot.md](agent/modules/astrbot.md)). Its configuration
-is `{secret, password, cookie_name, local_name, model, context_length}`: the token secret;
+is `{secret, password, cookie_name, local_name, model, context_length, is_gateway_used}`: the token secret;
 the password of AstrBot's dashboard user; the name of the forwarder's login
 cookie, `neutrino_` and the first 12 hex characters of the SHA-256 of the
 entry's id; the app's local name; and the default model
@@ -1808,7 +1814,12 @@ AstrBot's settings file before the first start and, when it changes,
 through AstrBot's API while the person's own default stays
 ([agent/modules/astrbot.md](agent/modules/astrbot.md), "The gateway"); and
 `context_length`, the default model's one number, 0 while there is no
-model, which the agent writes as its provider's `max_context_tokens`. The
+model, which the agent writes as its provider's `max_context_tokens`; and
+`is_gateway_used`, as Hermes WebUI's, with which the agent adds or takes out
+the gateway's source and its provider through AstrBot's API
+([agent/modules/astrbot.md](agent/modules/astrbot.md), "The gateway"). The
+three modules' `is_gateway_used` is an added field and keeps `PROTOCOL`: an
+agent that predates it ignores it and keeps the gateway in. The
 agent takes the
 forwarder's port itself, from 6185 up. The hub generates both secrets the
 first time the module is installed, keeps them sealed in
@@ -1858,14 +1869,14 @@ the hub generated for each, sealed under the vault's data key:
 | `code_server` | `{accounts: [{account, secret_sealed}]}` | `{instances: [{account, secret, local_name, cookie_name}]}` |
 | `cloudcli` | `{accounts: [{account, web_password_sealed, token_secret_sealed}]}` | `{instances: [{account, web_password, token_secret, password, local_name, cookie_name}]}`, `token_secret` being the secret its tokens are minted from |
 | `codeg` | `{accounts: [{account, secret_sealed}]}` | `{instances: [{account, secret, password, local_name, cookie_name}]}` |
-| `siyuan` | `{accounts: [{account, secret_sealed, access_code_sealed, gateway_key_sealed}]}`, `gateway_key_sealed` present while the account is enabled | `{instances: [{account, secret, access_code, gateway_key, password, local_name, cookie_name}], gateway_url, models, model, context_lengths}` |
+| `siyuan` | `{accounts: [{account, secret_sealed, access_code_sealed, gateway_key_sealed}]}`, `gateway_key_sealed` present while the account is enabled and its AI switch is on | `{instances: [{account, secret, access_code, gateway_key, password, local_name, cookie_name}], gateway_url, models, model, context_lengths}` |
 | `ssh_server` | `{accounts: [{account, private_key_sealed}]}` | `{instances: [{account, authorized_key, shell_path, password, programs}]}`, `authorized_key` the public half of the sealed key and `programs` as the Terminal's |
 | `codex`, `claude_code`, `opencode` | `{accounts: [{account}]}` | `{accounts: [{account, password}]}` |
 
 | Rule | Reason |
 | --- | --- |
 | The share's `path` is the account row's `share_path`, and the hub writes the account's `home` from the machine's `account_details` for an empty one. An enabled account whose `share_path` is empty while the machine reports an empty `home` for it is left out of `shares`, `users` and `passwords` until a report brings its home, and its row on the module's page carries `account_home_unknown {account}`; the hub composes no path from a home it has not been told. `shell_path` goes as the row holds it, and the agent starts the account's login shell, PowerShell on Windows, for an empty one. `password` is the account's login, sent to a Windows machine alone. | One form per account holds them ([agent/accounts.md](agent/accounts.md), "Available accounts"), and each side fills in the default it knows. An account that never signed in on Windows has no profile folder; a folder the hub makes under the expected name first makes Windows put the profile beside it under another name. |
-| The hub generates a module's secret for an account the first time that account is enabled, and keeps it when the account is disabled and enabled again; removing the available account deletes it. SiYuan's gateway key alone is voided when the account is disabled, and a new one is generated when it is enabled again. | A browser's login, a mounted share's password and a key a client wrote stay valid across a toggle. |
+| The hub generates a module's secret for an account the first time that account is enabled, and keeps it when the account is disabled and enabled again; removing the available account deletes it. SiYuan's gateway key alone is voided when the account is disabled or its AI switch turns off, and a new one is generated when both hold again. | A browser's login, a mounted share's password and a key a client wrote stay valid across a toggle. |
 | Every instance with a forwarder in front of it, code-server's, CloudCLI's, Codeg's and SiYuan's, also carries `local_name`, its app's, and `cookie_name`, its entry's, `neutrino_` and the first 12 hex characters of the SHA-256 of the entry's id ([agent/module_template.md](agent/module_template.md), "The run"); the Hermes WebUI and Ayakaleaf modules carry `local_name` beside their own `cookie_name`, and the AstrBot module carries both, its `cookie_name` the forwarder's by the same rule. | The forwarder accepts a `Host` of `127.0.0.1`, `[::1]`, `localhost` or `local_name`, and names its login cookie `cookie_name`. |
 | No instance names a port. The agent takes a free port on `127.0.0.1` for each instance at its first start, from the module's base port in its `constants.py` up, keeps it in the instance's root-only record under its state root, across a disable and an enable, and reports it in `details`, the port a `connect` reaches, the forwarder's where the module has one; the hub publishes the entry at the reported port. A kept port another program holds at a start is replaced by the next free one and reported. | A port the person never sees needs no field, and the machine is the one that knows which ports are free. |
 | An account that is not available, or is not one the machine reports, is not composed into any module; the agent's own `validate` refuses an account the machine does not have with `account_unknown {account}`. | A module never starts a process for an account the machine page does not list. |
