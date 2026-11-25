@@ -22,7 +22,7 @@ from neutrino_agent.platforms.darwin import (
     parse_ps,
 )
 
-PwdEntry = collections.namedtuple("PwdEntry", "pw_name pw_dir")
+PwdEntry = collections.namedtuple("PwdEntry", "pw_name pw_dir pw_shell")
 
 
 def completed(stdout="", returncode=0):
@@ -44,13 +44,14 @@ def answering(monkeypatch, replies: dict, calls: "list | None" = None):
 
 
 class FakePwd:
-    def __init__(self, homes: dict):
+    def __init__(self, homes: dict, shells: "dict | None" = None):
         self._homes = homes
+        self._shells = shells or {}
 
     def getpwnam(self, name):
         if name not in self._homes:
             raise KeyError(name)
-        return PwdEntry(name, self._homes[name])
+        return PwdEntry(name, self._homes[name], self._shells.get(name, "/bin/zsh"))
 
 
 DSCL_SAMPLE = """_mbsetupuser             248
@@ -62,14 +63,27 @@ pat                      501
 sam                      502
 guest                    201
 ghost                    503
+kit                      504
+gone                     505
 """
 
 
-def test_the_people_are_uid_501_up_with_a_home_under_users(monkeypatch, tmp_path):
+def test_the_people_are_uid_501_up_with_a_login_shell_and_a_home_under_users(
+    monkeypatch, tmp_path
+):
     answering(monkeypatch, {("dscl", "."): completed(DSCL_SAMPLE)})
-    homes = {"pat": "/Users/pat", "sam": "/Users/sam", "ghost": "/var/empty"}
-    monkeypatch.setattr(darwin_module, "pwd", FakePwd(homes))
-    monkeypatch.setattr(darwin_module.os.path, "isdir", lambda path: True)
+    homes = {
+        "pat": "/Users/pat",
+        "sam": "/Users/sam",
+        "ghost": "/var/empty",
+        "kit": "/Users/kit",
+        "gone": "/Users/gone",
+    }
+    shells = {"kit": "/usr/bin/false"}
+    monkeypatch.setattr(darwin_module, "pwd", FakePwd(homes, shells))
+    monkeypatch.setattr(
+        darwin_module.os.path, "isdir", lambda path: path != "/Users/gone"
+    )
 
     assert DarwinPlatform().human_accounts() == ["pat", "sam"]
 

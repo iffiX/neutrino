@@ -3,7 +3,8 @@
 The accounts are ``NetUserEnum``'s normal accounts at level 1, each enabled
 unless its flags say disabled. An account's home is the profile the
 registry's ``ProfileList`` names for its SID, which ``LookupAccountNameW``
-reads for the name on this computer. A thread acts as an account under a
+reads for the name on this computer, and an account with no such entry has
+never signed in. A thread acts as an account under a
 logon its password makes, ``LogonUserW`` then ``ImpersonateLoggedOnUser``,
 until it reverts. The decoder takes the bytes ``NetUserEnum`` filled and the
 address they sat at, never a live handle; the calls take the bound
@@ -151,6 +152,26 @@ def account_home(account: str, *, advapi32=None, kernel32=None) -> str:
     if not home:
         raise KeyError(account)
     return home
+
+
+def has_profile(account: str, *, advapi32=None, kernel32=None) -> bool:
+    """Whether a local account has a profile, an entry under its SID in the registry's ``ProfileList``.
+
+    Args:
+        account: The account's name on this computer.
+        advapi32: The bound advapi32; None binds the real one.
+        kernel32: The bound kernel32; None binds the real one.
+
+    Returns:
+        True when the entry names a profile; False for an account with
+        none, for a name with no account, and when the SID or the registry
+        cannot be read.
+    """
+    try:
+        account_home(account, advapi32=advapi32, kernel32=kernel32)
+    except (KeyError, OSError):
+        return False
+    return True
 
 
 def account_sid(account: str, *, advapi32=None, kernel32=None) -> str:

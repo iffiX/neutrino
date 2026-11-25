@@ -52,7 +52,11 @@ from neutrino_agent.modules.samba.constants import (
 )
 from neutrino_agent.modules.samba.darwin_applier import SambaDarwinApplier
 from neutrino_agent.platforms.answered_run import run_on_pty
-from neutrino_agent.platforms.base import AgentPlatform, is_added_name
+from neutrino_agent.platforms.base import (
+    AgentPlatform,
+    is_added_name,
+    is_login_account,
+)
 
 try:
     import pwd
@@ -359,7 +363,8 @@ class DarwinPlatform(AgentPlatform):
 
     def human_accounts(self) -> list:
         """The accounts that are people: uid at the floor or above, a name
-        that does not start with an underscore, a home under ``/Users``.
+        that does not start with an underscore, a home under ``/Users`` that
+        exists, and a shell someone can log in with.
 
         Returns:
             Account names, sorted.
@@ -376,10 +381,13 @@ class DarwinPlatform(AgentPlatform):
             if uid < DARWIN_HUMAN_UID_FLOOR:
                 continue
             try:
-                home = self.account_home(fields[0])
+                entry = pwd.getpwnam(fields[0])
             except KeyError:
                 continue
-            if home.startswith(DARWIN_HOMES_DIR) and os.path.isdir(home):
+            home = str(entry.pw_dir or "")
+            if home.startswith(DARWIN_HOMES_DIR) and is_login_account(
+                entry.pw_shell, home
+            ):
                 accounts.append(fields[0])
         return sorted(accounts)
 

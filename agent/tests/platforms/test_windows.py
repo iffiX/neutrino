@@ -976,9 +976,19 @@ def user(name, description="", is_enabled=True):
     return {"name": name, "description": description, "is_enabled": is_enabled}
 
 
+def with_profiles(monkeypatch, names):
+    """``has_profile`` answering true for these accounts alone."""
+    monkeypatch.setattr(
+        windows_module,
+        "has_profile",
+        lambda account, **libraries: account in names,
+    )
+
+
 def test_the_accounts_are_the_enabled_people_without_the_builtin_or_share_ones(
     monkeypatch,
 ):
+    with_profiles(monkeypatch, {"zoe", "hanha", "media", "old", "Administrator"})
     reading = users_reading(
         [
             user("zoe"),
@@ -990,6 +1000,7 @@ def test_the_accounts_are_the_enabled_people_without_the_builtin_or_share_ones(
             user("old", is_enabled=False),
             user(""),
             user("hanha", "Hanha's account"),
+            user("never_signed_in"),
         ]
     )
     monkeypatch.setattr(windows_module, "read_users", reading)
@@ -1003,6 +1014,7 @@ def test_the_accounts_are_the_enabled_people_without_the_builtin_or_share_ones(
 
 
 def test_the_accounts_are_read_every_time(monkeypatch):
+    with_profiles(monkeypatch, {"hanha"})
     reading = users_reading([user("hanha")])
     monkeypatch.setattr(windows_module, "read_users", reading)
     platform = WindowsPlatform()

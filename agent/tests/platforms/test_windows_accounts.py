@@ -6,7 +6,9 @@ enabled ones are the accounts ``Get-LocalUser`` named there; rows past the
 buffer or a pointer outside it raise; the live read frees the block always;
 an account's home is the registry's profile for the SID of its name on
 this computer, variables expanded, and a name with no account, a SID that
-is no user's and a SID with no profile are ``KeyError``; a thread acts as an
+is no user's and a SID with no profile are ``KeyError``; an account with no
+profile, or one whose SID cannot be read, has none and is left out of the
+accounts; a thread acts as an
 account under a network logon, a batch logon when that is not granted, a
 wrong password is ``credential_invalid`` with no second try, and the thread
 reverts and the logon closes whatever the block does; a password check is one
@@ -26,6 +28,7 @@ from neutrino_agent.platforms import win32
 from neutrino_agent.platforms.windows_accounts import (
     account_home,
     check_password,
+    has_profile,
     impersonated,
     read_users,
     users_from,
@@ -265,6 +268,29 @@ def test_an_account_with_no_profile_has_no_home(monkeypatch, profiles):
 
     with pytest.raises(KeyError):
         account_home("lab", advapi32=FakeAdvapi32(), kernel32=FakeKernel32())
+
+
+def test_an_account_with_a_profile_has_one(monkeypatch):
+    registry = FakeWinreg(
+        {PROFILES + "S-1-5-21-1-2-3-1001": "%SystemDrive%\\Users\\lab"}
+    )
+    monkeypatch.setattr(accounts_module, "winreg", registry)
+
+    assert has_profile("lab", advapi32=FakeAdvapi32(), kernel32=FakeKernel32())
+
+
+@pytest.mark.parametrize("profiles", [{}, {PROFILES + "S-1-5-21-1-2-3-1001": ""}])
+def test_an_account_that_never_signed_in_has_no_profile(monkeypatch, profiles):
+    monkeypatch.setattr(accounts_module, "winreg", FakeWinreg(profiles))
+
+    assert not has_profile("lab", advapi32=FakeAdvapi32(), kernel32=FakeKernel32())
+
+
+def test_an_account_whose_sid_cannot_be_read_has_no_profile(monkeypatch):
+    monkeypatch.setattr(accounts_module, "winreg", FakeWinreg({}))
+    monkeypatch.setattr(win32, "last_error", lambda: win_error(1722))
+
+    assert not has_profile("ghost", advapi32=FakeAdvapi32(), kernel32=FakeKernel32())
 
 
 def test_a_lookup_that_fails_otherwise_is_an_os_error(monkeypatch):

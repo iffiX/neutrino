@@ -82,6 +82,7 @@ from neutrino_agent.platforms.windows_accounts import (
     account_home,
     account_sid,
     check_password,
+    has_profile,
     impersonated,
     read_users,
 )
@@ -499,10 +500,11 @@ class WindowsPlatform(AgentPlatform):
         )
 
     def human_accounts(self) -> list:
-        """The enabled local accounts that are people.
+        """The enabled local accounts that are people and have a profile.
 
-        The accounts Windows makes for itself and the ones the file share
-        made, whose description starts with its marker, are left out.
+        The accounts Windows makes for itself, the ones the file share
+        made, whose description starts with its marker, and an account that
+        never signed in are left out.
 
         Returns:
             Account names, sorted; empty when the accounts cannot be listed.
@@ -519,6 +521,8 @@ class WindowsPlatform(AgentPlatform):
             if name.lower() in WINDOWS_BUILTIN_ACCOUNTS:
                 continue
             if user["description"].startswith(SAMBA_WINDOWS_MARKER):
+                continue
+            if not has_profile(name, advapi32=self._advapi32, kernel32=self._kernel32):
                 continue
             accounts.add(name)
         return sorted(accounts)
