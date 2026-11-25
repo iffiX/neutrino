@@ -35,7 +35,7 @@ publish" do not reach it; "The launcher and the account's `PATH`" holds what
 it puts on the machine.
 
 One instance runs per enabled account of the module, an available account of
-the machine ([agent.md](../agent.md), "The two layers and the accounts"). The
+the machine ([accounts.md](accounts.md), "Available accounts"). The
 account service layer, `modules/shared/account_service/` with one file per system, writes
 the service definition, starts, stops, disables, enables, removes and
 queries it:
@@ -212,8 +212,9 @@ take over").
 The hub describes every module once, in the description table
 `modules/devices/module_table.py`: its kind, the word of its kind chip
 ([module_install.md](module_install.md), "The source chip and the kind
-chip"), its configuration file name under
-`config/devices/<id>/`, the fields the vault seals in it, the published
+chip"), the accounts it serves, `accounts`, `several`, `one` or `none`
+([accounts.md](accounts.md), "Which modules serve which accounts"), its
+configuration file name under `config/devices/<id>/`, the fields the vault seals in it, the published
 entry's `description_code`, and the panel kind the machine page draws. The
 table's rows are in the one order every list of modules shows, and the
 manifest loader returns the modules in it ([ui_behavior.md](../ui_behavior.md),

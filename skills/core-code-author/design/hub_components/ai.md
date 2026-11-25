@@ -491,8 +491,8 @@ commands in the same order, the same record per tool, the same switch back.
 This section states only what differs, so the two cannot drift.
 
 The setting is one per available account of the machine, in the account's
-form on the machine page ([../agent.md](../agent.md), "The two layers and the
-accounts"): whether that account's AI tools use the gateway, and the
+form on the machine page ([../agent/accounts.md](../agent/accounts.md),
+"Available accounts"): whether that account's AI tools use the gateway, and the
 account's tool configuration (`{claude: {default, opus, sonnet, haiku},
 codex: {model, model_reasoning_effort}, gemini: {model}, opencode:
 {model}}`), each model

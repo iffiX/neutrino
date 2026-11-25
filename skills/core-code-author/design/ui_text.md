@@ -465,10 +465,11 @@ where they fit.
 | `code.version_older_than_run` | {module} has run {newest_run} on this machine and moved its data forward, so it cannot install the older {version}. | {module} 在这个系统上运行过 {newest_run}，数据已经往前迁移，不能安装更旧的 {version}。 |
 | `ui.modules.stopped_hint`, the hint of every apply bar of a module's panel while its module's `want` is not `running`, and under the file share's folder shares. The panels of the modules the agent carries keep their own hint | The module is stopped; these settings take effect at the next Start. | 模块已停止，这些设置在下次启动时生效。 |
 
-A module tab's chips hold one short label each. What each label says, which install
-method reads as which source, and which module reads as which kind, is
+A module tab's chips hold one short label each. What each label says and which
+install method reads as which source is
 [agent/module_install.md](agent/module_install.md), "The source chip and the
-kind chip":
+kind chip", and which module reads as which kind is the one module table of
+[agent/accounts.md](agent/accounts.md), "Which modules serve which accounts":
 
 | Chip | English | Chinese |
 | --- | --- | --- |

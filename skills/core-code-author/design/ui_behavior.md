@@ -850,7 +850,7 @@ in each section, and an id the hub holds no row for shows
 `ui.machine.not_found` with the **Agents** button alone.
 
 **Available accounts** (`ui.accounts.title`) is the machine's accounts the
-person added ([agent.md](agent.md), "The two layers and the accounts"). A
+person added ([agent/accounts.md](agent/accounts.md), "Available accounts"). A
 new machine shows none, with `ui.accounts.empty` and its hint; **Add**, a
 bordered `button` at the panel's top right, opens the inline form under the
 list, the panel add of "Inline forms", lit with the accent frame:
@@ -970,7 +970,7 @@ a program runs only when a person runs it. A program the machine reports
 
 | Rule | Reason |
 | --- | --- |
-| The panel shows each account's AI tools state and holds no switch for it. The account's form under **Available accounts** is the one place it is set. | Installing a program changes no switch, and one form per account holds the account's settings ([agent.md](agent.md), "The two layers and the accounts"). |
+| The panel shows each account's AI tools state and holds no switch for it. The account's form under **Available accounts** is the one place it is set. | Installing a program changes no switch, and one form per account holds the account's settings ([agent/accounts.md](agent/accounts.md), "Available accounts"). |
 | The dialog shows before the apply, and an unchecked account stays unchecked. | From the apply on, the module's copy runs in place of the person's in the account's shell ([agent.md](agent.md), "Parallel, never take over"), and a click outside a dialog means no. |
 | **Put this module's copy first** acts at once and asks nothing. | The person's line or copy that put another copy first stays until this press, which is the person's answer. |
 

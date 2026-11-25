@@ -744,6 +744,10 @@ linked from the table.
 | container images | [Hermes WebUI](agent/modules/hermes_webui.md), [Ayakaleaf](agent/modules/ayakaleaf.md), [AstrBot](agent/modules/astrbot.md) | `container`, pulled by the Containers module's Podman | hub containers on the Containers module, which the module needs |
 | a command line program per account | [Codex](agent/modules/codex.md), [Claude Code](agent/modules/claude_code.md), [OpenCode](agent/modules/opencode.md) | `hub`, the module's own copy unpacked and sealed under `agent/<module>/<directory>/` | nothing runs until a person runs the program: each enabled account's `PATH` reaches the module's copy first |
 
+Each module's kind chip, install method and the accounts it serves are one
+table, [agent/accounts.md](agent/accounts.md), "Which modules serve which
+accounts".
+
 A command line program is a module with no service, no port and no page.
 It has no **Start** and no **Stop**, as the modules the agent carries have
 none, and its kind chip reads Program
@@ -796,35 +800,9 @@ the machine's own accounts, each process being that account and nothing
 more: the terminal, the SSH server, VS Code, code-server, CloudCLI, Codeg,
 SiYuan, Codex, Claude Code, OpenCode, the AI tools and the account's file share.
 
-An available account is one of the machine's accounts the person added on
-the machine page, with what every feature of the account layer needs to know
-of it. The hub keeps them per machine in
-`config/devices/<id>/accounts.json`, `{accounts: [{account, login_id,
-share_path, shell_path, is_ai_tools_enabled, tool_configs}]}`:
-
-| Field | Holds |
-| --- | --- |
-| `account` | an account the machine reports in its `machine` section |
-| `login_id` | on Windows, the vault login that holds the account's password, which the form asks once; empty elsewhere |
-| `share_path` | the folder the account's share serves, absolute in the machine's own form; empty is the account's home |
-| `shell_path` | the shell the account's terminal and SSH server start, absolute; empty is the account's login shell, and PowerShell on Windows |
-| `is_ai_tools_enabled` | whether the account's AI tools use the hub's AI gateway ([ai_tools.md](agent/ai_tools.md)); false on a new account |
-| `tool_configs` | the account's model choices, `{claude: {default, opus, sonnet, haiku}, codex: {model, model_reasoning_effort}, gemini: {model}, opencode: {model}}`, each empty for the gateway's default |
-
-A module of the account layer keeps its enabled accounts in its own file
-under `config/devices/<id>/`, each one an available account, and runs one
-instance for each.
-
-| Rule | Reason |
-| --- | --- |
-| A machine starts with no available account, and every module of the account layer with none enabled. | The hub runs nothing as a person's account until the person chose that account. |
-| A module of the account layer with no enabled account runs as a service with no instance: **Start** takes and the module reads `running`, and **Stop** reads `stopped`. An account enabled while it runs starts that one instance. | A module installed is a service, whatever instances it has. |
-| The machine reports `account_details` in its `machine` section beside `accounts`, one `{account, home, shell}` for each, `home` in the machine's own form and `shell` the login shell, empty on Windows. | The form shows each default before the person changes it. |
-| Every feature that runs as an account reads that account's row: the file share its `share_path`, the terminal and the SSH server its `shell_path`, every program its login on Windows. | One form per account holds it, so no module asks again and two modules never disagree. |
-| On Windows the account's password is the one login every feature of the account signs in with: the scheduled tasks of the programs and of the SSH server, the terminal's logon, and the AI tools' one-shot tasks. A changed password is a new login; the old one is deleted ([ui_behavior.md](ui_behavior.md), "Secrets"). | Windows starts a process as another account only with its password, and one password per account is the one a person can keep up to date. |
-| A terminal and a command run as an enabled account of the Terminal module, never as root or SYSTEM. With no account enabled, the module opens no shell. | A shell the hub opens is a person's own; root's work is the agent's alone. |
-| The file share serves one Home share per enabled account, named after the account, at its `share_path`, and the folder shares the person names, each open to the enabled accounts checked for it; every enabled account has one SMB user, whose password the hub generates and seals ("The file share's accounts", [modules/file_share.md](agent/modules/file_share.md)). | The person mounts without a password, and a client holds a password that opens only the shares of that account. |
-| Removing an available account takes it out of every module's enabled accounts, switches its AI tools back, and deletes its login and the generated passwords of its features, in one write; on Windows the agent switches the tools back with the login it kept from the switch ([ai_tools.md](agent/ai_tools.md)). | A module never runs for an account the machine page no longer lists. |
+The available accounts, the machine's default account, which modules serve
+several accounts, one or none, and what follows each account's AI switch
+are [agent/accounts.md](agent/accounts.md).
 
 ### The file share's accounts
 
@@ -1128,7 +1106,7 @@ only POSIX has is guarded, so one package imports on all three systems.
 | Metrics | `/proc`, `/sys`, `nvidia-smi` | kernel32 `GetSystemTimes`, `GlobalMemoryStatusEx`, `GetTickCount64` and the system drive; per-core CPU and the process table from `NtQuerySystemInformation`, rated against the previous report; GPUs from `nvidia-smi` where it is installed, else the PDH counters `GPU Engine` (the busiest engine type per adapter, the way Task Manager reads it) and `GPU Adapter Memory`, with the adapter's name and total memory from the graphics kernel (`D3DKMTEnumAdapters2`, `D3DKMTQueryAdapterInfo`); a temperature from WMI `MSAcpi_ThermalZoneTemperature` through the PowerShell host where the firmware exposes one, else none; no load average | `host_statistics`, `vm_stat`, `sysctl` and `/`; per-core CPU from `host_processor_info`; the process table from `ps -axo pid,user,%cpu,%mem,comm`, the command last so `ps` does not cut it; GPUs from the `PerformanceStatistics` of `ioreg -r -c IOAccelerator`; a temperature from `powermetrics --samplers smc`, which root may run |
 | Interfaces | `ip -j addr` | `GetAdaptersAddresses` through iphlpapi, loopback and tunnel adapters left out | `ifconfig -a` |
 | Machine id | `/etc/machine-id` | the registry's `MachineGuid` | `IOPlatformUUID` from `ioreg` |
-| Accounts | uid 1000 and above with a login shell | the enabled local accounts from `NetUserEnum`, without Administrator, Guest, DefaultAccount, WDAGUtilityAccount and the file share's own; the home is the `ProfileImagePath` under the account's SID in the registry's `ProfileList` | `dscl`, uid 501 and above, home under `/Users` |
+| Accounts | uid 1000 and above with a login shell and a home that exists | the enabled local accounts from `NetUserEnum` that have a profile, an entry under the account's SID in the registry's `ProfileList`, so an account that never signed in is left out, without Administrator, Guest, DefaultAccount, WDAGUtilityAccount and the file share's own; the home is that entry's `ProfileImagePath` | `dscl`, uid 501 and above, a home under `/Users` that exists |
 | Power | `systemctl reboot` or `poweroff --force` | `shutdown /r` or `/s /t 0` | `shutdown -r` or `-h now` |
 | Running as an account | `runuser -u <account> --`, with the account's home and environment; an answered run on a pseudo-terminal the agent makes | a one-shot scheduled task `neutrino_run_as_<account>`, registered through the PowerShell host with the login the Credentials page holds for the account's instance and a limited token, started in the account's profile; the account holds the batch logon right while the task runs ([module_template.md](agent/module_template.md), "The run"); its script, standard input, output and exit code are files in `state\run_as\<account>\`, whose ACL grants the account modify and SYSTEM and the administrators full control; the task and the files are removed once the exit code is read, and an uninstall removes a task or files a stopped run left; two runs for one account take turns under a lock per account, since they share the task's name and its directory; a login Windows rejects at registration (`0x8007052E`) is `credential_invalid {account}`, an account with no login `credential_missing {account}`; an answered run is `nagent answer` inside the task. The exit code is the number the task's script writes last. The agent waits for the number until the command's timeout, then reads -1. | a child process with the account's uid and group and no other groups, in its home, with `HOME`, `USER` and `LOGNAME` set; an answered run on a pseudo-terminal the agent makes |
 | Refused | nothing | packages | packages |

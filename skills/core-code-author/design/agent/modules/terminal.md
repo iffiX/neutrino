@@ -3,7 +3,7 @@
 The `terminal` module is one of the modules the agent's package carries
 ([agent.md](../../agent.md), "The kinds of module"). Its one setting is its
 enabled accounts: the available accounts of the machine a `shell` or an
-`exec` stream runs as ([agent.md](../../agent.md), "The two layers and the
+`exec` stream runs as ([../accounts.md](../accounts.md), "Available
 accounts"). A stream names the account it runs as, and one that names none
 runs as the first enabled account.
 
