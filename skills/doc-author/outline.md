@@ -17,6 +17,37 @@ A finished page is connected prose. A list holds real steps or truly parallel it
 and an item is a whole sentence. Every step of installing and of using something has
 a picture, placed as `layout.md` says.
 
+## Search title and description
+
+Every page of the site, in both languages, names its search description in its
+frontmatter, and an app page also its search title. A search engine shows the title
+as the link and the description under it. The site puts the brand before the
+title, `微子中枢 | <title>` and `Neutrino Hub | <title>` (`titleTemplate` in
+`docs/.vitepress/config.mts`), and a page with no `title` uses its H1. The home pages
+are the exception: their title and description are `HOMES` in
+`docs/.vitepress/search_head.ts`, with no brand added. `docs/check_pages.py` and
+`docs/check_pages_en.py` fail a page whose description is missing, too long, opens
+with another subject or holds a banned word, an app page whose title is not the one
+below, and any other page that names a title.
+
+| Rule | Reason |
+| --- | --- |
+| The description is written by hand for its page, and nothing takes the page's first paragraph in its place. | The first paragraph defines the thing for a reader already on the page. A searcher decides from the description whether to open the page, and a definition gives no reason to: Ayakaleaf's page ranked third for its name with its definition as the snippet. |
+| Its subject is 微子中枢 in Chinese and Neutrino Hub in English, and it says what the hub does for the reader: deploys in one click, on Windows, macOS and Linux, opens on the phone and the laptop, and shares by link where the app can be shared. It names only what the page's subject really has. | iffi, 2026-11-24: the search text sells what the hub does for the reader, and a claim the page does not back loses the reader who clicks. |
+| A Chinese description holds at most 80 characters, an English one at most 155. | The length a search engine shows before it cuts. |
+| An app page, each app under `deploy/`, has the title `一键部署 <应用名>` in Chinese and `One-click deploy <App>` in English, the name as the page's H1 has it: a space between 一键部署 and a Latin name and none before a Chinese one (`一键部署 Ayakaleaf`, `一键部署思源笔记`), and an English common noun in lower case (`One-click deploy remote desktop`). The page renders as `微子中枢 \| 一键部署 Ayakaleaf` and `Neutrino Hub \| One-click deploy Ayakaleaf`. | iffi, 2026-11-24: a searcher types the app's name, and the title says at once that the hub deploys it, with the brand first. |
+| Every other page names no title. | iffi, 2026-11-24: the H1 already names the page, and the brand comes before it. |
+| A description follows the promotion rules: no 翻墙, VPN, 代理, 内网穿透, 隧道, NAS, 收费, proxy or tunnel, and no comparison with another product. | A description is promotion text. The page's body keeps the precise terms. |
+| Both values are in double quotes. | A value that holds `: ` is otherwise read by YAML as a key. |
+
+| Page | Description |
+| --- | --- |
+| Ayakaleaf, Chinese | 微子中枢一键部署 Ayakaleaf：Windows、macOS、Linux 都能装，手机和笔记本随时打开，发个链接就能和同学一起写 LaTeX 论文。 |
+| Ayakaleaf, English | Neutrino Hub deploys Ayakaleaf in one click on Windows, macOS or Linux: open your LaTeX editor on any phone or laptop and share it with co-authors by link. |
+| CloudCLI, Chinese | 微子中枢一键部署 CloudCLI：给 Claude Code 装上网页界面，Windows、macOS、Linux 都支持，手机上也能接着用 AI 编程。 |
+| Ways in, Chinese | 微子中枢帮你接好 6 种外部访问方式，客户端自动用最快的一条，没有公网 IP 也能在外面连回家里的电脑。 |
+| Ways in, English | Neutrino Hub sets up six ways to reach your home computer from outside, and the client uses the fastest one, even without a public IP. |
+
 ## The user guide's outline
 
 The sidebar has these groups, in this order. A group with `+` is folded under its
@@ -129,6 +160,7 @@ app is and who it suits.
 | --- | --- |
 | The opening | what it is, in the page's first sentence and one short paragraph, then the facts strip from `layout.md` |
 | 支持的系统 | one table: the system, the architectures, and the Neutrino Hub version that first supports it, read per system from the release tags |
+| 支持多账户 | only on the page of a module that serves several accounts: one short paragraph, that the app runs as the default account and that another account is checked under **启用的账户**, with a link to 添加更多账户 on the install page; the 安装 steps hold no account step |
 | 安装 | every step on the panel, each with its picture, so the reader never has to leave the page; steps every app shares are written out, and a link is for detail only |
 | 使用 | every step on a client, each with its picture, then the app's own first run |
 | 分享 | whether it can be shared and how, the account a visitor uses, the dialog's warning |
