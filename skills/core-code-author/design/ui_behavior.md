@@ -563,11 +563,16 @@ machine again by itself. Its cell reads the words of
 A machine online with no default account is incomplete, its row's
 `default_account` empty
 ([agent/accounts.md](agent/accounts.md), "A machine with no default"): its
-row's status dot is `warn`, labelled `state.incomplete`, and its status cell
+row's status dot is `warn` with no word, the cell of when the agent was last
+seen reads `state.incomplete` in place of `state.online`, and its status cell
 keeps its rings. The sidebar's machine group shows the same `warn` dot and
 `state.incomplete` at the right of the machine's row, where an offline
 machine shows `state.offline`. Offline wins, in the sidebar and in the table
-alike.
+alike: an offline machine's row keeps its grey dot and its offline time.
+
+| Rule | Reason |
+| --- | --- |
+| The table's word goes in the last seen cell, and the dot beside the name stays bare. | The name column is 148 px wide, and a word beside the dot left no room for the name. |
 
 The page has no filter chips, no legend, no search box, no scan and no drawer.
 Its title carries `<n> agents, <m> online`, and its header holds two primary
