@@ -57,7 +57,6 @@ WEB_PATH_VERBS = frozenset(
         "import",
         "update",
         "reset",
-        "prefer",
         "apply",
         "scan",
         "test",

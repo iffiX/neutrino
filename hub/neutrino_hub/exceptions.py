@@ -49,6 +49,22 @@ class ServiceFieldInvalidError(ValueError):
         self.params = params or {}
 
 
+class AccountTestRefusedError(ValueError):
+    """Raised when an account fails the test before it is written.
+
+    Attributes:
+        code: ``account_unknown``, ``account_no_login``,
+            ``credential_invalid`` or ``account_logon_refused``; the askers
+            do the wording.
+        params: The values the refusal's sentence needs.
+    """
+
+    def __init__(self, code: str, params: dict | None = None):
+        super().__init__(code)
+        self.code = code
+        self.params = params or {}
+
+
 class VaultLockedError(ValueError):
     """Raised when the vault's data key state file is missing.
 

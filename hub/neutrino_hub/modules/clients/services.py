@@ -281,8 +281,9 @@ def agent_connect_target(runtime, device_id: str, args: dict) -> tuple:
     Returns:
         ``(code, params, target)``: ``service_unknown {service_id}`` for an
         id other than the ``ai`` entry's, ``permission_denied {kind: ai}``
-        while the device's AI tools setting is off and no container module
-        that uses the gateway is installed there, each with None; else an
+        while no account's AI tools switch is on on the device and no
+        container module installed there uses the gateway, each with None;
+        else an
         empty code, empty params and the gateway on loopback.
     """
     entry_id = str(args.get("id", "") or "")

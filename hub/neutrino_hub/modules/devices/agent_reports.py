@@ -15,12 +15,18 @@ the module's row goes on saying what the person asked for. At the
 first report on a socket that carries a module's row, the hub's record of
 that module when it holds no ``want`` for it: what the machine hosts
 becomes the hub's configuration and its want, and the hub's copy is the
-one truth from then on.
+one truth from then on. And the default account setup asked for the hub's
+own machine, written as available and default at that machine's first
+report that lists it.
 """
 
 import logging
 
-from neutrino_hub.exceptions import AgentOfflineError, StreamRefusedError
+from neutrino_hub.exceptions import (
+    AgentOfflineError,
+    StreamRefusedError,
+    VaultLockedError,
+)
 from neutrino_hub.modules.channel.constants import (
     CHANNEL_MODULE_PRESENT_STATES,
     CHANNEL_MODULE_STATE_ABSENT,
@@ -39,6 +45,10 @@ from neutrino_hub.modules.devices.module_import import (
     import_module_config,
 )
 from neutrino_hub.modules.devices.registry import DeviceRegistry
+from neutrino_hub.modules.devices.setup_default import (
+    apply_setup_default,
+    is_setup_default_kept,
+)
 from neutrino_hub.modules.services.constants import SERVICES_RDP_PORT
 from neutrino_hub.modules.services.host_scope import (
     lan_in_place_of_overlay,
@@ -108,9 +118,10 @@ def record_report(
     )
     is_shared = _adopt_desktop_share(runtime, key, report.get("desktop"))
     is_seated = _ensure_seat_password(runtime, key)
-    if is_settled or is_adopted or is_shared or is_seated:
+    is_defaulted = _apply_setup_default(runtime, device)
+    if is_settled or is_adopted or is_shared or is_seated or is_defaulted:
         _push_state(runtime, key)
-    if is_adopted:
+    if is_adopted or is_defaulted:
         runtime.published_services.schedule_refresh()
     record_desktop_share(
         runtime,
@@ -357,6 +368,31 @@ def _import(store, key: str, name: str, status: dict) -> bool:
         return False
     store.write(key, name, config)
     return True
+
+
+def _apply_setup_default(runtime, device) -> bool:
+    """The default account setup asked, written once the hub's own machine reports it.
+
+    Returns:
+        True when the account was written; False on every other machine,
+        while setup left no file, and while the report does not list it.
+    """
+    if not is_setup_default_kept():
+        return False
+    own_machine = machine_id()
+    if not own_machine or device.machine_id != own_machine:
+        return False
+    try:
+        return apply_setup_default(
+            runtime.desired_states,
+            device.id,
+            runtime.device_accounts.get(device.id, []),
+        )
+    except (OSError, VaultLockedError) as error:
+        LOGGER.warning(
+            "device %s: the setup's default account waits: %s", device.id, error
+        )
+        return False
 
 
 def _push_state(runtime, key: str) -> None:

@@ -31,7 +31,18 @@ def setup_files(monkeypatch, tmp_path):
     monkeypatch.setattr(
         setup, "WEB_RESTORE_LOCAL_AGENT_PATH", directory / "restore_local_agent"
     )
+    monkeypatch.setattr(
+        setup,
+        "write_setup_default",
+        lambda account, login_id: setup_default_written.append((account, login_id)),
+    )
+    setup_default_written.clear()
     return directory
+
+
+# What the setup step wrote as the machine's default account, for the test
+# that reads it.
+setup_default_written: list = []
 
 
 class TerminalStdin(io.StringIO):

@@ -70,7 +70,11 @@ from neutrino_hub.web.constants import (
     WEB_EVENT_DEVICE_REPORT,
     WEB_TASK_LABEL_AGENT_INSTALL,
 )
-from neutrino_hub.web.dependencies import get_runtime, require_session
+from neutrino_hub.web.dependencies import (
+    get_runtime,
+    require_default_account,
+    require_session,
+)
 from neutrino_hub.utils.json_file import CONFIG_WRITE_LOCK
 from neutrino_hub.web.models import (
     DeviceCountView,
@@ -198,8 +202,9 @@ def _device_view(runtime: PanelRuntime, device: ManagedDevice) -> DeviceView:
         device: The stored device.
 
     Returns:
-        The view, carrying the platform and the agent version on a device
-        whose agent has beaten since the panel started. A row that joined
+        The view, carrying the machine's default account, empty while it has
+        none, and the platform and the agent version on a device whose agent
+        has beaten since the panel started. A row that joined
         under 0.5, with a token and no static key, carries ``last_error``
         ``hub_key_missing``.
     """
@@ -217,6 +222,7 @@ def _device_view(runtime: PanelRuntime, device: ManagedDevice) -> DeviceView:
     # is on no served LAN, and a machine that moved is at its new address a
     # beat later.
     view.ipv4_address = runtime.device_address.get(key) or view.ipv4_address
+    view.default_account = runtime.desired_states.default_account(key)
     platform = runtime.device_platform.get(key, {})
     if view.client is not None:
         view.client.platform_os = platform.get("os") or None
@@ -1170,7 +1176,11 @@ def _remote_desktop_view(product: str, info: dict) -> RemoteDesktopStatusView:
     )
 
 
-@router.post("/remote_desktop/password/set", response_model=TaskStarted)
+@router.post(
+    "/remote_desktop/password/set",
+    response_model=TaskStarted,
+    dependencies=[Depends(require_default_account)],
+)
 async def set_remote_desktop_password(
     request: RemoteDesktopPassword,
     runtime: PanelRuntime = Depends(get_runtime),
@@ -1187,7 +1197,9 @@ async def set_remote_desktop_password(
 
     Raises:
         HTTPException: 400 for an unknown product, 404 when no device has
-            the id, 409 when the agent is not answering.
+            the id, 409 when the agent is not answering, 409
+            ``default_account_missing`` on a machine with no default
+            account.
     """
     device_id = request.device_id
     product = request.product
@@ -1214,7 +1226,9 @@ async def set_remote_desktop_password(
     return TaskStarted(task_id=stream.id)
 
 
-@router.post("/desktop/seat_password/reset")
+@router.post(
+    "/desktop/seat_password/reset", dependencies=[Depends(require_default_account)]
+)
 def reset_seat_password(
     request: DeviceRequest, runtime: PanelRuntime = Depends(get_runtime)
 ) -> dict:
@@ -1234,8 +1248,9 @@ def reset_seat_password(
 
     Raises:
         HTTPException: 404 when no device has the id, 409 ``agent_offline``
-            when the device has no channel, 502 when its socket did not take
-            the state in time.
+            when the device has no channel, 409 ``default_account_missing``
+            on a machine with no default account, 502 when its socket did
+            not take the state in time.
     """
     key = _require_device(DeviceRegistry(), request.device_id).id
     if not runtime.agent_sessions.is_online(key):

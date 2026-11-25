@@ -9,10 +9,13 @@ import re
 import shlex
 import subprocess
 
-from neutrino_hub.platforms.base import HubPlatform
+from neutrino_hub.platforms.base import HubPlatform, is_login_account
 from neutrino_hub.platforms.constants import (
     PLATFORM_BROWSER_TIMEOUT_S,
     PLATFORM_COMMAND_TIMEOUT_S,
+    PLATFORM_DARWIN_ACCOUNTS_COMMAND,
+    PLATFORM_DARWIN_HOMES_DIR,
+    PLATFORM_DARWIN_HUMAN_UID_FLOOR,
     PLATFORM_DARWIN_BROWSER_OPENER,
     PLATFORM_DARWIN_CONSOLE,
     PLATFORM_DARWIN_CONSOLE_USER_QUERY,
@@ -195,6 +198,59 @@ class DarwinHubPlatform(HubPlatform):
             The argument vector.
         """
         return ["installer", "-pkg", str(package), "-target", "/"]
+
+    def human_accounts(self) -> list:
+        """The accounts that are people: uid at the floor or above, a name
+        that does not start with an underscore, a home under ``/Users``
+        that exists, and a shell someone can log in with.
+
+        Returns:
+            Account names, sorted; none when ``dscl`` cannot list them.
+        """
+        try:
+            result = subprocess.run(
+                list(PLATFORM_DARWIN_ACCOUNTS_COMMAND),
+                capture_output=True,
+                text=True,
+                timeout=PLATFORM_COMMAND_TIMEOUT_S,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return []
+        accounts = []
+        for line in (result.stdout or "").splitlines():
+            fields = line.split()
+            if len(fields) != 2 or fields[0].startswith("_"):
+                continue
+            try:
+                uid = int(fields[1])
+            except ValueError:
+                continue
+            if uid < PLATFORM_DARWIN_HUMAN_UID_FLOOR:
+                continue
+            try:
+                entry = pwd.getpwnam(fields[0])
+            except KeyError:
+                continue
+            home = str(entry.pw_dir or "")
+            if home.startswith(PLATFORM_DARWIN_HOMES_DIR) and is_login_account(
+                entry.pw_shell, home
+            ):
+                accounts.append(fields[0])
+        return sorted(accounts)
+
+    def seated_account(self) -> str:
+        """The account at the screen, by the console user.
+
+        Returns:
+            Its name; empty for the login window, root or nobody.
+        """
+        uid = console_uid()
+        if uid == 0:
+            return ""
+        try:
+            return pwd.getpwuid(uid).pw_name
+        except KeyError:
+            return ""
 
     def netbird_daemon_address(self) -> str:
         """The socket the hub's own NetBird daemon answers on.

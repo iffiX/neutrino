@@ -181,6 +181,12 @@ DEVICE_SOURCE_CONTAINER = "container"
 DEVICE_KIND_SYSTEM_SERVICE = "system_service"
 DEVICE_KIND_ACCOUNT_SERVICE = "account_service"
 DEVICE_KIND_PROGRAM = "program"
+# The accounts a module serves (agent/accounts.md, "Which modules serve
+# which accounts"): one instance or record per enabled account, a tie to the
+# machine's default account, or nothing that runs as a person's account.
+DEVICE_SERVES_SEVERAL = "several"
+DEVICE_SERVES_ONE = "one"
+DEVICE_SERVES_NONE = "none"
 # The panel the Modules page draws every program run as an account with;
 # every other module is drawn by a panel named after it.
 DEVICE_MODULE_PANEL_INSTANCES = "instances"
@@ -217,10 +223,21 @@ DEVICE_MODULES_FILE = "modules.json"
 DEVICE_RDP_FILE = "rdp.json"
 DEVICE_GITEA_SECRETS_FILE = "gitea_secrets.json"  # scan: allow
 # The machine's available accounts, the account layer's one form per account
-# (agent.md, "The two layers and the accounts"): the name the file takes
-# beside the modules' own, and each row's fields.
+# (agent/accounts.md, "Available accounts"): the name the file takes beside
+# the modules' own, the key naming the machine's default account, and each
+# row's fields.
 DEVICE_ACCOUNTS_NAME = "accounts"
 DEVICE_ACCOUNTS_FILE = f"{DEVICE_ACCOUNTS_NAME}.json"
+DEVICE_DEFAULT_ACCOUNT_KEY = "default_account"
+# The default account setup asked for the hub's own machine, kept under the
+# state root until that machine's first report that lists it (files.md).
+DEVICE_SETUP_DEFAULT_ACCOUNT_PATH = UTILS_STATE_ROOT / "setup_default_account.json"
+DEVICE_SETUP_DEFAULT_ACCOUNT_MODE = 0o600
+# A Windows account's password, stored as a vault login of this kind under
+# this field, and named after the machine and the account.
+DEVICE_LOGIN_KIND = "login"
+DEVICE_LOGIN_PASSWORD_FIELD = "password"
+DEVICE_LOGIN_NAME = "{device} / {account}"
 DEVICE_ACCOUNT_FIELDS = (
     "account",
     "login_id",

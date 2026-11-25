@@ -60,9 +60,9 @@ def podman_import_config(details: dict) -> dict:
 
     Returns:
         ``{"containers", "mirrors"}`` in the hub's shape, and ``machine``,
-        the Run settings naming the reported account with its disk's size
-        now, rounded up to whole GiB, and Podman's default CPUs and memory,
-        where a machine is reported; a container comes up with the machine
+        the Run settings with the reported machine's disk size now, rounded
+        up to whole GiB, as the disk limit, and Podman's default CPUs and
+        memory, where a machine is reported; a container comes up with the machine
         where a unit already stands for it, and keeps its ``services``
         where they are reported. A container with a module's label is its
         module's and is left out, as is a container whose image is empty or
@@ -83,7 +83,6 @@ def podman_import_config(details: dict) -> dict:
     machine = details.get("machine")
     if isinstance(machine, dict) and machine.get("account"):
         config["machine"] = {
-            "account": str(machine["account"]),
             "cpus": 0,
             "memory_gib": 0,
             "disk_gib": _whole_gib(machine.get("disk_gib")),

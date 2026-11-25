@@ -82,3 +82,23 @@ def test_after_a_failed_run_the_next_answers_are_waited_for():
 
     assert session.wait(0) == {}
     assert session.state()["state"] == "failed"
+
+
+def test_the_context_carries_the_accounts_and_the_one_the_screen_starts_at():
+    from fastapi.testclient import TestClient
+
+    from neutrino_hub.web.setup_app import create_setup_app
+
+    session = WebSetupSession(
+        context={
+            "interfaces": [],
+            "modes": [{"key": "server"}],
+            "accounts": ["ann", "lab"],
+            "default_account": "lab",
+        }
+    )
+    client = TestClient(create_setup_app(session))
+
+    answer = client.get(f"/api/hub/setup/context?token={session.token}").json()
+
+    assert (answer["accounts"], answer["default_account"]) == (["ann", "lab"], "lab")

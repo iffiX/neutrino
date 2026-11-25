@@ -3,12 +3,13 @@
 The file is ``config/devices/<id>/ayakaleaf.json``: the token secret, the
 administrator's password and the app's session and invitation secrets,
 generated the first time the module is installed and sealed under the
-vault's data key, the module's gateway key, and ``model``, the tab's AI
-model, empty for the default model. The state carries ``{secret,
-password, cookie_name, local_name}`` opened: the name of the app's session
-cookie on the device and the app's local name, which its forwarder checks
-the ``Host`` against; the desired state adds the guests of the app's Web
-shares. The forwarder's port is the agent's. The module runs three hub
+vault's data key, the module's gateway key while the default account's AI
+switch is on, and ``model``, the tab's AI model, empty for the default
+model. The state carries ``{secret, password, cookie_name, local_name,
+is_gateway_used}``, the secrets opened: the name of the app's session cookie
+on the device, the app's local name, which its forwarder checks the
+``Host`` against, and whether the app uses the gateway; the desired state
+adds the guests of the app's Web shares. The forwarder's port is the agent's. The module runs three hub
 containers on Containers: MongoDB and Redis first, then the app, which
 starts after both and whose 80 the module's forwarder serves.
 
@@ -47,7 +48,7 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_AYAKALEAF_SECRET_KEY,
     DEVICE_AYAKALEAF_SESSION_SECRET_KEY,
 )
-from neutrino_hub.modules.devices.hermes_webui import gateway_url
+from neutrino_hub.modules.devices.hermes_webui import gateway_url, gateway_variables
 from neutrino_hub.modules.devices.hub_containers import (
     HUB_CONTAINER_COMPOSERS,
     HubContainer,
@@ -104,7 +105,9 @@ def cookie_name(key: str) -> str:
     return DEVICE_AYAKALEAF_COOKIE_PREFIX + key[:DEVICE_AYAKALEAF_COOKIE_ID_CHARS]
 
 
-def agent_config(stored: dict, key: str, *, local_name: str = "") -> dict:
+def agent_config(
+    stored: dict, key: str, *, local_name: str = "", is_gateway_used: bool = True
+) -> dict:
     """What the agent is sent for Ayakaleaf.
 
     Args:
@@ -112,10 +115,12 @@ def agent_config(stored: dict, key: str, *, local_name: str = "") -> dict:
         key: The device.
         local_name: The app's local name, which the forwarder checks the
             ``Host`` against.
+        is_gateway_used: Whether the app uses the gateway.
 
     Returns:
-        ``{secret, password, cookie_name, local_name}``, each secret opened,
-        empty when the file holds none or the vault cannot open it.
+        ``{secret, password, cookie_name, local_name, is_gateway_used}``,
+        each secret opened, empty when the file holds none or the vault
+        cannot open it.
     """
     row = module_row(DEVICE_AYAKALEAF_MODULE)
     config = {}
@@ -124,6 +129,7 @@ def agent_config(stored: dict, key: str, *, local_name: str = "") -> dict:
         config[sealed.opened_key] = _opened(stored.get(sealed.key), sealed.aad)
     config["cookie_name"] = cookie_name(key)
     config["local_name"] = local_name
+    config["is_gateway_used"] = bool(is_gateway_used)
     return config
 
 
@@ -136,11 +142,14 @@ def has_default_model_follower(store, device_ids) -> bool:
 
     Returns:
         True while a device's ``modules.json`` names the module with a
-        ``want`` other than ``absent`` and its file names no ``model``.
+        ``want`` other than ``absent``, its file names no ``model`` and the
+        app uses the gateway.
     """
     for key in device_ids:
         want = store.want_of(key, DEVICE_AYAKALEAF_MODULE)
         if want in ("", CHANNEL_MODULE_STATE_ABSENT):
+            continue
+        if not store.is_gateway_used(key):
             continue
         stored = store.read(key, DEVICE_AYAKALEAF_MODULE)
         if not str(stored.get(DEVICE_AYAKALEAF_MODEL_KEY, "") or ""):
@@ -170,11 +179,13 @@ def compose_containers(request: HubContainerRequest) -> tuple:
 
     Args:
         request: The store, the device, whether it is the hub's machine,
-            and the models the gateway serves.
+            the models the gateway serves and whether the app uses it.
 
     Returns:
-        MongoDB, Redis, then the app; none while a secret of the app does
-        not open, so no app runs without its own login and sessions.
+        MongoDB, Redis, then the app, the app's gateway and ``AI_``
+        variables only while it uses the gateway; none while a secret of the
+        app does not open, so no app runs without its own login and
+        sessions.
     """
     stored = request.store.read(request.key, DEVICE_AYAKALEAF_MODULE)
     row = module_row(DEVICE_AYAKALEAF_MODULE)
@@ -191,11 +202,10 @@ def compose_containers(request: HubContainerRequest) -> tuple:
         f"OVERLEAF_SESSION_SECRET={opened[DEVICE_AYAKALEAF_SESSION_SECRET_KEY]}",
         f"OVERLEAF_INVITE_TOKEN_SECRET={opened[DEVICE_AYAKALEAF_INVITE_SECRET_KEY]}",
         f"COOKIE_NAME={cookie_name(request.key)}",
-        f"NEUTRINO_GATEWAY_URL={url}",
-        f"NEUTRINO_GATEWAY_KEY={key}",
+        *gateway_variables(request, DEVICE_AYAKALEAF_MODULE),
     ]
     model = chosen_model(stored, request.models)
-    if model and key:
+    if model and key and request.is_gateway_used:
         environment += [
             "AI_ENABLED=true",
             f"AI_BASE_URL={url}{DEVICE_AYAKALEAF_AI_PATH}",

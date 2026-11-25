@@ -855,14 +855,21 @@ def test_every_system_takes_this_boxs_own_traffic(monkeypatch, system):
 
 @pytest.mark.feature("proxy")
 @pytest.mark.parametrize("system", ["darwin", "win32"])
-def test_macos_and_windows_ask_no_mode(monkeypatch, system):
+def test_macos_and_windows_ask_no_mode(monkeypatch, machine_accounts, system):
     monkeypatch.setattr(wizard.sys, "platform", system)
+    machine_accounts.accounts = ["lab"]
     asked = wizard.SetupWizard(links=StubLinks().all_links())
     titles = []
     monkeypatch.setattr(
         asked, "_frame", lambda step, total, title: titles.append(title)
     )
-    for name in ("_ask_language", "_ask_password", "_ask_ports", "_ask_proxy"):
+    for name in (
+        "_ask_language",
+        "_ask_password",
+        "_ask_ports",
+        "_ask_proxy",
+        "_ask_account",
+    ):
         monkeypatch.setattr(asked, name, lambda: wizard.WIZARD_NEXT)
     monkeypatch.setattr(asked, "_review", lambda: wizard.WIZARD_NEXT)
     monkeypatch.setattr(asked, "_ask_mode", lambda: pytest.fail("no mode question"))
@@ -1096,3 +1103,177 @@ def test_a_line_within_a_wait_is_read_whole_and_an_ended_input_is_empty(monkeypa
         assert wizard._line_within(0.05) == "\n"
         writer.close()
         assert wizard._line_within(0.05) == ""
+
+
+# --- the machine's default account ---
+
+
+def server_document(**fields) -> dict:
+    return {
+        "password": "a-long-enough-password",
+        "vault_passphrase": VAULT_PASSPHRASE,
+        "network": {"mode": "server"},
+        **fields,
+    }
+
+
+def test_a_machine_with_no_account_takes_no_default_account(machine_accounts):
+    answers = wizard.from_document(server_document())
+
+    assert answers.default_account is None
+
+
+def test_the_document_names_the_default_account_while_the_rule_finds_one(
+    machine_accounts,
+):
+    machine_accounts.accounts = ["ann", "lab"]
+
+    answers = wizard.from_document(server_document(default_account={"account": "lab"}))
+
+    assert answers.default_account == wizard.WizardDefaultAccount(account="lab")
+
+
+@pytest.mark.parametrize(
+    "given, words",
+    [
+        (None, "'default_account'"),
+        ({"account": "ghost"}, "not an account of this machine"),
+        ({"account": "lab", "shell": "/bin/sh"}, "does not take 'shell'"),
+    ],
+)
+def test_a_document_without_an_account_the_rule_finds_is_refused(
+    machine_accounts, given, words
+):
+    machine_accounts.accounts = ["lab"]
+    document = server_document(**({} if given is None else {"default_account": given}))
+
+    with pytest.raises(WizardAborted, match=words):
+        wizard.from_document(document)
+
+
+def test_windows_needs_the_accounts_password_and_keeps_it(machine_accounts, on_windows):
+    machine_accounts.accounts = ["lab"]
+
+    with pytest.raises(WizardAborted, match="'password'"):
+        wizard.from_document(server_document(default_account={"account": "lab"}))
+    answers = wizard.from_document(
+        server_document(default_account={"account": "lab", "password": "pw-lab"})
+    )
+
+    assert answers.default_account.password == "pw-lab"
+
+
+def test_linux_and_macos_drop_a_password_the_document_carries(machine_accounts):
+    machine_accounts.accounts = ["lab"]
+
+    answers = wizard.from_document(
+        server_document(default_account={"account": "lab", "password": "pw"})
+    )
+
+    assert answers.default_account.password == ""
+
+
+def test_stdin_tests_the_documents_account_before_any_step(
+    machine_accounts, monkeypatch
+):
+    machine_accounts.accounts = ["lab"]
+    machine_accounts.refusals["lab"] = ("account_no_login", {"account": "lab"})
+    monkeypatch.setattr(
+        sys,
+        "stdin",
+        io.StringIO(json.dumps(server_document(default_account={"account": "lab"}))),
+    )
+
+    with pytest.raises(WizardAborted) as refused:
+        setup._answers(argparse.Namespace(stdin=True, json=None))
+
+    assert str(refused.value) == (
+        "lab cannot log in on this machine: it has no login shell or no home."
+    )
+    assert machine_accounts.tested == [("lab", "")]
+
+
+def test_stdin_with_an_account_that_passes_its_test_answers(
+    machine_accounts, monkeypatch
+):
+    machine_accounts.accounts = ["lab"]
+    monkeypatch.setattr(
+        sys,
+        "stdin",
+        io.StringIO(json.dumps(server_document(default_account={"account": "lab"}))),
+    )
+
+    answers, server = setup._answers(argparse.Namespace(stdin=True, json=None))
+
+    assert (answers.default_account.account, server) == ("lab", None)
+
+
+def asked_account(monkeypatch, machine_accounts, *typed: str):
+    """The account screen, run with what the person types in turn."""
+    answers = iter(typed)
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(answers))
+    monkeypatch.setattr(wizard.getpass, "getpass", lambda prompt="": next(answers))
+    asked = wizard.SetupWizard(links=StubLinks().all_links())
+    return asked
+
+
+def test_the_account_screen_starts_at_the_account_that_ran_setup(
+    monkeypatch, machine_accounts
+):
+    machine_accounts.accounts = ["ann", "lab"]
+    machine_accounts.runner = "lab"
+    machine_accounts.seated = "ann"
+    asked = asked_account(monkeypatch, machine_accounts, "")
+
+    assert asked._ask_account() == wizard.WIZARD_NEXT
+    assert asked._default_account == wizard.WizardDefaultAccount(account="lab")
+    assert machine_accounts.tested == [("lab", "")]
+
+
+def test_a_refused_test_keeps_the_account_screen_with_its_words(
+    monkeypatch, machine_accounts, capsys
+):
+    machine_accounts.accounts = ["lab"]
+    machine_accounts.refusals["lab"] = ("account_no_login", {"account": "lab"})
+    asked = asked_account(monkeypatch, machine_accounts, "1", "")
+
+    assert asked._ask_account() == wizard.WIZARD_AGAIN
+    assert asked._default_account is None
+    assert "lab cannot log in on this machine" in capsys.readouterr().out
+
+
+def test_on_windows_the_screen_asks_the_password_and_tests_one_logon(
+    monkeypatch, machine_accounts, on_windows, capsys
+):
+    machine_accounts.accounts = ["lab"]
+    machine_accounts.refusals["lab"] = ("credential_invalid", {"account": "lab"})
+    asked = asked_account(monkeypatch, machine_accounts, "1", "wrong", "")
+
+    assert asked._ask_account() == wizard.WIZARD_AGAIN
+    assert machine_accounts.tested == [("lab", "wrong")]
+    assert "Windows does not accept this password for lab" in capsys.readouterr().out
+    machine_accounts.refusals.clear()
+    asked = asked_account(monkeypatch, machine_accounts, "1", "pw-lab")
+    assert asked._ask_account() == wizard.WIZARD_NEXT
+    assert asked._default_account.password == "pw-lab"
+
+
+def test_a_machine_with_no_account_asks_no_account_screen(
+    monkeypatch, machine_accounts
+):
+    asked = wizard.SetupWizard(links=StubLinks().all_links())
+    titles = []
+    monkeypatch.setattr(
+        asked, "_frame", lambda step, total, title: titles.append(title)
+    )
+    for name in ("_ask_language", "_ask_password", "_ask_mode", "_ask_ports"):
+        monkeypatch.setattr(asked, name, lambda: wizard.WIZARD_NEXT)
+    monkeypatch.setattr(asked, "_ask_proxy", lambda: wizard.WIZARD_NEXT)
+    monkeypatch.setattr(asked, "_review", lambda: wizard.WIZARD_NEXT)
+    monkeypatch.setattr(asked, "_ask_account", lambda: pytest.fail("no account"))
+    monkeypatch.setattr(asked, "_plan", lambda: None)
+
+    answers = asked.run()
+
+    assert "Your account on this machine" not in titles
+    assert answers.default_account is None

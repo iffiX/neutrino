@@ -99,6 +99,9 @@ class HubContainerRequest:
         platform: The tuple the machine reported.
         is_hub_machine: Whether the device is the hub's own machine.
         models: The names the AI gateway serves now.
+        is_gateway_used: Whether the module's containers use the AI gateway:
+            the default account's AI switch, true while the device has no
+            default account.
     """
 
     store: object
@@ -106,6 +109,7 @@ class HubContainerRequest:
     platform: dict
     is_hub_machine: bool = False
     models: tuple = ()
+    is_gateway_used: bool = True
 
 
 # Each container module's composition, by module name: called with a
@@ -185,6 +189,7 @@ def compose_hub_containers(
         platform=dict(platform),
         is_hub_machine=is_hub_machine,
         models=tuple(models),
+        is_gateway_used=store.is_gateway_used(key),
     )
     composed = []
     for module in container_modules(wants):

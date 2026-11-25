@@ -422,3 +422,53 @@ def test_a_refused_access_list_is_raised(monkeypatch):
 
     with pytest.raises(OSError, match="Access is denied"):
         _platform().make_root_only("C:\\key")
+
+
+# --- the machine's accounts, by the agent's rule ---
+
+
+def test_the_accounts_are_the_enabled_people_with_a_profile(monkeypatch):
+    from neutrino_hub.platforms import windows_accounts
+
+    users = [
+        {"name": "zoe", "description": "", "is_enabled": True},
+        {"name": "Administrator", "description": "Built-in", "is_enabled": True},
+        {"name": "DefaultAccount", "description": "", "is_enabled": True},
+        {"name": "WDAGUtilityAccount", "description": "", "is_enabled": True},
+        {"name": "Guest", "description": "", "is_enabled": True},
+        {"name": "media", "description": "neutrino:", "is_enabled": True},
+        {"name": "old", "description": "", "is_enabled": False},
+        {"name": "fresh", "description": "", "is_enabled": True},
+        {"name": "", "description": "", "is_enabled": True},
+        {"name": "hanha", "description": "Hanha's account", "is_enabled": True},
+    ]
+    monkeypatch.setattr(windows_accounts, "read_users", lambda netapi32: users)
+    monkeypatch.setattr(
+        windows_accounts,
+        "has_profile",
+        lambda name, advapi32, kernel32: name != "fresh",
+    )
+    libraries = types.SimpleNamespace(netapi32=None, advapi32=None, kernel32=None)
+
+    assert WindowsHubPlatform(libraries=libraries).human_accounts() == [
+        "hanha",
+        "zoe",
+    ]
+
+
+def test_accounts_that_cannot_be_listed_are_none(monkeypatch):
+    from neutrino_hub.platforms import windows_accounts
+
+    def refused(netapi32):
+        raise OSError(5, "denied")
+
+    monkeypatch.setattr(windows_accounts, "read_users", refused)
+    libraries = types.SimpleNamespace(netapi32=None, advapi32=None, kernel32=None)
+
+    assert WindowsHubPlatform(libraries=libraries).human_accounts() == []
+
+
+def test_the_account_that_ran_setup_is_the_elevated_processs_own(monkeypatch):
+    monkeypatch.setenv("USERNAME", "lab")
+
+    assert WindowsHubPlatform().runner_account() == "lab"

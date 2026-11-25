@@ -334,6 +334,7 @@ def test_each_enabled_siyuan_account_gets_its_own_key_and_a_disabled_one_loses_i
 
     from neutrino_hub.modules.cliproxyapi.ops import load_module_keys
 
+    switched_on(module_store, "ann", "bob", "cy")
     module_store.write(
         "dev-1",
         "siyuan",
@@ -368,11 +369,88 @@ def test_each_enabled_siyuan_account_gets_its_own_key_and_a_disabled_one_loses_i
     assert ai_keys.instance_key(held["accounts"][0]) in rendered["api-keys"]
 
 
+def switched_on(store, *names: str, default: str = "") -> None:
+    """Write ``accounts.json`` of dev-1: each account with its AI switch on."""
+    held = {
+        "accounts": [{"account": name, "is_ai_tools_enabled": True} for name in names]
+    }
+    if default:
+        held["default_account"] = default
+    store.write("dev-1", "accounts", held)
+
+
+def test_an_enabled_siyuan_account_whose_switch_is_off_holds_no_key(
+    module_store, unlocked
+):
+    from neutrino_hub.modules.cliproxyapi.ops import load_module_keys
+
+    switched_on(module_store, "ann")
+    module_store.write(
+        "dev-1", "siyuan", {"accounts": [{"account": "ann"}, {"account": "bob"}]}
+    )
+
+    ai_keys.settle_instance_keys(module_store, "dev-1", "siyuan", "argon")
+
+    ann, bob = module_store.read("dev-1", "siyuan")["accounts"]
+    assert ai_keys.instance_key(ann) and not ai_keys.instance_key(bob)
+
+    module_store.write("dev-1", "accounts", {"accounts": [{"account": "ann"}]})
+    ai_keys.settle_instance_keys(module_store, "dev-1", "siyuan", "argon")
+
+    ann, _ = module_store.read("dev-1", "siyuan")["accounts"]
+    assert "gateway_key_sealed" not in ann
+    assert load_module_keys() == []
+
+
+def test_the_container_modules_keys_follow_the_default_accounts_switch(
+    module_store, unlocked
+):
+    from neutrino_hub.modules.cliproxyapi.ops import load_module_keys
+
+    module_store.set_want("dev-1", "hermes_webui", "running")
+    module_store.set_want("dev-1", "astrbot", "absent")
+    switched_on(module_store, "ann", default="ann")
+
+    ai_keys.settle_module_keys(module_store, "dev-1", "argon")
+
+    first = ai_keys.module_key(module_store, "dev-1", "hermes_webui")
+    assert first
+    assert ai_keys.module_key(module_store, "dev-1", "astrbot") == ""
+
+    module_store.write(
+        "dev-1",
+        "accounts",
+        {"default_account": "ann", "accounts": [{"account": "ann"}]},
+    )
+    ai_keys.settle_module_keys(module_store, "dev-1", "argon")
+
+    assert "gateway_key" not in module_store.read("dev-1", "hermes_webui")
+    assert load_module_keys() == []
+
+    switched_on(module_store, "ann", default="ann")
+    ai_keys.settle_module_keys(module_store, "dev-1", "argon")
+
+    again = ai_keys.module_key(module_store, "dev-1", "hermes_webui")
+    assert again and again != first
+
+
+def test_a_machine_with_no_default_keeps_its_container_modules_keys(
+    module_store, unlocked
+):
+    module_store.set_want("dev-1", "ayakaleaf", "installed")
+    module_store.write("dev-1", "accounts", {"accounts": [{"account": "ann"}]})
+
+    ai_keys.settle_module_keys(module_store, "dev-1", "argon")
+
+    assert ai_keys.module_key(module_store, "dev-1", "ayakaleaf")
+
+
 def test_a_key_already_held_stays_and_an_uninstall_voids_every_one(
     module_store, unlocked
 ):
     from neutrino_hub.modules.cliproxyapi.ops import load_module_keys
 
+    switched_on(module_store, "ann")
     module_store.write("dev-1", "siyuan", {"accounts": [{"account": "ann"}]})
     ai_keys.settle_instance_keys(module_store, "dev-1", "siyuan", "argon")
     kept = ai_keys.instance_key(module_store.read("dev-1", "siyuan")["accounts"][0])
@@ -395,6 +473,11 @@ def test_a_locked_vault_mints_no_siyuan_key(config_dir, monkeypatch):
         "neutrino_hub.modules.devices.desired_state.UTILS_CONFIG_DIR", config_dir
     )
     store = DesiredStateStore()
+    store.write(
+        "dev-1",
+        "accounts",
+        {"accounts": [{"account": "ann", "is_ai_tools_enabled": True}]},
+    )
     store.write("dev-1", "siyuan", {"accounts": [{"account": "ann"}]})
 
     ai_keys.settle_instance_keys(store, "dev-1", "siyuan", "argon")

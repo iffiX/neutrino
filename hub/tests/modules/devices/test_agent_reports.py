@@ -946,3 +946,67 @@ def test_a_lost_control_connection_keeps_the_machines_ollama_in_the_gateway(box)
     agent_reports.record_offline(runtime, device, is_control_lost=True)
     assert runtime.ollama_gateway.asked == []
     assert runtime.ollama_kept.asked == [("drop", DEVICE)]
+
+
+# --- the default account setup asked for the hub's own machine ---
+
+
+@pytest.fixture
+def setup_default(hub_box, config_dir, monkeypatch):
+    """The hub's own machine with a real store, and setup's file of ``alice``."""
+    from neutrino_hub.modules.devices import setup_default as setup_default_module
+    from neutrino_hub.modules.devices.desired_state import DesiredStateStore
+    from tests.conftest import unlock_vault
+
+    monkeypatch.setattr(
+        "neutrino_hub.modules.devices.desired_state.UTILS_CONFIG_DIR", config_dir
+    )
+    unlock_vault(monkeypatch, config_dir)
+    path = config_dir / "state" / "setup_default_account.json"
+    monkeypatch.setattr(setup_default_module, "DEVICE_SETUP_DEFAULT_ACCOUNT_PATH", path)
+    setup_default_module.write_setup_default("alice", "login-1")
+    runtime, device = hub_box
+    runtime.desired_states = DesiredStateStore()
+    return runtime, device, path
+
+
+def test_the_setups_file_mode_is_root_alone(setup_default):
+    _runtime, _device, path = setup_default
+
+    assert path.stat().st_mode & 0o777 == 0o600
+
+
+def test_the_first_report_naming_the_account_makes_it_the_default(setup_default):
+    runtime, device, path = setup_default
+    store = runtime.desired_states
+
+    agent_reports.record_report(runtime, device, report(), peer_host="127.0.0.1")
+
+    assert store.default_account(DEVICE) == "alice"
+    (row,) = store.available_accounts(DEVICE)
+    assert (row.account, row.login_id) == ("alice", "login-1")
+    assert store.enabled_accounts(DEVICE, "terminal") == ["alice"]
+    assert store.enabled_accounts(DEVICE, "ssh_server") == ["alice"]
+    assert DEVICE in runtime.pushed
+    assert not path.exists()
+
+
+def test_a_report_that_does_not_name_the_account_keeps_the_file(setup_default):
+    runtime, device, path = setup_default
+    body = report()
+    body["machine"]["accounts"] = ["bob"]
+
+    agent_reports.record_report(runtime, device, body, peer_host="127.0.0.1")
+
+    assert runtime.desired_states.default_account(DEVICE) == ""
+    assert path.exists()
+
+
+def test_no_other_machine_takes_the_setups_account(setup_default):
+    runtime, _device, path = setup_default
+    other = ManagedDevice(id="device-two", name="box", machine_id="box-machine")
+
+    agent_reports.record_report(runtime, other, report(), peer_host="192.168.1.9")
+
+    assert runtime.desired_states.default_account("device-two") == ""
+    assert path.exists()

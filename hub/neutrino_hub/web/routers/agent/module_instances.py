@@ -5,14 +5,12 @@ are served for each account-layer row of the description table: Terminal,
 the file share, the SSH server, VS Code, code-server, CloudCLI, Codeg,
 Claude Code, Codex, OpenCode and SiYuan. The view lists every available account with
 whether the module enables it and what the machine reports of its instance,
-or for a command line program the code of the copy the account's shell runs
-and its last AI tools result. A command line program also serves ``copy``,
-the copies an account's shell finds read at once through the agent, and
-``prefer``, its copy put first for an account. The set replaces
-the enabled accounts, generating each newly enabled account's secrets, a
-SiYuan account's gateway key among them and voided for an account it
-disables, and writes no ``want`` on a module not running (protocol.md, "The
-account layer in the state").
+or for a command line program its last AI tools result, beside the
+machine's default account. The set replaces the enabled accounts, the
+default always among them and first, generating each newly enabled
+account's secrets, a SiYuan account's gateway key among them while its AI
+switch is on and voided for an account it disables, and writes no ``want``
+on a module not running (protocol.md, "The account layer in the state").
 """
 
 import functools
@@ -22,15 +20,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from neutrino_hub.exceptions import AgentOfflineError, StreamRefusedError
 from neutrino_hub.modules.channel.constants import (
     CHANNEL_STREAM_COMMAND,
-    CHANNEL_VERB_FIND,
-    CHANNEL_VERB_PREFER,
     CHANNEL_VERB_VALIDATE,
 )
 from neutrino_hub.modules.clients.ai_keys import apply_keys, settle_instance_keys
 from neutrino_hub.modules.devices.accounts import DeviceAccountStore
 from neutrino_hub.modules.devices.constants import (
     DEVICE_MODULE_VALIDATE_TIMEOUT_S,
-    DEVICE_PASSWORD_OS,
     DEVICE_SAMBA_MODULE,
     DEVICE_SSH_SERVER_MODULE,
     DEVICE_TERMINAL_MODULE,
@@ -38,13 +33,8 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_VSCODE_TERMS_KEY,
     DEVICE_VSCODE_TERMS_URL,
 )
-from neutrino_hub.modules.devices.desired_state import account_login, smb_user
+from neutrino_hub.modules.devices.desired_state import smb_user
 from neutrino_hub.modules.devices.folder_shares import folder_shares
-from neutrino_hub.modules.devices.manifests import (
-    entry_version,
-    load_module_manifests,
-    resolve_platform_entry,
-)
 from neutrino_hub.modules.devices.module_table import (
     DeviceModuleRow,
     account_layer_rows,
@@ -58,37 +48,30 @@ from neutrino_hub.web.models import (
     EnabledAccountRowView,
     EnabledAccountsUpdate,
     EnabledAccountsView,
-    ProgramAccountRequest,
-    ProgramCopyView,
 )
 from neutrino_hub.web.panel_runtime import PanelRuntime
 from neutrino_hub.web.routers.agent.module import (
     CODE_AGENT_OFFLINE,
     DeviceModuleContext,
+    account_home,
     device_context,
     module_router,
     push_state,
     recompose_published,
     record_apply,
     require_online,
+    require_share_folder,
     require_terms,
-    run_command,
     write_module_config,
 )
-from neutrino_hub.web.routers.agent.module_account import (
-    account_home,
-    reported_tools,
-    require_share_folder,
-)
+from neutrino_hub.web.routers.agent.module_account import reported_tools
 
 CODE_ACCOUNT_UNKNOWN = "account_unknown"
 CODE_ACCOUNT_DUPLICATE = "account_duplicate"
+CODE_ACCOUNT_IS_DEFAULT = "account_is_default"
 CODE_ACCOUNT_HOME_UNKNOWN = "account_home_unknown"
 CODE_SHARE_NAME_TAKEN = "share_name_taken"
 CODE_CONFIG_UNWRITABLE = "config_unwritable"
-CODE_ACCOUNT_NOT_ENABLED = "account_not_enabled"
-CODE_CREDENTIAL_MISSING = "credential_missing"
-CODE_COPY_IN_SYSTEM_PATH = "copy_in_system_path"
 
 
 def device_view(
@@ -109,9 +92,8 @@ def device_view(
         reports the module active and its Home share served, and the row of
         an enabled account with no share path whose home the machine has not
         reported carries ``account_home_unknown {account}``. A command line
-        program's row carries the account's code as the module's
-        ``details.accounts`` report it, the account's last AI tools result
-        and its AI tools switch.
+        program's row carries the account's last AI tools result and its AI
+        tools switch.
     """
     store = DeviceAccountStore(runtime.desired_states)
     enabled = runtime.desired_states.enabled_accounts(context.key, row.name)
@@ -121,8 +103,7 @@ def device_view(
     tools = reported_tools(runtime, context.key) if is_program else {}
     reported = {
         str(instance.get("account", "")): instance
-        for instance in context.details.get("accounts" if is_program else "instances")
-        or []
+        for instance in context.details.get("instances") or []
         if isinstance(instance, dict)
     }
     is_serving = bool(context.details.get("is_active"))
@@ -166,7 +147,11 @@ def device_view(
         extra["is_terms_accepted"] = bool(context.config.get(DEVICE_VSCODE_TERMS_KEY))
         extra["terms_url"] = DEVICE_VSCODE_TERMS_URL
     return EnabledAccountsView(
-        **context.fields(), accounts=rows, is_active=context.is_active, **extra
+        **context.fields(),
+        default_account=store.default_account(context.key),
+        accounts=rows,
+        is_active=context.is_active,
+        **extra,
     )
 
 
@@ -191,7 +176,9 @@ def replace_accounts(
 
     Raises:
         HTTPException: 400 ``account_unknown {account}`` for an account that
-            is not available, ``account_duplicate {account}``; 409
+            is not available, ``account_duplicate {account}``,
+            ``account_is_default {account}`` for a list that leaves the
+            machine's default account out; 409
             ``terms_not_accepted {module}`` for VS Code before its terms,
             ``agent_offline``; 400 ``share_name_taken {name}`` for a file
             share account a folder share's name takes, ``share_path_missing
@@ -205,10 +192,8 @@ def replace_accounts(
     context = device_context(runtime, row.name, update.device_id)
     require_terms(runtime, context.key, row.name)
     require_online(context)
-    available = {
-        account.account
-        for account in DeviceAccountStore(runtime.desired_states).accounts(context.key)
-    }
+    accounts = DeviceAccountStore(runtime.desired_states)
+    available = {account.account for account in accounts.accounts(context.key)}
     chosen: list = []
     for account in update.accounts:
         if account not in available:
@@ -220,6 +205,11 @@ def replace_accounts(
                 status.HTTP_400_BAD_REQUEST, CODE_ACCOUNT_DUPLICATE, account=account
             )
         chosen.append(account)
+    default = accounts.default_account(context.key)
+    if default and default not in chosen:
+        raise _refusal(
+            status.HTTP_400_BAD_REQUEST, CODE_ACCOUNT_IS_DEFAULT, account=default
+        )
     if row.name == DEVICE_SAMBA_MODULE:
         _refuse_folder_share_names(chosen, context.config)
         _require_home_share_folders(runtime, context, chosen)
@@ -278,131 +268,6 @@ def _require_home_share_folders(
         folder = rows[account].share_path or account_home(runtime, context.key, account)
         if folder:
             require_share_folder(runtime, context.key, name=account, path=folder)
-
-
-def program_copy(
-    row: DeviceModuleRow, device_id: str, account: str, runtime: PanelRuntime
-) -> ProgramCopyView:
-    """The copy of a command line program an account's shell finds that is not the module's, read at once through the agent.
-
-    Args:
-        row: The module's row in the description table.
-        device_id: The device.
-        account: The available account.
-        runtime: The shared runtime.
-
-    Returns:
-        The copy's path and version, empty for none, the version of the
-        module's copy for the machine, and on Windows
-        ``copy_in_system_path {account, path, version}`` for a copy in the
-        system ``PATH``.
-
-    Raises:
-        HTTPException: 400 ``account_unknown {account}`` for an account that
-            is not available, ``credential_missing {account}`` for a Windows
-            account with no login; 409 ``agent_offline``; 502 with the
-            agent's code.
-        VaultLockedError: When the login cannot be opened.
-    """
-    context = device_context(runtime, row.name, device_id)
-    password = _program_login(runtime, context, account)
-    info = run_command(
-        runtime, context, CHANNEL_VERB_FIND, {"account": account, "password": password}
-    )
-    found = info.get("result")
-    found = found if isinstance(found, dict) else {}
-    path = str(found.get("path", "") or "")
-    version = str(found.get("version", "") or "")
-    code, params = "", {}
-    if path and found.get("is_system_path") is True:
-        code = CODE_COPY_IN_SYSTEM_PATH
-        params = {"account": account, "path": path, "version": version}
-    return ProgramCopyView(
-        account=account,
-        path=path,
-        version=version,
-        module_version=_module_copy_version(runtime, context),
-        code=code,
-        params=params,
-    )
-
-
-def prefer_module_copy(
-    row: DeviceModuleRow, request: ProgramAccountRequest, runtime: PanelRuntime
-) -> EnabledAccountsView:
-    """Put a command line program's copy first for one enabled account at once.
-
-    Args:
-        row: The module's row in the description table.
-        request: The device and the account.
-        runtime: The shared runtime.
-
-    Returns:
-        The module's view after the agent's report.
-
-    Raises:
-        HTTPException: 400 ``account_not_enabled {account}`` for an account
-            the module does not enable, ``credential_missing {account}``;
-            409 ``agent_offline``; 502 with the agent's code.
-        VaultLockedError: When the login cannot be opened.
-    """
-    context = device_context(runtime, row.name, request.device_id)
-    if request.account not in runtime.desired_states.enabled_accounts(
-        context.key, row.name
-    ):
-        raise _refusal(
-            status.HTTP_400_BAD_REQUEST,
-            CODE_ACCOUNT_NOT_ENABLED,
-            account=request.account,
-        )
-    password = _program_login(runtime, context, request.account)
-    run_command(
-        runtime,
-        context,
-        CHANNEL_VERB_PREFER,
-        {"account": request.account, "password": password},
-    )
-    return device_view(row, runtime, context)
-
-
-def _program_login(
-    runtime: PanelRuntime, context: DeviceModuleContext, account: str
-) -> str:
-    """An available account's login on a Windows machine, empty elsewhere.
-
-    Raises:
-        HTTPException: 400 ``account_unknown {account}`` for an account that
-            is not available, ``credential_missing {account}`` for a Windows
-            account with no login.
-    """
-    accounts = DeviceAccountStore(runtime.desired_states).accounts(context.key)
-    held = next((each for each in accounts if each.account == account), None)
-    if held is None:
-        raise _refusal(
-            status.HTTP_400_BAD_REQUEST, CODE_ACCOUNT_UNKNOWN, account=account
-        )
-    platform = runtime.device_platform.get(context.key, {})
-    password = account_login(held, platform)
-    if platform.get("os") == DEVICE_PASSWORD_OS and not password:
-        raise _refusal(
-            status.HTTP_400_BAD_REQUEST, CODE_CREDENTIAL_MISSING, account=account
-        )
-    return password
-
-
-def _module_copy_version(runtime: PanelRuntime, context: DeviceModuleContext) -> str:
-    """The version of a command line program's copy for a machine: the reported one, else the chosen one, else the tested one."""
-    reported = str(context.details.get("version", "") or "")
-    if reported:
-        return reported
-    chosen = runtime.desired_states.version_of(context.key, context.module)
-    if chosen:
-        return chosen
-    manifest = load_module_manifests().get(context.module) or {}
-    _, entry = resolve_platform_entry(
-        manifest, runtime.device_platform.get(context.key, {})
-    )
-    return entry_version(manifest, entry) if entry else ""
 
 
 def _refuse_folder_share_names(accounts: list, stored: dict) -> None:
@@ -486,23 +351,6 @@ def _accounts_router(row: DeviceModuleRow) -> APIRouter:
     ):
         """Replace the enabled accounts, as :func:`replace_accounts` says."""
         return replace_accounts(row, update, runtime)
-
-    if row.name in command_line_program_names():
-
-        @router.get("/copy", response_model=ProgramCopyView)
-        def read_copy(
-            device_id: str, account: str, runtime: PanelRuntime = Depends(get_runtime)
-        ):
-            """Read an account's copies at once, as :func:`program_copy` says."""
-            return program_copy(row, device_id, account, runtime)
-
-        @router.post("/prefer", response_model=EnabledAccountsView)
-        def prefer_copy(
-            request: ProgramAccountRequest,
-            runtime: PanelRuntime = Depends(get_runtime),
-        ):
-            """Put the module's copy first, as :func:`prefer_module_copy` says."""
-            return prefer_module_copy(row, request, runtime)
 
     return router
 

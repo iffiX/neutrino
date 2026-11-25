@@ -79,7 +79,7 @@ def test_podman_reads_the_containers_and_the_mirrors():
     }
 
 
-def test_podman_takes_the_services_and_the_machines_account_where_reported():
+def test_podman_takes_the_services_and_the_machines_disk_where_reported():
     details = {
         "containers": [
             {
@@ -111,12 +111,7 @@ def test_podman_takes_the_services_and_the_machines_account_where_reported():
         {"port": 5353, "kind": "port", "scheme": "http", "protocols": ["tcp", "udp"]},
     ]
     assert "services" not in imported["containers"][1]
-    assert imported["machine"] == {
-        "account": "lab",
-        "cpus": 0,
-        "memory_gib": 0,
-        "disk_gib": 100,
-    }
+    assert imported["machine"] == {"cpus": 0, "memory_gib": 0, "disk_gib": 100}
 
 
 @pytest.mark.parametrize(

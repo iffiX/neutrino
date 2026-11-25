@@ -125,3 +125,39 @@ PLATFORM_WINDOWS_CONNECTION_LOST_CALLBACK = "_call_connection_lost"
 # How often the service on macOS and Windows looks for the configuration
 # before nhub setup has written it.
 PLATFORM_SETUP_POLL_S = 5
+
+# The machine's accounts, by the agent's rule (agent.md, "The platform
+# layer"): on Linux uid 1000 and above, not nobody, with a login shell and a
+# home that exists; on macOS uid 501 and above, no leading underscore, a home
+# under /Users that exists; on Windows the enabled local accounts with a
+# profile, without the ones Windows makes for itself and the file share's
+# own, whose description starts with its marker.
+PLATFORM_LINUX_HUMAN_UID_FLOOR = 1000
+PLATFORM_LINUX_NOBODY_UID = 65534
+PLATFORM_NO_LOGIN_SHELLS = ("nologin", "false")
+PLATFORM_DARWIN_HUMAN_UID_FLOOR = 501
+PLATFORM_DARWIN_HOMES_DIR = "/Users/"
+PLATFORM_DARWIN_ACCOUNTS_COMMAND = ("dscl", ".", "-list", "/Users", "UniqueID")
+PLATFORM_WINDOWS_BUILTIN_ACCOUNTS = frozenset(
+    {"administrator", "guest", "defaultaccount", "wdagutilityaccount"}
+)
+PLATFORM_WINDOWS_SHARE_MARKER = "neutrino:"
+# Who sits at the screen on Linux: the seat's active session and its account.
+PLATFORM_LINUX_SEAT_SESSION_COMMAND = (
+    "loginctl",
+    "show-seat",
+    "seat0",
+    "--property=ActiveSession",
+    "--value",
+)
+PLATFORM_LINUX_SESSION_NAME_COMMAND = (
+    "loginctl",
+    "show-session",
+    "--property=Name",
+    "--value",
+)
+# The codes of an account's test (agent/accounts.md, "Available accounts").
+PLATFORM_CODE_ACCOUNT_UNKNOWN = "account_unknown"
+PLATFORM_CODE_ACCOUNT_NO_LOGIN = "account_no_login"
+PLATFORM_CODE_CREDENTIAL_INVALID = "credential_invalid"
+PLATFORM_CODE_ACCOUNT_LOGON_REFUSED = "account_logon_refused"

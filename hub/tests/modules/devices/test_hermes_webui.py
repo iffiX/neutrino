@@ -83,6 +83,7 @@ def test_the_state_carries_both_secrets_opened_and_the_local_name(store):
         "local_name": "hermes-webui.argon.localhost",
         "model": "",
         "context_lengths": {},
+        "is_gateway_used": True,
     }
 
 
@@ -153,6 +154,7 @@ def test_a_file_with_nothing_sealed_sends_empty_secrets():
         "local_name": "",
         "model": "",
         "context_lengths": {},
+        "is_gateway_used": True,
     }
 
 
@@ -287,3 +289,28 @@ def test_every_entry_names_the_tested_pair_by_digest_and_the_pypi_set():
                 "sources": ["docker.io/nousresearch/hermes-agent"],
             },
         ]
+
+
+def test_no_gateway_variable_while_the_default_account_s_switch_is_off(store):
+    hermes_webui.ensure_config(store, DEVICE)
+    key = ai_keys.ensure_module_key(store, DEVICE, "hermes_webui", "argon")
+    store.set_want(DEVICE, "hermes_webui", "running")
+    store.write(
+        DEVICE, "hermes_webui", {**store.read(DEVICE, "hermes_webui"), "model": "m2"}
+    )
+    store.write(
+        DEVICE,
+        "accounts",
+        {"default_account": "lab", "accounts": [{"account": "lab"}]},
+    )
+
+    composed = compose_hub_containers(store, DEVICE, LINUX, models=["m1", "m2"])
+    config = store.agent_config(
+        DEVICE, "hermes_webui", store.read(DEVICE, "hermes_webui"), LINUX
+    )
+
+    lines = [line for item in composed for line in item["environment"]]
+    assert not [line for line in lines if line.startswith(("NEUTRINO_GATEWAY_", "AI_"))]
+    assert key not in " ".join(lines)
+    assert config["is_gateway_used"] is False
+    assert store.read(DEVICE, "hermes_webui")["model"] == "m2"

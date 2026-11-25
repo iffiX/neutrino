@@ -4,8 +4,10 @@ The contract names what differs between Linux, macOS and Windows and
 nothing else: whether this process may act on the installed hub, running
 ``nhub`` elevated, the controller of the daemons the hub runs, the one
 service on macOS and Windows, opening a page, a lock on a file, the
-commands the hub runs of itself and of its agent, and the system's own
-resolvers. A new system is a new class.
+commands the hub runs of itself and of its agent, the system's own
+resolvers, and the machine's accounts as the agent reads them, with the
+test an account passes before setup takes it as the default. A new system
+is a new class.
 """
 
 import ipaddress
@@ -13,8 +15,17 @@ import os
 import sys
 from pathlib import Path
 
+try:
+    import pwd
+except ImportError:  # Windows has no account database of this kind.
+    pwd = None
+
+from neutrino_hub.exceptions import AccountTestRefusedError
 from neutrino_hub.platforms.constants import (
     PLATFORM_AGENT_COMMANDS,
+    PLATFORM_CODE_ACCOUNT_NO_LOGIN,
+    PLATFORM_CODE_ACCOUNT_UNKNOWN,
+    PLATFORM_NO_LOGIN_SHELLS,
     PLATFORM_RESOLVER_FILES,
 )
 
@@ -250,6 +261,81 @@ class HubPlatform:
             if addresses:
                 return addresses
         return []
+
+    def human_accounts(self) -> list:
+        """The machine's accounts that can log in and have their home, as the agent reads them.
+
+        Returns:
+            Account names, sorted; none on a system the hub has no rule for.
+        """
+        return []
+
+    def runner_account(self) -> str:
+        """The account that ran this elevated process: the one sudo names.
+
+        Returns:
+            ``SUDO_USER``; empty when it names none or root.
+        """
+        account = os.environ.get("SUDO_USER", "")
+        return "" if account == "root" else account
+
+    def seated_account(self) -> str:
+        """The account at the screen.
+
+        Returns:
+            Its name; empty when nobody is signed in there or it cannot be
+            read.
+        """
+        return ""
+
+    def test_account(self, account: str, password: str) -> None:
+        """Test an account before setup takes it as the default.
+
+        On Linux and macOS the account's login shell is neither ``nologin``
+        nor ``false`` and its home exists; the password is not read.
+
+        Args:
+            account: The account.
+            password: Its password, read on Windows alone.
+
+        Raises:
+            AccountTestRefusedError: ``account_unknown {account}`` for an
+                account the system does not have, ``account_no_login
+                {account}`` for one that cannot log in or has no home.
+        """
+        del password
+        if pwd is None:
+            raise AccountTestRefusedError(
+                PLATFORM_CODE_ACCOUNT_UNKNOWN, {"account": account}
+            )
+        try:
+            entry = pwd.getpwnam(account)
+        except KeyError as error:
+            raise AccountTestRefusedError(
+                PLATFORM_CODE_ACCOUNT_UNKNOWN, {"account": account}
+            ) from error
+        if not is_login_account(entry.pw_shell, entry.pw_dir):
+            raise AccountTestRefusedError(
+                PLATFORM_CODE_ACCOUNT_NO_LOGIN, {"account": account}
+            )
+
+
+def is_login_account(shell: str, home: str) -> bool:
+    """Whether an account can log in: a login shell that is neither ``nologin`` nor ``false``, and a home that exists.
+
+    The agent's rule, copied (agent/accounts.md, "The default account").
+
+    Args:
+        shell: The account's login shell, by its path.
+        home: The account's home.
+
+    Returns:
+        True when both hold.
+    """
+    name = os.path.basename(str(shell or ""))
+    if not name or name in PLATFORM_NO_LOGIN_SHELLS:
+        return False
+    return bool(home) and os.path.isdir(home)
 
 
 def parse_resolv_conf(text: str) -> list:

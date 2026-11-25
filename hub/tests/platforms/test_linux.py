@@ -99,3 +99,58 @@ def test_without_pkexec_nothing_is_asked(monkeypatch):
     )
 
     assert not LinuxHubPlatform().run_elevated(["open"])
+
+
+# --- the machine's accounts, by the agent's rule ---
+
+
+class PwdEntry:
+    def __init__(self, name, uid, shell, home):
+        self.pw_name = name
+        self.pw_uid = uid
+        self.pw_shell = shell
+        self.pw_dir = home
+
+
+def test_the_accounts_are_the_agents_people_at_the_floor_with_a_shell_and_a_home(
+    monkeypatch, tmp_path
+):
+    home = tmp_path / "alice"
+    home.mkdir()
+    entries = [
+        PwdEntry("root", 0, "/bin/bash", "/root"),
+        PwdEntry("daemon", 1, "/usr/sbin/nologin", "/usr/sbin"),
+        PwdEntry("service", 999, "/bin/bash", str(home)),
+        PwdEntry("alice", 1000, "/bin/bash", str(home)),
+        PwdEntry("shell_less", 1001, "/usr/sbin/nologin", str(home)),
+        PwdEntry("falsely", 1003, "/bin/false", str(home)),
+        PwdEntry("homeless", 1002, "/bin/bash", str(tmp_path / "missing")),
+        PwdEntry("nobody", 65534, "/bin/sh", "/nonexistent"),
+    ]
+    monkeypatch.setattr(linux.pwd, "getpwall", lambda: entries)
+
+    assert LinuxHubPlatform().human_accounts() == ["alice"]
+
+
+def test_the_account_at_the_screen_is_seat0s_active_session(monkeypatch):
+    asked: list = []
+
+    def loginctl(command, **keywords):
+        asked.append(command)
+        printed = "c2\n" if command[1] == "show-seat" else "lab\n"
+        return type("Ran", (), {"exit_code": 0, "stdout": printed})()
+
+    monkeypatch.setattr(linux, "run", loginctl)
+
+    assert LinuxHubPlatform().seated_account() == "lab"
+    assert asked[1][-1] == "c2"
+
+
+def test_no_seat_is_nobody_at_the_screen(monkeypatch):
+    monkeypatch.setattr(
+        linux,
+        "run",
+        lambda command, **keywords: type("Ran", (), {"exit_code": 1, "stdout": ""})(),
+    )
+
+    assert LinuxHubPlatform().seated_account() == ""

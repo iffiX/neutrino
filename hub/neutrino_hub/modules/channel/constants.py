@@ -146,12 +146,9 @@ CHANNEL_VERB_VALIDATE = "validate"
 CHANNEL_VERB_JOURNAL = "journal"
 # Containers' read of what a new machine starts from.
 CHANNEL_VERB_MACHINE_READ = "machine_read"
-# The agent's test of an account's password. One test is one logon.
-CHANNEL_VERB_ACCOUNT_PASSWORD_TEST = "account_password_test"  # scan: allow
-# A command line program's read of the copies an account's shell finds, and
-# its put-first of the module's copy for an account.
-CHANNEL_VERB_FIND = "find"
-CHANNEL_VERB_PREFER = "prefer"
+# The agent's test of an account before it is added: one logon with its
+# password on Windows, its login shell and its home on Linux and macOS.
+CHANNEL_VERB_ACCOUNT_TEST = "account_test"
 # The file share's read of whether a path is a real folder.
 CHANNEL_VERB_FOLDER = "folder"
 # The verbs that read and change nothing on the machine.
@@ -159,7 +156,6 @@ CHANNEL_READ_VERBS = (
     CHANNEL_VERB_VALIDATE,
     CHANNEL_VERB_JOURNAL,
     CHANNEL_VERB_MACHINE_READ,
-    CHANNEL_VERB_FIND,
     CHANNEL_VERB_FOLDER,
 )
 # The two verbs on a shell session: whether it outlives its streams and

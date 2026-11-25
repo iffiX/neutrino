@@ -221,3 +221,60 @@ def test_the_login_window_and_no_key_are_nobody_at_the_screen(monkeypatch, print
     monkeypatch.setattr(darwin.subprocess, "run", lambda *a, **k: completed(printed))
 
     assert darwin.console_uid() == 0
+
+
+# --- the machine's accounts, by the agent's rule ---
+
+
+DSCL_SAMPLE = """_mbsetupuser             248
+_www                     70
+daemon                   1
+nobody                   -2
+root                     0
+pat                      501
+sam                      502
+guest                    504
+ghost                    503
+"""
+
+
+class _PwdEntry:
+    def __init__(self, name, home, shell="/bin/zsh"):
+        self.pw_name = name
+        self.pw_dir = home
+        self.pw_shell = shell
+
+
+def test_the_people_are_uid_501_up_with_a_home_under_users_and_a_login_shell(
+    monkeypatch,
+):
+    entries = {
+        "pat": _PwdEntry("pat", "/Users/pat"),
+        "sam": _PwdEntry("sam", "/Users/sam"),
+        "ghost": _PwdEntry("ghost", "/var/empty"),
+        "guest": _PwdEntry("guest", "/Users/guest", "/usr/bin/false"),
+    }
+
+    def getpwnam(name):
+        if name not in entries:
+            raise KeyError(name)
+        return entries[name]
+
+    monkeypatch.setattr(
+        darwin.subprocess,
+        "run",
+        lambda command, **keywords: completed(DSCL_SAMPLE),
+    )
+    monkeypatch.setattr(darwin.pwd, "getpwnam", getpwnam)
+    monkeypatch.setattr(darwin.os.path, "isdir", lambda path: True)
+
+    assert DarwinHubPlatform().human_accounts() == ["pat", "sam"]
+
+
+def test_the_account_at_the_screen_is_the_console_user(monkeypatch):
+    monkeypatch.setattr(darwin, "console_uid", lambda: 501)
+    monkeypatch.setattr(darwin.pwd, "getpwuid", lambda uid: _PwdEntry("pat", ""))
+
+    assert DarwinHubPlatform().seated_account() == "pat"
+    monkeypatch.setattr(darwin, "console_uid", lambda: 0)
+    assert DarwinHubPlatform().seated_account() == ""

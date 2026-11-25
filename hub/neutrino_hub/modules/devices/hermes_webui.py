@@ -2,11 +2,14 @@
 
 The file is ``config/devices/<id>/hermes_webui.json``: the token secret and
 the webui's password, generated the first time the module is installed and
-sealed under the vault's data key, and the module's gateway key. The state
-carries ``{secret, password, cookie_name, local_name, model}``, the secrets
-opened: the name of the webui's login cookie on the device, the app's local
-name, which its forwarder checks the ``Host`` against, and the default
-model, which the agent writes into Hermes's ``model.default``.
+sealed under the vault's data key, and the module's gateway key while the
+default account's AI switch is on. The state carries ``{secret, password,
+cookie_name, local_name, model, context_lengths, is_gateway_used}``, the
+secrets opened: the name of the webui's login cookie on the device, the
+app's local name, which its forwarder checks the ``Host`` against, the
+default model, which the agent writes into Hermes's ``model.default``, and
+whether the app uses the gateway (agent/accounts.md, "The AI switch and what
+follows it").
 The forwarder's port is the agent's.
 The module runs two hub containers on Containers: the agent's gateway first,
 then the webui, which starts after it and whose 8787 the module's forwarder
@@ -101,6 +104,7 @@ def agent_config(
     local_name: str = "",
     models: "list | tuple" = (),
     context_lengths: "dict | None" = None,
+    is_gateway_used: bool = True,
 ) -> dict:
     """What the agent is sent for Hermes WebUI.
 
@@ -112,10 +116,11 @@ def agent_config(
         models: The names the gateway serves now.
         context_lengths: Each served name's ``{context_length, input_limit,
             output_limit}``; None names none.
+        is_gateway_used: Whether the app uses the gateway.
 
     Returns:
         ``{secret, password, cookie_name, local_name, model,
-        context_lengths}``, each secret opened, empty when the file holds
+        context_lengths, is_gateway_used}``, each secret opened, empty when the file holds
         none or the vault cannot open it; ``model`` the default model, empty
         while no name is served, and ``context_lengths`` every served name's
         one number.
@@ -127,6 +132,7 @@ def agent_config(
     config["local_name"] = local_name
     config["model"] = gateway_default_model(models)
     config["context_lengths"] = one_numbers(models, context_lengths)
+    config["is_gateway_used"] = bool(is_gateway_used)
     return config
 
 
@@ -145,6 +151,26 @@ def gateway_url(*, is_hub_machine: bool) -> str:
     return DEVICE_CONTAINER_GATEWAY_URL.format(port=port)
 
 
+def gateway_variables(request: HubContainerRequest, module: str) -> tuple:
+    """The gateway's address and the module's key in a container's environment.
+
+    Args:
+        request: The store, the device, whether it is the hub's machine, and
+            whether the module's containers use the gateway.
+        module: The container module, whose file holds its key.
+
+    Returns:
+        ``NEUTRINO_GATEWAY_URL`` and ``NEUTRINO_GATEWAY_KEY`` lines; none
+        while the containers do not use the gateway.
+    """
+    if not request.is_gateway_used:
+        return ()
+    return (
+        f"NEUTRINO_GATEWAY_URL={gateway_url(is_hub_machine=request.is_hub_machine)}",
+        "NEUTRINO_GATEWAY_KEY=" + module_key(request.store, request.key, module),
+    )
+
+
 def compose_containers(request: HubContainerRequest) -> tuple:
     """The module's two hub containers on one machine.
 
@@ -160,11 +186,7 @@ def compose_containers(request: HubContainerRequest) -> tuple:
     )
     if not config["password"]:
         return ()
-    gateway = (
-        f"NEUTRINO_GATEWAY_URL={gateway_url(is_hub_machine=request.is_hub_machine)}",
-        "NEUTRINO_GATEWAY_KEY="
-        + module_key(request.store, request.key, DEVICE_HERMES_WEBUI_MODULE),
-    )
+    gateway = gateway_variables(request, DEVICE_HERMES_WEBUI_MODULE)
     agent = HubContainer(
         name=DEVICE_HERMES_WEBUI_AGENT_CONTAINER,
         image=DEVICE_HERMES_WEBUI_AGENT_IMAGE,

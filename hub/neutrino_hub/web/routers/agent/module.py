@@ -47,6 +47,7 @@ from neutrino_hub.modules.channel.constants import (
     CHANNEL_MODULE_WANTS,
     CHANNEL_READ_VERBS,
     CHANNEL_STREAM_COMMAND,
+    CHANNEL_VERB_FOLDER,
     CHANNEL_VERB_JOURNAL,
     CHANNEL_VERB_VALIDATE,
 )
@@ -61,6 +62,7 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_OLLAMA_MODULE,
     DEVICE_PODMAN_MACHINE_KEY,
     DEVICE_PODMAN_MODULE,
+    DEVICE_SAMBA_MODULE,
     DEVICE_VSCODE_MODULE,
     DEVICE_VSCODE_TERMS_KEY,
     DEVICE_MODULE_COMMAND_TIMEOUT_S,
@@ -108,7 +110,11 @@ from neutrino_hub.modules.devices.retry_marks import DeviceRetryMarks
 from neutrino_hub.modules.services.constants import SERVICES_PUBLISHED_MODULES
 from neutrino_hub.utils.json_file import CONFIG_WRITE_LOCK
 from neutrino_hub.web.channel_serve import module_task_label
-from neutrino_hub.web.dependencies import get_runtime, require_session
+from neutrino_hub.web.dependencies import (
+    get_runtime,
+    require_default_account,
+    require_session,
+)
 from neutrino_hub.web.constants import WEB_JOURNAL_LINE_LIMIT
 from neutrino_hub.web.models import (
     ApplyResult,
@@ -130,7 +136,9 @@ from neutrino_hub.web.panel_runtime import PanelRuntime
 from neutrino_hub.web.web_share_access import end_device_shares
 
 router = APIRouter(
-    prefix="/api/agent/module", tags=["module"], dependencies=[Depends(require_session)]
+    prefix="/api/agent/module",
+    tags=["module"],
+    dependencies=[Depends(require_session), Depends(require_default_account)],
 )
 
 CODE_AGENT_OFFLINE = "agent_offline"
@@ -147,6 +155,10 @@ CODE_MODULE_IN_USE = "module_in_use"
 CODE_VERSION_UNKNOWN = "version_unknown"
 CODE_VERSION_LOCKED = "version_locked"
 CODE_VERSION_OLDER_THAN_RUN = "version_older_than_run"
+# What the file share's folder read refuses a share's folder with.
+CODE_SHARE_PATH_MISSING = "share_path_missing"
+CODE_SHARE_PATH_LINK = "share_path_link"
+SHARE_FOLDER_CODES = (CODE_SHARE_PATH_MISSING, CODE_SHARE_PATH_LINK)
 
 # What a module reads as until its agent has said.
 STATE_UNKNOWN = "unknown"
@@ -595,12 +607,16 @@ def install_module(
             carries, 409 ``no_platform_build`` when the manifest offers
             the device's platform nothing, 409 ``terms_not_accepted`` for
             VS Code on a machine whose terms the person has not accepted,
-            409 ``agent_offline`` when the device has no socket.
+            409 ``agent_offline`` when the device has no socket, 400
+            ``share_path_missing {name, path}`` or ``share_path_link {name,
+            path}`` for the file share whose default account's folder is no
+            real folder.
 
     Note:
         An install first wants each module the entry requires ``running``,
         and gives a container module its configuration and its gateway key
-        where it has none.
+        where it has none. A module of the account layer gets the machine's
+        default account enabled, first in its list, with its secrets.
     """
     if request.module in command_line_program_names():
         return _set_want(runtime, request, CHANNEL_MODULE_STATE_RUNNING)
@@ -743,7 +759,7 @@ def module_router(
     router = APIRouter(
         prefix=f"/api/agent/module/{module}",
         tags=["module"],
-        dependencies=[Depends(require_session)],
+        dependencies=[Depends(require_session), Depends(require_default_account)],
     )
 
     @router.get("", response_model=view_model)
@@ -950,6 +966,7 @@ def podman_memory_need(runtime: PanelRuntime, key: str) -> PodmanMemoryNeedView 
         os_name=str(runtime.device_platform.get(key, {}).get("os", "") or ""),
         stored=stored if isinstance(stored, dict) else {},
         reported=reported if isinstance(reported, dict) else {},
+        account=runtime.desired_states.default_account(key),
     )
     return PodmanMemoryNeedView(**need) if need is not None else None
 
@@ -990,6 +1007,94 @@ def module_task_id(runtime: PanelRuntime, key: str, module: str) -> str:
         if stream.label == label:
             return stream.id
     return ""
+
+
+def account_home(runtime: PanelRuntime, key: str, account: str) -> str:
+    """An account's home as the machine last reported it; empty when it named none.
+
+    Args:
+        runtime: The shared runtime.
+        key: The device.
+        account: The account.
+
+    Returns:
+        The home folder.
+    """
+    details = runtime.account_details(key).get(account) or {}
+    return str(details.get("home", "") or "")
+
+
+def require_share_folder(runtime: PanelRuntime, key: str, *, name: str, path: str):
+    """Ask the machine at once whether a share's folder is a real folder.
+
+    The file share's ``folder`` verb reads it as whoever owns the path's
+    place, and nothing is written or pushed before it answers.
+
+    Args:
+        runtime: The shared runtime.
+        key: The device.
+        name: The share's name: the folder share's, or the account's for a
+            Home share.
+        path: The folder.
+
+    Raises:
+        HTTPException: 409 ``agent_offline``; 400 ``share_path_missing
+            {name, path}`` or ``share_path_link {name, path}``; 400 with the
+            agent's own code otherwise; 502 when the stream is refused.
+    """
+    try:
+        ask_machine(
+            runtime,
+            key,
+            {"module": DEVICE_SAMBA_MODULE, "verb": CHANNEL_VERB_FOLDER, "path": path},
+            fallback_code=CODE_COMMAND_FAILED,
+        )
+    except HTTPException as error:
+        detail = error.detail if isinstance(error.detail, dict) else {}
+        if detail.get("code") in SHARE_FOLDER_CODES:
+            raise _refusal(
+                status.HTTP_400_BAD_REQUEST, detail["code"], name=name, path=path
+            ) from error
+        raise
+
+
+def ask_machine(
+    runtime: PanelRuntime, key: str, command: dict, *, fallback_code: str
+) -> None:
+    """Run one verb on the machine, a refusal raised with the agent's code.
+
+    Args:
+        runtime: The shared runtime.
+        key: The device.
+        command: The command stream's arguments.
+        fallback_code: The code of a failure that names none.
+
+    Raises:
+        HTTPException: 409 ``agent_offline``; 502 when the stream is refused;
+            400 with the agent's code.
+    """
+    if not runtime.agent_sessions.is_online(key):
+        raise _refusal(status.HTTP_409_CONFLICT, CODE_AGENT_OFFLINE, device_id=key)
+    try:
+        verdict = runtime.agent_sessions.run_stream_from_thread(
+            key,
+            CHANNEL_STREAM_COMMAND,
+            command,
+            timeout=DEVICE_MODULE_VALIDATE_TIMEOUT_S,
+        )
+    except AgentOfflineError:
+        raise _refusal(status.HTTP_409_CONFLICT, CODE_AGENT_OFFLINE, device_id=key)
+    except StreamRefusedError as error:
+        raise _refusal(status.HTTP_502_BAD_GATEWAY, error.code, **error.params)
+    params = dict(verdict.get("params") or {})
+    if verdict.get("code") or int(params.get("exit_code", 1) or 0) != 0:
+        for name in ("exit_code", "output", "result"):
+            params.pop(name, None)
+        raise _refusal(
+            status.HTTP_400_BAD_REQUEST,
+            str(verdict.get("code") or fallback_code),
+            **params,
+        )
 
 
 def require_online(context: DeviceModuleContext) -> None:
@@ -1263,7 +1368,10 @@ def _set_want(
     An install or a start first wants each module the entry requires
     ``running``, with the same mark, and gives a container module its
     configuration and its gateway key where it has none; a container
-    module's uninstall voids the key.
+    module's uninstall voids the key. An install or a start of a module of
+    the account layer enables the machine's default account in the module's
+    file in the same hold of the lock, the file share's folder of it read
+    first.
 
     Args:
         runtime: The shared runtime.
@@ -1315,28 +1423,32 @@ def _set_want(
     is_container = DEVICE_METHOD_CONTAINER in manifest_methods(manifest)
     required = entry_requires(entry) if is_present else []
     is_retried = _is_retried(runtime, key, module, want)
+    is_default_enabled = is_present and module in account_layer_names()
+    if is_default_enabled and module == DEVICE_SAMBA_MODULE:
+        _require_default_share_folder(runtime, key)
     minted = ""
     try:
         if is_container and want == CHANNEL_MODULE_STATE_ABSENT:
             if module in gateway_module_names():
                 revoke_module_key(runtime.desired_states, key, module)
-        if module in gateway_instance_names():
-            if want == CHANNEL_MODULE_STATE_ABSENT:
-                revoke_instance_keys(runtime.desired_states, key, module)
-            else:
-                device = DeviceRegistry().get(key)
-                settle_instance_keys(
-                    runtime.desired_states, key, module, device.name if device else ""
-                )
-        # The wants, their marks and the module's file in one hold of the
-        # lock, so no state is composed between them.
+        if module in gateway_instance_names() and want == CHANNEL_MODULE_STATE_ABSENT:
+            revoke_instance_keys(runtime.desired_states, key, module)
+        # The default account, the wants, their marks and the module's file
+        # in one hold of the lock, so no state is composed between them.
         with CONFIG_WRITE_LOCK:
+            if is_default_enabled:
+                runtime.desired_states.enable_default(key, module)
             _want_required_running(runtime, key, required)
             if is_container and is_present:
                 minted = _prepare_container_module(runtime, key, module)
             runtime.desired_states.set_want(key, module, want)
             if is_retried:
                 DeviceRetryMarks().mark(key, module)
+        if module in gateway_instance_names() and is_present:
+            device = DeviceRegistry().get(key)
+            settle_instance_keys(
+                runtime.desired_states, key, module, device.name if device else ""
+            )
     except OSError as error:
         raise _config_unwritable(error) from error
     if minted:
@@ -1344,6 +1456,30 @@ def _set_want(
     push_state(runtime, key)
     recompose_published(runtime, module)
     return list_modules(request.device_id, runtime)
+
+
+def _require_default_share_folder(runtime: PanelRuntime, key: str) -> None:
+    """Ask the machine whether the default account's Home share folder is a real folder, ahead of the file share's install or start.
+
+    The folder is the default's share path, else its home as the machine
+    reported it; a default the file share already enables, and one with
+    neither, is not asked.
+
+    Raises:
+        HTTPException: As :func:`require_share_folder` says, ``name`` the
+            account.
+    """
+    store = runtime.desired_states
+    default = store.default_account(key)
+    if not default or default in store.enabled_accounts(key, DEVICE_SAMBA_MODULE):
+        return
+    row = next(
+        (held for held in store.available_accounts(key) if held.account == default),
+        None,
+    )
+    folder = (row.share_path if row else "") or account_home(runtime, key, default)
+    if folder:
+        require_share_folder(runtime, key, name=default, path=folder)
 
 
 def _want_required_running(runtime: PanelRuntime, key: str, required: list) -> None:
@@ -1373,8 +1509,9 @@ def _prepare_container_module(runtime: PanelRuntime, key: str, module: str) -> s
     """Give a container module what its containers are composed from, ahead of its install or start.
 
     Hermes WebUI, Ayakaleaf and AstrBot get the secrets their files hold none of,
-    and a module that uses the AI gateway its own key. A locked vault leaves
-    a secret or the key for a later press.
+    and a module that uses the AI gateway its own key while the default
+    account's AI switch has it use the gateway. A locked vault leaves a
+    secret or the key for a later press.
 
     Args:
         runtime: The shared runtime.
@@ -1399,7 +1536,7 @@ def _prepare_container_module(runtime: PanelRuntime, key: str, module: str) -> s
             ensure_config(store, key)
         except VaultLockedError:
             pass
-    if module not in gateway_module_names():
+    if module not in gateway_module_names() or not store.is_gateway_used(key):
         return ""
     device = DeviceRegistry().get(key)
     return mint_module_key(store, key, module, device.name if device else "")

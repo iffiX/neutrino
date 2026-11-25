@@ -287,3 +287,91 @@ def test_a_given_token_is_the_one_the_wizard_takes():
     client = TestClient(create_setup_app(session))
 
     assert client.get("/api/hub/setup/context?token=kept-token").status_code == 200
+
+
+# --- the account screen's test ---
+
+
+class ScreenPlatform:
+    """The machine's accounts and their test, as the account screen asks."""
+
+    def __init__(self, accounts, refusals=None):
+        self.accounts = list(accounts)
+        self.refusals = dict(refusals or {})
+        self.tested: list = []
+
+    def human_accounts(self) -> list:
+        return list(self.accounts)
+
+    def test_account(self, account: str, password: str) -> None:
+        from neutrino_hub.exceptions import AccountTestRefusedError
+
+        self.tested.append((account, password))
+        if account in self.refusals:
+            raise AccountTestRefusedError(*self.refusals[account])
+
+
+def account_test(monkeypatch, client, session, platform, system, **body):
+    monkeypatch.setattr(setup_router, "hub_platform", lambda: platform)
+    monkeypatch.setattr(setup_router, "hub_os", lambda: system)
+    return client.post(f"/api/hub/setup/account/test?token={session.token}", json=body)
+
+
+def test_the_screens_test_needs_the_token(client):
+    assert client.post("/api/hub/setup/account/test", json={}).status_code == 403
+
+
+def test_the_screens_test_passes_an_account_that_can_log_in(
+    monkeypatch, client, session
+):
+    platform = ScreenPlatform(["lab"])
+
+    answer = account_test(
+        monkeypatch, client, session, platform, "linux", account="lab", password="x"
+    )
+
+    assert answer.status_code == 200, answer.text
+    assert platform.tested == [("lab", "")]
+    assert session.wait(0.01) == {}
+
+
+def test_on_windows_the_screens_test_is_one_logon_with_the_password(
+    monkeypatch, client, session
+):
+    platform = ScreenPlatform(
+        ["lab"], {"lab": ("credential_invalid", {"account": "lab"})}
+    )
+
+    answer = account_test(
+        monkeypatch,
+        client,
+        session,
+        platform,
+        "windows",
+        account="lab",
+        password="wrong",
+    )
+
+    assert answer.status_code == 400
+    assert answer.json()["detail"] == {
+        "code": "credential_invalid",
+        "params": {"account": "lab"},
+    }
+    assert platform.tested == [("lab", "wrong")]
+    assert "wrong" not in answer.text
+
+
+def test_an_account_the_rule_does_not_find_is_refused_untested(
+    monkeypatch, client, session
+):
+    platform = ScreenPlatform(["lab"])
+
+    answer = account_test(
+        monkeypatch, client, session, platform, "darwin", account="root"
+    )
+
+    assert answer.json()["detail"] == {
+        "code": "account_unknown",
+        "params": {"account": "root"},
+    }
+    assert platform.tested == []

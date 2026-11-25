@@ -108,6 +108,7 @@ def test_the_state_carries_both_secrets_opened_the_cookie_and_the_local_name(sto
         "local_name": "astrbot.argon.localhost",
         "model": "",
         "context_length": 0,
+        "is_gateway_used": True,
     }
 
 
@@ -241,3 +242,24 @@ def test_every_entry_names_the_tested_image_by_digest_the_feed_and_the_pypi_set(
         assert params["artifacts"] == [
             {"name": "astrbot", "kind": "image", "digest": DIGEST, "sources": SOURCES}
         ]
+
+
+def test_no_gateway_variable_while_the_default_account_s_switch_is_off(store):
+    astrbot.ensure_config(store, DEVICE)
+    key = ai_keys.ensure_module_key(store, DEVICE, "astrbot", "argon")
+    store.set_want(DEVICE, "astrbot", "running")
+    store.write(DEVICE, "astrbot", {**store.read(DEVICE, "astrbot"), "model": "m2"})
+    store.write(
+        DEVICE,
+        "accounts",
+        {"default_account": "lab", "accounts": [{"account": "lab"}]},
+    )
+
+    composed = compose_hub_containers(store, DEVICE, LINUX, models=["m1", "m2"])
+    config = store.agent_config(DEVICE, "astrbot", store.read(DEVICE, "astrbot"), LINUX)
+
+    lines = [line for item in composed for line in item["environment"]]
+    assert not [line for line in lines if line.startswith(("NEUTRINO_GATEWAY_", "AI_"))]
+    assert key not in " ".join(lines)
+    assert config["is_gateway_used"] is False
+    assert store.read(DEVICE, "astrbot")["model"] == "m2"

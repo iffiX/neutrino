@@ -15,16 +15,19 @@ CloudCLI by an earlier build, is revoked when the panel starts.
 
 One more per container module that uses the gateway on each device,
 labelled ``device/<name>/<module>`` and kept sealed in that module's file
-under the device's directory: minted when the module is installed, voided
-at its uninstall and when the device is removed, and handed to the module's
-containers in their environment whatever the AI tools setting says.
+under the device's directory: minted when the module is installed while the
+default account's AI switch is on, voided when that switch turns off, at
+the module's uninstall and when the device is removed, minted again when the
+switch turns on, and handed to the module's containers in their environment
+while it exists (agent/accounts.md, "The AI switch and what follows it").
 
 One more per enabled account of a program run as an account that uses the
 gateway, SiYuan, labelled ``device/<name>/<module>/<account>`` and kept
-sealed in the account's record of that module's file: minted when the
-account is enabled, voided when it is disabled or removed, at the module's
-uninstall and when the device is removed, and handed to the instance in the
-module's section of the state.
+sealed in the account's record of that module's file: minted while the
+account is enabled and its AI switch is on, voided when it is disabled or
+removed, when its switch turns off, at the module's uninstall and when the
+device is removed, and handed to the instance in the module's section of
+the state.
 """
 
 from neutrino_hub.modules.clients.constants import (
@@ -35,6 +38,7 @@ from neutrino_hub.modules.clients.constants import (
 from neutrino_hub.modules.clients.registry import Client, ClientRegistry
 from neutrino_hub.modules.cliproxyapi.config import CliproxyApiClientKey
 from neutrino_hub.modules.cliproxyapi.constants import CLIPROXYAPI_LISTEN_HOST
+from neutrino_hub.modules.channel.constants import CHANNEL_MODULE_STATE_ABSENT
 from neutrino_hub.modules.devices.constants import (
     DEVICE_DISABLED_ACCOUNTS_KEY,
     DEVICE_ENABLED_ACCOUNTS_KEY,
@@ -48,6 +52,7 @@ from neutrino_hub.modules.cliproxyapi.ops import (
     load_config,
     save_config,
 )
+from neutrino_hub.modules.devices.module_table import gateway_container_names
 from neutrino_hub.utils.json_file import CONFIG_WRITE_LOCK
 
 
@@ -249,12 +254,47 @@ def revoke_module_key(store, device_id: str, module: str) -> None:
     _apply()
 
 
+def settle_module_keys(store, device_id: str, name: str) -> None:
+    """Key each installed container module that uses the gateway while the default account's switch is on, and void every key while it is off.
+
+    Args:
+        store: The desired state store, whose files of the modules hold the
+            keys and whose ``is_gateway_used`` reads the default account's
+            switch.
+        device_id: The device.
+        name: What the device is called, for each key's label.
+
+    Raises:
+        OSError: When a module's file cannot be written.
+    """
+    is_used = store.is_gateway_used(device_id)
+    minted = []
+    is_voided = False
+    with CONFIG_WRITE_LOCK:
+        for module in gateway_container_names():
+            if store.want_of(device_id, module) in ("", CHANNEL_MODULE_STATE_ABSENT):
+                continue
+            if is_used:
+                key = mint_module_key(store, device_id, module, name)
+                if key:
+                    minted.append(key)
+                continue
+            held = store.read(device_id, module)
+            if DEVICE_MODULE_GATEWAY_KEY in held:
+                held.pop(DEVICE_MODULE_GATEWAY_KEY)
+                store.write(device_id, module, held)
+                is_voided = True
+    if minted or is_voided:
+        _apply(new_key=minted[-1] if minted else None)
+
+
 def settle_instance_keys(store, device_id: str, module: str, name: str) -> None:
-    """Give each enabled account of one module its own key, and void a disabled account's.
+    """Give each enabled account of one module whose AI switch is on its own key, and void every other account's.
 
     Args:
         store: The desired state store, whose file of the module holds the
-            accounts' records.
+            accounts' records and whose ``ai_tool_accounts`` names the
+            accounts whose switch is on.
         device_id: The device.
         module: A program run as an account that uses the gateway.
         name: What the device is called, for each key's label.
@@ -264,6 +304,7 @@ def settle_instance_keys(store, device_id: str, module: str, name: str) -> None:
     """
     minted = []
     with CONFIG_WRITE_LOCK:
+        switched = {account.account for account in store.ai_tool_accounts(device_id)}
         held = store.read(device_id, module)
         written = dict(held)
         enabled = []
@@ -271,6 +312,10 @@ def settle_instance_keys(store, device_id: str, module: str, name: str) -> None:
             if not isinstance(record, dict) or not record.get("account"):
                 continue
             record = dict(record)
+            if record["account"] not in switched:
+                record.pop(DEVICE_INSTANCE_GATEWAY_KEY, None)
+                enabled.append(record)
+                continue
             if CliproxyApiClientKey.from_stored(
                 record.get(DEVICE_INSTANCE_GATEWAY_KEY)
             ):

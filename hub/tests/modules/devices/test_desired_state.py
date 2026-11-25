@@ -440,7 +440,7 @@ def test_siyuan_carries_its_code_its_key_the_gateways_address_and_its_models(
     monkeypatch.setattr(ai_keys, "_apply", lambda **kwargs: None)
     monkeypatch.setattr(desired_state_module, "gateway_port", lambda: 18317)
     store = DesiredStateStore()
-    with_accounts(store, "ann")
+    with_accounts(store, "ann", is_ai_tools_enabled=True)
     store.set_enabled_accounts(DEVICE, "siyuan", ["ann"])
     ai_keys.settle_instance_keys(store, DEVICE, "siyuan", "argon")
     store.set_want(DEVICE, "siyuan", "running")
@@ -474,13 +474,15 @@ def test_siyuan_carries_its_code_its_key_the_gateways_address_and_its_models(
     assert own["modules"]["siyuan"]["config"]["gateway_url"] == (
         "http://127.0.0.1:18317"
     )
-    assert managed["ai_tools"]["is_forwarded"] is True
+    assert instance["gateway_key"]
+    assert managed["ai_tools"]["is_forwarded"] is False
     assert managed["ai_tools"]["gateway_port"] == 0
     assert own["ai_tools"]["is_forwarded"] is False
     assert own["ai_tools"]["gateway_port"] == 0
     assert store.has_gateway_instances(DEVICE)
     assert store.uses_gateway_models(DEVICE)
     store.set_enabled_accounts(DEVICE, "siyuan", [])
+    DeviceAccountStore(store).replace(DEVICE, DeviceAccount(account="ann"))
     assert not store.uses_gateway_models(DEVICE)
     assert "gateway_url" not in store.agent_config(DEVICE, "codeg", {}, PLATFORM)
 
@@ -572,7 +574,14 @@ def test_the_state_sends_ayakaleaf_its_secrets_names_and_container_digests(
     desired, _ = store.compose(DEVICE, PLATFORM, machine_slug="argon")
 
     config = desired["modules"]["ayakaleaf"]["config"]
-    assert set(config) == {"secret", "password", "cookie_name", "local_name", "guests"}
+    assert set(config) == {
+        "secret",
+        "password",
+        "cookie_name",
+        "local_name",
+        "guests",
+        "is_gateway_used",
+    }
     assert config["local_name"] == "ayakaleaf.argon.localhost"
     assert desired["source_sets"]["ctan"]["variables"] == []
     names = [
@@ -675,7 +684,7 @@ def test_forgetting_an_account_takes_it_out_of_every_module_and_names_them(unloc
     assert "ann" not in json.dumps(store.read(DEVICE, "vscode"))
 
 
-def test_the_containers_run_settings_name_an_account_and_its_login_on_windows(
+def test_the_containers_machine_is_the_default_accounts_with_its_login_on_windows(
     unlocked,
 ):
     store = DesiredStateStore()
@@ -685,22 +694,28 @@ def test_the_containers_run_settings_name_an_account_and_its_login_on_windows(
         kind="login", name="lab", secret={"username": "lab", "password": "pw-lab"}
     )
     DeviceAccountStore(store).add(
-        DEVICE, DeviceAccount(account="lab", login_id=login.id)
+        DEVICE, DeviceAccount(account="lab", login_id=login.id), is_default=True
     )
+    DeviceAccountStore(store).add(DEVICE, DeviceAccount(account="old"))
     stored = {
         "containers": [],
-        "machine": {"account": "lab", "cpus": 4, "memory_gib": 8, "disk_gib": 120},
+        "machine": {"account": "old", "cpus": 4, "memory_gib": 8, "disk_gib": 120},
     }
+    available = store.available_accounts(DEVICE)
+    default = store.default_account(DEVICE)
 
     windows = desired_state_module.podman_agent_config(
-        stored, WINDOWS, store.available_accounts(DEVICE)
+        stored, WINDOWS, available, default
     )
     darwin = desired_state_module.podman_agent_config(
-        stored, {"os": "darwin", "arch": "arm64"}, store.available_accounts(DEVICE)
+        stored, {"os": "darwin", "arch": "arm64"}, available, default
     )
     linux = desired_state_module.podman_agent_config(
-        stored, PLATFORM, store.available_accounts(DEVICE)
+        stored, PLATFORM, available, default
     )
+    store.write(DEVICE, "podman", stored)
+    store.set_want(DEVICE, "podman", "running")
+    composed, _ = store.compose(DEVICE, {"os": "darwin", "arch": "arm64"})
 
     assert windows["machine"] == {
         "account": "lab",
@@ -716,6 +731,7 @@ def test_the_containers_run_settings_name_an_account_and_its_login_on_windows(
         "disk_gib": 120,
     }
     assert "machine" not in linux
+    assert composed["modules"]["podman"]["config"]["machine"]["account"] == "lab"
 
 
 def test_the_seat_password_is_generated_once_and_reset_on_demand(unlocked):
@@ -766,3 +782,129 @@ def test_ollama_is_sent_its_settings_and_never_its_kept_models():
 @pytest.mark.parametrize("stored", [1024, 300000, "65536", True, 8192.0, None])
 def test_a_stored_context_length_outside_its_bounds_is_sent_as_65536(stored):
     assert ollama_agent_config({"context_length": stored})["context_length"] == 65536
+
+
+# --- the machine's default account ---
+
+
+def with_default(store: DesiredStateStore, *names: str, switched=()) -> None:
+    """The first name the device's default account, each in ``switched`` with
+    its AI switch on."""
+    store.write(
+        DEVICE,
+        "accounts",
+        {
+            "default_account": names[0],
+            "accounts": [
+                {"account": name, "is_ai_tools_enabled": name in switched}
+                for name in names
+            ],
+        },
+    )
+
+
+def test_the_default_goes_first_in_every_list_a_set_writes(unlocked):
+    store = DesiredStateStore()
+    with_default(store, "lab", "ann")
+
+    store.set_enabled_accounts(DEVICE, "terminal", ["ann", "lab"])
+    store.set_enabled_accounts(DEVICE, "ssh_server", ["ann", "lab"])
+    desired, _ = store.compose(DEVICE, PLATFORM)
+
+    assert store.enabled_accounts(DEVICE, "terminal") == ["lab", "ann"]
+    terminal = desired["modules"]["terminal"]["config"]["accounts"]
+    instances = desired["modules"]["ssh_server"]["config"]["instances"]
+    assert [entry["account"] for entry in terminal] == ["lab", "ann"]
+    assert [entry["account"] for entry in instances] == ["lab", "ann"]
+
+
+def test_terminal_and_the_ssh_server_hold_the_default_once_it_is_enabled(unlocked):
+    store = DesiredStateStore()
+    with_default(store, "lab")
+
+    for module in store.default_modules(DEVICE):
+        store.enable_default(DEVICE, module)
+    desired, _ = store.compose(DEVICE, PLATFORM)
+
+    assert store.default_modules(DEVICE) == ["terminal", "ssh_server"]
+    assert desired["modules"]["terminal"]["config"]["accounts"][0]["account"] == "lab"
+    assert desired["modules"]["ssh_server"]["want"] == "running"
+
+
+@pytest.mark.parametrize(
+    "default, switched, used",
+    [("", (), True), ("lab", ("lab",), True), ("lab", ("ann",), False)],
+    ids=["no_default", "switch_on", "switch_off"],
+)
+def test_the_container_modules_use_the_gateway_by_the_defaults_switch(
+    unlocked, monkeypatch, default, switched, used
+):
+    from neutrino_hub.modules.devices import ayakaleaf, catalog, hermes_webui
+
+    monkeypatch.setattr(
+        desired_state_module, "resolved_modules", catalog.resolved_modules
+    )
+    store = DesiredStateStore()
+    if default:
+        with_default(store, "lab", "ann", switched=switched)
+    else:
+        store.write(DEVICE, "accounts", {"accounts": [{"account": "lab"}]})
+    hermes_webui.ensure_config(store, DEVICE)
+    ayakaleaf.ensure_config(store, DEVICE)
+    store.write(
+        DEVICE,
+        "ayakaleaf",
+        {**store.read(DEVICE, "ayakaleaf"), "model": "m1"},
+    )
+    for module in ("podman", "hermes_webui", "ayakaleaf"):
+        store.set_want(DEVICE, module, "running")
+
+    desired, _ = store.compose(DEVICE, PLATFORM, ai_models=["m1"])
+    own, _ = store.compose(DEVICE, PLATFORM, ai_models=["m1"], is_hub_machine=True)
+
+    assert store.is_gateway_used(DEVICE) is used
+    for module in ("hermes_webui", "ayakaleaf"):
+        assert desired["modules"][module]["config"]["is_gateway_used"] is used
+    environment = [
+        line
+        for container in desired["modules"]["podman"]["config"]["hub_containers"]
+        for line in container["environment"]
+    ]
+    gateway = [
+        line for line in environment if line.startswith(("NEUTRINO_GATEWAY_", "AI_"))
+    ]
+    assert bool(gateway) is used
+    assert desired["ai_tools"]["is_forwarded"] is used
+    assert own["ai_tools"]["is_forwarded"] is False
+    assert (own["ai_tools"]["gateway_port"] != 0) is used
+    assert store.read(DEVICE, "ayakaleaf")["model"] == "m1"
+
+
+def test_a_machine_with_no_default_is_composed_as_stored(unlocked):
+    store = DesiredStateStore()
+    with_accounts(store, "lab", "ann")
+    store.set_enabled_accounts(DEVICE, "terminal", ["ann", "lab"])
+
+    desired, _ = store.compose(DEVICE, PLATFORM)
+
+    assert store.default_account(DEVICE) == ""
+    terminal = desired["modules"]["terminal"]["config"]["accounts"]
+    assert [entry["account"] for entry in terminal] == ["ann", "lab"]
+    assert desired["modules"]["ssh_server"]["want"] == "stopped"
+
+
+def test_siyuan_holds_no_key_for_an_account_whose_switch_is_off(unlocked, monkeypatch):
+    from neutrino_hub.modules.clients import ai_keys
+
+    monkeypatch.setattr(ai_keys, "_apply", lambda **kwargs: None)
+    store = DesiredStateStore()
+    with_default(store, "lab", "ann", switched=("ann",))
+    store.set_enabled_accounts(DEVICE, "siyuan", ["lab", "ann"])
+    ai_keys.settle_instance_keys(store, DEVICE, "siyuan", "argon")
+    store.set_want(DEVICE, "siyuan", "running")
+
+    desired, _ = store.compose(DEVICE, PLATFORM, ai_models=["m1"])
+
+    lab, ann = desired["modules"]["siyuan"]["config"]["instances"]
+    assert (lab["account"], lab["gateway_key"]) == ("lab", "")
+    assert ann["account"] == "ann" and ann["gateway_key"]

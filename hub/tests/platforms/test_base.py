@@ -92,3 +92,92 @@ def test_a_stub_alone_and_no_file_both_name_none(monkeypatch, tmp_path):
     )
 
     assert HubPlatform().system_resolvers() == []
+
+
+# --- the account rule and its test on Linux and macOS, the agent's cases ---
+
+
+@pytest.mark.parametrize(
+    ("shell", "is_home_made", "is_login"),
+    [
+        ("/bin/bash", True, True),
+        ("/usr/bin/zsh", True, True),
+        ("/usr/sbin/nologin", True, False),
+        ("/sbin/nologin", True, False),
+        ("/bin/false", True, False),
+        ("/usr/bin/false", True, False),
+        ("", True, False),
+        ("/bin/bash", False, False),
+    ],
+)
+def test_an_account_logs_in_with_a_login_shell_and_a_home_that_exists(
+    tmp_path, shell, is_home_made, is_login
+):
+    home = tmp_path / "home"
+    if is_home_made:
+        home.mkdir()
+
+    assert base.is_login_account(shell, str(home)) is is_login
+
+
+def test_an_account_with_no_home_named_cannot_log_in():
+    assert base.is_login_account("/bin/bash", "") is False
+
+
+class _Entry:
+    def __init__(self, name, shell, home):
+        self.pw_name = name
+        self.pw_shell = shell
+        self.pw_dir = home
+
+
+class _FakePwd:
+    def __init__(self, entries):
+        self._entries = {entry.pw_name: entry for entry in entries}
+
+    def getpwnam(self, name):
+        if name not in self._entries:
+            raise KeyError(name)
+        return self._entries[name]
+
+
+def _account_test(monkeypatch, tmp_path, account):
+    home = tmp_path / "ann"
+    home.mkdir(exist_ok=True)
+    entries = [
+        _Entry("ann", "/bin/bash", str(home)),
+        _Entry("svc", "/usr/sbin/nologin", str(home)),
+        _Entry("gone", "/bin/bash", str(tmp_path / "missing")),
+    ]
+    monkeypatch.setattr(base, "pwd", _FakePwd(entries))
+    return HubPlatform().test_account(account, "ignored")
+
+
+def test_the_account_test_passes_an_account_that_can_log_in(monkeypatch, tmp_path):
+    assert _account_test(monkeypatch, tmp_path, "ann") is None
+
+
+@pytest.mark.parametrize(
+    ("account", "code"),
+    [
+        ("svc", "account_no_login"),
+        ("gone", "account_no_login"),
+        ("ghost", "account_unknown"),
+    ],
+)
+def test_the_account_test_refuses_each_account_that_cannot_log_in(
+    monkeypatch, tmp_path, account, code
+):
+    from neutrino_hub.exceptions import AccountTestRefusedError
+
+    with pytest.raises(AccountTestRefusedError) as refused:
+        _account_test(monkeypatch, tmp_path, account)
+
+    assert (refused.value.code, refused.value.params) == (code, {"account": account})
+
+
+@pytest.mark.parametrize("named, expected", [("lab", "lab"), ("root", ""), ("", "")])
+def test_the_account_that_ran_setup_is_the_one_sudo_names(monkeypatch, named, expected):
+    monkeypatch.setenv("SUDO_USER", named)
+
+    assert HubPlatform().runner_account() == expected

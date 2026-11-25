@@ -9,6 +9,7 @@ to break there.
 Nothing here writes: it returns what was answered, and `setup` does the work.
 """
 
+import getpass
 import ipaddress
 import os
 import queue
@@ -20,7 +21,11 @@ from dataclasses import dataclass, field
 
 from neutrino_hub import edition
 from neutrino_hub.cli.password import read_new_password, worded_refusal
-from neutrino_hub.exceptions import PasswordRefusedError, WizardAborted
+from neutrino_hub.exceptions import (
+    AccountTestRefusedError,
+    PasswordRefusedError,
+    WizardAborted,
+)
 from neutrino_hub.utils.passwords import (
     PASSWORDS_MASTER_RULES,
     PASSWORDS_PANEL_RULES,
@@ -29,7 +34,7 @@ from neutrino_hub.utils.passwords import (
 )
 from neutrino_hub.modules.router.link_status import RouterLinkStatus
 from neutrino_hub.platforms.constants import PLATFORM_OS_WINDOWS
-from neutrino_hub.platforms.detect import hub_os, is_linux
+from neutrino_hub.platforms.detect import hub_os, hub_platform, is_linux
 from neutrino_hub.web.constants import (
     WEB_DEFAULT_HTTPS_LISTEN_PORT,
     WEB_DEFAULT_LANGUAGE,
@@ -77,8 +82,28 @@ WIZARD_TITLES = (
     "What is this machine for?",
     "Which ports?",
     "Going out through a proxy",
+    "Your account on this machine",
     "Ready",
 )
+# The account screen's line, and the words of each code its test refuses
+# with (ui_text.md, "The setup's account screen's words").
+WIZARD_ACCOUNT_LEAD = (
+    "The account you pick is this machine's default account and cannot be "
+    "changed later."
+)
+WIZARD_ACCOUNT_REFUSALS = {
+    "account_unknown": "{account} is not an account of this machine.",
+    "account_no_login": (
+        "{account} cannot log in on this machine: it has no login shell or no home."
+    ),
+    "credential_invalid": (
+        "Windows does not accept this password for {account}. Type the right "
+        "one and try again."
+    ),
+    "account_logon_refused": "Windows refused the logon of {account}: {detail}",
+}
+# What the review says for a machine with no account to pick.
+WIZARD_NO_ACCOUNT = "—"
 # The screens that are not questions about the configuration, and so carry no
 # counter: the one before the questions asking how they will be answered, the
 # one waiting for a browser to take them, and the one after everything.
@@ -127,6 +152,19 @@ class WizardProxy:
 
 
 @dataclass
+class WizardDefaultAccount:
+    """What the account screen answered.
+
+    Attributes:
+        account: The machine's default account, one the account rule finds.
+        password: Its password on Windows; empty elsewhere.
+    """
+
+    account: str
+    password: str = ""
+
+
+@dataclass
 class WizardAnswers:
     """Everything the wizard asked for, before anything acts on it.
 
@@ -142,6 +180,8 @@ class WizardAnswers:
         language: The language the panel is drawn in.
         is_https_enabled: Whether the HTTP port sends browsers to the HTTPS
             port.
+        default_account: The machine's default account; None on a machine
+            where the account rule finds none.
     """
 
     password: str
@@ -152,6 +192,7 @@ class WizardAnswers:
     https_listen_port: int = WEB_DEFAULT_HTTPS_LISTEN_PORT
     language: str = WEB_DEFAULT_LANGUAGE
     is_https_enabled: bool = False
+    default_account: "WizardDefaultAccount | None" = None
 
 
 # What an answers document may say, and which planner keyword each becomes.
@@ -176,10 +217,13 @@ WIZARD_DOCUMENT_KEYS = (
     "https_listen_port",
     "language",
     "is_https_enabled",
+    "default_account",
 )
 # A document need not answer the proxy screen; skipping it is what an
 # unanswered one means, exactly as it does on the screen.
 WIZARD_PROXY_KEYS = ("links", "is_local")
+# The account screen's answer: the account, and its password on Windows.
+WIZARD_ACCOUNT_KEYS = ("account", "password")
 
 
 def from_document(document: dict) -> WizardAnswers:
@@ -196,8 +240,9 @@ def from_document(document: dict) -> WizardAnswers:
         The answers, in the same shape asking produces.
 
     Raises:
-        WizardAborted: On a key this does not know, a missing one, or a mode
-            that cannot be planned.
+        WizardAborted: On a key this does not know, a missing one, a mode
+            that cannot be planned, an account the account rule does not
+            find, or an empty Windows password.
     """
     if not isinstance(document, dict):
         raise WizardAborted("the answers must be an object")
@@ -246,7 +291,103 @@ def from_document(document: dict) -> WizardAnswers:
         https_listen_port=https_listen_port,
         language=_language_from(document.get("language", WEB_DEFAULT_LANGUAGE)),
         is_https_enabled=_https_from(document.get("is_https_enabled", False)),
+        default_account=_default_account_from(document.get("default_account")),
     )
+
+
+def _default_account_from(given) -> "WizardDefaultAccount | None":
+    """The account screen's answer, read rather than asked for.
+
+    Args:
+        given: The document's ``default_account``, None when it has none.
+
+    Returns:
+        The answer; None on a machine where the account rule finds none.
+
+    Raises:
+        WizardAborted: For a missing answer while the rule finds an account,
+            one the rule does not find, a key this does not know, or an
+            empty Windows password.
+    """
+    accounts = hub_platform().human_accounts()
+    if not accounts:
+        return None
+    if not isinstance(given, dict):
+        raise WizardAborted(
+            "the answers need a 'default_account' object: one of " + ", ".join(accounts)
+        )
+    _reject_unknown(given, WIZARD_ACCOUNT_KEYS, "'default_account'")
+    account = given.get("account")
+    if account not in accounts:
+        raise WizardAborted(
+            f"'default_account' names {account!r}, which is not an account of "
+            f"this machine; there is: {', '.join(accounts)}"
+        )
+    password = given.get("password", "")
+    if not isinstance(password, str):
+        raise WizardAborted("'default_account': 'password' must be a string")
+    if hub_os() != PLATFORM_OS_WINDOWS:
+        return WizardDefaultAccount(account=account)
+    if not password:
+        raise WizardAborted("'default_account' needs the account's 'password'")
+    return WizardDefaultAccount(account=account, password=password)
+
+
+def check_default_account(answers: WizardAnswers) -> None:
+    """Test the answers' default account as the account screen does.
+
+    Args:
+        answers: The answers; one with no default account passes.
+
+    Raises:
+        WizardAborted: With the words of the test's code.
+    """
+    chosen = answers.default_account
+    if chosen is None:
+        return
+    try:
+        hub_platform().test_account(chosen.account, chosen.password)
+    except AccountTestRefusedError as error:
+        raise WizardAborted(refusal_words(error)) from error
+
+
+def refusal_words(error: AccountTestRefusedError) -> str:
+    """The English words of an account test's code.
+
+    Args:
+        error: The refusal.
+
+    Returns:
+        The sentence with its parameters written in.
+    """
+    template = WIZARD_ACCOUNT_REFUSALS.get(error.code, error.code)
+    params = {"account": "", "detail": "", **error.params}
+    return template.format(**params)
+
+
+def suggested_account(accounts: list, *, is_terminal: bool) -> str:
+    """The account the account screen's picker starts at.
+
+    Args:
+        accounts: The machine's accounts by the account rule.
+        is_terminal: Whether the terminal asks, which starts at the account
+            that ran setup; the browser starts at the account at the
+            screen.
+
+    Returns:
+        The account that ran setup, else the one at the screen, else the
+        first; empty with none.
+    """
+    if not accounts:
+        return ""
+    platform = hub_platform()
+    choices = [platform.seated_account()]
+    if is_terminal:
+        choices.insert(0, platform.runner_account())
+    for choice in choices:
+        if choice in accounts:
+            return choice
+    return accounts[0]
 
 
 def _check_secret(given, rules, what: str) -> None:
@@ -437,6 +578,8 @@ class SetupWizard:
         self._https_listen_port = WEB_DEFAULT_HTTPS_LISTEN_PORT
         self._language = WEB_DEFAULT_LANGUAGE
         self._is_https_enabled = False
+        self._accounts = hub_platform().human_accounts()
+        self._default_account = None
 
     def run(self) -> WizardAnswers:
         """Ask every screen, and hand back what they answered.
@@ -454,6 +597,7 @@ class SetupWizard:
             self._ask_mode,
             self._ask_ports,
             self._ask_proxy,
+            self._ask_account,
             self._review,
         )
         asked = [
@@ -461,6 +605,7 @@ class SetupWizard:
             for title, screen in zip(WIZARD_TITLES, screens)
             if (is_linux() or screen != self._ask_mode)
             and (WIZARD_PROXY is not None or screen != self._ask_proxy)
+            and (self._accounts or screen != self._ask_account)
         ]
         index = 0
         try:
@@ -482,6 +627,7 @@ class SetupWizard:
             https_listen_port=self._https_listen_port,
             language=self._language,
             is_https_enabled=self._is_https_enabled,
+            default_account=self._default_account,
         )
 
     def _ask_language(self) -> int:
@@ -831,6 +977,44 @@ class SetupWizard:
         self._proxy = _proxy_answered(tuple(nodes), self._mode, answer)
         return WIZARD_NEXT
 
+    def _ask_account(self) -> int:
+        """The machine's default account, tested before the screen moves on.
+
+        On Windows the account's password is asked too, and this elevated
+        process makes the one logon that tests it; on Linux and macOS the
+        test reads the account's login shell and its home.
+        """
+        self._say(WIZARD_ACCOUNT_LEAD)
+        self._say("")
+        for index, account in enumerate(self._accounts, start=1):
+            self._say(f"  {index}  {account}")
+        start = (
+            self._default_account.account
+            if self._default_account is not None
+            else suggested_account(self._accounts, is_terminal=True)
+        )
+        answer = self._choose(
+            self._accounts, default=self._accounts.index(start) + 1, prompt="Account"
+        )
+        if answer is None:
+            return WIZARD_PREVIOUS
+        chosen = WizardDefaultAccount(account=self._accounts[answer])
+        if hub_os() == PLATFORM_OS_WINDOWS:
+            print()
+            chosen.password = getpass.getpass(f"  Password of {chosen.account}: ")
+            if not chosen.password:
+                self._say("The account's password is needed on Windows.")
+                return WIZARD_AGAIN
+        try:
+            hub_platform().test_account(chosen.account, chosen.password)
+        except AccountTestRefusedError as error:
+            self._say("")
+            self._say(refusal_words(error))
+            self._prompt("Press Enter to try again")
+            return WIZARD_AGAIN
+        self._default_account = chosen
+        return WIZARD_NEXT
+
     def _yes_no(self, question: str, *, default: bool):
         """Ask something with two answers.
 
@@ -907,6 +1091,14 @@ class SetupWizard:
         else:
             self._say("  proxy          off")
         self._say(f"  language       {WIZARD_LANGUAGE_NAMES[self._language]}")
+        self._say(
+            "  default account "
+            + (
+                self._default_account.account
+                if self._default_account is not None
+                else WIZARD_NO_ACCOUNT
+            )
+        )
         self._say(
             f"  panel ports    HTTP {self._listen_port}, HTTPS {self._https_listen_port}"
         )
@@ -1077,10 +1269,11 @@ def context() -> dict:
     second wizard to keep in step.
 
     Returns:
-        The ports, the modes they allow, the modules that could be installed,
-        and what each question starts at. Every word a person reads is named
-        rather than written: the page words a mode, a module and a consent
-        from its own catalog.
+        The machine's accounts by the agent's rule and the one the account
+        screen starts at, the ports, the modes they allow, the modules that
+        could be installed, and what each question starts at. Every word a
+        person reads is named rather than written: the page words a mode, a
+        module and a consent from its own catalog.
 
     Raises:
         WizardAborted: When this machine has nothing to configure.
@@ -1092,7 +1285,10 @@ def context() -> dict:
             "this machine has no network interface; a gateway needs at least one"
         )
     wired_count = sum(1 for link in links if not link.is_wifi)
+    accounts = hub_platform().human_accounts()
     return {
+        "accounts": accounts,
+        "default_account": suggested_account(accounts, is_terminal=False),
         "interfaces": [
             {
                 "name": link.name,

@@ -3,7 +3,7 @@
 The children run in a job object that ends them with the service.
 
 Not pure: runs ``sc``, the shell's opener, the UAC prompt and the
-children.
+children, and reads the machine's local accounts and logs one on.
 """
 
 import ctypes
@@ -12,10 +12,12 @@ import os
 import subprocess
 import time
 
-from neutrino_hub.platforms import win32
+from neutrino_hub.platforms import win32, windows_accounts
 from neutrino_hub.platforms.base import HubPlatform
 from neutrino_hub.platforms.constants import (
     PLATFORM_COMMAND_TIMEOUT_S,
+    PLATFORM_WINDOWS_BUILTIN_ACCOUNTS,
+    PLATFORM_WINDOWS_SHARE_MARKER,
     PLATFORM_NETBIRD_DAEMON_PORT_WINDOWS,
     PLATFORM_OS_WINDOWS,
     PLATFORM_SERVICE_POLL_S,
@@ -357,6 +359,76 @@ class WindowsHubPlatform(HubPlatform):
         return [
             server for server in servers if not ipaddress.ip_address(server).is_loopback
         ]
+
+    def human_accounts(self) -> list:
+        """The enabled local accounts that are people and have a profile.
+
+        The accounts Windows makes for itself, the ones the file share made,
+        whose description starts with its marker, and an account that never
+        signed in are left out.
+
+        Returns:
+            Account names, sorted; empty when the accounts cannot be listed.
+        """
+        try:
+            bound = self._bound()
+            users = windows_accounts.read_users(bound.netapi32)
+        except (OSError, ValueError, AttributeError):
+            return []
+        accounts = set()
+        for user in users:
+            name = user["name"]
+            if not user["is_enabled"] or not name:
+                continue
+            if name.lower() in PLATFORM_WINDOWS_BUILTIN_ACCOUNTS:
+                continue
+            if user["description"].startswith(PLATFORM_WINDOWS_SHARE_MARKER):
+                continue
+            try:
+                if not windows_accounts.has_profile(
+                    name, advapi32=bound.advapi32, kernel32=bound.kernel32
+                ):
+                    continue
+            except OSError:
+                continue
+            accounts.add(name)
+        return sorted(accounts)
+
+    def runner_account(self) -> str:
+        """The account this elevated process runs as.
+
+        Returns:
+            ``USERNAME``; empty when it names none.
+        """
+        return os.environ.get("USERNAME", "")
+
+    def seated_account(self) -> str:
+        """The account signed in on the console session.
+
+        Returns:
+            Its name; empty when no one is, or it cannot be read.
+        """
+        try:
+            bound = self._bound()
+            return windows_accounts.console_account(bound.kernel32, bound.wtsapi32)
+        except (OSError, AttributeError):
+            return ""
+
+    def test_account(self, account: str, password: str) -> None:
+        """Test an account's password with one network logon, made by this elevated process.
+
+        Args:
+            account: The account.
+            password: Its password.
+
+        Raises:
+            AccountTestRefusedError: ``credential_invalid {account}`` or
+                ``account_logon_refused {account, detail}``.
+        """
+        bound = self._bound()
+        windows_accounts.check_password(
+            account, password, advapi32=bound.advapi32, kernel32=bound.kernel32
+        )
 
     def tie_to_service(self, process) -> None:
         """Put one child in the job that ends it with the service.

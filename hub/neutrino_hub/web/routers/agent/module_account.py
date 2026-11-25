@@ -2,25 +2,23 @@
 
 An available account is one of the machine's accounts the person added,
 with what every feature of the account layer needs to know of it
-(agent.md, "The two layers and the accounts"): on Windows its password as a
+(agent/accounts.md, "Available accounts"): on Windows its password as a
 vault login, the folder its share serves, the shell its terminal and SSH
 server start, and whether its AI tools use the hub's gateway. The rows live
-in ``config/devices/<id>/accounts.json``; removing one takes it out of
-every module that enables it and deletes what the hub generated for it.
+in ``config/devices/<id>/accounts.json``. Every account added is tested by
+the agent first; the first one added to a machine with no default account
+becomes the default, enabled in Terminal, the SSH server and every installed
+module of the account layer. Removing one takes it out of every module that
+enables it and deletes what the hub generated for it; the default is never
+removed.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from neutrino_hub.exceptions import (
-    AgentOfflineError,
-    StreamRefusedError,
-    VaultLockedError,
-)
+from neutrino_hub.exceptions import VaultLockedError
 from neutrino_hub.modules.channel.constants import (
     CHANNEL_COMMAND_MODULE_AGENT,
-    CHANNEL_STREAM_COMMAND,
-    CHANNEL_VERB_ACCOUNT_PASSWORD_TEST,
-    CHANNEL_VERB_FOLDER,
+    CHANNEL_VERB_ACCOUNT_TEST,
     CHANNEL_VERB_VALIDATE,
 )
 from neutrino_hub.modules.clients.ai_keys import (
@@ -28,11 +26,16 @@ from neutrino_hub.modules.clients.ai_keys import (
     ensure_device_key,
     gateway_models,
     revoke_device_key,
+    settle_instance_keys,
+    settle_module_keys,
 )
 from neutrino_hub.modules.credentials.vault import SecretVault
 from neutrino_hub.modules.devices.accounts import DeviceAccount, DeviceAccountStore
 from neutrino_hub.modules.devices.constants import (
-    DEVICE_MODULE_VALIDATE_TIMEOUT_S,
+    DEVICE_ACCOUNTS_NAME,
+    DEVICE_LOGIN_KIND,
+    DEVICE_LOGIN_NAME,
+    DEVICE_LOGIN_PASSWORD_FIELD,
     DEVICE_PASSWORD_OS,
     DEVICE_SAMBA_MODULE,
     DEVICE_TERMINAL_MODULE,
@@ -42,11 +45,11 @@ from neutrino_hub.modules.devices.module_table import (
     gateway_instance_names,
 )
 from neutrino_hub.modules.devices.registry import DeviceRegistry
+from neutrino_hub.utils.json_file import CONFIG_WRITE_LOCK
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.models import (
     AccountCreate,
     AccountListView,
-    AccountPasswordTest,
     AccountRequest,
     AccountToolsView,
     AccountView,
@@ -54,10 +57,12 @@ from neutrino_hub.web.models import (
 )
 from neutrino_hub.web.panel_runtime import PanelRuntime
 from neutrino_hub.web.routers.agent.module import (
-    CODE_AGENT_OFFLINE,
     CODE_COMMAND_FAILED,
     CODE_DEVICE_UNKNOWN,
+    account_home,
+    ask_machine,
     push_state,
+    require_share_folder,
 )
 
 router = APIRouter(
@@ -68,19 +73,11 @@ router = APIRouter(
 
 CODE_ACCOUNT_UNKNOWN = "account_unknown"
 CODE_ACCOUNT_DUPLICATE = "account_duplicate"
+CODE_ACCOUNT_IS_DEFAULT = "account_is_default"
 CODE_CREDENTIAL_MISSING = "credential_missing"
 CODE_PATH_INVALID = "path_invalid"
 CODE_GATEWAY_NOT_SERVING = "gateway_not_serving"
 CODE_CONFIG_UNWRITABLE = "config_unwritable"
-CODE_UNSUPPORTED_PLATFORM = "unsupported_platform"
-# What the file share's folder read refuses a share's folder with.
-CODE_SHARE_PATH_MISSING = "share_path_missing"
-CODE_SHARE_PATH_LINK = "share_path_link"
-SHARE_FOLDER_CODES = (CODE_SHARE_PATH_MISSING, CODE_SHARE_PATH_LINK)
-# The vault kind a Windows account's password is stored as, and its label.
-LOGIN_KIND = "login"
-LOGIN_NAME = "{device} / {account}"
-LOGIN_PASSWORD_FIELD = "password"
 
 
 @router.get("", response_model=AccountListView)
@@ -108,7 +105,14 @@ def list_accounts(
 def add_account(
     request: AccountCreate, runtime: PanelRuntime = Depends(get_runtime)
 ) -> AccountListView:
-    """Add an available account and push the machine's state.
+    """Test an account, add it as available and push the machine's state.
+
+    On a machine with no default account the account becomes the default:
+    it is enabled first in Terminal, the SSH server and every module of the
+    account layer whose ``want`` is neither empty nor ``absent``, with its
+    secrets generated, and the container modules' keys follow its AI switch.
+    The agent checks each changed module's section first, and a refusal
+    writes nothing.
 
     Args:
         request: The account's form.
@@ -121,14 +125,17 @@ def add_account(
         HTTPException: 400 ``account_unknown {account}`` for an account the
             machine does not report, ``account_duplicate {account}``,
             ``credential_missing {account}`` for a Windows account with no
-            password, ``path_invalid {path}`` for a path that is not
-            absolute, the agent's own ``shell_program_unusable {path}``,
-            ``share_path_missing {name, path}`` or ``share_path_link {name,
-            path}`` for a share path the machine reads as no real folder;
-            409 ``gateway_not_serving`` for the AI tools turned on while the
-            gateway serves no model, ``agent_offline``; 500
-            ``config_unwritable``.
-        VaultLockedError: When a password cannot be sealed.
+            password, the test's ``credential_invalid {account}``,
+            ``account_logon_refused {account, detail}`` and
+            ``account_no_login {account}``, ``path_invalid {path}`` for a
+            path that is not absolute, the agent's own
+            ``shell_program_unusable {path}``, ``share_path_missing {name,
+            path}`` or ``share_path_link {name, path}`` for a share path the
+            machine reads as no real folder, the agent's refusal of a
+            changed module's section; 409 ``gateway_not_serving`` for the AI
+            tools turned on while the gateway serves no model,
+            ``agent_offline``; 500 ``config_unwritable``.
+        VaultLockedError: When a password or a secret cannot be sealed.
     """
     key = _require_device(request.device_id).id
     store = DeviceAccountStore(runtime.desired_states)
@@ -136,19 +143,48 @@ def add_account(
         raise _refusal(
             status.HTTP_400_BAD_REQUEST, CODE_ACCOUNT_DUPLICATE, account=request.account
         )
-    row = _checked_row(runtime, key, request, held=None)
+    is_default = not store.default_account(key)
+    modules = runtime.desired_states.default_modules(key) if is_default else []
+    row = _checked_row(
+        runtime,
+        key,
+        request,
+        held=None,
+        is_shared=DEVICE_SAMBA_MODULE in modules,
+    )
+    previous = {
+        name: runtime.desired_states.read(key, name)
+        for name in (DEVICE_ACCOUNTS_NAME, *modules)
+    }
     try:
-        store.add(key, row)
+        with CONFIG_WRITE_LOCK:
+            store.add(key, row, is_default=is_default)
+            written = {
+                module: runtime.desired_states.enable_default(key, module)
+                for module in modules
+            }
     except ValueError:
         _delete_login(row.login_id)
         raise _refusal(
             status.HTTP_400_BAD_REQUEST, CODE_ACCOUNT_DUPLICATE, account=request.account
         )
-    except OSError as error:
-        _delete_login(row.login_id)
+    except (OSError, VaultLockedError) as error:
+        _undo_add(runtime, key, row.login_id, previous)
+        if isinstance(error, VaultLockedError):
+            raise
         raise _config_unwritable(error) from error
+    try:
+        for module, config in written.items():
+            _validate_section(runtime, key, module, config)
+    except HTTPException:
+        _undo_add(runtime, key, row.login_id, previous)
+        raise
+    if is_default:
+        _settle_gateway_keys(runtime, key)
     _settle_device_key(runtime, key)
     push_state(runtime, key)
+    if modules:
+        runtime.published_services.schedule_refresh()
     return _view(runtime, key)
 
 
@@ -158,8 +194,10 @@ def set_account(
 ) -> AccountListView:
     """Replace an available account's row and push the machine's state.
 
-    A new password is a new login and the old one is deleted; an empty one
-    keeps the login the account has.
+    A new password is tested first, as ``add`` tests one, and is a new
+    login, the old one deleted; an empty one keeps the login the account
+    has. An AI switch changed settles the account's SiYuan key, and on the
+    default account the container modules' keys.
 
     Args:
         request: The account's form.
@@ -182,7 +220,10 @@ def set_account(
         raise _refusal(
             status.HTTP_400_BAD_REQUEST, CODE_ACCOUNT_UNKNOWN, account=request.account
         )
-    row = _checked_row(runtime, key, request, held=held)
+    is_shared = request.account in (
+        runtime.desired_states.enabled_accounts(key, DEVICE_SAMBA_MODULE)
+    )
+    row = _checked_row(runtime, key, request, held=held, is_shared=is_shared)
     try:
         store.replace(key, row)
     except OSError as error:
@@ -191,60 +232,10 @@ def set_account(
         raise _config_unwritable(error) from error
     if row.login_id != held.login_id:
         _delete_login(held.login_id)
+    if row.is_ai_tools_enabled != held.is_ai_tools_enabled:
+        _settle_gateway_keys(runtime, key)
     _settle_device_key(runtime, key)
     push_state(runtime, key)
-    return _view(runtime, key)
-
-
-@router.post("/password/test", response_model=AccountListView)
-def test_account_password(
-    request: AccountPasswordTest, runtime: PanelRuntime = Depends(get_runtime)
-) -> AccountListView:
-    """Test an account's password on its Windows machine, writing nothing.
-
-    Each call is one logon on the machine, and a wrong password counts as one
-    failed logon there.
-
-    Args:
-        request: The account, and the password, empty for the login it has.
-        runtime: The shared runtime.
-
-    Returns:
-        The rows, unchanged.
-
-    Raises:
-        HTTPException: 400 ``unsupported_platform`` for a machine that is
-            not Windows, ``account_unknown {account}`` for an account the
-            machine does not report, ``credential_missing {account}`` with no
-            password and no login, the agent's ``credential_invalid {account}``
-            and ``account_logon_refused {account, detail}``; 409
-            ``agent_offline``.
-    """
-    key = _require_device(request.device_id).id
-    if runtime.device_platform.get(key, {}).get("os") != DEVICE_PASSWORD_OS:
-        raise _refusal(status.HTTP_400_BAD_REQUEST, CODE_UNSUPPORTED_PLATFORM)
-    if request.account not in runtime.device_accounts.get(key, []):
-        raise _refusal(
-            status.HTTP_400_BAD_REQUEST, CODE_ACCOUNT_UNKNOWN, account=request.account
-        )
-    password = request.password or _stored_password(runtime, key, request.account)
-    if not password:
-        raise _refusal(
-            status.HTTP_400_BAD_REQUEST,
-            CODE_CREDENTIAL_MISSING,
-            account=request.account,
-        )
-    _ask_machine(
-        runtime,
-        key,
-        {
-            "module": CHANNEL_COMMAND_MODULE_AGENT,
-            "verb": CHANNEL_VERB_ACCOUNT_PASSWORD_TEST,
-            "account": request.account,
-            "password": password,
-        },
-        fallback_code=CODE_COMMAND_FAILED,
-    )
     return _view(runtime, key)
 
 
@@ -262,10 +253,18 @@ def remove_account(
         The rows afterwards.
 
     Raises:
-        HTTPException: 404 ``device_unknown``; 500 ``config_unwritable``.
+        HTTPException: 400 ``account_is_default {account}`` for the
+            machine's default account; 404 ``device_unknown``; 500
+            ``config_unwritable``.
     """
     key = _require_device(request.device_id).id
     store = DeviceAccountStore(runtime.desired_states)
+    if request.account and request.account == store.default_account(key):
+        raise _refusal(
+            status.HTTP_400_BAD_REQUEST,
+            CODE_ACCOUNT_IS_DEFAULT,
+            account=request.account,
+        )
     try:
         removed = store.remove(key, request.account)
         was_enabled = runtime.desired_states.forget_account(key, request.account)
@@ -295,6 +294,7 @@ def _view(runtime: PanelRuntime, key: str) -> AccountListView:
     return AccountListView(
         device_id=key,
         is_online=runtime.agent_sessions.is_online(key),
+        default_account=store.default_account(key),
         accounts=[
             AccountView(
                 account=row.account,
@@ -353,15 +353,25 @@ def reported_tools(runtime: PanelRuntime, key: str) -> dict:
 
 
 def _checked_row(
-    runtime: PanelRuntime, key: str, request: AccountCreate, *, held
+    runtime: PanelRuntime,
+    key: str,
+    request: AccountCreate,
+    *,
+    held,
+    is_shared: bool = False,
 ) -> DeviceAccount:
     """The row a form amounts to, every refusal of the standard checked.
+
+    An added account, and a new Windows password, are tested by the agent's
+    ``account_test`` before anything is stored.
 
     Args:
         runtime: The shared runtime.
         key: The device.
         request: The form.
         held: The row being replaced, None on an add.
+        is_shared: Whether the file share enables the account once written,
+            so its home is read for an empty share path.
 
     Returns:
         The row, its login stored when the form carried a password.
@@ -391,12 +401,13 @@ def _checked_row(
         )
     if request.is_ai_tools_enabled and not gateway_models(runtime.served_models):
         raise _refusal(status.HTTP_409_CONFLICT, CODE_GATEWAY_NOT_SERVING)
+    if held is None or (is_windows and request.password):
+        test_account(
+            runtime, key, request.account, request.password if is_windows else ""
+        )
     if request.shell_path:
         _check_shell(runtime, key, request)
     folder = request.share_path
-    is_shared = held is not None and request.account in (
-        runtime.desired_states.enabled_accounts(key, DEVICE_SAMBA_MODULE)
-    )
     if not folder and is_shared:
         folder = account_home(runtime, key, request.account)
     if folder:
@@ -424,7 +435,7 @@ def _check_shell(runtime: PanelRuntime, key: str, request: AccountCreate) -> Non
     config = {
         "accounts": [{"account": request.account, "shell_path": request.shell_path}]
     }
-    _ask_machine(
+    ask_machine(
         runtime,
         key,
         {
@@ -436,107 +447,89 @@ def _check_shell(runtime: PanelRuntime, key: str, request: AccountCreate) -> Non
     )
 
 
-def account_home(runtime: PanelRuntime, key: str, account: str) -> str:
-    """An account's home as the machine last reported it; empty when it named none.
+def test_account(runtime: PanelRuntime, key: str, account: str, password: str) -> None:
+    """Have the machine's agent test an account before it is written.
+
+    On Windows one logon with the password; on Linux and macOS the account's
+    login shell and its home (agent/accounts.md, "Available accounts").
 
     Args:
         runtime: The shared runtime.
         key: The device.
         account: The account.
+        password: Its password on Windows; empty elsewhere.
 
-    Returns:
-        The home folder.
+    Raises:
+        HTTPException: 409 ``agent_offline``; 400 with the test's code,
+            ``credential_invalid {account}``, ``account_logon_refused
+            {account, detail}`` or ``account_no_login {account}``; 502 when
+            the stream is refused.
     """
-    details = runtime.account_details(key).get(account) or {}
-    return str(details.get("home", "") or "")
+    ask_machine(
+        runtime,
+        key,
+        {
+            "module": CHANNEL_COMMAND_MODULE_AGENT,
+            "verb": CHANNEL_VERB_ACCOUNT_TEST,
+            "account": account,
+            "password": password,
+        },
+        fallback_code=CODE_COMMAND_FAILED,
+    )
 
 
-def require_share_folder(runtime: PanelRuntime, key: str, *, name: str, path: str):
-    """Ask the machine at once whether a share's folder is a real folder.
+def _validate_section(runtime: PanelRuntime, key: str, module: str, config: dict):
+    """Ask the agent whether one module's section holds together as written.
 
-    The file share's ``folder`` verb reads it as whoever owns the path's
-    place, and nothing is written or pushed before it answers.
+    Raises:
+        HTTPException: As :func:`ask_machine` says, with the agent's code.
+    """
+    ask_machine(
+        runtime,
+        key,
+        {
+            "module": module,
+            "verb": CHANNEL_VERB_VALIDATE,
+            "config": runtime.module_agent_config(key, module, config),
+        },
+        fallback_code="config_invalid",
+    )
+
+
+def _undo_add(runtime: PanelRuntime, key: str, login_id: str, previous: dict) -> None:
+    """Put back each file an add wrote, as it was, and delete the login it stored.
 
     Args:
         runtime: The shared runtime.
         key: The device.
-        name: The share's name: the folder share's, or the account's for a
-            Home share.
-        path: The folder.
-
-    Raises:
-        HTTPException: 409 ``agent_offline``; 400 ``share_path_missing
-            {name, path}`` or ``share_path_link {name, path}``; 400 with the
-            agent's own code otherwise; 502 when the stream is refused.
+        login_id: The vault login the add stored; empty for none.
+        previous: File name, ``accounts`` or a module's, to what it held
+            before the add.
     """
     try:
-        _ask_machine(
-            runtime,
-            key,
-            {"module": DEVICE_SAMBA_MODULE, "verb": CHANNEL_VERB_FOLDER, "path": path},
-            fallback_code=CODE_COMMAND_FAILED,
-        )
-    except HTTPException as error:
-        detail = error.detail if isinstance(error.detail, dict) else {}
-        if detail.get("code") in SHARE_FOLDER_CODES:
-            raise _refusal(
-                status.HTTP_400_BAD_REQUEST, detail["code"], name=name, path=path
-            ) from error
-        raise
+        with CONFIG_WRITE_LOCK:
+            for name, config in previous.items():
+                runtime.desired_states.write(key, name, config)
+    except OSError:
+        pass
+    _delete_login(login_id)
 
 
-def _ask_machine(
-    runtime: PanelRuntime, key: str, command: dict, *, fallback_code: str
-) -> None:
-    """Run one verb on the machine, a refusal raised with the agent's code.
-
-    Args:
-        runtime: The shared runtime.
-        key: The device.
-        command: The command stream's arguments.
-        fallback_code: The code of a failure that names none.
+def _settle_gateway_keys(runtime: PanelRuntime, key: str) -> None:
+    """Give the keys of SiYuan's accounts and of the container modules the AI switches as they stand.
 
     Raises:
-        HTTPException: 409 ``agent_offline``; 502 when the stream is refused;
-            400 with the agent's code.
+        HTTPException: 500 ``config_unwritable``.
     """
-    if not runtime.agent_sessions.is_online(key):
-        raise _refusal(status.HTTP_409_CONFLICT, CODE_AGENT_OFFLINE, device_id=key)
+    device = DeviceRegistry().get(key)
+    name = device.name if device else ""
     try:
-        verdict = runtime.agent_sessions.run_stream_from_thread(
-            key,
-            CHANNEL_STREAM_COMMAND,
-            command,
-            timeout=DEVICE_MODULE_VALIDATE_TIMEOUT_S,
-        )
-    except AgentOfflineError:
-        raise _refusal(status.HTTP_409_CONFLICT, CODE_AGENT_OFFLINE, device_id=key)
-    except StreamRefusedError as error:
-        raise _refusal(status.HTTP_502_BAD_GATEWAY, error.code, **error.params)
-    params = dict(verdict.get("params") or {})
-    if verdict.get("code") or int(params.get("exit_code", 1) or 0) != 0:
-        for name in ("exit_code", "output", "result"):
-            params.pop(name, None)
-        raise _refusal(
-            status.HTTP_400_BAD_REQUEST,
-            str(verdict.get("code") or fallback_code),
-            **params,
-        )
-
-
-def _stored_password(runtime: PanelRuntime, key: str, account: str) -> str:
-    """The password of the login an available account has, empty with none.
-
-    Raises:
-        VaultLockedError: When the vault cannot open the login.
-    """
-    row = DeviceAccountStore(runtime.desired_states).get(key, account)
-    if row is None or not row.login_id:
-        return ""
-    try:
-        return str(SecretVault().open(row.login_id).get(LOGIN_PASSWORD_FIELD, "") or "")
-    except ValueError:
-        return ""
+        for module in gateway_instance_names():
+            if runtime.desired_states.read(key, module):
+                settle_instance_keys(runtime.desired_states, key, module, name)
+        settle_module_keys(runtime.desired_states, key, name)
+    except OSError as error:
+        raise _config_unwritable(error) from error
 
 
 def _store_login(key: str, account: str, password: str) -> str:
@@ -552,9 +545,9 @@ def _store_login(key: str, account: str, password: str) -> str:
         return (
             SecretVault()
             .add(
-                kind=LOGIN_KIND,
-                name=LOGIN_NAME.format(device=key[:8], account=account),
-                secret={LOGIN_PASSWORD_FIELD: password},
+                kind=DEVICE_LOGIN_KIND,
+                name=DEVICE_LOGIN_NAME.format(device=key[:8], account=account),
+                secret={DEVICE_LOGIN_PASSWORD_FIELD: password},
             )
             .id
         )

@@ -3,10 +3,12 @@
 The file is ``config/devices/<id>/astrbot.json``: the token secret and the
 password of AstrBot's dashboard user, generated the first time the module is
 installed and sealed under the vault's data key, and the module's gateway
-key. The state carries ``{secret, password, cookie_name, local_name,
-model}``, the secrets opened: the name of the forwarder's login cookie, the
-app's local name, which its forwarder checks the ``Host`` against, and the
-default model, which the agent writes into AstrBot's settings. The
+key while the default account's AI switch is on. The state carries
+``{secret, password, cookie_name, local_name, model, context_length,
+is_gateway_used}``, the secrets opened: the name of the forwarder's login
+cookie, the app's local name, which its forwarder checks the ``Host``
+against, the default model, which the agent writes into AstrBot's settings,
+and whether the app uses the gateway. The
 forwarder's port is the agent's. The module runs one hub container on
 Containers, whose 6185 the module's forwarder serves.
 
@@ -17,7 +19,7 @@ the gateway's file, which names the default model.
 import secrets
 
 from neutrino_hub.modules.ai.context_lengths import one_numbers
-from neutrino_hub.modules.clients.ai_keys import gateway_default_model, module_key
+from neutrino_hub.modules.clients.ai_keys import gateway_default_model
 from neutrino_hub.modules.credentials.vault import seal_bytes, unseal_bytes
 from neutrino_hub.modules.devices.constants import (
     DEVICE_ASTRBOT_CONTAINER,
@@ -31,7 +33,7 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_ASTRBOT_STOP_SIGNAL,
     DEVICE_ASTRBOT_VOLUMES,
 )
-from neutrino_hub.modules.devices.hermes_webui import gateway_url
+from neutrino_hub.modules.devices.hermes_webui import gateway_variables
 from neutrino_hub.modules.devices.hub_containers import (
     HUB_CONTAINER_COMPOSERS,
     HubContainer,
@@ -119,6 +121,7 @@ def agent_config(
     local_name: str = "",
     models: "list | tuple" = (),
     context_lengths: "dict | None" = None,
+    is_gateway_used: bool = True,
 ) -> dict:
     """What the agent is sent for AstrBot.
 
@@ -130,10 +133,11 @@ def agent_config(
         models: The names the gateway serves now.
         context_lengths: Each served name's ``{context_length, input_limit,
             output_limit}``; None names none.
+        is_gateway_used: Whether the app uses the gateway.
 
     Returns:
         ``{secret, password, cookie_name, local_name, model,
-        context_length}``, each secret opened, empty when the file holds
+        context_length, is_gateway_used}``, each secret opened, empty when the file holds
         none or the vault cannot open it; ``cookie_name`` the entry's,
         ``model`` the default model, empty while no name is served, and
         ``context_length`` the default model's one number, 0 while there is
@@ -150,6 +154,7 @@ def agent_config(
     config["context_length"] = one_numbers([config["model"]], context_lengths).get(
         config["model"], 0
     )
+    config["is_gateway_used"] = bool(is_gateway_used)
     return config
 
 
@@ -174,9 +179,7 @@ def compose_containers(request: HubContainerRequest) -> tuple:
         volumes=DEVICE_ASTRBOT_VOLUMES,
         environment=(
             *DEVICE_ASTRBOT_ENVIRONMENT,
-            f"NEUTRINO_GATEWAY_URL={gateway_url(is_hub_machine=request.is_hub_machine)}",
-            "NEUTRINO_GATEWAY_KEY="
-            + module_key(request.store, request.key, DEVICE_ASTRBOT_MODULE),
+            *gateway_variables(request, DEVICE_ASTRBOT_MODULE),
         ),
         page_port=DEVICE_ASTRBOT_PAGE_PORT,
         local_ports=DEVICE_ASTRBOT_LOCAL_PORTS,

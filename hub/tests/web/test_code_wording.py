@@ -23,6 +23,7 @@ CODE_PATTERN = re.compile(r"^[a-z][a-z0-9]*(_[a-z0-9]+)+$")
 # one under a ``code`` key or a ``code=`` argument, which is read as well.
 CODED_CALLS = frozenset(
     {
+        "AccountTestRefusedError",
         "AgentArtifactFetchError",
         "AiAccountRefusedError",
         "HubUpdateError",

@@ -19,17 +19,21 @@ from neutrino_hub.modules.devices.hub_containers import container_modules
 from neutrino_hub.modules.devices.manifests import load_module_manifests
 
 
-def memory_need(wants: dict, *, os_name: str, stored: dict, reported: dict):
+def memory_need(
+    wants: dict, *, os_name: str, stored: dict, reported: dict, account: str = ""
+):
     """The memory to advise for a machine's Podman machine.
 
     Args:
         wants: Module name to ``{want, is_settled}``, as ``modules.json``
             holds them.
         os_name: The machine's system, ``linux``, ``windows`` or ``darwin``.
-        stored: The Run settings as stored, ``{account, cpus, memory_gib,
+        stored: The Run settings as stored, ``{cpus, memory_gib,
             disk_gib}``; empty when none are.
         reported: The Podman machine as last reported, ``details.machine``;
             empty before a report.
+        account: The account whose Podman machine runs the containers, the
+            machine's default account; empty while it has none.
 
     Returns:
         ``{need_gib, memory_gib}``: the sum of the ``memory_mib`` of the
@@ -40,7 +44,7 @@ def memory_need(wants: dict, *, os_name: str, stored: dict, reported: dict):
     if os_name not in DEVICE_PODMAN_MACHINE_OS:
         return None
     need = need_gib(wants)
-    memory_gib = machine_memory_gib(stored, reported)
+    memory_gib = machine_memory_gib(stored, reported, account)
     if memory_gib <= 0 or need <= memory_gib:
         return None
     return {"need_gib": need, "memory_gib": memory_gib}
@@ -64,20 +68,20 @@ def need_gib(wants: dict) -> int:
     return math.ceil(need_mib / DEVICE_MIB_PER_GIB)
 
 
-def machine_memory_gib(stored: dict, reported: dict) -> int:
+def machine_memory_gib(stored: dict, reported: dict, account: str) -> int:
     """The Podman machine's memory in whole GiB.
 
     Args:
         stored: The Run settings as stored; empty when none are.
         reported: The Podman machine as last reported; empty before a
             report.
+        account: The account whose Podman machine runs the containers.
 
     Returns:
-        The reported machine's memory while it runs for the stored account;
-        else the stored memory; else, for a stored 0, the memory a 0 gives
-        on the computer as the machine reported it. 0 when none is known.
+        The reported machine's memory while it runs for that account; else
+        the stored memory; else, for a stored 0, the memory a 0 gives on the
+        computer as the machine reported it. 0 when none is known.
     """
-    account = str(stored.get("account", "") or "")
     is_stored_machine = account != "" and reported.get("account") == account
     running_gib = round(_number(reported.get("memory_gib")))
     if is_stored_machine and reported.get("is_running") is True and running_gib > 0:

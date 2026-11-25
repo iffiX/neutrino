@@ -15,7 +15,11 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_VSCODE_TERMS_KEY,
 )
 from neutrino_hub.modules.devices.module_table import module_row
-from neutrino_hub.web.dependencies import get_runtime, require_session
+from neutrino_hub.web.dependencies import (
+    get_runtime,
+    require_default_account,
+    require_session,
+)
 from neutrino_hub.web.models import EnabledAccountsView, VscodeTermsUpdate
 from neutrino_hub.web.panel_runtime import PanelRuntime
 from neutrino_hub.web.routers.agent.module import (
@@ -29,7 +33,7 @@ MODULE = DEVICE_VSCODE_MODULE
 router = APIRouter(
     prefix=f"/api/agent/module/{MODULE}",
     tags=["module"],
-    dependencies=[Depends(require_session)],
+    dependencies=[Depends(require_session), Depends(require_default_account)],
 )
 
 

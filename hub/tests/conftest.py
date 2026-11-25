@@ -35,6 +35,8 @@ from types import SimpleNamespace
 import pytest
 
 from neutrino_hub import edition
+from neutrino_hub.exceptions import AccountTestRefusedError
+from neutrino_hub.platforms import base, darwin, linux, windows
 
 # What a test may run: the program, and the verbs of it that only read. A
 # program not listed here is refused outright; one listed is refused unless
@@ -798,9 +800,11 @@ class StubDesiredStates:
         files: ``(key, module)`` to the module's file, what a report reads
             and writes.
         taken_over: Every ``(key, module)`` whose want a takeover wrote.
+        defaults: Device key to its default account, what a row reads.
     """
 
     def __init__(self):
+        self.defaults: dict = {}
         self.ensured: list = []
         self.wants: dict = {}
         self.settled: list = []
@@ -824,6 +828,12 @@ class StubDesiredStates:
 
     def available_accounts(self, key: str) -> list:
         return []
+
+    def default_account(self, key: str) -> str:
+        return self.defaults.get(key.lower(), "")
+
+    def is_gateway_used(self, key: str) -> bool:
+        return not self.default_account(key)
 
     def enabled_accounts(self, key: str, module: str) -> list:
         return []
@@ -2046,3 +2056,54 @@ def demo_container_module(monkeypatch, tmp_path):
     monkeypatch.setattr(manifests, "MANIFESTS_DIR", directory)
     monkeypatch.setitem(hub_containers.HUB_CONTAINER_COMPOSERS, "demo", compose_demo)
     return directory
+
+
+class MachineAccounts:
+    """The machine's accounts as the account rule finds them, and their test.
+
+    Attributes:
+        accounts: The names the rule finds; none to begin with.
+        runner: The account that ran setup.
+        seated: The account at the screen.
+        refusals: Account to the ``(code, params)`` its test refuses with.
+        tested: Every ``(account, password)`` a test was asked for.
+    """
+
+    def __init__(self):
+        self.accounts: list = []
+        self.runner = ""
+        self.seated = ""
+        self.refusals: dict = {}
+        self.tested: list = []
+
+    def test(self, account: str, password: str) -> None:
+        self.tested.append((account, password))
+        if account in self.refusals:
+            code, params = self.refusals[account]
+            raise AccountTestRefusedError(code, params)
+
+
+@pytest.fixture(autouse=True)
+def machine_accounts(request, monkeypatch):
+    """The machine's accounts in place of this host's own: none, unless a test names some.
+
+    The platform tests read the account rule itself, and keep it.
+    """
+    held = MachineAccounts()
+    if "platforms" in request.node.path.parts:
+        return held
+    for system in (
+        base.HubPlatform,
+        linux.LinuxHubPlatform,
+        darwin.DarwinHubPlatform,
+        windows.WindowsHubPlatform,
+    ):
+        monkeypatch.setattr(system, "human_accounts", lambda self: list(held.accounts))
+        monkeypatch.setattr(system, "runner_account", lambda self: held.runner)
+        monkeypatch.setattr(system, "seated_account", lambda self: held.seated)
+        monkeypatch.setattr(
+            system,
+            "test_account",
+            lambda self, account, password: held.test(account, password),
+        )
+    return held

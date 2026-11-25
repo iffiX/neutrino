@@ -14,10 +14,17 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from starlette.requests import Request
 
+from starlette.concurrency import run_in_threadpool
+
 from neutrino_hub import edition
+from neutrino_hub.exceptions import AccountTestRefusedError
 from neutrino_hub.modules.router.constants import ROUTER_MODE_SERVER
-from neutrino_hub.platforms.constants import PLATFORM_OS_LINUX
-from neutrino_hub.platforms.detect import hub_os
+from neutrino_hub.platforms.constants import (
+    PLATFORM_CODE_ACCOUNT_UNKNOWN,
+    PLATFORM_OS_LINUX,
+    PLATFORM_OS_WINDOWS,
+)
+from neutrino_hub.platforms.detect import hub_os, hub_platform
 from neutrino_hub.web.constants import WEB_CODE_SETUP_IN_PROGRESS
 
 
@@ -76,6 +83,32 @@ def setup_router(session) -> APIRouter:
                 return {"name": "", "detail": str(error)}
             return {"name": node.name or node.id, "detail": ""}
 
+    @router.post("/account/test")
+    async def test_account(request: Request):
+        """The account screen's test of the account picked, writing nothing.
+
+        On Windows the hub, elevated during setup, makes the one logon with
+        the password; on Linux and macOS it reads the account's login shell
+        and its home (agent/accounts.md, "The default account").
+        """
+        if not _guard(request):
+            return _denied()
+        body = await request.json()
+        if not isinstance(body, dict):
+            return JSONResponse(
+                status_code=400, content={"detail": "the test takes an object"}
+            )
+        account = str(body.get("account", "") or "")
+        password = str(body.get("password", "") or "")
+        try:
+            await run_in_threadpool(_test_account, account, password)
+        except AccountTestRefusedError as error:
+            return JSONResponse(
+                status_code=400,
+                content={"detail": {"code": error.code, "params": error.params}},
+            )
+        return {}
+
     @router.post("/answer/set")
     async def write_answers(request: Request):
         if not _guard(request):
@@ -93,6 +126,25 @@ def setup_router(session) -> APIRouter:
         return JSONResponse(status_code=202, content=session.state())
 
     return router
+
+
+def _test_account(account: str, password: str) -> None:
+    """Test one of the machine's accounts as the account screen does.
+
+    Args:
+        account: The account picked, one the account rule finds.
+        password: Its password, read on Windows alone.
+
+    Raises:
+        AccountTestRefusedError: ``account_unknown {account}`` for an
+            account the rule does not find, and the test's own codes.
+    """
+    platform = hub_platform()
+    if account not in platform.human_accounts():
+        raise AccountTestRefusedError(
+            PLATFORM_CODE_ACCOUNT_UNKNOWN, {"account": account}
+        )
+    platform.test_account(account, password if hub_os() == PLATFORM_OS_WINDOWS else "")
 
 
 def _context_for_system(context: dict) -> dict:

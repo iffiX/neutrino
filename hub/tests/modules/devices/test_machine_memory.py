@@ -2,7 +2,7 @@
 
 What these pin: the sum of the ``memory_mib`` of every container module not
 asked ``absent``, rounded up to whole GiB; the machine's memory read from
-the report while the stored account's machine runs, else from the stored
+the report while the default account's machine runs, else from the stored
 Run settings, else from the default the computer reported; no advice on
 Linux, while the machine's memory is unknown, or while the need fits.
 """
@@ -18,7 +18,7 @@ from neutrino_hub.modules.devices.machine_memory import (
 )
 from tests.conftest import DEMO_MANIFEST
 
-STORED = {"account": "lab", "cpus": 0, "memory_gib": 0, "disk_gib": 120}
+STORED = {"cpus": 0, "memory_gib": 0, "disk_gib": 120}
 RUNNING = {
     "account": "lab",
     "is_running": True,
@@ -50,6 +50,7 @@ def test_the_need_sums_every_container_module_not_asked_absent(modules):
         os_name="windows",
         stored=STORED,
         reported=RUNNING,
+        account="lab",
     )
 
     assert need == {"need_gib": 5, "memory_gib": 2}
@@ -66,6 +67,7 @@ def test_a_module_asked_absent_needs_nothing(modules):
         os_name="darwin",
         stored=STORED,
         reported=RUNNING,
+        account="lab",
     )
 
     assert need == {"need_gib": 3, "memory_gib": 2}
@@ -75,7 +77,11 @@ def test_a_need_that_fits_the_machine_gives_no_advice(modules):
     reported = dict(RUNNING, memory_gib=4)
 
     need = memory_need(
-        wants(demo="running"), os_name="windows", stored=STORED, reported=reported
+        wants(demo="running"),
+        os_name="windows",
+        stored=STORED,
+        reported=reported,
+        account="lab",
     )
 
     assert need is None
@@ -95,24 +101,24 @@ def test_an_unknown_memory_gives_no_advice(modules):
     assert need is None
 
 
-def test_the_running_machine_of_the_stored_account_gives_the_memory():
-    assert machine_memory_gib(STORED, dict(RUNNING, memory_gib=3.8)) == 4
+def test_the_running_machine_of_the_default_account_gives_the_memory():
+    assert machine_memory_gib(STORED, dict(RUNNING, memory_gib=3.8), "lab") == 4
 
 
 def test_a_stopped_machine_gives_the_stored_memory():
     stored = dict(STORED, memory_gib=6)
     reported = dict(RUNNING, is_running=False)
 
-    assert machine_memory_gib(stored, reported) == 6
+    assert machine_memory_gib(stored, reported, "lab") == 6
 
 
 def test_another_accounts_machine_gives_the_stored_memory():
-    stored = dict(STORED, account="ann", memory_gib=6)
+    stored = dict(STORED, memory_gib=6)
 
-    assert machine_memory_gib(stored, RUNNING) == 6
+    assert machine_memory_gib(stored, RUNNING, "ann") == 6
 
 
 def test_a_stored_0_gives_the_default_the_computer_reported():
     reported = dict(RUNNING, is_running=False)
 
-    assert machine_memory_gib(STORED, reported) == 4
+    assert machine_memory_gib(STORED, reported, "lab") == 4

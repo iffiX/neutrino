@@ -166,6 +166,17 @@ def test_a_device_carries_its_id_and_the_facts_its_agent_reported(listed):
     assert "mac_address" not in device
 
 
+def test_a_row_carries_its_default_account_and_none_reads_empty(listed):
+    client, runtime = listed
+
+    incomplete = client.get(DEVICE_PATH).json()["devices"][0]
+    runtime.desired_states.defaults[DEVICE] = "lab"
+    complete = client.get(DEVICE_PATH).json()["devices"][0]
+
+    assert incomplete["default_account"] == ""
+    assert complete["default_account"] == "lab"
+
+
 def test_a_managed_device_carries_the_platform_its_agent_reported(listed):
     client, runtime = listed
     runtime.device_platform[DEVICE] = {
@@ -323,6 +334,7 @@ class SshRuntime:
         self.device_last_error = {}
         self.device_modules = {}
         self.agent_sessions = FakeChannelSessions()
+        self.desired_states = StubDesiredStates()
 
 
 @pytest.fixture
@@ -642,6 +654,39 @@ def rdp_api(monkeypatch, tmp_path):
     app.dependency_overrides[get_runtime] = lambda: runtime
     with TestClient(app) as client:
         yield client, runtime
+
+
+@pytest.mark.parametrize(
+    "path, body",
+    [
+        (SEAT_PASSWORD_PATH, {}),
+        (
+            "/api/hub/device/remote_desktop/password/set",
+            {"product": "rustdesk", "password": "hunter2hunter2"},  # scan: allow
+        ),
+    ],
+)
+def test_the_desktop_writes_wait_for_the_default_account(
+    rdp_api, monkeypatch, path, body
+):
+    from neutrino_hub.modules.devices.accounts import DeviceAccount, DeviceAccountStore
+    from neutrino_hub.web import dependencies
+
+    client, runtime = rdp_api
+    monkeypatch.setattr(dependencies, "DeviceRegistry", RdpRegistry)
+    RdpRegistry.device.client.public_key = "k" * 64
+
+    refused = client.post(path, json={"device_id": DEVICE, **body})
+    DeviceAccountStore(runtime.desired_states).add(
+        DEVICE, DeviceAccount(account="lab"), is_default=True
+    )
+    taken = client.post(path, json={"device_id": DEVICE, **body})
+
+    assert refused.status_code == 409
+    assert refused.json()["detail"] == {"code": "default_account_missing", "params": {}}
+    assert taken.status_code != 409 or (
+        taken.json()["detail"]["code"] != "default_account_missing"
+    )
 
 
 def test_a_reset_generates_a_password_and_pushes_the_state_carrying_it(rdp_api):

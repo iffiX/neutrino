@@ -4,9 +4,11 @@ An available account is one of the machine's accounts the person added on
 the machine page, with what every feature of the account layer needs of it:
 its Windows login, the folder its share serves, the shell its terminal and
 SSH server start, and whether its AI tools use the hub's gateway with which
-models (agent.md, "The two layers and the accounts"). The file is
-``{accounts: [{account, login_id, share_path, shell_path,
-is_ai_tools_enabled, tool_configs}]}`` in the order the accounts were added.
+models (agent/accounts.md, "Available accounts"). The file is
+``{default_account, accounts: [{account, login_id, share_path, shell_path,
+is_ai_tools_enabled, tool_configs}]}``, the accounts in the order they were
+added and ``default_account`` the machine's default account, empty while
+it has none (agent/accounts.md, "The default account").
 
 Every write re-reads the file under the config lock, as every store does.
 """
@@ -16,6 +18,7 @@ from dataclasses import dataclass, field
 from neutrino_hub.modules.devices.ai_tools import clean_tool_configs
 from neutrino_hub.modules.devices.constants import (
     DEVICE_ACCOUNTS_NAME,
+    DEVICE_DEFAULT_ACCOUNT_KEY,
     DEVICE_ENABLED_ACCOUNTS_KEY,
 )
 from neutrino_hub.utils.json_file import CONFIG_WRITE_LOCK
@@ -104,6 +107,43 @@ class DeviceAccountStore:
                 accounts.append(DeviceAccount.from_dict(row))
         return accounts
 
+    def default_account(self, key: str) -> str:
+        """One machine's default account.
+
+        Args:
+            key: The device.
+
+        Returns:
+            The account; empty while the machine has none, and while the
+            name is no available account.
+        """
+        held = self._store.read(key, DEVICE_ACCOUNTS_NAME)
+        name = held.get(DEVICE_DEFAULT_ACCOUNT_KEY)
+        if not isinstance(name, str) or not name:
+            return ""
+        return name if name in self.names(key) else ""
+
+    def has_default_key(self, key: str) -> bool:
+        """Whether one machine's file holds the ``default_account`` key, empty included."""
+        return DEVICE_DEFAULT_ACCOUNT_KEY in self._store.read(key, DEVICE_ACCOUNTS_NAME)
+
+    def set_default_account(self, key: str, account: str) -> None:
+        """Write one machine's default account.
+
+        Args:
+            key: The device.
+            account: One of its available accounts; empty for none.
+
+        Raises:
+            KeyError: When the account is not available.
+            OSError: When the file cannot be written.
+        """
+        with CONFIG_WRITE_LOCK:
+            accounts = self.accounts(key)
+            if account and not any(held.account == account for held in accounts):
+                raise KeyError(account)
+            self._write(key, accounts, default_account=account)
+
     def names(self, key: str) -> list:
         """The names of one machine's available accounts, in their order."""
         return [account.account for account in self.accounts(key)]
@@ -115,12 +155,16 @@ class DeviceAccountStore:
                 return held
         return None
 
-    def add(self, key: str, account: DeviceAccount) -> None:
+    def add(
+        self, key: str, account: DeviceAccount, *, is_default: bool = False
+    ) -> None:
         """Add an available account to one machine.
 
         Args:
             key: The device.
             account: The account's row.
+            is_default: Whether it becomes the machine's default account in
+                the same write.
 
         Raises:
             ValueError: When the machine already has an account of that name.
@@ -130,7 +174,11 @@ class DeviceAccountStore:
             accounts = self.accounts(key)
             if any(held.account == account.account for held in accounts):
                 raise ValueError(f"account {account.account!r} is already available")
-            self._write(key, accounts + [account])
+            self._write(
+                key,
+                accounts + [account],
+                default_account=account.account if is_default else None,
+            )
 
     def replace(self, key: str, account: DeviceAccount) -> None:
         """Replace one available account's row, keeping its place.
@@ -187,9 +235,15 @@ class DeviceAccountStore:
         """
         return [held for held in self.accounts(key) if held.is_ai_tools_enabled]
 
-    def _write(self, key: str, accounts: list) -> None:
-        self._store.write(
-            key,
-            DEVICE_ACCOUNTS_NAME,
-            {DEVICE_ENABLED_ACCOUNTS_KEY: [held.to_dict() for held in accounts]},
-        )
+    def _write(
+        self, key: str, accounts: list, *, default_account: "str | None" = None
+    ) -> None:
+        """Write the file, the default account kept unless one is given."""
+        stored = self._store.read(key, DEVICE_ACCOUNTS_NAME)
+        written = {}
+        if default_account is not None:
+            written[DEVICE_DEFAULT_ACCOUNT_KEY] = default_account
+        elif DEVICE_DEFAULT_ACCOUNT_KEY in stored:
+            written[DEVICE_DEFAULT_ACCOUNT_KEY] = stored[DEVICE_DEFAULT_ACCOUNT_KEY]
+        written[DEVICE_ENABLED_ACCOUNTS_KEY] = [held.to_dict() for held in accounts]
+        self._store.write(key, DEVICE_ACCOUNTS_NAME, written)

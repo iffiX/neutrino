@@ -1185,6 +1185,9 @@ class DeviceView(BaseModel):
     # and on one whose agent has gone quiet — which is how a machine that is
     # up but no longer reporting is told apart from one that is off.
     is_agent_online: bool = False
+    # The machine's default account; empty while it has none, which an
+    # online machine reads as incomplete.
+    default_account: str = ""
     has_ssh: bool = False
     # Whether this box holds anything about the device — a name, credentials,
     # an agent token. A scan-only row holds nothing, so there is nothing to
@@ -2617,6 +2620,8 @@ class AccountListView(BaseModel):
 
     device_id: str
     is_online: bool = False
+    # The machine's default account; empty while it has none.
+    default_account: str = ""
     accounts: list[AccountView] = Field(default_factory=list)
     system_accounts: list[SystemAccountView] = Field(default_factory=list)
     platform_os: str = ""
@@ -2648,15 +2653,6 @@ class AccountRequest(BaseModel):
     account: str
 
 
-class AccountPasswordTest(BaseModel):
-    """A password to test for one account of one Windows machine."""
-
-    device_id: str
-    account: str
-    # Empty tests the login the account has.
-    password: str = ""
-
-
 class EnabledAccountRowView(BaseModel):
     """One available account as an account-layer module's tab lists it."""
 
@@ -2684,6 +2680,8 @@ class EnabledAccountRowView(BaseModel):
 class EnabledAccountsView(ModuleDeviceFields):
     """One account-layer module on one device: its enabled accounts."""
 
+    # The machine's default account, always enabled; empty while it has none.
+    default_account: str = ""
     accounts: list[EnabledAccountRowView] = Field(default_factory=list)
     is_active: bool = False
     # The release the machine reports, where the module has one.
@@ -2691,27 +2689,6 @@ class EnabledAccountsView(ModuleDeviceFields):
     # VS Code's: whether the person accepted the terms, and their address.
     is_terms_accepted: bool | None = None
     terms_url: str | None = None
-
-
-class ProgramCopyView(BaseModel):
-    """The copy of a command line program an account's shell finds that is not the module's."""
-
-    account: str
-    # The copy's path, empty for none, and its version, empty when it
-    # prints none.
-    path: str = ""
-    version: str = ""
-    # The version of the module's copy for the machine.
-    module_version: str = ""
-    code: str = ""
-    params: dict = Field(default_factory=dict)
-
-
-class ProgramAccountRequest(BaseModel):
-    """A request naming one account of a command line program on one device."""
-
-    device_id: str
-    account: str
 
 
 class EnabledAccountsUpdate(BaseModel):
@@ -2911,11 +2888,9 @@ class PodmanHubContainerView(BaseModel):
 
 
 class PodmanMachineView(BaseModel):
-    """The Run settings as stored: the account whose Podman machine runs the
-    containers, the vault login it signs in with on Windows, and the
-    machine's resources, each 0 for Podman's default."""
+    """The Run settings as stored: the resources of the default account's
+    Podman machine, each 0 for Podman's default."""
 
-    account: str = ""
     cpus: int = 0
     memory_gib: int = 0
     disk_gib: int = 0
@@ -2945,9 +2920,8 @@ class PodmanSettingsView(BaseModel):
     is_installed: bool
     is_active: bool
     version: str
-    # The human accounts the machine last reported, for the Run settings.
-    accounts: list[str] = Field(default_factory=list)
-    # The Run settings on Windows and macOS; None on Linux.
+    # The Run settings on Windows and macOS; None on Linux and while the hub
+    # holds none.
     machine: PodmanMachineView | None = None
     # The Podman machine as last reported; None until one is.
     machine_state: PodmanMachineStateView | None = None
@@ -2961,9 +2935,9 @@ class PodmanNewMachineView(BaseModel):
 
     cpus: int
     memory_gib: int
-    # The account's disk now, else the default.
+    # The default account's disk now, else the default.
     disk_gib: int
-    # The account's disk now; 0 while the account has no machine.
+    # The default account's disk now; 0 while it has no machine.
     disk_gib_now: int
     # What the container modules need, the module being installed among them.
     need_gib: int
@@ -2988,10 +2962,9 @@ class PodmanMirrorListUpdate(BaseModel):
 
 
 class PodmanMachineUpdate(BaseModel):
-    """The Run settings being saved: an available account and the limits."""
+    """The Run settings being saved: the limits of the default account's Podman machine."""
 
     device_id: str
-    account: str = ""
     cpus: int = Field(default=0, ge=0)
     memory_gib: int = Field(default=0, ge=0)
     disk_gib: int = Field(default=0, ge=0)

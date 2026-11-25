@@ -1,8 +1,9 @@
 """The description table: every device module the hub administers, one row each.
 
 A row names the module's kind, the word of its kind chip, its configuration
-file under ``config/devices/<id>/``, whether it runs one instance per
-enabled account (the account layer), the fields the vault seals in each
+file under ``config/devices/<id>/``, the accounts it serves (several, the
+account layer, one instance per enabled account; one, the machine's default
+account; or none), the fields the vault seals in each
 account's record, the published entry's ``description_code`` and title, and
 the panel the machine page draws it with. The eleven account-layer modules
 share one router, one panel and one state composition, each driven by its
@@ -70,6 +71,9 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_SAMBA_PASSWORD_AAD,
     DEVICE_SAMBA_PASSWORD_BYTES,
     DEVICE_SAMBA_PASSWORD_KEY,
+    DEVICE_SERVES_NONE,
+    DEVICE_SERVES_ONE,
+    DEVICE_SERVES_SEVERAL,
     DEVICE_SIYUAN_ACCESS_CODE_AAD,
     DEVICE_SIYUAN_ACCESS_CODE_KEY,
     DEVICE_SIYUAN_MODULE,
@@ -143,8 +147,11 @@ class DeviceModuleRow:
         config_file: The module's file under ``config/devices/<id>/``.
         kind_chip: The kind chip's word, ``DEVICE_KIND_*``: a system
             service, an account service or a program.
-        is_account_layer: Whether the module runs one instance per enabled
-            account and keeps its enabled accounts in its file.
+        accounts: The accounts the module serves, ``DEVICE_SERVES_*``:
+            ``several``, one instance or record per enabled account kept in
+            its file, the account layer; ``one``, a tie to the machine's
+            default account; ``none``, nothing that runs as a person's
+            account.
         sealed_fields: The fields the vault seals in each account's record,
             or in the file itself for a container module, in the order the
             state carries them opened; empty for a module that keeps no
@@ -179,7 +186,7 @@ class DeviceModuleRow:
     kind: str
     config_file: str
     kind_chip: str
-    is_account_layer: bool = False
+    accounts: str = DEVICE_SERVES_NONE
     sealed_fields: tuple = ()
     description_code: str = ""
     entry_title: str = ""
@@ -191,6 +198,11 @@ class DeviceModuleRow:
     is_token_minted: bool = False
     config_head: tuple = ()
     is_gateway_used: bool = False
+
+    @property
+    def is_account_layer(self) -> bool:
+        """Whether the module serves several accounts, one instance per enabled account."""
+        return self.accounts == DEVICE_SERVES_SEVERAL
 
     def sealed_field(self, key: str) -> SealedField:
         """The sealed field stored under one key.
@@ -224,7 +236,7 @@ DEVICE_MODULE_ROWS = (
         DEVICE_TERMINAL_MODULE,
         DEVICE_MODULE_KIND_AGENT,
         kind_chip=DEVICE_KIND_ACCOUNT_SERVICE,
-        is_account_layer=True,
+        accounts=DEVICE_SERVES_SEVERAL,
         panel=DEVICE_MODULE_PANEL_INSTANCES,
         is_in_picker=False,
         is_login_named=True,
@@ -233,7 +245,7 @@ DEVICE_MODULE_ROWS = (
         DEVICE_SSH_SERVER_MODULE,
         DEVICE_MODULE_KIND_AGENT,
         kind_chip=DEVICE_KIND_ACCOUNT_SERVICE,
-        is_account_layer=True,
+        accounts=DEVICE_SERVES_SEVERAL,
         sealed_fields=(
             SealedField(
                 key=DEVICE_SSH_SERVER_KEY_KEY,
@@ -259,7 +271,7 @@ DEVICE_MODULE_ROWS = (
         DEVICE_SAMBA_MODULE,
         DEVICE_MODULE_KIND_SYSTEM_PACKAGE,
         kind_chip=DEVICE_KIND_SYSTEM_SERVICE,
-        is_account_layer=True,
+        accounts=DEVICE_SERVES_SEVERAL,
         sealed_fields=(
             SealedField(
                 key=DEVICE_SAMBA_PASSWORD_KEY,
@@ -290,7 +302,7 @@ DEVICE_MODULE_ROWS = (
         DEVICE_VSCODE_MODULE,
         DEVICE_MODULE_KIND_ACCOUNT_PROGRAM,
         kind_chip=DEVICE_KIND_ACCOUNT_SERVICE,
-        is_account_layer=True,
+        accounts=DEVICE_SERVES_SEVERAL,
         sealed_fields=(
             SealedField(
                 key=DEVICE_VSCODE_TOKEN_KEY,
@@ -311,7 +323,7 @@ DEVICE_MODULE_ROWS = (
         DEVICE_CODE_SERVER_MODULE,
         DEVICE_MODULE_KIND_ACCOUNT_PROGRAM,
         kind_chip=DEVICE_KIND_ACCOUNT_SERVICE,
-        is_account_layer=True,
+        accounts=DEVICE_SERVES_SEVERAL,
         sealed_fields=(
             SealedField(
                 key=DEVICE_CODE_SERVER_SECRET_KEY,
@@ -331,7 +343,7 @@ DEVICE_MODULE_ROWS = (
         DEVICE_CLOUDCLI_MODULE,
         DEVICE_MODULE_KIND_ACCOUNT_PROGRAM,
         kind_chip=DEVICE_KIND_ACCOUNT_SERVICE,
-        is_account_layer=True,
+        accounts=DEVICE_SERVES_SEVERAL,
         sealed_fields=(
             SealedField(
                 key=DEVICE_CLOUDCLI_PASSWORD_KEY,
@@ -358,7 +370,7 @@ DEVICE_MODULE_ROWS = (
         DEVICE_CODEG_MODULE,
         DEVICE_MODULE_KIND_ACCOUNT_PROGRAM,
         kind_chip=DEVICE_KIND_ACCOUNT_SERVICE,
-        is_account_layer=True,
+        accounts=DEVICE_SERVES_SEVERAL,
         sealed_fields=(
             SealedField(
                 key=DEVICE_CODEG_SECRET_KEY,
@@ -379,7 +391,7 @@ DEVICE_MODULE_ROWS = (
         DEVICE_CLAUDE_CODE_MODULE,
         DEVICE_MODULE_KIND_COMMAND_LINE_PROGRAM,
         kind_chip=DEVICE_KIND_PROGRAM,
-        is_account_layer=True,
+        accounts=DEVICE_SERVES_SEVERAL,
         panel=DEVICE_MODULE_PANEL_INSTANCES,
         is_login_named=True,
     ),
@@ -387,7 +399,7 @@ DEVICE_MODULE_ROWS = (
         DEVICE_CODEX_MODULE,
         DEVICE_MODULE_KIND_COMMAND_LINE_PROGRAM,
         kind_chip=DEVICE_KIND_PROGRAM,
-        is_account_layer=True,
+        accounts=DEVICE_SERVES_SEVERAL,
         panel=DEVICE_MODULE_PANEL_INSTANCES,
         is_login_named=True,
     ),
@@ -395,7 +407,7 @@ DEVICE_MODULE_ROWS = (
         DEVICE_OPENCODE_MODULE,
         DEVICE_MODULE_KIND_COMMAND_LINE_PROGRAM,
         kind_chip=DEVICE_KIND_PROGRAM,
-        is_account_layer=True,
+        accounts=DEVICE_SERVES_SEVERAL,
         panel=DEVICE_MODULE_PANEL_INSTANCES,
         is_login_named=True,
     ),
@@ -403,7 +415,7 @@ DEVICE_MODULE_ROWS = (
         DEVICE_SIYUAN_MODULE,
         DEVICE_MODULE_KIND_ACCOUNT_PROGRAM,
         kind_chip=DEVICE_KIND_ACCOUNT_SERVICE,
-        is_account_layer=True,
+        accounts=DEVICE_SERVES_SEVERAL,
         sealed_fields=(
             SealedField(
                 key=DEVICE_SIYUAN_SECRET_KEY,
@@ -431,12 +443,14 @@ DEVICE_MODULE_ROWS = (
         DEVICE_PODMAN_MODULE,
         DEVICE_MODULE_KIND_SYSTEM_PACKAGE,
         kind_chip=DEVICE_KIND_SYSTEM_SERVICE,
+        accounts=DEVICE_SERVES_ONE,
         description_code=SERVICES_DESCRIPTION_CONTAINER,
     ),
     _row(
         DEVICE_HERMES_WEBUI_MODULE,
         DEVICE_MODULE_KIND_CONTAINER,
         kind_chip=DEVICE_KIND_SYSTEM_SERVICE,
+        accounts=DEVICE_SERVES_ONE,
         sealed_fields=(
             SealedField(
                 key=DEVICE_HERMES_WEBUI_SECRET_KEY,
@@ -462,6 +476,7 @@ DEVICE_MODULE_ROWS = (
         DEVICE_AYAKALEAF_MODULE,
         DEVICE_MODULE_KIND_CONTAINER,
         kind_chip=DEVICE_KIND_SYSTEM_SERVICE,
+        accounts=DEVICE_SERVES_ONE,
         sealed_fields=(
             SealedField(
                 key=DEVICE_AYAKALEAF_SECRET_KEY,
@@ -499,6 +514,7 @@ DEVICE_MODULE_ROWS = (
         DEVICE_ASTRBOT_MODULE,
         DEVICE_MODULE_KIND_CONTAINER,
         kind_chip=DEVICE_KIND_SYSTEM_SERVICE,
+        accounts=DEVICE_SERVES_ONE,
         sealed_fields=(
             SealedField(
                 key=DEVICE_ASTRBOT_SECRET_KEY,

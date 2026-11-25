@@ -254,3 +254,29 @@ def test_an_http_run_hands_over_no_authority(monkeypatch):
     setup._setup(_SilentReporter(), [], _NoAnswers())
 
     assert finished[0]["authority"] is None
+
+
+# --- the default account the setup asked ---
+
+
+def test_the_write_step_keeps_the_default_account_and_seals_a_windows_password(
+    monkeypatch, tmp_path
+):
+    from neutrino_hub.modules.credentials.vault import SecretVault
+    from tests.cli.conftest import setup_default_written
+    from tests.conftest import unlock_vault
+
+    monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", tmp_path)
+    unlock_vault(monkeypatch, tmp_path)
+    monkeypatch.setattr(setup.socket, "gethostname", lambda: "argon")
+
+    setup._write_default_account(setup.wizard.WizardDefaultAccount(account="lab"))
+    setup._write_default_account(
+        setup.wizard.WizardDefaultAccount(account="win", password="pw-win")
+    )
+    setup._write_default_account(None)
+
+    (record,) = SecretVault().list_records()
+    assert setup_default_written == [("lab", ""), ("win", record.id)]
+    assert record.name == "argon / win"
+    assert SecretVault().open(record.id) == {"password": "pw-win"}

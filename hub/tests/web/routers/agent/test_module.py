@@ -1125,8 +1125,11 @@ def test_the_list_advises_memory_while_the_container_modules_pass_the_machine(
         json.dumps(dict(demo, memory_mib=2600))
     )
     runtime.desired_states.set_want(DEVICE, "demo", "installed")
+    runtime.desired_states.write(DEVICE, "podman", {"machine": {"memory_gib": 0}})
     runtime.desired_states.write(
-        DEVICE, "podman", {"machine": {"account": "lab", "memory_gib": 0}}
+        DEVICE,
+        "accounts",
+        {"default_account": "lab", "accounts": [{"account": "lab"}]},
     )
     runtime.device_modules[DEVICE] = {
         "podman": {
@@ -2374,3 +2377,188 @@ def test_a_command_line_program_reads_upstream_in_every_state(
     }
 
     assert rows_by_name(client)["codex"]["source"] == "upstream"
+
+
+# --- the machine's default account ---
+
+
+def with_default(runtime, *names: str) -> None:
+    """Make the first name the device's default account, every name available."""
+    runtime.desired_states.write(
+        DEVICE,
+        "accounts",
+        {
+            "default_account": names[0],
+            "accounts": [{"account": name} for name in names],
+        },
+    )
+
+
+@pytest.mark.parametrize("press", ["install", "start"])
+def test_install_and_start_enable_the_default_first_under_the_lock(
+    shipped, monkeypatch, tmp_path, press
+):
+    from neutrino_hub.utils.json_file import CONFIG_WRITE_LOCK
+    from tests.conftest import unlock_vault
+
+    unlock_vault(monkeypatch, tmp_path)
+    client, runtime = shipped
+    with_default(runtime, "lab", "ann")
+    store = runtime.desired_states
+    store.set_enabled_accounts(DEVICE, "code_server", ["ann"])
+    held_at: list = []
+    enable_default = store.enable_default
+
+    def recorded(key, module):
+        held_at.append(CONFIG_WRITE_LOCK._is_owned())
+        return enable_default(key, module)
+
+    monkeypatch.setattr(store, "enable_default", recorded)
+
+    answer = client.post(
+        f"{MODULE_PATH}/{press}", json={"device_id": DEVICE, "module": "code_server"}
+    )
+
+    assert answer.status_code == 200, answer.text
+    assert held_at == [True]
+    assert store.enabled_accounts(DEVICE, "code_server") == ["lab", "ann"]
+    assert store.account_secret(DEVICE, "code_server", "lab", "secret_sealed")
+    assert store.want_of(DEVICE, "code_server") in ("installed", "running")
+
+
+def test_a_module_that_serves_no_accounts_enables_none(shipped, monkeypatch):
+    client, runtime = shipped
+    with_default(runtime, "lab")
+    called: list = []
+    monkeypatch.setattr(
+        runtime.desired_states,
+        "enable_default",
+        lambda key, module: called.append(module),
+    )
+
+    answer = client.post(
+        f"{MODULE_PATH}/install", json={"device_id": DEVICE, "module": "gitea"}
+    )
+
+    assert answer.status_code == 200, answer.text
+    assert called == []
+
+
+def test_the_file_shares_install_reads_the_defaults_folder_first(shipped, tmp_path):
+    client, runtime = shipped
+    with_default(runtime, "lab")
+    runtime.account_details = lambda key: {"lab": {"home": "/home/lab"}}
+    runtime.agent_sessions.outcomes["folder"] = {
+        "exit_code": 1,
+        "code": "share_path_link",
+        "params": {"path": "/home/lab"},
+    }
+
+    answer = client.post(
+        f"{MODULE_PATH}/install", json={"device_id": DEVICE, "module": "samba"}
+    )
+
+    assert answer.status_code == 400
+    assert answer.json()["detail"] == {
+        "code": "share_path_link",
+        "params": {"name": "lab", "path": "/home/lab"},
+    }
+    assert runtime.agent_sessions.commands == [
+        (DEVICE, "samba", "folder", {"path": "/home/lab"})
+    ]
+    assert modules_file(tmp_path) == {}
+    assert runtime.agent_sessions.pushes == []
+
+
+@pytest.mark.parametrize(
+    "path, body",
+    [
+        ("install", {"module": "gitea"}),
+        ("start", {"module": "gitea"}),
+        ("stop", {"module": "gitea"}),
+        ("uninstall", {"module": "gitea"}),
+        ("version/set", {"module": "gitea", "version": ""}),
+        ("gitea/apply", {}),
+    ],
+)
+def test_every_write_on_a_machine_with_no_default_is_refused(
+    shipped, monkeypatch, tmp_path, path, body
+):
+    from neutrino_hub.web import dependencies
+    from tests.web.device_api_box import BoxRegistry
+
+    client, runtime = shipped
+    monkeypatch.setattr(dependencies, "DeviceRegistry", BoxRegistry)
+    client.app.include_router(
+        device_modules.module_router(
+            "gitea", view_model=ModuleDeviceFields, build_view=lambda r, c: None
+        )
+    )
+
+    answer = client.post(f"{MODULE_PATH}/{path}", json={"device_id": DEVICE, **body})
+    read = client.get(MODULE_PATH, params={"device_id": DEVICE})
+
+    assert answer.status_code == 409
+    assert answer.json()["detail"] == {"code": "default_account_missing", "params": {}}
+    assert read.status_code == 200
+    assert modules_file(tmp_path) == {}
+    assert runtime.agent_sessions.pushes == []
+
+
+def test_a_write_on_a_machine_with_its_default_passes_the_check(
+    shipped, monkeypatch, tmp_path
+):
+    from neutrino_hub.web import dependencies
+    from tests.web.device_api_box import BoxRegistry
+
+    client, runtime = shipped
+    monkeypatch.setattr(dependencies, "DeviceRegistry", BoxRegistry)
+    with_default(runtime, "lab")
+
+    answer = client.post(
+        f"{MODULE_PATH}/install", json={"device_id": DEVICE, "module": "gitea"}
+    )
+
+    assert answer.status_code == 200, answer.text
+
+
+def test_every_write_of_the_machine_page_but_the_account_routes_checks_the_default():
+    from neutrino_hub.web.app import API_ROUTERS
+    from neutrino_hub.web.dependencies import require_default_account
+
+    checked, unchecked = [], []
+    for router in API_ROUTERS:
+        for route in router.routes:
+            if "POST" not in getattr(route, "methods", set()):
+                continue
+            calls = {dependant.call for dependant in route.dependant.dependencies}
+            is_checked = require_default_account in calls
+            (checked if is_checked else unchecked).append(route.path)
+    agent_writes = [
+        path for path in checked + unchecked if path.startswith(MODULE_PATH)
+    ]
+
+    assert len(agent_writes) > 30
+    assert f"{MODULE_PATH}/account/add" in unchecked
+    assert all(
+        path in checked
+        for path in agent_writes
+        if not path.startswith(f"{MODULE_PATH}/account/")
+    )
+    assert all(
+        path in unchecked
+        for path in agent_writes
+        if path.startswith(f"{MODULE_PATH}/account/")
+    )
+    assert "/api/hub/device/remote_desktop/password/set" in checked
+    assert "/api/hub/device/desktop/seat_password/reset" in checked
+    assert not [
+        path
+        for path in checked
+        if not path.startswith(MODULE_PATH)
+        and path
+        not in (
+            "/api/hub/device/remote_desktop/password/set",
+            "/api/hub/device/desktop/seat_password/reset",
+        )
+    ]

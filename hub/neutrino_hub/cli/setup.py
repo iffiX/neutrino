@@ -72,7 +72,13 @@ from neutrino_hub.modules.devices.agent_package import (
     AGENT_PACKAGE_FAMILY_OF_PLATFORM,
     AgentPackageCache,
 )
+from neutrino_hub.modules.devices.constants import (
+    DEVICE_LOGIN_KIND,
+    DEVICE_LOGIN_NAME,
+    DEVICE_LOGIN_PASSWORD_FIELD,
+)
 from neutrino_hub.modules.devices.registry import DeviceRegistry
+from neutrino_hub.modules.devices.setup_default import write_setup_default
 from neutrino_hub.modules.easytier.constants import (
     EASYTIER_CLI_PATH,
     EASYTIER_CORE_PATH,
@@ -560,18 +566,22 @@ def _answers(arguments):
         down afterwards.
 
     Raises:
-        WizardAborted: On an answers document that cannot be used, or a
-            wizard nobody finished.
+        WizardAborted: On an answers document that cannot be used, one whose
+            default account fails its test, or a wizard nobody finished.
     """
     if arguments.stdin:
-        return wizard.from_document(_parsed(sys.stdin.read(), "standard input")), None
+        answers = wizard.from_document(_parsed(sys.stdin.read(), "standard input"))
+        wizard.check_default_account(answers)
+        return answers, None
     if arguments.json:
         path = Path(arguments.json)
         try:
             document = _parsed(path.read_text(encoding="utf-8-sig"), str(path))
         except OSError as error:
             raise WizardAborted(str(error)) from error
-        return wizard.from_document(document), None
+        answers = wizard.from_document(document)
+        wizard.check_default_account(answers)
+        return answers, None
     answered = _browser_answers()
     if answered is not None:
         return answered
@@ -915,6 +925,7 @@ def _setup(
                     answers.language,
                     answers.is_https_enabled,
                 )
+                _write_default_account(answers.default_account)
             except (
                 subprocess.SubprocessError,
                 OSError,
@@ -958,6 +969,38 @@ def _setup(
         is_waiting=sys.stdin.isatty(),
     )
     return 0
+
+
+def _write_default_account(chosen) -> None:
+    """Keep the default account the setup asked for this machine's first report.
+
+    A Windows password is stored as a vault login named ``<host name> /
+    <account>``; the vault is made in the same step, before this.
+
+    Args:
+        chosen: The answers' :class:`wizard.WizardDefaultAccount`; None
+            keeps nothing.
+
+    Raises:
+        OSError: When the file cannot be written.
+        ValueError: When the password cannot be sealed.
+    """
+    if chosen is None:
+        return
+    login_id = ""
+    if chosen.password:
+        login_id = (
+            SecretVault()
+            .add(
+                kind=DEVICE_LOGIN_KIND,
+                name=DEVICE_LOGIN_NAME.format(
+                    device=socket.gethostname(), account=chosen.account
+                ),
+                secret={DEVICE_LOGIN_PASSWORD_FIELD: chosen.password},
+            )
+            .id
+        )
+    write_setup_default(chosen.account, login_id)
 
 
 def _write_system_firewall(reporter) -> None:

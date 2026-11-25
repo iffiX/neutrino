@@ -1,15 +1,20 @@
-"""The account block: a Windows account's password is sealed as a vault login.
+"""The account block: every account added is tested, and the first one becomes the default.
 
-What these pin: an add with a password on a Windows machine stores one
-login holding ``password``, the row references it, and the view says it
-holds one; removing an account a module with a gateway key per account
-enables hands the gateway its keys again. A password test sends the typed
-password, or the stored login's with none typed, to the agent's one verb,
-answers the agent's refusal and writes nothing. A share path is read by the
-file share's ``folder`` verb first, and the home of an account the file
-share enables when its share path is emptied; a folder the machine reads as
-missing or a link is refused with the account as the share's name, nothing
-written and nothing pushed.
+What these pin: an add first has the agent's ``account_test`` test the
+account, with the password on Windows and none elsewhere, and a refusal
+writes nothing; a Windows password is then sealed as a vault login the row
+references; a new Windows password on ``set`` is tested the same way. The
+first account added to a machine with no default account becomes the
+default, enabled first in Terminal, the SSH server and every installed
+module of the account layer, the agent checking each changed section and a
+refusal writing nothing; a later one does not. ``remove`` refuses the
+default with ``account_is_default``; removing an account a module with a
+gateway key per account enables hands the gateway its keys again; a switch
+changed settles SiYuan's keys and the container modules'. A share path is
+read by the file share's ``folder`` verb first, and the home of an account
+the file share enables when its share path is emptied; a folder the machine
+reads as missing or a link is refused with the account as the share's name,
+nothing written and nothing pushed.
 """
 
 import json
@@ -68,132 +73,112 @@ def test_removing_an_account_siyuan_enables_hands_the_gateway_its_keys_again(
     client, runtime, _tmp_path = api
     applied: list = []
     monkeypatch.setattr(module_account, "apply_keys", lambda: applied.append(True))
+    runtime.device_accounts = {DEVICE: ["lab", "ann"]}
     client.post(
         f"{BASE}/add", json={"device_id": DEVICE, "account": "lab", "password": "pw"}
     )
-    runtime.desired_states.set_enabled_accounts(DEVICE, "siyuan", ["lab"])
+    client.post(
+        f"{BASE}/add", json={"device_id": DEVICE, "account": "ann", "password": "pw"}
+    )
+    runtime.desired_states.set_enabled_accounts(DEVICE, "siyuan", ["lab", "ann"])
 
-    answer = client.post(f"{BASE}/remove", json={"device_id": DEVICE, "account": "lab"})
+    answer = client.post(f"{BASE}/remove", json={"device_id": DEVICE, "account": "ann"})
 
     assert answer.status_code == 200, answer.text
-    assert runtime.desired_states.read(DEVICE, "siyuan")["accounts"] == []
+    assert runtime.desired_states.enabled_accounts(DEVICE, "siyuan") == ["lab"]
     assert applied == [True]
 
 
-# --- the password test ---
+# --- the test before the write ---
 
 
-def password_test(client, **fields):
-    return client.post(
-        f"{BASE}/password/test",
-        json={"device_id": DEVICE, "account": "lab", **fields},
+def test_an_add_has_the_agent_test_the_account_with_its_password_first(api):
+    client, runtime, tmp_path = api
+
+    answer = client.post(
+        f"{BASE}/add", json={"device_id": DEVICE, "account": "lab", "password": "pw-1"}
+    )
+
+    assert answer.status_code == 200, answer.text
+    assert runtime.agent_sessions.commands[0] == (
+        DEVICE,
+        "agent",
+        "account_test",
+        {"account": "lab", "password": "pw-1"},
     )
 
 
-def test_a_typed_password_goes_to_the_agents_verb_and_nothing_is_written(api):
-    client, runtime, tmp_path = api
+def test_off_windows_the_test_carries_no_password(api):
+    client, runtime, _tmp_path = api
+    runtime.device_platform[DEVICE] = {"os": "linux", "family": "debian"}
 
-    answer = password_test(client, password="pw-1")
+    answer = client.post(
+        f"{BASE}/add", json={"device_id": DEVICE, "account": "lab", "password": "x"}
+    )
 
     assert answer.status_code == 200, answer.text
-    assert runtime.agent_sessions.commands == [
-        (
-            DEVICE,
-            "agent",
-            "account_password_test",
-            {"account": "lab", "password": "pw-1"},
-        )
-    ]
-    assert not (tmp_path / "devices" / DEVICE / "accounts.json").exists()
-    assert SecretVault().list_records() == []
+    assert runtime.agent_sessions.commands[0][2:] == (
+        "account_test",
+        {"account": "lab", "password": ""},
+    )
+    assert stored_accounts(_tmp_path)[0]["login_id"] == ""
 
 
-def test_a_password_the_agent_refuses_is_answered_with_its_code(api):
+@pytest.mark.parametrize(
+    "code, params",
+    [
+        ("credential_invalid", {"account": "lab"}),
+        ("account_logon_refused", {"account": "lab", "detail": "locked out"}),
+        ("account_no_login", {"account": "lab"}),
+    ],
+)
+def test_a_refused_test_is_answered_with_its_code_and_writes_nothing(api, code, params):
     client, runtime, tmp_path = api
-    runtime.agent_sessions.outcome = {
+    runtime.agent_sessions.outcomes["account_test"] = {
         "exit_code": 1,
-        "code": "credential_invalid",
-        "params": {"account": "lab"},
-        "output": "",
+        "code": code,
+        "params": params,
     }
 
-    answer = password_test(client, password="wrong")
+    answer = client.post(
+        f"{BASE}/add",
+        json={"device_id": DEVICE, "account": "lab", "password": "wrong"},
+    )
 
     assert answer.status_code == 400
-    assert answer.json()["detail"] == {
-        "code": "credential_invalid",
-        "params": {"account": "lab"},
-    }
+    assert answer.json()["detail"] == {"code": code, "params": params}
     assert "wrong" not in answer.text
     assert not (tmp_path / "devices" / DEVICE / "accounts.json").exists()
     assert SecretVault().list_records() == []
+    assert runtime.agent_sessions.pushes == []
 
 
-def test_a_logon_refused_otherwise_is_answered_with_windows_sentence(api):
-    client, runtime, _tmp_path = api
-    runtime.agent_sessions.outcome = {
-        "exit_code": 1,
-        "code": "account_logon_refused",
-        "params": {"account": "lab", "detail": "locked out"},
-        "output": "",
-    }
-
-    answer = password_test(client, password="pw-1")
-
-    assert answer.status_code == 400
-    assert answer.json()["detail"] == {
-        "code": "account_logon_refused",
-        "params": {"account": "lab", "detail": "locked out"},
-    }
-
-
-def test_no_password_typed_tests_the_login_the_account_has(api):
-    client, runtime, _tmp_path = api
+def test_a_new_windows_password_is_tested_and_an_empty_one_is_not(api):
+    client, runtime, tmp_path = api
     client.post(
-        f"{BASE}/add", json={"device_id": DEVICE, "account": "lab", "password": "pw-9"}
+        f"{BASE}/add", json={"device_id": DEVICE, "account": "lab", "password": "pw-1"}
+    )
+    login = stored_accounts(tmp_path)[0]["login_id"]
+    runtime.agent_sessions.commands.clear()
+
+    kept = client.post(f"{BASE}/set", json={"device_id": DEVICE, "account": "lab"})
+    runtime.agent_sessions.outcomes["account_test"] = {
+        "exit_code": 1,
+        "code": "credential_invalid",
+        "params": {"account": "lab"},
+    }
+    refused = client.post(
+        f"{BASE}/set",
+        json={"device_id": DEVICE, "account": "lab", "password": "wrong"},
     )
 
-    answer = password_test(client)
-
-    assert answer.status_code == 200, answer.text
-    assert runtime.agent_sessions.commands[-1][3] == {
-        "account": "lab",
-        "password": "pw-9",
-    }
-
-
-def test_no_password_and_no_login_is_refused_before_the_agent_is_asked(api):
-    client, runtime, _tmp_path = api
-
-    answer = password_test(client)
-
-    assert answer.status_code == 400
-    assert answer.json()["detail"]["code"] == "credential_missing"
-    assert runtime.agent_sessions.commands == []
-
-
-def test_an_account_the_machine_does_not_report_is_refused(api):
-    client, runtime, _tmp_path = api
-
-    answer = password_test(client, account="ghost", password="pw-1")
-
-    assert answer.status_code == 400
-    assert answer.json()["detail"] == {
-        "code": "account_unknown",
-        "params": {"account": "ghost"},
-    }
-    assert runtime.agent_sessions.commands == []
-
-
-def test_a_machine_that_is_not_windows_tests_no_password(api):
-    client, runtime, _tmp_path = api
-    runtime.device_platform[DEVICE] = {"os": "darwin"}
-
-    answer = password_test(client, password="pw-1")
-
-    assert answer.status_code == 400
-    assert answer.json()["detail"]["code"] == "unsupported_platform"
-    assert runtime.agent_sessions.commands == []
+    assert kept.status_code == 200, kept.text
+    assert refused.status_code == 400
+    assert [command[2] for command in runtime.agent_sessions.commands] == [
+        "account_test"
+    ]
+    assert stored_accounts(tmp_path)[0]["login_id"] == login
+    assert [record.id for record in SecretVault().list_records()] == [login]
 
 
 def test_a_machine_with_no_socket_answers_agent_offline(api):
@@ -201,10 +186,132 @@ def test_a_machine_with_no_socket_answers_agent_offline(api):
     runtime.device_platform[OFFLINE] = WINDOWS
     runtime.device_accounts[OFFLINE] = ["lab"]
 
-    answer = password_test(client, device_id=OFFLINE, password="pw-1")
+    answer = client.post(
+        f"{BASE}/add",
+        json={"device_id": OFFLINE, "account": "lab", "password": "pw-1"},
+    )
 
     assert answer.status_code == 409
     assert answer.json()["detail"]["code"] == "agent_offline"
+
+
+def test_the_password_test_route_is_gone(api):
+    client, _runtime, _tmp_path = api
+
+    answer = client.post(
+        f"{BASE}/password/test", json={"device_id": DEVICE, "account": "lab"}
+    )
+
+    assert answer.status_code in (404, 405)
+
+
+# --- the default account ---
+
+
+def test_the_first_account_becomes_the_default_in_terminal_ssh_and_installed_modules(
+    api,
+):
+    client, runtime, tmp_path = api
+    runtime.device_accounts = {DEVICE: ["lab", "ann"]}
+    store = runtime.desired_states
+    store.set_want(DEVICE, "code_server", "running")
+    store.set_want(DEVICE, "vscode", "absent")
+
+    first = client.post(
+        f"{BASE}/add", json={"device_id": DEVICE, "account": "lab", "password": "pw"}
+    )
+    second = client.post(
+        f"{BASE}/add", json={"device_id": DEVICE, "account": "ann", "password": "pw"}
+    )
+
+    assert first.status_code == 200, first.text
+    assert second.json()["default_account"] == "lab"
+    held = json.loads((tmp_path / "devices" / DEVICE / "accounts.json").read_text())
+    assert list(held)[0] == "default_account"
+    assert held["default_account"] == "lab"
+    assert store.enabled_accounts(DEVICE, "terminal") == ["lab"]
+    assert store.enabled_accounts(DEVICE, "ssh_server") == ["lab"]
+    assert store.enabled_accounts(DEVICE, "code_server") == ["lab"]
+    assert store.account_secret(DEVICE, "code_server", "lab", "secret_sealed")
+    assert store.enabled_accounts(DEVICE, "vscode") == []
+    checked = {module for _key, module, _config in runtime.agent_sessions.validations}
+    assert checked == {"terminal", "ssh_server", "code_server"}
+    assert store.enabled_accounts(DEVICE, "terminal") == ["lab"]
+
+
+def test_a_section_the_agent_refuses_writes_nothing_of_the_first_account(api):
+    client, runtime, tmp_path = api
+    runtime.agent_sessions.verdict = {
+        "is_valid": False,
+        "code": "account_no_profile",
+        "params": {"account": "lab"},
+    }
+
+    answer = client.post(
+        f"{BASE}/add", json={"device_id": DEVICE, "account": "lab", "password": "pw"}
+    )
+
+    assert answer.status_code == 400
+    assert answer.json()["detail"]["code"] == "account_no_profile"
+    held = runtime.desired_states.read(DEVICE, "accounts")
+    assert held == {}
+    assert runtime.desired_states.read(DEVICE, "terminal") == {}
+    assert runtime.desired_states.read(DEVICE, "ssh_server") == {}
+    assert SecretVault().list_records() == []
+    assert runtime.agent_sessions.pushes == []
+
+
+def test_the_default_account_is_never_removed(api):
+    client, runtime, _tmp_path = api
+    client.post(
+        f"{BASE}/add", json={"device_id": DEVICE, "account": "lab", "password": "pw"}
+    )
+
+    answer = client.post(f"{BASE}/remove", json={"device_id": DEVICE, "account": "lab"})
+
+    assert answer.status_code == 400
+    assert answer.json()["detail"] == {
+        "code": "account_is_default",
+        "params": {"account": "lab"},
+    }
+    assert runtime.desired_states.default_account(DEVICE) == "lab"
+
+
+def test_a_switch_change_settles_siyuan_and_the_container_modules_keys(
+    api, monkeypatch
+):
+    client, runtime, _tmp_path = api
+    settled: list = []
+    monkeypatch.setattr(
+        module_account,
+        "settle_instance_keys",
+        lambda store, key, module, name: settled.append(("instances", module)),
+    )
+    monkeypatch.setattr(
+        module_account,
+        "settle_module_keys",
+        lambda store, key, name: settled.append(("modules", key)),
+    )
+    monkeypatch.setattr(module_account, "gateway_models", lambda served: ["m1"])
+    monkeypatch.setattr(module_account, "ensure_device_key", lambda key, name: "k")
+    monkeypatch.setattr(module_account, "revoke_device_key", lambda key: None)
+    client.post(
+        f"{BASE}/add", json={"device_id": DEVICE, "account": "lab", "password": "pw"}
+    )
+    runtime.desired_states.set_enabled_accounts(DEVICE, "siyuan", ["lab"])
+    settled.clear()
+
+    same = client.post(f"{BASE}/set", json={"device_id": DEVICE, "account": "lab"})
+    after_same = list(settled)
+    switched = client.post(
+        f"{BASE}/set",
+        json={"device_id": DEVICE, "account": "lab", "is_ai_tools_enabled": True},
+    )
+
+    assert same.status_code == 200, same.text
+    assert switched.status_code == 200, switched.text
+    assert after_same == []
+    assert settled == [("instances", "siyuan"), ("modules", DEVICE)]
 
 
 # --- the share path ---
@@ -233,14 +340,17 @@ def test_a_share_path_at_no_real_folder_is_refused_and_nothing_written(api):
         "code": "share_path_missing",
         "params": {"name": "lab", "path": "D:\\gone"},
     }
-    assert runtime.agent_sessions.commands == [
-        ("device-one", "samba", "folder", {"path": "D:\\gone"})
-    ]
+    assert runtime.agent_sessions.commands[-1] == (
+        "device-one",
+        "samba",
+        "folder",
+        {"path": "D:\\gone"},
+    )
     assert not (tmp_path / "devices" / DEVICE / "accounts.json").exists()
     assert runtime.agent_sessions.pushes == []
 
 
-def test_an_add_with_no_share_path_asks_the_machine_nothing(api):
+def test_an_add_with_no_share_path_asks_the_machine_no_folder(api):
     client, runtime, _tmp_path = api
 
     answer = client.post(
@@ -248,7 +358,9 @@ def test_an_add_with_no_share_path_asks_the_machine_nothing(api):
     )
 
     assert answer.status_code == 200, answer.text
-    assert runtime.agent_sessions.commands == []
+    assert [command[2] for command in runtime.agent_sessions.commands] == [
+        "account_test"
+    ]
 
 
 def test_an_emptied_share_path_of_a_file_share_account_reads_its_home(api):

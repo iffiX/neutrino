@@ -1,14 +1,16 @@
 """The Containers page's per-device API, with the agent underneath replaced.
 
-The Run settings: ``machine/set`` refuses a Linux machine, an account that
-is not available, a Windows account with no login and a Windows disk limit
-of 0 before the agent is asked, and takes a macOS disk of 0; the agent
-checks the settings as the state carries them, with the login's password on
-Windows alone and never the login's id; the view holds the stored settings
-on Windows and macOS, the reported machine, the accounts, and the memory
-the container modules need past the machine's. The read of a new machine
-answers the agent's numbers beside what the container modules need, the module
-being installed counted, and refuses Linux before the agent is asked.
+The Run settings: ``machine/set`` takes no account, refuses a Linux
+machine and a Windows disk limit of 0 before the agent is asked, and takes a
+macOS disk of 0; the agent checks the settings as the state carries them,
+the machine's default account's Podman machine with that account's login's
+password on Windows alone and never the login's id; the view holds the
+stored settings on Windows and macOS, none while the hub holds none, the
+reported machine and the memory the container modules need past the
+machine's. The read of a new machine reads the default account's machine
+and answers the agent's numbers beside what the container modules need,
+the module being installed counted, and refuses Linux before the agent is
+asked.
 """
 
 import json
@@ -25,7 +27,7 @@ BASE = "/api/agent/module/podman"
 WINDOWS = {"os": "windows", "family": "", "arch": "amd64", "version": "26100"}
 DARWIN = {"os": "darwin", "family": "", "arch": "arm64", "version": "15.3.1"}
 LINUX = {"os": "linux", "family": "debian", "arch": "amd64", "version": "2.36"}
-RUN_SETTINGS = {"account": "lab", "cpus": 4, "memory_gib": 8, "disk_gib": 120}
+RUN_SETTINGS = {"cpus": 4, "memory_gib": 8, "disk_gib": 120}
 
 
 def login(name: str) -> str:
@@ -41,8 +43,12 @@ def login(name: str) -> str:
 def available(
     runtime, name: str, *, device_id: str = DEVICE, login_id: str = ""
 ) -> None:
-    DeviceAccountStore(runtime.desired_states).add(
-        device_id, DeviceAccount(account=name, login_id=login_id)
+    """Add an available account, the machine's default when it is the first."""
+    accounts = DeviceAccountStore(runtime.desired_states)
+    accounts.add(
+        device_id,
+        DeviceAccount(account=name, login_id=login_id),
+        is_default=not accounts.default_account(device_id),
     )
 
 
@@ -510,28 +516,19 @@ def test_run_settings_are_stored_with_containers_absent_and_want_nothing(box):
     assert not runtime.desired_states.want_of(DEVICE, "podman")
 
 
-def test_an_account_not_available_and_a_windows_account_with_no_login_are_refused(
-    box,
-):
+def test_an_account_in_the_run_settings_is_no_field_of_theirs(box):
     client, runtime = box
-    runtime.device_platform[DEVICE] = WINDOWS
-    body = {"device_id": DEVICE, **RUN_SETTINGS}
-
-    unknown = client.post(f"{BASE}/machine/set", json=body)
+    runtime.device_platform[DEVICE] = DARWIN
     available(runtime, "lab")
-    missing = client.post(f"{BASE}/machine/set", json=body)
 
-    assert unknown.status_code == missing.status_code == 400
-    assert unknown.json()["detail"] == {
-        "code": "account_unknown",
-        "params": {"account": "lab"},
-    }
-    assert missing.json()["detail"] == {
-        "code": "credential_missing",
-        "params": {"account": "lab"},
-    }
-    assert runtime.agent_sessions.validations == []
-    assert "machine" not in runtime.desired_states.read(DEVICE, "podman")
+    response = client.post(
+        f"{BASE}/machine/set",
+        json={"device_id": DEVICE, "account": "ann", **RUN_SETTINGS},
+    )
+
+    assert response.status_code == 200, response.text
+    assert runtime.desired_states.read(DEVICE, "podman")["machine"] == RUN_SETTINGS
+    assert runtime.agent_sessions.validations[0][2]["machine"]["account"] == "lab"
 
 
 def test_a_windows_disk_limit_of_0_is_refused_before_the_agent_is_asked(box):
@@ -579,7 +576,11 @@ def test_windows_run_settings_are_checked_with_the_password_and_stored_without_i
     assert response.status_code == 200
     key, module, checked = runtime.agent_sessions.validations[0]
     assert (key, module) == (DEVICE, "podman")
-    assert checked["machine"] == {**RUN_SETTINGS, "password": "pw-lab"}
+    assert checked["machine"] == {
+        "account": "lab",
+        **RUN_SETTINGS,
+        "password": "pw-lab",
+    }
     assert [c["name"] for c in checked["containers"]] == ["web"]
     stored = runtime.desired_states.read(DEVICE, "podman")
     assert stored["machine"] == RUN_SETTINGS
@@ -599,7 +600,10 @@ def test_macos_run_settings_take_no_login_and_send_no_password(box):
     )
 
     assert response.status_code == 200
-    assert runtime.agent_sessions.validations[0][2]["machine"] == RUN_SETTINGS
+    assert runtime.agent_sessions.validations[0][2]["machine"] == {
+        "account": "lab",
+        **RUN_SETTINGS,
+    }
     assert runtime.desired_states.read(DEVICE, "podman")["machine"] == RUN_SETTINGS
 
 
@@ -652,7 +656,7 @@ def test_a_negative_resource_is_refused_before_the_agent_is_asked(box):
     assert runtime.agent_sessions.validations == []
 
 
-def test_the_view_holds_the_run_settings_the_reported_machine_and_the_accounts(box):
+def test_the_view_holds_the_run_settings_and_the_reported_machine(box):
     client, runtime = box
     runtime.device_platform[DEVICE] = WINDOWS
     runtime.device_accounts[DEVICE] = ["lab", "ann", "kim"]
@@ -664,7 +668,7 @@ def test_the_view_holds_the_run_settings_the_reported_machine_and_the_accounts(b
         {
             "containers": [],
             "mirrors": [],
-            "machine": RUN_SETTINGS,
+            "machine": {"account": "ann", **RUN_SETTINGS},
         },
     )
     reported = {
@@ -681,7 +685,7 @@ def test_the_view_holds_the_run_settings_the_reported_machine_and_the_accounts(b
 
     view = client.get(BASE, params={"device_id": DEVICE}).json()
 
-    assert view["accounts"] == ["lab", "ann"]
+    assert "accounts" not in view
     assert view["machine"] == RUN_SETTINGS
     assert view["machine_state"] == reported
     assert view["memory_need"] is None
@@ -765,13 +769,15 @@ def answer_new_machine(runtime, result=None) -> None:
     }
 
 
-def test_a_new_machine_reads_the_agents_numbers_for_the_account(box):
+def test_a_new_machine_reads_the_agents_numbers_for_the_default_account(box):
     client, runtime = box
     runtime.device_platform[DEVICE] = WINDOWS
+    available(runtime, "lab")
+    available(runtime, "ann")
     answer_new_machine(runtime, dict(NEW_MACHINE, disk_gib=1024, disk_gib_now=1024))
 
     response = client.get(
-        f"{BASE}/new_machine", params={"device_id": DEVICE, "account": "lab"}
+        f"{BASE}/new_machine", params={"device_id": DEVICE, "account": "ann"}
     )
 
     assert response.status_code == 200, response.text
@@ -827,9 +833,7 @@ def test_a_new_machine_with_no_socket_answers_agent_offline(box):
     assert response.json()["detail"]["code"] == "agent_offline"
 
 
-def test_the_run_settings_are_empty_on_windows_and_macos_until_stored_and_none_on_linux(
-    box,
-):
+def test_the_run_settings_are_none_until_stored_and_none_on_linux(box):
     client, runtime = box
 
     runtime.device_platform[DEVICE] = DARWIN
@@ -837,12 +841,7 @@ def test_the_run_settings_are_empty_on_windows_and_macos_until_stored_and_none_o
     runtime.device_platform[DEVICE] = LINUX
     linux = client.get(BASE, params={"device_id": DEVICE}).json()
 
-    assert darwin["machine"] == {
-        "account": "",
-        "cpus": 0,
-        "memory_gib": 0,
-        "disk_gib": 0,
-    }
+    assert darwin["machine"] is None
     assert darwin["machine_state"] is None
     assert linux["machine"] is None
     assert linux["machine_state"] is None

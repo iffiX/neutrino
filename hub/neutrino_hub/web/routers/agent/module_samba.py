@@ -25,7 +25,11 @@ from neutrino_hub.modules.devices.folder_shares import (
     without_folder_share,
 )
 from neutrino_hub.modules.services.file_ids import folder_share_id
-from neutrino_hub.web.dependencies import get_runtime, require_session
+from neutrino_hub.web.dependencies import (
+    get_runtime,
+    require_default_account,
+    require_session,
+)
 from neutrino_hub.web.models import (
     FolderShareListView,
     FolderShareRemove,
@@ -43,13 +47,11 @@ from neutrino_hub.web.routers.agent.module import (
     recompose_published,
     record_apply,
     require_online,
+    require_share_folder,
     validate_config,
     write_module_config,
 )
-from neutrino_hub.web.routers.agent.module_account import (
-    is_machine_path_absolute,
-    require_share_folder,
-)
+from neutrino_hub.web.routers.agent.module_account import is_machine_path_absolute
 
 MODULE = DEVICE_SAMBA_MODULE
 CODE_SHARE_NAME_INVALID = "share_name_invalid"
@@ -62,7 +64,7 @@ CODE_CONFIG_UNWRITABLE = "config_unwritable"
 router = APIRouter(
     prefix=f"/api/agent/module/{MODULE}",
     tags=["module"],
-    dependencies=[Depends(require_session)],
+    dependencies=[Depends(require_session), Depends(require_default_account)],
 )
 
 

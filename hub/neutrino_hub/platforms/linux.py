@@ -1,18 +1,25 @@
 """The hub on Linux: one systemd unit per daemon, root by euid.
 
-Not pure: runs the browser opener and pkexec.
+Not pure: runs the browser opener, pkexec and loginctl, and reads the
+account database.
 """
 
 import os
+import pwd
 import shutil
 import subprocess
 from pathlib import Path
 
-from neutrino_hub.platforms.base import HubPlatform
+from neutrino_hub.platforms.base import HubPlatform, is_login_account
 from neutrino_hub.platforms.constants import (
     PLATFORM_BROWSER_TIMEOUT_S,
+    PLATFORM_COMMAND_TIMEOUT_S,
     PLATFORM_LINUX_BROWSER_OPENER,
     PLATFORM_LINUX_ELEVATOR,
+    PLATFORM_LINUX_HUMAN_UID_FLOOR,
+    PLATFORM_LINUX_NOBODY_UID,
+    PLATFORM_LINUX_SEAT_SESSION_COMMAND,
+    PLATFORM_LINUX_SESSION_NAME_COMMAND,
     PLATFORM_LINUX_USER_RUNTIME_ROOT,
     PLATFORM_OS_LINUX,
 )
@@ -130,6 +137,37 @@ class LinuxHubPlatform(HubPlatform):
             url,
         ]
 
+    def human_accounts(self) -> list:
+        """The accounts that are people: uid at the floor or above, a shell
+        someone can log in with, and a home directory that exists.
+
+        Returns:
+            Account names, sorted.
+        """
+        accounts = []
+        for entry in pwd.getpwall():
+            if entry.pw_uid < PLATFORM_LINUX_HUMAN_UID_FLOOR:
+                continue
+            if entry.pw_uid == PLATFORM_LINUX_NOBODY_UID:
+                continue
+            if not is_login_account(entry.pw_shell, entry.pw_dir):
+                continue
+            accounts.append(entry.pw_name)
+        return sorted(accounts)
+
+    def seated_account(self) -> str:
+        """The account of seat0's active session, as loginctl names it.
+
+        Returns:
+            The name; empty when the seat has no session or loginctl cannot
+            say.
+        """
+        session = _loginctl(PLATFORM_LINUX_SEAT_SESSION_COMMAND)
+        if not session:
+            return ""
+        name = _loginctl((*PLATFORM_LINUX_SESSION_NAME_COMMAND, session))
+        return "" if name == "root" else name
+
     def log_hint(self, name: str, unit: str) -> str:
         """Where a person reads one unit's log.
 
@@ -141,3 +179,16 @@ class LinuxHubPlatform(HubPlatform):
             The ``journalctl`` command.
         """
         return f"journalctl -u {unit}"
+
+
+def _loginctl(command: tuple) -> str:
+    """What one loginctl read prints, stripped; empty when it fails."""
+    try:
+        result = run(
+            list(command), is_checked=False, timeout_s=PLATFORM_COMMAND_TIMEOUT_S
+        )
+    except (subprocess.SubprocessError, OSError):
+        return ""
+    if result.exit_code != 0:
+        return ""
+    return (result.stdout or "").strip()

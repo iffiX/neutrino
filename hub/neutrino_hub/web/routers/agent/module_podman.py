@@ -7,7 +7,8 @@ and shown read only. The live list shows every container the device's
 podman knows with where it comes from, including ones started by hand at a
 shell, each with start, stop and restart and its unit's journal, a hub
 container with its journal alone. On Windows and macOS the containers run
-in one account's Podman machine, which the Run settings name.
+in the default account's Podman machine, whose resources the Run settings
+hold (agent/accounts.md, "The default account").
 """
 
 import httpx
@@ -72,8 +73,6 @@ LOGIN_KIND = "login"
 
 CODE_UNSUPPORTED_PLATFORM = "unsupported_platform"
 CODE_UNKNOWN_CREDENTIAL = "unknown_credential"
-CODE_CREDENTIAL_MISSING = "credential_missing"
-CODE_ACCOUNT_UNKNOWN = "account_unknown"
 CODE_MACHINE_DISK_INVALID = "machine_disk_invalid"
 CODE_CONTAINER_NAME_RESERVED = "container_name_reserved"
 CODE_CONTAINER_HUB_OWNED = "container_hub_owned"
@@ -91,10 +90,10 @@ def device_view(
     Returns:
         Declared containers as configured, the hub containers the machine's
         container modules compose, every container the device's podman
-        knows with its owner, the engine's own state, and the machine's
-        available accounts; on Windows and macOS the stored Run settings,
-        the Podman machine wherever the machine reports one, and the memory
-        the container modules need while it passes the machine's.
+        knows with its owner, and the engine's own state; on Windows and
+        macOS the stored Run settings, None while the hub holds none, the
+        Podman machine wherever the machine reports one, and the memory the
+        container modules need while it passes the machine's.
     """
     details = context.details
     config = context.config
@@ -128,15 +127,14 @@ def device_view(
         is_installed=context.state in CHANNEL_MODULE_PRESENT_STATES,
         is_active=bool(details.get("is_active")),
         version=str(details.get("version", "") or ""),
-        accounts=[
-            row.account
-            for row in runtime.desired_states.available_accounts(context.key)
-        ],
         machine=(
             PodmanMachineView(
-                **(stored_machine if isinstance(stored_machine, dict) else {})
+                **{
+                    name: stored_machine.get(name, 0)
+                    for name in ("cpus", "memory_gib", "disk_gib")
+                }
             )
-            if is_machine_run
+            if is_machine_run and isinstance(stored_machine, dict)
             else None
         ),
         machine_state=(
@@ -257,8 +255,8 @@ def update_machine(
     """Replace the Run settings of a Windows or macOS machine.
 
     Args:
-        update: The device, the available account whose Podman machine runs
-            the containers, and the machine's resources.
+        update: The device and the resources of its default account's
+            Podman machine.
         runtime: The shared runtime.
 
     Returns:
@@ -266,28 +264,14 @@ def update_machine(
 
     Raises:
         HTTPException: 400 ``unsupported_platform`` for a machine that is
-            not Windows or macOS, ``account_unknown`` for an account that is
-            not available, ``credential_missing`` for an account of a
-            Windows machine with no login, ``machine_disk_invalid`` for a
-            Windows machine with a disk limit of 0; 409 ``agent_offline``;
-            400 with the agent's code when it refuses the settings.
+            not Windows or macOS, ``machine_disk_invalid`` for a Windows
+            machine with a disk limit of 0; 409 ``agent_offline``; 400 with
+            the agent's code when it refuses the settings.
     """
     context = device_context(runtime, MODULE, update.device_id)
     os_name = runtime.device_platform.get(context.key, {}).get("os")
     if os_name not in DEVICE_PODMAN_MACHINE_OS:
         raise _refusal(CODE_UNSUPPORTED_PLATFORM)
-    available = {
-        row.account: row
-        for row in runtime.desired_states.available_accounts(context.key)
-    }
-    if update.account and update.account not in available:
-        raise _refusal(CODE_ACCOUNT_UNKNOWN, account=update.account)
-    if (
-        os_name == OS_WINDOWS
-        and update.account
-        and not available[update.account].login_id
-    ):
-        raise _refusal(CODE_CREDENTIAL_MISSING, account=update.account)
     if os_name == OS_WINDOWS and update.disk_gib < 1:
         raise _refusal(CODE_MACHINE_DISK_INVALID, disk_gib=update.disk_gib)
     config = dict(context.config)
@@ -299,7 +283,6 @@ def update_machine(
 @router.get("/new_machine", response_model=PodmanNewMachineView)
 def read_new_machine(
     device_id: str,
-    account: str = "",
     module: str = "",
     runtime: PanelRuntime = Depends(get_runtime),
 ) -> PodmanNewMachineView:
@@ -307,14 +290,13 @@ def read_new_machine(
 
     Args:
         device_id: The device, from the query.
-        account: The account whose disk to read; empty reads none.
         module: The module being installed, counted in the need; empty adds
             none.
         runtime: The shared runtime.
 
     Returns:
-        The default CPUs and memory, the disk the account's machine has or
-        else the default, and what the container modules need.
+        The default CPUs and memory, the disk the default account's machine
+        has or else the default, and what the container modules need.
 
     Raises:
         HTTPException: 400 ``unsupported_platform`` for a machine that is
@@ -326,7 +308,10 @@ def read_new_machine(
     if os_name not in DEVICE_PODMAN_MACHINE_OS:
         raise _refusal(CODE_UNSUPPORTED_PLATFORM)
     closed = run_command(
-        runtime, context, CHANNEL_VERB_MACHINE_READ, {"account": account}
+        runtime,
+        context,
+        CHANNEL_VERB_MACHINE_READ,
+        {"account": runtime.desired_states.default_account(context.key)},
     )
     wants = dict(runtime.desired_states.modules(context.key))
     if module:

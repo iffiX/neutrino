@@ -338,3 +338,34 @@ def test_each_command_line_program_runs_as_its_login_with_no_page_or_key():
             "",
             False,
         )
+
+
+# The accounts page's one module table (agent/accounts.md, "Which modules
+# serve which accounts"): each module and the accounts it serves.
+SERVES = {
+    "terminal": "several",
+    "ssh_server": "several",
+    "remote_desktop": "none",
+    "samba": "several",
+    "gitea": "none",
+    "ollama": "none",
+    "vscode": "several",
+    "code_server": "several",
+    "cloudcli": "several",
+    "codeg": "several",
+    "claude_code": "several",
+    "codex": "several",
+    "opencode": "several",
+    "siyuan": "several",
+    "podman": "one",
+    "hermes_webui": "one",
+    "ayakaleaf": "one",
+    "astrbot": "one",
+}
+
+
+def test_every_row_names_the_accounts_its_module_serves_as_the_accounts_page_does():
+    assert {row.name: row.accounts for row in DEVICE_MODULE_ROWS} == SERVES
+    assert account_layer_names() == tuple(
+        name for name, serves in SERVES.items() if serves == "several"
+    )

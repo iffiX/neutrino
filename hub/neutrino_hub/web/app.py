@@ -25,6 +25,7 @@ from neutrino_hub.modules.clients.ai_keys import settle_device_keys
 from neutrino_hub.modules.cliproxyapi.ops import CliproxyApiConfigApplier, load_config
 from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.modules.devices.desired_state import DesiredStateStore
+from neutrino_hub.modules.devices.legacy_defaults import set_legacy_defaults
 from neutrino_hub.modules.devices.legacy_files import move_legacy_device_files
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.modules.hub_update.installer import retire_finished_job
@@ -229,10 +230,12 @@ def _settle_gateway_key() -> None:
 
 
 def _move_legacy_files() -> None:
-    """Move every machine's 0.5 files into the account layer, at the panel's start.
+    """Move every machine's 0.5 files into the account layer, and give each 0.6.1 machine its default account, at the panel's start.
 
     A hub upgraded from 0.5 holds each module's accounts inside the module's
-    file; they go into ``accounts.json`` here, once per machine.
+    file; they go into ``accounts.json`` here, once per machine. A machine
+    whose ``accounts.json`` names no default account then takes its first
+    available account as the default.
     """
     try:
         moved = move_legacy_device_files(
@@ -244,6 +247,16 @@ def _move_legacy_files() -> None:
         return
     if moved:
         LOGGER.info("devices: the 0.5 files of %s moved", ", ".join(moved))
+    try:
+        defaulted = set_legacy_defaults(
+            DesiredStateStore(),
+            {device.id: device.name or "" for device in DeviceRegistry().all_stored()},
+        )
+    except (VaultLockedError, ValueError, OSError) as error:
+        LOGGER.warning("the 0.6.1 default accounts were not set: %s", error)
+        return
+    if defaulted:
+        LOGGER.info("devices: %s took a default account", ", ".join(defaulted))
 
 
 def _drop_legacy_tls() -> None:

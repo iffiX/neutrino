@@ -113,6 +113,7 @@ def test_the_state_carries_two_secrets_opened_and_the_names(store):
         "password": opened_values["password"],
         "cookie_name": "ayakaleaf_sid_dev-1",
         "local_name": "ayakaleaf.argon.localhost",
+        "is_gateway_used": True,
     }
 
 
@@ -122,6 +123,7 @@ def test_a_file_with_nothing_sealed_sends_empty_secrets():
         "password": "",
         "cookie_name": "ayakaleaf_sid_dev-1",
         "local_name": "",
+        "is_gateway_used": True,
     }
 
 
@@ -322,5 +324,33 @@ def test_an_installed_ayakaleaf_with_no_model_of_its_own_follows_the_default(sto
     store.write(DEVICE, "ayakaleaf", {**store.read(DEVICE, "ayakaleaf"), "model": "m2"})
     assert not ayakaleaf.has_default_model_follower(store, [DEVICE])
     store.write(DEVICE, "ayakaleaf", {**store.read(DEVICE, "ayakaleaf"), "model": ""})
+    store.write(
+        DEVICE, "accounts", {"default_account": "lab", "accounts": [{"account": "lab"}]}
+    )
+    assert not ayakaleaf.has_default_model_follower(store, [DEVICE])
+    store.write(DEVICE, "accounts", {})
     store.set_want(DEVICE, "ayakaleaf", "absent")
     assert not ayakaleaf.has_default_model_follower(store, [DEVICE])
+
+
+def test_no_gateway_variable_while_the_default_account_s_switch_is_off(store):
+    ayakaleaf.ensure_config(store, DEVICE)
+    key = ai_keys.ensure_module_key(store, DEVICE, "ayakaleaf", "argon")
+    store.set_want(DEVICE, "ayakaleaf", "running")
+    store.write(DEVICE, "ayakaleaf", {**store.read(DEVICE, "ayakaleaf"), "model": "m2"})
+    store.write(
+        DEVICE,
+        "accounts",
+        {"default_account": "lab", "accounts": [{"account": "lab"}]},
+    )
+
+    composed = compose_hub_containers(store, DEVICE, LINUX, models=["m1", "m2"])
+    config = store.agent_config(
+        DEVICE, "ayakaleaf", store.read(DEVICE, "ayakaleaf"), LINUX
+    )
+
+    lines = [line for item in composed for line in item["environment"]]
+    assert not [line for line in lines if line.startswith(("NEUTRINO_GATEWAY_", "AI_"))]
+    assert key not in " ".join(lines)
+    assert config["is_gateway_used"] is False
+    assert store.read(DEVICE, "ayakaleaf")["model"] == "m2"

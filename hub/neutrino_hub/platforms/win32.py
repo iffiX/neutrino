@@ -2,7 +2,9 @@
 
 Copied from the agent's and cut to what the hub calls: the service
 dispatcher, the job its children run in, the elevation check, starting
-``nhub`` elevated through the UAC prompt, and iphlpapi's network tables.
+``nhub`` elevated through the UAC prompt, iphlpapi's network tables, and
+the machine's local accounts, their profiles, the console's account and one
+network logon, which setup reads and tests the default account with.
 Nothing binds a library at import time, so this module imports on Linux as
 readily as on Windows and the seams above it stay replaceable in tests.
 """
@@ -90,6 +92,28 @@ ADDRESS_NEXT_OFFSET = 8  # Next, pointer
 ADDRESS_SOCKADDR_OFFSET = 16  # Address.lpSockaddr, pointer
 ADDRESS_ON_LINK_PREFIX_LENGTH_OFFSET = 56  # OnLinkPrefixLength, UINT8
 
+# Local accounts: the normal ones, every row in one buffer, the flag of a
+# disabled one, the kind of SID an account is, a name no SID answers, and
+# the registry read from its 64-bit view whatever the process is.
+FILTER_NORMAL_ACCOUNT = 0x0002
+MAX_PREFERRED_LENGTH = 0xFFFFFFFF
+UF_ACCOUNTDISABLE = 0x0002
+SID_TYPE_USER = 1
+ERROR_NONE_MAPPED = 1332
+COMPUTER_NAME_CHARS = 256
+KEY_WOW64_64KEY = 0x0100
+# A password check: the network logon, the answer a wrong password gets, and
+# the one a kind the account may not use gets.
+LOGON32_LOGON_NETWORK = 3
+LOGON32_PROVIDER_DEFAULT = 0
+ERROR_LOGON_FAILURE = 1326
+ERROR_LOGON_TYPE_NOT_GRANTED = 1385
+# The console session's account: this server, the session with no console,
+# and the class that names a session's account.
+WTS_CURRENT_SERVER_HANDLE = 0
+WTS_NO_CONSOLE_SESSION = 0xFFFFFFFF
+WTS_USER_NAME = 5
+
 _LIBRARIES = None
 
 
@@ -116,6 +140,32 @@ def returned_error(code: int) -> OSError:
     if maker is None:
         return OSError(code, f"error {code}")
     return maker(code)
+
+
+def utf16_at(data: bytes, base: int, address: int) -> str:
+    """The null-terminated UTF-16 string a pointer inside a buffer names.
+
+    Args:
+        data: The buffer's bytes.
+        base: The address the buffer sat at, which its pointers count from.
+        address: The pointer; 0 is no string.
+
+    Returns:
+        The text up to its null, or to the buffer's end; empty for a null
+        pointer.
+
+    Raises:
+        ValueError: When the pointer leads outside the buffer.
+    """
+    if not address:
+        return ""
+    offset = address - base
+    if offset < 0 or offset >= len(data):
+        raise ValueError(f"a pointer {address:#x} outside the buffer at {base:#x}")
+    end = offset
+    while end + 1 < len(data) and data[end : end + 2] != b"\x00\x00":
+        end += 2
+    return data[offset:end].decode("utf-16-le", errors="replace")
 
 
 def service_main_type():
@@ -241,6 +291,21 @@ class ShellExecuteInfo(ctypes.Structure):
         ("dwHotKey", DWORD),
         ("hIconOrMonitor", ctypes.c_void_p),
         ("hProcess", ctypes.c_void_p),
+    ]
+
+
+class UserInfo1(ctypes.Structure):
+    """USER_INFO_1, pointers as 64-bit addresses."""
+
+    _fields_ = [
+        ("usri1_name", ctypes.c_uint64),
+        ("usri1_password", ctypes.c_uint64),
+        ("usri1_password_age", ctypes.c_uint32),
+        ("usri1_priv", ctypes.c_uint32),
+        ("usri1_home_dir", ctypes.c_uint64),
+        ("usri1_comment", ctypes.c_uint64),
+        ("usri1_flags", ctypes.c_uint32),
+        ("usri1_script_path", ctypes.c_uint64),
     ]
 
 
@@ -382,10 +447,13 @@ class Win32Libraries:
         self.advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
         self.shell32 = ctypes.WinDLL("shell32", use_last_error=True)
         self.iphlpapi = ctypes.WinDLL("iphlpapi")
+        self.netapi32 = ctypes.WinDLL("netapi32")
+        self.wtsapi32 = ctypes.WinDLL("wtsapi32", use_last_error=True)
         self._describe_kernel32()
         self._describe_advapi32()
         self._describe_shell32()
         self._describe_iphlpapi()
+        self._describe_accounts()
 
     def _describe_kernel32(self) -> None:
         """Prototype the job calls."""
@@ -456,3 +524,60 @@ class Win32Libraries:
             ctypes.c_void_p,
             ctypes.POINTER(DWORD),
         ]
+
+    def _describe_accounts(self) -> None:
+        """Prototype the local account, SID, logon and console session calls."""
+        self.netapi32.NetUserEnum.restype = DWORD
+        self.netapi32.NetUserEnum.argtypes = [
+            ctypes.c_wchar_p,
+            DWORD,
+            DWORD,
+            ctypes.POINTER(ctypes.c_void_p),
+            DWORD,
+            ctypes.POINTER(DWORD),
+            ctypes.POINTER(DWORD),
+            ctypes.POINTER(DWORD),
+        ]
+        self.netapi32.NetApiBufferSize.restype = DWORD
+        self.netapi32.NetApiBufferSize.argtypes = [
+            ctypes.c_void_p,
+            ctypes.POINTER(DWORD),
+        ]
+        self.netapi32.NetApiBufferFree.restype = DWORD
+        self.netapi32.NetApiBufferFree.argtypes = [ctypes.c_void_p]
+        self.advapi32.LookupAccountNameW.argtypes = [
+            ctypes.c_wchar_p,
+            ctypes.c_wchar_p,
+            ctypes.c_void_p,
+            ctypes.POINTER(DWORD),
+            ctypes.c_void_p,
+            ctypes.POINTER(DWORD),
+            ctypes.POINTER(DWORD),
+        ]
+        self.advapi32.ConvertSidToStringSidW.argtypes = [
+            ctypes.c_void_p,
+            ctypes.POINTER(ctypes.c_void_p),
+        ]
+        self.advapi32.LogonUserW.argtypes = [
+            ctypes.c_wchar_p,
+            ctypes.c_wchar_p,
+            ctypes.c_wchar_p,
+            DWORD,
+            DWORD,
+            ctypes.POINTER(ctypes.c_void_p),
+        ]
+        self.kernel32.LocalFree.argtypes = [ctypes.c_void_p]
+        self.kernel32.GetComputerNameW.argtypes = [
+            ctypes.c_wchar_p,
+            ctypes.POINTER(DWORD),
+        ]
+        self.kernel32.WTSGetActiveConsoleSessionId.restype = DWORD
+        self.kernel32.WTSGetActiveConsoleSessionId.argtypes = []
+        self.wtsapi32.WTSQuerySessionInformationW.argtypes = [
+            ctypes.c_void_p,
+            DWORD,
+            ctypes.c_int,
+            ctypes.POINTER(ctypes.c_void_p),
+            ctypes.POINTER(DWORD),
+        ]
+        self.wtsapi32.WTSFreeMemory.argtypes = [ctypes.c_void_p]

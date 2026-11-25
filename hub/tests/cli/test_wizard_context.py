@@ -43,6 +43,41 @@ def test_the_browser_starts_both_panel_ports_where_the_terminal_does(monkeypatch
     assert defaults["https_listen_port"] == asked._https_listen_port
 
 
+def test_the_context_carries_the_accounts_and_starts_at_the_one_at_the_screen(
+    monkeypatch, machine_accounts
+):
+    monkeypatch.setattr(wizard, "RouterLinkStatus", _one_wired_port)
+    machine_accounts.accounts = ["ann", "lab", "zoe"]
+    machine_accounts.runner = "zoe"
+    machine_accounts.seated = "lab"
+
+    context = wizard.context()
+
+    assert context["accounts"] == ["ann", "lab", "zoe"]
+    assert context["default_account"] == "lab"
+    assert wizard.suggested_account(context["accounts"], is_terminal=True) == "zoe"
+
+
+def test_the_picker_starts_at_the_first_where_nobody_is_named(
+    monkeypatch, machine_accounts
+):
+    monkeypatch.setattr(wizard, "RouterLinkStatus", _one_wired_port)
+    machine_accounts.accounts = ["ann", "lab"]
+    machine_accounts.runner = "root"
+    machine_accounts.seated = "ghost"
+
+    assert wizard.context()["default_account"] == "ann"
+    assert wizard.suggested_account(["ann", "lab"], is_terminal=True) == "ann"
+
+
+def test_a_machine_with_no_account_offers_none(monkeypatch, machine_accounts):
+    monkeypatch.setattr(wizard, "RouterLinkStatus", _one_wired_port)
+
+    context = wizard.context()
+
+    assert (context["accounts"], context["default_account"]) == ([], "")
+
+
 def test_a_machine_with_no_port_is_refused_the_same_way(monkeypatch):
     monkeypatch.setattr(wizard, "RouterLinkStatus", _no_ports)
 

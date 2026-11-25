@@ -126,7 +126,7 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_RDP_SEAT_PASSWORD_CHARS,
 )
 from neutrino_hub.modules.devices import astrbot, ayakaleaf, hermes_webui
-from neutrino_hub.modules.devices.accounts import DeviceAccount
+from neutrino_hub.modules.devices.accounts import DeviceAccount, DeviceAccountStore
 from neutrino_hub.modules.devices.folder_shares import (
     folder_shares,
     with_accounts_only,
@@ -149,7 +149,6 @@ from neutrino_hub.modules.devices.module_table import (
     command_line_program_names,
     gateway_container_names,
     gateway_instance_names,
-    gateway_module_names,
     module_row,
 )
 from neutrino_hub.modules.services.apps import (
@@ -595,22 +594,26 @@ def ollama_agent_config(stored: dict) -> dict:
     return settings
 
 
-def podman_agent_config(stored: dict, platform: dict, available: list) -> dict:
+def podman_agent_config(
+    stored: dict, platform: dict, available: list, default_account: str = ""
+) -> dict:
     """What the agent is sent for the Containers module.
 
     Args:
         stored: ``podman.json``: the containers, the mirrors and the Run
-            settings, ``machine``, naming an available account.
+            settings, ``machine``, its three numbers.
         platform: The tuple the agent reported; only a Windows or macOS
             machine is sent ``machine``, and only a Windows one a password.
         available: The machine's available accounts, whose login a Windows
             machine's ``machine`` signs in with.
+        default_account: The machine's default account, whose Podman
+            machine runs the containers; empty while it has none.
 
     Returns:
         The file's fields as stored, ``machine`` left out on Linux and on a
         machine that reported no system; on Windows and macOS ``machine``
-        is ``{account, cpus, memory_gib, disk_gib}``, with the ``password``
-        of the account's login on Windows.
+        is ``{account, cpus, memory_gib, disk_gib}``, ``account`` the
+        default account, with the ``password`` of its login on Windows.
     """
     config = {
         key: value for key, value in stored.items() if key != DEVICE_PODMAN_MACHINE_KEY
@@ -619,7 +622,7 @@ def podman_agent_config(stored: dict, platform: dict, available: list) -> dict:
     os_name = platform.get("os")
     if os_name not in DEVICE_PODMAN_MACHINE_OS or not isinstance(machine, dict):
         return config
-    account = str(machine.get("account", "") or "")
+    account = default_account
     sent = {
         "account": account,
         "cpus": machine.get("cpus", 0),
@@ -662,7 +665,8 @@ def ai_tools_agent_config(
         is_hub_machine: Whether the device is the hub's own machine, whose
             agent opens no forward.
         is_gateway_module: Whether a container module that uses the gateway
-            is installed on the device.
+            is installed on the device while the default account's switch
+            has it use it.
         listen_port: The gateway's own port, which the hub's own machine
             relays to its containers while such a module is installed there.
         context_lengths: Each served name's ``{context_length,
@@ -1113,6 +1117,85 @@ class DesiredStateStore:
             if isinstance(row, dict) and row.get("account")
         ]
 
+    def default_account(self, key: str) -> str:
+        """One device's default account (agent/accounts.md, "The default account").
+
+        Args:
+            key: The device key.
+
+        Returns:
+            The account ``accounts.json`` names; empty while it names none.
+        """
+        return DeviceAccountStore(self).default_account(key)
+
+    def is_gateway_used(self, key: str) -> bool:
+        """Whether Hermes WebUI, Ayakaleaf and AstrBot use the gateway on one device.
+
+        Args:
+            key: The device key.
+
+        Returns:
+            The default account's AI tools switch; true while the device has
+            no default account (agent/accounts.md, "The AI switch and what
+            follows it").
+        """
+        default = self.default_account(key)
+        if not default:
+            return True
+        return any(
+            account.account == default and account.is_ai_tools_enabled
+            for account in self.available_accounts(key)
+        )
+
+    def default_modules(self, key: str, wanted: "dict | None" = None) -> list:
+        """The modules the default account is enabled in on one device.
+
+        Args:
+            key: The device key.
+            wanted: The modules ``modules.json`` names; None reads the file.
+
+        Returns:
+            Terminal, the SSH server, and every other module of the account
+            layer whose ``want`` is neither empty nor ``absent``, in the
+            description table's order.
+        """
+        held = self.modules(key) if wanted is None else wanted
+        names = []
+        for row in account_layer_rows():
+            if row.name not in (DEVICE_TERMINAL_MODULE, DEVICE_SSH_SERVER_MODULE):
+                want = str((held.get(row.name) or {}).get("want", "") or "")
+                if want in ("", CHANNEL_MODULE_STATE_ABSENT):
+                    continue
+            names.append(row.name)
+        return names
+
+    def enable_default(self, key: str, module: str) -> dict:
+        """Enable the default account in one account-layer module, first in its list.
+
+        Call under ``CONFIG_WRITE_LOCK`` when the write joins others.
+
+        Args:
+            key: The device key.
+            module: The module.
+
+        Returns:
+            The module's file as written; as it was while the device has no
+            default account.
+
+        Raises:
+            KeyError: For a module the table does not hold.
+            VaultLockedError: If a secret has to be made and the vault is
+                locked.
+            OSError: When the file cannot be written.
+        """
+        default = self.default_account(key)
+        if not default:
+            return self.read(key, module)
+        others = [
+            name for name in self.enabled_accounts(key, module) if name != default
+        ]
+        return self.set_enabled_accounts(key, module, [default, *others])
+
     def programs_of(self, key: str, wanted: "dict | None" = None) -> dict:
         """The command line programs each account of one device is enabled in.
 
@@ -1158,8 +1241,9 @@ class DesiredStateStore:
 
         A newly enabled account gets each field the row seals, made once; an
         account disabled keeps its record under ``disabled``, so enabling it
-        again gives it the same secrets. On the file share an account
-        disabled leaves every folder share in the same write.
+        again gives it the same secrets. The default account goes first. On
+        the file share an account disabled leaves every folder share in the
+        same write.
 
         Args:
             key: The device key.
@@ -1176,6 +1260,9 @@ class DesiredStateStore:
             OSError: When the file cannot be written.
         """
         row = module_row(module)
+        default = self.default_account(key)
+        if default in accounts:
+            accounts = [default, *(name for name in accounts if name != default)]
         with CONFIG_WRITE_LOCK:
             held = self.read(key, module)
             kept = {
@@ -1467,26 +1554,22 @@ class DesiredStateStore:
             return CHANNEL_MODULE_STATE_STOPPED
         return CHANNEL_MODULE_STATE_RUNNING
 
-    def has_gateway_module(
-        self, key: str, *, is_container: bool = False, wanted: "dict | None" = None
-    ) -> bool:
-        """Whether a module that uses the AI gateway is installed on one device.
+    def has_gateway_module(self, key: str, *, wanted: "dict | None" = None) -> bool:
+        """Whether a container module that uses the AI gateway is installed on one device while it uses it.
 
         Args:
             key: The device key.
-            is_container: Whether only a container module counts.
             wanted: The modules ``modules.json`` names, as the state's one
                 read gave them; None reads the file.
 
         Returns:
             True while ``modules.json`` names such a module with a ``want``
-            other than ``absent``.
+            other than ``absent`` and :meth:`is_gateway_used` holds.
         """
         modules = self.modules(key) if wanted is None else wanted
-        names = gateway_container_names() if is_container else gateway_module_names()
-        return any(
+        return self.is_gateway_used(key) and any(
             modules[name]["want"] != CHANNEL_MODULE_STATE_ABSENT
-            for name in names
+            for name in gateway_container_names()
             if name in modules
         )
 
@@ -1628,7 +1711,9 @@ class DesiredStateStore:
         elif name == DEVICE_OLLAMA_MODULE:
             config = ollama_agent_config(config)
         elif name == DEVICE_PODMAN_MODULE:
-            config = podman_agent_config(config, platform, available)
+            config = podman_agent_config(
+                config, platform, available, self.default_account(key)
+            )
             config[DEVICE_HUB_CONTAINERS_KEY] = compose_hub_containers(
                 self,
                 key,
@@ -1648,12 +1733,16 @@ class DesiredStateStore:
                 local_name=local_name(made, machine_slug),
                 models=ai_models,
                 context_lengths=ai_lengths,
+                is_gateway_used=self.is_gateway_used(key),
             )
         elif name == DEVICE_AYAKALEAF_MODULE:
             app_id = module_app_id(name, key)
             made = (app_slug_of or {}).get(app_id) or slug(SERVICES_AYAKALEAF_TITLE)
             config = ayakaleaf.agent_config(
-                config, key, local_name=local_name(made, machine_slug)
+                config,
+                key,
+                local_name=local_name(made, machine_slug),
+                is_gateway_used=self.is_gateway_used(key),
             )
         elif name == DEVICE_ASTRBOT_MODULE:
             app_id = module_app_id(name, key)
@@ -1664,6 +1753,7 @@ class DesiredStateStore:
                 local_name=local_name(made, machine_slug),
                 models=ai_models,
                 context_lengths=ai_lengths,
+                is_gateway_used=self.is_gateway_used(key),
             )
         held = load_module_manifests() if manifests is None else manifests
         if guest_login_of(held, name) == DEVICE_GUEST_LOGIN_GUEST_ACCOUNT:
@@ -1793,9 +1883,6 @@ class DesiredStateStore:
                 modules[name][DEVICE_RETRY_MARK_KEY] = marks[name]
         switcher = load_tool_manifests().get(DEVICE_AI_SWITCHER_NAME, {})
         is_gateway_module = self.has_gateway_module(key, wanted=wanted)
-        is_gateway_container = self.has_gateway_module(
-            key, is_container=True, wanted=wanted
-        )
         desired = {
             "modules": modules,
             "desktop": {"seat_password": self.seat_password(key)},
@@ -1810,7 +1897,7 @@ class DesiredStateStore:
                 is_hub_machine=is_hub_machine,
                 is_gateway_module=is_gateway_module,
                 listen_port=(
-                    gateway_port() if is_hub_machine and is_gateway_container else 0
+                    gateway_port() if is_hub_machine and is_gateway_module else 0
                 ),
                 context_lengths=ai_lengths,
             ),
