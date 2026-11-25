@@ -41,7 +41,8 @@ interface GiteaPanelsProps {
   deviceId: string;
   /** Where Gitea answers: `/agent/module/gitea`. */
   basePath: string;
-  isEditable: boolean;
+  /** Why nothing here can be applied, or null while it can. */
+  blockedHint: string | null;
   /** Whether a change takes effect at Gitea's next Start. */
   isWaitingForStart: boolean;
 }
@@ -52,7 +53,7 @@ type GiteaAccessDraft = Omit<GiteaConfigUpdate, "device_id">;
 export function GiteaPanels({
   deviceId,
   basePath,
-  isEditable,
+  blockedHint,
   isWaitingForStart,
 }: GiteaPanelsProps) {
   // Redrawn when the panel's language changes.
@@ -173,7 +174,7 @@ export function GiteaPanels({
               ? t("ui.modules.stopped_hint")
               : t("ui.gitea.access_apply_hint")
           }
-          blockedHint={isEditable ? null : t("ui.modules.agent_offline")}
+          blockedHint={blockedHint}
           error={error}
           notice={notice}
           onReset={reset}

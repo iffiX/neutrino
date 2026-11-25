@@ -58,7 +58,8 @@ interface OllamaSettingsProps {
   basePath: string;
   /** The Ollama view: the stored settings and the machine's GPUs. */
   saved: OllamaDeviceView;
-  isEditable: boolean;
+  /** Why nothing here can be applied, or null while it can. */
+  blockedHint: string | null;
   /** The machine's system: `linux`, `windows` or `darwin`. */
   platformOs: string;
   /** What the hub asks of the module: `running`, `stopped`, or empty. */
@@ -79,7 +80,7 @@ export function OllamaSettings({
   deviceId,
   basePath,
   saved,
-  isEditable,
+  blockedHint,
   platformOs,
   want,
   onSaved,
@@ -157,7 +158,7 @@ export function OllamaSettings({
             setDraft({ ...draft, keep_alive: keepAlive });
           }}
           label={t("ui.ollama.keep_alive")}
-          isDisabled={!isEditable || isUnsupported}
+          isDisabled={blockedHint !== null || isUnsupported}
         />
         <label className="field">
           <span className="field_label">{t("ui.ollama.context_length")}</span>
@@ -169,7 +170,7 @@ export function OllamaSettings({
             max={CONTEXT_LENGTH_MAX}
             step={1}
             value={draft.context_length}
-            disabled={!isEditable || isUnsupported}
+            disabled={blockedHint !== null || isUnsupported}
             onChange={(event) => {
               setDraft({ ...draft, context_length: event.target.value });
             }}
@@ -192,7 +193,7 @@ export function OllamaSettings({
                 <input
                   type="checkbox"
                   checked={draft.ticks[place] ?? true}
-                  disabled={!isEditable || isUnsupported}
+                  disabled={blockedHint !== null || isUnsupported}
                   onChange={(event) => {
                     const ticks = [...draft.ticks];
                     ticks[place] = event.target.checked;
@@ -219,7 +220,7 @@ export function OllamaSettings({
             ? t("ui.ollama.settings_restart_warning")
             : undefined
         }
-        blockedHint={isEditable ? null : t("ui.modules.agent_offline")}
+        blockedHint={blockedHint}
         isApplyDisabled={isUnsupported || contextLengthError !== null}
         error={error}
         notice={

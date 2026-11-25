@@ -10,12 +10,17 @@ import { MachineModules } from "../components/machine_modules";
 import { Spinner } from "../components/spinner";
 import { StatusDot } from "../components/status_dot";
 import { apiPost, describeError } from "../api_client";
-import { describeJoinedUnder05, toDeviceLabel } from "../device_level";
+import {
+  describeJoinedUnder05,
+  isDeviceIncomplete,
+  toDeviceLabel,
+} from "../device_level";
 import { toDeviceMetrics, withDeviceMetrics } from "../device_metrics";
 import { formatTimeAgo } from "../format_duration";
 import { t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
 import {
+  HUB_EVENT_CONFIG,
   HUB_EVENT_DEVICE_REPORT,
   HUB_EVENT_DEVICES,
   HUB_EVENT_METRICS,
@@ -36,8 +41,9 @@ import "./machine_page.css";
  * The machine page, `/agents/<id>`: one managed machine, what it does now,
  * what it hosts, and its agent.
  *
- * The header names the machine, its online dot, its agent's version, its
- * system, host name and address, with **Agents** back to the table. Three
+ * The header names the machine, its online dot, `incomplete` while it is
+ * online with no default account, its agent's version, its system, host
+ * name and address, with **Agents** back to the table. Three
  * sections follow: **Monitor**, **Modules** (its available accounts, then
  * its module tabs) and **The agent**. A machine that has not reported yet
  * shows that it waits in each section; an id the hub holds no row for says
@@ -47,11 +53,15 @@ import "./machine_page.css";
 const DEVICES_PATH = "/hub/device";
 
 // What moves this machine's row: its session opening or ending, its name,
-// and a report saying something new about it.
-const INVALIDATE_ON = [
-  { type: HUB_EVENT_DEVICES },
-  { type: HUB_EVENT_DEVICE_REPORT },
-];
+// a report saying something new about it, and its accounts' file, which
+// holds its default account.
+function invalidateOn(deviceId: string) {
+  return [
+    { type: HUB_EVENT_DEVICES },
+    { type: HUB_EVENT_DEVICE_REPORT },
+    { type: HUB_EVENT_CONFIG, key: `devices/${deviceId}/accounts.json` },
+  ];
+}
 
 /** What a field shows for a value the machine has not reported. */
 const NOTHING = "—";
@@ -61,7 +71,7 @@ export function MachinePage() {
   useLanguage();
   const { deviceId = "" } = useParams();
   const resource = useApiResource<DevicesResponse>(DEVICES_PATH, {
-    invalidateOn: INVALIDATE_ON,
+    invalidateOn: invalidateOn(deviceId),
   });
   const [devices, setDevices] = useState<DeviceView[]>([]);
 
@@ -136,6 +146,7 @@ interface MachineViewProps {
 function MachineView({ device, onReinstalled }: MachineViewProps) {
   const client = device.client;
   const isOnline = device.is_agent_online;
+  const isIncomplete = isDeviceIncomplete(device);
   const name = toDeviceLabel(device);
   const joinedUnder05 = describeJoinedUnder05(device);
   const platform = [client?.platform_os, client?.platform_arch]
@@ -147,11 +158,15 @@ function MachineView({ device, onReinstalled }: MachineViewProps) {
         <div className="page_header_text">
           <div className="page_title_row">
             <h1>{name}</h1>
-            <StatusDot
-              tone={isOnline ? "ok" : "idle"}
-              isPulsing={isOnline}
-              label={t(isOnline ? "state.online" : "state.offline")}
-            />
+            {isIncomplete ? (
+              <StatusDot tone="warn" label={t("state.incomplete")} />
+            ) : (
+              <StatusDot
+                tone={isOnline ? "ok" : "idle"}
+                isPulsing={isOnline}
+                label={t(isOnline ? "state.online" : "state.offline")}
+              />
+            )}
             {client?.version != null && (
               <span
                 className={`badge ${client.is_version_mismatched ? "badge--warn" : "badge--ok"}`}
@@ -202,6 +217,7 @@ function MachineView({ device, onReinstalled }: MachineViewProps) {
                 deviceId={device.id}
                 deviceName={name}
                 platformOs={client.platform_os ?? ""}
+                defaultAccount={device.default_account}
               />
             </section>
           </>

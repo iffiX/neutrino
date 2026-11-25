@@ -40,3 +40,17 @@ export function describeJoinedUnder05(device: DeviceView): string | null {
   }
   return describeCode(error);
 }
+
+/**
+ * Whether a managed machine is incomplete: online with no default account.
+ * An offline machine reads offline, whatever its accounts.
+ *
+ * Args:
+ *   device: The machine's row.
+ *
+ * Returns:
+ *   True for an online machine whose row names no default account.
+ */
+export function isDeviceIncomplete(device: DeviceView): boolean {
+  return device.is_agent_online && device.default_account === "";
+}

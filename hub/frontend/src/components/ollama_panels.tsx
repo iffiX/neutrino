@@ -40,7 +40,8 @@ interface OllamaPanelsProps {
   deviceId: string;
   /** Where the module answers: `/agent/module/ollama`. */
   basePath: string;
-  isEditable: boolean;
+  /** Why nothing here can be applied, or null while it can. */
+  blockedHint: string | null;
   /** The machine's system: `linux`, `windows` or `darwin`. */
   platformOs: string;
   /** What the hub asks of the module: `running`, `stopped`, or empty. */
@@ -76,7 +77,7 @@ const BYTES_PER_MIB = 1024 * 1024;
 export function OllamaPanels({
   deviceId,
   basePath,
-  isEditable,
+  blockedHint,
   platformOs,
   want,
 }: OllamaPanelsProps) {
@@ -110,7 +111,7 @@ export function OllamaPanels({
         deviceId={deviceId}
         basePath={basePath}
         saved={saved}
-        isEditable={isEditable}
+        blockedHint={blockedHint}
         platformOs={platformOs}
         want={want}
         onSaved={resource.setData}
@@ -119,7 +120,7 @@ export function OllamaPanels({
         deviceId={deviceId}
         basePath={basePath}
         saved={saved}
-        isEditable={isEditable}
+        isEditable={blockedHint === null}
         onView={resource.setData}
         onRetry={resource.reload}
       />

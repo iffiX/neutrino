@@ -3,11 +3,11 @@ import { NavLink } from "react-router-dom";
 import { HubFace } from "./hub_face";
 import { Icon } from "./icon";
 import { StatusDot } from "./status_dot";
-import { toDeviceLabel } from "../device_level";
+import { isDeviceIncomplete, toDeviceLabel } from "../device_level";
 import { t, useLanguage } from "../i18n";
 import { NAV_ITEMS } from "../nav_items";
 import { useApiResource } from "../use_api_resource";
-import { HUB_EVENT_DEVICES } from "../use_hub_events";
+import { HUB_EVENT_CONFIG, HUB_EVENT_DEVICES } from "../use_hub_events";
 import type { DevicesResponse, DeviceView } from "../api_types";
 import "./sidebar_nav.css";
 
@@ -21,15 +21,20 @@ import "./sidebar_nav.css";
  *
  * Two groups. The hub group is the hub's own pages; the machine group under
  * it holds one entry per managed machine, its status dot pulsing green while
- * the machine is online and grey with a faint `offline` otherwise, each a
- * link to its machine page. The machine list scrolls in its own box.
+ * the machine is online and grey with a faint `offline` otherwise, amber
+ * with `incomplete` while it is online with no default account, each a link
+ * to its machine page. The machine list scrolls in its own box.
  */
 
 /** The paths whose entry is lit only at the path itself, not below it. */
 const EXACT_PATHS = ["/", "/agents"];
 
-/** What moves the machine group: a machine came, went, or was named. */
-const DEVICES_INVALIDATE_ON = [{ type: HUB_EVENT_DEVICES }];
+/** What moves the machine group: a machine came, went, or was named, or a
+ * file under `config/` was written, a machine's default account among them. */
+const DEVICES_INVALIDATE_ON = [
+  { type: HUB_EVENT_DEVICES },
+  { type: HUB_EVENT_CONFIG },
+];
 
 interface SidebarNavProps {
   onLogout: () => void;
@@ -107,6 +112,7 @@ interface MachineEntryProps {
 
 function MachineEntry({ machine }: MachineEntryProps) {
   const isOnline = machine.is_agent_online;
+  const isIncomplete = isDeviceIncomplete(machine);
   const label = toDeviceLabel(machine);
   return (
     <NavLink
@@ -117,11 +123,18 @@ function MachineEntry({ machine }: MachineEntryProps) {
       }
     >
       <span className="sidebar_machine_dot">
-        <StatusDot tone={isOnline ? "ok" : "idle"} isPulsing={isOnline} />
+        {isIncomplete ? (
+          <StatusDot tone="warn" />
+        ) : (
+          <StatusDot tone={isOnline ? "ok" : "idle"} isPulsing={isOnline} />
+        )}
       </span>
       <span className="sidebar_item_label sidebar_machine_name">{label}</span>
       {!isOnline && (
         <span className="sidebar_machine_offline">{t("state.offline")}</span>
+      )}
+      {isIncomplete && (
+        <span className="sidebar_machine_offline">{t("state.incomplete")}</span>
       )}
     </NavLink>
   );

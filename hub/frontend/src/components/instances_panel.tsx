@@ -30,13 +30,14 @@ import "./instances_panel.css";
  * A module of the account layer on one machine: which of the machine's
  * available accounts it runs for, **Enabled accounts**.
  *
- * One check row per available account; an account checked goes to the end
- * of the order, and the apply bar writes the whole list. While the module
- * reads failed the bar is lit, and its apply with nothing changed tries the
- * module again. An apply writes no want on a module not running. A row shows
- * the module's own field of the account, whether its instance runs, and its
- * code's words. A command line program's row shows the module copy's
- * version and the account's AI tools state. The SSH server shows the
+ * One check row per available account, the default account's first,
+ * checked and locked, with the Default chip; an account checked goes to the
+ * end of the order, and the apply bar writes the whole list. While the
+ * module reads failed the bar is lit, and its apply with nothing changed
+ * tries the module again. An apply writes no want on a module not running.
+ * A row shows the module's own field of the account, whether its instance
+ * runs, and its code's words. A command line program's row shows the module
+ * copy's version and the account's AI tools state. The SSH server shows the
  * machine's host key under the rows. The module's words come from its
  * descriptor.
  */
@@ -79,7 +80,8 @@ interface InstancesPanelProps {
   deviceId: string;
   /** Where the module answers: `/agent/module/<module>`. */
   basePath: string;
-  isEditable: boolean;
+  /** Why nothing here can be applied, or null while it can. */
+  blockedHint: string | null;
   /** Whether the change takes effect at the module's next Start. */
   isWaitingForStart: boolean;
   /** What the hub asks of the module: `running`, `stopped`, `installed`, or
@@ -91,7 +93,7 @@ export function InstancesPanel({
   descriptor,
   deviceId,
   basePath,
-  isEditable,
+  blockedHint,
   isWaitingForStart,
   want,
 }: InstancesPanelProps) {
@@ -123,7 +125,7 @@ export function InstancesPanel({
   }
 
   const isUnsupported = saved.state === STATE_UNSUPPORTED;
-  const isLocked = !isEditable || isUnsupported;
+  const isLocked = blockedHint !== null || isUnsupported;
   const isPending = isDirty || FAILED_STATES.includes(saved.state);
   const isReady =
     descriptor.isWithoutProgram === true && saved.state === STATE_RUNNING;
@@ -164,75 +166,73 @@ export function InstancesPanel({
 
   const report = reportOf(saved, descriptor);
   return (
-    <>
-      <section
-        className={`settings_group ${isPending ? "settings_group--dirty" : ""}`}
-      >
-        <div className="settings_group_title">
-          <h2>{t(descriptor.title ?? "ui.modules.enabled_accounts")}</h2>
+    <section
+      className={`settings_group ${isPending ? "settings_group--dirty" : ""}`}
+    >
+      <div className="settings_group_title">
+        <h2>{t(descriptor.title ?? "ui.modules.enabled_accounts")}</h2>
+      </div>
+      {descriptor.titleHint !== undefined && (
+        <p className="field_hint">{t(descriptor.titleHint)}</p>
+      )}
+      {saved.accounts.length > 0 && (
+        <div className="instances_rows">
+          {defaultFirst(saved).map((row) =>
+            descriptor.isProgram === true ? (
+              <ProgramAccountRow
+                key={row.account}
+                row={row}
+                version={version}
+                isDefault={row.account === saved.default_account}
+                isChecked={draft.accounts.includes(row.account)}
+                isDisabled={isLocked}
+                onToggle={(isOn) => {
+                  toggle(row.account, isOn);
+                }}
+              />
+            ) : (
+              <AccountRow
+                key={row.account}
+                row={row}
+                descriptor={descriptor}
+                isReady={isReady}
+                isDefault={row.account === saved.default_account}
+                isChecked={draft.accounts.includes(row.account)}
+                isDisabled={isLocked}
+                onToggle={(isOn) => {
+                  toggle(row.account, isOn);
+                }}
+              />
+            ),
+          )}
         </div>
-        {descriptor.titleHint !== undefined && (
-          <p className="field_hint">{t(descriptor.titleHint)}</p>
-        )}
-        {saved.accounts.length === 0 ? (
-          <p className="field_hint">{t("ui.modules.no_accounts")}</p>
-        ) : (
-          <div className="instances_rows">
-            {saved.accounts.map((row) =>
-              descriptor.isProgram === true ? (
-                <ProgramAccountRow
-                  key={row.account}
-                  row={row}
-                  version={version}
-                  isChecked={draft.accounts.includes(row.account)}
-                  isDisabled={isLocked}
-                  onToggle={(isOn) => {
-                    toggle(row.account, isOn);
-                  }}
-                />
-              ) : (
-                <AccountRow
-                  key={row.account}
-                  row={row}
-                  descriptor={descriptor}
-                  isReady={isReady}
-                  isChecked={draft.accounts.includes(row.account)}
-                  isDisabled={isLocked}
-                  onToggle={(isOn) => {
-                    toggle(row.account, isOn);
-                  }}
-                />
-              ),
-            )}
-          </div>
-        )}
-        <ApplyBar
-          isDirty={isPending}
-          hasChanges={isDirty}
-          isBusy={isBusy || settle.isSettling}
-          label={t(descriptor.apply)}
-          hint={
-            isWaitingForStart
-              ? t("ui.modules.stopped_hint")
-              : t(descriptor.applyHint)
-          }
-          blockedHint={isEditable ? null : t("ui.modules.agent_offline")}
-          isApplyDisabled={isUnsupported}
-          error={error}
-          notice={
-            settle.isApplied && report !== null && !isFailing(report)
-              ? t("ui.api.applied")
-              : null
-          }
-          onReset={() => {
-            reset();
-            setError(null);
-            settle.clear();
-          }}
-          onApply={() => void apply()}
-        />
-      </section>
-    </>
+      )}
+      <ApplyBar
+        isDirty={isPending}
+        hasChanges={isDirty}
+        isBusy={isBusy || settle.isSettling}
+        label={t(descriptor.apply)}
+        hint={
+          isWaitingForStart
+            ? t("ui.modules.stopped_hint")
+            : t(descriptor.applyHint)
+        }
+        blockedHint={blockedHint}
+        isApplyDisabled={isUnsupported}
+        error={error}
+        notice={
+          settle.isApplied && report !== null && !isFailing(report)
+            ? t("ui.api.applied")
+            : null
+        }
+        onReset={() => {
+          reset();
+          setError(null);
+          settle.clear();
+        }}
+        onApply={() => void apply()}
+      />
+    </section>
   );
 }
 
@@ -241,6 +241,8 @@ interface AccountRowProps {
   descriptor: ModuleDescriptor;
   /** Whether the row shows `state.ready` in place of its running dot. */
   isReady: boolean;
+  /** Whether the account is the machine's default, checked and locked. */
+  isDefault: boolean;
   isChecked: boolean;
   isDisabled: boolean;
   onToggle: (isOn: boolean) => void;
@@ -251,6 +253,7 @@ function AccountRow({
   row,
   descriptor,
   isReady,
+  isDefault,
   isChecked,
   isDisabled,
   onToggle,
@@ -261,6 +264,7 @@ function AccountRow({
     <div className="instances_row">
       <AccountCheck
         account={row.account}
+        isDefault={isDefault}
         isChecked={isChecked}
         isDisabled={isDisabled}
         onToggle={onToggle}
@@ -305,6 +309,8 @@ interface ProgramAccountRowProps {
   row: EnabledAccountView;
   /** The version of the module's copy, empty while it has none. */
   version: string;
+  /** Whether the account is the machine's default, checked and locked. */
+  isDefault: boolean;
   isChecked: boolean;
   isDisabled: boolean;
   onToggle: (isOn: boolean) => void;
@@ -316,6 +322,7 @@ interface ProgramAccountRowProps {
 function ProgramAccountRow({
   row,
   version,
+  isDefault,
   isChecked,
   isDisabled,
   onToggle,
@@ -326,6 +333,7 @@ function ProgramAccountRow({
     <div className="instances_row">
       <AccountCheck
         account={row.account}
+        isDefault={isDefault}
         isChecked={isChecked}
         isDisabled={isDisabled}
         onToggle={onToggle}
@@ -351,6 +359,9 @@ function ProgramAccountRow({
 
 interface AccountCheckProps {
   account: string;
+  /** Whether the account is the machine's default: checked and locked, with
+   * the Default chip after its name. */
+  isDefault: boolean;
   isChecked: boolean;
   isDisabled: boolean;
   onToggle: (isOn: boolean) => void;
@@ -359,6 +370,7 @@ interface AccountCheckProps {
 /** An account's check and its name, at the start of its row. */
 function AccountCheck({
   account,
+  isDefault,
   isChecked,
   isDisabled,
   onToggle,
@@ -368,22 +380,37 @@ function AccountCheck({
       <input
         type="checkbox"
         checked={isChecked}
-        disabled={isDisabled}
+        disabled={isDisabled || isDefault}
         onChange={(event) => {
           onToggle(event.target.checked);
         }}
       />
       <span className="mono">{account}</span>
+      {isDefault && <span className="badge">{t("ui.accounts.default")}</span>}
     </label>
   );
 }
 
-/** What the form starts from: the enabled accounts in their order. */
+/** The available accounts in the panel's order: the default account's row
+ * first, then the rest as the view lists them. */
+function defaultFirst(view: EnabledAccountsView): EnabledAccountView[] {
+  return [
+    ...view.accounts.filter((row) => row.account === view.default_account),
+    ...view.accounts.filter((row) => row.account !== view.default_account),
+  ];
+}
+
+/** What the form starts from: the enabled accounts in their order, the
+ * default account first and always among them. */
 function draftOf(view: EnabledAccountsView): EnabledDraft {
+  const enabled = view.accounts
+    .filter((row) => row.is_enabled && row.account !== view.default_account)
+    .map((row) => row.account);
+  const isDefaultListed = view.accounts.some(
+    (row) => row.account === view.default_account,
+  );
   return {
-    accounts: view.accounts
-      .filter((row) => row.is_enabled)
-      .map((row) => row.account),
+    accounts: isDefaultListed ? [view.default_account, ...enabled] : enabled,
   };
 }
 

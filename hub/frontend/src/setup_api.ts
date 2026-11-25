@@ -51,6 +51,10 @@ export interface SetupContext {
   /** The modes this machine can be: `server` alone outside Linux. */
   modes: SetupMode[];
   defaults: SetupDefaults;
+  /** The machine's accounts that can log in and have their home. */
+  accounts: string[];
+  /** The account the account screen starts at; empty with none. */
+  default_account: string;
 }
 
 /** One installation step, as the terminal reports it. */
@@ -106,6 +110,12 @@ export interface SetupProxyAnswers {
   is_local?: boolean;
 }
 
+/** The machine's default account; `password` on Windows alone. */
+export interface SetupAccountAnswer {
+  account: string;
+  password?: string;
+}
+
 /** Everything the wizard asks for. */
 export interface SetupAnswers {
   /** The language the panel is drawn in, asked first. */
@@ -119,6 +129,8 @@ export interface SetupAnswers {
   https_listen_port?: number;
   /** Whether the HTTP port sends browsers to the HTTPS port; off when left out. */
   is_https_enabled?: boolean;
+  /** Left out on a machine with no account. */
+  default_account?: SetupAccountAnswer;
 }
 
 /** What the hub made of one share link. */
@@ -175,6 +187,21 @@ export async function readSetupLink(
   link: string,
 ): Promise<SetupLinkReading> {
   return call<SetupLinkReading>("link/create", token, { link });
+}
+
+/**
+ * Test the account the account screen names, writing nothing.
+ *
+ * Raises:
+ *   ApiError: `account_unknown`, `credential_invalid`,
+ *     `account_logon_refused` or `account_no_login` for an account that
+ *     cannot log in.
+ */
+export async function testSetupAccount(
+  token: string,
+  answer: SetupAccountAnswer,
+): Promise<void> {
+  await call<unknown>("account/test", token, answer);
 }
 
 export async function sendSetupAnswers(

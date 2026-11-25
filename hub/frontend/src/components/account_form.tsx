@@ -9,6 +9,7 @@ import { Spinner } from "./spinner";
 import { ToggleSwitch } from "./toggle_switch";
 import { apiPost, describeError } from "../api_client";
 import { t, useLanguage } from "../i18n";
+import { useConfirm } from "../use_confirm";
 import type {
   AccountListView,
   AccountSetRequest,
@@ -25,7 +26,9 @@ import "./account_form.css";
  * rows under it. Cancel and Save sit at its bottom right.
  *
  * An empty share path or shell sends empty, and the account's own default
- * holds; the field shows that default as its placeholder.
+ * holds; the field shows that default as its placeholder. The Save of the
+ * first account on a machine with no default account asks first, since it
+ * becomes the default.
  */
 
 const WINDOWS_OS = "windows";
@@ -70,6 +73,7 @@ export function AccountForm({
   const [browsing, setBrowsing] = useState<BrowseField | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const confirm = useConfirm();
 
   const isWindows = view.platform_os === WINDOWS_OS;
   const isNew = account === null;
@@ -112,6 +116,19 @@ export function AccountForm({
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const askSave = () => {
+    if (!isNew || view.default_account !== "") {
+      void save();
+      return;
+    }
+    confirm.ask({
+      title: t("ui.accounts.default_title", { account: name }),
+      body: t("ui.accounts.default_body", { account: name }),
+      confirmLabel: t("ui.accounts.make_default"),
+      onConfirm: () => void save(),
+    });
   };
 
   return (
@@ -184,7 +201,7 @@ export function AccountForm({
           type="button"
           className="button button--primary"
           disabled={!isReady}
-          onClick={() => void save()}
+          onClick={askSave}
         >
           {isSaving ? <Spinner size={13} /> : <Icon name="check" size={14} />}
           {t("ui.accounts.save")}
@@ -212,6 +229,7 @@ export function AccountForm({
           }}
         />
       )}
+      {confirm.modal}
     </div>
   );
 }

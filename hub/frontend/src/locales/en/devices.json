@@ -31,6 +31,7 @@
   "state.not_serving": "not serving",
   "state.not_sharing": "not sharing",
   "state.offline": "offline",
+  "state.incomplete": "incomplete",
   "state.online": "online",
   "state.reachable": "reachable",
   "state.router": "router",

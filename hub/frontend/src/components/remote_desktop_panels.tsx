@@ -28,7 +28,8 @@ interface RemoteDesktopPanelsProps {
   deviceId: string;
   /** Where the module answers: `/agent/module/remote_desktop`. */
   basePath: string;
-  isEditable: boolean;
+  /** Why nothing here can be applied, or null while it can. */
+  blockedHint: string | null;
 }
 
 /** The form's own field; the machine it is written to is the page's. */
@@ -37,7 +38,7 @@ type RemoteDesktopDraft = Omit<RemoteDesktopConfigUpdate, "device_id">;
 export function RemoteDesktopPanels({
   deviceId,
   basePath,
-  isEditable,
+  blockedHint,
 }: RemoteDesktopPanelsProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
@@ -101,7 +102,7 @@ export function RemoteDesktopPanels({
           }}
           label={t("ui.remote_desktop_module.switch")}
           description={t("ui.remote_desktop_module.switch_hint")}
-          isDisabled={!isEditable || isUnsupported}
+          isDisabled={blockedHint !== null || isUnsupported}
         />
         <ApplyBar
           isDirty={isDirty || isFailed}
@@ -109,7 +110,7 @@ export function RemoteDesktopPanels({
           isBusy={isBusy}
           label={t("ui.remote_desktop_module.apply")}
           hint={t("ui.remote_desktop_module.apply_hint")}
-          blockedHint={isEditable ? null : t("ui.modules.agent_offline")}
+          blockedHint={blockedHint}
           isApplyDisabled={isUnsupported}
           error={error}
           onReset={() => {

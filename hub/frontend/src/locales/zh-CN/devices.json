@@ -31,6 +31,7 @@
   "state.not_serving": "未提供服务",
   "state.not_sharing": "未共享",
   "state.offline": "离线",
+  "state.incomplete": "未完成",
   "state.online": "在线",
   "state.reachable": "可访问",
   "state.router": "路由器",

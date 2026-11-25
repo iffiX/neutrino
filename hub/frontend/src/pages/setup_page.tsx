@@ -6,6 +6,7 @@ import { AuthorityInstall } from "../components/authority_install";
 import { HubFace } from "../components/hub_face";
 import { Icon } from "../components/icon";
 import { PasswordField } from "../components/password_field";
+import { PasswordInput } from "../components/password_input";
 import { Picker } from "../components/picker";
 import { ToggleSwitch } from "../components/toggle_switch";
 import {
@@ -23,13 +24,19 @@ import {
   isPasswordAccepted,
 } from "../password_strength";
 import type {
+  SetupAccountAnswer,
   SetupAnswers,
   SetupAuthority,
   SetupContext,
   SetupInterface,
   SetupState,
 } from "../setup_api";
-import { readSetupLink, readSetupState, sendSetupAnswers } from "../setup_api";
+import {
+  readSetupLink,
+  readSetupState,
+  sendSetupAnswers,
+  testSetupAccount,
+} from "../setup_api";
 import { hasFeature } from "../edition";
 
 import "./setup_page.css";
@@ -53,6 +60,7 @@ const SCREEN_TITLES = [
   "ui.setup.screen_shape",
   "ui.setup.screen_ports",
   "ui.setup.screen_proxy",
+  "ui.setup.screen_account",
   "ui.setup.screen_ready",
 ] as const;
 
@@ -62,11 +70,16 @@ const SCREEN_SECRETS = 1;
 const SCREEN_SHAPE = 2;
 const SCREEN_PORTS = 3;
 const SCREEN_PROXY = 4;
+const SCREEN_ACCOUNT = 5;
 const SCREEN_REVIEW = SCREEN_TITLES.length - 1;
 /** Whether the tree carries the proxy; without it the proxy screen is
  * never shown and the counter does not count it. */
 const IS_PROXY_CARRIED = hasFeature("proxy");
-const SCREEN_COUNT = SCREEN_TITLES.length - (IS_PROXY_CARRIED ? 0 : 1);
+
+/** The system whose account screen asks the account's password. */
+const WINDOWS_OS = "windows";
+/** What the review shows for an answer the run does not ask. */
+const NOTHING = "—";
 
 /** How often the running screen asks how far the steps have got. */
 const POLL_INTERVAL_MS = 700;
@@ -136,6 +149,12 @@ export function SetupPage({ token, context }: SetupPageProps) {
   // that same box means the address under this page can change while it is
   // open, so losing the wizard is expected rather than an error.
   const [missedPolls, setMissedPolls] = useState(0);
+  const [account, setAccount] = useState(
+    context.default_account || (context.accounts[0] ?? ""),
+  );
+  const [accountPassword, setAccountPassword] = useState("");
+  const [accountError, setAccountError] = useState<string | null>(null);
+  const [isAccountTesting, setIsAccountTesting] = useState(false);
 
   const isServer = mode === "server";
   const isLocalProxied = localAnswer ?? isServer;
@@ -146,6 +165,9 @@ export function SetupPage({ token, context }: SetupPageProps) {
   // Read from the mode rather than listed here: which modes address a machine
   // is the backend's answer, and two copies of it drift.
   const ownsAddressing = chosenMode?.is_addressing_owned ?? true;
+  const hasAccounts = context.accounts.length > 0;
+  const isWindows = context.hub_os === WINDOWS_OS;
+  const hidden = hiddenScreens(hasAccounts);
 
   // Only the ports the chosen mode can be built on: 802.1Q tags do not ride
   // on a radio, so a trunk lists wires alone.
@@ -210,6 +232,12 @@ export function SetupPage({ token, context }: SetupPageProps) {
     !isProxyWanted ||
     links.every((link) => link.value.trim() === "" || link.name !== "");
 
+  const accountAnswer = useCallback(
+    (): SetupAccountAnswer =>
+      isWindows ? { account, password: accountPassword } : { account },
+    [isWindows, account, accountPassword],
+  );
+
   const answers = useCallback((): SetupAnswers => {
     const network: SetupAnswers["network"] = { mode };
     if (isRouter) {
@@ -242,6 +270,9 @@ export function SetupPage({ token, context }: SetupPageProps) {
     document.listen_port = listenPort;
     document.https_listen_port = httpsListenPort;
     document.is_https_enabled = isHttps;
+    if (hasAccounts) {
+      document.default_account = accountAnswer();
+    }
     return document;
   }, [
     mode,
@@ -264,6 +295,8 @@ export function SetupPage({ token, context }: SetupPageProps) {
     listenPort,
     httpsListenPort,
     isHttps,
+    hasAccounts,
+    accountAnswer,
   ]);
 
   const isProxyGiven = isProxyWanted && named.length > 0;
@@ -328,11 +361,25 @@ export function SetupPage({ token, context }: SetupPageProps) {
 
   const back = () => {
     setError(null);
-    setIndex((current) => skipped(current - 1, -1));
+    setAccountError(null);
+    setIndex((current) => skipped(current - 1, -1, hidden));
   };
   const next = () => {
     setError(null);
-    setIndex((current) => skipped(current + 1, 1));
+    setIndex((current) => skipped(current + 1, 1, hidden));
+  };
+
+  const testAccount = async () => {
+    setIsAccountTesting(true);
+    setAccountError(null);
+    try {
+      await testSetupAccount(token, accountAnswer());
+      next();
+    } catch (cause: unknown) {
+      setAccountError(describeError(cause));
+    } finally {
+      setIsAccountTesting(false);
+    }
   };
 
   if (index < 0) {
@@ -389,11 +436,13 @@ export function SetupPage({ token, context }: SetupPageProps) {
           <button
             type="button"
             className="button button--primary"
-            onClick={next}
+            onClick={index === SCREEN_ACCOUNT ? () => void testAccount() : next}
             disabled={
               (index === SCREEN_SECRETS && !isPasswordReady) ||
               (index === SCREEN_PORTS && !isPortsReady) ||
-              (index === SCREEN_PROXY && !isProxyReady)
+              (index === SCREEN_PROXY && !isProxyReady) ||
+              (index === SCREEN_ACCOUNT &&
+                (isAccountTesting || (isWindows && accountPassword === "")))
             }
           >
             {t("ui.setup.next")}
@@ -405,8 +454,8 @@ export function SetupPage({ token, context }: SetupPageProps) {
 
   return (
     <SetupFrame
-      step={index + 1 - (!IS_PROXY_CARRIED && index > SCREEN_PROXY ? 1 : 0)}
-      total={SCREEN_COUNT}
+      step={index + 1 - hidden.filter((screen) => screen < index).length}
+      total={SCREEN_TITLES.length - hidden.length}
       title={t(SCREEN_TITLES[index] ?? "")}
       actions={actions}
     >
@@ -690,6 +739,41 @@ export function SetupPage({ token, context }: SetupPageProps) {
         </div>
       )}
 
+      {index === SCREEN_ACCOUNT && (
+        <div className="setup_body">
+          <p className="setup_lead">{t("ui.setup.account_lead")}</p>
+          <Picker
+            options={context.accounts.map((offered) => ({
+              id: offered,
+              name: offered,
+            }))}
+            value={account}
+            onChange={(picked) => {
+              setAccount(picked);
+              setAccountError(null);
+            }}
+            label={t("ui.setup.account")}
+          />
+          {isWindows && (
+            <label className="field">
+              <span className="field_label">
+                {t("ui.setup.account_password")}
+              </span>
+              <PasswordInput
+                value={accountPassword}
+                onChange={(typed) => {
+                  setAccountPassword(typed);
+                  setAccountError(null);
+                }}
+              />
+            </label>
+          )}
+          {accountError !== null && (
+            <span className="field_error">{accountError}</span>
+          )}
+        </div>
+      )}
+
       {index === SCREEN_REVIEW && (
         <div className="setup_body">
           <p className="setup_lead">
@@ -769,6 +853,10 @@ export function SetupPage({ token, context }: SetupPageProps) {
             {IS_PROXY_CARRIED && (
               <Row name={t("ui.setup.review_proxy")} value={proxyReview} />
             )}
+            <Row
+              name={t("ui.setup.review_account")}
+              value={hasAccounts ? account : NOTHING}
+            />
           </dl>
         </div>
       )}
@@ -777,20 +865,39 @@ export function SetupPage({ token, context }: SetupPageProps) {
 }
 
 /**
- * The screen a step lands on, past the proxy screen in a tree without the
- * proxy.
+ * The screens a run leaves out: the proxy screen in a tree without the
+ * proxy, and the account screen on a machine with no account.
+ *
+ * Args:
+ *   hasAccounts: Whether the machine has an account to pick.
+ *
+ * Returns:
+ *   The screens left out, in order.
+ */
+function hiddenScreens(hasAccounts: boolean): number[] {
+  return [
+    ...(IS_PROXY_CARRIED ? [] : [SCREEN_PROXY]),
+    ...(hasAccounts ? [] : [SCREEN_ACCOUNT]),
+  ];
+}
+
+/**
+ * The screen a step lands on, past every screen the run leaves out.
  *
  * Args:
  *   index: The screen the step would land on.
  *   direction: 1 going on, -1 stepping back.
+ *   hidden: The screens the run leaves out.
  *
  * Returns:
  *   The screen to show.
  */
-function skipped(index: number, direction: number): number {
-  return !IS_PROXY_CARRIED && index === SCREEN_PROXY
-    ? index + direction
-    : index;
+function skipped(index: number, direction: number, hidden: number[]): number {
+  let landed = index;
+  while (hidden.includes(landed)) {
+    landed += direction;
+  }
+  return landed;
 }
 
 /**

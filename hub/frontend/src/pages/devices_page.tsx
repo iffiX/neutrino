@@ -11,7 +11,11 @@ import { StatusDot } from "../components/status_dot";
 import type { IconName } from "../components/icon";
 import { ApiError, apiPost, describeCode, describeError } from "../api_client";
 import { toDeviceIconName } from "../device_icon";
-import { describeJoinedUnder05, toDeviceLabel } from "../device_level";
+import {
+  describeJoinedUnder05,
+  isDeviceIncomplete,
+  toDeviceLabel,
+} from "../device_level";
 import { toDeviceMetrics, withDeviceMetrics } from "../device_metrics";
 import { formatTimeAgo } from "../format_duration";
 import { t, useLanguage } from "../i18n";
@@ -43,7 +47,8 @@ import "./devices_page.css";
  * The **Agents** page: one table of the managed machines, one row each.
  *
  * A row's icon is a button that writes a pick at once; its name links to
- * the machine page. The status cell is five rings that move on the
+ * the machine page. Its dot reads `incomplete` in amber while the machine
+ * is online with no default account. The status cell is five rings that move on the
  * `metrics` event: CPU, memory, disk, the busiest GPU and the temperature,
  * or how long ago an offline machine was seen. The row's actions sit at its
  * right; Rename turns the name into an input and leaves Save and Cancel
@@ -482,7 +487,11 @@ function DeviceRow({
               isDisabled={isBusy || isRenaming}
               onPick={onIcon}
             />
-            <StatusDot tone={isOnline ? "ok" : "idle"} isPulsing={isOnline} />
+            {isDeviceIncomplete(device) ? (
+              <StatusDot tone="warn" label={t("state.incomplete")} />
+            ) : (
+              <StatusDot tone={isOnline ? "ok" : "idle"} isPulsing={isOnline} />
+            )}
             {isRenaming ? (
               <input
                 className="input devices_rename_input"

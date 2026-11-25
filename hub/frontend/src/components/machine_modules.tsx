@@ -72,7 +72,9 @@ import "./machine_modules.css";
  * state line and their panel alone. A command line program has no Start or
  * Stop, and its version line shows while its own copy is on the machine.
  * The picked tab is kept in the address as `?module=`, and
- * `&configure=1` opens its panel at the page's start.
+ * `&configure=1` opens its panel at the page's start. While the machine has
+ * no default account, every tab's buttons, every apply bar and **+ Add
+ * module** are disabled, as while the agent is offline.
  */
 
 /** The machine a module's own panels are pointed at. */
@@ -80,8 +82,9 @@ interface PanelTarget {
   deviceId: string;
   /** Where the module answers: `/agent/module/<module>`. */
   basePath: string;
-  /** Whether anything here can be applied. Offline machines take no orders. */
-  isEditable: boolean;
+  /** Why nothing here can be applied: the agent offline, or the machine
+   * with no default account; null while it can. */
+  blockedHint: string | null;
   /** The system the machine's agent reports: `linux`, `windows`, `darwin`. */
   platformOs: string;
   /** What the hub asks of the module: `running`, `stopped`, `installed`, or
@@ -117,7 +120,7 @@ const ACCOUNT_LAYER_PANELS: Record<string, (target: PanelTarget) => ReactNode> =
           descriptor={descriptor}
           deviceId={target.deviceId}
           basePath={target.basePath}
-          isEditable={target.isEditable}
+          blockedHint={target.blockedHint}
           isWaitingForStart={
             !target.isCarried &&
             !target.isProgram &&
@@ -138,7 +141,7 @@ const MODULE_PANELS: Record<string, (target: PanelTarget) => ReactNode> = {
       <FolderSharesPanel
         deviceId={target.deviceId}
         basePath={target.basePath}
-        isEditable={target.isEditable}
+        isEditable={target.blockedHint === null}
         isWaitingForStart={target.want !== WANT_RUNNING}
       />
       <SambaStatusPanel deviceId={target.deviceId} basePath={target.basePath} />
@@ -148,7 +151,7 @@ const MODULE_PANELS: Record<string, (target: PanelTarget) => ReactNode> = {
     <GiteaPanels
       deviceId={target.deviceId}
       basePath={target.basePath}
-      isEditable={target.isEditable}
+      blockedHint={target.blockedHint}
       isWaitingForStart={target.want !== WANT_RUNNING}
     />
   ),
@@ -156,7 +159,7 @@ const MODULE_PANELS: Record<string, (target: PanelTarget) => ReactNode> = {
     <OllamaPanels
       deviceId={target.deviceId}
       basePath={target.basePath}
-      isEditable={target.isEditable}
+      blockedHint={target.blockedHint}
       platformOs={target.platformOs}
       want={target.want}
     />
@@ -165,7 +168,7 @@ const MODULE_PANELS: Record<string, (target: PanelTarget) => ReactNode> = {
     <ContainersPanels
       deviceId={target.deviceId}
       basePath={target.basePath}
-      isEditable={target.isEditable}
+      blockedHint={target.blockedHint}
       platformOs={target.platformOs}
       want={target.want}
       manifestTitles={target.manifestTitles}
@@ -175,14 +178,14 @@ const MODULE_PANELS: Record<string, (target: PanelTarget) => ReactNode> = {
     <RemoteDesktopPanels
       deviceId={target.deviceId}
       basePath={target.basePath}
-      isEditable={target.isEditable}
+      blockedHint={target.blockedHint}
     />
   ),
   ayakaleaf: (target) => (
     <AyakaleafPanels
       deviceId={target.deviceId}
       basePath={target.basePath}
-      isEditable={target.isEditable}
+      blockedHint={target.blockedHint}
       want={target.want}
     />
   ),
@@ -343,12 +346,15 @@ interface MachineModulesProps {
   deviceName: string;
   /** The system the machine's agent reports. */
   platformOs: string;
+  /** The machine's default account; empty while it has none. */
+  defaultAccount: string;
 }
 
 export function MachineModules({
   deviceId,
   deviceName,
   platformOs,
+  defaultAccount,
 }: MachineModulesProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
@@ -393,6 +399,14 @@ export function MachineModules({
       : (shownNames[0] ?? null);
   const activeRow = activeModule === null ? undefined : rows[activeModule];
   const isAgentOnline = modules.data?.is_agent_online ?? false;
+  const isDefaultMissing = defaultAccount === "";
+  // A machine offline, or one with no default account, takes no orders.
+  const isLive = isAgentOnline && !isDefaultMissing;
+  const blockedHint = !isAgentOnline
+    ? t("ui.modules.agent_offline")
+    : isDefaultMissing
+      ? t("ui.modules.default_needed")
+      : null;
 
   // VS Code's terms, read while its tab is the current one.
   const terms = useApiResource<EnabledAccountsView>(
@@ -664,8 +678,7 @@ export function MachineModules({
     (isCarriedRow || configured.includes(activeModule));
   const isBusy = busyAction !== null;
   const isInTransit = activeRow !== undefined && isRowInTransit(activeRow);
-  const canAct =
-    activeRow !== undefined && isAgentOnline && !isBusy && !isInTransit;
+  const canAct = activeRow !== undefined && isLive && !isBusy && !isInTransit;
   const isPresent =
     activeRow !== undefined && PRESENT_STATES.includes(activeRow.state);
   const isConfigRefused =
@@ -699,7 +712,7 @@ export function MachineModules({
     <button
       type="button"
       className="button button--small"
-      disabled={!isAgentOnline || isBusy}
+      disabled={!isLive || isBusy}
       onClick={askRestart}
     >
       {busyAction === "restart" ? (
@@ -741,6 +754,7 @@ export function MachineModules({
         <button
           type="button"
           className="button modules_list_add"
+          disabled={isDefaultMissing}
           onClick={() => {
             setIsCatalogOpen(true);
           }}
@@ -799,7 +813,7 @@ export function MachineModules({
                     deviceId={deviceId}
                     module={activeRow.name}
                     title={moduleTitle(activeRow.name, activeRow.title)}
-                    canPress={isAgentOnline && !isInTransit}
+                    canPress={isLive && !isInTransit}
                   />
                 )}
               {!isAgentOnline && (
@@ -886,14 +900,11 @@ export function MachineModules({
                       {t("ui.modules.config_title")}
                     </span>
                   )}
-                  <fieldset
-                    className="modules_config"
-                    disabled={!isAgentOnline}
-                  >
+                  <fieldset className="modules_config" disabled={!isLive}>
                     {panels({
                       deviceId,
                       basePath: `/agent/module/${activeRow.name}`,
-                      isEditable: isAgentOnline,
+                      blockedHint,
                       platformOs,
                       want: wantAtApply(activeRow),
                       isCarried: isCarriedRow,
@@ -908,7 +919,7 @@ export function MachineModules({
                   {isCancelShown ? (
                     <CancelButton
                       isCancelling={isRowCancelling}
-                      isEnabled={isAgentOnline && !isBusy && !isRowCancelling}
+                      isEnabled={isLive && !isBusy && !isRowCancelling}
                       isBusy={busyAction === CANCEL_BUSY}
                       onClick={askCancel}
                     />

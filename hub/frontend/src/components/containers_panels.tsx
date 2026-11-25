@@ -142,7 +142,8 @@ interface ContainersPanelsProps {
   deviceId: string;
   /** Where podman answers: `/agent/module/podman`. */
   basePath: string;
-  isEditable: boolean;
+  /** Why nothing here can be applied, or null while it can. */
+  blockedHint: string | null;
   /** The system the machine's agent reports: `linux`, `windows`, `darwin`. */
   platformOs: string;
   /** What the hub asks of the module: `running`, `stopped`, or empty. */
@@ -154,7 +155,7 @@ interface ContainersPanelsProps {
 export function ContainersPanels({
   deviceId,
   basePath,
-  isEditable,
+  blockedHint,
   platformOs,
   want,
   manifestTitles,
@@ -288,7 +289,7 @@ export function ContainersPanels({
           deviceId={deviceId}
           basePath={basePath}
           saved={saved}
-          isEditable={isEditable}
+          blockedHint={blockedHint}
           isWindows={platformOs === WINDOWS_OS}
           want={want}
           report={report}
@@ -440,7 +441,7 @@ export function ContainersPanels({
               ? t("ui.modules.stopped_hint")
               : t("ui.containers.mirrors_apply_hint")
           }
-          blockedHint={isEditable ? null : t("ui.modules.agent_offline")}
+          blockedHint={blockedHint}
           isApplyDisabled={isRunNeeded}
           error={mirrorsError}
           notice={appliedNotice(mirrorsSettle, report)}
@@ -511,7 +512,7 @@ export function ContainersPanels({
               : t("ui.containers.containers_apply_hint")
           }
           warning={t("ui.containers.containers_apply_warning")}
-          blockedHint={isEditable ? null : t("ui.modules.agent_offline")}
+          blockedHint={blockedHint}
           isApplyDisabled={isRunNeeded}
           error={error}
           notice={appliedNotice(containersSettle, report)}

@@ -24,7 +24,7 @@ def test_a_failed_row_keeps_the_version_block():
         "{(isPresent || FAILED_STATES.includes(activeRow.state)) && !isCarriedRow && "
         "(!isProgram || hasModuleCopy(activeRow)) && ( <ModuleVersionBlock"
     ) in page
-    assert "canPress={isAgentOnline && !isInTransit}" in page
+    assert "canPress={isLive && !isInTransit}" in page
 
 
 def test_a_row_with_no_version_reported_shows_no_line_and_a_dead_update():

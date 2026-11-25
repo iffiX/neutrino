@@ -56,7 +56,8 @@ interface ContainersRunSettingsProps {
   basePath: string;
   /** The Containers view: the stored Run settings and the reported machine. */
   saved: PodmanDeviceView;
-  isEditable: boolean;
+  /** Why nothing here can be applied, or null while it can. */
+  blockedHint: string | null;
   /** Whether the machine is Windows, whose machine starts with a login. */
   isWindows: boolean;
   /** What the hub asks of the module: `running`, `stopped`, or empty. */
@@ -74,7 +75,7 @@ export function ContainersRunSettings({
   deviceId,
   basePath,
   saved,
-  isEditable,
+  blockedHint,
   isWindows,
   want,
   report,
@@ -173,7 +174,7 @@ export function ContainersRunSettings({
             : t("ui.containers.run_apply_hint")
         }
         warning={runWarning(stored, draft, saved.machine_state, isWindows)}
-        blockedHint={isEditable ? null : t("ui.modules.agent_offline")}
+        blockedHint={blockedHint}
         isApplyDisabled={isUnsupported || diskError !== null}
         error={error}
         notice={

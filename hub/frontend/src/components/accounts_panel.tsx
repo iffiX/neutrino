@@ -27,7 +27,8 @@ import "./accounts_panel.css";
  * **Edit** opens the same form in the row's place. A row is the account's
  * name and, while its AI tools switch is on, the machine's last result as a
  * dot and a word. **Remove** asks first, naming the modules that lose the
- * account. Each write acts at once.
+ * account. The default account's row carries the Default chip and **Edit**
+ * alone. Each write acts at once.
  */
 
 const ACCOUNTS_PATH = "/agent/module/account";
@@ -146,6 +147,9 @@ export function AccountsPanel({ deviceId, isEditable }: AccountsPanelProps) {
                     <span className="accounts_row_name mono">
                       {account.account}
                     </span>
+                    {account.account === view.default_account && (
+                      <span className="badge">{t("ui.accounts.default")}</span>
+                    )}
                     {account.is_ai_tools_enabled && (
                       <StatusDot
                         tone={AI_TOOLS_TONES[account.ai_tools.state] ?? "idle"}
@@ -167,18 +171,20 @@ export function AccountsPanel({ deviceId, isEditable }: AccountsPanelProps) {
                       >
                         {t("ui.accounts.edit")}
                       </button>
-                      <button
-                        type="button"
-                        className="button button--ghost button--small button--danger"
-                        disabled={
-                          !isEditable || busyAccount === account.account
-                        }
-                        onClick={() => {
-                          askRemove(account);
-                        }}
-                      >
-                        {t("ui.accounts.remove")}
-                      </button>
+                      {account.account !== view.default_account && (
+                        <button
+                          type="button"
+                          className="button button--ghost button--small button--danger"
+                          disabled={
+                            !isEditable || busyAccount === account.account
+                          }
+                          onClick={() => {
+                            askRemove(account);
+                          }}
+                        >
+                          {t("ui.accounts.remove")}
+                        </button>
+                      )}
                     </span>
                   </div>
                 ),

@@ -55,6 +55,7 @@ import {
 } from "./demo_traffic";
 import type { DemoFrameReadings } from "./demo_traffic";
 import type {
+  AccountListView,
   AiCloudContextView,
   AiContextResponse,
   AiContextSourceView,
@@ -172,6 +173,9 @@ interface DemoDevice {
   lastSeen: string | null;
   metricsSeed: number;
   modules: Record<string, DemoModuleState>;
+  /** The available accounts in the order they were added, the first the
+   * default; none on a machine that is incomplete. */
+  accounts: string[];
 }
 
 /** An app declared on the Services page. */
@@ -281,6 +285,7 @@ function initialDevices(): DemoDevice[] {
         "siyuan",
         "podman",
       ]),
+      accounts: [DEMO_ACCOUNT],
     },
     {
       id: "dev_laptop",
@@ -295,6 +300,7 @@ function initialDevices(): DemoDevice[] {
       lastSeen: null,
       metricsSeed: 1,
       modules: modulesWith(["code_server", "cloudcli", "ollama"]),
+      accounts: [DEMO_ACCOUNT],
     },
     {
       id: "dev_mini",
@@ -309,6 +315,22 @@ function initialDevices(): DemoDevice[] {
       lastSeen: secondsAgo(3600 * 7),
       metricsSeed: 2,
       modules: modulesWith(["samba"]),
+      accounts: [DEMO_ACCOUNT],
+    },
+    {
+      id: "dev_living_room",
+      name: sample("客厅电脑", "Living room PC"),
+      icon: "desktop",
+      address: "192.168.1.57",
+      mac: "52:54:00:12:34:57",
+      isOnline: true,
+      hostname: "living-room",
+      platformOs: "linux",
+      platformArch: "amd64",
+      lastSeen: null,
+      metricsSeed: 3,
+      modules: { ...modulesWith([]), ssh_server: moduleState("stopped", true) },
+      accounts: [],
     },
   ];
 }
@@ -681,7 +703,7 @@ export class DemoHub {
         device_id: device.id,
         name: device.name,
         is_online: device.isOnline,
-        accounts: [DEMO_ACCOUNT],
+        accounts: device.accounts,
         hostname: device.hostname,
         platform_os: device.platformOs,
         address: device.address,
@@ -816,10 +838,7 @@ export class DemoHub {
       "/agent/module/catalog": (query) =>
         this.moduleCatalog(query.get("device_id") ?? ""),
       "/agent/module/account": (query) =>
-        demoAccounts(
-          this.device(query.get("device_id") ?? "").platformOs,
-          this.servedModels(),
-        ),
+        this.accountList(this.device(query.get("device_id") ?? "")),
       "/agent/module/version": (query) =>
         this.moduleVersion(
           query.get("device_id") ?? "",
@@ -852,6 +871,7 @@ export class DemoHub {
       "/hub/device/set": (_query, body) => this.setDevice(body),
       "/hub/device/enrollment/create": (_query, body) =>
         this.createDeviceLink(body),
+      "/agent/module/account/add": (_query, body) => this.addAccount(body),
       "/agent/module/install": (_query, body) =>
         this.pressModule(body, "install"),
       "/agent/module/start": (_query, body) => this.pressModule(body, "start"),
@@ -1055,6 +1075,7 @@ export class DemoHub {
         lastSeen: null,
         metricsSeed: 0,
         modules: modulesWith([]),
+        accounts: [],
       }
     );
   }
@@ -1071,6 +1092,7 @@ export class DemoHub {
       ipv4_address: device.address,
       link_mac: device.mac,
       is_agent_online: device.isOnline,
+      default_account: device.accounts[0] ?? "",
       ssh: null,
       client: {
         version: DEMO_HUB_VERSION,
@@ -1239,7 +1261,8 @@ export class DemoHub {
       uninstall_data: spec.uninstallData,
       requires: spec.requires,
       is_configured: held.state !== "absent",
-      is_without_accounts: false,
+      is_without_accounts:
+        spec.kind === "account_service" && device.accounts.length === 0,
       task: held.task,
       step: null,
       task_id: "",
@@ -1338,25 +1361,24 @@ export class DemoHub {
     return {
       ...state,
       device_id: device.id,
-      accounts: [
-        {
-          account: DEMO_ACCOUNT,
-          is_enabled: true,
-          port: spec?.web?.port ?? 0,
-          is_running: state.state === "running",
-          code: "",
-          params: {},
-          shell_path: "",
-          share_path: "",
-          user: DEMO_ACCOUNT,
-          host_key_fingerprint: "SHA256:demo-host-key-of-a-made-up-system",
-          ai_tools:
-            spec?.kind === "program"
-              ? { state: "switched", code: "", params: {} }
-              : null,
-          is_ai_tools_enabled: spec?.kind === "program" ? true : null,
-        },
-      ],
+      default_account: device.accounts[0] ?? "",
+      accounts: device.accounts.map((account) => ({
+        account,
+        is_enabled: true,
+        port: spec?.web?.port ?? 0,
+        is_running: state.state === "running",
+        code: "",
+        params: {},
+        shell_path: "",
+        share_path: "",
+        user: account,
+        host_key_fingerprint: "SHA256:demo-host-key-of-a-made-up-system",
+        ai_tools:
+          spec?.kind === "program"
+            ? { state: "switched", code: "", params: {} }
+            : null,
+        is_ai_tools_enabled: spec?.kind === "program" ? true : null,
+      })),
       is_terms_accepted: device.modules[name]?.isTermsAccepted ?? false,
       terms_url: "https://code.visualstudio.com/license",
       version: spec?.version ?? "",
@@ -1721,6 +1743,29 @@ export class DemoHub {
     ].join("\n");
   }
 
+  /** The machine's available accounts, the first its default. */
+  private accountList(device: DemoDevice): AccountListView {
+    return demoAccounts(
+      device.platformOs,
+      this.servedModels(),
+      device.accounts,
+    );
+  }
+
+  /** Adds an available account; the first on a machine becomes its
+   * default. */
+  private addAccount(body: DemoBody): AccountListView {
+    const device = this.device(textField(body, "device_id"));
+    const account = textField(body, "account");
+    if (device.accounts.includes(account)) {
+      throw new DemoRefusal("account_duplicate", { account });
+    }
+    device.accounts.push(account);
+    this.publish("config", `devices/${device.id}/accounts.json`);
+    this.publish("devices", device.id);
+    return this.accountList(device);
+  }
+
   private setDevice(body: DemoBody): DevicesResponse {
     const device = this.device(textField(body, "device_id"));
     if (typeof body.name === "string" && body.name !== "") {
@@ -1766,6 +1811,7 @@ export class DemoHub {
       lastSeen: null,
       metricsSeed: number,
       modules: modulesWith([]),
+      accounts: [],
     });
     this.publish("devices", "");
     this.notify(

@@ -1201,6 +1201,8 @@ export interface DeviceView {
   link_mac: string;
   /** Whether its agent holds a session now. */
   is_agent_online: boolean;
+  /** Its default account; empty while it has none. */
+  default_account: string;
   /** The SSH login the hub last installed its agent with. */
   ssh: DeviceSshConfig | null;
   /** What its agent reports; null before it first reports. */
@@ -1495,6 +1497,8 @@ export interface SystemAccountView {
 }
 
 export interface AccountListView {
+  /** The machine's default account; empty while it has none. */
+  default_account: string;
   /** In the order they were added. */
   accounts: AvailableAccountView[];
   system_accounts: SystemAccountView[];
@@ -1557,6 +1561,8 @@ export interface EnabledAccountView {
  * or OpenCode. */
 export interface EnabledAccountsView extends ModuleDeviceState {
   device_id: string;
+  /** The machine's default account; empty while it has none. */
+  default_account: string;
   accounts: EnabledAccountView[];
   /** VS Code's: whether the person accepted Microsoft's terms here. */
   is_terms_accepted?: boolean;

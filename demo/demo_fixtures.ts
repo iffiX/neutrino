@@ -510,12 +510,14 @@ export function demoAbout(uptimeS: number, isProxyCarried: boolean): AboutInfo {
 }
 
 /**
- * A machine's available accounts, all on the one demo account, whose
- * OpenCode uses a model of the desktop's Ollama.
+ * A machine's available accounts, whose OpenCode uses a model of the
+ * desktop's Ollama, on a machine that reports the one demo account.
  *
  * Args:
  *   platformOs: The machine's system.
  *   models: The names the gateway serves.
+ *   accounts: The available accounts in the order they were added, the
+ *     first the default; none on a machine that is incomplete.
  *
  * Returns:
  *   The accounts' view.
@@ -523,24 +525,24 @@ export function demoAbout(uptimeS: number, isProxyCarried: boolean): AboutInfo {
 export function demoAccounts(
   platformOs: string,
   models: string[],
+  accounts: string[],
 ): AccountListView {
   const home =
     platformOs === "windows"
       ? `C:\\Users\\${DEMO_ACCOUNT}`
       : `/home/${DEMO_ACCOUNT}`;
   return {
-    accounts: [
-      {
-        account: DEMO_ACCOUNT,
-        has_login: true,
-        share_path: "",
-        shell_path: "",
-        is_ai_tools_enabled: true,
-        tool_configs: { opencode: { model: DEMO_OPENCODE_MODEL } },
-        modules: ["terminal", "samba"],
-        ai_tools: { state: "switched", code: "", params: {} },
-      },
-    ],
+    default_account: accounts[0] ?? "",
+    accounts: accounts.map((account) => ({
+      account,
+      has_login: true,
+      share_path: "",
+      shell_path: "",
+      is_ai_tools_enabled: true,
+      tool_configs: { opencode: { model: DEMO_OPENCODE_MODEL } },
+      modules: ["terminal", "samba"],
+      ai_tools: { state: "switched", code: "", params: {} },
+    })),
     system_accounts: [
       {
         account: DEMO_ACCOUNT,

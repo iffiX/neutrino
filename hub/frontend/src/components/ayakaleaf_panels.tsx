@@ -26,7 +26,8 @@ interface AyakaleafPanelsProps {
   deviceId: string;
   /** Where the module answers: `/agent/module/ayakaleaf`. */
   basePath: string;
-  isEditable: boolean;
+  /** Why nothing here can be applied, or null while it can. */
+  blockedHint: string | null;
   /** What the hub asks of the module: `running`, `stopped`, `installed`, or
    * empty. */
   want: string;
@@ -54,7 +55,7 @@ interface RestartWait {
 export function AyakaleafPanels({
   deviceId,
   basePath,
-  isEditable,
+  blockedHint,
   want,
 }: AyakaleafPanelsProps) {
   // Redrawn when the panel's language changes.
@@ -150,7 +151,9 @@ export function AyakaleafPanels({
             ? t("ui.ayakaleaf.model_hint")
             : t("code.gateway_not_serving")
         }
-        isDisabled={!isEditable || isUnsupported || !saved.is_gateway_serving}
+        isDisabled={
+          blockedHint !== null || isUnsupported || !saved.is_gateway_serving
+        }
       />
       <ApplyBar
         isDirty={isDirty}
@@ -162,7 +165,7 @@ export function AyakaleafPanels({
             : t("ui.modules.stopped_hint")
         }
         warning={isRestarted ? t("ui.ayakaleaf.apply_warning") : undefined}
-        blockedHint={isEditable ? null : t("ui.modules.agent_offline")}
+        blockedHint={blockedHint}
         isApplyDisabled={isUnsupported}
         error={error}
         onReset={() => {
