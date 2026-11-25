@@ -33,9 +33,14 @@ HERMES_WEBUI_GATEWAY_KEY_VARIABLE = "NEUTRINO_GATEWAY_KEY"
 # The variable in the reference form the webui expands, which it reads a
 # bare ``custom`` provider's key from when it lists the gateway's models.
 HERMES_WEBUI_GATEWAY_KEY_REFERENCE = "${NEUTRINO_GATEWAY_KEY}"
+# What a read of a key runs ahead of ``hermes``: the key's variable unset,
+# so ``hermes config get --raw`` prints a reference as the file holds it.
+HERMES_WEBUI_READ_PREFIX = ("env", "-u", HERMES_WEBUI_GATEWAY_KEY_VARIABLE)
 HERMES_WEBUI_BASE_URL_SUFFIX = "/v1"
 HERMES_WEBUI_PROVIDER = "custom"
 HERMES_WEBUI_MODEL_KEY = "model.default"
+HERMES_WEBUI_BASE_URL_KEY = "model.base_url"
+HERMES_WEBUI_API_KEY_KEY = "model.api_key"
 # Each served name's context window, written as one JSON mapping
 # ``{<name>: {context_window}}`` for the gateway's bare custom endpoint.
 HERMES_WEBUI_OVERRIDES_KEY = "model_overrides.custom"

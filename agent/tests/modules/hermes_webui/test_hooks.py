@@ -22,8 +22,10 @@ false, each key that still holds the agent's value unset, a
 wrote unset while the base URL is the agent's, "Config key not set"
 counted as done, a failed read leaving the record, and the first start
 ending at ``/health`` 200 with no keys; with it true again, every key
-written again; and the record that brings the forwarder back after a
-restart.
+written again; while it is true, an ``api_key`` the webui's own save wrote
+written back to the variable's name at the next start while the base URL
+is the agent's, each key read with the key's variable unset; and the
+record that brings the forwarder back after a restart.
 """
 
 import json
@@ -135,7 +137,10 @@ class FakePodman:
         if key not in self.keys:
             return CommandResult(list(command), 1, f"Config key not set: {key}\n", "")
         if verb == "get":
-            return CommandResult(list(command), 0, self.keys[key] + "\n", "")
+            value = self.keys[key]
+            if command[at - 3 : at - 1] != ["-u", "NEUTRINO_GATEWAY_KEY"]:
+                value = value.replace("${NEUTRINO_GATEWAY_KEY}", "k")
+            return CommandResult(list(command), 0, value + "\n", "")
         del self.keys[key]
         return CommandResult(list(command), 0, f"Unset {key}", "")
 
@@ -1068,6 +1073,76 @@ def test_a_state_with_no_is_gateway_used_keeps_the_gateway(box):
         "model.key_env",
         "model.api_key",
     ]
+
+
+def on_and_written(box) -> None:
+    """A first start with the gateway on and every key written, then the calls forgotten."""
+    box.podman.has_config = True
+    box.status = 200
+    box.hooks.installed("0.52.492")
+    box.hooks.apply({**CONFIG, "model": "deepseek-flash"})
+    box.start()
+    box.podman.calls.clear()
+
+
+def test_on_a_key_a_webui_save_wrote_is_the_variable_s_name_again_at_the_next_start(
+    box,
+):
+    on_and_written(box)
+    box.podman.keys["model.api_key"] = "the-gateway-key"  # scan: allow
+
+    box.start()
+
+    assert box.podman.keys["model.api_key"] == "${NEUTRINO_GATEWAY_KEY}"
+    assert box.podman.config_calls("set") == ["model.api_key"]
+    assert not any("the-gateway-key" in line for line in box.lines)
+    assert "hermes_webui: model.api_key names NEUTRINO_GATEWAY_KEY again" in box.lines
+
+
+def test_on_a_key_that_names_the_variable_is_read_once_and_not_written(box):
+    on_and_written(box)
+
+    box.start()
+
+    assert box.podman.config_calls("get") == ["model.api_key"]
+    assert box.podman.config_calls("set") == []
+
+
+def test_a_key_is_read_with_its_variable_unset_so_a_reference_reads_as_written(box):
+    on_and_written(box)
+
+    box.start()
+
+    read = next(call for call in box.podman.calls if "get" in call)
+    at = read.index("neutrino_hermes_webui_agent")
+    assert read[at + 1 : at + 6] == [
+        "env",
+        "-u",
+        "NEUTRINO_GATEWAY_KEY",
+        "hermes",
+        "config",
+    ]
+
+
+def test_on_a_key_beside_a_base_url_of_the_person_s_stays(box):
+    on_and_written(box)
+    box.podman.keys["model.base_url"] = "https://openrouter.ai/api/v1"
+    box.podman.keys["model.api_key"] = "the-person-s-key"  # scan: allow
+
+    box.start()
+
+    assert box.podman.keys["model.api_key"] == "the-person-s-key"
+    assert box.podman.config_calls("set") == []
+
+
+def test_on_a_key_that_cannot_be_read_writes_nothing(box):
+    on_and_written(box)
+    box.podman.unreadable_key = "model.api_key"
+
+    box.start()
+
+    assert box.podman.config_calls("set") == []
+    assert "hermes_webui: model.api_key was not read" in box.lines
 
 
 # --- the forwarder, against a fake webui ---

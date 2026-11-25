@@ -19,8 +19,10 @@ record holds. Once they hold the current base URL it writes
 differs from the one the record holds, and nothing while the state sends
 none; and ``model_overrides.custom`` with each served name's context length
 as one JSON mapping, again whenever the lengths differ from the ones the
-record holds, and nothing while the state sends none. While the state's
-``is_gateway_used`` is false, the module's start reads each of the six keys
+record holds, and nothing while the state sends none. At each start after
+that, while ``model.base_url`` holds the record's base URL, a
+``model.api_key`` that holds anything else is written back to the
+variable's name. While the state's ``is_gateway_used`` is false, the module's start reads each of the six keys
 with ``hermes config get`` and unsets each that still holds what the agent
 wrote, ``model_overrides.custom`` whole, and the record forgets the base
 URL, the model and the lengths. From the install, and after a version
@@ -58,7 +60,9 @@ from neutrino_agent.exceptions import ModuleApplyError, ModuleInstallPending
 from neutrino_agent.modules.hermes_webui.config import HermesWebuiConfig
 from neutrino_agent.modules.hermes_webui.constants import (
     HERMES_WEBUI_AGENT_CONTAINER,
+    HERMES_WEBUI_API_KEY_KEY,
     HERMES_WEBUI_BASE_PORT,
+    HERMES_WEBUI_BASE_URL_KEY,
     HERMES_WEBUI_BASE_URL_SUFFIX,
     HERMES_WEBUI_CACHE_VOLUMES,
     HERMES_WEBUI_CONFIG_COMMAND,
@@ -79,6 +83,7 @@ from neutrino_agent.modules.hermes_webui.constants import (
     HERMES_WEBUI_PENDING,
     HERMES_WEBUI_PODMAN_TIMEOUT_S,
     HERMES_WEBUI_PROVIDER,
+    HERMES_WEBUI_READ_PREFIX,
     HERMES_WEBUI_RECORD_FIELDS,
     HERMES_WEBUI_SETTINGS_PATH,
     HERMES_WEBUI_STEP_FIRST_START,
@@ -138,9 +143,9 @@ def gateway_keys(base_url: str) -> list:
     """
     return [
         ("model.provider", HERMES_WEBUI_PROVIDER),
-        ("model.base_url", base_url),
+        (HERMES_WEBUI_BASE_URL_KEY, base_url),
         ("model.key_env", HERMES_WEBUI_GATEWAY_KEY_VARIABLE),
-        ("model.api_key", HERMES_WEBUI_GATEWAY_KEY_REFERENCE),
+        (HERMES_WEBUI_API_KEY_KEY, HERMES_WEBUI_GATEWAY_KEY_REFERENCE),
     ]
 
 
@@ -170,7 +175,10 @@ def keys_to_unset(held: dict, record: dict) -> list:
         found = held.get(key)
         if found is None:
             continue
-        is_api_key = key == "model.api_key" and held.get("model.base_url") == base_url
+        is_api_key = (
+            key == HERMES_WEBUI_API_KEY_KEY
+            and held.get(HERMES_WEBUI_BASE_URL_KEY) == base_url
+        )
         if found == value or is_api_key:
             keys.append(key)
     if held.get(HERMES_WEBUI_OVERRIDES_KEY) is not None:
@@ -394,7 +402,7 @@ class HermesWebuiHooks(ContainerHooks):
             )
 
     def start(self) -> None:
-        """Serve the page, and once the first start has ended write the gateway keys again for a new base URL, ``model.default`` for a new model and ``model_overrides.custom`` for new lengths, or take them out while the gateway is not used.
+        """Serve the page, and once the first start has ended write the gateway keys again for a new base URL, ``model.default`` for a new model and ``model_overrides.custom`` for new lengths, and ``model.api_key`` back to the variable's name, or take them out while the gateway is not used.
 
         Raises:
             ModuleApplyError: When the Containers runner cannot keep the
@@ -406,10 +414,13 @@ class HermesWebuiHooks(ContainerHooks):
             with self._lock:
                 self._is_starting = True
             return
-        if self._is_gateway_used():
-            self._keys_written(record, self._base_url())
-        else:
+        if not self._is_gateway_used():
             self._keys_taken_out(record)
+            return
+        base_url = self._base_url()
+        record = self._keys_written(record, base_url)
+        if base_url and record.get("base_url") == base_url:
+            self._api_key_named(base_url)
 
     def start_steps(self, config: dict, version: str) -> list:
         """``first_start`` while the first start has not ended, then ``update_check`` while the update check is on.
@@ -634,6 +645,24 @@ class HermesWebuiHooks(ContainerHooks):
         record = self._model_written(record, context=context)
         return self._lengths_written(record, context=context)
 
+    def _api_key_named(self, base_url: str) -> None:
+        """Write the variable's name into ``model.api_key`` when it holds anything else while ``model.base_url`` holds the base URL; a failed read or write is a line in the log.
+
+        Args:
+            base_url: The base URL the record holds and the agent container
+                names.
+        """
+        held = self._read_key(HERMES_WEBUI_API_KEY_KEY)
+        if held is False or held == HERMES_WEBUI_GATEWAY_KEY_REFERENCE:
+            return
+        if self._read_key(HERMES_WEBUI_BASE_URL_KEY) != base_url:
+            return
+        if self._set_key(HERMES_WEBUI_API_KEY_KEY, HERMES_WEBUI_GATEWAY_KEY_REFERENCE):
+            self._log(
+                f"{self._name}: {HERMES_WEBUI_API_KEY_KEY} names"
+                f" {HERMES_WEBUI_GATEWAY_KEY_VARIABLE} again"
+            )
+
     def _keys_taken_out(self, record: dict) -> dict:
         """The record after each key that still holds what the agent wrote is unset, while the record holds a base URL.
 
@@ -827,7 +856,7 @@ class HermesWebuiHooks(ContainerHooks):
         return True
 
     def _read_key(self, key: str):
-        """One key's value with ``hermes config get --raw``; None for a key the file does not hold, False when the read fails."""
+        """One key's value as ``config.yaml`` holds it, with ``hermes config get --raw`` and the key's variable unset; None for a key the file does not hold, False when the read fails."""
         done = self._hermes_config("get", key, "--raw")
         if done is not None and done.is_success:
             return (done.stdout or "").strip()
@@ -847,7 +876,8 @@ class HermesWebuiHooks(ContainerHooks):
         return False
 
     def _hermes_config(self, verb: str, *arguments: str):
-        """One ``hermes config`` command in the agent container, as the image's user; None when it cannot run."""
+        """One ``hermes config`` command in the agent container, as the image's user, a ``get`` with the key's variable unset; None when it cannot run."""
+        prefix = HERMES_WEBUI_READ_PREFIX if verb == "get" else ()
         return self._quietly(
             [
                 "exec",
@@ -856,6 +886,7 @@ class HermesWebuiHooks(ContainerHooks):
                 "-e",
                 HERMES_WEBUI_EXEC_HOME,
                 HERMES_WEBUI_AGENT_CONTAINER,
+                *prefix,
                 *HERMES_WEBUI_CONFIG_COMMAND,
                 verb,
                 *arguments,
