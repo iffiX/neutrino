@@ -40,7 +40,7 @@ HERMES_WEBUI_BASE_URL_SUFFIX = "/v1"
 HERMES_WEBUI_PROVIDER = "custom"
 HERMES_WEBUI_MODEL_KEY = "model.default"
 HERMES_WEBUI_BASE_URL_KEY = "model.base_url"
-HERMES_WEBUI_API_KEY_KEY = "model.api_key"
+HERMES_WEBUI_API_KEY_KEY = "model.api_key"  # scan: allow
 # Each served name's context window, written as one JSON mapping
 # ``{<name>: {context_window}}`` for the gateway's bare custom endpoint.
 HERMES_WEBUI_OVERRIDES_KEY = "model_overrides.custom"
