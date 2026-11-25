@@ -47,14 +47,15 @@ import "./devices_page.css";
  * The **Agents** page: one table of the managed machines, one row each.
  *
  * A row's icon is a button that writes a pick at once; its name links to
- * the machine page. Its dot reads `incomplete` in amber while the machine
- * is online with no default account. The status cell is five rings that move on the
- * `metrics` event: CPU, memory, disk, the busiest GPU and the temperature,
- * or how long ago an offline machine was seen. The row's actions sit at its
- * right; Rename turns the name into an input and leaves Save and Cancel
- * alone. A box narrower than every column lays each row out as a card. The
- * header adds a machine through two dialogs, by link or over SSH. What a
- * press started reads on the row's own line under it.
+ * the machine page. While the machine is online with no default account,
+ * its dot is amber and its last seen cell reads `incomplete`. The status
+ * cell is five rings that move on the `metrics` event: CPU, memory, disk,
+ * the busiest GPU and the temperature, or how long ago an offline machine
+ * was seen. The row's actions sit at its right; Rename turns the name into
+ * an input and leaves Save and Cancel alone. A box narrower than every
+ * column lays each row out as a card. The header adds a machine through two
+ * dialogs, by link or over SSH. What a press started reads on the row's own
+ * line under it.
  */
 
 // What moves this list: a machine's session opening or ending, a machine
@@ -473,6 +474,7 @@ function DeviceRow({
   useLanguage();
   const client = device.client;
   const isOnline = device.is_agent_online;
+  const isIncomplete = isDeviceIncomplete(device);
   const icon = toDeviceIconName(device.icon, client?.platform_os ?? null);
   return (
     <>
@@ -487,8 +489,8 @@ function DeviceRow({
               isDisabled={isBusy || isRenaming}
               onPick={onIcon}
             />
-            {isDeviceIncomplete(device) ? (
-              <StatusDot tone="warn" label={t("state.incomplete")} />
+            {isIncomplete ? (
+              <StatusDot tone="warn" />
             ) : (
               <StatusDot tone={isOnline ? "ok" : "idle"} isPulsing={isOnline} />
             )}
@@ -562,7 +564,11 @@ function DeviceRow({
           className="mono devices_cell--seen"
           data-label={t("ui.devices.header_last_seen")}
         >
-          {isOnline ? t("state.online") : formatTimeAgo(lastSeen(device))}
+          {isIncomplete
+            ? t("state.incomplete")
+            : isOnline
+              ? t("state.online")
+              : formatTimeAgo(lastSeen(device))}
         </td>
         <td className="devices_cell--actions">
           <div className="devices_actions">

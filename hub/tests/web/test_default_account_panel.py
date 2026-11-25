@@ -10,8 +10,9 @@ default asking first; the default's row first in Enabled accounts, checked
 and locked with the chip, and always in the list the apply writes; a machine
 with no default greying every tab's buttons, every apply bar and + Add
 module, each bar showing ``ui.modules.default_needed``; an online machine
-with no default reading incomplete in amber in the sidebar, the Agents table
-and the machine page's header, offline winning; the API types mirroring the
+with no default reading incomplete in amber in the sidebar and the machine
+page's header, and in the Agents table as a bare amber dot with the word in
+the last seen cell, offline winning; the API types mirroring the
 hub's ``default_account`` fields; and every word in both languages as
 ui_text.md writes it, the deleted ones gone.
 """
@@ -332,17 +333,27 @@ def test_the_sidebar_shows_the_amber_dot_and_incomplete_where_offline_goes():
     assert "{ type: HUB_EVENT_CONFIG }," in nav
 
 
-@pytest.mark.parametrize(
-    "path,check",
-    [
-        (PAGES_DIR / "devices_page.tsx", "{isDeviceIncomplete(device) ? ("),
-        (PAGES_DIR / "machine_page.tsx", "{isIncomplete ? ("),
-    ],
-)
-def test_the_agents_table_and_the_machine_header_read_incomplete(path, check):
-    page = source(path)
+def test_the_machine_header_reads_incomplete_beside_its_dot():
+    page = source(PAGES_DIR / "machine_page.tsx")
 
     assert (
-        f'{check} <StatusDot tone="warn" label={{t("state.incomplete")}} /> ) : ('
-        in page
-    )
+        '{isIncomplete ? ( <StatusDot tone="warn" label={t("state.incomplete")} /> ) : ('
+    ) in page
+
+
+def test_the_agents_table_reads_incomplete_in_the_last_seen_cell():
+    page = source(PAGES_DIR / "devices_page.tsx")
+    row = function_body(page, "DeviceRow")
+    seen = row[row.index('className="mono devices_cell--seen"') :]
+    seen = seen[: seen.index("</td>")]
+
+    assert "const isIncomplete = isDeviceIncomplete(device);" in row
+    assert (
+        '{isIncomplete ? ( <StatusDot tone="warn" /> ) : ( '
+        '<StatusDot tone={isOnline ? "ok" : "idle"} isPulsing={isOnline} /> )}'
+    ) in row
+    assert (
+        '{isIncomplete ? t("state.incomplete") : isOnline ? t("state.online") '
+        ": formatTimeAgo(lastSeen(device))}"
+    ) in seen
+    assert 'label={t("state.incomplete")}' not in row
