@@ -343,7 +343,7 @@
   "code.service_invalid": "非法服务设置：容器 {name} 的端口 {port} 没有发布、重复列出，或类型、协议不在可选范围内。",
   "code.windows_feature_failed": "Windows 没能打开 {feature}（退出码 {exit_code}）。",
   "code.podman_install_failed": "{artifact} 安装包没能装上（退出码 {exit_code}）。",
-  "code.machine_account_missing": "选一个运行容器的账户。",
+  "code.machine_account_missing": "先设置这个系统的默认账户。",
   "code.machine_cpus_invalid": "非法 CPU 数：要在 0 到 {max} 之间。",
   "code.machine_memory_invalid": "非法内存大小：要在 0 到 {max} GiB 之间。",
   "code.machine_disk_shrink": "磁盘现在是 {current_gib} GiB，只能改大，{disk_gib} GiB 比它小。",

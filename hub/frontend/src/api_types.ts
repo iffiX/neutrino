@@ -1525,13 +1525,6 @@ export interface AccountRemoveRequest {
   account: string;
 }
 
-export interface AccountPasswordTest {
-  device_id: string;
-  account: string;
-  /** Empty tests the login the account has. */
-  password: string;
-}
-
 /** One available account as an account-layer module's tab lists it. */
 export interface EnabledAccountView {
   account: string;
@@ -2523,11 +2516,9 @@ export interface PodmanHubContainer {
   volumes: string[];
 }
 
-/** The Run settings as stored: the account whose Podman machine runs the
- * containers, the vault login it signs in with on Windows, and the machine's
- * resources, each 0 for Podman's default. */
+/** The Run settings as stored: the resources of the default account's
+ * Podman machine, each 0 for Podman's default. */
 export interface PodmanMachine {
-  account: string;
   cpus: number;
   memory_gib: number;
   disk_gib: number;
@@ -2563,9 +2554,8 @@ export interface PodmanSettings {
   is_installed: boolean;
   is_active: boolean;
   version: string;
-  /** The machine's available accounts, for the Run settings. */
-  accounts: string[];
-  /** The Run settings on Windows and macOS; null on Linux. */
+  /** The Run settings on Windows and macOS; null while the hub holds none,
+   * and on Linux. */
   machine: PodmanMachine | null;
   /** The Podman machine as last reported; null until one is. */
   machine_state: PodmanMachineState | null;
@@ -2582,9 +2572,9 @@ export interface PodmanDeviceView extends PodmanSettings, ModuleDeviceState {}
 export interface PodmanNewMachineView {
   cpus: number;
   memory_gib: number;
-  /** The account's disk now, else the default. */
+  /** The default account's disk now, else the default. */
   disk_gib: number;
-  /** The account's disk now; 0 while the account has no machine. */
+  /** The default account's disk now; 0 while it has no machine. */
   disk_gib_now: number;
   /** What the container modules need, the module being installed among them. */
   need_gib: number;
@@ -2592,8 +2582,6 @@ export interface PodmanNewMachineView {
 
 export interface PodmanMachineUpdate {
   device_id: string;
-  /** An available account; a Windows machine signs in with its login. */
-  account: string;
   cpus: number;
   memory_gib: number;
   disk_gib: number;

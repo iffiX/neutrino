@@ -48,15 +48,25 @@ WORDED_KEYS = {
         "ui.accounts.default_title",
         "ui.accounts.default_body",
         "ui.modules.default_needed",
+        "ui.containers.run_apply_hint",
     ),
     "codes.json": (
         "code.account_no_login",
         "code.account_is_default",
         "code.default_account_missing",
+        "code.machine_account_missing",
     ),
 }
 # The words ui_text.md deletes with the default account.
-GONE_KEYS = ("ui.modules.no_accounts",)
+GONE_KEYS = (
+    "ui.modules.no_accounts",
+    "ui.containers.run_account",
+    "ui.containers.run_account_hint",
+    "ui.containers.run_account_warning",
+    "ui.containers.run_needed",
+    "ui.containers.account_title",
+    "ui.containers.account_empty",
+)
 # Every apply bar the machine page reaches, by the file that draws it.
 MODULE_BAR_FILES = (
     "instances_panel.tsx",
@@ -131,6 +141,7 @@ def test_the_api_types_mirror_the_hub_s_default_account():
         body = types[types.index(f"export interface {view} ") :]
         body = body[: body.index("}")]
         assert "default_account: string;" in body
+    assert "AccountPasswordTest" not in types
     context = setup[setup.index("export interface SetupContext {") :]
     context = context[: context.index("}")]
     assert "accounts: string[];" in context
@@ -265,7 +276,7 @@ def test_a_machine_with_no_default_greys_the_tabs_like_an_offline_one():
     assert "disabled={!isLive || isBusy}" in page
     assert "canPress={isLive && !isInTransit}" in page
     assert '<fieldset className="modules_config" disabled={!isLive}>' in page
-    assert "blockedHint, platformOs," in page
+    assert "blockedHint, defaultAccount, platformOs," in page
     assert (
         '<button type="button" className="button modules_list_add" '
         "disabled={isDefaultMissing}"

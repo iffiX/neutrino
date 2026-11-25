@@ -2,7 +2,6 @@ import { useState } from "react";
 
 import { ApplyBar } from "./apply_bar";
 import { ContainersMachineFields } from "./containers_machine_fields";
-import { Picker } from "./picker";
 import { apiPost, describeApplyFailure, describeError } from "../api_client";
 import { t, useLanguage } from "../i18n";
 import { machineDiskError } from "../podman_machine";
@@ -17,15 +16,12 @@ import type {
   PodmanMachineUpdate,
 } from "../api_types";
 
-import "./containers_run_settings.css";
-
 /**
- * The Run settings of Containers on a Windows or macOS machine: the
- * available account whose Podman machine runs the containers, and the
- * machine's CPUs, memory and disk limit, each 0 for the default except the
- * disk limit on Windows, which is at least 1. On Windows the machine starts
- * with the login the account's form holds. While the container modules need
- * more memory than the machine has, the memory field advises their need.
+ * The Run settings of Containers on a Windows or macOS machine: the CPUs,
+ * memory and disk limit of the default account's Podman machine, each 0 for
+ * the default except the disk limit on Windows, which is at least 1. While
+ * the container modules need more memory than the machine has, the memory
+ * field advises their need.
  *
  * The disk limit starts at the disk's size now, as the machine reported it,
  * the way Podman Desktop's edit form for a machine holds its disk size. An
@@ -41,9 +37,8 @@ const WANT_RUNNING = "running";
 /** The disk limit a Windows machine with none stored starts at, in GiB. */
 const WINDOWS_NEW_DISK_GIB = 100;
 
-/** The Run settings while none are stored: no account, Podman's defaults. */
+/** The Run settings while none are stored: Podman's defaults. */
 const EMPTY_MACHINE: PodmanMachine = {
-  account: "",
   cpus: 0,
   memory_gib: 0,
   disk_gib: 0,
@@ -58,7 +53,9 @@ interface ContainersRunSettingsProps {
   saved: PodmanDeviceView;
   /** Why nothing here can be applied, or null while it can. */
   blockedHint: string | null;
-  /** Whether the machine is Windows, whose machine starts with a login. */
+  /** The machine's default account, whose Podman machine this is. */
+  defaultAccount: string;
+  /** Whether the machine is Windows, whose disk limit is at least 1. */
   isWindows: boolean;
   /** What the hub asks of the module: `running`, `stopped`, or empty. */
   want: string;
@@ -76,6 +73,7 @@ export function ContainersRunSettings({
   basePath,
   saved,
   blockedHint,
+  defaultAccount,
   isWindows,
   want,
   report,
@@ -96,7 +94,7 @@ export function ContainersRunSettings({
 
   const stored = draftOf(saved, isWindows);
   const isUnsupported = saved.state === STATE_UNSUPPORTED;
-  const currentDisk = currentDiskGib(saved.machine_state, draft.account);
+  const currentDisk = currentDiskGib(saved.machine_state, defaultAccount);
   const memoryNeed = saved.memory_need;
   const isMemoryShort =
     memoryNeed !== null && draft.memory_gib < memoryNeed.need_gib;
@@ -133,22 +131,6 @@ export function ContainersRunSettings({
       <div className="settings_group_title">
         <h2>{t("ui.containers.run_title")}</h2>
       </div>
-      <div className="containers_run_account">
-        <Picker
-          options={saved.accounts.map((account) => ({
-            id: account,
-            name: account,
-          }))}
-          value={draft.account}
-          onChange={(account) => {
-            setDraft({ ...draft, account });
-          }}
-          label={t("ui.containers.run_account")}
-          hint={t("ui.containers.run_account_hint")}
-          emptyText={t("ui.accounts.empty")}
-          isDisabled={isUnsupported}
-        />
-      </div>
       <ContainersMachineFields
         size={draft}
         currentDisk={currentDisk}
@@ -173,7 +155,13 @@ export function ContainersRunSettings({
             ? t("ui.modules.stopped_hint")
             : t("ui.containers.run_apply_hint")
         }
-        warning={runWarning(stored, draft, saved.machine_state, isWindows)}
+        warning={runWarning(
+          stored,
+          draft,
+          saved.machine_state,
+          defaultAccount,
+          isWindows,
+        )}
         blockedHint={blockedHint}
         isApplyDisabled={isUnsupported || diskError !== null}
         error={error}
@@ -194,12 +182,11 @@ export function ContainersRunSettings({
 }
 
 /** What the form starts from: the Run settings as stored; on Windows, while
- * none name an account, a disk limit of 100 GiB. */
+ * the hub holds none, a disk limit of 100 GiB. */
 function draftOf(view: PodmanDeviceView, isWindows: boolean): RunDraft {
   const machine = view.machine ?? EMPTY_MACHINE;
-  const isNewWindowsMachine = isWindows && machine.account === "";
+  const isNewWindowsMachine = isWindows && view.machine === null;
   return {
-    account: machine.account,
     cpus: machine.cpus,
     memory_gib: machine.memory_gib,
     disk_gib: isNewWindowsMachine ? WINDOWS_NEW_DISK_GIB : machine.disk_gib,
@@ -230,6 +217,7 @@ function runWarning(
   stored: RunDraft,
   draft: RunDraft,
   reported: PodmanMachineState | null,
+  account: string,
   isWindows: boolean,
 ): string | undefined {
   const lines: string[] = [];
@@ -237,16 +225,12 @@ function runWarning(
     draft.cpus !== stored.cpus ||
     draft.memory_gib !== stored.memory_gib ||
     draft.disk_gib !== stored.disk_gib;
-  const isRestarted =
-    isResourceChanged && isMachineMade(reported, draft.account);
+  const isRestarted = isResourceChanged && isMachineMade(reported, account);
   if (isRestarted) {
     lines.push(t("ui.containers.run_restart_warning"));
   }
   if (isRestarted && isWindows) {
     lines.push(t("ui.containers.run_wsl_warning"));
-  }
-  if (stored.account !== "" && draft.account !== stored.account) {
-    lines.push(t("ui.containers.run_account_warning"));
   }
   return lines.length === 0 ? undefined : lines.join(" ");
 }

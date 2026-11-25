@@ -1,7 +1,0 @@
-/* The Run settings: the account and its login above the machine's numbers. */
-.containers_run_account {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: var(--space-3);
-  align-items: start;
-}

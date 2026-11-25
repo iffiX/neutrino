@@ -18,6 +18,7 @@ import type {
   OpenFrpView,
   OverlayKindView,
   PanelHttpsView,
+  PodmanNewMachineView,
   RelayView,
   SettingsView,
   TokensResponse,
@@ -508,6 +509,15 @@ export function demoAbout(uptimeS: number, isProxyCarried: boolean): AboutInfo {
     ],
   };
 }
+
+/** The numbers a new Podman machine starts from on a demo machine. */
+export const DEMO_NEW_PODMAN_MACHINE: PodmanNewMachineView = {
+  cpus: 4,
+  memory_gib: 4,
+  disk_gib: 100,
+  disk_gib_now: 0,
+  need_gib: 0,
+};
 
 /**
  * A machine's available accounts, whose OpenCode uses a model of the

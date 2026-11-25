@@ -1,8 +1,11 @@
-"""Containers' account dialog keeps a refusal of its numbers on screen.
+"""Containers' numbers dialog asks no account and keeps a refusal on screen.
 
-What these pin: **Install** in the dialog writes the Run settings before the
-press, a refusal of them shows the code's words in the dialog, and the dialog
-closes only once the press may go on.
+What these pin: the dialog asks the CPUs, the memory and the disk of the
+default account's Podman machine alone, under ``ui.containers.run_title``,
+and opens while the hub holds no Run settings; **Install** in the dialog
+writes the Run settings before the press, a refusal of them shows the code's
+words in the dialog, and the dialog closes only once the press may go on;
+the Run settings and the panels under them name no account.
 """
 
 import json
@@ -17,9 +20,13 @@ WORDS = {
 }
 
 
-def modal() -> str:
-    path = FRONTEND_SRC_DIR / "components" / "containers_account_modal.tsx"
+def flat_source(name: str) -> str:
+    path = FRONTEND_SRC_DIR / "components" / name
     return " ".join(path.read_text(encoding="utf-8").split())
+
+
+def modal() -> str:
+    return flat_source("containers_account_modal.tsx")
 
 
 @pytest.mark.parametrize("language", list(WORDS))
@@ -41,3 +48,34 @@ def test_a_refused_number_stays_in_the_dialog_with_its_words():
         '<Icon name="alert" size={15} /> '
         '<div className="notice_body">{shownError}</div>'
     ) in body
+
+
+def test_the_dialog_asks_the_numbers_alone():
+    body = modal()
+
+    assert 'title={t("ui.containers.run_title")}' in body
+    assert "apiPath(NEW_MACHINE_PATH, { device_id: deviceId, module })" in body
+    assert (
+        "const request: PodmanMachineUpdate = { device_id: deviceId, ...size };"
+    ) in body
+    for gone in ("Picker", "PasswordInput", "AccountListView", "ACCOUNT_PATH"):
+        assert gone not in body
+
+
+def test_the_dialog_opens_while_the_hub_holds_no_run_settings():
+    page = flat_source("machine_modules.tsx")
+
+    assert "return view.machine === null;" in page
+    assert "machine?.account" not in page
+
+
+def test_the_run_settings_and_the_panels_under_them_name_no_account():
+    settings = flat_source("containers_run_settings.tsx")
+    panels = flat_source("containers_panels.tsx")
+
+    assert "Picker" not in settings
+    assert "draft.account" not in settings
+    assert "const isNewWindowsMachine = isWindows && view.machine === null;" in settings
+    assert "currentDiskGib(saved.machine_state, defaultAccount)" in settings
+    assert "isRunNeeded" not in panels
+    assert "podmanReport(saved, isMachineRun, defaultAccount)" in panels

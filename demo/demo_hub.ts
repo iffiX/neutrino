@@ -26,6 +26,7 @@ import {
   DEMO_KEYS,
   DEMO_LOGINS,
   DEMO_NETBIRD,
+  DEMO_NEW_PODMAN_MACHINE,
   DEMO_OPENCODE_MODEL,
   DEMO_OPENFRP,
   DEMO_OPENFRP_TUNNELS,
@@ -95,6 +96,7 @@ import type {
   OverlayChoiceView,
   PermissionRowView,
   PodmanDeviceView,
+  PodmanMachine,
   ProxySettings,
   PublishedService,
   RemoteDesktopDeviceView,
@@ -176,6 +178,9 @@ interface DemoDevice {
   /** The available accounts in the order they were added, the first the
    * default; none on a machine that is incomplete. */
   accounts: string[];
+  /** Containers' Run settings on Windows and macOS; null while none are
+   * held. */
+  podmanMachine: PodmanMachine | null;
 }
 
 /** An app declared on the Services page. */
@@ -286,6 +291,7 @@ function initialDevices(): DemoDevice[] {
         "podman",
       ]),
       accounts: [DEMO_ACCOUNT],
+      podmanMachine: null,
     },
     {
       id: "dev_laptop",
@@ -301,6 +307,7 @@ function initialDevices(): DemoDevice[] {
       metricsSeed: 1,
       modules: modulesWith(["code_server", "cloudcli", "ollama"]),
       accounts: [DEMO_ACCOUNT],
+      podmanMachine: null,
     },
     {
       id: "dev_mini",
@@ -316,6 +323,7 @@ function initialDevices(): DemoDevice[] {
       metricsSeed: 2,
       modules: modulesWith(["samba"]),
       accounts: [DEMO_ACCOUNT],
+      podmanMachine: null,
     },
     {
       id: "dev_living_room",
@@ -331,6 +339,7 @@ function initialDevices(): DemoDevice[] {
       metricsSeed: 3,
       modules: { ...modulesWith([]), ssh_server: moduleState("stopped", true) },
       accounts: [],
+      podmanMachine: null,
     },
   ];
 }
@@ -412,6 +421,12 @@ function delay(ms: number): Promise<void> {
 export function textField(body: DemoBody, name: string): string {
   const value = body[name];
   return typeof value === "string" ? value : "";
+}
+
+/** The number of a body's field, 0 when it holds none. */
+function numberField(body: DemoBody, name: string): number {
+  const value = body[name];
+  return typeof value === "number" ? value : 0;
 }
 
 /** The source chip's word for each install method the demo's modules name. */
@@ -855,6 +870,7 @@ export class DemoHub {
       "/agent/module/samba/folder_share": () => this.folderShares(),
       "/agent/file": (query) => this.fileList(query.get("path") ?? "/"),
       "/agent/module/podman/container/journal": () => ({ text: "" }),
+      "/agent/module/podman/new_machine": () => DEMO_NEW_PODMAN_MACHINE,
     };
   }
 
@@ -872,6 +888,8 @@ export class DemoHub {
       "/hub/device/enrollment/create": (_query, body) =>
         this.createDeviceLink(body),
       "/agent/module/account/add": (_query, body) => this.addAccount(body),
+      "/agent/module/podman/machine/set": (_query, body) =>
+        this.setPodmanMachine(body),
       "/agent/module/install": (_query, body) =>
         this.pressModule(body, "install"),
       "/agent/module/start": (_query, body) => this.pressModule(body, "start"),
@@ -1076,6 +1094,7 @@ export class DemoHub {
         metricsSeed: 0,
         modules: modulesWith([]),
         accounts: [],
+        podmanMachine: null,
       }
     );
   }
@@ -1405,6 +1424,7 @@ export class DemoHub {
     const state = this.moduleDeviceState(device, "podman");
     const isOnMachine = device.platformOs !== "linux";
     const isRunning = state.state === "running";
+    const machine = device.podmanMachine;
     return {
       ...state,
       containers: [
@@ -1443,20 +1463,18 @@ export class DemoHub {
       is_installed: state.state !== "absent",
       is_active: isRunning,
       version: demoModule("podman")?.version ?? "",
-      accounts: [DEMO_ACCOUNT],
-      machine: isOnMachine
-        ? { account: DEMO_ACCOUNT, cpus: 4, memory_gib: 6, disk_gib: 60 }
-        : null,
-      machine_state: isOnMachine
-        ? {
-            account: DEMO_ACCOUNT,
-            is_running: isRunning,
-            cpus: 4,
-            memory_gib: 6,
-            disk_gib: 60,
-            default_memory_gib: 4,
-          }
-        : null,
+      machine: isOnMachine ? machine : null,
+      machine_state:
+        isOnMachine && machine !== null
+          ? {
+              account: device.accounts[0] ?? "",
+              is_running: isRunning,
+              cpus: machine.cpus,
+              memory_gib: machine.memory_gib,
+              disk_gib: machine.disk_gib,
+              default_memory_gib: DEMO_NEW_PODMAN_MACHINE.memory_gib,
+            }
+          : null,
       memory_need: null,
     };
   }
@@ -1766,6 +1784,18 @@ export class DemoHub {
     return this.accountList(device);
   }
 
+  /** Stores Containers' Run settings. */
+  private setPodmanMachine(body: DemoBody): PodmanDeviceView {
+    const device = this.device(textField(body, "device_id"));
+    device.podmanMachine = {
+      cpus: numberField(body, "cpus"),
+      memory_gib: numberField(body, "memory_gib"),
+      disk_gib: numberField(body, "disk_gib"),
+    };
+    this.publish("config", `devices/${device.id}/podman.json`);
+    return this.podmanView(device);
+  }
+
   private setDevice(body: DemoBody): DevicesResponse {
     const device = this.device(textField(body, "device_id"));
     if (typeof body.name === "string" && body.name !== "") {
@@ -1812,6 +1842,7 @@ export class DemoHub {
       metricsSeed: number,
       modules: modulesWith([]),
       accounts: [],
+      podmanMachine: null,
     });
     this.publish("devices", "");
     this.notify(

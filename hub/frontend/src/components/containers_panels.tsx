@@ -62,11 +62,10 @@ import "./containers_panels.css";
  * containers, and its live row names the module and offers its journal
  * alone. Every live row ends with where its container comes from.
  *
- * On Windows and macOS the containers run in one account's Podman machine,
- * and the Run settings that name it come first; until they name an account
- * the panels under them hold nothing to apply. An apply holds until the
+ * On Windows and macOS the containers run in the default account's Podman
+ * machine, and its Run settings come first. An apply holds until the
  * machine reports the module where the hub asks it, on Windows and macOS
- * with the account's machine running.
+ * with the default account's machine running.
  */
 
 const EMPTY_CONTAINER: PodmanContainer = {
@@ -144,6 +143,9 @@ interface ContainersPanelsProps {
   basePath: string;
   /** Why nothing here can be applied, or null while it can. */
   blockedHint: string | null;
+  /** The machine's default account, whose Podman machine runs the
+   * containers on Windows and macOS; empty while it has none. */
+  defaultAccount: string;
   /** The system the machine's agent reports: `linux`, `windows`, `darwin`. */
   platformOs: string;
   /** What the hub asks of the module: `running`, `stopped`, or empty. */
@@ -156,6 +158,7 @@ export function ContainersPanels({
   deviceId,
   basePath,
   blockedHint,
+  defaultAccount,
   platformOs,
   want,
   manifestTitles,
@@ -189,7 +192,8 @@ export function ContainersPanels({
   const [shellTarget, setShellTarget] = useState<string | null>(null);
   const [journalTarget, setJournalTarget] = useState<string | null>(null);
   const isMachineRun = MACHINE_RUN_OS.includes(platformOs);
-  const report = saved === null ? null : podmanReport(saved, isMachineRun);
+  const report =
+    saved === null ? null : podmanReport(saved, isMachineRun, defaultAccount);
   const mirrorsSettle = useSettledApply(report, want);
   const containersSettle = useSettledApply(report, want);
   const containersRows = useUnaddedRows();
@@ -273,8 +277,6 @@ export function ContainersPanels({
     return <div className="skeleton" style={{ height: 360 }} />;
   }
 
-  const isRunNeeded = isMachineRun && (saved.machine?.account ?? "") === "";
-
   return (
     <>
       {saved.state === ABSENT_STATE && (
@@ -290,6 +292,7 @@ export function ContainersPanels({
           basePath={basePath}
           saved={saved}
           blockedHint={blockedHint}
+          defaultAccount={defaultAccount}
           isWindows={platformOs === WINDOWS_OS}
           want={want}
           report={report}
@@ -314,9 +317,7 @@ export function ContainersPanels({
             <div className="notice_body">{liveError}</div>
           </div>
         )}
-        {isRunNeeded ? (
-          <p className="field_hint">{t("ui.containers.run_needed")}</p>
-        ) : saved.running.length === 0 ? (
+        {saved.running.length === 0 ? (
           <p className="field_hint">{t("ui.containers.live_empty")}</p>
         ) : (
           <div className="container_rows">
@@ -382,56 +383,50 @@ export function ContainersPanels({
         <div className="settings_group_title">
           <h2>{t("ui.containers.mirrors_title")}</h2>
         </div>
-        {isRunNeeded ? (
-          <p className="field_hint">{t("ui.containers.run_needed")}</p>
-        ) : (
-          <>
-            <p className="field_hint">{t("ui.containers.mirrors_hint")}</p>
-            {mirrors.map((mirror, index) => (
-              <div key={index} className="mirror_row">
-                <input
-                  className="input"
-                  placeholder="mirror.ccs.tencentyun.com"
-                  value={mirror}
-                  onChange={(event) => {
-                    setMirrors((current) =>
-                      current.map((entry, at) =>
-                        at === index
-                          ? event.target.value
-                              .replace(/^https?:\/\//, "")
-                              .replace(/\/+$/, "")
-                          : entry,
-                      ),
-                    );
-                  }}
-                />
-                <button
-                  type="button"
-                  className="button button--ghost button--small"
-                  onClick={() => {
-                    setMirrors((current) =>
-                      current.filter((_, at) => at !== index),
-                    );
-                  }}
-                >
-                  <Icon name="trash" size={13} />
-                </button>
-              </div>
-            ))}
-            <div>
-              <button
-                type="button"
-                className="button"
-                onClick={() => {
-                  setMirrors((current) => [...current, ""]);
-                }}
-              >
-                <Icon name="plus" size={14} />
-                {t("ui.containers.mirror_add")}
-              </button>
-            </div>
-          </>
-        )}
+        <p className="field_hint">{t("ui.containers.mirrors_hint")}</p>
+        {mirrors.map((mirror, index) => (
+          <div key={index} className="mirror_row">
+            <input
+              className="input"
+              placeholder="mirror.ccs.tencentyun.com"
+              value={mirror}
+              onChange={(event) => {
+                setMirrors((current) =>
+                  current.map((entry, at) =>
+                    at === index
+                      ? event.target.value
+                          .replace(/^https?:\/\//, "")
+                          .replace(/\/+$/, "")
+                      : entry,
+                  ),
+                );
+              }}
+            />
+            <button
+              type="button"
+              className="button button--ghost button--small"
+              onClick={() => {
+                setMirrors((current) =>
+                  current.filter((_, at) => at !== index),
+                );
+              }}
+            >
+              <Icon name="trash" size={13} />
+            </button>
+          </div>
+        ))}
+        <div>
+          <button
+            type="button"
+            className="button"
+            onClick={() => {
+              setMirrors((current) => [...current, ""]);
+            }}
+          >
+            <Icon name="plus" size={14} />
+            {t("ui.containers.mirror_add")}
+          </button>
+        </div>
         <ApplyBar
           isDirty={isMirrorsDirty}
           isBusy={isMirrorsBusy || mirrorsSettle.isSettling}
@@ -442,7 +437,6 @@ export function ContainersPanels({
               : t("ui.containers.mirrors_apply_hint")
           }
           blockedHint={blockedHint}
-          isApplyDisabled={isRunNeeded}
           error={mirrorsError}
           notice={appliedNotice(mirrorsSettle, report)}
           onReset={() => {
@@ -460,48 +454,40 @@ export function ContainersPanels({
         <div className="settings_group_title">
           <h2>{t("ui.containers.declared_title")}</h2>
         </div>
-        {isRunNeeded ? (
-          <p className="field_hint">{t("ui.containers.run_needed")}</p>
-        ) : (
-          <>
-            {containers.map((container, index) => (
-              <ContainerEditor
-                key={index}
-                deviceId={deviceId}
-                basePath={basePath}
-                platformOs={platformOs}
-                container={container}
-                state={saved.running.find(
-                  (state) => state.name === container.name,
-                )}
-                onChange={(patch) => {
-                  setContainers((current) =>
-                    current.map((entry, at) =>
-                      at === index ? { ...entry, ...patch } : entry,
-                    ),
-                  );
-                }}
-                onRemove={() => {
-                  setContainers((current) =>
-                    current.filter((_, at) => at !== index),
-                  );
-                }}
-              />
-            ))}
-            <div>
-              <button
-                type="button"
-                className="button"
-                onClick={() => {
-                  setContainers((current) => [...current, EMPTY_CONTAINER]);
-                }}
-              >
-                <Icon name="plus" size={14} />
-                {t("ui.containers.container_add")}
-              </button>
-            </div>
-          </>
-        )}
+        {containers.map((container, index) => (
+          <ContainerEditor
+            key={index}
+            deviceId={deviceId}
+            basePath={basePath}
+            platformOs={platformOs}
+            container={container}
+            state={saved.running.find((state) => state.name === container.name)}
+            onChange={(patch) => {
+              setContainers((current) =>
+                current.map((entry, at) =>
+                  at === index ? { ...entry, ...patch } : entry,
+                ),
+              );
+            }}
+            onRemove={() => {
+              setContainers((current) =>
+                current.filter((_, at) => at !== index),
+              );
+            }}
+          />
+        ))}
+        <div>
+          <button
+            type="button"
+            className="button"
+            onClick={() => {
+              setContainers((current) => [...current, EMPTY_CONTAINER]);
+            }}
+          >
+            <Icon name="plus" size={14} />
+            {t("ui.containers.container_add")}
+          </button>
+        </div>
         <ApplyBar
           isDirty={isDirty}
           isBusy={isBusy || containersSettle.isSettling}
@@ -513,7 +499,6 @@ export function ContainersPanels({
           }
           warning={t("ui.containers.containers_apply_warning")}
           blockedHint={blockedHint}
-          isApplyDisabled={isRunNeeded}
           error={error}
           notice={appliedNotice(containersSettle, report)}
           onReset={() => {
@@ -546,12 +531,12 @@ function mirrorsOf(view: PodmanDeviceView): string[] {
 }
 
 /** The module as the machine reports it, for an apply to wait on; on
- * Windows and macOS the stored account's machine is its one instance. */
+ * Windows and macOS the default account's machine is its one instance. */
 function podmanReport(
   view: PodmanDeviceView,
   isMachineRun: boolean,
+  account: string,
 ): ReportedModule {
-  const account = view.machine?.account ?? "";
   const reported = view.machine_state;
   const isMachineUp =
     reported !== null && reported.account === account && reported.is_running;

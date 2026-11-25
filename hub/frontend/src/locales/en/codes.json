@@ -343,7 +343,7 @@
   "code.service_invalid": "The service on port {port} of {name} cannot be used: the port is not published, is listed twice, or has an unknown type or protocol.",
   "code.windows_feature_failed": "Windows could not turn on {feature} (exit code {exit_code}).",
   "code.podman_install_failed": "The {artifact} installer failed (exit code {exit_code}).",
-  "code.machine_account_missing": "Choose the account that runs the containers.",
+  "code.machine_account_missing": "Set this machine's default account first.",
   "code.machine_cpus_invalid": "CPUs must be between 0 and {max}.",
   "code.machine_memory_invalid": "Memory must be between 0 and {max} GiB.",
   "code.machine_disk_shrink": "The disk is {current_gib} GiB and only grows; {disk_gib} GiB is smaller.",

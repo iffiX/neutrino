@@ -85,6 +85,8 @@ interface PanelTarget {
   /** Why nothing here can be applied: the agent offline, or the machine
    * with no default account; null while it can. */
   blockedHint: string | null;
+  /** The machine's default account; empty while it has none. */
+  defaultAccount: string;
   /** The system the machine's agent reports: `linux`, `windows`, `darwin`. */
   platformOs: string;
   /** What the hub asks of the module: `running`, `stopped`, `installed`, or
@@ -169,6 +171,7 @@ const MODULE_PANELS: Record<string, (target: PanelTarget) => ReactNode> = {
       deviceId={target.deviceId}
       basePath={target.basePath}
       blockedHint={target.blockedHint}
+      defaultAccount={target.defaultAccount}
       platformOs={target.platformOs}
       want={target.want}
       manifestTitles={target.manifestTitles}
@@ -212,7 +215,8 @@ const KIND_KEYS: Record<string, string> = {
 /** The kind of a command line program, which has no Start or Stop. */
 const KIND_PROGRAM = "program";
 
-/** The module whose containers run in an account's Podman machine. */
+/** The module whose containers run in the default account's Podman machine
+ * on Windows and macOS. */
 const CONTAINERS_MODULE = "podman";
 
 /** The module whose Stop stops the machine's SMB server. */
@@ -373,7 +377,7 @@ export function MachineModules({
       : [];
   });
   const [isCatalogOpen, setIsCatalogOpen] = useState(false);
-  const [isAccountAsked, setIsAccountAsked] = useState(false);
+  const [isMachineAsked, setIsMachineAsked] = useState(false);
   // The modules this page saw cancelling, by name, until the uninstall ends.
   const [cancels, setCancels] = useState<string[]>([]);
   const confirm = useConfirm();
@@ -546,8 +550,9 @@ export function MachineModules({
     });
   };
 
-  // Whether Install on this row needs the account of Containers' machine.
-  const isAccountMissing = async (row: DeviceModuleView) => {
+  // Whether Install on this row needs the numbers of Containers' machine:
+  // the hub holds no Run settings for it yet.
+  const isMachineUnset = async (row: DeviceModuleView) => {
     const isOnMachine =
       MACHINE_RUN_OS.includes(platformOs) &&
       (row.name === CONTAINERS_MODULE ||
@@ -558,12 +563,12 @@ export function MachineModules({
     const view = await apiGet<PodmanDeviceView>(
       apiPath(`/agent/module/${CONTAINERS_MODULE}`, { device_id: deviceId }),
     );
-    return (view.machine?.account ?? "") === "";
+    return view.machine === null;
   };
 
   // Install on a module whose required modules read absent opens a dialog
-  // listing them first. Install asks for Containers' account after that dialog
-  // and before anything installs.
+  // listing them first. Install asks for the numbers of Containers' machine
+  // after that dialog and before anything installs.
   const askInstall = async () => {
     if (activeRow === undefined) {
       return;
@@ -572,7 +577,7 @@ export function MachineModules({
     setActionError(null);
     let isAsked = false;
     try {
-      isAsked = await isAccountMissing(activeRow);
+      isAsked = await isMachineUnset(activeRow);
     } catch (cause: unknown) {
       setActionError(describeError(cause));
       return;
@@ -581,7 +586,7 @@ export function MachineModules({
     }
     const install = () => {
       if (isAsked) {
-        setIsAccountAsked(true);
+        setIsMachineAsked(true);
       } else {
         void act("install");
       }
@@ -905,6 +910,7 @@ export function MachineModules({
                       deviceId,
                       basePath: `/agent/module/${activeRow.name}`,
                       blockedHint,
+                      defaultAccount,
                       platformOs,
                       want: wantAtApply(activeRow),
                       isCarried: isCarriedRow,
@@ -1029,16 +1035,17 @@ export function MachineModules({
           }}
         />
       )}
-      {isAccountAsked && (
+      {isMachineAsked && (
         <ContainersAccountModal
           deviceId={deviceId}
+          platformOs={platformOs}
           module={activeRow?.name ?? ""}
           onChosen={() => {
-            setIsAccountAsked(false);
+            setIsMachineAsked(false);
             void act("install");
           }}
           onCancel={() => {
-            setIsAccountAsked(false);
+            setIsMachineAsked(false);
           }}
         />
       )}
