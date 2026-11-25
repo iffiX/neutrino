@@ -11,8 +11,11 @@ being the account's login, sent to a Windows machine alone
 ([../../protocol.md](../../protocol.md), "The account layer in the state").
 
 **The module's copy runs first for each enabled account.** Before an
-account is checked, `find` reads the account's `PATH`, then these places, as
-the account, and a copy found is named in the panel's dialog
+account other than the default is checked, `find` reads the account's
+`PATH`, then these places, as the account, and a copy found is named in the
+panel's dialog; **Install** enables the default account with no such read,
+as on a clean system ([../accounts.md](../accounts.md), "The default
+account")
 ([../../agent.md](../../agent.md), "Parallel, never take over"):
 
 | System | The places after `PATH` |

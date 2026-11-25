@@ -1009,6 +1009,7 @@ a program runs only when a person runs it. A program the machine reports
 | The panel shows each account's AI tools state and holds no switch for it. The account's form under **Available accounts** is the one place it is set. | Installing a program changes no switch, and one form per account holds the account's settings ([agent/accounts.md](agent/accounts.md), "Available accounts"). |
 | The dialog shows before the apply, and an unchecked account stays unchecked. | From the apply on, the module's copy runs in place of the person's in the account's shell ([agent.md](agent.md), "Parallel, never take over"), and a click outside a dialog means no. |
 | **Put this module's copy first** acts at once and asks nothing. | The person's line or copy that put another copy first stays until this press, which is the person's answer. |
+| **Install** enables the default account with no read of a copy and no dialog, and its row shows the copy its shell runs from the next report on. | The default is enabled in the write that installs the module, as on a clean system ([agent.md](agent.md), "Parallel, never take over"). |
 
 The File share tab's panel holds two panels, one under the other, one for
 each kind of share ([agent/modules/file_share.md](agent/modules/file_share.md)):

@@ -175,8 +175,10 @@ frame hands.
 
 A command line program's `find` reads the copies of the program an
 account's shell reaches ([../agent.md](../agent.md), "Parallel, never take
-over"). It runs for the panel's dialog before the account is checked, as the
-module's `find` verb, and in each `account` step. The places a module looks
+over"). It runs for the panel's dialog before an account other than the
+default is checked, as the module's `find` verb, and in each `account` step.
+The default account is enabled at **Install** with no `find` before it
+([accounts.md](accounts.md), "The default account"). The places a module looks
 in besides `PATH` are its own page's.
 
 | Rule | Reason |
