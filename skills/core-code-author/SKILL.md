@@ -136,8 +136,8 @@ conventions explicit so nobody drifts.
      words with no clause where a phrase will do; no agent co-author trailers.
    - [agent_work_rule/release.md](agent_work_rule/release.md) — one tag builds
      all three packages; hub, agent and client share a version and are
-     compatible by protocol number; changelog lines are `feature:` / `fix:` /
-     `docs:` and nothing else; which file each platform installs.
+     compatible by protocol number; changelog lines are `feature:` / `change:` /
+     `fix:` / `docs:` and nothing else; which file each platform installs.
 
 5. **Hygiene** — the anti-patterns to remove on sight.
    - [kill_on_sight.md](kill_on_sight.md) — self-check this before you finish.

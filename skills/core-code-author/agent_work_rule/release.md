@@ -138,10 +138,14 @@ One line per change, prefixed by what kind it is, in this order:
 
 ```
 feature: ...
+change: ...
 fix: ...
 docs: ...
 ```
 
+`feature` is something a person could not do before; `change` is something
+that already existed and now behaves differently, so a person who knew it
+must learn it again; `fix` makes something behave as it was meant to.
 Nothing else gets a section. Refactors, test changes and dependency bumps do
 not appear: a reader of release notes is asking what changed for them, and
 those did not.
@@ -153,6 +157,7 @@ now, not what was wrong before.
 # GOOD
 feature: devices report GPU utilisation and per-process memory
 feature: cc-switch is installed and pointed at the hub from the panel
+change: each machine has one default account, asked at setup and never changed
 fix: restoring a backup no longer accepts paths outside config/
 fix: a device's SSH host key is checked on every connection, not just the first
 docs: the documentation style now covers reference, usage and development guides
