@@ -418,14 +418,13 @@ where they fit.
 | `ui.accounts.remove_body` | What runs as {account} stops: {modules}. Its AI tools go back to their own settings. | {modules} 不再以 {account} 运行，它的 AI 工具改回原来的设置。 |
 | `ui.accounts.remove_body_none` | {account} leaves this machine's accounts, and its AI tools go back to their own settings. | {account} 从这个系统的可用账户里移除，它的 AI 工具改回原来的设置。 |
 | `ui.accounts.default`, the chip of the default account's row | Default | 默认 |
-| `ui.accounts.make_default` | Make default | 设为默认 |
+| `ui.accounts.make_default`, the confirming button of the first account's dialog | Make default | 设为默认 |
 | `ui.accounts.default_title` | Make {account} the default account | 把 {account} 设为默认账户 |
 | `ui.accounts.default_body` | {account} becomes this machine's default account and cannot be changed later. | {account} 会成为这个系统的默认账户，之后不能更改。 |
-| `ui.modules.default_needed`, every apply bar's reason on a machine with no default account | Set this machine's default account under Available accounts first. | 先在“可用账户”里设置这个系统的默认账户。 |
+| `ui.modules.default_needed`, every apply bar's reason on a machine with no default account | Add this machine's default account under Available accounts first. | 先在“可用账户”里添加这个系统的默认账户。 |
 | `code.account_no_login` | {account} cannot log in on this machine: it has no login shell or no home. | {account} 不能在这个系统上登录：它没有登录 shell 或家目录。 |
 | `code.account_is_default` | {account} is this machine's default account. | {account} 是这个系统的默认账户。 |
 | `code.default_account_missing` | This machine has no default account yet. | 这个系统还没有默认账户。 |
-| `code.default_account_exists` | This machine's default account is {account}, and it cannot be changed. | 这个系统的默认账户是 {account}，不能更改。 |
 | `ui.machine.version`, `ui.machine.platform`, `ui.machine.hostname`, `ui.machine.last_report` | Version, Platform, Host name, Last report | 版本、平台、主机名、最后上报 |
 | `ui.machine.uptime`, `ui.machine.load`, `ui.machine.disk`, `ui.machine.temperature` | Uptime, Load 1/5/15 min, Disk, Temperature | 运行时间、负载 1/5/15 分钟、磁盘、温度 |
 | `ui.machine.not_found` | This machine is not on record. | 没有这个系统的记录。 |

@@ -560,8 +560,8 @@ machine again by itself. Its cell reads the words of
 ([transport.md](transport.md), "A peer of 0.5"). The rings move on the
 `metrics` event and ask for nothing.
 
-A machine online with no default account, or whose default is gone, is
-incomplete, as its row's `is_default_account_missing` says
+A machine online with no default account is incomplete, its row's
+`default_account` empty
 ([agent/accounts.md](agent/accounts.md), "A machine with no default"): its
 row's status dot is `warn`, labelled `state.incomplete`, and its status cell
 keeps its rings. The sidebar's machine group shows the same `warn` dot and
@@ -885,21 +885,16 @@ none enables it).
 
 The default account's row ([agent/accounts.md](agent/accounts.md), "The
 default account") carries `ui.accounts.default`, a plain `badge` after the
-name, and **Edit** alone. While the machine has no default, or its default
-is gone, every other row has **Make default** (`ui.accounts.make_default`),
-a ghost `button--small` before **Edit**. **Make default**, and the **Save**
-of an account added while the machine has no default or its default is
-gone, ask through
-`useConfirm` first: the title `ui.accounts.default_title {account}`, the
-body `ui.accounts.default_body {account}`, and the confirming button
+name, and **Edit** alone. The **Save** of the first account added to a
+machine with no default asks through `useConfirm` first: the title
+`ui.accounts.default_title {account}`, the body
+`ui.accounts.default_body {account}`, and the confirming button
 `ui.accounts.make_default`; **Cancel**, Escape and the backdrop write
-nothing. The row of a default that is gone shows the words of
-`code.account_unknown` under it in the error colour.
+nothing.
 
 | Rule | Reason |
 | --- | --- |
 | The default's row has no **Remove** at all, as a hub container's row of **Running now** has none of the buttons that do not apply to it. | A button the hub always rejects is no control, and the chip says which row it is. |
-| **Make default** shows only while the machine has no default or its default is gone. It follows Gmail's **make default** on its **Send mail as** rows and Windows' **Set as default** on a printer. | The default changes only then, and established apps already have this control ("An interaction this document does not cover"). |
 
 **Module configuration** (`ui.modules.tabs_title`) is a left and right
 split: on the left a vertical, scrollable list of the machine's modules, the
@@ -919,7 +914,7 @@ panel and writes no `want`, after the first import of Gitea or Containers, and
 the module stays as it is until its **Start** ([protocol.md](protocol.md), "The
 modules section, one entry per module").
 
-While the machine has no default account, or its default is gone, every
+While the machine has no default account, every
 tab's buttons, every apply bar and **+ Add module** are disabled, as while
 the agent is offline, and each apply bar shows `ui.modules.default_needed`
 in place of its hint. Each tab keeps its state, its steps and its log, and

@@ -90,7 +90,6 @@ agent tests:
 | `modules/hermes_webui/test_hooks.py` | With `is_gateway_used` false: each key that still holds the agent's value unset, a `model.default` the person changed kept, "Config key not set" counted as done, the first start ending at `/health` 200 with no keys; with it true again, every key written again. |
 | `modules/astrbot/test_hooks.py`, against `fake_astrbot.py` | With `is_gateway_used` false: the default reset only while it names the agent's provider, only the agent's own provider deleted, the source deleted only while no provider of the person's is on it, a first settings file holding no source; with it true again, the source and the provider added and the person's default kept. |
 | `modules/siyuan/test_config.py` | With no key, the module's provider gone and the model ids that named its models empty, a model id naming the person's provider kept. |
-| `modules/podman/test_machine_runner.py` | A new account after one the system no longer has: the old keeper removed as SYSTEM or root, and the new account's machine made. |
 | `platforms/test_windows_accounts.py` | An account with no profile left out of the accounts. |
 | `platforms/` | `account_test` on each system: one network logon on Windows, the login shell and the home on Linux and macOS, each refusal's code. |
 
@@ -226,19 +225,19 @@ tests, each in the file its source mirrors:
 | --- | --- |
 | `modules/devices/test_accounts.py` | `default_account` read and written, empty while the machine has none. |
 | `modules/devices/test_module_table.py` | Every row's `accounts`, exactly the values of the accounts page's table. |
-| `modules/devices/test_desired_state.py` | The default first in every list and in `terminals`; Terminal and the SSH server holding it; `machine.account` the default on Windows and macOS, and the stored one with no default; `is_gateway_used` the default's switch, a gone default's stored switch, and true with no default; no `NEUTRINO_GATEWAY_` and no `AI_` variable while it is false; the forward and `gateway_port` by the switches; SiYuan's `gateway_key` empty for an account whose switch is off; a machine with no default composed as stored. |
+| `modules/devices/test_desired_state.py` | The default first in every list and in `terminals`; Terminal and the SSH server holding it; `machine.account` the default on Windows and macOS, and the stored one with no default; `is_gateway_used` the default's switch, and true with no default; no `NEUTRINO_GATEWAY_` and no `AI_` variable while it is false; the forward and `gateway_port` by the switches; SiYuan's `gateway_key` empty for an account whose switch is off; a machine with no default composed as stored. |
 | `modules/devices/test_hermes_webui.py`, `test_ayakaleaf.py`, `test_astrbot.py` | No `NEUTRINO_GATEWAY_` and no `AI_` variable while `is_gateway_used` is false, the tab's model still stored. |
 | the upgrade step's own test, beside `modules/devices/test_legacy_files.py` | One account taken as the default, several or none leaving the key empty, a file that holds the key left alone, and the one account first in each module file and added to Terminal, the SSH server and each module of the account layer whose `want` is neither empty nor `absent`. |
 | `modules/devices/test_agent_reports.py` | The setup's file applied at the first report of the hub's own machine that lists the account, and no other machine taking it. |
-| `web/routers/agent/test_module_account.py` | `add`, and `set` with a new Windows password, running the agent's test first, a refusal writing nothing; `add` making the first account the default; `default/set` taken only with no default or a gone one, its refusals, nothing written on a refusal, the gone default kept after the new one; `remove` refused `account_is_default`; a switch change settling SiYuan's key and the container modules' keys. |
+| `web/routers/agent/test_module_account.py` | `add`, and `set` with a new Windows password, running the agent's test first, a refusal writing nothing; `add` making the first account the default; `remove` refused `account_is_default`; a switch change settling SiYuan's key and the container modules' keys. |
 | `web/routers/agent/test_module_instances.py` | A list without the default refused `account_is_default`. |
 | `web/routers/agent/test_module.py` | **Install** and **Start** writing the default under the lock; the file share's folder check; every write refused `default_account_missing`, the account routes excepted. |
 | `web/routers/agent/test_module_podman.py` | `machine/set` and `new_machine` with no account. |
-| `web/routers/hub/test_device.py` | The rows carrying `default_account` and `is_default_account_missing`. |
+| `web/routers/hub/test_device.py` | The rows carrying `default_account`. |
 | `cli/test_wizard.py`, `cli/test_wizard_context.py`, `cli/test_setup_writes.py`, `cli/test_setup_local_agent.py` | The document's `default_account`; an account the rule does not find refused; the Windows password required; the screen's test on each system, a refusal keeping the screen, and `--stdin` exiting on one; no account meaning no key and no screen; the setup's file and the login written. |
 | `platforms/` | The hub's copy of the agent's account rule on each system, with the agent's cases. |
 | `web/test_setup_app.py` | The context carrying `accounts` and `default_account`. |
-| the panel's source tests, as `web/test_containers_account_modal.py` reads its component | The chip and no **Remove** on the default's row; **Make default** only with no default or a gone one, and its confirmation; the locked row in **Enabled accounts**; the greyed tabs and **+ Add module** with `ui.modules.default_needed`; the containers dialog with no account; the sidebar's `warn` dot and `state.incomplete`, offline winning; the words in both languages. |
+| the panel's source tests, as `web/test_containers_account_modal.py` reads its component | The chip and no **Remove** on the default's row; the first account's confirmation; the locked row in **Enabled accounts**; the greyed tabs and **+ Add module** with `ui.modules.default_needed`; the containers dialog with no account; the sidebar's `warn` dot and `state.incomplete`, offline winning; the words in both languages. |
 
 ## Editions
 
