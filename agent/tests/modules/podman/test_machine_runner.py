@@ -20,7 +20,8 @@ machine and removing its keeper; the wait for the machine to answer; the one
 root script; the reads through the ssh URL with addresses blanked and
 folders back in the computer's form; the read's command a container's
 shell runs through, empty before any apply; a machine step with no
-account failing ``machine_account_missing``; the keeper's log in the
+account failing ``machine_account_missing``, and an account that never
+signed in refused ``account_no_profile``; the keeper's log in the
 journal; a container module's journal asked while one runs taking that
 read's lines; the verbs; stop stopping the containers, the keeper and the
 machine, and start bringing them back; a stopped machine woken by its
@@ -857,26 +858,29 @@ def test_a_new_machine_of_an_account_the_computer_lacks_is_refused(rig):
     assert closed["params"] == {"account": "ghost"}
 
 
-def test_a_new_machine_of_an_account_with_no_profile_reads_no_disk(tmp_path):
+def test_a_new_machine_of_an_account_with_no_profile_is_refused(tmp_path):
     rig = Rig(tmp_path, os_name="windows", provider="wsl")
     rig.platform.with_no_home.add("ann")
 
     closed = rig.runner.command("machine_read", {"account": "ann"})
 
-    assert (closed["exit_code"], closed["code"]) == (0, "")
-    assert closed["result"]["disk_gib"] == 100
-    assert closed["result"]["disk_gib_now"] == 0
+    assert (closed["exit_code"], closed["code"]) == (1, "account_no_profile")
+    assert closed["params"] == {"account": "ann"}
 
 
 # --- refusals ---
 
 
-def test_an_account_with_no_profile_is_not_unknown(tmp_path):
+def test_an_account_with_no_profile_is_refused(tmp_path):
     rig = Rig(tmp_path, os_name="windows", provider="wsl")
     rig.platform.with_no_home.add("ann")
     machine = dict(MACHINE, account="ann", password="pw", disk_gib=100)
 
-    rig.runner.validate(dict(CONFIG, containers=[], machine=machine))
+    found = refusal(
+        lambda: rig.runner.validate(dict(CONFIG, containers=[], machine=machine))
+    )
+
+    assert (found.code, found.params) == ("account_no_profile", {"account": "ann"})
 
 
 def test_an_account_the_computer_does_not_have_is_unknown(rig):

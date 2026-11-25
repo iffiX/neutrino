@@ -1504,12 +1504,14 @@ class PodmanMachineModuleRunner(ModuleRunner):
             disk_gib_now}``, ``disk_gib`` the disk now or else the default,
             and ``disk_gib_now`` 0 while the account has no machine.
             ``account_unknown {account}`` for an account the computer does
-            not have.
+            not have, ``account_no_profile {account}`` for one that never
+            signed in.
         """
         disk_gib_now = 0
         if account:
-            if not self._platform.has_account(account):
-                return command_outcome(1, "account_unknown", {"account": account})
+            code = self._missing_account(account)
+            if code:
+                return command_outcome(1, code, {"account": account})
             disk_gib_now = self._disk_now(self._machine_of(account, ""), self._record())
         return {
             **command_outcome(0),
@@ -1558,10 +1560,10 @@ class PodmanMachineModuleRunner(ModuleRunner):
         settings = parsed.machine or PodmanMachineSettings()
         host_cpus, host_memory_gib = self._system.host_facts()
         disk_gib_now = 0
-        is_known = True
+        missing = ""
         if settings.account:
-            is_known = self._platform.has_account(settings.account)
-            if is_known:
+            missing = self._missing_account(settings.account)
+            if not missing:
                 machine = self._machine_of(settings.account, settings.password)
                 disk_gib_now = self._disk_now(machine, self._record())
         parsed.validate(
@@ -1570,8 +1572,8 @@ class PodmanMachineModuleRunner(ModuleRunner):
             host_memory_gib=host_memory_gib,
             disk_gib_now=disk_gib_now,
         )
-        if not is_known:
-            raise ModuleApplyError("account_unknown", {"account": settings.account})
+        if missing:
+            raise ModuleApplyError(missing, {"account": settings.account})
         if (
             settings.account
             and self._platform.os_name == "windows"
@@ -1579,6 +1581,16 @@ class PodmanMachineModuleRunner(ModuleRunner):
         ):
             raise ModuleApplyError("credential_missing", {"account": settings.account})
         return settings
+
+    def _missing_account(self, account: str) -> str:
+        """Why the machine cannot run as an account: ``account_unknown`` for one it lacks, ``account_no_profile`` for one that never signed in; empty for one it can."""
+        try:
+            self._service_machine.lookup_account(account)
+        except KeyError:
+            if self._platform.has_account(account):
+                return "account_no_profile"
+            return "account_unknown"
+        return ""
 
     def _refuse_left_out(self, refused: list) -> None:
         """Log the declared containers an apply left out, and raise the first one's refusal.
