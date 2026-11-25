@@ -192,6 +192,11 @@ overrides both, which is what makes a second instance testable. Details of the f
                             start installs and joins the box's own agent;
                             removed once that agent has joined, so every
                             start tries again until it has
+        setup_default_account.json
+                            the default account the setup asked, and its
+                            vault login on Windows, mode 0600; removed at
+                            the first report of the box's own machine that
+                            names its accounts
         stood_down.json     which units the hub stopped so it could drive
                             the network
         device_retry_marks.json

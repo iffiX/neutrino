@@ -407,10 +407,10 @@ the page's whole view.
 
 | Route | Parameters | Does |
 | --- | --- | --- |
-| `GET /api/hub/setup/context` | | `SetupContext`, the box as the wizard finds it, with `hub_os` (`linux`, `darwin` or `windows`) and `modes`, which holds `server` alone outside Linux |
+| `GET /api/hub/setup/context` | | `SetupContext`, the box as the wizard finds it, with `hub_os` (`linux`, `darwin` or `windows`), `modes`, which holds `server` alone outside Linux, `accounts`, the machine's accounts by the agent's rule, and `default_account`, the one the account screen starts at, empty with none ([agent/accounts.md](agent/accounts.md), "The default account") |
 | `GET /api/hub/setup/state` | | each step and where it is; once done, `panel_url`, the `https://` address when the answers turned HTTPS on, with no port when it is 443, and `authority` then: `{url, file_name, fingerprint, der}`, `url` on the HTTP port and the DER in base64 so the last page downloads it while the panel starts |
 | `POST /api/hub/setup/link/create` | | a blank enrolment link for the box's own agent |
-| `POST /api/hub/setup/answer/set` | the wizard's answers, the document `nhub setup --stdin` reads, `listen_port`, `https_listen_port` and `is_https_enabled` among them | writes them and runs the steps |
+| `POST /api/hub/setup/answer/set` | the wizard's answers, the document `nhub setup --stdin` reads, `listen_port`, `https_listen_port`, `is_https_enabled` and `default_account`, `{account, password}`, among them, `password` on Windows alone | writes them and runs the steps |
 
 #### `/api/hub/auth`
 

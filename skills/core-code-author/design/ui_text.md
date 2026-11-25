@@ -372,6 +372,21 @@ gateway listens on the hub's loopback alone.
 | `ui.ai.context_apply_hint` | Writes the lengths into every machine's AI tools. | 把这些长度写进每个系统的 AI 工具。 |
 | `code.context_length_invalid`, under a cloud name's field and as the refusal of `ai/context/set` | The context length must be between {min} and {max} tokens. | 非法上下文长度：要在 {min} 到 {max} 个 token 之间。 |
 
+## The setup's account screen's words
+
+The screen of the setup page that asks the default account
+([ui_behavior.md](ui_behavior.md), "The setup page"). The keys are in
+`locales/<language>/setup.json`. The terminal wizard of `nhub setup` says the
+English words.
+
+| Key | English | Chinese |
+| --- | --- | --- |
+| `ui.setup.screen_account` | Your account on this machine | 你在这个系统上的账户 |
+| `ui.setup.account_lead` | The account you pick is this machine's default account and cannot be changed later. | 你选的账户就是这个系统的默认账户，之后不能更改。 |
+| `ui.setup.account` | Account | 账户 |
+| `ui.setup.account_password` | Password | 密码 |
+| `ui.setup.review_account` | Default account | 默认账户 |
+
 ## The machine page's words
 
 The machine page's sections, the available accounts, the catalog and a
