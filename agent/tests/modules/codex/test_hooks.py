@@ -1,4 +1,4 @@
-"""Codex's part of the shared runner: its program under the build target of each platform, its known places, a launcher that sets nothing."""
+"""Codex's part of the shared runner: its program under the build target of each platform, a launcher that sets nothing."""
 
 import pytest
 
@@ -35,19 +35,6 @@ def test_the_program_is_vendor_target_bin_codex(monkeypatch, os_name, arch, part
     )
 
 
-def test_the_known_places_and_the_launcher():
+def test_the_launcher_sets_nothing():
     assert CodexHooks.program == "codex"
     assert CodexHooks.launcher_variables == ()
-    assert CodexHooks.known_places["linux"] == (
-        "~/.local/bin/codex",
-        "/usr/local/bin/codex",
-    )
-    assert CodexHooks.known_places["darwin"] == (
-        "~/.local/bin/codex",
-        "/opt/homebrew/bin/codex",
-        "/usr/local/bin/codex",
-    )
-    assert CodexHooks.known_places["windows"] == (
-        "%LOCALAPPDATA%\\Programs\\OpenAI\\Codex\\bin\\codex.exe",
-        "%APPDATA%\\npm\\codex.cmd",
-    )

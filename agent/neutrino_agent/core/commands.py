@@ -34,7 +34,6 @@ from neutrino_agent.constants import (
     AGENT_MODULE_VERB_JOURNAL,
     AGENT_MODULE_VERB_VALIDATE,
     AGENT_OUTPUT_LIMIT_BYTES,
-    AGENT_PROGRAM_VERB_FIND,
 )
 from neutrino_agent.exceptions import ModuleApplyError, PlatformUnsupportedError
 from neutrino_agent.modules.podman.constants import PODMAN_COMMAND_MACHINE_READ
@@ -72,19 +71,17 @@ VERB_LOCKS = {
     (AGENT_CONTAINERS_MODULE, "control"): CONTAINERS_SHARED_LOCKS,
 }
 # The module verbs that only read: those of every module, Containers' read
-# of a new machine, a command line program's find, and the file share's read
-# of a folder.
+# of a new machine, and the file share's read of a folder.
 MODULE_READING_VERBS = (
     AGENT_MODULE_VERB_VALIDATE,
     AGENT_MODULE_VERB_JOURNAL,
     PODMAN_COMMAND_MACHINE_READ,
-    AGENT_PROGRAM_VERB_FIND,
     SAMBA_COMMAND_FOLDER,
 )
 
 
 def is_reading_command(module: str, verb: str) -> bool:
-    """Whether a command only reads: a module's ``validate`` or ``journal``, a read verb of Containers, a command line program or the file share, or the agent's remote desktop read.
+    """Whether a command only reads: a module's ``validate`` or ``journal``, a read verb of Containers or the file share, or the agent's remote desktop read.
 
     Args:
         module: The module the command names, ``agent`` for the agent's own

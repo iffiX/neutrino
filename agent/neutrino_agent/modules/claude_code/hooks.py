@@ -10,7 +10,6 @@ Pure: names the program and what the launcher sets.
 
 from neutrino_agent.modules.claude_code.config import ClaudeCodeConfig
 from neutrino_agent.modules.claude_code.constants import (
-    CLAUDE_CODE_KNOWN_PLACES,
     CLAUDE_CODE_LAUNCHER_VARIABLES,
     CLAUDE_CODE_NAME,
     CLAUDE_CODE_PROGRAM,
@@ -27,7 +26,6 @@ class ClaudeCodeHooks(ProgramHooks):
     title = CLAUDE_CODE_TITLE
     runner = CLAUDE_CODE_RUNNER
     program = CLAUDE_CODE_PROGRAM
-    known_places = CLAUDE_CODE_KNOWN_PLACES
     launcher_variables = CLAUDE_CODE_LAUNCHER_VARIABLES
     config_class = ClaudeCodeConfig
 

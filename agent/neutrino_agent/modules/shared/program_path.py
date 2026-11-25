@@ -210,7 +210,7 @@ def ordered_modules(modules) -> list:
 
 
 def file_stamp(path: str) -> "list | None":
-    """One file's size, time and inode, as a record keeps them.
+    """One file's size, time and inode.
 
     Args:
         path: The file; a link is followed.
@@ -316,21 +316,6 @@ class ProgramPathApplier:
                 del record[account]
             self._write_record(record)
         return notes
-
-    def stamps(self, account: str) -> dict:
-        """The size, time and inode of each startup file and env file of an account the record names.
-
-        Args:
-            account: The account.
-
-        Returns:
-            Path to its stamp, None for a file that is not there; empty for
-            an account the record does not name.
-        """
-        with PATH_LOCK:
-            held = _held_of(self._read_record().get(account))
-        paths = list(held["files"]) + list(held["env"])
-        return {path: file_stamp(path) for path in sorted(paths)}
 
     # --- the account's files ---
 

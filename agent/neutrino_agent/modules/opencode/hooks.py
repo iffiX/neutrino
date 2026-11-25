@@ -13,7 +13,6 @@ from neutrino_agent.modules.opencode.constants import (
     OPENCODE_BIN_DIR_NAME,
     OPENCODE_HOME_VARIABLE,
     OPENCODE_HOME_VARIABLES,
-    OPENCODE_KNOWN_PLACES,
     OPENCODE_NAME,
     OPENCODE_PROGRAM,
     OPENCODE_RUNNER,
@@ -29,7 +28,6 @@ class OpencodeHooks(ProgramHooks):
     title = OPENCODE_TITLE
     runner = OPENCODE_RUNNER
     program = OPENCODE_PROGRAM
-    known_places = OPENCODE_KNOWN_PLACES
     config_class = OpencodeConfig
 
     @property

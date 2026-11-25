@@ -13,7 +13,6 @@ from neutrino_agent.modules.codex.config import CodexConfig
 from neutrino_agent.modules.codex.constants import (
     CODEX_BIN_DIR_NAME,
     CODEX_HOME_VARIABLE,
-    CODEX_KNOWN_PLACES,
     CODEX_NAME,
     CODEX_PROGRAM,
     CODEX_RUNNER,
@@ -32,7 +31,6 @@ class CodexHooks(ProgramHooks):
     title = CODEX_TITLE
     runner = CODEX_RUNNER
     program = CODEX_PROGRAM
-    known_places = CODEX_KNOWN_PLACES
     home_variable = CODEX_HOME_VARIABLE
     config_class = CodexConfig
 

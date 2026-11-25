@@ -6,14 +6,11 @@ enabled account's ``PATH`` names the launcher's folder first. A task
 installs the copy as any ``hub`` module's does, then ``configure`` writes
 the launcher and lets go of every account no longer enabled, then one
 ``account {account}`` per enabled account puts the launcher's folder first
-on the account's ``PATH`` at its first enabling and reads which copy the
-account's shell runs: through ``env.sh`` and a marked line in each startup
-file on Linux and macOS, and an entry at the front of the user ``PATH`` on
-Windows. ``find`` reads the copies an account's shell reaches, for the
-panel's dialog and for each ``account`` step, and a read asks for a task
-when a startup file changed. The module's :class:`ProgramHooks` names what
-differs: the program's name, the places a person's copy is looked for,
-where the program sits in the module's copy, and what the launcher sets.
+on the account's ``PATH`` at its first enabling: through ``env.sh`` and a
+marked line in each startup file on Linux and macOS, and an entry at the
+front of the user ``PATH`` on Windows. The module's :class:`ProgramHooks`
+names what differs: the program's name, where the program sits in the
+module's copy, and what the launcher sets.
 
 Not pure: runs commands as the accounts and writes files.
 """
@@ -34,24 +31,11 @@ import time
 from dataclasses import dataclass, field
 
 from neutrino_agent.constants import (
-    AGENT_PROGRAM_BASH_SHELL,
-    AGENT_PROGRAM_CODE_RUNS_FIRST,
-    AGENT_PROGRAM_CODE_SYSTEM_PATH,
-    AGENT_PROGRAM_CODE_UNREACHED,
-    AGENT_PROGRAM_FALLBACK_SHELL,
-    AGENT_PROGRAM_INTERACTIVE_FLAGS,
     AGENT_PROGRAM_JOURNAL_SCAN_LINES,
     AGENT_PROGRAM_LAUNCHER_DIR_NAME,
-    AGENT_PROGRAM_LOGIN_FLAGS,
     AGENT_PROGRAM_PACKAGE_DIR_NAME,
-    AGENT_PROGRAM_PATH_COMMAND,
     AGENT_PROGRAM_RECORD_NAME,
-    AGENT_PROGRAM_SHELL_TIMEOUT_S,
-    AGENT_PROGRAM_VERB_FIND,
-    AGENT_PROGRAM_VERB_PREFER,
     AGENT_PROGRAM_VERIFY_HOME_DIR_NAME,
-    AGENT_PROGRAM_VERSION_TIMEOUT_S,
-    AGENT_PROGRAM_WINDOWS_FIND_PARTS,
     AGENT_PROGRAM_WINDOWS_PATH_PARTS,
     AGENT_PROGRAM_WINDOWS_POWERSHELL,
     AGENT_PROGRAM_WINDOWS_RUN_TIMEOUT_S,
@@ -60,18 +44,14 @@ from neutrino_agent.constants import (
     AGENT_STEP_CONFIGURE,
     AGENT_TASK_LINE_PATTERN,
 )
-from neutrino_agent.exceptions import ModuleApplyError, PlatformUnsupportedError
+from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.shared import subprocess_run
 from neutrino_agent.modules.shared.account_service import (
     AccountEntry,
     ServiceMachine,
     write_if_changed,
 )
-from neutrino_agent.modules.shared.base import (
-    ModuleRunner,
-    ModuleStep,
-    command_outcome,
-)
+from neutrino_agent.modules.shared.base import ModuleRunner, ModuleStep
 from neutrino_agent.modules.shared.instances import machine_for
 from neutrino_agent.modules.shared.package import joiner
 from neutrino_agent.modules.shared.program_path import (
@@ -83,17 +63,12 @@ from neutrino_agent.modules.shared.windows_acl import leave_to_system
 
 # An account name that survives a command line, a path and a task name.
 ACCOUNT_PATTERN = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}\Z")
-# The first dotted number a program's ``--version`` prints.
+# The first dotted number of a version.
 VERSION_PATTERN = re.compile(r"\d+(?:\.\d+)+")
 # How many times, and how often, an uninstall deletes the module's directory.
 # Windows refuses to delete a program file for a moment after its process ended.
 REMOVE_TRIES = 30
 REMOVE_RETRY_S = 1.0
-# What ``sh`` prints of its arguments: each one that is a file the account
-# may run, in order.
-EXECUTABLES_SHELL = (
-    'for p do [ -f "$p" ] && [ -x "$p" ] && printf "%s\\n" "$p"; done; exit 0'
-)
 # What a Windows PATH entry step prints.
 ENTRY_ADDED = "added"
 ENTRY_PRESENT = "present"
@@ -104,14 +79,6 @@ ENTRY_VERB_FIRST = "first"
 ENTRY_VERB_REMOVE = "remove"
 # How much of a failed command's words an ``apply_failed`` keeps.
 DETAIL_CHARS = 500
-# What ``find`` answers when the account's shell reaches no copy.
-NOTHING_FOUND = {
-    "path": "",
-    "version": "",
-    "is_on_path": False,
-    "is_system_path": False,
-    "is_module_first": False,
-}
 
 
 @dataclass
@@ -179,10 +146,10 @@ class ProgramConfig:
 
 
 def first_version(text: str) -> str:
-    """The first dotted number in a program's words. Pure.
+    """The first dotted number in a version's words. Pure.
 
     Args:
-        text: What the program printed.
+        text: The words, such as a package's ``version``.
 
     Returns:
         The number, such as ``2.1.311``; empty when it prints none.
@@ -239,9 +206,6 @@ class ProgramHooks:
         title: What the module is called in its log lines.
         runner: The name a recipe's ``runner`` chooses the module by.
         program: The name a shell runs the program by.
-        known_places: By system, the places after ``PATH`` a person's copy
-            is looked for, ``~`` being the account's home on Linux and macOS
-            and Windows' variables expanded as the account.
         launcher_variables: ``(name, value)`` pairs the launcher sets.
         home_variable: The variable naming the folder the program writes its
             own files in, which its ``verify`` points into the module's
@@ -253,7 +217,6 @@ class ProgramHooks:
     title = ""
     runner = ""
     program = ""
-    known_places: dict = {}
     launcher_variables: tuple = ()
     home_variable = ""
     config_class = ProgramConfig
@@ -340,9 +303,6 @@ class ProgramsModuleRunner(ModuleRunner):
         self._config: dict = {}
         # One read or write of the record at a time.
         self._lock = threading.Lock()
-        # The changed stamps a read asked for a task about, by account, until
-        # that account's next ``account`` step.
-        self._asked: dict = {}
         # The module copy's version, by the stamp of the file it was read from.
         self._version_read: tuple = (None, "")
 
@@ -544,38 +504,19 @@ class ProgramsModuleRunner(ModuleRunner):
         return lines
 
     def details(self, recipe: dict) -> dict:
-        """Whether the module's copy is there, its version, and each enabled account's code.
+        """Whether the module's copy is there, and its version.
 
         Args:
             recipe: The module's recipe, empty for a module the state does
                 not name.
 
         Returns:
-            ``{has_module_copy, version, accounts: [{account, code,
-            params}]}``, ``version`` the module copy's and empty while it has
-            none.
+            ``{has_module_copy, version}``, ``version`` the module copy's and
+            empty while it has none.
         """
-        if recipe:
-            self._watch_accounts()
-        with self._lock:
-            records = self._read_record()
-        order = self._enabled() if recipe else list(records)
-        rows = []
-        for account in order:
-            record = records.get(account)
-            if not record:
-                continue
-            rows.append(
-                {
-                    "account": account,
-                    "code": str(record.get("code", "") or ""),
-                    "params": dict(record.get("params") or {}),
-                }
-            )
         return {
             "has_module_copy": self.has_module_copy(),
             "version": self._module_version(),
-            "accounts": rows,
         }
 
     def journal_text(self, lines: int) -> list:
@@ -598,64 +539,6 @@ class ProgramsModuleRunner(ModuleRunner):
             if self.name in line and not pattern.search(line)
         ]
         return named[-lines:]
-
-    def command(self, verb: str, args: dict, on_line=None) -> dict:
-        """Run one of this module's verbs: ``find`` and ``prefer`` beside every module's.
-
-        Args:
-            verb: The verb on the wire, without the module's name.
-            args: ``{account, password}`` for ``find`` and ``prefer``.
-            on_line: Called with each output line as it is produced.
-
-        Returns:
-            ``{"exit_code", "code", "params", "output"}``, with ``result``
-            for ``find``.
-        """
-        if verb == AGENT_PROGRAM_VERB_FIND:
-            return self._find_command(args)
-        if verb == AGENT_PROGRAM_VERB_PREFER:
-            return self._prefer_command(args)
-        return super().command(verb, args, on_line)
-
-    # --- the verbs ---
-
-    def _find_command(self, args: dict) -> dict:
-        """The ``find`` verb: the copies one account's shell reaches, read at once."""
-        item = ProgramAccount.from_dict(args)
-        if not ACCOUNT_PATTERN.match(item.account):
-            return command_outcome(1, "account_invalid", {"account": item.account})
-        if self._os_name == "windows" and not item.password:
-            return command_outcome(1, "credential_missing", {"account": item.account})
-        try:
-            found = self._find(item, self._entry_of(item.account))
-        except ModuleApplyError as error:
-            return command_outcome(1, error.code, error.params)
-        except (OSError, subprocess.SubprocessError) as error:
-            return command_outcome(1, "apply_failed", {"detail": _said(error)})
-        outcome = command_outcome(0)
-        outcome["result"] = dict(found)
-        return outcome
-
-    def _prefer_command(self, args: dict) -> dict:
-        """The ``prefer`` verb: the module's copy put first for one enabled account at once."""
-        item = ProgramAccount.from_dict(args)
-        if item.account not in self._enabled():
-            return command_outcome(1, "account_not_enabled", {"account": item.account})
-        password = item.password or self._passwords().get(item.account, "")
-        try:
-            record = self._set_way_in(
-                ProgramAccount(account=item.account, password=password),
-                is_put_first=True,
-            )
-        except ModuleApplyError as error:
-            return command_outcome(1, error.code, error.params)
-        except (OSError, subprocess.SubprocessError) as error:
-            return command_outcome(1, "apply_failed", {"detail": _said(error)})
-        self._log(
-            f"{self.name}: put the module's copy first for {item.account}"
-            + (f", {record['code']}" if record.get("code") else "")
-        )
-        return command_outcome(0)
 
     # --- the steps ---
 
@@ -697,7 +580,7 @@ class ProgramsModuleRunner(ModuleRunner):
         self._log(f"{self.name}: " + "; ".join(notes or ["unchanged"]))
 
     def _run_account(self, config: dict, account: str, context) -> None:
-        """The ``account {account}`` step: the module's copy put first at the account's first enabling, and the copy its shell runs read.
+        """The ``account {account}`` step: the module's copy put first at the account's first enabling.
 
         Raises:
             ModuleApplyError: ``account_unknown {account}``,
@@ -712,21 +595,15 @@ class ProgramsModuleRunner(ModuleRunner):
         with self._lock:
             is_set = bool((self._read_record().get(account) or {}).get("is_path_set"))
         try:
-            record = self._set_way_in(item, is_put_first=not is_set)
+            self._set_way_in(item, is_put_first=not is_set)
         except (OSError, subprocess.SubprocessError) as error:
             raise ModuleApplyError(
                 "apply_failed", {"detail": str(error)[:DETAIL_CHARS]}
             ) from None
-        if record.get("code"):
-            self._log(f"{self.name}: {account} {record['code']} {record['params']}")
-        else:
-            self._log(f"{self.name}: {account} runs the module's copy first")
+        self._log(f"{self.name}: {account} runs the module's copy first")
 
-    def _set_way_in(self, item: ProgramAccount, *, is_put_first: bool) -> dict:
-        """Put the launcher's folder first on an account's ``PATH`` where asked, read the copy its shell runs, and keep the record.
-
-        Returns:
-            The account's record as kept.
+    def _set_way_in(self, item: ProgramAccount, *, is_put_first: bool) -> None:
+        """Put the launcher's folder first on an account's ``PATH`` where asked, and keep the record.
 
         Raises:
             ModuleApplyError: ``account_unknown {account}``,
@@ -739,18 +616,18 @@ class ProgramsModuleRunner(ModuleRunner):
         account = item.account
         entry = self._entry_of(account)
         with self._lock:
-            record = dict(self._read_record().get(account) or {})
-        record["account"] = account
+            held = dict(self._read_record().get(account) or {})
+        record = {"account": account}
         if self._os_name == "windows":
             if not item.password:
                 raise ModuleApplyError("credential_missing", {"account": account})
+            is_made = bool(held.get("is_value_made"))
             if is_put_first:
                 answer = self._windows_entry(
                     account, item.password, ENTRY_VERB_FIRST, False
                 )
-                record["is_value_made"] = bool(record.get("is_value_made")) or bool(
-                    answer.get("is_made")
-                )
+                is_made = is_made or bool(answer.get("is_made"))
+            record["is_value_made"] = is_made
             record["password"] = item.password
         else:
             for note in self._path.set_module(
@@ -758,157 +635,10 @@ class ProgramsModuleRunner(ModuleRunner):
             ):
                 self._log(f"{self.name}: {account}: {note}")
         record["is_path_set"] = True
-        found = self._find(item, entry)
-        record["code"], record["params"] = _code_of(account, found)
-        if self._os_name != "windows":
-            record["stamps"] = self._path.stamps(account)
         with self._lock:
             held = self._read_record()
             held[account] = record
             self._write_record(held)
-            self._asked.pop(account, None)
-        return record
-
-    # --- the find ---
-
-    def _find(self, item: ProgramAccount, entry: AccountEntry) -> dict:
-        """The copies an account's shell reaches, found as the account.
-
-        Returns:
-            ``{path, version, is_on_path, is_system_path, is_module_first}``:
-            the first copy on ``PATH`` that is not the module's, else the
-            first in the known places, ``path`` empty for none.
-
-        Raises:
-            ModuleApplyError: ``credential_invalid {account}`` or
-                ``apply_failed {detail}`` on Windows.
-            OSError: When the run as the account cannot start on Windows.
-        """
-        if self._os_name == "windows":
-            return self._find_windows(item)
-        return self._find_posix(item.account, entry)
-
-    def _find_posix(self, account: str, entry: AccountEntry) -> dict:
-        """The copies on the login shell's ``PATH``, then in the known places; for bash also on the ``PATH`` of a shell that is not a login shell.
-
-        The module comes first only where it comes first on every ``PATH``
-        read, and the answer is that of the first ``PATH`` where it does not.
-        """
-        shell = entry.shell or AGENT_PROGRAM_FALLBACK_SHELL
-        kinds = [AGENT_PROGRAM_LOGIN_FLAGS]
-        if os.path.basename(shell) == AGENT_PROGRAM_BASH_SHELL:
-            kinds.append(AGENT_PROGRAM_INTERACTIVE_FLAGS)
-        found = [
-            self._found_on(account, entry, self._shell_path(account, shell, flags))
-            for flags in kinds
-        ]
-        return next((each for each in found if not each["is_module_first"]), found[0])
-
-    def _found_on(self, account: str, entry: AccountEntry, search_path: str) -> dict:
-        """The first copy on one ``PATH``, then in the known places, that is not the module's."""
-        program = self._hooks.program
-        on_path = [
-            os.path.join(folder, program) for folder in search_path.split(":") if folder
-        ]
-        candidates = list(on_path)
-        for place in self._hooks.known_places.get(self._os_name, ()):
-            candidates.append(
-                entry.home + place[1:] if place.startswith("~/") else place
-            )
-        found = dict(NOTHING_FOUND)
-        for path in self._executables(account, list(dict.fromkeys(candidates))):
-            if self._is_module_own(path):
-                if path in on_path:
-                    found["is_module_first"] = True
-                continue
-            found["path"] = path
-            found["is_on_path"] = path in on_path
-            found["version"] = self._version_posix(account, path, search_path)
-            break
-        return found
-
-    def _shell_path(self, account: str, shell: str, flags: tuple) -> str:
-        """The ``PATH`` the account's shell prints, run with these flags; empty when the shell fails or runs past its time."""
-        try:
-            result = self._platform.run_as_account(
-                account,
-                [shell, *flags, "-c", AGENT_PROGRAM_PATH_COMMAND],
-                stdin="",
-                timeout_s=AGENT_PROGRAM_SHELL_TIMEOUT_S,
-            )
-        except (OSError, subprocess.SubprocessError, PlatformUnsupportedError) as error:
-            self._log(
-                f"{self.name}: the login shell {shell} of {account} gave no PATH: {error}"
-            )
-            return ""
-        printed = [line.strip() for line in result.stdout.splitlines() if line.strip()]
-        if result.returncode != 0 or not printed:
-            self._log(
-                f"{self.name}: the login shell {shell} of {account} gave no PATH: "
-                f"exit {result.returncode}"
-            )
-            return ""
-        return printed[-1]
-
-    def _executables(self, account: str, candidates: list) -> list:
-        """The candidates the account may run, in their order."""
-        if not candidates:
-            return []
-        try:
-            result = self._platform.run_as_account(
-                account,
-                ["/bin/sh", "-c", EXECUTABLES_SHELL, "sh", *candidates],
-                stdin="",
-                timeout_s=AGENT_PROGRAM_VERSION_TIMEOUT_S,
-            )
-        except (OSError, subprocess.SubprocessError, PlatformUnsupportedError) as error:
-            self._log(f"{self.name}: the copies of {account} were not read: {error}")
-            return []
-        found = {line.strip() for line in result.stdout.splitlines() if line.strip()}
-        return [path for path in candidates if path in found]
-
-    def _version_posix(self, account: str, path: str, search_path: str) -> str:
-        """A copy's version, its ``--version`` run as the account on the account's ``PATH``."""
-        try:
-            result = self._platform.run_as_account(
-                account,
-                [path, "--version"],
-                stdin="",
-                timeout_s=AGENT_PROGRAM_VERSION_TIMEOUT_S,
-                environment={"PATH": search_path} if search_path else None,
-            )
-        except (OSError, subprocess.SubprocessError, PlatformUnsupportedError):
-            return ""
-        if result.returncode != 0:
-            return ""
-        return first_version(f"{result.stdout}\n{result.stderr}")
-
-    def _find_windows(self, item: ProgramAccount) -> dict:
-        """The copies the system's and the account's ``PATH`` and the known places hold, found by one run as the account."""
-        answer = self._windows_run(
-            item.account,
-            item.password,
-            AGENT_PROGRAM_WINDOWS_FIND_PARTS,
-            {
-                "name": self._hooks.program,
-                "module_folder": self.launcher_dir,
-                "places": list(self._hooks.known_places.get("windows", ())),
-            },
-        )
-        found = dict(NOTHING_FOUND)
-        found["path"] = str(answer.get("path", "") or "")
-        found["version"] = first_version(str(answer.get("version", "") or ""))
-        for name in ("is_on_path", "is_system_path", "is_module_first"):
-            found[name] = bool(answer.get(name))
-        return found
-
-    def _is_module_own(self, path: str) -> bool:
-        """Whether a path reaches the module's launcher or its program."""
-        own = {
-            os.path.realpath(self.launcher_path),
-            os.path.realpath(self.program_path),
-        }
-        return os.path.realpath(path) in own
 
     # --- the ways in ---
 
@@ -964,30 +694,6 @@ class ProgramsModuleRunner(ModuleRunner):
                 "apply_failed", {"detail": f"the user PATH of {account}: {result}"}
             )
         return answer
-
-    # --- the read ---
-
-    def _watch_accounts(self) -> None:
-        """Ask for a task once for each enabled account whose startup files or env file changed since its last ``account`` step."""
-        if self._os_name == "windows":
-            return
-        enabled = set(self._enabled())
-        with self._lock:
-            records = self._read_record()
-        for account, record in records.items():
-            if account not in enabled or not record.get("is_path_set"):
-                continue
-            stamps = self._path.stamps(account)
-            if stamps == record.get("stamps"):
-                continue
-            with self._lock:
-                if self._asked.get(account) == stamps:
-                    continue
-                self._asked[account] = stamps
-            self._log(
-                f"{self.name}: the startup files of {account} changed, a task follows"
-            )
-            self.ask_configure()
 
     # --- the files ---
 
@@ -1163,27 +869,6 @@ class ProgramsModuleRunner(ModuleRunner):
             "apply_failed",
             {"detail": f"{account}: {result.stdout.strip()[-DETAIL_CHARS:]}"},
         )
-
-
-def _code_of(account: str, found: dict) -> tuple:
-    """An account's code from what ``find`` found: none while the module's launcher comes first. Pure."""
-    if found.get("is_module_first"):
-        return "", {}
-    path = str(found.get("path", "") or "")
-    version = str(found.get("version", "") or "")
-    if path and found.get("is_system_path"):
-        return AGENT_PROGRAM_CODE_SYSTEM_PATH, {
-            "account": account,
-            "path": path,
-            "version": version,
-        }
-    if path and found.get("is_on_path"):
-        return AGENT_PROGRAM_CODE_RUNS_FIRST, {
-            "account": account,
-            "path": path,
-            "version": version,
-        }
-    return AGENT_PROGRAM_CODE_UNREACHED, {"account": account}
 
 
 def _said(error: BaseException) -> str:

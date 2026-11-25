@@ -11,26 +11,5 @@ OPENCODE_PROGRAM = "opencode"
 OPENCODE_HOME_VARIABLES = {"windows": "USERPROFILE"}
 OPENCODE_HOME_VARIABLE = "HOME"
 
-# The places after PATH an account's own OpenCode is looked for, by system:
-# the publisher's install script, the system's packages, Homebrew's, Scoop's,
-# Chocolatey's and npm's.
-OPENCODE_KNOWN_PLACES = {
-    "linux": (
-        "~/.opencode/bin/opencode",
-        "/usr/local/bin/opencode",
-        "/usr/bin/opencode",
-    ),
-    "darwin": (
-        "~/.opencode/bin/opencode",
-        "/opt/homebrew/bin/opencode",
-        "/usr/local/bin/opencode",
-    ),
-    "windows": (
-        "%USERPROFILE%\\scoop\\shims\\opencode.exe",
-        "%ProgramData%\\chocolatey\\bin\\opencode.exe",
-        "%APPDATA%\\npm\\opencode.cmd",
-    ),
-}
-
 # The folder of the npm package that holds the program.
 OPENCODE_BIN_DIR_NAME = "bin"

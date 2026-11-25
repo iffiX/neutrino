@@ -10,21 +10,6 @@ CODEX_PROGRAM = "codex"
 # default, which its verify points into the module's directory.
 CODEX_HOME_VARIABLE = "CODEX_HOME"
 
-# The places after PATH an account's own Codex is looked for, by system:
-# the publisher's install scripts, Homebrew's cask and npm.
-CODEX_KNOWN_PLACES = {
-    "linux": ("~/.local/bin/codex", "/usr/local/bin/codex"),
-    "darwin": (
-        "~/.local/bin/codex",
-        "/opt/homebrew/bin/codex",
-        "/usr/local/bin/codex",
-    ),
-    "windows": (
-        "%LOCALAPPDATA%\\Programs\\OpenAI\\Codex\\bin\\codex.exe",
-        "%APPDATA%\\npm\\codex.cmd",
-    ),
-}
-
 # The build target of the npm package for each system and architecture. The
 # program is ``vendor/<target>/bin/codex`` under the module's copy.
 CODEX_TARGETS = {

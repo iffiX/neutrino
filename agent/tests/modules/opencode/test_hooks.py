@@ -1,4 +1,4 @@
-"""OpenCode's part of the shared runner: its program in the package's bin folder, its known places, a launcher that sets nothing, its home folder's variable."""
+"""OpenCode's part of the shared runner: its program in the package's bin folder, a launcher that sets nothing, its home folder's variable."""
 
 import pytest
 
@@ -28,22 +28,7 @@ def test_the_program_is_bin_opencode_and_its_home_folder_s_variable(
     assert hooks.home_variable == variable
 
 
-def test_the_known_places_and_the_launcher():
+def test_the_launcher_sets_nothing():
     assert OpencodeHooks.name == OpencodeHooks.runner == "opencode"
     assert OpencodeHooks.program == "opencode"
     assert OpencodeHooks.launcher_variables == ()
-    assert OpencodeHooks.known_places["linux"] == (
-        "~/.opencode/bin/opencode",
-        "/usr/local/bin/opencode",
-        "/usr/bin/opencode",
-    )
-    assert OpencodeHooks.known_places["darwin"] == (
-        "~/.opencode/bin/opencode",
-        "/opt/homebrew/bin/opencode",
-        "/usr/local/bin/opencode",
-    )
-    assert OpencodeHooks.known_places["windows"] == (
-        "%USERPROFILE%\\scoop\\shims\\opencode.exe",
-        "%ProgramData%\\chocolatey\\bin\\opencode.exe",
-        "%APPDATA%\\npm\\opencode.cmd",
-    )

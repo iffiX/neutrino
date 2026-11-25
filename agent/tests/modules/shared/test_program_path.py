@@ -343,19 +343,6 @@ def test_every_file_is_read_and_written_as_the_account(tmp_path):
     assert all(argv[0] == "/bin/sh" for _account, argv in asked)
 
 
-def test_the_stamps_name_each_startup_file_and_env_file(tmp_path):
-    applier, entry = applier_for(tmp_path, shell="/bin/zsh")
-    assert applier.stamps("ann") == {}
-    applier.set_module("ann", entry, "codex", is_put_first=True)
-
-    stamps = applier.stamps("ann")
-
-    assert sorted(stamps) == sorted(
-        [os.path.join(entry.home, ".zshrc"), os.path.join(tree(entry), "env.sh")]
-    )
-    assert all(stamp is not None for stamp in stamps.values())
-
-
 def test_an_account_gone_from_the_machine_is_dropped_from_the_record(tmp_path):
     applier, entry = applier_for(tmp_path)
     applier.set_module("ann", entry, "codex", is_put_first=True)
