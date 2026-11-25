@@ -3,10 +3,9 @@
 What these pin: no `find` step's words, the programs' section of ui_text.md
 being test_program_wording.py's; each tool a module of the account layer
 whose apply bar shows `ui.program.apply_hint` and waits for the module's
-state alone; the owner notice over the state line; no Start and no Stop on a
-program, whose state line reads `state.ready` with a dot that does not
-pulse; Install live on a program with no want and on a failed one wanting
-`running`; the version line only while the module's own copy is on the
+state alone; no Start and no Stop on a program, whose state line reads
+`state.ready` with a dot that does not pulse; Install live on a program
+with no want and on a failed one wanting `running`; the version line only while the module's own copy is on the
 machine; a check that first reads the account's copies, a copy found asking
 through the replace dialog and a copy in Windows' system PATH through a
 dialog of one button; each enabled account's row showing the module copy's
@@ -107,7 +106,6 @@ def test_each_tool_is_a_program_of_the_account_layer():
         assert "field: null," in text
         assert "isProgram: true," in text
         assert "isWithoutProgram" not in text
-        assert "ownerNotice" not in text
 
 
 @pytest.mark.parametrize("language", LANGUAGES)
@@ -122,9 +120,7 @@ def test_ui_behavior_draws_the_tab_as_these_check():
     text = flat(design("ui_behavior.md"))
 
     assert (
-        "draws the line `ui.codex.owner_notice`, `ui.claude_code.owner_notice` or "
-        "`ui.opencode.owner_notice` over its state line, and **Install**, **Uninstall** and **Configure** "
-        "alone at the bottom"
+        "draws **Install**, **Uninstall** and **Configure** alone at the bottom"
     ) in text
     assert (
         "Its state line reads `state.ready` in place of `running`, as Terminal's "
@@ -159,26 +155,6 @@ def test_ui_behavior_draws_the_tab_as_these_check():
         "`ui.opencode.apply` its button and `ui.program.apply_hint` its hint; the apply waits for the "
         "module's state alone"
     ) in text
-
-
-def test_the_owner_notice_is_drawn_over_the_state_line():
-    body = page()
-    start = body.index("const PROGRAM_NOTICES: Record<string, string> = {")
-    table = body[start : body.index("};", start)]
-    notice = (
-        '{programNotice !== undefined && ( <p className="field_hint">'
-        "{t(programNotice)}</p> )}"
-    )
-
-    assert dict(re.findall(r'(\w+): "(ui\.\w+\.owner_notice)"', table)) == {
-        name: f"ui.{name}.owner_notice" for name in PROGRAMS
-    }
-    assert (
-        "const programNotice = activeRow === undefined "
-        "? undefined : PROGRAM_NOTICES[activeRow.name];"
-    ) in body
-    assert notice in body
-    assert body.index(notice) < body.index('<div className="modules_detail_head">')
 
 
 def test_a_program_is_read_from_the_row_s_kind():

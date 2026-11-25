@@ -241,13 +241,6 @@ export function InstancesPanel({
   const report = reportOf(saved, descriptor);
   return (
     <>
-      {descriptor.ownerNotice !== undefined && (
-        <p className="field_hint">
-          {version === "" || descriptor.ownerNoticeVersion === undefined
-            ? t(descriptor.ownerNotice)
-            : t(descriptor.ownerNoticeVersion, { version })}
-        </p>
-      )}
       <section
         className={`settings_group ${isPending ? "settings_group--dirty" : ""}`}
       >

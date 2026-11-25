@@ -222,6 +222,15 @@ def test_every_module_has_a_title_of_its_own(language):
             assert f"ui.module_title.{module}" in words, module
 
 
+@pytest.mark.parametrize("name", catalog_names())
+@pytest.mark.parametrize("language", list(WEB_LANGUAGES))
+def test_no_module_tab_carries_an_owner_notice(language, name):
+    """ui_text.md, "Software the owner installs": VS Code's terms are the one
+    line that names a module's licence or says the owner installs it."""
+    for key in catalog(language, name):
+        assert not key.endswith(("owner_notice", "owner_notice_version")), key
+
+
 @pytest.mark.parametrize(
     "language, in_use, remove_body",
     [
