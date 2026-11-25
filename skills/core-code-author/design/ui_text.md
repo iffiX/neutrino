@@ -204,8 +204,7 @@ rules follow from that:
 
 | Rule | Example |
 | --- | --- |
-| A module page that names third-party software says that the owner installs it on that machine. | `You install VS Code Server on this machine under Microsoft's license terms.` |
-| A module page names the publisher's terms only where the publisher asks for acceptance; VS Code is the one such module ([ui_behavior.md](ui_behavior.md), "Terms before a module opens"). CloudCLI's, Codeg's and SiYuan's pages carry no licence line. | |
+| A module page names the publisher's terms only where the publisher asks for acceptance; VS Code is the one such module ([ui_behavior.md](ui_behavior.md), "Terms before a module opens"). No other module page carries a licence line or a line saying that the owner installs the software. | |
 | No surface says the hub downloads, provides, bundles or distributes third-party software, in either language (代为下载, 提供, 自带). A sentence about the mechanism, in a standard page or a code comment, makes the module's installer its subject. The source chip's 自带 marks the modules the agent carries alone, and never one of these programs ("The machine page's words"). | `The module's installer fetches the archive.`, never `The hub downloads VS Code.` |
 | The **About** card on the Settings page credits only the components the hub's own package carries on that system and in that edition, such as xray, CLIProxyAPI, NetBird, EasyTier, frp and tun2socks. Gitea, Ollama, VS Code, code-server, CloudCLI, Codeg, SiYuan, Hermes WebUI, Ayakaleaf, AstrBot, Codex, Claude Code and OpenCode are never on it. | |
 
@@ -666,9 +665,6 @@ whose line named Gemini; each tool is one entry of the `code` category.
 | `ui.module_catalog.codex` | Codex on the command line, for each account. | 命令行里的 Codex，每个账户都能用。 |
 | `ui.module_catalog.claude_code` | Claude Code on the command line, for each account. | 命令行里的 Claude Code，每个账户都能用。 |
 | `ui.module_catalog.opencode` | OpenCode on the command line, for each account. | 命令行里的 OpenCode，每个账户都能用。 |
-| `ui.codex.owner_notice` | You install Codex, Apache-2.0-licensed, on this machine. | 你在这个系统上安装 Codex，它以 Apache-2.0 许可发布。 |
-| `ui.claude_code.owner_notice` | You install Claude Code on this machine under Anthropic's legal agreements. | 你在这个系统上按 Anthropic 的法律协议安装 Claude Code。 |
-| `ui.opencode.owner_notice` | You install OpenCode, MIT-licensed, on this machine. | 你在这个系统上安装 OpenCode，它以 MIT 许可发布。 |
 | `ui.codex.apply` | Apply Codex | 应用 Codex |
 | `ui.claude_code.apply` | Apply Claude Code | 应用 Claude Code |
 | `ui.opencode.apply` | Apply OpenCode | 应用 OpenCode |
@@ -696,7 +692,6 @@ other times.
 | Key | English | Chinese |
 | --- | --- | --- |
 | `ui.module_catalog.ollama` | Language models on this machine, through Ollama's API. | 在这个系统上运行大语言模型，通过 Ollama 的 API 使用。 |
-| `ui.ollama.owner_notice` | You install Ollama, MIT-licensed, on this machine. | 你在这个系统上安装 Ollama，它以 MIT 许可发布。 |
 | `ui.ollama.models_title` | Models | 模型 |
 | `ui.ollama.models_summary`, and `ui.ollama.models_summary_one` for one model | {count} models, {size}; 1 model, {size} | {count} 个模型，共 {size}；1 个模型，共 {size} |
 | `ui.ollama.pull` | Pull | 拉取 |
@@ -735,18 +730,6 @@ other times.
 | `code.ollama_pull_unknown` | No pull of {name} is waiting or running. | 没有在等待或进行中的 {name} 拉取。 |
 | `code.ollama_pull_failed` | Ollama could not pull {name}: {detail} | Ollama 没能拉取 {name}：{detail} |
 
-## The Hermes WebUI tab's words
-
-[ui_behavior.md](ui_behavior.md), "The machine page", places them. The keys
-are in `locales/<language>/modules.json`. The tab has no panel, since the
-agent takes its port, so `ui.hermes_webui.port`, `port_hint`, `apply` and
-`apply_hint` go.
-
-| Key | English | Chinese |
-| --- | --- | --- |
-| `ui.hermes_webui.owner_notice` | You install Hermes WebUI and Hermes Agent, both MIT-licensed, on this machine. | 你在这个系统上安装 Hermes WebUI 和 Hermes Agent，两者都以 MIT 许可发布。 |
-| `ui.hermes_webui.owner_notice_version` | You install Hermes WebUI and Hermes Agent, both MIT-licensed, on this machine. Installed: {version}. | 你在这个系统上安装 Hermes WebUI 和 Hermes Agent，两者都以 MIT 许可发布。已安装：{version}。 |
-
 ## The Ayakaleaf tab's words
 
 [ui_behavior.md](ui_behavior.md), "The machine page", places them. The keys
@@ -754,7 +737,6 @@ are in `locales/<language>/modules.json`, and the code's in `codes.json`.
 
 | Key | English | Chinese |
 | --- | --- | --- |
-| `ui.ayakaleaf.owner_notice` | You install Ayakaleaf, MongoDB and Redis on this machine, each under its publisher's license. | 你在这个系统上安装 Ayakaleaf、MongoDB 和 Redis，各自遵循发布者的许可证。 |
 | `ui.ayakaleaf.model` | AI model | AI 模型 |
 | `ui.ayakaleaf.model_hint` | The model the editor's AI assistant uses. | 编辑器里的 AI 助手用这个模型。 |
 | `ui.ayakaleaf.apply` | Apply Ayakaleaf | 应用 Ayakaleaf 设置 |
@@ -771,8 +753,6 @@ are in `locales/<language>/modules.json`, and the Services page's line in
 | Key | English | Chinese |
 | --- | --- | --- |
 | `ui.module_catalog.astrbot`, AstrBot's line in the **Add module** dialog | Chat bots that answer with the hub's AI models. | 用中枢的 AI 模型回复消息的聊天机器人。 |
-| `ui.astrbot.owner_notice` | You install AstrBot, AGPL-3.0-licensed, on this machine. | 你在这个系统上安装 AstrBot，它以 AGPL-3.0 许可发布。 |
-| `ui.astrbot.owner_notice_version` | You install AstrBot, AGPL-3.0-licensed, on this machine. Installed: {version}. | 你在这个系统上安装 AstrBot，它以 AGPL-3.0 许可发布。已安装：{version}。 |
 | `ui.services.description_astrbot_module`, the Services page's provenance line of the `web` entry | published by the AstrBot module on {host} | 由 {host} 上的 AstrBot 模块发布 |
 
 ## The Containers tab's words

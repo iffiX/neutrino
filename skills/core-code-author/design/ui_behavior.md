@@ -948,11 +948,9 @@ accounts. No module asks for a port: the agent takes them.
 The tab of a command line program, Codex, Claude Code or OpenCode
 ([agent/modules/codex.md](agent/modules/codex.md),
 [agent/modules/claude_code.md](agent/modules/claude_code.md),
-[agent/modules/opencode.md](agent/modules/opencode.md)), draws the
-line `ui.codex.owner_notice`, `ui.claude_code.owner_notice` or
-`ui.opencode.owner_notice` over its
-state line, and **Install**, **Uninstall** and **Configure** alone at the
-bottom, since it has no **Start** or **Stop** ([agent.md](agent.md), "The
+[agent/modules/opencode.md](agent/modules/opencode.md)), draws
+**Install**, **Uninstall** and **Configure** alone at the bottom, since it
+has no **Start** or **Stop** ([agent.md](agent.md), "The
 kinds of module"). Its state line reads `state.ready` in place of
 `running`, as Terminal's rows do, with or without an enabled account, since
 a program runs only when a person runs it. A program the machine reports
@@ -1237,19 +1235,17 @@ carries them:
 | SSH server | **Enabled accounts**, each enabled account's row ending with its instance's host key fingerprint in mono, `ui.ssh_server.host_key` | one configurable `settings_group` with its own apply bar, `ui.ssh_server.apply` |
 | Remote desktop | one switch, `ui.remote_desktop_module.switch`, with its description | one configurable `settings_group` with its own apply bar, `ui.remote_desktop_module.apply`; a failed step shows its code's words under it, and the apply bar's Apply tries again |
 
-The Hermes WebUI tab draws the line `ui.hermes_webui.owner_notice`, or
-`ui.hermes_webui.owner_notice_version` once the machine reports the version,
-over its state, its log and its buttons; it has no panel, since the agent
-takes its port.
+The Hermes WebUI tab draws its state, its log and its buttons, and the
+version line shows the version the machine reports; it has no panel, since
+the agent takes its port.
 
 The tab holds no link to the page: a client opens it from its **Apps** page
 with the token the hub hands ([agent/modules/hermes_webui.md](agent/modules/hermes_webui.md),
 "The page").
 
-The Ayakaleaf tab draws the line `ui.ayakaleaf.owner_notice` over its state,
-its log and its buttons, and holds no link to its page either. Its panel is
-one configurable `settings_group` with its own apply bar,
-`ui.ayakaleaf.apply`, around one field
+The Ayakaleaf tab draws its state, its log and its buttons, and holds no
+link to its page either. Its panel is one configurable `settings_group`
+with its own apply bar, `ui.ayakaleaf.apply`, around one field
 ([agent/modules/ayakaleaf.md](agent/modules/ayakaleaf.md), "The model"):
 
 | Control | Idiom |
@@ -1260,9 +1256,8 @@ While the module's `want` is `running`, the bar's warning on a dirty group is
 `ui.ayakaleaf.apply_warning`, and the bar stays busy after its press until the
 machine reports the module `running` again, at most two minutes.
 
-The AstrBot tab draws the line `ui.astrbot.owner_notice`, or
-`ui.astrbot.owner_notice_version` once the machine reports the version,
-over its state, its log and its buttons, as the Hermes WebUI tab does. It
+The AstrBot tab draws its state, its log and its buttons, and the version
+line shows the version the machine reports, as the Hermes WebUI tab does. It
 has no panel, since the agent takes its port, and holds no link to its
 page ([agent/modules/astrbot.md](agent/modules/astrbot.md), "The page").
 
@@ -1285,8 +1280,8 @@ module, keeps its state word `unsupported` and draws its panel with every
 field, the switch and the apply bar disabled, and no sentence added.
 
 The Ollama tab ([agent/modules/ollama.md](agent/modules/ollama.md)) draws
-the line `ui.ollama.owner_notice` over its state, its log and its buttons.
-**Configure** opens two panels, **Settings** and under it **Models**.
+its state, its log and its buttons. **Configure** opens two panels,
+**Settings** and under it **Models**.
 
 **Settings** (`ui.ollama.settings_title`) is one `settings_group` with its
 own apply bar, as the Containers tab's **Run settings**:
