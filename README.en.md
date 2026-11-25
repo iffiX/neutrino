@@ -89,6 +89,8 @@ The client runs on Windows, macOS, Linux, Android and iOS, with apps, the deskto
 - **[Credential vault](https://neutrinohub.net/en/hub/what_it_holds#stored-data)**: the hub generates and keeps the passwords for file sharing and remote desktop, and the SSH keys.
 - **[Remote execution](https://neutrinohub.net/en/access/terminal#run-one-command)**: `nclient terminal exec` runs commands on another computer, for scripts and AI agents alike.
 
+**The share address, share.neutrinohub.net, serves only a static client of under 40 KB. It opens no extra connection to any Neutrino server. The connection between the visitor's browser and the hub is encrypted all the way, and third-party lines cannot read it. You can also host your own copy of the page.**
+
 ## Why Neutrino Hub
 
 - **Complete**: apps, the desktop, terminals, files and SSH. One click installs them, and the client has them ready.

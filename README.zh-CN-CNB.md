@@ -88,6 +88,8 @@ AI 工具更新快、配置多，有些默认源安装还慢。微子中枢点�
 - **[凭据保险库](https://neutrinohub.net/hub/what_it_holds#保存的数据)**：文件共享、远程桌面的密码和 SSH 密钥由中枢生成和保管。
 - **[远程执行](https://neutrinohub.net/access/terminal#运行一条命令)**：`nclient terminal exec` 在别的电脑上跑命令，脚本和 AI agent 都能用。
 
+**分享地址 share.neutrinohub.net 只提供一个不到 40 KB 的静态客户端，不会另外连到微子的服务器。访客的浏览器和中枢之间全程加密，第三方线路看不到内容。你也可以自己部署这个页面的镜像。**
+
 ## 为什么选它
 
 - **全能**：应用、桌面、终端、文件、SSH。点一下就能安装，客户端里都配好了。
