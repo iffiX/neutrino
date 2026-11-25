@@ -111,10 +111,11 @@ def with_module_settings(
 
     The module's provider, found by its fixed id, is replaced whole or
     added after the person's own; with no key or no address it is taken
-    out. The agent's and the editor's model point at ``model``, or at the
-    provider's first model while ``model`` is not among ``models``, only
-    while they name no model the settings hold. The kernel's background
-    download of new installers is turned off.
+    out, and the agent's and the editor's model are emptied where they name
+    one of its models. The agent's and the editor's model point at
+    ``model``, or at the provider's first model while ``model`` is not among
+    ``models``, only while they name no model the settings hold. The
+    kernel's background download of new installers is turned off.
 
     Args:
         conf: The kernel's ``conf.json``, parsed.
@@ -140,6 +141,13 @@ def with_module_settings(
         for entry in (held if isinstance(held, list) else [])
         if not (isinstance(entry, dict) and entry.get("id") == provider_id())
     ]
+    gone = {
+        str(model.get("id", ""))
+        for entry in (held if isinstance(held, list) else [])
+        if isinstance(entry, dict) and entry.get("id") == provider_id()
+        for model in entry.get("models") or []
+        if isinstance(model, dict)
+    }
     if gateway_key and gateway_url:
         providers.append(
             {
@@ -163,7 +171,12 @@ def with_module_settings(
         for model in provider.get("models") or []
         if isinstance(model, dict)
     }
-    if gateway_key and gateway_url and models:
+    if not (gateway_key and gateway_url):
+        for use in ("agent", "editing"):
+            held_use = ai.get(use)
+            if isinstance(held_use, dict) and held_use.get("modelId") in gone:
+                held_use["modelId"] = ""
+    elif models:
         chosen = model_id(model if model in models else models[0])
         for use in ("agent", "editing"):
             held_use = ai.get(use)

@@ -4,7 +4,8 @@ What these pin: an instance parses from what the hub sends and checks its
 account, its secrets and, on Windows, its password; the provider and model
 ids have SiYuan's own form from the SHA-256 of their seeds; the provider is
 written after the person's own and replaced whole by its id, taken out with
-no key; the agent's and the editor's model point at the hub's default
+no key, the agent's and the editor's model emptied where they named one of
+its models and kept where they name a provider of the person's; the agent's and the editor's model point at the hub's default
 model, or the first model while it is not among the models, only while they
 name no model the settings hold; the background installer
 download is off; each model holds its ``contextLength`` where the hub sends
@@ -151,6 +152,42 @@ def test_no_key_takes_the_provider_out_and_still_turns_the_download_off():
 
     assert settings["ai"]["providers"] == []
     assert settings["system"] == {"x": 1, "downloadInstallPkg": False}
+
+
+def test_no_key_empties_the_model_ids_that_named_the_module_s_models():
+    own_model = "20240101000000-person1"
+    conf = {
+        "ai": {
+            "providers": [
+                {"id": "20240101000000-abcdefg", "models": [{"id": own_model}]},
+                {
+                    "id": provider_id(),
+                    "models": [{"id": model_id("m1")}, {"id": model_id("m2")}],
+                },
+            ],
+            "agent": {"modelId": model_id("m2"), "temperature": 1},
+            "editing": {"modelId": own_model},
+        }
+    }
+
+    settings = with_module_settings(
+        conf, gateway_key="", gateway_url=URL, models=["m1"]
+    )
+
+    assert [entry["id"] for entry in settings["ai"]["providers"]] == [
+        "20240101000000-abcdefg"
+    ]
+    assert settings["ai"]["agent"] == {"modelId": "", "temperature": 1}
+    assert settings["ai"]["editing"] == {"modelId": own_model}
+
+
+def test_no_key_and_no_module_provider_leaves_the_model_ids():
+    conf = {"ai": {"providers": [], "agent": {"modelId": "20240101000000-x"}}}
+
+    settings = with_module_settings(conf, gateway_key="", gateway_url=URL, models=[])
+
+    assert settings["ai"]["agent"] == {"modelId": "20240101000000-x"}
+    assert "editing" not in settings["ai"]
 
 
 def test_the_digest_follows_the_key_the_address_and_the_models():
