@@ -22,7 +22,10 @@ HERMES_WEBUI_CACHE_VOLUMES = (
 HERMES_WEBUI_EXEC_USER = "hermes"
 HERMES_WEBUI_EXEC_HOME = "HERMES_HOME=/opt/data"
 HERMES_WEBUI_CONFIG_FILE = "/opt/data/config.yaml"
-HERMES_WEBUI_CONFIG_COMMAND = ("hermes", "config", "set")
+HERMES_WEBUI_CONFIG_COMMAND = ("hermes", "config")
+# What ``hermes config get`` and ``unset`` print for a key the file does
+# not hold.
+HERMES_WEBUI_KEY_NOT_SET = "Config key not set"
 # The variables the hub composes into both containers, and what the agent
 # writes into config.yaml from them; ``model.default`` is the state's model.
 HERMES_WEBUI_GATEWAY_URL_VARIABLE = "NEUTRINO_GATEWAY_URL"

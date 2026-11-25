@@ -16,8 +16,14 @@ and ``/health`` hold, the
 step ``first_start`` waiting meanwhile; the webui's own update check saved
 off in the step ``update_check`` once the first start has ended, each step
 planned only while the record owes it; a version change making ``agent`` and ``app``
-again and keeping ``home`` and ``workspace``; and the record that brings
-the forwarder back after a restart.
+again and keeping ``home`` and ``workspace``; with ``is_gateway_used``
+false, each key that still holds the agent's value unset, a
+``model.default`` the person saved kept, an ``api_key`` the webui's own save
+wrote unset while the base URL is the agent's, "Config key not set"
+counted as done, a failed read leaving the record, and the first start
+ending at ``/health`` 200 with no keys; with it true again, every key
+written again; and the record that brings the forwarder back after a
+restart.
 """
 
 import json
@@ -84,13 +90,15 @@ class FakeContainers:
 
 
 class FakePodman:
-    """podman's answers: the agent container's environment, config.yaml, config set."""
+    """podman's answers: the agent container's environment, config.yaml, and config set, get and unset on the keys it holds."""
 
     def __init__(self, *, url=URL, is_running=True, has_config=False):
         self.url = url
         self.is_running = is_running
         self.has_config = has_config
         self.refused_key = ""
+        self.unreadable_key = ""
+        self.keys: dict = {}
         self.calls: list = []
 
     def __call__(self, command, *, is_checked=True, input_text=None, timeout_s=120):
@@ -112,7 +120,31 @@ class FakePodman:
             return CommandResult(list(command), 0 if self.has_config else 1, "", "")
         if self.refused_key and self.refused_key in command:
             return CommandResult(list(command), 1, "", "refused")
+        if "config" in command:
+            return self._config(command)
         return CommandResult(list(command), 0, "", "")
+
+    def _config(self, command):
+        at = command.index("config")
+        verb, key = command[at + 1], command[at + 2]
+        if verb == "set":
+            self.keys[key] = command[at + 3]
+            return CommandResult(list(command), 0, f"Set {key}", "")
+        if verb == "get" and key == self.unreadable_key:
+            return CommandResult(list(command), 1, "", "Traceback")
+        if key not in self.keys:
+            return CommandResult(list(command), 1, f"Config key not set: {key}\n", "")
+        if verb == "get":
+            return CommandResult(list(command), 0, self.keys[key] + "\n", "")
+        del self.keys[key]
+        return CommandResult(list(command), 0, f"Unset {key}", "")
+
+    def config_calls(self, verb: str) -> list:
+        return [
+            call[call.index("config") + 2]
+            for call in self.calls
+            if "config" in call and call[call.index("config") + 1] == verb
+        ]
 
     def config_sets(self) -> list:
         return [call for call in self.calls if "config" in call and "set" in call]
@@ -821,6 +853,220 @@ def test_the_keys_name_the_custom_provider_and_the_key_s_variable():
         ("model.base_url", "http://h:1/v1"),
         ("model.key_env", "NEUTRINO_GATEWAY_KEY"),
         ("model.api_key", "${NEUTRINO_GATEWAY_KEY}"),
+    ]
+
+
+# --- the gateway off ---
+
+OFF = {**CONFIG, "model": "deepseek-flash", "is_gateway_used": False}
+KEYS = {
+    "model.provider": "custom",
+    "model.base_url": URL + "/v1",
+    "model.key_env": "NEUTRINO_GATEWAY_KEY",
+    "model.api_key": "${NEUTRINO_GATEWAY_KEY}",
+    "model.default": "deepseek-flash",
+    "model_overrides.custom": "deepseek-flash:\n  context_window: 131072",
+}
+
+
+def wired(box) -> None:
+    """A first start with the gateway on, every key written, then the switch off and the variables gone."""
+    box.podman.has_config = True
+    box.status = 200
+    box.hooks.installed("0.52.492")
+    box.hooks.apply(
+        {
+            **CONFIG,
+            "model": "deepseek-flash",
+            "context_lengths": {"deepseek-flash": 131072},
+        }
+    )
+    box.start()
+    box.podman.keys.update(KEYS)
+    box.podman.url = ""
+    box.podman.calls.clear()
+    box.hooks.apply(OFF)
+
+
+def test_off_each_key_the_agent_wrote_is_unset_and_the_record_forgets_them(box):
+    wired(box)
+
+    box.start()
+
+    assert box.podman.config_calls("get") == list(KEYS)
+    assert box.podman.config_calls("unset") == list(KEYS)
+    assert box.podman.keys == {}
+    assert box.podman.config_calls("set") == []
+    record = box.record()
+    assert (record["base_url"], record["model"], record["context_lengths"]) == (
+        "",
+        "",
+        {},
+    )
+
+
+def test_off_a_default_the_person_saved_and_a_provider_of_theirs_stay(box):
+    wired(box)
+    box.podman.keys["model.default"] = "person-pick"
+    box.podman.keys["model.provider"] = "openrouter"
+
+    box.start()
+
+    assert box.podman.keys == {
+        "model.default": "person-pick",
+        "model.provider": "openrouter",
+    }
+    assert box.record()["base_url"] == ""
+
+
+def test_off_the_key_a_webui_save_wrote_is_unset_while_the_base_url_is_the_agents(
+    box,
+):
+    wired(box)
+    box.podman.keys["model.api_key"] = "the-voided-key"  # scan: allow
+
+    box.start()
+
+    assert "model.api_key" not in box.podman.keys
+    assert not any("the-voided-key" in line for line in box.lines)
+
+
+def test_off_a_key_beside_a_base_url_of_the_person_s_stays(box):
+    wired(box)
+    box.podman.keys["model.base_url"] = "https://openrouter.ai/api/v1"
+    box.podman.keys["model.api_key"] = "the-person-s-key"  # scan: allow
+
+    box.start()
+
+    assert box.podman.keys == {
+        "model.base_url": "https://openrouter.ai/api/v1",
+        "model.api_key": "the-person-s-key",
+    }
+
+
+def test_off_a_key_already_gone_counts_as_done(box):
+    wired(box)
+    del box.podman.keys["model.key_env"]
+    del box.podman.keys["model_overrides.custom"]
+
+    box.start()
+
+    assert box.podman.keys == {}
+    assert "model.key_env" not in box.podman.config_calls("unset")
+    assert box.record()["base_url"] == ""
+
+
+def test_off_an_unset_that_says_config_key_not_set_counts_as_done(box):
+    wired(box)
+    box.podman.keys["model.default"] = "deepseek-flash"
+    real = box.podman._config
+
+    def gone_before_unset(command):
+        at = command.index("config")
+        if command[at + 1] == "unset" and command[at + 2] == "model.default":
+            box.podman.keys.pop("model.default", None)
+        return real(command)
+
+    box.podman._config = gone_before_unset
+
+    box.start()
+
+    assert box.podman.keys == {}
+    assert box.record()["model"] == ""
+
+
+def test_off_a_read_that_fails_changes_nothing_and_the_next_start_tries_again(box):
+    wired(box)
+    box.podman.unreadable_key = "model.default"
+
+    box.start()
+
+    assert box.podman.config_calls("unset") == []
+    assert box.record()["base_url"] == URL + "/v1"
+    box.podman.unreadable_key = ""
+    box.start()
+    assert box.podman.keys == {}
+
+
+def test_off_an_unset_that_fails_keeps_the_record_for_the_next_start(box):
+    wired(box)
+    box.podman.refused_key = "unset"
+
+    box.start()
+
+    assert box.record()["base_url"] == URL + "/v1"
+    assert any("not unset" in line for line in box.lines)
+
+
+def test_off_a_record_with_no_base_url_reads_nothing(box):
+    wired(box)
+    box.start()
+    box.podman.calls.clear()
+
+    box.start()
+
+    assert box.podman.config_calls("get") == []
+
+
+def test_off_the_first_start_ends_at_health_200_with_no_keys(box):
+    box.podman.url = ""
+    box.hooks.installed("0.52.492")
+    box.hooks.apply(OFF)
+    with pytest.raises(ModuleInstallPending):
+        box.start()
+    assert box.hooks.is_installing() is True
+
+    box.status = 200
+    box.start()
+
+    assert box.record()["is_ready"] is True
+    assert box.hooks.is_installing() is False
+    assert box.podman.config_calls("set") == []
+    assert box.podman.config_calls("get") == []
+
+
+def test_on_again_every_key_is_written_again(box):
+    wired(box)
+    box.start()
+    box.podman.url = URL
+    box.podman.calls.clear()
+    box.hooks.apply(
+        {
+            **CONFIG,
+            "model": "deepseek-flash",
+            "context_lengths": {"deepseek-flash": 131072},
+        }
+    )
+
+    box.start()
+
+    assert box.podman.config_calls("set") == [
+        "model.provider",
+        "model.base_url",
+        "model.key_env",
+        "model.api_key",
+        "model.default",
+        "model_overrides.custom",
+    ]
+    assert box.record()["base_url"] == URL + "/v1"
+    assert box.record()["model"] == "deepseek-flash"
+
+
+def test_a_state_with_no_is_gateway_used_keeps_the_gateway(box):
+    box.podman.has_config = True
+    box.status = 200
+    box.hooks.installed("0.52.492")
+    box.hooks.apply(
+        {key: value for key, value in OFF.items() if key != "is_gateway_used"}
+    )
+
+    box.start()
+
+    assert box.podman.config_calls("set")[:4] == [
+        "model.provider",
+        "model.base_url",
+        "model.key_env",
+        "model.api_key",
     ]
 
 
