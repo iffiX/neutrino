@@ -1,3 +1,7 @@
+---
+description: "Neutrino Hub sets up NetBird for you, linking your phone, laptop and home computer so you reach it while away without a public IP."
+---
+
 # NetBird
 
 NetBird is a virtual network service: the hub and your devices join one NetBird network, and the devices connect to the hub's address in it.

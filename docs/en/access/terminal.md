@@ -1,3 +1,7 @@
+---
+description: "Neutrino Hub opens a terminal on any system at home from your laptop's command line or scripts, and commands run as they would on that computer."
+---
+
 # Terminal commands
 
 You can open terminals on your other systems and run commands there from the command line and from scripts, with the same results as on that system.
@@ -6,11 +10,9 @@ These commands exist only in the desktop client. Before you start, check these c
 
 - The client is running.
 - This computer has the **Terminals** permission.
-- That system's **Terminal** tab has an account enabled.
+- That system has its default account, and the sidebar shows no **incomplete** for it.
 
-To enable an account, open that system's page, select the **Terminal** tab, select the account, then select **Apply terminal**. When the account shows **ready**, terminal commands work.
-
-![Terminal tab with an account selected and the Apply terminal button marked in red](/guide/en/access_terminal_05_tick.webp)
+Terminal commands run as that system's default account. To use another account, open that system's page, check it on the **Terminal** tab, then select **Apply terminal**.
 
 ## Run one command
 
@@ -26,7 +28,7 @@ nclient terminal exec my-computer -- uname -sr
 Linux 5.15.0-198-generic
 ```
 
-Exit code 125 means the run was refused, for example because that system has no account enabled. Exit code 126 means the system was not found, and the command lists the available systems. Every other exit code comes from the command you ran.
+Exit code 125 means the run was refused, for example because that system has no account yet. Exit code 126 means the system was not found, and the command lists the available systems. Every other exit code comes from the command you ran.
 
 `exec` runs outside any session, so other windows cannot see its input.
 
@@ -63,12 +65,12 @@ nclient terminal set my-computer <session> --persist on
 
 ## Other options
 
-| Option                                       | Effect                                                                                   |
-| -------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `--account <account>`                        | Chooses the account for `open` and `exec`; without it, the first enabled account is used |
-| `--tty`                                      | Gives `exec` a terminal, which full-screen programs such as `top` and `vim` need         |
-| `--hub <hub>`                                | Picks one hub when two hubs have systems with the same name                              |
-| `terminal set <system> <session> --share on` | Opens the session to every client with the permission                                    |
-| `terminal stop <system> <session>`           | Ends the session and the programs in it                                                  |
+| Option                                       | Effect                                                                             |
+| -------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `--account <account>`                        | Chooses the account for `open` and `exec`; without it, the default account is used |
+| `--tty`                                      | Gives `exec` a terminal, which full-screen programs such as `top` and `vim` need   |
+| `--hub <hub>`                                | Picks one hub when two hubs have systems with the same name                        |
+| `terminal set <system> <session> --share on` | Opens the session to every client with the permission                              |
+| `terminal stop <system> <session>`           | Ends the session and the programs in it                                            |
 
 Add `-h` to any command level for its help. [nclient commands](/en/reference/nclient) lists every command.

@@ -1,3 +1,8 @@
+---
+title: "One-click deploy SSH"
+description: "Neutrino Hub gives every system that joins it an SSH server on Windows, macOS and Linux, and handles the keys, so ssh and VS Code connect from anywhere."
+---
+
 # SSH
 
 SSH is the standard way to sign in to a computer remotely. Every system includes an SSH server, and the hub sets up its keys for you.
@@ -14,25 +19,22 @@ The SSH server of Neutrino Hub and the system's sshd run independently of each o
 | Windows | amd64                | 0.6.0                      |
 | macOS   | Apple silicon, Intel | 0.6.0                      |
 
+## Multiple accounts
+
+The SSH server runs for the system's default account. For another account, check it under **Enabled accounts** on the **SSH server** tab and select **Apply SSH server**; see [Add more accounts](/en/deploy/on_a_machine#add-more-accounts).
+
 ## Install
 
-The SSH server is already installed, so you only enable an account:
+The SSH server is already installed. When the system has its default account, the SSH server runs for that account.
 
-1. Open the panel in a browser, sign in, and select the system to connect to in the lower half of the sidebar. Check that **Available accounts** lists your account. If it does not, add it first with the steps in [Add an account](/en/deploy/on_a_machine#add-an-account).
+1. Open the panel in a browser, sign in, and select the system to connect to in the lower half of the sidebar.
 1. In the list of the **Module configuration** area, select **SSH server**. This tab is always present, so you do not add it.
 
    ![The module list with the SSH server row boxed in red](/guide/en/deploy_ssh_01_tab.webp)
 
-1. The tab shows **stopped**. Under **Enabled accounts**, select your account, then select **Apply SSH server**.
+1. The tab shows **running**, and the default account lab's row also shows **running** with this account's host key fingerprint. You can connect now.
 
-   ![The Enabled accounts field with the lab row boxed in red](/guide/en/deploy_ssh_02_tick_account.webp "Select lab")
-   ![lab selected, with the Apply SSH server button boxed in red](/guide/en/deploy_ssh_03_apply.webp "Select Apply SSH server")
-
-1. The tab shows **running**, and the account's row also shows **running** with this account's host key fingerprint. You can connect now.
-
-   ![The lab row showing running and the host key](/guide/en/deploy_ssh_04_applied.webp)
-
-If the Windows account has never signed in, you cannot enable it here. Sign in as this account on the computer one time, then select **Apply SSH server** again.
+   ![The lab row showing running and the host key](/guide/en/deploy_ssh_02_default_row.webp)
 
 ## Use
 
@@ -76,7 +78,7 @@ Each enabled account has its own host key, which the client fetches automaticall
 
 ## Settings
 
-Apart from selecting accounts, the following settings can stay at their defaults:
+The following settings can stay at their defaults:
 
 | Setting               | Where                                                        | Purpose                                                                           |
 | --------------------- | ------------------------------------------------------------ | --------------------------------------------------------------------------------- |
@@ -86,6 +88,6 @@ Apart from selecting accounts, the following settings can stay at their defaults
 
 ## Uninstall
 
-The SSH server cannot be uninstalled, and it has no data to keep. If you no longer use it, deselect the accounts, then select **Apply SSH server**.
+The SSH server cannot be uninstalled, and it has no data to keep. The default account stays enabled. To turn SSH off for another account, deselect it, then select **Apply SSH server**.
 
 If you cannot connect, see [Troubleshooting](/en/reference/troubleshooting).

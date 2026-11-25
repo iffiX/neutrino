@@ -1,3 +1,7 @@
+---
+description: "Neutrino Hub uninstalls one app or the whole system: what data stays, what is deleted, and each step."
+---
+
 # Uninstall
 
 You can remove one app or the whole of Neutrino Hub:
@@ -12,7 +16,7 @@ Open the system's page, select the app's tab under **Module configuration**, the
 ![The Uninstall button marked](/guide/en/deploy_on_a_machine_39_uninstall.webp "Select Uninstall")
 ![The uninstall dialog with Uninstall marked](/guide/en/deploy_on_a_machine_40_uninstall_dialog.webp "Read it, then select Uninstall")
 
-Most apps keep their data. Ayakaleaf and Hermes WebUI differ: red text in the dialog states that the data is deleted and cannot be recovered. Copy out the data you want to keep first.
+Most apps keep their data. Ayakaleaf, Hermes WebUI and AstrBot differ: red text in the dialog states that the data is deleted and cannot be recovered. Copy out the data you want to keep first.
 
 ![The red text in the Ayakaleaf uninstall dialog](/guide/en/deploy_ayakaleaf_51_uninstall_dialog.webp)
 

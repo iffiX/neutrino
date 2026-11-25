@@ -1,3 +1,8 @@
+---
+title: "One-click deploy containers"
+description: "Neutrino Hub installs Podman containers in one click on Windows, macOS or Linux: run any app from an image name and open it on your phone."
+---
+
 # Containers
 
 A container is packaged software that runs with Podman. You can also run and open an app missing from the module list by entering its image name.
@@ -29,10 +34,10 @@ An image is a packaged software bundle, such as `docker.io/library/redis:7`. Aft
    ![The module list with the Containers row boxed in red](/guide/en/deploy_containers_04_tab.webp "Select Containers")
    ![The Containers tab showing not installed, with the Install button boxed in red](/guide/en/deploy_containers_05_install.webp "Select Install")
 
-1. On Linux, the tab starts listing the steps right away. On Windows and macOS, **Choose the account that runs the containers** opens first; for its steps, see [Apps that need containers](/en/deploy/on_a_machine#apps-that-need-containers).
+1. On Linux, the tab starts listing the steps right away. On Windows and macOS, **Run settings** opens first. Check **CPUs**, **Memory (GiB)** and **Disk limit (GiB)**, then select **Install**; see [Apps that need containers](/en/deploy/on_a_machine#apps-that-need-containers).
 
    ![The tab showing installing, with every step listed](/guide/en/deploy_containers_06_installing.webp "Linux: steps listed")
-   ![The Choose the account that runs the containers dialog](/guide/en/windows_account_dialog.webp "Windows and macOS: choose an account first")
+   ![The Run settings dialog with the Install button boxed in red](/guide/en/containers_run_settings.webp "Windows and macOS: check the run settings first")
 
 1. On Windows, if the tab shows that a restart is needed, select **Restart now**. Every program open on this system closes, and the install continues after the restart.
 
@@ -107,7 +112,7 @@ Every program in a container can read and write the folders that volumes map, an
 
 On Linux, published ports bind to every address of the system, and the system firewall decides whether other computers can connect directly. On Windows and macOS, other computers connect through the client. Windows cannot publish UDP ports.
 
-On Windows, changing the CPUs, memory or disk restarts every WSL system of this account. On Windows and macOS, changing the account stops the old account's virtual machine, and its images and named volumes stay where they are.
+On Windows, changing the CPUs, memory or disk restarts every WSL system of the default account.
 
 **Stop** also stops the virtual machine, which then stays stopped after a restart of the computer. Settings changed while it is stopped take effect at the next **Start**.
 
@@ -130,11 +135,10 @@ Each container's settings are in **Declared containers**, and you select **Apply
 | **Command (optional)** | When empty, the image's own command runs. A base image needs a long-running command                                                                       |
 | **Start with the box** | Whether this container starts with the system                                                                                                             |
 
-**Run settings** exist only on Windows and macOS:
+**Run settings** exist only on Windows and macOS. The containers run in the default account's Podman virtual machine, which starts at boot without that account signing in.
 
 | Setting              | Purpose                                                                                                                           |
 | -------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| **Account**          | Runs the containers in this account's Podman virtual machine, which starts at boot without the account signing in                 |
 | **CPUs**             | Defaults to half the CPU count; 0 here means the default                                                                          |
 | **Memory (GiB)**     | Defaults to half the computer's memory, up to 4 GiB. When a container app lacks memory, a suggested value appears under the field |
 | **Disk limit (GiB)** | Defaults to 100 and can only grow                                                                                                 |
@@ -157,7 +161,7 @@ On the **Containers** tab, select **Uninstall**. The dialog states that the volu
 
 After you install Containers again, the containers and volumes return.
 
-While Ayakaleaf or Hermes WebUI is installed, uninstall it before you uninstall Containers. If you select **Uninstall** in that case, the tab lists the apps to uninstall first.
+While Ayakaleaf, Hermes WebUI or AstrBot is installed, uninstall it before you uninstall Containers. If you select **Uninstall** in that case, the tab lists the apps to uninstall first.
 
 ![The Containers tab showing that Hermes WebUI and Ayakaleaf must be uninstalled first](/guide/en/deploy_containers_47_uninstall_refused.webp)
 

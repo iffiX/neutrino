@@ -1,3 +1,8 @@
+---
+title: "一键部署 VS Code"
+description: "微子中枢一键安装 VS Code：Windows、macOS、Linux 都支持，在电脑、手机或平板的浏览器里开发家里电脑上的代码，发个链接就能分享。"
+---
+
 # VS Code
 
 VS Code 是微软的代码编辑器。微子·中枢运行微软的 VS Code Server，你可以在电脑、手机或平板的浏览器里使用它。
@@ -14,9 +19,13 @@ VS Code 是微软的代码编辑器。微子·中枢运行微软的 VS Code Serv
 | Windows | amd64             | 0.5.0                   |
 | macOS   | Apple 芯片、Intel | 0.5.0                   |
 
+## 支持多账户
+
+VS Code 以这个系统的默认账户运行，安装时不用选择账户。如果其他账户也要使用，按 **配置**，在 **启用的账户** 里勾选它，再按 **应用 VS Code**，见[添加更多账户](/deploy/on_a_machine#添加更多账户)。
+
 ## 安装
 
-1. 在浏览器里打开面板并登录，再到左侧栏的下半部分，点你要安装到的系统。确认 **可用账户** 里有你的账户。如果没有，先按[添加账户](/deploy/on_a_machine#添加账户)的步骤添加它。
+1. 在浏览器里打开面板并登录，再到左侧栏的下半部分，点你要安装到的系统。
 1. 在 **模块配置** 区域，按 **+ 添加模块**。在弹窗里勾选 **VS Code** 卡片，卡片亮起后按 **关闭**。
 
    ![模块列表，添加模块按钮标红](/guide/zh/deploy_vscode_01_add_module.webp "按 + 添加模块")
@@ -37,15 +46,9 @@ VS Code 是微软的代码编辑器。微子·中枢运行微软的 VS Code Serv
    ![标签显示安装中，下面列出每一步](/guide/zh/deploy_vscode_06_installing.webp "安装中")
    ![标签显示已安装，启动按钮标红](/guide/zh/deploy_vscode_07_installed.webp "按 启动")
 
-1. 标签变成 **运行中，没有账户**。按 **配置**，下面会展开设置。在 **启用的账户** 里勾选你的账户。
+1. 标签变成 **运行中**，这时安装完成。
 
-   ![标签显示运行中，没有账户，配置按钮标红](/guide/zh/deploy_vscode_17_started.webp "按 配置")
-   ![启用的账户一栏，lab 这一行标红](/guide/zh/deploy_vscode_08_tick_account.webp "勾选 lab")
-
-1. 按 **应用 VS Code**。账户后面出现 **运行中**，下面也出现 **已应用。** 这时安装完成。
-
-   ![勾选了 lab，应用 VS Code 按钮标红](/guide/zh/deploy_vscode_09_apply.webp "按 应用 VS Code")
-   ![lab 后面显示运行中，下面显示已应用](/guide/zh/deploy_vscode_10_applying.webp "已应用")
+   ![标签显示运行中](/guide/zh/deploy_vscode_17_running.webp)
 
 ## 使用
 

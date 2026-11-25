@@ -1,3 +1,7 @@
+---
+description: "Neutrino Hub lists every word of its manual and panel here, with its Chinese name and its meaning."
+---
+
 # Glossary
 
 Every term that the manual and the panel use is in the following tables, with its Chinese name, the name the English interface shows, and its meaning.
@@ -58,18 +62,20 @@ Every term that the manual and the panel use is in the following tables, with it
 
 ## Systems and apps
 
-| Chinese       | English interface  | Meaning                                                                                    |
-| ------------- | ------------------ | ------------------------------------------------------------------------------------------ |
-| 可用账户      | Available accounts | The system accounts on this system that the hub can use                                    |
-| 添加模块      | Add module         | The dialog on a system's page. Selecting an app there adds a tab only and installs nothing |
-| 应用          | Apps               | A program published on a system. The client and the Services page both use this name       |
-| 入口          | Entries            | An app's web page or port                                                                  |
-| 声明应用      | Declare app        | The dialog on the Services page that adds an existing web page, port or share              |
-| 运行设置      | Run settings       | The account the containers belong to, and the CPU, memory and disk of the virtual machine  |
-| Podman 虚拟机 | Podman machine     | The Linux virtual machine of one account on Windows or macOS, where the containers run     |
-| 主目录共享    | Home shares        | One share per account, sharing that account's home folder                                  |
-| 文件夹共享    | Folder shares      | A share of any path, with a choice of the accounts that can use it                         |
-| 持久          | Persistent         | The terminal session keeps running after the window closes                                 |
+| Chinese       | English interface  | Meaning                                                                                                                  |
+| ------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------ |
+| 可用账户      | Available accounts | The system accounts on this system that the hub can use                                                                  |
+| 默认账户      | Default            | One available account per system, enabled automatically in every app that runs as an account; it cannot be changed later |
+| 未完成        | incomplete         | The state of a system joined by a link or over SSH that has no first account yet                                         |
+| 添加模块      | Add module         | The dialog on a system's page. Selecting an app there adds a tab only and installs nothing                               |
+| 应用          | Apps               | A program published on a system. The client and the Services page both use this name                                     |
+| 入口          | Entries            | An app's web page or port                                                                                                |
+| 声明应用      | Declare app        | The dialog on the Services page that adds an existing web page, port or share                                            |
+| 运行设置      | Run settings       | The CPU, memory and disk of the containers' virtual machine on Windows and macOS                                         |
+| Podman 虚拟机 | Podman machine     | The Linux virtual machine of one account on Windows or macOS, where the containers run                                   |
+| 主目录共享    | Home shares        | One share per account, sharing that account's home folder                                                                |
+| 文件夹共享    | Folder shares      | A share of any path, with a choice of the accounts that can use it                                                       |
+| 持久          | Persistent         | The terminal session keeps running after the window closes                                                               |
 
 ## Devices and sharing
 

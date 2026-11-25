@@ -1,3 +1,8 @@
+---
+title: "One-click deploy CloudCLI"
+description: "Neutrino Hub deploys CloudCLI in one click on Windows, macOS or Linux: a web interface for Claude Code, so you keep coding with AI from your phone."
+---
+
 # CloudCLI
 
 CloudCLI is a web interface for AI coding tools such as Claude Code. On your phone, you can use it to have an AI tool change the code on your computer.
@@ -13,6 +18,10 @@ CloudCLI runs one instance per account, so enable it for each account you use it
 | Linux   | amd64, arm64         | 0.5.0                      |
 | Windows | amd64                | 0.5.0                      |
 | macOS   | Apple silicon, Intel | 0.5.0                      |
+
+## Multiple accounts
+
+CloudCLI runs as the system's default account, so the install needs no account choice. For another account, select **Configure**, check the account under **Enabled accounts**, and select **Apply CloudCLI**; see [Add more accounts](/en/deploy/on_a_machine#add-more-accounts).
 
 ## Install
 
@@ -30,7 +39,7 @@ CloudCLI looks for `claude` only in the following folders, which include the fol
 
 Install CloudCLI in the panel:
 
-1. Open the panel in a browser and sign in. In the lower part of the left sidebar, select the system to install on. Check that **Available accounts** lists your account. If it does not, add it as [Add an account](/en/deploy/on_a_machine#add-an-account) describes.
+1. Open the panel in a browser and sign in. In the lower part of the left sidebar, select the system to install on.
 1. In **Module configuration**, select **+ Add module**. In the dialog, select the **CloudCLI** card. When the card is highlighted, select **Close**.
 
    ![The module list with the Add module button marked in red](/guide/en/deploy_cloudcli_01_add_module.webp "Select + Add module")
@@ -47,21 +56,12 @@ Install CloudCLI in the panel:
    ![The tab showing installing, with Node.js as the first step](/guide/en/deploy_cloudcli_06_installing.webp "Installing")
    ![The tab showing installed, with the Start button marked in red](/guide/en/deploy_cloudcli_07_installed.webp "Select Start")
 
-1. The tab shows **running, no accounts**. Select **Configure** to expand the settings. Under **Enabled accounts**, select your account.
+1. The tab lists the step **Run npm for lab**, which installs CloudCLI for the default account lab with npm. The first time, it takes from a few minutes to over ten minutes, depending on the network and the system's speed. You can keep the page open or close it, and the step keeps running on the system.
+1. About half a minute after every step turns green, the tab shows **running**, and the installation is complete.
 
-   ![The tab showing running, no accounts, with the Configure button marked in red](/guide/en/deploy_cloudcli_17_started.webp "Select Configure")
-   ![The Enabled accounts field with the lab row marked in red](/guide/en/deploy_cloudcli_08_tick_account.webp "Select lab")
+   ![The tab showing running, with a green dot on every step listed](/guide/en/deploy_cloudcli_17_running.webp)
 
-1. Select **Apply CloudCLI**. The tab shows **installing** and runs the step **Run npm for lab**. This step takes from a few minutes to over ten minutes, depending on the network and the system's speed. You can keep the page open or close it, and the step keeps running on the system.
-
-   ![lab selected, with the Apply CloudCLI button marked in red](/guide/en/deploy_cloudcli_09_apply.webp "Select Apply CloudCLI")
-   ![The npm step running](/guide/en/deploy_cloudcli_10_npm_running.webp "Wait for the npm step")
-
-1. When the tab shows **running**, the installation is complete.
-
-   ![The tab showing running, with a green dot on every step listed](/guide/en/deploy_cloudcli_11_running.webp)
-
-If the npm step fails, the tab shows the reason, such as an address that cannot be reached. After the network recovers, select **Apply CloudCLI** again to retry. For other failures, see [Troubleshooting](/en/reference/troubleshooting).
+If the npm step fails, the tab shows the reason, such as an address that cannot be reached. After the network recovers, select **Start** again to retry. For other failures, see [Troubleshooting](/en/reference/troubleshooting).
 
 ## Use
 

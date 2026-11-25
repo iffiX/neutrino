@@ -1,8 +1,12 @@
+---
+description: "Neutrino Hub installs apps on any system that joined it, from the panel: pick the system, add the module, select Install. Every system works the same."
+---
+
 # Install an app on a system
 
 You can install an app from the panel on any system that has joined the hub. A system is a computer that has joined the hub, and the computer running the hub has joined already, so you start with one system.
 
-The steps use code-server as the example: add an account, add the module, install, start, configure, stop, change the version and uninstall. Other apps follow the same steps, and each app's own page covers its differences. The panel calls an app a **module**.
+The steps use code-server as the example: add the module, install, start, add more accounts, stop, change the version and uninstall. Other apps follow the same steps, and each app's own page covers its differences. The panel calls an app a **module**.
 
 ## Open the system's page
 
@@ -13,26 +17,36 @@ The steps use code-server as the example: add an account, add the module, instal
 
 The system's page opens on the right. Monitoring is at the top, and further down are the **Available accounts** and **Module configuration** areas. Every later step happens in these two areas.
 
-## Add an account
+## Accounts
 
-An app runs as a system account, and the files it creates belong to that account. Before anything else, set which accounts the hub can use. You add each account only one time.
+An app runs as a system account, and the files it creates belong to that account. **Available accounts** lists the accounts the hub can use.
+
+Every system has one default account, whose row carries the **Default** chip, and it cannot be changed later. Terminal, SSH server, File share and every app that runs as an account enable the default account automatically. So you choose no account when you install an app. The system that runs the hub got its default account in the [setup wizard](/en/hub/install). A system joined by a link or over SSH needs its first account first, as [Add the first account](#add-the-first-account) describes. On an upgrade from 0.6.1, the account added earliest on each system becomes its default account automatically. A system with no account yet shows **incomplete**.
+
+### Add another account
+
+If another account on this system also uses apps, add it to **Available accounts**. You add each account only one time.
 
 1. In the **Available accounts** area, select **Add** in the top-right corner.
 
-   ![The Available accounts area with the Add button boxed in red](/guide/en/deploy_on_a_machine_02_accounts_add.webp)
+   ![The Available accounts area with the lab row carrying the Default chip and the Add button boxed in red](/guide/en/deploy_on_a_machine_02_accounts.webp)
 
-1. In the form that opens, select the **System account** field. The list shows the accounts on this system, with each one's home folder on the right. Select the account you normally use, here lab.
+1. In the form that opens, select the **System account** field. The list shows the accounts on this system that can sign in and are not added yet, with each one's home folder on the right. Select the account to add, here dev.
 
-   ![The account form with the System account field boxed in red](/guide/en/deploy_on_a_machine_03_account_form.webp "Select System account")
-   ![The system account list with the lab row boxed in red](/guide/en/deploy_on_a_machine_04_account_pick.webp "Select lab")
+   ![The account form with the System account field boxed in red](/guide/en/deploy_on_a_machine_03_account_form2.webp "Select System account")
+   ![The system account list with the dev row boxed in red](/guide/en/deploy_on_a_machine_04_account_pick_dev.webp "Select dev")
 
 1. Leave the remaining fields empty and select **Save**.
 
-   ![The completed form with the Save button boxed in red](/guide/en/deploy_on_a_machine_05_account_save.webp)
+   ![The completed form with the Save button boxed in red](/guide/en/deploy_on_a_machine_05_account_save_dev.webp)
 
-The account appears in the list when it is added.
+1. The hub first tests that the account can sign in, then saves it. The account appears in the list when it is added.
 
-![The list with the new lab row boxed in red](/guide/en/deploy_on_a_machine_06_account_saved.webp)
+   ![The list with the new dev row under lab, boxed in red](/guide/en/deploy_on_a_machine_06_account_saved_dev.webp)
+
+If the test fails, the reason appears under the form and nothing is saved. On Linux and macOS, the test checks that the account has a login shell and that its home folder exists. On Windows, the test signs in one time with the password in the form.
+
+The list holds only accounts that can sign in. On Linux and macOS, these are the accounts with a login shell and a home folder that exists. On Windows, these are the accounts that have signed in on this computer at least one time. If the account you want is missing, sign in as it on the computer one time first.
 
 The other fields of the form usually stay empty, and the defaults work for every later step. The fields are:
 
@@ -42,13 +56,33 @@ The other fields of the form usually stay empty, and the defaults work for every
 | **Shell**                          | The program that runs when you open a terminal; when empty, the account's own shell                                             |
 | **AI tools use the hub's gateway** | This account's AI tools use the [AI gateway](/en/hub/ai_gateway). You cannot turn this switch on while the gateway has no model |
 
-On Windows, the form has an extra **Password** field. Enter the password this account uses to sign in to Windows. Neutrino Hub signs in as this account with it to run apps on this system. Enter the password even if you normally sign in with a PIN.
+On Windows, the form has an extra **Password** field. Enter the password this account uses to sign in to Windows. Neutrino Hub signs in as this account with it to run apps on this system. Enter the password even if you normally sign in with a PIN. With a wrong password, the form shows **Windows does not accept this password for dev. Type the right one and try again.** A later password change is tested the same way.
 
 ![The account form of a Windows system, with the Password field boxed in red](/guide/en/deploy_on_a_machine_44_windows_account.webp)
 
-If the Windows account has never signed in, you cannot enable SSH, VS Code, CloudCLI, Codeg or SiYuan; the limit does not apply to Containers. The tab shows **lab has never signed in on this machine. Sign in as lab once, then try again.** Sign in as this account on the computer one time, then return to the panel and select the same button again. Later, select **Edit** on the account's row to change its settings, or **Remove** to delete it; the dialog lists the apps that stop running as it.
+Later, select **Edit** on the account's row to change its settings, or **Remove** to delete it; the dialog lists the apps that stop running as it. The default account has no **Remove**.
 
-![The remove-account dialog with the Remove button boxed in red](/guide/en/deploy_on_a_machine_90_account_remove.webp)
+![The dialog that removes dev, with the Remove button boxed in red](/guide/en/deploy_on_a_machine_91_remove_dev.webp)
+
+### Add the first account
+
+A system joined by a link or over SSH starts with no account. Its name in the sidebar then shows a yellow dot and **incomplete**, and the top of its page shows **incomplete** too. Every module and **+ Add module** are grey, and the modules show **Add this machine's default account under Available accounts first.**
+
+![The page of an incomplete system, with Available accounts empty and the Add button boxed in red](/guide/en/deploy_on_a_machine_46_incomplete.webp)
+
+1. Select **Add** in the top-right corner of **Available accounts**, choose the account you normally use as the previous section describes, and select **Save**.
+1. A dialog shows **Make lab the default account** and says that it cannot be changed later. When this is the right account, select **Make default**.
+
+   ![The Make lab the default account dialog with the Make default button boxed in red](/guide/en/deploy_on_a_machine_47_first_confirm.webp)
+
+When the account carries the **Default** chip, **incomplete** disappears and the modules become available. Terminal and SSH server already have this account enabled.
+
+### A wrong default account
+
+The default account cannot be changed. If you chose the wrong account, or the system deleted it, join the system again:
+
+- A system joined by a link or over SSH: on the **Agents** page, select [Forget](/en/hub/agents#forget) on its row. Then [uninstall the agent](/en/hub/uninstall) on that computer, install it again, join the hub, and add the first account.
+- The system that runs the hub: [uninstall the hub](/en/hub/uninstall) together with its configuration, then install it again. The setup wizard asks for the account again.
 
 ## Add the module
 
@@ -67,7 +101,7 @@ This step only adds a tab, and the software stays uninstalled until the next sec
 
 ## Install
 
-1. In the list on the left, select the code-server row, and its tab appears on the right. The **Upstream** and **Service** chips after the title show its source and kind, which [App sources and kinds](/en/deploy/app_kinds) explains. Then select **Install**.
+1. In the list on the left, select the code-server row, and its tab appears on the right. The **Upstream** and **Account service** chips after the title show its source and kind, which [App sources and kinds](/en/deploy/app_kinds) explains. Then select **Install**.
 
    ![The module list with the code-server row boxed in red](/guide/en/deploy_on_a_machine_10_tab.webp "Select code-server")
    ![The code-server tab showing not installed, with the Install button boxed in red](/guide/en/deploy_on_a_machine_11_install.webp "Select Install")
@@ -92,33 +126,38 @@ Ayakaleaf's first start takes longer, and the **Cancel** button also shows durin
 
 ## Start
 
-An installed app is a service on this system. **Start** runs it and **Stop** stops it, however many accounts are enabled. Terminal, SSH server and Remote desktop are exceptions: they have no **Start** or **Stop**, and they run after you select the apply button in their settings.
+An installed app is a service on this system. **Start** runs it and **Stop** stops it. Terminal, SSH server and Remote desktop are exceptions, with no **Start** or **Stop**.
 
 1. Select **Start**, the button boxed in red in the previous picture.
-1. The tab shows **running, no accounts**: the app has started, but no account is enabled yet. The client does not list the app yet.
+1. The tab shows **running**. code-server already runs as the default account lab, with nothing more to set.
 
-   ![The tab showing running, no accounts, with the Configure button boxed in red](/guide/en/deploy_on_a_machine_19_started_no_account.webp)
+   ![The tab showing running, with the Configure button boxed in red](/guide/en/deploy_on_a_machine_19_running.webp)
 
-## Configure
+The app now appears on the client's **Apps** page, with the account name after its name, for example `code-server (lab)`. Each app's own page explains how to use it.
 
-Configuring chooses the accounts the app runs as. The app runs one instance for each account you select.
+## Add more accounts
 
-1. Select **Configure**, and the settings open under the tab. Under **Enabled accounts**, select your account. The button further down becomes active; select **Apply code-server**.
+Terminal, SSH server, File share, VS Code, code-server, CloudCLI, Codeg, SiYuan, Claude Code, Codex and OpenCode can add more accounts. The app runs one instance for each account you enable. The default account stays enabled and cannot be cleared. An account must be in **Available accounts** before you enable it; see [Add another account](#add-another-account).
 
-   ![The Enabled accounts field with the lab row boxed in red](/guide/en/deploy_on_a_machine_15_tick_account.webp "Select lab")
-   ![lab selected, with the Apply code-server button boxed in red](/guide/en/deploy_on_a_machine_16_apply.webp "Select Apply code-server")
+1. Select **Configure**, and the settings open under the tab. Under **Enabled accounts**, the default account lab is already selected and grey. Select the account to add, here dev.
 
-1. The account shows **running**, and **Applied.** appears under it. The configuration is complete, and the tab also shows **running**.
+   ![The Enabled accounts field with lab selected and the dev row boxed in red](/guide/en/deploy_on_a_machine_15_tick_dev.webp)
 
-   ![lab showing running, with Applied. under it](/guide/en/deploy_on_a_machine_17_applying.webp)
+1. The button further down becomes active; select **Apply code-server**.
+
+   ![dev selected, with the Apply code-server button boxed in red](/guide/en/deploy_on_a_machine_16_apply_dev.webp)
+
+1. A few seconds later, dev shows **running**, and the bar under the list returns to **Nothing changed here.** The client now also lists `code-server (dev)`.
+
+   ![lab and dev both showing running](/guide/en/deploy_on_a_machine_17_applied_dev.webp)
 
 Select **Hide configuration** to close the settings, and the log box then shows the app's own log.
 
 ![The tab showing running, with output in the log box](/guide/en/deploy_on_a_machine_18_running.webp)
 
-The app now appears on the client's **Apps** page, with the account name after its name, for example `code-server (lab)`. Each app's own page explains how to use it. Adding an account or changing a setting does not start the app. You can also configure first and select **Start** later, and the configuration then shows **The module is stopped; these settings take effect at the next Start.**
+Adding an account or changing a setting does not start the app. While the app is stopped, you can also configure first and select **Start** later, and the configuration then shows **The module is stopped; these settings take effect at the next Start.**
 
-Gitea, Containers, Hermes WebUI and Ayakaleaf have no **Enabled accounts** field, and each runs one instance per system. For Gitea, Containers and Ayakaleaf, **Configure** opens their own settings, which their pages describe. Hermes WebUI has no **Configure** button.
+The other apps run one instance per system and have no **Enabled accounts** field. On Windows and macOS, Containers runs as the default account. Hermes WebUI, Ayakaleaf and AstrBot follow the default account's **AI tools use the hub's gateway** switch, and use the AI gateway while it is on. For Gitea, Containers and Ayakaleaf, **Configure** opens their own settings, which their pages describe. Hermes WebUI and AstrBot have no **Configure** button.
 
 ## Stop
 
@@ -158,7 +197,7 @@ The **Update** button beside it switches straight to the newest version. The new
 
 ![Already on the newest version 4.145.2, with the Update button grey](/guide/en/deploy_on_a_machine_38_updated.webp)
 
-To return to the tested version, select **Follow the tested version** at the top of the dialog. The panel has no switch for automatic updates. Hermes WebUI, File share and Containers on Linux have no version choice, and their dialog shows one version you cannot select. Gitea, Ayakaleaf, Codeg and CloudCLI carry **Upgrade only** on their tab. In their dialog, the versions older than the installed one are grey and cannot be selected; see [App kinds](/en/deploy/app_kinds#upgrade-only).
+To return to the tested version, select **Follow the tested version** at the top of the dialog. The panel has no switch for automatic updates. Hermes WebUI, File share and Containers on Linux have no version choice, and their dialog shows one version you cannot select. Gitea, Ayakaleaf, AstrBot, Codeg and CloudCLI carry **Upgrade only** on their tab. In their dialog, the versions older than the installed one are grey and cannot be selected; see [App kinds](/en/deploy/app_kinds#upgrade-only).
 
 ## Uninstall
 
@@ -174,11 +213,11 @@ To return to the tested version, select **Follow the tested version** at the top
 
    ![The tab showing not installed, with the Install button available again](/guide/en/deploy_on_a_machine_42_uninstalled.webp)
 
-Uninstalling ends every share of the app, and you must generate new links to use it again. The tab stays in the list; to hide it, deselect the app in **+ Add module**. When you install the same app again, the accounts selected last time stay selected, and the app runs after you select **Start**. While another app needs Containers, uninstall that app before you uninstall Containers.
+Uninstalling ends every share of the app, and you must generate new links to use it again. The tab stays in the list; to hide it, deselect the app in **+ Add module**. When you install the same app again, the accounts enabled last time stay enabled, and the app runs after you select **Start**. While another app needs Containers, uninstall that app before you uninstall Containers.
 
 ## Apps that need containers
 
-Hermes WebUI and Ayakaleaf run in containers, and their cards show **Needs: Containers**.
+Hermes WebUI, Ayakaleaf and AstrBot run in containers, and their cards show **Needs: Containers**.
 
 ![The Hermes WebUI card showing that it needs Containers, boxed in red](/guide/en/deploy_on_a_machine_20_requires_card.webp)
 
@@ -186,14 +225,12 @@ If Containers is not installed yet, **Install** first opens a confirmation that 
 
 ![The confirmation listing Containers, with the No and Yes buttons](/guide/en/deploy_on_a_machine_21_requires_dialog.webp)
 
-On Linux, this is the last step. On Windows and macOS, if you have not chosen an account before, **Choose the account that runs the containers** opens next. The containers run in a virtual machine that belongs to an account. Fill in the dialog:
+On Linux, this is the last step. On Windows and macOS, the containers run in a virtual machine of the default account, and the first install opens **Run settings** next.
 
-1. Under **Account**, select an account.
-1. On Windows, if this account has no saved password, enter its **Password**. The hub verifies the password on the spot, and with a wrong password nothing is installed.
 1. Check the default values of **CPUs**, **Memory (GiB)** and **Disk limit (GiB)**. After the virtual machine's first start, a CPU or memory change needs a restart of the virtual machine, and the disk can only grow.
 1. Select **Install**.
 
-![The Choose the account that runs the containers dialog](/guide/en/windows_account_dialog.webp)
+![The Run settings dialog with the Install button boxed in red](/guide/en/containers_run_settings.webp)
 
 On Windows, installing Containers can need a restart of the computer. The Containers tab then shows **Windows needs a restart to finish turning on WSL; the install goes on after it.** with **Restart now** beside it. Save your work first, because every program open on this system closes; then select **Restart now**, and **Restart** in the dialog. The install continues automatically after the restart, and apps that wait for Containers show the same button on their tabs.
 

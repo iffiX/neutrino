@@ -1,3 +1,7 @@
+---
+description: "Neutrino Hub sets up SakuraFrp for you, so your phone and laptop reach your home computer while away without a public IP. Enter your token and turn it on."
+---
+
 # SakuraFrp
 
 SakuraFrp is a third-party tunnel service. The hub runs frpc, which connects to a SakuraFrp node, and the node forwards a public port to the hub's connection port. Content between the devices and the hub is encrypted, so the node cannot read it.

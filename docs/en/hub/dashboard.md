@@ -1,3 +1,7 @@
+---
+description: "Neutrino Hub shows traffic, the state of every system and AI usage on one dashboard page."
+---
+
 # Dashboard
 
 **Dashboard** is the first page you see after you sign in to the panel, and it shows traffic, systems and AI usage.

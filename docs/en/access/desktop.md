@@ -1,3 +1,7 @@
+---
+description: "Neutrino Hub brings your home computer's apps, files, terminal and desktop to your laptop with a desktop client for Windows, macOS and Linux."
+---
+
 # Desktop client
 
 The desktop client is a window program on your computer. In its window, you use the apps, files, terminals and desktops on each system.

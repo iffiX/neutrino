@@ -1,15 +1,19 @@
+---
+description: "微子中枢在每个应用上标出来源和种类：谁负责安装和升级，应用为整个系统运行一份还是每个账户各一份。"
+---
+
 # 应用的分类
 
-应用的分类是面板在每个模块标签上显示的两个小标签：来源和种类。来源说明由谁负责安装、升级和卸载这份软件，种类说明它是不是一直在后台运行。
+应用的分类是面板在每个模块标签上显示的两个小标签：来源和种类。来源说明由谁负责安装、升级和卸载这份软件，种类说明它运行几份、以谁的身份运行。
 
 <Facts systems="Linux,Windows,macOS" editions="国际版,国内版" since="0.6.0" />
 
-你在系统页面的 **模块配置** 里点一个模块，标签的标题后面、运行状态前面就是这两个小标签。下图的 **终端** 显示 **自带** 和 **服务**。
+你在系统页面的 **模块配置** 里点一个模块，标签的标题后面、运行状态前面就是这两个小标签。下图的 **终端** 显示 **自带** 和 **账户服务**。
 
 ![系统页面的模块配置，终端标签的标题后面有两个小标签](/guide/zh/deploy_app_kinds_00_page.webp "模块配置")
-![终端标签的标题，自带标红，后面是服务和运行状态](/guide/zh/deploy_app_kinds_01_chips.webp "来源和种类")
+![终端标签的标题，自带标红，后面是账户服务和运行状态](/guide/zh/deploy_app_kinds_01_chips.webp "来源和种类")
 
-**模块配置** 里的模块按这个顺序排列：终端、SSH 服务器、远程桌面、文件共享、Gitea、Ollama、VS Code、code-server、CloudCLI、Codeg、Claude Code、Codex、OpenCode、思源笔记、容器、Hermes WebUI、Ayakaleaf。
+**模块配置** 里的模块按这个顺序排列：终端、SSH 服务器、远程桌面、文件共享、Gitea、Ollama、VS Code、code-server、CloudCLI、Codeg、Claude Code、Codex、OpenCode、思源笔记、容器、Hermes WebUI、Ayakaleaf、AstrBot。
 
 ## 来源
 
@@ -18,24 +22,25 @@
 | **自带**   | 随被控端一起安装，由被控端负责                                                       | 终端、SSH 服务器、远程桌面                                                                                              |
 | **系统**   | 由操作系统负责：通过系统的软件包管理器安装，或者是系统自带的服务。你原来就安装的也算 | 文件共享；Linux 上的容器                                                                                                |
 | **外部源** | 中枢从发布方下载，版本由中枢决定                                                     | Gitea、Ollama、VS Code、code-server、CloudCLI、Codeg、思源笔记、Claude Code、Codex、OpenCode；Windows 和 macOS 上的容器 |
-| **容器**   | 容器模块的 Podman 拉取的镜像                                                         | Hermes WebUI、Ayakaleaf                                                                                                 |
+| **容器**   | 容器模块的 Podman 拉取的镜像                                                         | Hermes WebUI、Ayakaleaf、AstrBot                                                                                        |
 
 来源是 **系统** 的软件由系统的软件包管理器升级和卸载，不管它是不是微子·中枢安装的。
 
-如果系统上已经有你自己安装的同名软件，微子·中枢直接接管它，没有单独的来源。系统加入中枢时，被控端只读取这些软件，不安装、不写文件、也不改服务。你第一次按这个模块的按钮时，被控端才开始管理它。Claude Code、Codex 和 OpenCode 例外：模块总是安装自己的副本，你勾选账户时可以选择是否换成这个副本，见 [Claude Code](/deploy/claude_code)、[Codex](/deploy/codex) 和 [OpenCode](/deploy/opencode)。Ollama 也不同：在 Windows 和 macOS 上，如果你安装过 Ollama 官方的 App，安装 Ollama 模块后，中枢停止这个 App，并关掉它的开机自动启动，卸载模块后恢复，见 [Ollama](/deploy/ollama)。
+如果系统上已经有你自己安装的同名软件，微子·中枢直接接管它，没有单独的来源。系统加入中枢时，被控端只读取这些软件，不安装、不写文件、也不改服务。你第一次按这个模块的按钮时，被控端才开始管理它。Claude Code、Codex 和 OpenCode 例外：模块总是安装自己的副本，排在启用账户的 PATH 最前面，你自己安装的那一份不受影响，见 [Claude Code](/deploy/claude_code)、[Codex](/deploy/codex) 和 [OpenCode](/deploy/opencode)。Ollama 也不同：在 Windows 和 macOS 上，如果你安装过 Ollama 官方的 App，安装 Ollama 模块后，中枢停止这个 App，并关掉它的开机自动启动，卸载模块后恢复，见 [Ollama](/deploy/ollama)。
 
 ## 种类
 
-| 种类         | 含义                                             | 模块                                          |
-| ------------ | ------------------------------------------------ | --------------------------------------------- |
-| **服务**     | 有启动和停止，启动后一直在后台运行，直到你停止它 | Claude Code、Codex 和 OpenCode 以外的所有模块 |
-| **普通程序** | 没有启动和停止，只在你运行它时运行               | Claude Code、Codex、OpenCode                  |
+| 种类         | 含义                                                                          | 模块                                                                      |
+| ------------ | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| **系统服务** | 整个系统运行一份，以模块自己的服务账户、root 或 SYSTEM 运行，或者在容器里运行 | 远程桌面、文件共享、容器、Ollama、Gitea、Hermes WebUI、Ayakaleaf、AstrBot |
+| **账户服务** | 每个启用的账户各运行一份，以这个账户的身份运行                                | 终端、SSH 服务器、VS Code、code-server、CloudCLI、Codeg、思源笔记         |
+| **普通程序** | 没有启动和停止，你运行它时才运行，以你的身份运行                              | Claude Code、Codex、OpenCode                                              |
 
-终端、SSH 服务器和远程桌面的标签上没有 **启动** 按钮，它们也是服务，由被控端运行。
+终端、SSH 服务器和远程桌面由被控端运行，标签上没有 **启动** 按钮，也照样显示种类。
 
 ## 只能升级
 
-Gitea、Ayakaleaf、Codeg 和 CloudCLI 的标签上还有第三个小标签 **只能升级**。这些应用的数据升级后不能退回旧版本，所以 **安装另一个版本…** 的列表里，比当前版本旧的版本是灰色的，不能选。
+Gitea、Ayakaleaf、AstrBot、Codeg 和 CloudCLI 的标签上还有第三个小标签 **只能升级**。这些应用的数据升级后不能退回旧版本，所以 **安装另一个版本…** 的列表里，比当前版本旧的版本是灰色的，不能选。
 
 ## 安装文件的类型
 
@@ -47,7 +52,7 @@ Gitea、Ayakaleaf、Codeg 和 CloudCLI 的标签上还有第三个小标签 **�
 | 安装包       | Windows 的 `msi`、macOS 的 `pkg`              | 放进模块的程序目录，再交给系统的安装程序安装                                    | Windows 和 macOS 上的容器                                                                                                             |
 | 磁盘映像     | macOS 的 `dmg`、Windows 的 `nsis`             | 从里面取出程序，复制到模块的程序目录，设为只读，映像里的程序不运行              | Windows 和 macOS 上的思源笔记                                                                                                         |
 | 虚拟机映像   | `tar_zst`、`raw_zst`                          | 中枢下载后原样放进模块的程序目录，交给 Podman 创建虚拟机                        | Windows 和 macOS 上的容器                                                                                                             |
-| 容器镜像     | `image`                                       | 由系统上的 Podman 从镜像仓库拉取                                                | Hermes WebUI、Ayakaleaf                                                                                                               |
+| 容器镜像     | `image`                                       | 由系统上的 Podman 从镜像仓库拉取                                                | Hermes WebUI、Ayakaleaf、AstrBot                                                                                                      |
 | 单个程序文件 | `binary`                                      | 保持发布方的原始文件，加上执行权限                                              | Gitea                                                                                                                                 |
 | npm 包       | `npm`                                         | 以账户的身份用 npm 安装到账户的数据目录                                         | CloudCLI                                                                                                                              |
 
@@ -64,7 +69,7 @@ Gitea、Ayakaleaf、Codeg 和 CloudCLI 的标签上还有第三个小标签 **�
 
 - **单个程序文件：** 在 Linux 上放在 `/usr/local/bin/`，在 macOS 和 Windows 上放在模块的程序目录。新版本整个替换旧文件。
 - **容器镜像：** 放在 Podman 自己的存储里，不放进模块的程序目录。Linux 上是 root 的存储，Windows 和 macOS 上是 Podman 虚拟机里的存储。
-- **普通程序：** 程序放在模块的程序目录。被控端把这个目录排到勾选账户的 PATH 最前面，见 [Claude Code](/deploy/claude_code) 的“设置”一节。
+- **普通程序：** 程序放在模块的程序目录。被控端把这个目录排到启用账户的 PATH 最前面，见 [Claude Code](/deploy/claude_code) 的“设置”一节。
 - **安装包：** 系统的安装程序把程序装到它自己的位置。Podman 的位置是：Windows 上 `C:\Program Files\Podman\`；macOS 上 `/opt/podman/`。
 
 在一个系统上安装应用的步骤见[在一个系统上安装应用](/deploy/on_a_machine)。

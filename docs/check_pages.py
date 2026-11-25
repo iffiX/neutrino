@@ -17,9 +17,13 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 SKIP = {"index.md", "app.md", "README.md", "SOURCES.md", "layout_demo.md"}
-EXPECTED_PAGES = 61
+EXPECTED_PAGES = 62
 
 VALUE_MIN, VALUE_MAX = 10, 60
+# The search description: its subject, its longest length, and words it never holds.
+PRODUCT = "微子中枢"
+DESCRIPTION_MAX = 80
+SEARCH_BANNED = ["VPN", "代理", "翻墙", "内网穿透", "隧道", "NAS", "收费", "proxy", "Proxy", "tunnel", "Tunnel"]
 TOP_LINES_MAX = 10
 PAGE_LINES_MAX = 60
 LONG_PAGES = {
@@ -39,6 +43,8 @@ LONG_PAGES = {
     "access/desktop.md": 80,
     "share/web_share.md": 80,
     "deploy/containers.md": 80,
+    "deploy/on_a_machine.md": 80,
+    "hub/agents.md": 80,
 }
 CLAUSE_MAX = 40
 LABEL_MAX = 30
@@ -49,7 +55,7 @@ APP_PAGES = {
     f"deploy/{name}.md"
     for name in (
         "cloudcli codeg hermes_webui vscode code_server terminal ssh gitea "
-        "ayakaleaf siyuan remote_desktop file_share containers claude_code codex opencode ollama"
+        "ayakaleaf siyuan remote_desktop file_share containers claude_code codex opencode ollama astrbot"
     ).split()
 }
 APP_HEADINGS = ["支持的系统", "安装", "使用", "分享", "注意", "设置", "卸载"]
@@ -59,8 +65,8 @@ BANNED_ALWAYS = [
     "—", "Jupyter", "模组", "来自：", "待核", "给谁看", "中微子",
     "Web 分享", "网页分享", "设备页", "证书不匹配", "综上", "总之", "以上就是", "装上",
 ]
-# Words a page uses only inside a label quoted from the screen.
-LABEL_ONLY = ["机器"]
+# Words a page uses only inside a label quoted from the screen; 机器人, a chat bot, is another word.
+LABEL_ONLY = [re.compile(r"机器(?!人)")]
 # Screen labels quoted in bold that hold a banned word or mark.
 VENDOR_LABELS = ["**VPN与设备管理**", "**OpenAI 兼容 — /chat/completions**"]
 # Everyday words that stand in for a term, or lines that talk about the page.
@@ -94,9 +100,50 @@ def table_cells(line: str) -> list[str]:
     return [visible(cell) for cell in line.strip().strip("|").split("|")]
 
 
+
+def split_front(text: str) -> tuple[dict, str]:
+    """Return a page's frontmatter keys and the text after the frontmatter."""
+    if not text.startswith("---\n"):
+        return {}, text
+    end = text.index("\n---\n", 4)
+    front = {}
+    for line in text[4:end].splitlines():
+        key, _, value = line.partition(":")
+        front[key.strip()] = value.strip().strip('"')
+    return front, text[end + 5 :]
+
+
+def app_title(heading: str) -> str:
+    """Return the search title of an app page whose H1 is the heading."""
+    return ("一键部署 " if re.match(r"[A-Za-z]", heading) else "一键部署") + heading
+
+
+def check_search_text(front: dict, relative: str, text: str) -> list:
+    """Collect the failures of a page's search title and description."""
+    failures = []
+    title = front.get("title", "")
+    heading = re.search(r"^# (.+)$", text, re.M)
+    if relative in APP_PAGES and heading:
+        if title.lower() != app_title(heading.group(1).strip()).lower():
+            failures.append(f"app page title is not {app_title(heading.group(1).strip())}")
+    elif title:
+        failures.append("a search title outside an app page")
+    description = front.get("description", "")
+    if not description:
+        failures.append("no description in the frontmatter")
+    elif len(description) > DESCRIPTION_MAX:
+        failures.append(f"description is {len(description)} characters")
+    elif not description.startswith(PRODUCT):
+        failures.append(f"description does not start with {PRODUCT}")
+    for word in SEARCH_BANNED:
+        if word in description or word in title:
+            failures.append(f"banned word in the search text: {word}")
+    return failures
+
 def check_page(relative: str, text: str) -> dict:
     """Measure one page and collect its failures."""
-    failures = []
+    front, text = split_front(text)
+    failures = check_search_text(front, relative, text)
     source = text.splitlines()
     title_at = next((i for i, l in enumerate(source) if l.strip()), 0)
     if not source[title_at].startswith("# "):
@@ -178,8 +225,8 @@ def check_page(relative: str, text: str) -> dict:
     if PASSIVE.search(unlabelled):
         failures.append("a sentence with 被")
     for word in LABEL_ONLY:
-        if word in unlabelled:
-            failures.append(f"{word} outside a screen label")
+        if word.search(unlabelled):
+            failures.append(f"{word.pattern[:2]} outside a screen label")
     prose = "\n".join(
         line for line in rest if not line.lstrip().startswith(("![", "<div", "```"))
     )
@@ -237,7 +284,7 @@ def main() -> int:
 
     openings: dict[str, list[str]] = {}
     for path in pages:
-        body = [l for l in path.read_text(encoding="utf-8").splitlines() if l.strip()]
+        body = [l for l in split_front(path.read_text(encoding="utf-8"))[1].splitlines() if l.strip()]
         if len(body) > 1:
             openings.setdefault(visible(body[1])[:6], []).append(path.relative_to(ROOT).as_posix())
     for start, names in openings.items():

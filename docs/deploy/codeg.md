@@ -1,3 +1,8 @@
+---
+title: "一键部署 Codeg"
+description: "微子中枢一键部署 Codeg：一个网页里用 Claude Code、Codex、Gemini，Windows、macOS、Linux 都支持，手机上接着对话。"
+---
+
 # Codeg
 
 Codeg 是 AI 编程工作台。你可以在同一个网页里使用 Claude Code、Codex 和 Gemini，并在另一台设备上继续对话。
@@ -14,11 +19,15 @@ Codeg 是 AI 编程工作台。你可以在同一个网页里使用 Claude Code�
 | Windows | amd64             | 0.5.1                   |
 | macOS   | Apple 芯片、Intel | 0.5.1                   |
 
+## 支持多账户
+
+Codeg 以这个系统的默认账户运行，安装时不用选择账户。如果其他账户也要使用，按 **配置**，在 **启用的账户** 里勾选它，再按 **应用 Codeg**，见[添加更多账户](/deploy/on_a_machine#添加更多账户)。
+
 ## 安装
 
 Codeg 不包含 AI 工具。开始之前，你要先用你的账户在这个系统上安装要使用的工具，并登录一次。其中两个工具有现成的模块，见 [Claude Code](/deploy/claude_code) 和 [Codex](/deploy/codex)。Claude Code 的安装方法见 [Claude Code 的安装页](https://code.claude.com/docs/en/setup)。
 
-1. 在浏览器里打开面板并登录，再到左侧栏的下半部分，点你要安装到的系统。确认 **可用账户** 里有你的账户。如果没有，先按[添加账户](/deploy/on_a_machine#添加账户)的步骤添加它。
+1. 在浏览器里打开面板并登录，再到左侧栏的下半部分，点你要安装到的系统。
 1. 在 **模块配置** 区域，按 **+ 添加模块**。在弹窗里勾选 **Codeg** 卡片，卡片亮起后按 **关闭**。
 
    ![模块列表，添加模块按钮标红](/guide/zh/deploy_codeg_01_add_module.webp "按 + 添加模块")
@@ -35,15 +44,9 @@ Codeg 不包含 AI 工具。开始之前，你要先用你的账户在这个系�
    ![标签显示安装中，下面列出每一步](/guide/zh/deploy_codeg_06_installing.webp "安装中")
    ![标签显示已安装，启动按钮标红](/guide/zh/deploy_codeg_07_installed.webp "按 启动")
 
-1. 标签变成 **运行中，没有账户**。按 **配置**，下面会展开设置。在 **启用的账户** 里勾选你的账户。
+1. 标签变成 **运行中**，这时安装完成。
 
-   ![标签显示运行中，没有账户，配置按钮标红](/guide/zh/deploy_codeg_17_started.webp "按 配置")
-   ![启用的账户一栏，lab 这一行标红](/guide/zh/deploy_codeg_08_tick_account.webp "勾选 lab")
-
-1. 按 **应用 Codeg**。账户后面出现 **运行中**，下面也出现 **已应用。** 这时安装完成。
-
-   ![勾选了 lab，应用 Codeg 按钮标红](/guide/zh/deploy_codeg_09_apply.webp "按 应用 Codeg")
-   ![lab 后面显示运行中，下面显示已应用](/guide/zh/deploy_codeg_10_applying.webp "已应用")
+   ![标签显示运行中](/guide/zh/deploy_codeg_17_running.webp)
 
 ## 使用
 

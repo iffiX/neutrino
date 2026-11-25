@@ -1,3 +1,7 @@
+---
+description: "Neutrino Hub puts your home computer's apps, files, terminal and desktop on your Android phone: scan once to join, then open them anywhere."
+---
+
 # Android app
 
 The Android app is the phone client of Neutrino Hub. With only your phone, you use the apps, files, terminals and desktops on your computers.

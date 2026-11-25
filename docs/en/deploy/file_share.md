@@ -1,3 +1,8 @@
+---
+title: "One-click deploy file share"
+description: "Neutrino Hub sets up file sharing in one click: folders of your home computer mount as a drive on your laptop, on Windows, macOS or Linux."
+---
+
 # File share
 
 File share is the feature that mounts a folder on your system at a path or drive letter on the client, where you read and write its files directly.
@@ -20,9 +25,13 @@ The kinds of share are:
 | Windows                          | amd64                | 0.5.0                      | The system's built-in sharing service, with nothing to download       |
 | macOS                            | Apple silicon, Intel | 0.5.0                      | The system's built-in sharing service, with nothing to download       |
 
+## Multiple accounts
+
+File share always shares the default account's home folder. For another account's home share, select **Configure**, check the account under **Home shares**, and select **Apply file share**; see [Add more accounts](/en/deploy/on_a_machine#add-more-accounts).
+
 ## Install
 
-1. Open the panel in a browser, sign in, and select the system to share files from in the lower half of the sidebar. Check that **Available accounts** lists your account. If it does not, add it first with the steps in [Add an account](/en/deploy/on_a_machine#add-an-account).
+1. Open the panel in a browser, sign in, and select the system to share files from in the lower half of the sidebar.
 1. In the **Module configuration** area, select **+ Add module**. In the dialog, scroll down and select the **File share** card, then select **Close** after the card is highlighted.
 
    ![The module list with the Add module button boxed in red](/guide/en/deploy_file_share_01_add_module.webp "Select + Add module")
@@ -39,19 +48,13 @@ The kinds of share are:
    ![The tab showing installing, with every step listed](/guide/en/deploy_file_share_06_installing.webp "Installing")
    ![The tab showing installed, with the Start button boxed in red](/guide/en/deploy_file_share_07_installed.webp "Select Start")
 
-1. The tab shows **running, no accounts**. Select **Configure**, and the settings open under it. Under **Home shares**, select your account. The log box can show a few `No such file or directory` lines; if the tab then shows **running**, ignore them.
+1. The tab shows **running**, and the install is complete. The home share of the default account lab is already on, and it stays on.
 
-   ![The tab showing running, no accounts, with the Configure button boxed in red](/guide/en/deploy_file_share_17_started.webp "Select Configure")
-   ![The Home shares field with the lab row boxed in red](/guide/en/deploy_file_share_08_tick_account.webp "Select lab")
+   ![The tab showing running](/guide/en/deploy_file_share_17_running.webp)
 
-1. Select **Apply file share**. The account shows **running**, and **Applied.** appears under it. The home share is now on.
+You can also share one more folder. An account that uses a folder share must first be checked under **Home shares**, and the default account already is. To add a folder share:
 
-   ![lab selected, with the Apply file share button boxed in red](/guide/en/deploy_file_share_09_apply.webp "Select Apply file share")
-   ![lab showing running, with Applied. under it](/guide/en/deploy_file_share_10_applying.webp "Applied")
-
-You can also share one more folder. A folder share's accounts must first be selected under **Home shares**, so do not skip the previous steps. To add a folder share:
-
-1. Scroll down to **Folder shares**, and select **Add** on the right.
+1. Select **Configure**, and the settings open under the tab. Scroll down to **Folder shares**, and select **Add** on the right.
 
    ![The Folder shares field with the Add button boxed in red](/guide/en/deploy_file_share_11_folder_add.webp)
 
@@ -139,15 +142,15 @@ On systems such as Rocky and RHEL, when SELinux is in enforcing mode, File share
 
 ## Settings
 
-Apart from selecting accounts, the following settings can stay at their defaults:
+The following settings can stay at their defaults:
 
-| Setting                    | Where                                                        | Purpose                                                                          |
-| -------------------------- | ------------------------------------------------------------ | -------------------------------------------------------------------------------- |
-| **Home shares**            | **Configure** on the tab                                     | Select accounts; takes effect after **Apply file share**                         |
-| **Folder shares**          | **Configure** on the tab                                     | **Add**, **Edit**, **Remove**; takes effect on save, and the name cannot change  |
-| **Share path**             | Account form in **Available accounts**                       | Location of the home share; when empty, the home folder                          |
-| **Now serving**            | **Configure** on the tab                                     | Shows who is connected to which share, and the disk usage                        |
-| **SMB password · account** | **Generated by the hub** section of the **Credentials** page | The client gets it automatically; you need it only to sign in to a share by hand |
+| Setting                    | Where                                                        | Purpose                                                                                 |
+| -------------------------- | ------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
+| **Home shares**            | **Configure** on the tab                                     | The default account is always on; other accounts take effect after **Apply file share** |
+| **Folder shares**          | **Configure** on the tab                                     | **Add**, **Edit**, **Remove**; takes effect on save, and the name cannot change         |
+| **Share path**             | Account form in **Available accounts**                       | Location of the home share; when empty, the home folder                                 |
+| **Now serving**            | **Configure** on the tab                                     | Shows who is connected to which share, and the disk usage                               |
+| **SMB password · account** | **Generated by the hub** section of the **Credentials** page | The client gets it automatically; you need it only to sign in to a share by hand        |
 
 **Now serving** is at the bottom of the settings, with a disk usage line under each share.
 

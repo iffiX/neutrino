@@ -1,3 +1,8 @@
+---
+title: "One-click deploy Hermes WebUI"
+description: "Neutrino Hub deploys Hermes WebUI in one click on Windows, macOS or Linux: an AI assistant with memory and skills, on your phone and shared by link."
+---
+
 # Hermes WebUI
 
 Hermes WebUI is the web interface of Hermes Agent, an AI assistant. Hermes Agent supports memory and skills, and you can open it on your phone at any time.
@@ -16,7 +21,7 @@ Hermes WebUI runs in [Containers](/en/deploy/containers), with one instance per 
 
 ## Install
 
-Every model in Hermes WebUI comes from the AI gateway. Before you start, add an API key or a subscription account in the [AI gateway](/en/hub/ai_gateway).
+Hermes WebUI follows the default account's **AI tools use the hub's gateway** switch. While the switch is on, every model in it comes from the AI gateway. Before you start, add an API key or a subscription account in the [AI gateway](/en/hub/ai_gateway). Then edit the default account on the system's page and turn the switch on, as [Systems joined to the hub](/en/hub/ai_gateway#systems-joined-to-the-hub) describes.
 
 1. Open the panel in a browser and sign in. In the lower part of the left sidebar, select the system to install on.
 1. In **Module configuration**, select **+ Add module**. In the dialog, select the **Hermes WebUI** card, which shows **Needs: Containers**. When the card is highlighted, select **Close**.
@@ -30,9 +35,9 @@ Every model in Hermes WebUI comes from the AI gateway. Before you start, add an 
    ![The module list with the Hermes WebUI row marked in red](/guide/en/deploy_hermes_webui_04_tab.webp "Select Hermes WebUI")
    ![The Hermes WebUI tab showing not installed, with the Install button marked in red](/guide/en/deploy_hermes_webui_05_install.webp "Select Install")
 
-1. On Windows and macOS, the first installation then opens **Choose the account that runs the containers**. Choose an account and select **Install**; the details are in [Apps that need containers](/en/deploy/on_a_machine#apps-that-need-containers). Linux has no such dialog.
+1. On Windows and macOS, the first installation then opens **Run settings**. Check **CPUs**, **Memory (GiB)** and **Disk limit (GiB)**, then select **Install**; the details are in [Apps that need containers](/en/deploy/on_a_machine#apps-that-need-containers). Linux has no such dialog.
 
-   ![The Choose the account that runs the containers dialog](/guide/en/windows_account_dialog.webp)
+   ![The Run settings dialog with the Install button boxed in red](/guide/en/containers_run_settings.webp)
 
 1. On Windows, if a restart is needed, the tab shows a notice with **Restart now** beside it. Select **Restart now**. After the computer restarts, the installation continues automatically.
 
@@ -95,6 +100,8 @@ When Containers stops, Hermes WebUI also shows **stopped**. When Containers star
 ## Settings
 
 Hermes WebUI has no **Configure** button, and its tab holds only the status, the journal and the action buttons. To change the model, choose it on the Hermes page.
+
+When you turn off the default account's **AI tools use the hub's gateway**, Hermes WebUI stops using the AI gateway. The default model and other settings you saved on its page stay. Turn the switch on again, and it uses the AI gateway again.
 
 The Hermes page is dark by default. To switch to light, select the gear in the lower-left corner of the page, then choose **Light** under **Theme** in **Appearance**.
 

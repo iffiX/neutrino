@@ -1,10 +1,15 @@
+---
+title: "One-click deploy terminal"
+description: "Neutrino Hub opens your home computer's terminal on your phone or laptop, on Windows, macOS or Linux. With Persistent on, commands keep running."
+---
+
 # Terminal
 
 Terminal is a window where you control a computer by typing commands. You can open it on a phone too. With **Persistent** on, commands keep running after you close the window.
 
 <Facts systems="Linux,Windows,macOS" editions="国际版,国内版" since="0.5.0" />
 
-Terminal is installed with Neutrino Hub on every system that has joined the hub, so there is nothing to download. At first it has no enabled account, so choose an account before you use it.
+Terminal is installed with Neutrino Hub on every system that has joined the hub, so there is nothing to download.
 
 ## Supported systems
 
@@ -14,25 +19,22 @@ Terminal is installed with Neutrino Hub on every system that has joined the hub,
 | Windows | amd64                | 0.5.0                      | PowerShell                |
 | macOS   | Apple silicon, Intel | 0.5.0                      | The account's login shell |
 
+## Multiple accounts
+
+Terminal runs as the system's default account. For another account, check it under **Enabled accounts** on the **Terminal** tab and select **Apply terminal**; see [Add more accounts](/en/deploy/on_a_machine#add-more-accounts).
+
 ## Install
 
-Terminal is already installed, so you only enable an account:
+Terminal is already installed. When the system has its default account, the terminal runs as that account.
 
-1. Open the panel in a browser, sign in, and select the system to use the terminal on in the lower half of the sidebar. Check that **Available accounts** lists your account. If it does not, add it first with the steps in [Add an account](/en/deploy/on_a_machine#add-an-account).
+1. Open the panel in a browser, sign in, and select the system to use the terminal on in the lower half of the sidebar.
 1. In the list of the **Module configuration** area, select **Terminal**. This tab is always present, so you do not add it.
 
    ![The module list with the Terminal row boxed in red](/guide/en/deploy_terminal_01_tab.webp)
 
-1. The tab shows **running, no accounts**. Under **Enabled accounts**, select your account, then select **Apply terminal**.
+1. The tab shows **running**, and the default account lab under **Enabled accounts** shows **ready**. The terminal is ready to use.
 
-   ![The Enabled accounts field with the lab row boxed in red](/guide/en/deploy_terminal_02_tick_account.webp "Select lab")
-   ![lab selected, with the Apply terminal button boxed in red](/guide/en/deploy_terminal_03_apply.webp "Select Apply terminal")
-
-1. The account shows **ready**, and **Applied.** appears under it. The tab shows **running**, and the terminal is ready to use.
-
-   ![lab showing ready, with Applied. under it](/guide/en/deploy_terminal_04_applied.webp)
-
-On Windows, enter this account's password in the account form first, because Windows can start a program as another account only with that account's password.
+   ![The Enabled accounts field with lab selected and showing ready](/guide/en/deploy_terminal_02_default_row.webp)
 
 ## Use
 
@@ -82,7 +84,7 @@ When the agent restarts or upgrades, every session ends, persistent sessions inc
 
 ## Settings
 
-Apart from selecting accounts, the following settings can stay at their defaults:
+The following settings can stay at their defaults:
 
 | Setting              | Where                                  | Purpose                                                         |
 | -------------------- | -------------------------------------- | --------------------------------------------------------------- |
@@ -93,6 +95,6 @@ A changed setting applies only to terminals opened afterwards, and terminals alr
 
 ## Uninstall
 
-Terminal cannot be uninstalled, and it has no data to keep. To stop people from using an account's terminal, deselect the account, then select **Apply terminal**.
+Terminal cannot be uninstalled, and it has no data to keep. The default account stays enabled. To stop people from using another account's terminal, deselect that account, then select **Apply terminal**.
 
 If you cannot open a terminal, see [Troubleshooting](/en/reference/troubleshooting).

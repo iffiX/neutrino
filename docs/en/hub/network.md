@@ -1,3 +1,7 @@
+---
+description: "Neutrino Hub runs as a server, a side gateway or a router on your network. Pick the role for your home network; server mode changes nothing."
+---
+
 # Network modes: server, router and side gateway
 
 A network mode is the role that the hub's computer has in the network: server, side gateway or router.

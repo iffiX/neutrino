@@ -1,3 +1,7 @@
+---
+description: "Neutrino Hub adds phones and laptops with one join link: scan it, and decide which apps and features each device gets."
+---
+
 # Join a hub
 
 You join a device to the hub before you use apps on it, and you decide which features each device can use.

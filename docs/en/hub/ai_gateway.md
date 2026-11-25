@@ -1,10 +1,14 @@
+---
+description: "Neutrino Hub takes your API keys and subscriptions once, and Claude Code, Codex and OpenCode on every computer use them, with usage in one place."
+---
+
 # AI gateway
 
 The AI gateway is one endpoint that all your AI tools share. You add API keys and AI subscriptions to the hub one time, the AI tools on every computer can use them, and you see the usage in one place.
 
 <Facts systems="Linux,Windows,macOS" editions="国际版,国内版" since="0.1.0" />
 
-The AI gateway installs with the hub and is already running. After you add a key or a subscription and connect your tools to the gateway, the tools keep no keys of their own. The gateway replaces only the model source and installs no tools, so you install tools such as Claude Code yourself. Hermes WebUI, Ayakaleaf and SiYuan use the AI gateway automatically, with nothing to set up.
+The AI gateway installs with the hub and is already running. After you add a key or a subscription and connect your tools to the gateway, the tools keep no keys of their own. The gateway replaces only the model source and installs no tools, so you install tools such as Claude Code yourself. Hermes WebUI, Ayakaleaf, AstrBot and SiYuan also connect to the AI gateway through an account's switch; see [Systems joined to the hub](#systems-joined-to-the-hub).
 
 ## Add an API key
 
@@ -94,13 +98,32 @@ On a system that joined the hub, the switch is on the system's page in the panel
    ![The account form with the AI tools use the hub's gateway switch marked](/guide/en/hub_ai_gateway_13_account_switch.webp "Turn the switch on")
    ![The model list open with one model marked](/guide/en/hub_ai_gateway_14_account_model.webp "Choose a model")
 
-The switch also covers CloudCLI and Codeg, and tools started in a VS Code or code-server terminal use the gateway too. While the gateway has no models available, the switch cannot be turned on. When you remove the account, or the system leaves the hub, the tools return to their own settings.
+The switch also covers CloudCLI, Codeg and this account's SiYuan, and tools started in a VS Code or code-server terminal use the gateway too. Hermes WebUI, Ayakaleaf and AstrBot have one copy per system, and they follow the default account's switch. While the gateway has no models available, the switch cannot be turned on. When you remove the account, or the system leaves the hub, the tools return to their own settings.
 
 If a computer with the client has also joined the hub, the client's switch is grey. Use the switch in the panel instead.
 
 ## Default model
 
-The default model is the model that the AI tools, Ayakaleaf, Hermes WebUI and SiYuan use when nobody chose one. On the **AI** page, in the **Access** panel, choose a model in **Default model**, then select **Apply access settings**. Without a choice, the hub uses the first model by name among the models the gateway serves.
+The default model is the model that the AI tools, Ayakaleaf, Hermes WebUI, AstrBot and SiYuan use when nobody chose one. On the **AI** page, in the **Access** panel, choose a model in **Default model**, then select **Apply access settings**. Without a choice, the hub uses the first model by name among the models the gateway serves.
+
+## Context length
+
+A model's context length is the most tokens one request to it can hold: the prompt, the conversation and the answer. The hub works out a length for every model the gateway serves. It writes the length into OpenCode, Codex and Claude Code, and into Hermes WebUI, SiYuan and AstrBot. These tools compact a conversation before it grows past that length. Claude Code gets a length only while it uses a model whose name does not start with `claude-`, and Ayakaleaf uses no length.
+
+On the **AI** page, the **Context length** panel has one row per model. **From** shows the accounts and providers that serve the model, and **Tokens** shows the length the tools get.
+
+![The Context length panel of the AI page, with cloud models above and Ollama models below](/guide/en/hub_ai_gateway_40_context.webp)
+
+By default, a cloud model's length comes from the hub's own table of models, then from the gateway's model catalog. When neither names the model, it is 200000. Where the length depends on the plan, the table holds the smallest plan's length. To change a model's length:
+
+1. In the model's row, enter the new length under **Tokens**, from 4096 to 10000000. **Reset to** and the default appear on its left; selecting it puts the default back.
+1. Select **Apply context lengths**. The AI tools on every system use the new length the next time they start, and a tool that is running keeps its old length.
+
+   ![One model's length changed, Reset to on its left, and the Apply context lengths button marked in red](/guide/en/hub_ai_gateway_41_context_edit.webp)
+
+An Ollama model's row is read-only. Its length is the smaller of the **setting** and the **model max**. When several systems hold the same model, the row takes the smallest, offline systems included. Under the row, each system has a line of its own, and its name opens that system's Ollama tab, where you change **Context length (tokens)**; see [Ollama](/en/deploy/ollama#settings).
+
+Hermes WebUI does not take a model whose context length is under 64000. When you choose such a model, Hermes says the message was not sent.
 
 ## Generate a key for other tools
 

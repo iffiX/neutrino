@@ -1,3 +1,8 @@
+---
+title: "One-click deploy SiYuan"
+description: "Neutrino Hub deploys SiYuan in one click on Windows, macOS or Linux: your notes stay on your computer, open the same on phone and laptop, shared by link."
+---
+
 # SiYuan
 
 SiYuan is note-taking and knowledge base software. You open the same notes on your phone and your laptop, and the notes are stored on your own computer.
@@ -14,9 +19,13 @@ SiYuan runs one instance per account, and the notes of each account are kept apa
 | Windows | amd64                | 0.6.0                      |
 | macOS   | Apple silicon, Intel | 0.6.0                      |
 
+## Multiple accounts
+
+SiYuan runs as the system's default account, so the install needs no account choice. For another account, select **Configure**, check the account under **Enabled accounts**, and select **Apply SiYuan**; see [Add more accounts](/en/deploy/on_a_machine#add-more-accounts).
+
 ## Install
 
-1. Open the panel in a browser and sign in. In the lower part of the left sidebar, select the system to install on. Check that **Available accounts** lists your account. If it does not, add it as [Add an account](/en/deploy/on_a_machine#add-an-account) describes.
+1. Open the panel in a browser and sign in. In the lower part of the left sidebar, select the system to install on.
 1. In **Module configuration**, select **+ Add module**. In the dialog, select the **SiYuan** card. When the card is highlighted, select **Close**.
 
    ![The module list with the Add module button marked in red](/guide/en/deploy_siyuan_01_add_module.webp "Select + Add module")
@@ -33,15 +42,9 @@ SiYuan runs one instance per account, and the notes of each account are kept apa
    ![The tab showing installing, with each step listed](/guide/en/deploy_siyuan_06_installing.webp "Installing")
    ![The tab showing installed, with the Start button marked in red](/guide/en/deploy_siyuan_07_installed.webp "Select Start")
 
-1. The tab shows **running, no accounts**. Select **Configure** to expand the settings. Under **Enabled accounts**, select your account.
+1. The step list on the tab gains **Set up account lab**. A few seconds after every step turns green, the tab shows **running**, and the installation is complete.
 
-   ![The tab showing running, no accounts, with the Configure button marked in red](/guide/en/deploy_siyuan_17_started.webp "Select Configure")
-   ![The Enabled accounts field with the lab row marked in red](/guide/en/deploy_siyuan_08_tick_account.webp "Select lab")
-
-1. Select **Apply SiYuan**. The button changes to **Applying…** for a few seconds. When the step list on the tab gains **Set up account lab** and the tab shows **running**, the installation is complete.
-
-   ![lab selected, with the Apply SiYuan button marked in red](/guide/en/deploy_siyuan_09_apply.webp "Select Apply SiYuan")
-   ![The tab showing running, with a green dot on every step](/guide/en/deploy_siyuan_11_running.webp "Running")
+   ![The tab showing running, with a green dot on every step](/guide/en/deploy_siyuan_17_running.webp)
 
 ## Use
 

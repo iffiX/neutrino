@@ -63,6 +63,68 @@ export const WAYS_IN = [
 
 export const APP_GROUPS = [
   {
+    label: "AI agents",
+    apps: [
+      {
+        name: "Claude Code",
+        icon: "claude_code",
+        link: "/en/deploy/claude_code",
+      },
+      { name: "Codex", icon: "codex", link: "/en/deploy/codex" },
+      { name: "OpenCode", icon: "opencode", link: "/en/deploy/opencode" },
+    ],
+  },
+  {
+    label: "AI harnesses",
+    apps: [
+      { name: "CloudCLI", icon: "cloudcli", link: "/en/deploy/cloudcli" },
+      { name: "Codeg", icon: "codeg", link: "/en/deploy/codeg" },
+    ],
+  },
+  {
+    label: "AI assistants",
+    apps: [
+      {
+        name: "Hermes WebUI",
+        icon: "generic",
+        link: "/en/deploy/hermes_webui",
+      },
+    ],
+  },
+  {
+    label: "AI chat bots",
+    apps: [{ name: "AstrBot", icon: "astrbot", link: "/en/deploy/astrbot" }],
+  },
+  {
+    label: "AI local models",
+    apps: [{ name: "Ollama", icon: "ollama", link: "/en/deploy/ollama" }],
+  },
+  {
+    label: "AI editors",
+    apps: [
+      { name: "VS Code", icon: "vscode", link: "/en/deploy/vscode" },
+      {
+        name: "code-server",
+        icon: "code_server",
+        link: "/en/deploy/code_server",
+      },
+    ],
+  },
+  {
+    label: "AI paper writing",
+    apps: [
+      { name: "Ayakaleaf", icon: "ayakaleaf", link: "/en/deploy/ayakaleaf" },
+    ],
+  },
+  {
+    label: "AI notes",
+    apps: [{ name: "SiYuan", icon: "siyuan", link: "/en/deploy/siyuan" }],
+  },
+  {
+    label: "Hosting code",
+    apps: [{ name: "Gitea", icon: "gitea", link: "/en/deploy/gitea" }],
+  },
+  {
     label: "System access",
     apps: [
       {
@@ -76,45 +138,6 @@ export const APP_GROUPS = [
     ],
   },
   {
-    label: "Writing code",
-    apps: [
-      { name: "VS Code", icon: "vscode", link: "/en/deploy/vscode" },
-      {
-        name: "code-server",
-        icon: "code_server",
-        link: "/en/deploy/code_server",
-      },
-    ],
-  },
-  {
-    label: "AI workflows",
-    apps: [
-      { name: "CloudCLI", icon: "cloudcli", link: "/en/deploy/cloudcli" },
-      { name: "Codeg", icon: "codeg", link: "/en/deploy/codeg" },
-      {
-        name: "Hermes WebUI",
-        icon: "generic",
-        link: "/en/deploy/hermes_webui",
-      },
-      { name: "OpenCode", icon: "opencode", link: "/en/deploy/opencode" },
-      { name: "Ollama", icon: "ollama", link: "/en/deploy/ollama" },
-    ],
-  },
-  {
-    label: "Writing papers",
-    apps: [
-      { name: "Ayakaleaf", icon: "ayakaleaf", link: "/en/deploy/ayakaleaf" },
-    ],
-  },
-  {
-    label: "Notes",
-    apps: [{ name: "SiYuan", icon: "siyuan", link: "/en/deploy/siyuan" }],
-  },
-  {
-    label: "Hosting code",
-    apps: [{ name: "Gitea", icon: "gitea", link: "/en/deploy/gitea" }],
-  },
-  {
     label: "Containers",
     apps: [
       { name: "Containers", icon: "podman", link: "/en/deploy/containers" },
@@ -122,15 +145,7 @@ export const APP_GROUPS = [
   },
 ];
 
-export const COMPARE_PRODUCTS = [
-  "Neutrino Hub",
-  "1Panel",
-  "Cosmos",
-  "Olares",
-  "Tailscale",
-  "ToDesk",
-  "fnOS",
-];
+export const COMPARE_PRODUCTS = ["Neutrino Hub", "1Panel", "Cosmos", "Olares"];
 
 /** One row: its name, then each product's cell in COMPARE_PRODUCTS' order; a cell starting with "x:" is a miss. */
 export const COMPARE_GROUPS = [
@@ -143,9 +158,6 @@ export const COMPARE_GROUPS = [
         "x:Linux only",
         "x:Linux only",
         "x:Its own OS",
-        "All three",
-        "All three",
-        "x:Its own OS",
       ],
       [
         "Client support",
@@ -153,19 +165,13 @@ export const COMPARE_GROUPS = [
         "x:Web; phone in the Pro plan",
         "x:Web; phone in the paid plan",
         "All platforms",
-        "All platforms",
-        "All platforms",
-        "x:Phone and web",
       ],
-      ["One-click apps", "Yes", "Yes", "Yes", "Yes", "x:No", "x:No", "Yes"],
+      ["One-click apps", "Yes", "Yes", "Yes", "Yes"],
       [
         "Containers",
         "All three",
         "x:Linux only",
         "x:Linux only",
-        "x:Its own OS",
-        "x:No",
-        "x:No",
         "x:Its own OS",
       ],
       [
@@ -174,85 +180,19 @@ export const COMPARE_GROUPS = [
         "x:Open a port",
         "x:Open a port",
         "Yes",
-        "x:DIY",
-        "x:No",
-        "x:Partly",
       ],
-      [
-        "Remote desktop",
-        "Ready",
-        "x:No",
-        "x:DIY",
-        "x:DIY",
-        "x:DIY",
-        "Yes",
-        "x:DIY",
-      ],
-      [
-        "Terminal",
-        "Ready",
-        "Yes",
-        "x:Containers only",
-        "Yes",
-        "x:DIY",
-        "Yes",
-        "x:Turn it on",
-      ],
-      [
-        "Mounted drive",
-        "Ready",
-        "x:Web only",
-        "x:Paid plan",
-        "x:LAN only",
-        "x:Transfer only",
-        "x:Transfer only",
-        "Yes",
-      ],
-      [
-        "SSH/SFTP",
-        "Ready",
-        "x:Open a port",
-        "x:Open a port",
-        "Yes",
-        "Yes",
-        "x:No",
-        "x:Turn it on",
-      ],
-      [
-        "App sharing",
-        "One link",
-        "x:No",
-        "x:Needs a domain",
-        "x:Files only",
-        "Yes",
-        "x:Needs an install",
-        "x:Files only",
-      ],
+      ["Remote desktop", "Ready", "x:No", "x:DIY", "x:DIY"],
+      ["Terminal", "Ready", "Yes", "x:Containers only", "Yes"],
+      ["Mounted drive", "Ready", "x:Web only", "x:Paid plan", "x:LAN only"],
+      ["SSH/SFTP", "Ready", "x:Open a port", "x:Open a port", "Yes"],
+      ["App sharing", "One link", "x:No", "x:Needs a domain", "x:Files only"],
     ],
   },
   {
     title: "Secure",
     rows: [
-      [
-        "Encrypted transport",
-        "Yes",
-        "x:DIY",
-        "x:Needs a domain",
-        "Yes",
-        "Yes",
-        "Yes",
-        "x:Not stated",
-      ],
-      [
-        "Fingerprint on a scan",
-        "None",
-        "x:Yes",
-        "x:Yes",
-        "x:Yes",
-        "None",
-        "None",
-        "x:Yes",
-      ],
+      ["Encrypted transport", "Yes", "x:DIY", "x:Needs a domain", "Yes"],
+      ["Fingerprint on a scan", "None", "x:Yes", "x:Yes", "x:Yes"],
     ],
   },
   {
@@ -264,9 +204,6 @@ export const COMPARE_GROUPS = [
         "x:Linux server",
         "x:Linux server",
         "x:Bare metal",
-        "A computer you own",
-        "A computer you own",
-        "x:Replaces the OS",
       ],
       [
         "Ways back to the computer",
@@ -274,85 +211,25 @@ export const COMPARE_GROUPS = [
         "x:Open a port",
         "x:Open a port",
         "x:3",
-        "x:1",
-        "x:1",
-        "x:2",
       ],
-      [
-        "Relies on vendor servers",
-        "No",
-        "No",
-        "No",
-        "x:For remote access",
-        "x:Yes",
-        "x:Yes",
-        "x:For remote access",
-      ],
-      [
-        "What you can share",
-        "One app",
-        "x:Nothing",
-        "One app",
-        "Files",
-        "One service",
-        "x:The whole desktop",
-        "Files and photos",
-      ],
+      ["Relies on vendor servers", "No", "No", "No", "x:For remote access"],
+      ["What you can share", "One app", "x:Nothing", "One app", "Files"],
     ],
   },
   {
     title: "Free",
     rows: [
-      [
-        "Paid tier",
-        "None",
-        "x:Yes",
-        "x:Yes",
-        "x:Yes",
-        "x:Yes",
-        "x:Yes",
-        "x:Yes",
-      ],
-      [
-        "Several computers",
-        "Free",
-        "x:¥1500 per set",
-        "x:$99/year",
-        "x:One",
-        "Free",
-        "Free",
-        "x:One",
-      ],
+      ["Paid tier", "None", "x:Yes", "x:Yes", "x:Yes"],
+      ["Several computers", "Free", "x:¥1500 per set", "x:$99/year", "x:One"],
       [
         "Global access",
         "Free",
         "x:Open a port",
         "x:Open a port",
         "x:$19.8/month",
-        "Free",
-        "x:¥66/month",
-        "x:Paid extra",
       ],
-      [
-        "Bandwidth",
-        "Unlimited",
-        "Unlimited",
-        "Unlimited",
-        "x:5 Mbps",
-        "Unlimited",
-        "x:4 Mbps",
-        "x:2 Mbps",
-      ],
-      [
-        "Open source",
-        "Yes",
-        "Yes",
-        "x:Restricted",
-        "Yes",
-        "x:Partly",
-        "x:Closed",
-        "x:Closed",
-      ],
+      ["Bandwidth", "Unlimited", "Unlimited", "Unlimited", "x:5 Mbps"],
+      ["Open source", "Yes", "Yes", "x:Restricted", "Yes"],
     ],
   },
 ];
@@ -400,10 +277,10 @@ export const ADVANCED = [
 /** Every sentence and label of the English page. */
 export const WORDS = {
   name: "Neutrino Hub",
-  title: ["Deploy apps in one click,", "use them anywhere"],
-  lead: "Code, write papers, take notes, use a remote desktop and move files. One click installs an app on your own computer, your phone and laptop open it anytime, and a link shares it with a friend.",
+  title: ["Deploy AI apps in one click,", "use them anywhere"],
+  lead: "AI coding tools, AI assistants, chat bots and local models install on your own computer in one click. One AI gateway holds the keys and the models, and your phone and laptop open them anytime.",
   small:
-    "Installs on Windows, macOS and Linux. Open source, free, MIT license.",
+    "Editors, remote desktop, terminals and files come too. Installs on Windows, macOS and Linux. Open source, free, MIT license.",
   quickStart: "Quick start",
   quickStartLink: "/en/quick-start",
   demo: "Live demo",
@@ -418,9 +295,9 @@ export const WORDS = {
   heroPhoneAlt: "The app list on a phone",
   deployTitle: "Deploy in one click",
   deployText:
-    "Pick an app and it installs in one click, with no environment to prepare and no system to replace. Containers deploy the same way on Windows, macOS and Linux. Each machine picks a fast and steady one of several download sources.",
+    "AI tools change fast, take a lot of setup, and some install slowly from their default sources. Neutrino Hub installs them in one click, with models and keys from the AI gateway, and adds the new tools people need quickly. Windows, macOS and Linux deploy the same way, from the fastest of several download sources.",
   deployNote:
-    "Apps missing from the list work too: declare a service yourself, with several ports and HTTP entries. Ports a container publishes become apps automatically.",
+    "Apps missing from the list work too: declare a service yourself or run it in a container, and its ports become apps automatically.",
   storeAlt: "Choosing an app to install on the panel",
   wolfSitAlt: "The mascot on a block, using a laptop",
   waysTitle: "Use it anywhere",

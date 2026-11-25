@@ -1,3 +1,7 @@
+---
+description: "Neutrino Hub backs up and restores its configuration, updates itself in one click, and changes the panel password on the Settings page."
+---
+
 # Settings: backup, updates and password
 
 The **Settings** page is where you back up the configuration, update the hub and change the panel password.

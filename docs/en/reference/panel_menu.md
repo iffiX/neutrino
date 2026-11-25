@@ -1,3 +1,7 @@
+---
+description: "Neutrino Hub lists every menu of its panel and the manual page that covers it, in one table."
+---
+
 # Panel menu map
 
 The panel menu map is a table of every menu name in the panel and the manual page that covers it.
@@ -58,6 +62,7 @@ Each row on the left of **Module configuration** is an app, and selecting it ope
 | **Containers**     | [Containers](/en/deploy/containers)         |
 | **Hermes WebUI**   | [Hermes WebUI](/en/deploy/hermes_webui)     |
 | **Ayakaleaf**      | [Ayakaleaf](/en/deploy/ayakaleaf)           |
+| **AstrBot**        | [AstrBot](/en/deploy/astrbot)               |
 
 ## Cards on the Access page
 

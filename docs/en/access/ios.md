@@ -1,3 +1,7 @@
+---
+description: "Neutrino Hub puts your home computer's apps, files and terminal on your iPhone: sign the app once with your own Apple ID and open them anywhere."
+---
+
 # iOS app
 
 The iPhone client of Neutrino Hub is the iOS app. After you sign it with your own Apple ID and install it one time, you use the apps and files on your computers from the iPhone.

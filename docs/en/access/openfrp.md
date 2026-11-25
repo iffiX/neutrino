@@ -1,3 +1,7 @@
+---
+description: "Neutrino Hub sets up OpenFrp for you, so your phone and laptop reach your home computer while away without a public IP. Enter your token and turn it on."
+---
+
 # OpenFrp
 
 OpenFrp is a tunnel service run by a third party: the hub runs frpc against an OpenFrp node, and the node forwards a public port to the hub's connection port. The content between the devices and the hub is encrypted, and the node cannot read it.

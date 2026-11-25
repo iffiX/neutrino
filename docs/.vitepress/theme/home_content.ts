@@ -153,6 +153,54 @@ export const WAYS_IN = [
 
 export const APP_GROUPS = [
   {
+    label: "AI agent",
+    apps: [
+      { name: "Claude Code", icon: "claude_code", link: "/deploy/claude_code" },
+      { name: "Codex", icon: "codex", link: "/deploy/codex" },
+      { name: "OpenCode", icon: "opencode", link: "/deploy/opencode" },
+    ],
+  },
+  {
+    label: "AI harness",
+    apps: [
+      { name: "CloudCLI", icon: "cloudcli", link: "/deploy/cloudcli" },
+      { name: "Codeg", icon: "codeg", link: "/deploy/codeg" },
+    ],
+  },
+  {
+    label: "AI 助手",
+    apps: [
+      { name: "Hermes WebUI", icon: "generic", link: "/deploy/hermes_webui" },
+    ],
+  },
+  {
+    label: "AI 聊天机器人",
+    apps: [{ name: "AstrBot", icon: "astrbot", link: "/deploy/astrbot" }],
+  },
+  {
+    label: "AI 本地模型",
+    apps: [{ name: "Ollama", icon: "ollama", link: "/deploy/ollama" }],
+  },
+  {
+    label: "AI 编辑器",
+    apps: [
+      { name: "VS Code", icon: "vscode", link: "/deploy/vscode" },
+      { name: "code-server", icon: "code_server", link: "/deploy/code_server" },
+    ],
+  },
+  {
+    label: "AI 写论文",
+    apps: [{ name: "Ayakaleaf", icon: "ayakaleaf", link: "/deploy/ayakaleaf" }],
+  },
+  {
+    label: "AI 笔记",
+    apps: [{ name: "思源笔记", icon: "siyuan", link: "/deploy/siyuan" }],
+  },
+  {
+    label: "放代码",
+    apps: [{ name: "Gitea", icon: "gitea", link: "/deploy/gitea" }],
+  },
+  {
     label: "系统访问",
     apps: [
       {
@@ -166,244 +214,60 @@ export const APP_GROUPS = [
     ],
   },
   {
-    label: "写代码",
-    apps: [
-      { name: "VS Code", icon: "vscode", link: "/deploy/vscode" },
-      { name: "code-server", icon: "code_server", link: "/deploy/code_server" },
-    ],
-  },
-  {
-    label: "AI 工作流",
-    apps: [
-      { name: "CloudCLI", icon: "cloudcli", link: "/deploy/cloudcli" },
-      { name: "Codeg", icon: "codeg", link: "/deploy/codeg" },
-      { name: "Hermes WebUI", icon: "generic", link: "/deploy/hermes_webui" },
-      { name: "OpenCode", icon: "opencode", link: "/deploy/opencode" },
-      { name: "Ollama", icon: "ollama", link: "/deploy/ollama" },
-    ],
-  },
-  {
-    label: "写论文",
-    apps: [{ name: "Ayakaleaf", icon: "ayakaleaf", link: "/deploy/ayakaleaf" }],
-  },
-  {
-    label: "记笔记",
-    apps: [{ name: "思源笔记", icon: "siyuan", link: "/deploy/siyuan" }],
-  },
-  {
-    label: "放代码",
-    apps: [{ name: "Gitea", icon: "gitea", link: "/deploy/gitea" }],
-  },
-  {
     label: "跑容器",
     apps: [{ name: "容器", icon: "podman", link: "/deploy/containers" }],
   },
 ];
 
-export const COMPARE_PRODUCTS = [
-  "微子·中枢",
-  "1Panel",
-  "Cosmos",
-  "Olares",
-  "Tailscale",
-  "ToDesk",
-  "飞牛",
-];
+export const COMPARE_PRODUCTS = ["微子·中枢", "1Panel", "Cosmos", "Olares"];
 
 /** One row: its name, then each product's cell in COMPARE_PRODUCTS' order; a cell starting with "x:" is a miss. */
 export const COMPARE_GROUPS = [
   {
     title: "全能",
     rows: [
-      [
-        "系统支持",
-        "三系统",
-        "x:仅 Linux",
-        "x:仅 Linux",
-        "x:仅它的系统",
-        "三系统",
-        "三系统",
-        "x:仅它的系统",
-      ],
+      ["系统支持", "三系统", "x:仅 Linux", "x:仅 Linux", "x:仅它的系统"],
       [
         "客户端支持",
         "全平台",
         "x:网页，手机专业版",
         "x:网页，手机付费版",
         "全平台",
-        "全平台",
-        "全平台",
-        "x:手机和网页",
       ],
-      ["一键装应用", "有", "有", "有", "有", "x:没有", "x:没有", "有"],
-      [
-        "容器",
-        "三系统",
-        "x:仅 Linux",
-        "x:仅 Linux",
-        "x:仅它的系统",
-        "x:没有",
-        "x:没有",
-        "x:仅它的系统",
-      ],
-      [
-        "在外面打开应用",
-        "配好了",
-        "x:自己开端口",
-        "x:自己开端口",
-        "有",
-        "x:自己配",
-        "x:没有",
-        "x:部分",
-      ],
-      [
-        "远程桌面",
-        "配好了",
-        "x:没有",
-        "x:自己装",
-        "x:自己装",
-        "x:自己装",
-        "有",
-        "x:自己装",
-      ],
-      [
-        "终端",
-        "配好了",
-        "有",
-        "x:只有容器",
-        "有",
-        "x:自己配",
-        "有",
-        "x:自己开",
-      ],
-      [
-        "文件盘挂载",
-        "配好了",
-        "x:只有网页",
-        "x:付费版",
-        "x:局域网",
-        "x:只传文件",
-        "x:只传文件",
-        "有",
-      ],
-      [
-        "SSH/SFTP",
-        "配好了",
-        "x:自己开端口",
-        "x:自己开端口",
-        "有",
-        "有",
-        "x:没有",
-        "x:自己开",
-      ],
-      [
-        "应用分享",
-        "一个链接",
-        "x:没有",
-        "x:要域名",
-        "x:只有文件",
-        "有",
-        "x:要装软件",
-        "x:只有文件",
-      ],
+      ["一键装应用", "有", "有", "有", "有"],
+      ["容器", "三系统", "x:仅 Linux", "x:仅 Linux", "x:仅它的系统"],
+      ["在外面打开应用", "配好了", "x:自己开端口", "x:自己开端口", "有"],
+      ["远程桌面", "配好了", "x:没有", "x:自己装", "x:自己装"],
+      ["终端", "配好了", "有", "x:只有容器", "有"],
+      ["文件盘挂载", "配好了", "x:只有网页", "x:付费版", "x:局域网"],
+      ["SSH/SFTP", "配好了", "x:自己开端口", "x:自己开端口", "有"],
+      ["应用分享", "一个链接", "x:没有", "x:要域名", "x:只有文件"],
     ],
   },
   {
     title: "安全",
     rows: [
-      ["传输加密", "有", "x:自己配", "x:要域名", "有", "有", "有", "x:未声明"],
-      ["扫描有指纹", "没有", "x:有", "x:有", "x:有", "没有", "没有", "x:有"],
+      ["传输加密", "有", "x:自己配", "x:要域名", "有"],
+      ["扫描有指纹", "没有", "x:有", "x:有", "x:有"],
     ],
   },
   {
     title: "自主",
     rows: [
-      [
-        "装在哪",
-        "已有电脑",
-        "x:Linux 服务器",
-        "x:Linux 服务器",
-        "x:裸机",
-        "已有电脑",
-        "已有电脑",
-        "x:要换系统",
-      ],
-      [
-        "连回电脑的办法",
-        "6 种",
-        "x:自己开端口",
-        "x:自己开端口",
-        "x:3 种",
-        "x:1 种",
-        "x:1 种",
-        "x:2 种",
-      ],
-      [
-        "靠厂商服务器",
-        "不靠",
-        "不靠",
-        "不靠",
-        "x:远程靠",
-        "x:靠",
-        "x:靠",
-        "x:远程靠",
-      ],
-      [
-        "分享范围",
-        "一个应用",
-        "x:不能分享",
-        "一个应用",
-        "文件",
-        "一个服务",
-        "x:整个桌面",
-        "文件相册",
-      ],
+      ["装在哪", "已有电脑", "x:Linux 服务器", "x:Linux 服务器", "x:裸机"],
+      ["连回电脑的办法", "6 种", "x:自己开端口", "x:自己开端口", "x:3 种"],
+      ["靠厂商服务器", "不靠", "不靠", "不靠", "x:远程靠"],
+      ["分享范围", "一个应用", "x:不能分享", "一个应用", "文件"],
     ],
   },
   {
     title: "免费",
     rows: [
-      ["付费档", "没有", "x:有", "x:有", "x:有", "x:有", "x:有", "x:有"],
-      [
-        "多台电脑",
-        "免费",
-        "x:¥1500/套",
-        "x:$99/年",
-        "x:一台",
-        "免费",
-        "免费",
-        "x:一台",
-      ],
-      [
-        "全球连接",
-        "免费",
-        "x:自己开端口",
-        "x:自己开端口",
-        "x:$19.8/月",
-        "免费",
-        "x:¥66/月",
-        "x:另收费",
-      ],
-      [
-        "带宽",
-        "不限",
-        "不限",
-        "不限",
-        "x:5 Mbps",
-        "不限",
-        "x:4 Mbps",
-        "x:2 Mbps",
-      ],
-      [
-        "开源",
-        "开源",
-        "开源",
-        "x:有限制",
-        "开源",
-        "x:部分",
-        "x:闭源",
-        "x:闭源",
-      ],
+      ["付费档", "没有", "x:有", "x:有", "x:有"],
+      ["多台电脑", "免费", "x:¥1500/套", "x:$99/年", "x:一台"],
+      ["全球连接", "免费", "x:自己开端口", "x:自己开端口", "x:$19.8/月"],
+      ["带宽", "不限", "不限", "不限", "x:5 Mbps"],
+      ["开源", "开源", "开源", "x:有限制", "开源"],
     ],
   },
 ];
@@ -451,9 +315,10 @@ export const ADVANCED = [
 
 export const WORDS = {
   name: "微子·中枢",
-  title: ["一键部署应用，", "走到哪用到哪"],
-  lead: "写代码、写论文、记笔记、远程桌面、传文件。点一下安装到自己电脑上，手机和笔记本随时打开，还能发链接给同学用。",
-  small: "Windows、macOS、Linux 都能安装。开源，免费，MIT 许可证。",
+  title: ["一键部署 AI 应用，", "走到哪用到哪"],
+  lead: "写代码的 AI 工具、AI 助手、聊天机器人、本地大模型，点一下装到自己电脑上，一个 AI 网关管好密钥和模型，手机和笔记本随时打开。",
+  small:
+    "编辑器、远程桌面、终端和文件也都有。Windows、macOS、Linux 都能安装，开源免费，MIT 许可证。",
   quickStart: "快速上手",
   quickStartLink: "/quick-start",
   demo: "在线演示",
@@ -468,9 +333,9 @@ export const WORDS = {
   heroPhoneAlt: "手机上的应用列表",
   deployTitle: "一键部署",
   deployText:
-    "想用什么，点一下就能安装。不用配环境，不用换系统。容器也一样，Windows、macOS、Linux 同样的办法部署。多个下载源自动选又快又稳的那个。",
+    "AI 工具更新快、配置多，有些默认源安装还慢。微子中枢点一下就帮你装好，模型和密钥统一从 AI 网关来；大家需要的新工具，微子中枢很快就跟上。Windows、macOS、Linux 同样的办法部署，多个下载源自动选最快的。",
   deployNote:
-    "列表里没有的也能用：你可以自己声明服务，填多个端口和 HTTP 入口。容器暴露的端口会自动添加为应用，全部自动。",
+    "列表里没有的也能用：自己声明服务或者用容器跑，端口会自动变成应用。",
   storeAlt: "面板上选择要安装的应用",
   wolfSitAlt: "小狼坐在方块上用电脑",
   waysTitle: "到处使用",

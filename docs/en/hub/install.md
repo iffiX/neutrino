@@ -1,3 +1,7 @@
+---
+description: "Neutrino Hub installs with one command on Linux, Windows or macOS. Finish the web setup, then deploy apps in one click and reach them from your phone."
+---
+
 # Install the hub
 
 The hub is a program you install on one computer, and the panel is its web page.
@@ -63,7 +67,7 @@ The last line is `Press Enter to begin:`. Do not press Enter at this point, beca
 
 ## Complete the setup wizard
 
-After **Set this box up**, the wizard has six screens. On each screen, select **Next** to go forward or **Back** to return to the previous one. The wizard writes nothing to the system until you confirm on the last screen.
+After **Set this box up**, the wizard has seven screens. On each screen, select **Next** to go forward or **Back** to return to the previous one. The wizard writes nothing to the system until you confirm on the last screen.
 
 The wizard and the panel open in the dark theme on your screen. The following pictures use the light theme for readability, with the same buttons and text.
 
@@ -94,9 +98,15 @@ The wizard and the panel open in the dark theme on your screen. The following pi
    ![The Which ports screen with the Next button marked](/guide/en/hub_install_07_network.webp "Change nothing, select Next")
    ![The proxy screen with the Next button marked](/guide/en/hub_install_08_exit.webp "Leave it off, select Next")
 
-1. On the **Ready** screen, check your choices, then select **Set this box up** again. The hub starts writing to the system only at this point. The page changes to **Setting up** and lists each operation as it runs, with a green dot on each finished one. Wait for the setup to finish.
+1. On the **Your account on this machine** screen, **Account** already holds an account, usually the one you sign in to this computer with. The account you pick is this system's default account and cannot be changed later; the terminal and the apps run as it. Check it, then select **Next**. On Windows, also enter this account's Windows password in **Password**. Enter the password even if you normally sign in with a PIN.
 
-   ![The Ready screen listing every choice, with the start button marked](/guide/en/hub_install_09_ready.webp "Check, then select Set this box up")
+   ![The account screen with the Next button marked](/guide/en/hub_install_12_account.webp "Check the account, select Next")
+
+   When you select **Next**, the hub first tests that the account can sign in. If the test fails, the wizard stays on this screen and shows the reason, such as Windows not accepting the password.
+
+1. On the **Ready** screen, check your choices; the **Default account** row is the account from the previous screen. Then select **Set this box up** again. The hub starts writing to the system only at this point. The page changes to **Setting up** and lists each operation as it runs, with a green dot on each finished one. Wait for the setup to finish.
+
+   ![The Ready screen listing every choice, with the start button marked](/guide/en/hub_install_13_ready.webp "Check, then select Set this box up")
    ![The Setting up screen showing progress step by step](/guide/en/hub_install_10_configuring.webp "Wait for the setup to finish")
 
    If the page shows **a step failed; the terminal has the output**, read the output in the terminal you used earlier. Then see [Troubleshooting](/en/reference/troubleshooting).

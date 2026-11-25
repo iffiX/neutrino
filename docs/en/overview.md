@@ -1,3 +1,7 @@
+---
+description: "Neutrino Hub is a one-click deploy panel with smart access routing: deploy apps on your own Windows, macOS or Linux computer and open them anywhere."
+---
+
 # What Neutrino Hub is
 
 Neutrino Hub is an open source, self-hosted panel for deploying apps, with routing for access from outside your network. You install it on your own Windows, macOS or Linux computer, without a domain or an extra server.

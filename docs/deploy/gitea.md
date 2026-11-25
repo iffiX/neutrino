@@ -1,3 +1,8 @@
+---
+title: "一键部署 Gitea"
+description: "微子中枢一键部署 Gitea：在 Windows、macOS、Linux 上搭好自己的代码托管，代码存在自己电脑上，发个链接就能一起管理仓库。"
+---
+
 # Gitea
 
 Gitea 是可以自行部署的代码托管服务，类似 GitHub。代码保存在你自己的电脑上，你也可以和别人一起管理仓库。

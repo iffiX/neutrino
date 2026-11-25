@@ -82,6 +82,7 @@ export const sidebar: DefaultTheme.SidebarItem[] = [
           { text: "CloudCLI", link: "/deploy/cloudcli" },
           { text: "Codeg", link: "/deploy/codeg" },
           { text: "Hermes WebUI", link: "/deploy/hermes_webui" },
+          { text: "AstrBot", link: "/deploy/astrbot" },
           { text: "Claude Code", link: "/deploy/claude_code" },
           { text: "Codex", link: "/deploy/codex" },
           { text: "OpenCode", link: "/deploy/opencode" },

@@ -1,3 +1,7 @@
+---
+description: "微子中枢可以只卸载一个应用，也能整套卸载：这一页列出哪些数据保留、哪些会删除，以及每一步。"
+---
+
 # 卸载
 
 你可以卸载一个应用，也可以卸载整套微子·中枢：
@@ -12,7 +16,7 @@
 ![卸载按钮标红](/guide/zh/deploy_on_a_machine_39_uninstall.webp "按 卸载")
 ![卸载的弹窗，卸载按钮标红](/guide/zh/deploy_on_a_machine_40_uninstall_dialog.webp "读完再按 卸载")
 
-大多数应用的数据都会保留。Ayakaleaf 和 Hermes WebUI 不同，弹窗里的红字说明数据会删除，无法恢复。你要先把需要保留的数据复制出来。
+大多数应用的数据都会保留。Ayakaleaf、Hermes WebUI 和 AstrBot 不同，弹窗里的红字说明数据会删除，无法恢复。你要先把需要保留的数据复制出来。
 
 ![Ayakaleaf 卸载弹窗的红字](/guide/zh/deploy_ayakaleaf_51_uninstall_dialog.webp)
 

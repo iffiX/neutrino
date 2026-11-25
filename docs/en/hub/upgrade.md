@@ -1,3 +1,7 @@
+---
+description: "Neutrino Hub keeps your configuration and vault when you upgrade from 0.5 to 0.6. Upgrade the hub, the agents and the clients step by step."
+---
+
 # Upgrade from 0.5
 
 When you upgrade from 0.5 to 0.6, the hub keeps your configuration and vault.

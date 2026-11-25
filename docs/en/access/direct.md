@@ -1,3 +1,7 @@
+---
+description: "Neutrino Hub connects phones and laptops straight to your hub when your line has a public address, with no third-party server and no account."
+---
+
 # Direct
 
 Direct is the access method in which devices connect to the hub at a public address. Connections go straight to the hub, without a third-party server or an account. If your broadband has a public address, you can use Direct.

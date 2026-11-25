@@ -1,3 +1,7 @@
+---
+description: "Neutrino Hub is ready in minutes: install the hub and CloudCLI, scan to join from your phone, and open the AI coding session on your computer."
+---
+
 # Quick start
 
 In this tutorial, you install the hub and CloudCLI, then open an AI session on your computer from your phone.
@@ -78,9 +82,13 @@ The hub is the program you install on the computer. The panel is its web page, a
    ![The Which ports? screen, with Next marked in red](/guide/en/hub_install_07_network.webp "Leave it as it is, select Next")
    ![The switch left off, with Next marked in red](/guide/en/hub_install_08_exit.webp "Leave it off, select Next")
 
+1. On the **Your account on this machine** screen, check that **Account** is the account you usually sign in to this computer with, then select **Next**. It is this system's default account and cannot be changed later. On Windows, also enter the sign-in password of this account in **Password**. If you start the computer with a PIN, enter the account password here, because the PIN does not work.
+
+   ![The account screen, with Next marked in red](/guide/en/hub_install_12_account.webp "Check the account, select Next")
+
 1. On the **Ready** screen, select **Set this box up**. When the page changes to **Setting up**, wait for the setup to finish. When **This hub is set up** appears, select **Open the panel**.
 
-   ![The Ready screen, with the set-up button marked in red](/guide/en/hub_install_09_ready.webp "Select Set this box up")
+   ![The Ready screen, with the set-up button marked in red](/guide/en/hub_install_13_ready.webp "Select Set this box up")
    ![This hub is set up, with Open the panel marked in red](/guide/en/hub_install_11_done.webp "After setup, select Open the panel")
 
 1. Sign in with the panel password you set earlier. The **Dashboard** page opens, and this stage is complete.
@@ -138,16 +146,13 @@ These steps use DeepSeek. For other providers, see [AI gateway](/en/hub/ai_gatew
 
 ## Step 3: Install CloudCLI in the panel
 
-1. The lower part of the left sidebar lists every system that joined the hub. Select the name of this computer to open its page. Then select **Add** in the **Available accounts** section.
+1. The lower part of the left sidebar lists every system that joined the hub. Select the name of this computer to open its page. **Available accounts** already holds the account you chose in the wizard, with the **Default** chip. Select **Edit** on its row.
 
    ![The lower part of the sidebar, with this computer's name marked in red](/guide/en/deploy_on_a_machine_01_sidebar.webp "Select this computer's name")
-   ![The Available accounts section, with Add marked in red](/guide/en/deploy_on_a_machine_02_accounts_add.webp "Select Add")
+   ![The system page with Edit marked on an account row](/guide/en/hub_ai_gateway_19_account_edit.webp "Select Edit")
 
-1. In **System account**, choose the account you usually sign in to this computer with. On Windows, also enter the sign-in password of this account in **Password**. If you start the computer with a PIN, enter the account password here, because the PIN does not work.
+1. Turn on **AI tools use the hub's gateway**, then select **Save**.
 
-   Turn on **AI tools use the hub's gateway**, then select **Save**. If this section already lists the account, select **Edit** on its row, turn on the switch and save.
-
-   ![The account form, with System account marked in red](/guide/en/deploy_on_a_machine_03_account_form.webp "Choose the account")
    ![The account form, with the AI tools switch marked in red](/guide/en/hub_ai_gateway_13_account_switch.webp "Turn on the switch, then select Save")
 
 1. In the **Module configuration** section, select **+ Add module**. In the dialog, select the **CloudCLI** card, which is highlighted when selected. Then select **Close** at the bottom right.
@@ -160,19 +165,9 @@ These steps use DeepSeek. For other providers, see [AI gateway](/en/hub/ai_gatew
    ![The CloudCLI tab showing not installed, with Install marked in red](/guide/en/deploy_cloudcli_05_install.webp "Select Install")
    ![The tab showing installed, with Start marked in red](/guide/en/deploy_cloudcli_07_installed.webp "Select Start")
 
-1. When the tab shows **running, no accounts**, select **Configure**. In **Enabled accounts**, select your account.
+1. The tab lists the step that runs npm for your account, which takes from a few minutes to more than ten minutes the first time. About half a minute after every step turns green, the tab shows **running**, and this stage is complete. CloudCLI runs as the default account you chose in the wizard, so you select no account.
 
-   ![The tab showing running, no accounts, with Configure marked in red](/guide/en/deploy_cloudcli_17_started.webp "Select Configure")
-   ![The Enabled accounts section, with the account row marked in red](/guide/en/deploy_cloudcli_08_tick_account.webp "Select the account")
-
-1. Select **Apply CloudCLI**. The tab shows **installing** while the npm step runs. The first time, this step takes from a few minutes to more than ten minutes.
-
-   ![The account selected, with Apply CloudCLI marked in red](/guide/en/deploy_cloudcli_09_apply.webp "Select Apply CloudCLI")
-   ![The npm step running](/guide/en/deploy_cloudcli_10_npm_running.webp "Wait for the npm step")
-
-1. When the tab shows **running**, this stage is complete.
-
-   ![The tab showing running](/guide/en/deploy_cloudcli_11_running.webp)
+   ![The tab showing running, with a green dot on every step listed](/guide/en/deploy_cloudcli_17_running.webp)
 
 ## Step 4: Add your phone to the hub
 

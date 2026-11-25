@@ -1,3 +1,7 @@
+---
+description: "Neutrino Hub lets Claude Code, Codex and other AI tools on your computer run commands on every system you manage, with nothing extra to set up."
+---
+
 # Let local AI tools operate your systems
 
 AI tools such as Claude Code on your computer can operate each of your systems by running commands, with no extra setup.

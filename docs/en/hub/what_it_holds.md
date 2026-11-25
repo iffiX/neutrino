@@ -1,3 +1,7 @@
+---
+description: "Neutrino Hub keeps keys and passwords encrypted on your own computer. This page lists what it stores and the outside addresses it connects to."
+---
+
 # Data and outbound connections
 
 The hub stores keys and passwords encrypted on your own computer and connects to the outside addresses listed in the following tables. None of this requires any action from you.

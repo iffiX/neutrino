@@ -1,3 +1,8 @@
+---
+title: "一键部署 CloudCLI"
+description: "微子中枢一键部署 CloudCLI：给 Claude Code 装上网页界面，Windows、macOS、Linux 都支持，手机上也能接着用 AI 编程。"
+---
+
 # CloudCLI
 
 CloudCLI 是 Claude Code 等 AI 编程工具的网页界面。你可以在手机上通过它让 AI 工具修改电脑上的代码。
@@ -14,6 +19,10 @@ CloudCLI 是 Claude Code 等 AI 编程工具的网页界面。你可以在手机
 | Windows | amd64             | 0.5.0                   |
 | macOS   | Apple 芯片、Intel | 0.5.0                   |
 
+## 支持多账户
+
+CloudCLI 以这个系统的默认账户运行，安装时不用选择账户。如果其他账户也要使用，按 **配置**，在 **启用的账户** 里勾选它，再按 **应用 CloudCLI**，见[添加更多账户](/deploy/on_a_machine#添加更多账户)。
+
 ## 安装
 
 CloudCLI 自带 Claude Code，你不用另外安装。开始之前，你要让它能访问模型。推荐的做法是在中枢的 AI 页添加订阅或 API 密钥，再在这个账户的表单里打开 **AI 工具使用中枢网关**，见 [AI 网关](/hub/ai_gateway)。如果你不用 AI 网关，要先用你的 Claude 账号登录一次 Claude Code，比如安装 [Claude Code](/deploy/claude_code) 模块后在终端里运行 `claude`。登录信息保存在这个账户的 `~/.claude` 里，CloudCLI 共用它。
@@ -28,7 +37,7 @@ CloudCLI 只在下面这些目录里查找 `claude`，官方安装命令的安�
 
 接下来的步骤都在面板上操作。
 
-1. 在浏览器里打开面板并登录，再到左侧栏的下半部分，点你要安装到的系统。确认 **可用账户** 里有你的账户。如果没有，先按[添加账户](/deploy/on_a_machine#添加账户)的步骤添加它。
+1. 在浏览器里打开面板并登录，再到左侧栏的下半部分，点你要安装到的系统。
 1. 在 **模块配置** 区域，按 **+ 添加模块**。在弹窗里勾选 **CloudCLI** 卡片，卡片亮起后按 **关闭**。
 
    ![模块列表，添加模块按钮标红](/guide/zh/deploy_cloudcli_01_add_module.webp "按 + 添加模块")
@@ -45,21 +54,12 @@ CloudCLI 只在下面这些目录里查找 `claude`，官方安装命令的安�
    ![标签显示安装中，第一步是安装 Node.js](/guide/zh/deploy_cloudcli_06_installing.webp "安装中")
    ![标签显示已安装，启动按钮标红](/guide/zh/deploy_cloudcli_07_installed.webp "按 启动")
 
-1. 标签变成 **运行中，没有账户**。按 **配置**，下面会展开设置。在 **启用的账户** 里勾选你的账户。
+1. 标签会列出 **为 lab 运行 npm** 这一步，用 npm 为默认账户 lab 安装 CloudCLI。第一次需要几分钟到十几分钟，取决于网速和这个系统的性能。你可以保持页面打开，也可以关闭页面，这一步会继续在系统上运行。
+1. 步骤都变成绿点后，再等半分钟左右，标签变成 **运行中**，这时安装完成。
 
-   ![标签显示运行中，没有账户，配置按钮标红](/guide/zh/deploy_cloudcli_17_started.webp "按 配置")
-   ![启用的账户一栏，lab 这一行标红](/guide/zh/deploy_cloudcli_08_tick_account.webp "勾选 lab")
+   ![标签显示运行中，下面列出的步骤都是绿点](/guide/zh/deploy_cloudcli_17_running.webp)
 
-1. 按 **应用 CloudCLI**。这时标签显示 **安装中**，正在运行 **为 lab 运行 npm** 这一步。这一步需要几分钟到十几分钟，取决于网速和这个系统的性能。你可以保持页面打开，也可以关闭页面，这一步会继续在系统上运行。
-
-   ![勾选了 lab，应用 CloudCLI 按钮标红](/guide/zh/deploy_cloudcli_09_apply.webp "按 应用 CloudCLI")
-   ![正在运行 npm 这一步](/guide/zh/deploy_cloudcli_10_npm_running.webp "等待 npm 这一步")
-
-1. 标签变成 **运行中**，这时安装完成。
-
-   ![标签显示运行中，下面列出的步骤都是绿点](/guide/zh/deploy_cloudcli_11_running.webp)
-
-如果 npm 这一步失败，标签会显示原因，比如某个地址无法连接。网络恢复后，再按一次 **应用 CloudCLI** 就会重试。其他情况查看[故障排查](/reference/troubleshooting)。
+如果 npm 这一步失败，标签会显示原因，比如某个地址无法连接。网络恢复后，再按一次 **启动** 就会重试。其他情况查看[故障排查](/reference/troubleshooting)。
 
 ## 使用
 

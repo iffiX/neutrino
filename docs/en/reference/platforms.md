@@ -1,3 +1,7 @@
+---
+description: "Neutrino Hub runs its hub, agent and client on Linux, Windows and macOS, with Android and iPhone apps. This page lists each app's systems."
+---
+
 # Supported platforms
 
 Every Neutrino Hub package is 64-bit, and there is no 32-bit build. The hub, the agent and the client install on Linux, Windows and macOS, and phones have the client only.
@@ -69,6 +73,7 @@ An app that a system cannot run appears grey in the **Add module** dialog.
 | Codeg          | amd64, arm64                             | amd64                       | Apple silicon, Intel  |                                                                                    |
 | Hermes WebUI   | Every system that can run **Containers** | amd64                       | Apple silicon, Intel  | Requires **Containers**, with 1 GiB of memory recommended                          |
 | Ayakaleaf      | Every system that can run **Containers** | amd64                       | Apple silicon, Intel  | Requires **Containers**, with 3 GiB of memory recommended                          |
+| AstrBot        | Every system that can run **Containers** | amd64                       | Apple silicon, Intel  | Requires **Containers**, with 1 GiB of memory recommended                          |
 | SiYuan         | amd64, arm64                             | amd64                       | Apple silicon, Intel  |                                                                                    |
 | Claude Code    | amd64, arm64                             | amd64, arm64                | Apple silicon, Intel  | A regular program that runs in a terminal                                          |
 | Codex          | amd64, arm64                             | amd64, arm64                | Apple silicon, Intel  | A regular program that runs in a terminal                                          |
@@ -76,7 +81,7 @@ An app that a system cannot run appears grey in the **Add module** dialog.
 | Ollama         | amd64, arm64                             | amd64                       | Apple silicon, Intel  | On Linux the system's zstd is installed automatically; macOS 14 or later           |
 | Containers     | Debian, RHEL and Arch families           | amd64, build 19041 or later | 13 or later           | On Linux, the system's Podman 3.4 or later                                         |
 
-A Linux system outside these three families, such as Alpine, has no containers, so it cannot run Hermes WebUI or Ayakaleaf either.
+A Linux system outside these three families, such as Alpine, has no containers, so it cannot run Hermes WebUI, Ayakaleaf or AstrBot either.
 
 On Windows, containers are tested on build 26100 only, and 19041 is the lowest build the installer accepts.
 

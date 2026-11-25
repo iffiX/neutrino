@@ -1,3 +1,7 @@
+---
+description: "微子中枢在这张表里列出面板的每个菜单和对应的手册页。"
+---
+
 # 面板菜单对照表
 
 面板菜单对照表是面板上每个菜单名和手册页的对应关系。
@@ -58,6 +62,7 @@
 | **容器**         | [容器](/deploy/containers)           |
 | **Hermes WebUI** | [Hermes WebUI](/deploy/hermes_webui) |
 | **Ayakaleaf**    | [Ayakaleaf](/deploy/ayakaleaf)       |
+| **AstrBot**      | [AstrBot](/deploy/astrbot)           |
 
 ## 外部访问的卡片
 

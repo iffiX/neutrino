@@ -1,3 +1,7 @@
+---
+description: "Neutrino Hub handles the keys, so ssh, sftp and VS Code Remote-SSH connect straight to every system at home, from anywhere."
+---
+
 # SSH connections
 
 You connect to each system directly with ssh, sftp and VS Code remote development, without setting up keys yourself.
@@ -8,10 +12,10 @@ The feature exists only in the desktop client; on a phone, use the **Terminals**
 
 Turn on the SSH server on the system you connect to, then turn on the client's switch on your computer:
 
-1. In the lower part of the panel's left sidebar, select the system to connect to, then select the **SSH server** tab. Select accounts in **Enabled accounts**, then select **Apply SSH server**. The step is done when the account shows **running**.
+1. In the lower part of the panel's left sidebar, select the system to connect to, then select the **SSH server** tab. The default account is already enabled and shows **running**. To connect as another account, check it under **Enabled accounts**, select **Apply SSH server**, and wait until that account shows **running** too.
 
    ![Module list with the SSH server tab marked in red](/guide/en/access_ssh_05_tab.webp "Select SSH server")
-   ![Accounts selected, Apply SSH server button marked in red](/guide/en/access_ssh_06_tick.webp "Select the accounts, then apply")
+   ![The lab row showing running and the host key](/guide/en/deploy_ssh_02_default_row.webp "The default account shows running")
 
 1. On your computer, open the client and go to the **Settings** page. Turn on **SSH programs reach the machines**, then select **Save**.
 
@@ -31,7 +35,7 @@ The switch adds one `Include` line at the top of `~/.ssh/config` and changes not
 
 ## Connect to a system
 
-The host name is the system's name in the panel plus `.nt`. To choose the account, put the account name and the system name in `ssh <account>@<system>.nt`. Without an account, ssh uses the system's first enabled account.
+The host name is the system's name in the panel plus `.nt`. To choose the account, put the account name and the system name in `ssh <account>@<system>.nt`. Without an account, ssh uses the system's default account.
 
 ```bash
 ssh my-computer.nt

@@ -1,3 +1,7 @@
+---
+description: "Neutrino Hub turns your own VPS into an SSH relay: the hub connects out to it, so your phone and laptop reach home without a public IP."
+---
+
 # SSH relay
 
 SSH relay, an access method, routes devices to the hub through a VPS of your own. The hub connects to the VPS over SSH, and the VPS forwards a public port to the hub's connection port.

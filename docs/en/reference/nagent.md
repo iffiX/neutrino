@@ -1,3 +1,7 @@
+---
+description: "Neutrino Hub checks the agent's status and joins or leaves a hub with the nagent command, run on the system that hosts the agent."
+---
+
 # nagent command
 
 `nagent` is the agent's own command, with the same name on Linux, Windows and macOS. When a system cannot connect to the hub, you can use it on that system to find the cause and join again.

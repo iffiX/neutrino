@@ -18,9 +18,13 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent / "en"
 SKIP = {"index.md", "app.md"}
-EXPECTED_PAGES = 61
+EXPECTED_PAGES = 62
 
 VALUE_MIN, VALUE_MAX = 6, 45
+# The search description: its subject, its longest length, and words it never holds.
+PRODUCT = "Neutrino Hub"
+DESCRIPTION_MAX = 155
+SEARCH_BANNED = ["VPN", "代理", "翻墙", "内网穿透", "隧道", "NAS", "收费", "proxy", "Proxy", "tunnel", "Tunnel"]
 TOP_LINES_MAX = 10
 PAGE_LINES_MAX = 60
 LONG_PAGES = {
@@ -41,6 +45,8 @@ LONG_PAGES = {
     "share/web_share.md": 80,
     "share/security.md": 120,
     "deploy/containers.md": 80,
+    "deploy/on_a_machine.md": 80,
+    "hub/agents.md": 80,
 }
 SENTENCE_MAX = 25
 LABEL_MAX = 20
@@ -49,7 +55,7 @@ APP_PAGES = {
     f"deploy/{name}.md"
     for name in (
         "cloudcli codeg hermes_webui vscode code_server terminal ssh gitea "
-        "ayakaleaf siyuan remote_desktop file_share containers claude_code codex opencode ollama"
+        "ayakaleaf siyuan remote_desktop file_share containers claude_code codex opencode ollama astrbot"
     ).split()
 }
 APP_HEADINGS = ["Supported systems", "Install", "Use", "Share", "Risks and limits", "Settings", "Uninstall"]
@@ -105,9 +111,50 @@ def words(text: str) -> int:
     return len(re.findall(r"[A-Za-z0-9][\w'./:-]*", text))
 
 
+
+def split_front(text: str) -> tuple[dict, str]:
+    """Return a page's frontmatter keys and the text after the frontmatter."""
+    if not text.startswith("---\n"):
+        return {}, text
+    end = text.index("\n---\n", 4)
+    front = {}
+    for line in text[4:end].splitlines():
+        key, _, value = line.partition(":")
+        front[key.strip()] = value.strip().strip('"')
+    return front, text[end + 5 :]
+
+
+def app_title(heading: str) -> str:
+    """Return the search title of an app page whose H1 is the heading."""
+    return f"One-click deploy {heading}"
+
+
+def check_search_text(front: dict, relative: str, text: str) -> list:
+    """Collect the failures of a page's search title and description."""
+    failures = []
+    title = front.get("title", "")
+    heading = re.search(r"^# (.+)$", text, re.M)
+    if relative in APP_PAGES and heading:
+        if title.lower() != app_title(heading.group(1).strip()).lower():
+            failures.append(f"app page title is not {app_title(heading.group(1).strip())}")
+    elif title:
+        failures.append("a search title outside an app page")
+    description = front.get("description", "")
+    if not description:
+        failures.append("no description in the frontmatter")
+    elif len(description) > DESCRIPTION_MAX:
+        failures.append(f"description is {len(description)} characters")
+    elif not description.startswith(PRODUCT):
+        failures.append(f"description does not start with {PRODUCT}")
+    for word in SEARCH_BANNED:
+        if word in description or word in title:
+            failures.append(f"banned word in the search text: {word}")
+    return failures
+
 def check_page(relative: str, text: str) -> dict:
     """Measure one page and collect its failures."""
-    failures = []
+    front, text = split_front(text)
+    failures = check_search_text(front, relative, text)
     source = text.splitlines()
     title_at = next((i for i, l in enumerate(source) if l.strip()), 0)
     if not source[title_at].startswith("# "):

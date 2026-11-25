@@ -1,3 +1,7 @@
+---
+description: "微子中枢为 iPhone 提供客户端，用自己的 Apple ID 签名安装一次，出门就能打开家里电脑的应用、文件和终端。"
+---
+
 # iOS 应用
 
 iOS 应用是微子·中枢的 iPhone 客户端。你用自己的 Apple ID 签名并安装一次后，就能在 iPhone 上使用电脑上的应用和文件。

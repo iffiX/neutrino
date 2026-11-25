@@ -1,3 +1,7 @@
+---
+description: "Neutrino Hub sends chosen devices and sites out through your exit server by rule, while the rest of the traffic uses your home line."
+---
+
 # Proxy
 
 The proxy is the feature that sends the traffic of chosen devices and destinations to an exit server by rule. All other traffic uses this computer's own connection.

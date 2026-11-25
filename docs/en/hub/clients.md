@@ -1,3 +1,7 @@
+---
+description: "Neutrino Hub manages the phones and laptops that connect to it: join links, per-device switches for apps, files and the AI gateway, and removal."
+---
+
 # Clients
 
 A client is the program you use to connect to the hub, either the desktop client or the phone app. The panel's **Clients** page is where you generate join links, set each device's permissions, and rename, disable or delete devices.

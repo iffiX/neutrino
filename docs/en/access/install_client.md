@@ -1,3 +1,7 @@
+---
+description: "Neutrino Hub has clients for Windows, macOS, Linux, Android and iPhone. Install one, scan to join, and open the apps and files on your home computer."
+---
+
 # Install the client
 
 You install the client on a phone or computer to use the apps and files on your systems.

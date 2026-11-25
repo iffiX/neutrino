@@ -1,3 +1,8 @@
+---
+title: "一键部署 Hermes WebUI"
+description: "微子中枢一键部署 Hermes WebUI：Windows、macOS、Linux 都能装，带记忆和技能的 AI 助手，手机随时打开，发个链接就能分享。"
+---
+
 # Hermes WebUI
 
 Hermes WebUI 是 AI 助手 Hermes Agent 的网页界面。Hermes Agent 支持记忆和技能，你可以在手机上随时打开它。
@@ -16,7 +21,7 @@ Hermes WebUI 运行在[容器](/deploy/containers)里，每个系统只运行一
 
 ## 安装
 
-开始之前，你要先到 [AI 网关](/hub/ai_gateway) 添加 API 密钥或者订阅账号，Hermes WebUI 的模型都来自 AI 网关。
+Hermes WebUI 跟随默认账户的 **AI 工具使用中枢网关** 开关，开关打开时，它的模型都来自 AI 网关。开始之前，你要先到 [AI 网关](/hub/ai_gateway) 添加 API 密钥或者订阅账号，再在系统页面编辑默认账户，打开这个开关，步骤见[加入了中枢的系统](/hub/ai_gateway#加入了中枢的系统)。
 
 1. 在浏览器里打开面板并登录，再到左侧栏的下半部分，点你要安装到的系统。
 1. 在 **模块配置** 区域，按 **+ 添加模块**。在弹窗里勾选 **Hermes WebUI** 卡片，卡片上显示 **需要：容器**，卡片亮起后按 **关闭**。
@@ -30,9 +35,9 @@ Hermes WebUI 运行在[容器](/deploy/containers)里，每个系统只运行一
    ![模块列表，Hermes WebUI 这一行标红](/guide/zh/deploy_hermes_webui_04_tab.webp "点 Hermes WebUI")
    ![Hermes WebUI 标签显示未安装，安装按钮标红](/guide/zh/deploy_hermes_webui_05_install.webp "按 安装")
 
-1. 在 Windows 和 macOS 上第一次安装时，接着会弹出 **选择运行容器的账户**。选择账户，再按 **安装**，详细步骤见[依赖容器的应用](/deploy/on_a_machine#依赖容器的应用)。Linux 上没有这个弹窗。
+1. 在 Windows 和 macOS 上第一次安装时，接着会弹出 **运行设置**。确认 **CPU 数**、**内存（GiB）** 和 **磁盘上限（GiB）**，再按 **安装**，详细步骤见[依赖容器的应用](/deploy/on_a_machine#依赖容器的应用)。Linux 上没有这个弹窗。
 
-   ![选择运行容器的账户的弹窗](/guide/zh/windows_account_dialog.webp)
+   ![运行设置的弹窗，安装按钮标红](/guide/zh/containers_run_settings.webp)
 
 1. 在 Windows 上，如果要重启，这个标签会显示提示，旁边有 **立即重启**。按 **立即重启**，电脑重启后会自动继续安装。
 
@@ -92,6 +97,8 @@ Hermes 页面里自己生成的分享链接，只有登录过的浏览器才能�
 ## 设置
 
 它没有 **配置** 按钮，标签里只有状态、日志和操作按钮。要换模型，在 Hermes 的页面里选择。
+
+关掉默认账户的 **AI 工具使用中枢网关** 时，Hermes WebUI 不再使用 AI 网关，你在页面里保存的默认模型和其他设置都保留。再打开这个开关，它重新使用 AI 网关。
 
 Hermes 的页面默认是深色的。如果你要换成浅色，按页面左下角的齿轮，在 **外观** 的 **主题** 里选择 **Light**。
 

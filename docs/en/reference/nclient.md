@@ -1,3 +1,7 @@
+---
+description: "Neutrino Hub's nclient command opens apps, terminals, SSH, files and remote desktops from the command line on Windows, macOS or Linux, in scripts too."
+---
+
 # nclient command
 
 `nclient` is the client's command-line program, and every action of the client window is also available through it in a terminal or a script. It installs with the client, and the phone apps have no `nclient`. It runs as your own account; with `sudo`, it returns `root_refused`.
@@ -171,7 +175,7 @@ Linux 5.15.0-198-generic
 | `nclient terminal set <system> <session>`     | Changes a session: `--persist on\|off`, `--share on\|off`                     |
 | `nclient terminal stop <system> <session>`    | Ends the session and the programs in it                                       |
 
-`--account` picks an enabled account and defaults to the first one; `open` and `exec` both take it. With `--tty`, `exec` gives the command a terminal, which htop and vim need.
+`--account` picks an enabled account and defaults to the system's default account; `open` and `exec` both take it. With `--tty`, `exec` gives the command a terminal, which htop and vim need.
 
 `exec` returns the remote command's exit code. 125 means the request was refused, and 126 means no hub offers this system. For a wrong system name, it shows **no machine named lab-gpu; there are: my-computer** and returns 126.
 

@@ -1,3 +1,7 @@
+---
+description: "Neutrino Hub shares apps by link: the other person opens VS Code, SiYuan, Ayakaleaf and more on your computer in a browser, with nothing to install."
+---
+
 # App share
 
 App share is the feature that shares a web app with other people through a link. The other person opens the link in a browser and uses the app on your computer without installing any software.
@@ -47,6 +51,7 @@ Each app gives visitors a different identity. Check it before you generate a lin
 | --------------------------------------------- | ---------------------------------- | ---------------------------------------------------------------------------------------------------- |
 | code-server, VS Code, SiYuan, Codeg, CloudCLI | The account that runs the app      | No sign-in page appears, and the visitor can do everything this account can do in the app            |
 | Hermes WebUI                                  | The account hermeswebui            | No sign-in page appears, and the visitor shares your conversations, memory and workspace             |
+| AstrBot                                       | The console account astrbot        | No sign-in page appears, and the visitor can change your bots, plugins and conversations             |
 | Ayakaleaf                                     | A guest account for this link only | The visitor sees only the projects you invite this account to; see [Ayakaleaf](/en/deploy/ayakaleaf) |
 | Gitea                                         | Not signed in                      | The visitor sees the Gitea sign-in page, and accounts are created in Gitea                           |
 | Containers, declared apps                     | Not signed in                      | The app opens as it is; if it has a sign-in page, the visitor sees that page                         |

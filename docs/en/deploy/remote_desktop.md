@@ -1,3 +1,8 @@
+---
+title: "One-click deploy remote desktop"
+description: "Neutrino Hub sets up remote desktop in one click on Windows, macOS or Linux, so you see and control your home computer's screen from your phone or laptop."
+---
+
 # Remote desktop
 
 Remote desktop is a view of a system's screen on your phone or another computer, which you control directly.

@@ -1,3 +1,8 @@
+---
+title: "One-click deploy Ayakaleaf"
+description: "Neutrino Hub deploys Ayakaleaf in one click on Windows, macOS or Linux: open your LaTeX editor on any phone or laptop and share it with co-authors by link."
+---
+
 # Ayakaleaf
 
 Ayakaleaf is a web editor for writing LaTeX papers. You can write together with other people, and the papers are stored on your own computer.
@@ -28,9 +33,9 @@ Ayakaleaf runs in [Containers](/en/deploy/containers), with one instance per sys
    ![The module list with the Ayakaleaf row marked in red](/guide/en/deploy_ayakaleaf_04_tab.webp "Select Ayakaleaf")
    ![The Ayakaleaf tab showing not installed, with the Install button marked in red](/guide/en/deploy_ayakaleaf_05_install.webp "Select Install")
 
-1. On Windows and macOS, the first installation then opens **Choose the account that runs the containers**. Choose an account and select **Install**; the details are in [Apps that need containers](/en/deploy/on_a_machine#apps-that-need-containers). Linux has no such dialog.
+1. On Windows and macOS, the first installation then opens **Run settings**. Check **CPUs**, **Memory (GiB)** and **Disk limit (GiB)**, then select **Install**; the details are in [Apps that need containers](/en/deploy/on_a_machine#apps-that-need-containers). Linux has no such dialog.
 
-   ![The Choose the account that runs the containers dialog](/guide/en/windows_account_dialog.webp)
+   ![The Run settings dialog with the Install button boxed in red](/guide/en/containers_run_settings.webp)
 
 1. On Windows, if a restart is needed, the tab shows a notice with **Restart now** beside it. Select **Restart now**. After the computer restarts, the installation continues automatically.
 
@@ -122,11 +127,13 @@ Apart from the version, the following settings can stay at their defaults. To ch
 
 ![The Ayakaleaf configuration with the AI model field](/guide/en/deploy_ayakaleaf_47_config.webp)
 
-| Setting                                  | Where                       | What it does                                                                                       |
-| ---------------------------------------- | --------------------------- | -------------------------------------------------------------------------------------------------- |
-| **AI model**                             | **Configure** on the tab    | The model the AI assistant in the editor uses; set up the [AI gateway](/en/hub/ai_gateway) first   |
-| **Apply Ayakaleaf**                      | **Configure** on the tab    | Saves the settings; Ayakaleaf restarts, and open editors connect again                             |
-| **Update**, **Install another version…** | Under the status on the tab | Changes the version; the steps are in [Change version](/en/deploy/on_a_machine#change-the-version) |
+| Setting                                  | Where                       | What it does                                                                                                                                                          |
+| ---------------------------------------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **AI model**                             | **Configure** on the tab    | The model the AI assistant in the editor uses; set up the [AI gateway](/en/hub/ai_gateway) and turn on the default account's **AI tools use the hub's gateway** first |
+| **Apply Ayakaleaf**                      | **Configure** on the tab    | Saves the settings; Ayakaleaf restarts, and open editors connect again                                                                                                |
+| **Update**, **Install another version…** | Under the status on the tab | Changes the version; the steps are in [Change version](/en/deploy/on_a_machine#change-the-version)                                                                    |
+
+Ayakaleaf follows the default account's **AI tools use the hub's gateway** switch. When the switch is off, Ayakaleaf stops using the AI gateway and restarts; the **AI model** chosen here stays and is used again when the switch is on.
 
 Ayakaleaf only upgrades, because an older version can fail to read data that a newer version migrated. In the **Install another version…** list, versions older than the installed one are grey and cannot be selected.
 

@@ -1,26 +1,36 @@
+---
+description: "微子中枢把安装、外部访问、应用、AI 网关和分享的常见问题按分组列出，需要细节时打开回答里的链接。"
+---
+
 # 常见问题
 
 你可以按下面的分组查找问题，需要细节时打开回答里的链接。
 
 ## 和其他工具的区别
 
+### 和 Claude 自带的远程、各种 agent 聚合工具有什么区别
+
+Claude 自带的远程只管 Claude。微子·中枢把 Claude Code、Codex、OpenCode，以及 CloudCLI、Codeg 这些 harness 安装到你自己的电脑上，一个 AI 网关管好密钥，手机上都能打开。Claude 自带的远程是 Anthropic 提供的功能，微子·中枢不安装也不管理它。
+
 ### 和 1Panel、宝塔有什么区别
 
 1Panel 和宝塔管理 Linux 服务器上的网站和数据库。微子·中枢管理你的 Windows、macOS、Linux 电脑上的工作软件，还提供 6 种外部访问：NetBird、EasyTier、SSH 中继、直连、SakuraFrp 和 OpenFrp。完整比较见[和其他工具比较](/compare)。
 
-### 和向日葵、ToDesk 有什么区别
+## AI 工具
 
-向日葵和 ToDesk 是远程桌面软件。在微子·中枢里，远程桌面是其中一个应用，此外还有编辑器、AI 编程工具、终端和文件。你在手机上能使用应用、文件、终端和桌面。
+### AI 网关怎么用，要准备什么
 
-### 和 Claude 自带的远程、各种 agent 聚合工具有什么区别
+你把 API 密钥或者订阅账号在中枢上添加一次，每台电脑上的 AI 工具都能使用，也能使用你电脑上 Ollama 的本地模型。步骤见 [AI 网关](/hub/ai_gateway)。
 
-Codeg、CloudCLI、Hermes WebUI 这类 agent 聚合工具是微子·中枢部署的应用。微子·中枢负责安装它们，并让你从其他设备连接它们。Claude 自带的远程是 Anthropic 提供的功能，不在微子·中枢的应用列表里，微子·中枢不安装也不管理它。
+### 新出的 AI 工具多久能用上
 
-### 和 Tailscale 有什么区别
-
-Tailscale 只负责把设备连成一个网络，上面的软件要你自己部署和配置。微子·中枢同时提供应用部署、外部访问和应用分享，使用它也不用注册账号。
+你在 [GitHub Issues](https://github.com/iffiX/neutrino/issues) 提一个许愿，一般 3 到 5 天就能加上。
 
 ## 准备工作
+
+### 国内下载慢怎么办
+
+你可以安装国内版，命令见[安装中枢](/hub/install)。每个应用有多个下载源，中枢自动选最快的那个。
 
 ### 要买服务器或域名吗
 

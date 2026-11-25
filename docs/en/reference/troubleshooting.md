@@ -1,3 +1,7 @@
+---
+description: "Neutrino Hub lists the cause and the fix for each message and error code you see on the screen."
+---
+
 # Troubleshooting
 
 You can look up a message on your screen or an error code in the following entries to find its cause and its fix.
@@ -440,13 +444,21 @@ This account is already added. Skip adding it again.
 
 This Windows account has never signed in, and this app needs its home folder. Sign in to the computer with this account one time, then select the same button again. Containers are exempt from this limit.
 
+### `account_no_login`
+
+This account has no login shell, or its home folder does not exist, so it cannot sign in. Give the account a login shell and a home folder on the system, or choose another account.
+
+### `default_account_missing`
+
+This system has no default account yet, and every module is grey. Add the first account under **Available accounts**, and it becomes the default account; see [Add the first account](/en/deploy/on_a_machine#add-the-first-account).
+
 ### `credential_missing`
 
 This Windows account has no saved password. In **Available accounts**, select **Edit** on this row and fill in **Password**.
 
 ### `credential_invalid`
 
-Windows rejects this password, for example because it changed. Enter the correct password in the dialog or in the account form.
+Windows rejects this password, for example because it changed. Enter the correct password in the account form or in the setup wizard.
 
 ### `account_logon_refused`
 
@@ -493,14 +505,6 @@ The first start stopped at one step, and the message names the step. Fix the cau
 ### `ayakaleaf_guest_failed`
 
 The guest account could not be created, so the share shows **failed**. The next apply retries automatically, and the message after the code gives the reason.
-
-### `copy_runs_first`, `copy_unreached`
-
-The account's shell runs another program with the same name first, or cannot find the copy that the module installed. Select **Put this module's copy first** on this row. See [Claude Code](/en/deploy/claude_code#risks-and-limits).
-
-### `copy_in_system_path`
-
-On Windows, a program with the same name is in the system PATH. The module's copy cannot go before it, so this account cannot be selected. Uninstall that copy, or remove its folder from the system PATH, then select this account.
 
 ### `share_name_taken`
 
@@ -550,7 +554,7 @@ The WSL or Podman installer returned an error. Look up its exit code, then selec
 
 ### `machine_account_missing`
 
-The account that runs the containers is not chosen yet. In **Run settings**, choose **Account**.
+This system has no default account yet, and on Windows and macOS the containers run as the default account. Add the first account first; see [Add the first account](/en/deploy/on_a_machine#add-the-first-account).
 
 ### `machine_image_missing`
 
@@ -614,7 +618,7 @@ A step of starting or restoring RustDesk failed. Fix the cause that follows the 
 
 ### `terminal_account_missing`
 
-The terminal of this system has no enabled account. Enable one on the **Terminal** tab.
+This system has no account yet, so its terminal has no enabled account. Add the first account; see [Add the first account](/en/deploy/on_a_machine#add-the-first-account).
 
 ### `key_missing`
 
@@ -952,7 +956,7 @@ The screen shows **The files adapter is in use by another account on this machin
 
 ### No account is enabled for this machine's terminal
 
-No account is enabled yet. Enable one on its **Terminal** tab.
+This system has no account yet. Add the first account on its page; see [Add the first account](/en/deploy/on_a_machine#add-the-first-account).
 
 ### `account_not_enabled`
 

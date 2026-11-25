@@ -1,3 +1,7 @@
+---
+description: "Neutrino Hub connects your phone and laptop through one port of the hub, checks their permissions, then reaches the apps, end-to-end encrypted."
+---
+
 # How it works
 
 Each of your devices connects to a single port on the hub, and the hub connects it to an app after a permission check.

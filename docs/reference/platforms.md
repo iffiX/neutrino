@@ -1,3 +1,7 @@
+---
+description: "微子中枢的中枢、被控端和客户端在 Linux、Windows、macOS 上都能装，手机有安卓和 iPhone 客户端，这一页列出每个应用支持的系统。"
+---
+
 # 支持的平台
 
 微子·中枢全部是 64 位，没有 32 位版。Linux、Windows 和 macOS 上都能安装中枢、被控端和客户端，手机上只有客户端。
@@ -69,6 +73,7 @@ Windows 版只有 x86-64，RustDesk 和 cc-switch 都没有 ARM64 版。
 | Codeg        | amd64、arm64                 | amd64                        | Apple 芯片、Intel |                                                    |
 | Hermes WebUI | 能运行 **容器** 的系统都支持 | amd64                        | Apple 芯片、Intel | 需要 **容器**，建议内存 1 GiB                      |
 | Ayakaleaf    | 能运行 **容器** 的系统都支持 | amd64                        | Apple 芯片、Intel | 需要 **容器**，建议内存 3 GiB                      |
+| AstrBot      | 能运行 **容器** 的系统都支持 | amd64                        | Apple 芯片、Intel | 需要 **容器**，建议内存 1 GiB                      |
 | 思源笔记     | amd64、arm64                 | amd64                        | Apple 芯片、Intel |                                                    |
 | Claude Code  | amd64、arm64                 | amd64、arm64                 | Apple 芯片、Intel | 普通程序，在终端里运行                             |
 | Codex        | amd64、arm64                 | amd64、arm64                 | Apple 芯片、Intel | 普通程序，在终端里运行                             |
@@ -76,7 +81,7 @@ Windows 版只有 x86-64，RustDesk 和 cc-switch 都没有 ARM64 版。
 | Ollama       | amd64、arm64                 | amd64                        | Apple 芯片、Intel | Linux 上自动安装系统的 zstd；macOS 14 及以上       |
 | 容器         | Debian、RHEL、Arch 三族      | amd64，内部版本 19041 及以上 | 13 及以上         | Linux 上系统的 Podman 3.4 及以上                   |
 
-不属于这三族的 Linux，比如 Alpine，没有容器，所以也不能运行 Hermes WebUI 和 Ayakaleaf。
+不属于这三族的 Linux，比如 Alpine，没有容器，所以也不能运行 Hermes WebUI、Ayakaleaf 和 AstrBot。
 
 Windows 上的容器只在内部版本 26100 上实测过，19041 是安装包接受的最低版本。
 

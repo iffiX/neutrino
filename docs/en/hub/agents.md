@@ -1,3 +1,7 @@
+---
+description: "Neutrino Hub manages several computers in one panel: Windows, macOS and Linux systems join, report their state, take app installs and wake from the panel."
+---
+
 # Agents
 
 An agent is the program on a system that installs and runs apps and reports the system's status to the hub. On the panel's **Agents** page, you add systems, view their status and manage them.
@@ -89,9 +93,11 @@ Before you add a system, make sure the other computer can connect to the hub. Ei
    joined tcp://192.168.1.20:8443 as 7a30fd786d7941d7b29d148ba0b5f034
    ```
 
-1. Back on the panel's **Agents** page, a row for the other computer appears shortly, with **Last seen** showing **online**. Its name also appears in the lower part of the sidebar.
+1. Back on the panel's **Agents** page, a row for the other computer appears shortly. Its name has a yellow dot, and **Last seen** shows **incomplete**, because the system has no account yet. Its name also appears in the lower part of the sidebar.
 
-   ![The Agents page with the new row marked and its name in the sidebar](/guide/en/hub_add_machine_11_two_rows.webp)
+   ![The Agents page with the new row marked and Last seen showing incomplete](/guide/en/hub_add_machine_11_incomplete.webp)
+
+1. Select **Manage** on the row to open the system's page, and add the first account, which becomes the system's default account; see [Add the first account](/en/deploy/on_a_machine#add-the-first-account). Then **incomplete** disappears, and **Last seen** shows **online**.
 
 To check the connection on the other computer, run `sudo nagent status`. The connection works when `service` shows `running` and `heartbeat` shows `ok`.
 
@@ -135,9 +141,11 @@ Adding over SSH works for Linux only. On any other system, the install stops wit
    ![The install output during the install](/guide/en/hub_add_machine_13_ssh_output.webp "Installing")
    ![The install output ending in joined, with exit 0 at the top right](/guide/en/hub_add_machine_14_ssh_done.webp "It shows exit 0")
 
-1. The other computer has joined the hub automatically. After you select **Close**, a new row appears on the **Agents** page, with **Last seen** showing **online**.
+1. The other computer has joined the hub automatically. After you select **Close**, a new row appears on the **Agents** page, with **Last seen** showing **incomplete**.
 
-   ![The Agents page with the new row marked](/guide/en/hub_add_machine_15_two_rows_ssh.webp)
+   ![The Agents page with the new row marked and Last seen showing incomplete](/guide/en/hub_add_machine_15_incomplete_ssh.webp)
+
+1. Select **Manage** on the row to open the system's page, and add the first account; see [Add the first account](/en/deploy/on_a_machine#add-the-first-account).
 
 ## Row buttons
 
@@ -181,7 +189,7 @@ Select **Reboot** or **Shut down**, then confirm in the dialog. The computer act
 
 Select **Forget**, then confirm in the dialog. The system leaves the hub and its modules stop: its shares end, its AI tools return to their own settings, and its desktop sharing turns off.
 
-The agent and the installed apps stay on the computer. The system needs a new link to join again. After it rejoins, its modules return to the list as **stopped**, and **Start** puts each one back into use. To remove them completely, see [Uninstall](/en/hub/uninstall).
+The agent and the installed apps stay on the computer. The system needs a new link to join again. After it rejoins, add the first account again, and it becomes the system's new default account. Its modules return to the list as **stopped**, and **Start** puts each one back into use. To remove them completely, see [Uninstall](/en/hub/uninstall).
 
 ![The Forget confirmation dialog](/guide/en/hub_add_machine_10_forget.webp)
 

@@ -1,3 +1,7 @@
+---
+description: "微子中枢的 nclient 命令让你在 Windows、macOS、Linux 的命令行里打开应用、终端、SSH、文件和远程桌面，脚本里也能用。"
+---
+
 # nclient 命令
 
 `nclient` 是客户端的命令行程序。你在窗口里能做的操作，都能在终端和脚本里用它完成。
@@ -173,7 +177,7 @@ Linux 5.15.0-198-generic
 | `nclient terminal set <系统> <会话>`     | 修改会话：`--persist on\|off`、`--share on\|off` |
 | `nclient terminal stop <系统> <会话>`    | 结束会话和里面的程序                             |
 
-`--account` 用来选择启用的账户，默认是第一个，`open` 和 `exec` 都可以使用。`exec` 加 `--tty` 会给命令分配一个终端，运行 htop、vim 时需要它。
+`--account` 用来选择启用的账户，默认是这个系统的默认账户，`open` 和 `exec` 都可以使用。`exec` 加 `--tty` 会给命令分配一个终端，运行 htop、vim 时需要它。
 
 `exec` 返回远端命令的退出码。125 表示拒绝，126 表示没有中枢提供这个系统。写错系统名称时，它显示 **没有叫 lab-gpu 的系统，有这些：my-computer**，并返回 126。
 

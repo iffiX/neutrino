@@ -1,26 +1,36 @@
+---
+description: "Neutrino Hub answers the common questions about installing, reaching home from outside, apps, the AI gateway and sharing, grouped by topic."
+---
+
 # Frequently asked questions
 
 The questions are grouped by topic, and each answer links to a page with the details.
 
 ## Differences from other tools
 
+### How is it different from Claude's built-in remote access and agent aggregation tools
+
+Claude's built-in remote access covers Claude alone. Neutrino Hub installs Claude Code, Codex and OpenCode, and harnesses such as CloudCLI and Codeg, on your own computer. One AI gateway holds the keys, and your phone opens them all. Claude's built-in remote access is a feature from Anthropic, and Neutrino Hub neither installs nor manages it.
+
 ### How is it different from 1Panel and BT Panel
 
 1Panel and BT Panel manage websites and databases on Linux servers. Neutrino Hub manages the software you work with on your Windows, macOS or Linux computers. It also provides 6 access methods: NetBird, EasyTier, SSH relay, Direct, SakuraFrp and OpenFrp. For the full comparison, see [Comparison with other tools](/en/compare).
 
-### How is it different from Sunlogin and ToDesk
+## AI tools
 
-Sunlogin and ToDesk are remote desktop programs. In Neutrino Hub, remote desktop is one of the apps, alongside editors, AI coding tools, terminals and files. The phone client opens apps, files, terminals and the desktop.
+### How to use the AI gateway, and what it needs
 
-### How is it different from Claude's built-in remote access and agent aggregation tools
+Add an API key or a subscription account to the hub, and the AI tools on every computer can use it. The local Ollama models on your computers work too. [AI gateway](/en/hub/ai_gateway) has the steps.
 
-Agent aggregation tools such as Codeg, CloudCLI and Hermes WebUI are apps that Neutrino Hub deploys. Neutrino Hub installs them, and you connect to them from other devices through the hub. Claude's built-in remote access is a feature from Anthropic. It is not in the app list of Neutrino Hub, and Neutrino Hub neither installs nor manages it.
+### How soon do new AI tools arrive
 
-### How is it different from Tailscale
-
-Tailscale only links devices into one network, and you deploy and configure the software on it yourself. Neutrino Hub provides app deployment, access from outside and app sharing together, and you use it without signing up for an account.
+Ask for a tool in [GitHub Issues](https://github.com/iffiX/neutrino/issues). A new tool usually lands in 3 to 5 days.
 
 ## Preparation
+
+### What if downloads are slow in mainland China
+
+Install the China edition, with the command on [Install the hub](/en/hub/install). Each app has several download sources, and the hub picks the fastest.
 
 ### Do you need to buy a server or a domain
 

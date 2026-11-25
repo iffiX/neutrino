@@ -1,3 +1,8 @@
+---
+title: "One-click deploy Gitea"
+description: "Neutrino Hub deploys Gitea in one click on Windows, macOS or Linux: your own code hosting, with the code on your computer, shared with others by link."
+---
+
 # Gitea
 
 Gitea is a self-hosted code hosting service similar to GitHub. Your code stays on your own computer, and you can manage repositories together with other people.

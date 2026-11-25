@@ -1,3 +1,8 @@
+---
+title: "One-click deploy VS Code"
+description: "Neutrino Hub installs VS Code in one click on Windows, macOS or Linux, so you work on your home computer's code from any phone, tablet or laptop."
+---
+
 # VS Code
 
 VS Code is Microsoft's code editor. Neutrino Hub runs Microsoft's VS Code Server, and you use it in the browser of a computer, phone or tablet.
@@ -14,9 +19,13 @@ Each account runs one instance. If you prefer not to accept Microsoft's terms, u
 | Windows | amd64                | 0.5.0                      |
 | macOS   | Apple silicon, Intel | 0.5.0                      |
 
+## Multiple accounts
+
+VS Code runs as the system's default account, so the install needs no account choice. For another account, select **Configure**, check the account under **Enabled accounts**, and select **Apply VS Code**; see [Add more accounts](/en/deploy/on_a_machine#add-more-accounts).
+
 ## Install
 
-1. Open the panel in a browser, sign in, and select the system to install on in the lower half of the sidebar. Check that **Available accounts** lists your account. If it does not, add it first with the steps in [Add an account](/en/deploy/on_a_machine#add-an-account).
+1. Open the panel in a browser, sign in, and select the system to install on in the lower half of the sidebar.
 1. In the **Module configuration** area, select **+ Add module**. In the dialog, select the **VS Code** card, then select **Close** after the card is highlighted.
 
    ![The module list with the Add module button boxed in red](/guide/en/deploy_vscode_01_add_module.webp "Select + Add module")
@@ -37,15 +46,9 @@ Each account runs one instance. If you prefer not to accept Microsoft's terms, u
    ![The tab showing installing, with every step listed](/guide/en/deploy_vscode_06_installing.webp "Installing")
    ![The tab showing installed, with the Start button boxed in red](/guide/en/deploy_vscode_07_installed.webp "Select Start")
 
-1. The tab shows **running, no accounts**. Select **Configure**, and the settings open under it. Under **Enabled accounts**, select your account.
+1. The tab shows **running**, and the install is complete.
 
-   ![The tab showing running, no accounts, with the Configure button boxed in red](/guide/en/deploy_vscode_17_started.webp "Select Configure")
-   ![The Enabled accounts field with the lab row boxed in red](/guide/en/deploy_vscode_08_tick_account.webp "Select lab")
-
-1. Select **Apply VS Code**. The account shows **running**, and **Applied.** appears under it. The install is complete.
-
-   ![lab selected, with the Apply VS Code button boxed in red](/guide/en/deploy_vscode_09_apply.webp "Select Apply VS Code")
-   ![lab showing running, with Applied. under it](/guide/en/deploy_vscode_10_applying.webp "Applied")
+   ![The tab showing running](/guide/en/deploy_vscode_17_running.webp)
 
 ## Use
 

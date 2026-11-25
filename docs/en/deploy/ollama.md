@@ -1,3 +1,8 @@
+---
+title: "One-click deploy Ollama"
+description: "Neutrino Hub deploys Ollama in one click on Windows, macOS or Linux, and OpenCode, Claude Code and other tools on every computer use its local models."
+---
+
 # Ollama
 
 Ollama is a server that runs large language models on your own computer. You install it on a system from the panel, pull models there, and use them from a client or the AI gateway.
@@ -71,11 +76,11 @@ Ollama pulls models from its own library, such as `qwen2.5:7b`, and from GGUF re
 
 **Cancel** stops a pull and keeps the parts already downloaded, so a later pull of the same name continues from them. A failed pull stays in the list with its reason until you select **Cancel**.
 
-Select **Load** on a model to load it into memory, where it stays until you select **Unload**. When Ollama restarts, the hub loads that model again. Models in memory come first in the list. Each shows how much memory it takes, and its share on the CPU and the GPU, such as **100% CPU**.
+Select **Load** on a model to load it into memory, where it stays until you select **Unload**. When Ollama restarts, the hub loads that model again. Models in memory come first in the list. Each shows how much memory it takes, and its share on the CPU and the GPU, such as **100% CPU**. The next line shows the context length the model actually holds, such as **Context 8192**. A model trained for a shorter length than the setting shows its own length there.
 
 When a program uses a model that is not in memory, through the API or the AI gateway, Ollama loads it too. Ollama unloads that model after it stays idle for the **Idle unload time**. Select **Remove** and confirm in the dialog to delete a model from this system.
 
-![A model in memory, with the Unload button marked in red](/guide/en/deploy_ollama_12_loaded.webp "Select Unload")
+![A model in memory with its context length under the Memory cell, and the Unload button marked in red](/guide/en/deploy_ollama_12_loaded.webp "Select Unload")
 ![The dialog for removing a model, with the Remove button marked in red](/guide/en/deploy_ollama_13_remove_dialog.webp "Select Remove")
 
 ### Connect from a client
@@ -100,7 +105,7 @@ Any other tool that uses Ollama's API takes `http://127.0.0.1:<local-port>` as i
 
 ### Use the models through the AI gateway
 
-While this system is online and its Ollama runs with at least one model, the hub adds the models to the [AI gateway](/en/hub/ai_gateway). They keep their names from Ollama, and every tool that uses the gateway can choose them. Under **Providers** on the panel's **AI** page, the row **from my-computer's Ollama** lists them, where my-computer is the name of this system. Its **Models** button opens the Ollama tab of this system with its **Models** area.
+While this system is online and its Ollama runs with at least one model, the hub adds the models to the [AI gateway](/en/hub/ai_gateway). They keep their names from Ollama, and every tool that uses the gateway can choose them. The hub also writes each model's [context length](/en/hub/ai_gateway#context-length) into those tools. Under **Providers** on the panel's **AI** page, the row **from my-computer's Ollama** lists them, where my-computer is the name of this system. Its **Models** button opens the Ollama tab of this system with its **Models** area.
 
 ![The provider list on the AI page with the row from my-computer's Ollama marked in red](/guide/en/hub_ai_gateway_30_ollama_row.webp)
 
@@ -123,17 +128,20 @@ Ollama's cloud models are off, so this system runs only the models pulled to it.
 
 Apart from pulling models, the following settings can stay at their defaults:
 
-| Setting                                  | Where                                        | What it does                                                                                                                                                                                        |
-| ---------------------------------------- | -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Idle unload time**                     | **Settings** under **Configure**             | How long a model a program loaded stays in memory with no requests: **5 minutes**, **30 minutes** (the default), **1 hour**, **4 hours** or **Never**. A model loaded with **Load** stays in memory |
-| **GPUs**                                 | **Settings** under **Configure**             | The GPUs Ollama uses, all of them by default. The row shows only on a system with GPUs, and never on macOS                                                                                          |
-| **Models**                               | **Models** under **Configure**               | Pulls, loads, unloads and removes models                                                                                                                                                            |
-| **Update**, **Install another version…** | Under the tab's state                        | Changes the version of Ollama                                                                                                                                                                       |
-| **Configure**                            | The Ollama row on the client's **Apps** page | Changes the local port on this computer                                                                                                                                                             |
+| Setting                                  | Where                                        | What it does                                                                                                                                                                                                                                                                |
+| ---------------------------------------- | -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Idle unload time**                     | **Settings** under **Configure**             | How long a model a program loaded stays in memory with no requests: **5 minutes**, **30 minutes** (the default), **1 hour**, **4 hours** or **Never**. A model loaded with **Load** stays in memory                                                                         |
+| **Context length (tokens)**              | **Settings** under **Configure**             | The most tokens a model holds in one request: the prompt, the conversation and the answer. The default is 65536, and you can enter 4096 to 262144. AI tools send a long prompt with every request, and a length too small makes the request fail or cuts part of the prompt |
+| **GPUs**                                 | **Settings** under **Configure**             | The GPUs Ollama uses, all of them by default. The row shows only on a system with GPUs, and never on macOS                                                                                                                                                                  |
+| **Models**                               | **Models** under **Configure**               | Pulls, loads, unloads and removes models                                                                                                                                                                                                                                    |
+| **Update**, **Install another version…** | Under the tab's state                        | Changes the version of Ollama                                                                                                                                                                                                                                               |
+| **Configure**                            | The Ollama row on the client's **Apps** page | Changes the local port on this computer                                                                                                                                                                                                                                     |
 
 After you change **Settings**, select **Apply settings**. Ollama restarts, every model leaves memory, and the models loaded with **Load** come back.
 
-![The Settings area with the Idle unload time choices open and 1 hour marked in red](/guide/en/deploy_ollama_14_settings.webp "Choose a time")
+A longer context length takes more memory. What does not fit on the GPU goes to system memory, and the **Memory** cell under **Models** shows the split. When system memory cannot hold it either, the model fails to load and requests to it fail. Lower the context length then.
+
+![The Settings area with the Context length (tokens) field marked in red](/guide/en/deploy_ollama_14_settings.webp "The Settings area")
 ![The Settings area with the restart warning and the Apply settings button marked in red](/guide/en/deploy_ollama_15_settings_apply.webp "Select Apply settings")
 
 The agent starts Ollama on `127.0.0.1:11434`, and keeps the models in these folders:

@@ -1,3 +1,7 @@
+---
+description: "Neutrino Hub installs, sets up, backs up and troubleshoots itself from the command line with nhub, run on the hub's computer."
+---
+
 # nhub command
 
 `nhub` is the command-line tool of Neutrino Hub, installed with the hub's package. When the panel does not open, you can repair the hub with it from a terminal on the hub's computer.

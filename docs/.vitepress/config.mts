@@ -30,6 +30,7 @@ export default defineConfig({
   base: process.env.NEUTRINO_DOCS_BASE || "/",
   lang: "zh-CN",
   title: SEARCH_NAME,
+  titleTemplate: `${SEARCH_NAME} | :title`,
   description: DEFAULT_DESCRIPTION.zh,
   cleanUrls: true,
   lastUpdated: false,
@@ -142,6 +143,7 @@ export default defineConfig({
       lang: "en",
       link: "/en/",
       title: "Neutrino Hub",
+      titleTemplate: "Neutrino Hub | :title",
       description: DEFAULT_DESCRIPTION.en,
       themeConfig: {
         logo: { src: "/logo.png", alt: "Neutrino Hub" },

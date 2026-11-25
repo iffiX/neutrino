@@ -1,3 +1,7 @@
+---
+description: "Neutrino Hub takes all outside connections through one port, admits devices by the keys in their join link, and lets you revoke any link."
+---
+
 # Security model
 
 Every outside connection to Neutrino Hub goes through one TCP port, which is 8443 by default. Devices with a join link connect to this port with the Noise protocol, and browsers with a share link connect to it with WebRTC. Every other connection receives no data.

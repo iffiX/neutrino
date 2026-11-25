@@ -1,3 +1,7 @@
+---
+description: "Neutrino Hub sets up EasyTier for you, so your phone and laptop reach your home computer while away, even without a public IP."
+---
+
 # EasyTier
 
 EasyTier is software that connects your devices in a virtual network. The hub and the devices join the same virtual network, and the devices connect to the hub's address in it. It works without a public address.

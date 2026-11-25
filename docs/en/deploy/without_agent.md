@@ -1,3 +1,7 @@
+---
+description: "Neutrino Hub reaches printers, routers and other devices that cannot run software, so you open their admin pages from your phone and laptop while away."
+---
+
 # Access devices without an agent
 
 You can access devices that cannot install software, such as printers and routers, from an outside network.

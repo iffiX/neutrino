@@ -1,3 +1,7 @@
+---
+description: "微子中枢几分钟就能装好：安装中枢和 CloudCLI，手机扫码加入，就能在手机上打开电脑上的 AI 编程会话。"
+---
+
 # 快速上手
 
 你将安装中枢和 CloudCLI，然后用手机打开电脑上的 AI 会话。
@@ -78,9 +82,13 @@
    ![用哪些网口这一屏，下一步按钮标红](/guide/zh/hub_install_07_network.webp "不用修改，按 下一步")
    ![开关保持关闭，下一步按钮标红](/guide/zh/hub_install_08_exit.webp "保持关闭，按 下一步")
 
+1. 在 **你在这个系统上的账户** 这一屏，确认 **账户** 是你平时登录这台电脑的账户，再按 **下一步**。它就是这个系统的默认账户，之后不能更改。在 Windows 上，你还要在 **密码** 里填写这个账户的登录密码。如果你平时用 PIN 开机，这里也要填写密码，不是 PIN。
+
+   ![账户这一屏，下一步按钮标红](/guide/zh/hub_install_12_account.webp "确认账户，按 下一步")
+
 1. 在 **就绪** 这一屏按 **开始配置这个系统**。页面变成 **正在配置** 后，等待配置完成。看到 **这个中枢已配置好** 时，按 **打开面板**。
 
-   ![就绪这一屏，开始配置的按钮标红](/guide/zh/hub_install_09_ready.webp "按 开始配置这个系统")
+   ![就绪这一屏，开始配置的按钮标红](/guide/zh/hub_install_13_ready.webp "按 开始配置这个系统")
    ![这个中枢已配置好，打开面板按钮标红](/guide/zh/hub_install_11_done.webp "配置完成后，按 打开面板")
 
 1. 用刚才设置的面板密码登录。登录后会进入 **总览** 页，这一步就完成了。
@@ -138,14 +146,13 @@ CloudCLI 通过中枢的 AI 网关使用模型，所以你不用在电脑上安�
 
 ## 第三步：在面板上安装 CloudCLI
 
-1. 面板左侧栏的下半部分列出了每个加入中枢的系统。按这台电脑的名字，打开它的页面。再在 **可用账户** 一栏按 **添加**。
+1. 面板左侧栏的下半部分列出了每个加入中枢的系统。按这台电脑的名字，打开它的页面。**可用账户** 里已经有你在向导里选的账户，带 **默认** 标签。按这一行的 **编辑**。
 
    ![左侧栏下半部分，这台电脑的名字标红](/guide/zh/deploy_on_a_machine_01_sidebar.webp "按这台电脑的名字")
-   ![可用账户一栏，添加按钮标红](/guide/zh/deploy_on_a_machine_02_accounts_add.webp "按 添加")
+   ![系统页面，账户那一行的编辑按钮标红](/guide/zh/hub_ai_gateway_19_account_edit.webp "按 编辑")
 
-1. 在 **系统账户** 里选择你平时登录这台电脑的账户。在 Windows 上，你还要在 **密码** 里填写这个账户的登录密码。如果你平时用 PIN 开机，这里也要填写密码，不是 PIN。再打开 **AI 工具使用中枢网关**，然后按 **保存**。如果这一栏已经列出这个账户，按这一行的 **编辑**，打开这个开关后保存。
+1. 打开 **AI 工具使用中枢网关**，然后按 **保存**。
 
-   ![账户表单，系统账户选择框标红](/guide/zh/deploy_on_a_machine_03_account_form.webp "选择账户")
    ![账户表单，AI 工具使用中枢网关开关标红](/guide/zh/hub_ai_gateway_13_account_switch.webp "打开开关，按 保存")
 
 1. 在 **模块配置** 一栏按 **+ 添加模块**。在弹窗里点 **CloudCLI** 的卡片，卡片亮起表示已选中，再按右下角的 **关闭**。
@@ -158,19 +165,9 @@ CloudCLI 通过中枢的 AI 网关使用模型，所以你不用在电脑上安�
    ![CloudCLI 标签显示未安装，安装按钮标红](/guide/zh/deploy_cloudcli_05_install.webp "按 安装")
    ![标签显示已安装，启动按钮标红](/guide/zh/deploy_cloudcli_07_installed.webp "按 启动")
 
-1. 标签显示 **运行中，没有账户** 后，按 **配置**。在 **启用的账户** 里勾选你的账户。
+1. 标签会列出为你的账户运行 npm 的那一步，第一次要几分钟到十几分钟。步骤都变成绿点后，再等半分钟左右，标签显示 **运行中**，这一步就完成了。CloudCLI 以你在向导里选的默认账户运行，不用勾选账户。
 
-   ![标签显示运行中，没有账户，配置按钮标红](/guide/zh/deploy_cloudcli_17_started.webp "按 配置")
-   ![启用的账户一栏，账户这一行标红](/guide/zh/deploy_cloudcli_08_tick_account.webp "勾选账户")
-
-1. 按 **应用 CloudCLI**。这时标签显示 **安装中**，正在运行 npm 这一步，第一次要几分钟到十几分钟。
-
-   ![勾选了账户，应用 CloudCLI 按钮标红](/guide/zh/deploy_cloudcli_09_apply.webp "按 应用 CloudCLI")
-   ![正在运行 npm 这一步](/guide/zh/deploy_cloudcli_10_npm_running.webp "等待 npm 这一步")
-
-1. 标签显示 **运行中**，这一步就完成了。
-
-   ![标签显示运行中](/guide/zh/deploy_cloudcli_11_running.webp)
+   ![标签显示运行中，下面列出的步骤都是绿点](/guide/zh/deploy_cloudcli_17_running.webp)
 
 ## 第四步：把手机加入中枢
 

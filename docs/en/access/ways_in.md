@@ -1,3 +1,7 @@
+---
+description: "Neutrino Hub sets up six ways to reach your home computer from outside, and the client uses the fastest one, even without a public IP."
+---
+
 # Choose an access method
 
 An access method is how you connect to the hub when you are away from its LAN. Turning on one method is enough.

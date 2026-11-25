@@ -1,3 +1,7 @@
+---
+description: "Neutrino Hub turns services already running at home, such as a router's admin page, into apps you open from your phone and laptop or share by link."
+---
+
 # Add existing services
 
 Existing services are services that already run, such as the admin page of a router or a NAS. After you declare them as apps, you can open them from the client.
