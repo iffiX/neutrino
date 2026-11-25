@@ -55,14 +55,14 @@ AI 工具更新快、配置多，有些默认源安装还慢。微子中枢点�
 
 | 用途 | 应用 |
 | --- | --- |
-| 写代码的 AI 工具 | [Claude Code](https://neutrinohub.net/deploy/claude_code)、[Codex](https://neutrinohub.net/deploy/codex)、[OpenCode](https://neutrinohub.net/deploy/opencode) |
-| Harness | [CloudCLI](https://neutrinohub.net/deploy/cloudcli)、[Codeg](https://neutrinohub.net/deploy/codeg) |
+| AI agent | [Claude Code](https://neutrinohub.net/deploy/claude_code)、[Codex](https://neutrinohub.net/deploy/codex)、[OpenCode](https://neutrinohub.net/deploy/opencode) |
+| AI harness | [CloudCLI](https://neutrinohub.net/deploy/cloudcli)、[Codeg](https://neutrinohub.net/deploy/codeg) |
 | AI 助手 | [Hermes WebUI](https://neutrinohub.net/deploy/hermes_webui) |
-| 聊天机器人 | [AstrBot](https://neutrinohub.net/deploy/astrbot) |
-| 本地大模型 | [Ollama](https://neutrinohub.net/deploy/ollama) |
-| 编辑器 | [VS Code](https://neutrinohub.net/deploy/vscode)、[code-server](https://neutrinohub.net/deploy/code_server) |
-| 写论文 | [Ayakaleaf](https://neutrinohub.net/deploy/ayakaleaf) |
-| 记笔记 | [思源笔记](https://neutrinohub.net/deploy/siyuan) |
+| AI 聊天机器人 | [AstrBot](https://neutrinohub.net/deploy/astrbot) |
+| AI 本地模型 | [Ollama](https://neutrinohub.net/deploy/ollama) |
+| AI 编辑器 | [VS Code](https://neutrinohub.net/deploy/vscode)、[code-server](https://neutrinohub.net/deploy/code_server) |
+| AI 写论文 | [Ayakaleaf](https://neutrinohub.net/deploy/ayakaleaf) |
+| AI 笔记 | [思源笔记](https://neutrinohub.net/deploy/siyuan) |
 | 放代码 | [Gitea](https://neutrinohub.net/deploy/gitea) |
 | 系统访问 | [远程桌面](https://neutrinohub.net/deploy/remote_desktop)、[文件共享](https://neutrinohub.net/deploy/file_share)、[终端](https://neutrinohub.net/deploy/terminal)、[SSH](https://neutrinohub.net/deploy/ssh) |
 | 跑容器 | [容器](https://neutrinohub.net/deploy/containers) |
@@ -79,17 +79,22 @@ AI 工具更新快、配置多，有些默认源安装还慢。微子中枢点�
 
 \* NetBird 和 EasyTier 要手动选择，其余的自动。iOS 不包含这两种，你要用美区账号安装它们的 App。
 
+## 任意分享
+
+任何网页应用，点“分享”得到一个链接。同学用浏览器打开就能用，什么都不用安装。到期失效，也能随时收回。
+
+<img src="images/web/readme_share_zh.webp" width="100%" alt="左边是分享弹窗，中间两只小狼坐在桌边，右边是同学浏览器里打开的 Ayakaleaf" />
+
+**分享地址 share.neutrinohub.net 只提供一个不到 40 KB 的静态客户端，不会另外连到微子的服务器。访客的浏览器和中枢之间全程加密，第三方线路看不到内容。你也可以自己部署这个页面的镜像。**
+
 ## 高级功能
 
 - **[AI 网关](https://neutrinohub.net/hub/ai_gateway)**：AI 提供方在中枢上配一次，每台电脑上的 Claude Code、Codex 都能用。
-- **[应用分享](https://neutrinohub.net/share/web_share)**：任何网页应用，点“分享”得到一个链接，同学用浏览器打开就能用，什么都不用装，到期失效，也能随时收回。
 - **[远程唤醒](https://neutrinohub.net/hub/agents#唤醒)**：在面板上一键唤醒局域网里关机的电脑。
 - **[多机管理](https://neutrinohub.net/hub/agents)**：家里、实验室的多台电脑都加进来，CPU、内存、显卡、温度一眼看清。
 - **[客户端权限](https://neutrinohub.net/hub/clients#权限种类)**：每个客户端能用哪些应用、终端、文件、远程桌面，分别开关，可以细到每个应用。
 - **[凭据保险库](https://neutrinohub.net/hub/what_it_holds#保存的数据)**：文件共享、远程桌面的密码和 SSH 密钥由中枢生成和保管。
 - **[远程执行](https://neutrinohub.net/access/terminal#运行一条命令)**：`nclient terminal exec` 在别的电脑上跑命令，脚本和 AI agent 都能用。
-
-**分享地址 share.neutrinohub.net 只提供一个不到 40 KB 的静态客户端，不会另外连到微子的服务器。访客的浏览器和中枢之间全程加密，第三方线路看不到内容。你也可以自己部署这个页面的镜像。**
 
 ## 为什么选它
 

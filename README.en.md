@@ -55,14 +55,14 @@ AI tools change fast, take a lot of setup, and some install slowly from their de
 
 | Use | Apps |
 | --- | --- |
-| AI coding tools | [Claude Code](https://neutrinohub.net/en/deploy/claude_code), [Codex](https://neutrinohub.net/en/deploy/codex), [OpenCode](https://neutrinohub.net/en/deploy/opencode) |
-| Harnesses | [CloudCLI](https://neutrinohub.net/en/deploy/cloudcli), [Codeg](https://neutrinohub.net/en/deploy/codeg) |
+| AI agents | [Claude Code](https://neutrinohub.net/en/deploy/claude_code), [Codex](https://neutrinohub.net/en/deploy/codex), [OpenCode](https://neutrinohub.net/en/deploy/opencode) |
+| AI harnesses | [CloudCLI](https://neutrinohub.net/en/deploy/cloudcli), [Codeg](https://neutrinohub.net/en/deploy/codeg) |
 | AI assistants | [Hermes WebUI](https://neutrinohub.net/en/deploy/hermes_webui) |
-| Chat bots | [AstrBot](https://neutrinohub.net/en/deploy/astrbot) |
-| Local models | [Ollama](https://neutrinohub.net/en/deploy/ollama) |
-| Editors | [VS Code](https://neutrinohub.net/en/deploy/vscode), [code-server](https://neutrinohub.net/en/deploy/code_server) |
-| Writing papers | [Ayakaleaf](https://neutrinohub.net/en/deploy/ayakaleaf) |
-| Notes | [SiYuan](https://neutrinohub.net/en/deploy/siyuan) |
+| AI chat bots | [AstrBot](https://neutrinohub.net/en/deploy/astrbot) |
+| AI local models | [Ollama](https://neutrinohub.net/en/deploy/ollama) |
+| AI editors | [VS Code](https://neutrinohub.net/en/deploy/vscode), [code-server](https://neutrinohub.net/en/deploy/code_server) |
+| AI paper writing | [Ayakaleaf](https://neutrinohub.net/en/deploy/ayakaleaf) |
+| AI notes | [SiYuan](https://neutrinohub.net/en/deploy/siyuan) |
 | Hosting code | [Gitea](https://neutrinohub.net/en/deploy/gitea) |
 | System access | [Remote desktop](https://neutrinohub.net/en/deploy/remote_desktop), [File share](https://neutrinohub.net/en/deploy/file_share), [Terminal](https://neutrinohub.net/en/deploy/terminal), [SSH](https://neutrinohub.net/en/deploy/ssh) |
 | Containers | [Containers](https://neutrinohub.net/en/deploy/containers) |
@@ -79,17 +79,22 @@ The client runs on Windows, macOS, Linux, Android and iOS, with apps, the deskto
 
 \* You pick NetBird and EasyTier by hand; the rest are automatic. iOS leaves those two out, and you need a US App Store account to install their own apps.
 
+## Share with a link
+
+Select **Share** on any web app to get a link. A friend opens it in a browser with nothing to install. The link expires on its own, and you can revoke it sooner.
+
+<img src="images/web/readme_share.webp" width="100%" alt="The share dialog on the left, two mascots at a table in the middle, and Ayakaleaf in a friend's browser on the right" />
+
+**The share address, share.neutrinohub.net, serves only a static client of under 40 KB. It opens no extra connection to any Neutrino server. The connection between the visitor's browser and the hub is encrypted all the way, and third-party lines cannot read it. You can also host your own copy of the page.**
+
 ## Advanced features
 
 - **[AI gateway](https://neutrinohub.net/en/hub/ai_gateway)**: set up an AI provider once on the hub, and Claude Code and Codex on every computer can use it.
-- **[App share](https://neutrinohub.net/en/share/web_share)**: select **Share** on any web app to get a link. A friend opens it in a browser with nothing to install, and it expires on its own or when you revoke it.
 - **[Wake-on-LAN](https://neutrinohub.net/en/hub/agents#wake)**: wake a computer on your LAN that is off, with one click in the panel.
 - **[Multi-machine management](https://neutrinohub.net/en/hub/agents)**: add your computers at home and in the lab, and see their CPU, memory, GPU and temperature at a glance.
 - **[Client permissions](https://neutrinohub.net/en/hub/clients#permission-kinds)**: turn apps, terminals, files and remote desktop on or off for each client, down to single apps.
 - **[Credential vault](https://neutrinohub.net/en/hub/what_it_holds#stored-data)**: the hub generates and keeps the passwords for file sharing and remote desktop, and the SSH keys.
 - **[Remote execution](https://neutrinohub.net/en/access/terminal#run-one-command)**: `nclient terminal exec` runs commands on another computer, for scripts and AI agents alike.
-
-**The share address, share.neutrinohub.net, serves only a static client of under 40 KB. It opens no extra connection to any Neutrino server. The connection between the visitor's browser and the hub is encrypted all the way, and third-party lines cannot read it. You can also host your own copy of the page.**
 
 ## Why Neutrino Hub
 
