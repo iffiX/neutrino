@@ -182,10 +182,10 @@ Each instance a running module serves is published as one app,
 `web`, has `is_token_required: true` and `description_code` `siyuan_module`.
 `details` is `{version, instances: [{account, port, is_running, code}]}`, and
 an apply refuses `account_invalid`, `account_duplicate` and `secret_missing`,
-each naming the `account`, and on Windows `account_no_profile {account}` for an
+each naming the `account`, `account_unknown {account}` for an account the
+machine does not have, and on Windows `account_no_profile {account}` for an
 account that never signed in, `credential_missing {account}` and
-`credential_invalid {account}`, and an account the machine does not have
-fails its own instance alone with `account_unknown {account}`, as Codeg's does
+`credential_invalid {account}` as Codeg's does
 ([../../protocol.md](../../protocol.md), "The modules section, one entry per
 module").
 
