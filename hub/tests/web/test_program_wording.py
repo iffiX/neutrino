@@ -5,7 +5,8 @@ What these pin: Codex, Claude Code and OpenCode are one catalog entry each in th
 gone in both languages; each title is the fixed name; and every key of
 ui_text.md's "The command line programs' words" says in both languages what
 the standard writes, the ``ui.*`` keys in ``modules.json`` and the
-``code.*`` keys in ``codes.json``.
+``code.*`` keys in ``codes.json``; the words of the read of a person's copy
+are gone in both languages.
 """
 
 import json
@@ -22,6 +23,20 @@ UI_TEXT = HUB_DIR.parent / "skills/core-code-author/design/ui_text.md"
 LANGUAGES = ("en", "zh-CN")
 PROGRAMS = ("claude_code", "codex", "opencode")
 ROW_PATTERN = re.compile(r"^\| `([a-z_.]+)` \| (.+) \| (.+) \|$")
+# The words ui_text.md deletes with the read of a person's copy.
+GONE_KEYS = (
+    "ui.program.replace_title",
+    "ui.program.replace_body",
+    "ui.program.replace_body_unversioned",
+    "ui.program.replace_detail",
+    "ui.program.replace_confirm",
+    "ui.program.system_copy_title",
+    "ui.program.system_copy_close",
+    "ui.program.prefer",
+    "code.copy_runs_first",
+    "code.copy_unreached",
+    "code.copy_in_system_path",
+)
 
 
 def words(language: str, name: str) -> dict:
@@ -80,19 +95,19 @@ def test_the_standard_names_every_key_of_the_programs():
         "ui.claude_code.apply",
         "ui.opencode.apply",
         "ui.program.apply_hint",
-        "ui.program.replace_title",
-        "ui.program.replace_body",
-        "ui.program.replace_body_unversioned",
-        "ui.program.replace_detail",
-        "ui.program.replace_confirm",
-        "ui.program.system_copy_title",
-        "ui.program.system_copy_close",
-        "ui.program.prefer",
-        "code.copy_runs_first",
-        "code.copy_unreached",
-        "code.copy_in_system_path",
         "code.module_not_service",
     }
+
+
+@pytest.mark.parametrize("language", LANGUAGES)
+def test_the_words_of_the_read_of_a_person_s_copy_are_gone(language):
+    held = {
+        **words(language, "modules.json"),
+        **words(language, "codes.json"),
+    }
+
+    for key in GONE_KEYS:
+        assert key not in held
 
 
 @pytest.mark.parametrize("key", sorted(standard_rows()))

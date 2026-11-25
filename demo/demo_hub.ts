@@ -94,7 +94,6 @@ import type {
   OverlayChoiceView,
   PermissionRowView,
   PodmanDeviceView,
-  ProgramCopyView,
   ProxySettings,
   PublishedService,
   RemoteDesktopDeviceView,
@@ -837,14 +836,6 @@ export class DemoHub {
       "/agent/module/samba/folder_share": () => this.folderShares(),
       "/agent/file": (query) => this.fileList(query.get("path") ?? "/"),
       "/agent/module/podman/container/journal": () => ({ text: "" }),
-      "/agent/module/opencode/copy": (query): ProgramCopyView => ({
-        account: query.get("account") ?? DEMO_ACCOUNT,
-        path: "",
-        version: "",
-        module_version: demoModule("opencode")?.version ?? "",
-        code: "",
-        params: {},
-      }),
     };
   }
 
@@ -1276,7 +1267,6 @@ export class DemoHub {
       return {
         has_module_copy: isPresent,
         version: isPresent ? spec.version : "",
-        accounts: [{ account: DEMO_ACCOUNT, code: "", params: {} }],
       };
     }
     return {};

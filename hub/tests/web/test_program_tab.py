@@ -6,13 +6,11 @@ whose apply bar shows `ui.program.apply_hint` and waits for the module's
 state alone; no Start and no Stop on a program, whose state line reads
 `state.ready` with a dot that does not pulse; Install live on a program
 with no want and on a failed one wanting `running`; the version line only while the module's own copy is on the
-machine; a check that first reads the account's copies, a copy found asking
-through the replace dialog and a copy in Windows' system PATH through a
-dialog of one button; each enabled account's row showing the module copy's
-version and its AI tools state in the words of its row under Available
-accounts, read with the account's switch and with no switch of its own, and
-a code's words with **Put this module's copy first** after a copy that runs
-first; and no path line and no ~/.local/bin line on the tab.
+machine; a check that acts at once, with no read of another copy and no
+dialog; each enabled account's row showing the module copy's version and its
+AI tools state in the words of its row under Available accounts, read with
+the account's switch and with no switch of its own, and no code of a copy;
+and no path line and no ~/.local/bin line on the tab.
 """
 
 import json
@@ -134,15 +132,14 @@ def test_ui_behavior_draws_the_tab_as_these_check():
     assert (
         "| An enabled account's row | as last reported: the module copy's "
         "version; the account's AI tools state in the words of its row under "
-        "**Available accounts**, shown and never set here; an account's code "
-        "shows its words under the row in the error colour, and after the "
-        "words of `copy_runs_first` and `copy_unreached` a bordered `button`, "
-        "`ui.program.prefer`"
+        "**Available accounts**, shown and never set here |"
     ) in text
     assert (
-        "| Checking an account | first reads `GET "
-        "/api/agent/module/<name>/copy` for the account"
+        "| **Install** and checking an account put the module's copy first on "
+        "the account's `PATH`, with no read of another copy and no dialog. |"
     ) in text
+    assert "/copy`" not in text
+    assert "ui.program.prefer" not in text
     assert (
         "`state.ai_tools_switched_back` for an account the machine has not " "reported"
     ) in text
@@ -246,7 +243,7 @@ def test_a_program_s_rows_are_its_own():
     ) in instances
 
 
-def test_an_enabled_account_s_row_shows_the_module_copy_s_version_and_its_code():
+def test_an_enabled_account_s_row_shows_the_module_copy_s_version_and_no_code():
     instances = panel()
     row = function_body(instances, "ProgramAccountRow")
 
@@ -255,73 +252,39 @@ def test_an_enabled_account_s_row_shows_the_module_copy_s_version_and_its_code()
         '<span className="instances_row_version mono">{version}</span> )}'
     ) in row
     assert row.index("{version}") < row.index("aiToolsWords(")
-    assert (
-        '{row.code !== "" && ( <span className="field_error instances_row_error"> '
-        "{describeCode(row)} {row.is_enabled && PREFER_CODES.includes(row.code) && ( "
-        '<button type="button" className="button" disabled={isDisabled} '
-        'onClick={onPrefer} > {t("ui.program.prefer")} </button> )} </span> )}'
-    ) in row
-    assert 'const PREFER_CODES = ["copy_runs_first", "copy_unreached"];' in instances
+    assert "row.code" not in row
     assert "copy" not in row.replace("ProgramAccountRow", "")
     assert "row.path" not in instances
     assert "state.running" not in row
     assert "is_running" not in row
 
 
-def test_prefer_answers_at_once_with_the_module_s_view():
+def test_a_check_acts_at_once_with_no_read_of_another_copy():
     instances = panel()
+    program_row = instances[instances.index("<ProgramAccountRow key=") :]
+    program_row = program_row[: program_row.index("/>")]
 
     assert (
-        "await apiPost<EnabledAccountsView>(`${basePath}/prefer`, request),"
-    ) in instances
-    assert (
-        "const request: ProgramAccountRequest = { device_id: deviceId, account };"
-        in (instances)
-    )
+        "isDisabled={isLocked} onToggle={(isOn) => { toggle(row.account, isOn); }}"
+    ) in program_row
+    for gone in ("/copy", "/prefer", "ProgramCopyView", "ProgramAccountRequest"):
+        assert gone not in instances
+    assert "useConfirm" not in instances
 
 
-def test_a_check_reads_the_account_s_copies_before_the_row_is_checked():
-    instances = panel()
+def test_the_read_and_the_prefer_of_a_copy_are_gone_from_the_api_types():
+    types = source(FRONTEND_SRC_DIR / "api_types.ts")
 
-    assert (
-        "onToggle={(isOn) => { if (isOn) { void checkProgram(row.account); } "
-        "else { toggle(row.account, false); } }}"
-    ) in instances
-    assert (
-        "const copy = await apiGet<ProgramCopyView>(`${basePath}/copy`, "
-        "{ device_id: deviceId, account, });"
-    ) in instances
-    assert 'else if (copy.path === "") { toggle(account, true); }' in instances
-    assert "isDisabled={isLocked || readingAccount !== null}" in instances
+    assert "ProgramCopyView" not in types
+    assert "ProgramAccountRequest" not in types
 
 
-def test_a_copy_found_asks_through_the_replace_dialog():
-    instances = panel()
-    dialog = instances[instances.index('title: t("ui.program.replace_title"') :]
-    dialog = dialog[: dialog.index("});")]
-
-    assert '"ui.program.replace_body_unversioned"' in dialog
-    assert '"ui.program.replace_body"' in dialog
-    assert 'detail: t("ui.program.replace_detail", { path: copy.path }),' in dialog
-    assert 'confirmLabel: t("ui.program.replace_confirm"),' in dialog
-    assert "onConfirm: () => { toggle(account, true); }," in dialog
-    assert "{confirm.modal}" in instances
-
-
-def test_a_copy_in_the_system_path_tells_through_a_dialog_of_one_button():
-    instances = panel()
-    dialog = instances[instances.index('title: t("ui.program.system_copy_title"') :]
-    dialog = dialog[: dialog.index("});")]
-    modal = source(COMPONENTS_DIR / "confirm_modal.tsx")
-
-    assert "body: codeWords(copy.code, account, copy.params)," in dialog
-    assert 'confirmLabel: t("ui.program.system_copy_close"),' in dialog
-    assert "hasCancel: false," in dialog
-    assert "onConfirm: keepUnchecked," in dialog
-    assert (
-        '{hasCancel && ( <button type="button" className="button" onClick={onCancel}>'
-        in (modal)
-    )
+def test_the_confirmation_has_no_dialog_of_one_button():
+    for path in (
+        COMPONENTS_DIR / "confirm_modal.tsx",
+        FRONTEND_SRC_DIR / "use_confirm.tsx",
+    ):
+        assert "hasCancel" not in source(path)
 
 
 def test_the_ai_tools_state_reads_as_its_row_under_available_accounts():
