@@ -6,7 +6,11 @@
 
 [neutrinohub.net](https://neutrinohub.net)
 
-**一键部署应用，走到哪用到哪**
+**一键部署 AI 应用，走到哪用到哪**
+
+写代码的 AI 工具、AI 助手、聊天机器人、本地大模型，点一下装到自己电脑上，一个 AI 网关管好密钥和模型，手机和笔记本随时打开。
+
+编辑器、远程桌面、终端和文件也都有。Windows、macOS、Linux 都能安装，开源免费，MIT 许可证。
 
 **简体中文** · [English](https://github.com/iffiX/neutrino/blob/main/README.en.md)
 
@@ -31,7 +35,7 @@
 
 ## 微子·中枢是什么
 
-微子·中枢是一个部署应用的面板，加一套安全的外部访问路由，给程序员和学生用。
+微子·中枢是一个跨主流操作系统部署 AI 时代应用的面板，加一套安全的外部访问路由，给程序员和学生用。
 
 - **面板**：安装在你已有的 Windows、macOS 或 Linux 电脑上。应用点一下就能安装，全都在一个面板里管理。
 - **外部访问路由**：手机扫一次码，在外面也能打开这些应用。有 6 种连接方式，设备和中枢之间全程加密。
@@ -44,19 +48,25 @@
 
 ## 一键部署
 
-想用什么，点一下就能安装。不用配环境，不用换系统。容器也一样，Windows、macOS、Linux 同样的办法部署。多个下载源自动选最快的，安装又稳又快。
+AI 工具更新快、配置多，有些默认源安装还慢。微子中枢点一下就帮你装好，模型和密钥统一从 AI 网关来；大家需要的新工具，微子中枢很快就跟上。Windows、macOS、Linux 同样的办法部署，多个下载源自动选最快的。
 
 <img src="images/web/readme_deploy_zh.webp" width="100%" alt="小狼坐在方块上用电脑，身后是面板的应用页" />
 
 | 用途 | 应用 |
 | --- | --- |
-| 系统访问 | [远程桌面](https://neutrinohub.net/deploy/remote_desktop)、[文件共享](https://neutrinohub.net/deploy/file_share)、[终端](https://neutrinohub.net/deploy/terminal)、[SSH](https://neutrinohub.net/deploy/ssh) |
-| 写代码 | [VS Code](https://neutrinohub.net/deploy/vscode)、[code-server](https://neutrinohub.net/deploy/code_server) |
-| AI 工作流 | [Claude Code](https://neutrinohub.net/deploy/claude_code)、[Codex](https://neutrinohub.net/deploy/codex)、[OpenCode](https://neutrinohub.net/deploy/opencode)、[Ollama](https://neutrinohub.net/deploy/ollama)、[CloudCLI](https://neutrinohub.net/deploy/cloudcli)、[Codeg](https://neutrinohub.net/deploy/codeg)、[Hermes WebUI](https://neutrinohub.net/deploy/hermes_webui) |
+| 写代码的 AI 工具 | [Claude Code](https://neutrinohub.net/deploy/claude_code)、[Codex](https://neutrinohub.net/deploy/codex)、[OpenCode](https://neutrinohub.net/deploy/opencode) |
+| Harness | [CloudCLI](https://neutrinohub.net/deploy/cloudcli)、[Codeg](https://neutrinohub.net/deploy/codeg) |
+| AI 助手 | [Hermes WebUI](https://neutrinohub.net/deploy/hermes_webui) |
+| 聊天机器人 | [AstrBot](https://neutrinohub.net/deploy/astrbot) |
+| 本地大模型 | [Ollama](https://neutrinohub.net/deploy/ollama) |
+| 编辑器 | [VS Code](https://neutrinohub.net/deploy/vscode)、[code-server](https://neutrinohub.net/deploy/code_server) |
 | 写论文 | [Ayakaleaf](https://neutrinohub.net/deploy/ayakaleaf) |
 | 记笔记 | [思源笔记](https://neutrinohub.net/deploy/siyuan) |
 | 放代码 | [Gitea](https://neutrinohub.net/deploy/gitea) |
-| 运行容器 | [容器](https://neutrinohub.net/deploy/containers) |
+| 系统访问 | [远程桌面](https://neutrinohub.net/deploy/remote_desktop)、[文件共享](https://neutrinohub.net/deploy/file_share)、[终端](https://neutrinohub.net/deploy/terminal)、[SSH](https://neutrinohub.net/deploy/ssh) |
+| 跑容器 | [容器](https://neutrinohub.net/deploy/containers) |
+
+列表里没有的也能用：自己声明服务或者用容器跑，端口会自动变成应用。
 
 ## 到处使用
 
@@ -68,17 +78,10 @@
 
 \* NetBird 和 EasyTier 要手动选择，其余的自动。iOS 不包含这两种，你要用美区账号安装它们的 App。
 
-## 任意分享
-
-任何网页应用，点“分享”得到一个链接。同学用浏览器打开就能用，什么都不用安装。到期失效，也能随时收回。
-
-<img src="images/web/readme_share_zh.webp" width="100%" alt="左边是分享弹窗，中间两只小狼坐在桌边，右边是同学浏览器里打开的 Ayakaleaf" />
-
-**分享地址 share.neutrinohub.net 只提供一个不到 40 KB 的静态客户端，不会另外连到微子的服务器。访客的浏览器和中枢之间全程加密，第三方线路看不到内容。你也可以自己部署这个页面的镜像。**
-
 ## 高级功能
 
 - **[AI 网关](https://neutrinohub.net/hub/ai_gateway)**：AI 提供方在中枢上配一次，每台电脑上的 Claude Code、Codex 都能用。
+- **[应用分享](https://neutrinohub.net/share/web_share)**：任何网页应用，点“分享”得到一个链接，同学用浏览器打开就能用，什么都不用装，到期失效，也能随时收回。
 - **[远程唤醒](https://neutrinohub.net/hub/agents#唤醒)**：在面板上一键唤醒局域网里关机的电脑。
 - **[多机管理](https://neutrinohub.net/hub/agents)**：家里、实验室的多台电脑都加进来，CPU、内存、显卡、温度一眼看清。
 - **[客户端权限](https://neutrinohub.net/hub/clients#权限种类)**：每个客户端能用哪些应用、终端、文件、远程桌面，分别开关，可以细到每个应用。
@@ -92,18 +95,18 @@
 - **自主**：不用买服务器、域名和专用设备。微子不提供公开服务器，分享也只连你的中枢。
 - **免费**：管理多台电脑，局域网唤醒，全球连接，不限用户数，不限流量。全部免费。
 
-| | 微子·中枢 | 1Panel | Cosmos | Olares | Tailscale | ToDesk | 飞牛 |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| 系统支持 | ✅ 三系统 | ❌ 仅 Linux | ❌ 仅 Linux | ❌ 仅它的系统 | ✅ 三系统 | ✅ 三系统 | ❌ 仅它的系统 |
-| 一键安装应用 | ✅ 有 | ✅ 有 | ✅ 有 | ✅ 有 | ❌ 没有 | ❌ 没有 | ✅ 有 |
-| 远程桌面 | ✅ 配好了 | ❌ 没有 | ❌ 自己安装 | ❌ 自己安装 | ❌ 自己安装 | ✅ 有 | ❌ 自己安装 |
-| 文件盘挂载 | ✅ 配好了 | ❌ 只有网页 | ❌ 付费版 | ❌ 局域网 | ❌ 只传文件 | ❌ 只传文件 | ✅ 有 |
-| 应用分享 | ✅ 一个链接 | ❌ 没有 | ❌ 要域名 | ❌ 只有文件 | ✅ 有 | ❌ 要安装软件 | ❌ 只有文件 |
-| 传输加密 | ✅ 有 | ❌ 自己配 | ❌ 要域名 | ✅ 有 | ✅ 有 | ✅ 有 | ❌ 未声明 |
-| 扫描有指纹 | ✅ 没有 | ❌ 有 | ❌ 有 | ❌ 有 | ✅ 没有 | ✅ 没有 | ❌ 有 |
-| 连接方式 | ✅ 6 种 | ❌ 自己开端口 | ❌ 自己开端口 | ❌ 3 种 | ❌ 1 种 | ❌ 1 种 | ❌ 2 种 |
-| 全球连接 | ✅ 免费 | ❌ 自己开端口 | ❌ 自己开端口 | ❌ $19.8/月 | ✅ 免费 | ❌ ¥66/月 | ❌ 另收费 |
-| 付费档 | ✅ 没有 | ❌ 有 | ❌ 有 | ❌ 有 | ❌ 有 | ❌ 有 | ❌ 有 |
+| | 微子·中枢 | 1Panel | Cosmos | Olares |
+| --- | --- | --- | --- | --- |
+| 系统支持 | ✅ 三系统 | ❌ 仅 Linux | ❌ 仅 Linux | ❌ 仅它的系统 |
+| 一键安装应用 | ✅ 有 | ✅ 有 | ✅ 有 | ✅ 有 |
+| 远程桌面 | ✅ 配好了 | ❌ 没有 | ❌ 自己安装 | ❌ 自己安装 |
+| 文件盘挂载 | ✅ 配好了 | ❌ 只有网页 | ❌ 付费版 | ❌ 局域网 |
+| 应用分享 | ✅ 一个链接 | ❌ 没有 | ❌ 要域名 | ❌ 只有文件 |
+| 传输加密 | ✅ 有 | ❌ 自己配 | ❌ 要域名 | ✅ 有 |
+| 扫描有指纹 | ✅ 没有 | ❌ 有 | ❌ 有 | ❌ 有 |
+| 连接方式 | ✅ 6 种 | ❌ 自己开端口 | ❌ 自己开端口 | ❌ 3 种 |
+| 全球连接 | ✅ 免费 | ❌ 自己开端口 | ❌ 自己开端口 | ❌ $19.8/月 |
+| 付费档 | ✅ 没有 | ❌ 有 | ❌ 有 | ❌ 有 |
 
 价格和限制来自 2026-10-30 各家页面。第三方服务以它们的带宽和账号规定为准。[完整对比](https://neutrinohub.net/compare)
 
@@ -172,23 +175,37 @@ nhub setup
 ## 常见问题
 
 <details>
+<summary><b>和 Claude 自带的远程、各种 agent 聚合工具有什么区别</b></summary>
+
+Claude 自带的远程只管 Claude。微子·中枢把 Claude Code、Codex、OpenCode，以及 CloudCLI、Codeg 这些 harness 装到你自己的电脑上，一个 AI 网关管好密钥，手机上都能打开。
+
+</details>
+
+<details>
+<summary><b>AI 网关怎么用，要准备什么</b></summary>
+
+API 密钥或者订阅账号在中枢上添加一次，每台电脑上的 AI 工具都能用，也能用自己电脑上 Ollama 的本地模型。详情见 [AI 网关](https://neutrinohub.net/hub/ai_gateway)。
+
+</details>
+
+<details>
+<summary><b>新出的 AI 工具多久能用上</b></summary>
+
+发个 [GitHub issue](https://github.com/iffiX/neutrino/issues) 许愿就好，一般 3 到 5 天就能加上。
+
+</details>
+
+<details>
+<summary><b>国内下载慢怎么办</b></summary>
+
+用[国内版](https://cnb.cool/iffi-X/neutrino/-/releases)。每个应用有多个下载源，中枢自动选最快的。
+
+</details>
+
+<details>
 <summary><b>和 1Panel、宝塔有什么区别</b></summary>
 
 它们管理 Linux 服务器上的网站和数据库。微子·中枢管理你自己 Windows、macOS、Linux 电脑上的工作软件，还提供 6 种外部访问方式。
-
-</details>
-
-<details>
-<summary><b>和 UU、向日葵、ToDesk 有什么区别</b></summary>
-
-它们是远程桌面。在微子·中枢里，远程桌面是其中一个应用，此外还有编辑器、AI 编程工具、终端和文件，你在手机上能使用应用、文件、终端和桌面。
-
-</details>
-
-<details>
-<summary><b>和 Claude 自带的远程、各种 agent 聚合工具有什么区别</b></summary>
-
-Codeg、CloudCLI、Hermes WebUI 这类 agent 聚合工具是微子·中枢部署的应用，微子·中枢负责安装它们，并让你从其他设备连接它们。Claude 自带的远程是 Anthropic 提供的功能，不在微子·中枢的应用列表里。
 
 </details>
 
@@ -223,6 +240,7 @@ Codeg、CloudCLI、Hermes WebUI 这类 agent 聚合工具是微子·中枢部署
 | [Codeg](https://github.com/spacering-net/codeg) | AI 编程工作台，在一个网页里使用 Claude Code、Codex 和 Gemini | [部署 Codeg](https://neutrinohub.net/deploy/codeg) |
 | [Hermes WebUI](https://github.com/nesquena/hermes-webui) | AI 助手 Hermes Agent 的网页界面 | [部署 Hermes WebUI](https://neutrinohub.net/deploy/hermes_webui) |
 | [Ayakaleaf](https://github.com/ayaka-notes/ayakaleaf-pro) | 写 LaTeX 论文的网页编辑器，能和同学一起写 | [部署 Ayakaleaf](https://neutrinohub.net/deploy/ayakaleaf) |
+| [AstrBot](https://github.com/AstrBotDevs/AstrBot) | 把大模型接进 QQ、微信、飞书的聊天机器人平台 | [部署 AstrBot](https://neutrinohub.net/deploy/astrbot) |
 | [思源笔记](https://github.com/siyuan-note/siyuan) | 笔记和知识库软件，笔记保存在自己的电脑上 | [部署思源笔记](https://neutrinohub.net/deploy/siyuan) |
 | [Gitea](https://github.com/go-gitea/gitea) | 可以自行部署的代码托管服务，类似 GitHub | [部署 Gitea](https://neutrinohub.net/deploy/gitea) |
 | [Podman](https://github.com/podman-container-tools/podman) | 运行容器的引擎，列表里没有的软件也能运行 | [部署容器](https://neutrinohub.net/deploy/containers) |

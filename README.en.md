@@ -6,7 +6,11 @@
 
 [neutrinohub.net](https://neutrinohub.net/en/)
 
-**Deploy apps in one click and use them anywhere**
+**Deploy AI apps in one click, use them anywhere**
+
+AI coding tools, AI assistants, chat bots and local models install on your own computer in one click. One AI gateway holds the keys and the models, and your phone and laptop open them anytime.
+
+Editors, remote desktop, terminals and files come too. Installs on Windows, macOS and Linux. Open source, free, MIT license.
 
 [简体中文](README.md) · **English**
 
@@ -32,7 +36,7 @@
 
 ## What it is
 
-Neutrino Hub is a panel for deploying apps plus secure routing for reaching them from outside, built for programmers and students.
+Neutrino Hub is a panel for deploying AI-era apps across the major operating systems, plus secure routing for reaching them from outside, built for programmers and students.
 
 - **Panel**: installs on the Windows, macOS or Linux computer you already own. One click installs an app, and one panel holds everything.
 - **Outside access routing**: scan a code once and your phone opens those apps from anywhere. Six ways connect the two, encrypted all the way between the device and the hub.
@@ -45,19 +49,25 @@ Claude Code on your phone, the lab machine's VS Code from your dorm room, a clas
 
 ## Deploy in one click
 
-Pick an app and it installs in one click, with no environment to prepare and no system to replace. Containers deploy the same way on Windows, macOS and Linux. Each machine picks the fastest of several download sources, so installs stay quick and reliable.
+AI tools change fast, take a lot of setup, and some install slowly from their default sources. Neutrino Hub installs them in one click, with models and keys from the AI gateway, and adds the new tools people need quickly. Windows, macOS and Linux deploy the same way, from the fastest of several download sources.
 
 <img src="images/web/readme_deploy.webp" width="100%" alt="The mascot on a block with a laptop, in front of the panel's app list" />
 
 | Use | Apps |
 | --- | --- |
-| System access | [Remote desktop](https://neutrinohub.net/en/deploy/remote_desktop), [File share](https://neutrinohub.net/en/deploy/file_share), [Terminal](https://neutrinohub.net/en/deploy/terminal), [SSH](https://neutrinohub.net/en/deploy/ssh) |
-| Writing code | [VS Code](https://neutrinohub.net/en/deploy/vscode), [code-server](https://neutrinohub.net/en/deploy/code_server) |
-| AI workflows | [Claude Code](https://neutrinohub.net/en/deploy/claude_code), [Codex](https://neutrinohub.net/en/deploy/codex), [OpenCode](https://neutrinohub.net/en/deploy/opencode), [Ollama](https://neutrinohub.net/en/deploy/ollama), [CloudCLI](https://neutrinohub.net/en/deploy/cloudcli), [Codeg](https://neutrinohub.net/en/deploy/codeg), [Hermes WebUI](https://neutrinohub.net/en/deploy/hermes_webui) |
+| AI coding tools | [Claude Code](https://neutrinohub.net/en/deploy/claude_code), [Codex](https://neutrinohub.net/en/deploy/codex), [OpenCode](https://neutrinohub.net/en/deploy/opencode) |
+| Harnesses | [CloudCLI](https://neutrinohub.net/en/deploy/cloudcli), [Codeg](https://neutrinohub.net/en/deploy/codeg) |
+| AI assistants | [Hermes WebUI](https://neutrinohub.net/en/deploy/hermes_webui) |
+| Chat bots | [AstrBot](https://neutrinohub.net/en/deploy/astrbot) |
+| Local models | [Ollama](https://neutrinohub.net/en/deploy/ollama) |
+| Editors | [VS Code](https://neutrinohub.net/en/deploy/vscode), [code-server](https://neutrinohub.net/en/deploy/code_server) |
 | Writing papers | [Ayakaleaf](https://neutrinohub.net/en/deploy/ayakaleaf) |
 | Notes | [SiYuan](https://neutrinohub.net/en/deploy/siyuan) |
 | Hosting code | [Gitea](https://neutrinohub.net/en/deploy/gitea) |
+| System access | [Remote desktop](https://neutrinohub.net/en/deploy/remote_desktop), [File share](https://neutrinohub.net/en/deploy/file_share), [Terminal](https://neutrinohub.net/en/deploy/terminal), [SSH](https://neutrinohub.net/en/deploy/ssh) |
 | Containers | [Containers](https://neutrinohub.net/en/deploy/containers) |
+
+Apps missing from the list work too: declare a service yourself or run it in a container, and its ports become apps automatically.
 
 ## Use it anywhere
 
@@ -69,17 +79,10 @@ The client runs on Windows, macOS, Linux, Android and iOS, with apps, the deskto
 
 \* You pick NetBird and EasyTier by hand; the rest are automatic. iOS leaves those two out, and you need a US App Store account to install their own apps.
 
-## Share with a link
-
-Select **Share** on any web app to get a link. A friend opens it in a browser with nothing to install. The link expires on its own, and you can revoke it sooner.
-
-<img src="images/web/readme_share.webp" width="100%" alt="The share dialog on the left, two mascots at a table in the middle, and Ayakaleaf in a friend's browser on the right" />
-
-**The share address, share.neutrinohub.net, serves only a static client of under 40 KB. It opens no extra connection to any Neutrino server. The connection between the visitor's browser and the hub is encrypted all the way, and third-party lines cannot read it. You can also host your own copy of the page.**
-
 ## Advanced features
 
 - **[AI gateway](https://neutrinohub.net/en/hub/ai_gateway)**: set up an AI provider once on the hub, and Claude Code and Codex on every computer can use it.
+- **[App share](https://neutrinohub.net/en/share/web_share)**: select **Share** on any web app to get a link. A friend opens it in a browser with nothing to install, and it expires on its own or when you revoke it.
 - **[Wake-on-LAN](https://neutrinohub.net/en/hub/agents#wake)**: wake a computer on your LAN that is off, with one click in the panel.
 - **[Multi-machine management](https://neutrinohub.net/en/hub/agents)**: add your computers at home and in the lab, and see their CPU, memory, GPU and temperature at a glance.
 - **[Client permissions](https://neutrinohub.net/en/hub/clients#permission-kinds)**: turn apps, terminals, files and remote desktop on or off for each client, down to single apps.
@@ -93,18 +96,18 @@ Select **Share** on any web app to get a link. A friend opens it in a browser wi
 - **Yours**: no server, domain or special hardware to buy. Neutrino runs no public server, and a share connects only to your hub.
 - **Free**: manage several computers, wake them over the LAN and connect worldwide, with no limit on users or traffic. All free.
 
-| | Neutrino Hub | 1Panel | Cosmos | Olares | Tailscale | ToDesk | fnOS |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| OS support | ✅ All three | ❌ Linux only | ❌ Linux only | ❌ Its own OS | ✅ All three | ✅ All three | ❌ Its own OS |
-| One-click apps | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | ❌ No | ❌ No | ✅ Yes |
-| Remote desktop | ✅ Ready | ❌ No | ❌ DIY | ❌ DIY | ❌ DIY | ✅ Yes | ❌ DIY |
-| Mounted drive | ✅ Ready | ❌ Web only | ❌ Paid plan | ❌ LAN only | ❌ Transfer only | ❌ Transfer only | ✅ Yes |
-| App sharing | ✅ One link | ❌ No | ❌ Needs a domain | ❌ Files only | ✅ Yes | ❌ Needs an install | ❌ Files only |
-| Encrypted transport | ✅ Yes | ❌ DIY | ❌ Needs a domain | ✅ Yes | ✅ Yes | ✅ Yes | ❌ Not stated |
-| Fingerprint on a scan | ✅ None | ❌ Yes | ❌ Yes | ❌ Yes | ✅ None | ✅ None | ❌ Yes |
-| Ways to connect | ✅ 6 | ❌ Open a port | ❌ Open a port | ❌ 3 | ❌ 1 | ❌ 1 | ❌ 2 |
-| Global access | ✅ Free | ❌ Open a port | ❌ Open a port | ❌ $19.8/month | ✅ Free | ❌ ¥66/month | ❌ Paid extra |
-| Paid tier | ✅ None | ❌ Yes | ❌ Yes | ❌ Yes | ❌ Yes | ❌ Yes | ❌ Yes |
+| | Neutrino Hub | 1Panel | Cosmos | Olares |
+| --- | --- | --- | --- | --- |
+| OS support | ✅ All three | ❌ Linux only | ❌ Linux only | ❌ Its own OS |
+| One-click apps | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes |
+| Remote desktop | ✅ Ready | ❌ No | ❌ DIY | ❌ DIY |
+| Mounted drive | ✅ Ready | ❌ Web only | ❌ Paid plan | ❌ LAN only |
+| App sharing | ✅ One link | ❌ No | ❌ Needs a domain | ❌ Files only |
+| Encrypted transport | ✅ Yes | ❌ DIY | ❌ Needs a domain | ✅ Yes |
+| Fingerprint on a scan | ✅ None | ❌ Yes | ❌ Yes | ❌ Yes |
+| Ways to connect | ✅ 6 | ❌ Open a port | ❌ Open a port | ❌ 3 |
+| Global access | ✅ Free | ❌ Open a port | ❌ Open a port | ❌ $19.8/month |
+| Paid tier | ✅ None | ❌ Yes | ❌ Yes | ❌ Yes |
 
 Prices and limits come from each vendor's page on 2026-10-30. Third-party services set their own bandwidth and account rules. [Full comparison](https://neutrinohub.net/en/compare)
 
@@ -191,23 +194,37 @@ To add another computer, see [Agents](https://neutrinohub.net/en/hub/agents). Fo
 ## FAQ
 
 <details>
+<summary><b>How is it different from Claude's built-in remote and agent aggregators</b></summary>
+
+Claude's built-in remote covers Claude alone. Neutrino Hub installs Claude Code, Codex and OpenCode, and harnesses such as CloudCLI and Codeg, on your own computer. One AI gateway holds the keys, and your phone opens them all.
+
+</details>
+
+<details>
+<summary><b>How do I use the AI gateway, and what do I need</b></summary>
+
+Add an API key or a subscription account on the hub once, and the AI tools on every computer use it. The local Ollama models on your own computers work too. See [AI gateway](https://neutrinohub.net/en/hub/ai_gateway).
+
+</details>
+
+<details>
+<summary><b>How soon do new AI tools arrive</b></summary>
+
+Open a [GitHub issue](https://github.com/iffiX/neutrino/issues) to ask for it. A new tool usually lands in 3 to 5 days.
+
+</details>
+
+<details>
+<summary><b>Downloads are slow in mainland China</b></summary>
+
+Use the [China edition](https://cnb.cool/iffi-X/neutrino/-/releases). Each app has several download sources, and the hub picks the fastest.
+
+</details>
+
+<details>
 <summary><b>How is it different from 1Panel or aaPanel</b></summary>
 
 They manage websites and databases on Linux servers. Neutrino Hub manages the work tools on your own Windows, macOS or Linux computers, and has six ways to reach them from outside.
-
-</details>
-
-<details>
-<summary><b>How is it different from UU, Sunlogin or ToDesk</b></summary>
-
-They are remote desktops. Here the remote desktop is one item next to editors, AI coding, terminals and files, and a phone reaches apps, files, terminals and desktops.
-
-</details>
-
-<details>
-<summary><b>How is it different from Claude's built-in remote and agent aggregators</b></summary>
-
-Agent aggregators such as Codeg, CloudCLI and Hermes WebUI are apps Neutrino Hub deploys. It installs them and lets you connect to them from other devices. Claude's built-in remote is a feature Anthropic provides, and it is not on the app list.
 
 </details>
 
@@ -242,6 +259,7 @@ Anything else works too. You can declare your own service, with several ports an
 | [Codeg](https://github.com/spacering-net/codeg) | An AI coding workspace with Claude Code, Codex and Gemini on one page | [Deploy Codeg](https://neutrinohub.net/en/deploy/codeg) |
 | [Hermes WebUI](https://github.com/nesquena/hermes-webui) | A web page for the Hermes Agent assistant | [Deploy Hermes WebUI](https://neutrinohub.net/en/deploy/hermes_webui) |
 | [Ayakaleaf](https://github.com/ayaka-notes/ayakaleaf-pro) | A web editor for writing LaTeX papers with classmates | [Deploy Ayakaleaf](https://neutrinohub.net/en/deploy/ayakaleaf) |
+| [AstrBot](https://github.com/AstrBotDevs/AstrBot) | A chat bot platform that brings large language models into QQ, WeChat, Telegram and Slack | [Deploy AstrBot](https://neutrinohub.net/en/deploy/astrbot) |
 | [SiYuan](https://github.com/siyuan-note/siyuan) | Notes and a knowledge base, kept on your computer | [Deploy SiYuan](https://neutrinohub.net/en/deploy/siyuan) |
 | [Gitea](https://github.com/go-gitea/gitea) | A self-hosted code hosting service, similar to GitHub | [Deploy Gitea](https://neutrinohub.net/en/deploy/gitea) |
 | [Podman](https://github.com/podman-container-tools/podman) | A container engine for software the list leaves out | [Deploy containers](https://neutrinohub.net/en/deploy/containers) |
