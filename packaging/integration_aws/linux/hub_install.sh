@@ -24,7 +24,8 @@ cat > /tmp/answers.json <<JSON
   "password": "$NEUTRINO_PANEL_PASSWORD",
   "vault_passphrase": "$NEUTRINO_VAULT_PASSPHRASE",
   "network": { "mode": "server" },
-  "is_https_enabled": ${NEUTRINO_PANEL_HTTPS:-false}
+  "is_https_enabled": ${NEUTRINO_PANEL_HTTPS:-false},
+  "default_account": { "account": "$(id -un)" }
 }
 JSON
 sudo nhub setup --stdin < /tmp/answers.json > /tmp/setup.log 2>&1 \

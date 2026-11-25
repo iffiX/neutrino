@@ -135,13 +135,24 @@ if ! python3 -m pytest --version >/dev/null 2>&1; then
 fi
 python3 -m pytest --version >/dev/null 2>&1 || { echo "no pytest on this box"; exit 1; }
 
+# The answers' default account: the first account the hub's account rule
+# finds, uid 1000 and above with a login shell and a home that exists, as
+# "default_account" after a comma; nothing when the rule finds none.
+account_answer() {
+    local account
+    account="$(getent passwd | awk -F: '$3 >= 1000 && $3 != 65534 && $7 != "" && $7 !~ /\/(nologin|false)$/ {print $1 ":" $6}' \
+        | while IFS=: read -r name home; do [ -d "$home" ] && echo "$name"; done | sort | head -1)"
+    [ -n "$account" ] && printf ', "default_account": { "account": "%s" }' "$account"
+}
+
 write_answers() {
+ACCOUNT_ANSWER="$(account_answer)"
 if [ "$MODE" = server ]; then
     cat > /tmp/answers.json <<JSON
 {
   "password": "$PASSWORD",
   "vault_passphrase": "$VAULT_PASSPHRASE",
-  "network": { "mode": "server" }
+  "network": { "mode": "server" }$ACCOUNT_ANSWER
 }
 JSON
 elif [ "$MODE" = side_gateway ]; then
@@ -155,7 +166,7 @@ elif [ "$MODE" = side_gateway ]; then
     "address": "${CIDR%/*}",
     "prefix_len": ${CIDR#*/},
     "upstream_gateway": "$GATEWAY"
-  }
+  }$ACCOUNT_ANSWER
 }
 JSON
 else
@@ -167,7 +178,7 @@ else
     "mode": "router",
     "wan": ["$INTERFACE"],
     "lan": []
-  }
+  }$ACCOUNT_ANSWER
 }
 JSON
 fi

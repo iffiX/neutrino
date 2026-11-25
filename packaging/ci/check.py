@@ -38,7 +38,9 @@ The targets:
   carried ``frpc --version`` answers the pinned version, the
   ``neutrino_hub`` service runs and serves the setup wizard on the panel's
   port with the rule ``neutrino_hub_setup`` in Windows Firewall, ``nhub
-  setup --json`` sets a ``server`` hub up and installs its local agent, the
+  setup --json`` sets a ``server`` hub up with the runner's account as the
+  machine's default, given a password set before the install, and installs
+  its local agent, the
   service runs, the panel answers ``/api/hub/display``, and the hub's rules
   hold ``neutrino_hub_panel_http`` and no ``neutrino_hub_setup``; ``nhub
   stop``, the hub and its agent are removed with no rule of the hub's left,
@@ -65,6 +67,7 @@ Not pure: installs and removes packages.
 
 import argparse
 import functools
+import getpass
 import hashlib
 import json
 import os
@@ -1230,6 +1233,8 @@ def check_hub_windows(msi: Path) -> None:
         SystemExit: When a step fails.
     """
     _require_host("win32", "Windows")
+    account = os.environ.get("USERNAME", "")
+    account_password = _set_runner_password(account)
     log = Path(tempfile.gettempdir()) / "hub_install.log"
     code = _msiexec("/i", msi, log)
     print(f"msiexec /i exited {code}")
@@ -1249,7 +1254,7 @@ def check_hub_windows(msi: Path) -> None:
     _wait_for_wizard()
     _check_hub_windows_rules("before setup", present=(HUB_WINDOWS_SETUP_RULE,))
 
-    _set_up_hub([str(nhub)])
+    _set_up_hub([str(nhub)], account=account, account_password=account_password)
     if not _wait_for_service(HUB_WINDOWS_SERVICE, is_running=True):
         raise SystemExit("the hub's service is not running after setup")
     _wait_for_panel()
@@ -1374,7 +1379,7 @@ def check_hub_macos(pkg: Path) -> None:
     _check_hub_macos_entry()
     _wait_for_wizard()
 
-    _set_up_hub(["sudo", HUB_MACOS_COMMAND])
+    _set_up_hub(["sudo", HUB_MACOS_COMMAND], account=getpass.getuser())
     job = _answer(["sudo", "launchctl", "print", HUB_MACOS_JOB])
     if "state = running" not in job:
         raise SystemExit(f"{HUB_MACOS_JOB} is not running after setup")
@@ -1615,19 +1620,25 @@ def hub_agent_cache(name: str) -> list:
     return [name.replace("neutrino-hub", "neutrino-agent", 1)]
 
 
-def _set_up_hub(nhub: list) -> None:
+def _set_up_hub(nhub: list, *, account: str, account_password: str = "") -> None:
     """Run ``nhub setup`` with the answers of a server hub.
 
     Args:
         nhub: The command that runs nhub, as root.
+        account: The runner's account, the machine's default account.
+        account_password: Its password on Windows; empty elsewhere.
 
     Raises:
         SystemExit: When setup fails.
     """
+    default_account = {"account": account}
+    if account_password:
+        default_account["password"] = account_password
     answers = {
         "password": secrets.token_urlsafe(18),
         "vault_passphrase": f"{secrets.token_urlsafe(18)}Aa1!",
         "network": {"mode": "server"},
+        "default_account": default_account,
     }
     with tempfile.TemporaryDirectory() as workdir:
         path = Path(workdir) / "answers.json"
@@ -2172,6 +2183,49 @@ def _machine_path() -> str:
 
     with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, MACHINE_ENVIRONMENT_KEY) as key:
         return winreg.QueryValueEx(key, "Path")[0]
+
+
+def _set_runner_password(account: str) -> str:
+    """Give the runner's Windows account a password the check knows.
+
+    The password reaches PowerShell in its environment, never on a command
+    line, and nothing prints it.
+
+    Args:
+        account: The runner's account.
+
+    Returns:
+        The password.
+
+    Raises:
+        SystemExit: When the account is not named or the password is not
+            set.
+    """
+    if not account:
+        raise SystemExit("the runner's account is not named")
+    password = f"{secrets.token_urlsafe(18)}Aa1!"
+    result = subprocess.run(
+        [
+            "powershell.exe",
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "Set-LocalUser -Name $env:CHECK_ACCOUNT -Password "
+            "(ConvertTo-SecureString $env:CHECK_ACCOUNT_PASSWORD -AsPlainText -Force)",
+        ],
+        env={
+            **os.environ,
+            "CHECK_ACCOUNT": account,
+            "CHECK_ACCOUNT_PASSWORD": password,
+        },
+        capture_output=True,
+        text=True,
+        timeout=CHECK_COMMAND_TIMEOUT_S,
+    )
+    if result.returncode != 0:
+        raise SystemExit(f"the password of {account} was not set")
+    print(f"{account} has a password the check knows")
+    return password
 
 
 def _powershell(script: str) -> str:

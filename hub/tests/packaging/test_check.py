@@ -39,7 +39,9 @@ def test_both_hub_targets_are_offered(check):
     assert {"hub_macos", "hub_windows"} <= set(check.CHECKS)
 
 
-def test_the_setup_answers_are_a_server_hub_setup_accepts(check, monkeypatch):
+def test_the_setup_answers_are_a_server_hub_setup_accepts_with_the_runners_account(
+    check, monkeypatch
+):
     seen = []
 
     class Finished:
@@ -52,11 +54,14 @@ def test_the_setup_answers_are_a_server_hub_setup_accepts(check, monkeypatch):
 
     monkeypatch.setattr(check.subprocess, "run", run)
 
-    check._set_up_hub(["nhub"])
+    check._set_up_hub(["nhub"], account="runner")
+    check._set_up_hub(["nhub"], account="runneradmin", account_password="pw-1")
 
-    (answers,) = seen
+    answers, windows = seen
     assert set(answers) <= set(wizard.WIZARD_DOCUMENT_KEYS)
     assert answers["network"] == {"mode": "server"}
+    assert answers["default_account"] == {"account": "runner"}
+    assert windows["default_account"] == {"account": "runneradmin", "password": "pw-1"}
     validate(answers["password"], PASSWORDS_PANEL_RULES)
     validate(answers["vault_passphrase"], PASSWORDS_MASTER_RULES)
 
@@ -988,7 +993,7 @@ def _macos_hub_check(check, monkeypatch, tmp_path, rm_codes):
     monkeypatch.setattr(check, "_is_job_loaded", lambda job: True)
     monkeypatch.setattr(check, "_check_hub_macos_entry", lambda: None)
     monkeypatch.setattr(check, "_wait_for_wizard", lambda: None)
-    monkeypatch.setattr(check, "_set_up_hub", lambda nhub: None)
+    monkeypatch.setattr(check, "_set_up_hub", lambda nhub, **account: None)
     monkeypatch.setattr(check, "_wait_for_panel", lambda: None)
     monkeypatch.setattr(check, "_wait_for_job_gone", lambda job: True)
     monkeypatch.setattr(
@@ -1576,3 +1581,26 @@ def test_the_agent_upgrade_may_owe_a_restart_and_the_fresh_install_starts_clean(
         "drop",
         ("/i", False),
     ]
+
+
+def test_the_runners_windows_password_reaches_powershell_by_its_environment(
+    check, monkeypatch, capsys
+):
+    ran = []
+
+    class Finished:
+        returncode = 0
+
+    def run(command, **kwargs):
+        ran.append((command, kwargs["env"]))
+        return Finished()
+
+    monkeypatch.setattr(check.subprocess, "run", run)
+
+    password = check._set_runner_password("runneradmin")
+
+    ((command, environment),) = ran
+    assert password not in " ".join(command)
+    assert environment["CHECK_ACCOUNT"] == "runneradmin"
+    assert environment["CHECK_ACCOUNT_PASSWORD"] == password
+    assert password not in capsys.readouterr().out
