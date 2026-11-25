@@ -994,19 +994,14 @@ a program runs only when a person runs it. A program the machine reports
 | Part of the panel | Idiom |
 | --- | --- |
 | **Enabled accounts** | one check row per available account, configurable, with its apply bar, `ui.codex.apply`, `ui.claude_code.apply` or `ui.opencode.apply` its button and `ui.program.apply_hint` its hint; the apply waits for the module's state alone, since no account runs an instance |
-| Checking an account | first reads `GET /api/agent/module/<name>/copy` for the account, the check busy meanwhile; with no copy found the row is checked; with a copy, the dialog below; a refusal shows in the bar's error and the row stays unchecked |
-| The replace dialog | `useConfirm`: the title `ui.program.replace_title`, the body `ui.program.replace_body`, or `ui.program.replace_body_unversioned` for a copy that prints no version, the detail `ui.program.replace_detail`, and `ui.program.replace_confirm`, which checks the row; **Cancel**, Escape and the backdrop leave it unchecked |
-| The system copy dialog | on Windows, for `copy_in_system_path`: the title `ui.program.system_copy_title`, the code's words as the body, and one button, `ui.program.system_copy_close`; the row stays unchecked |
-| An enabled account's row | as last reported: the module copy's version; the account's AI tools state in the words of its row under **Available accounts**, shown and never set here; an account's code shows its words under the row in the error colour, and after the words of `copy_runs_first` and `copy_unreached` a bordered `button`, `ui.program.prefer`, which sends `POST /api/agent/module/<name>/prefer` at once and is busy until it answers |
+| An enabled account's row | as last reported: the module copy's version; the account's AI tools state in the words of its row under **Available accounts**, shown and never set here |
 | The AI tools state | `state.ai_tools_switched` or `state.ai_tools_switched_back`, and `state.ai_tools_switched_back` for an account the machine has not reported, whose tools keep their own settings; a failure in its code's words, read with the account's switch, `is_ai_tools_enabled`, as the row under **Available accounts** reads it, so a failed switch back reads `ui.ai_tools.switch_back_failed` |
 | The version line | shown while the module's own copy is on the machine; **Install another version…** picks the version of that copy |
 
 | Rule | Reason |
 | --- | --- |
 | The panel shows each account's AI tools state and holds no switch for it. The account's form under **Available accounts** is the one place it is set. | Installing a program changes no switch, and one form per account holds the account's settings ([agent/accounts.md](agent/accounts.md), "Available accounts"). |
-| The dialog shows before the apply, and an unchecked account stays unchecked. | From the apply on, the module's copy runs in place of the person's in the account's shell ([agent.md](agent.md), "Parallel, never take over"), and a click outside a dialog means no. |
-| **Put this module's copy first** acts at once and asks nothing. | The person's line or copy that put another copy first stays until this press, which is the person's answer. |
-| **Install** enables the default account with no read of a copy and no dialog, and its row shows the copy its shell runs from the next report on. | The default is enabled in the write that installs the module, as on a clean system ([agent.md](agent.md), "Parallel, never take over"). |
+| **Install** and checking an account put the module's copy first on the account's `PATH`, with no read of another copy and no dialog. | The machine is taken as a clean one ([agent.md](agent.md), "Parallel, never take over"). |
 
 The File share tab's panel holds two panels, one under the other, one for
 each kind of share ([agent/modules/file_share.md](agent/modules/file_share.md)):

@@ -3,30 +3,17 @@
 The `codex` module makes Codex, OpenAI's coding agent for the terminal
 (Apache-2.0), ready for each enabled account on Linux, macOS and Windows,
 each on amd64 and arm64, tested at 0.166.0. It is a command line program
-([../module_template.md](../module_template.md), "A command line
-program"): `agent/neutrino_agent/modules/codex/` holds `config.py`,
+([../module_template.md](../module_template.md), "The launcher and the
+account's `PATH`"): `agent/neutrino_agent/modules/codex/` holds `config.py`,
 `constants.py` and `hooks.py`, and `modules/shared/programs.py` does the
 rest. Its configuration is `{accounts: [{account, password}]}`, `password`
 being the account's login, sent to a Windows machine alone
 ([../../protocol.md](../../protocol.md), "The account layer in the state").
 
-**The module's copy runs first for each enabled account.** Before an
-account other than the default is checked, `find` reads the account's
-`PATH`, then these places, as the account, and a copy found is named in the
-panel's dialog; **Install** enables the default account with no such read,
-as on a clean system ([../accounts.md](../accounts.md), "The default
-account")
-([../../agent.md](../../agent.md), "Parallel, never take over"):
-
-| System | The places after `PATH` |
-| --- | --- |
-| Linux | `~/.local/bin/codex`, the publisher's `install.sh`; `/usr/local/bin/codex` |
-| macOS | `~/.local/bin/codex`; `/opt/homebrew/bin/codex` and `/usr/local/bin/codex`, Homebrew's cask |
-| Windows | `%LOCALAPPDATA%\Programs\OpenAI\Codex\bin\codex.exe`, the publisher's `install.ps1`; `%APPDATA%\npm\codex.cmd`, npm's |
-
-On the person's yes the account's `PATH` names the module's launcher
-folder first, and the person's copy stays where it is, for its own
-installer to update or remove.
+**The module's copy runs first for each enabled account.** Installing the
+module and checking an account put the module's launcher folder first on
+the account's `PATH`, as on a clean system: no copy of the person's is
+looked for ([../../agent.md](../../agent.md), "Parallel, never take over").
 
 **The module's copy is OpenAI's npm build for the platform.**
 `data/manifests/codex.json` names one artifact per platform, of kind
@@ -109,8 +96,7 @@ uninstall removes", says. Its line in the uninstall dialog is "Each account's
 settings in ~/.codex stay, and so does a copy of Codex installed outside
 this module."
 
-`details` is `{has_module_copy, version, accounts: [{account, code,
-params}]}`, as Claude Code's is ([claude_code.md](claude_code.md)). An apply refuses what
+`details` is `{has_module_copy, version}`, as Claude Code's is ([claude_code.md](claude_code.md)). An apply refuses what
 Claude Code's refuses ([claude_code.md](claude_code.md)). Its journal is the
 agent's lines that name the module ([../../agent.md](../../agent.md), "Which
 modules each system runs").

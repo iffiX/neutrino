@@ -695,18 +695,14 @@ whose line named Gemini; each tool is one entry of the `code` category.
 | `ui.claude_code.apply` | Apply Claude Code | 应用 Claude Code |
 | `ui.opencode.apply` | Apply OpenCode | 应用 OpenCode |
 | `ui.program.apply_hint` | Puts this module's copy first on each checked account's PATH. | 让每个勾选账户的 PATH 先找到本模块安装的副本。 |
-| `ui.program.replace_title` | Replace the copy {account} runs | 替换 {account} 运行的副本 |
-| `ui.program.replace_body` | {account}'s shell runs {path}, version {version}. This module's copy, version {module_version}, will run in its place. | {account} 的 shell 现在运行 {path}，版本 {version}。之后改为运行本模块安装的副本，版本 {module_version}。 |
-| `ui.program.replace_body_unversioned` | {account}'s shell runs {path}. This module's copy, version {module_version}, will run in its place. | {account} 的 shell 现在运行 {path}。之后改为运行本模块安装的副本，版本 {module_version}。 |
-| `ui.program.replace_detail` | {path} stays on the machine as it is. | {path} 原样留在系统上。 |
-| `ui.program.replace_confirm` | Replace | 替换 |
-| `ui.program.system_copy_title` | {account} cannot use this module's copy | {account} 无法使用本模块安装的副本 |
-| `ui.program.system_copy_close` | Close | 关闭 |
-| `ui.program.prefer` | Put this module's copy first | 让本模块安装的副本优先 |
-| `code.copy_runs_first` | {account}'s shell runs {path} {version} before this module's copy. | {account} 的 shell 先于本模块安装的副本运行 {path} {version}。 |
-| `code.copy_unreached` | {account}'s shell does not find this module's copy. | {account} 的 shell 找不到本模块安装的副本。 |
-| `code.copy_in_system_path` | {path} {version} is on the system PATH, so {account}'s shell runs it before this module's copy. | {path} {version} 在系统 PATH 里，{account} 的 shell 会先于本模块安装的副本运行它。 |
 | `code.module_not_service` | {module} is a program and has no Start or Stop. | “{module}”是普通程序，没有启动和停止。 |
+
+`ui.program.replace_title`, `ui.program.replace_body`,
+`ui.program.replace_body_unversioned`, `ui.program.replace_detail`,
+`ui.program.replace_confirm`, `ui.program.system_copy_title`,
+`ui.program.system_copy_close`, `ui.program.prefer`, `code.copy_runs_first`,
+`code.copy_unreached` and `code.copy_in_system_path` go with the read of a
+person's copy.
 
 ## The Ollama tab's words
 

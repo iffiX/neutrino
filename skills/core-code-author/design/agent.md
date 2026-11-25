@@ -386,7 +386,7 @@ account carries it as a parameter.
 | A module has at most one task at a time. The `ai_tools` section is one task of its own, under the same rules, and reports through its own section. | Two tasks on one module would fight over the same files and units. |
 | A task's plan comes from the `want` and what the machine shows, by the table of "One session, everything on it": `absent` plans the uninstall when the software is there or the last install failed; a present `want` plans the install when the software is missing, the last install failed, or, under `installed` or `running`, the runner lacks a part its install adds, as Containers' machine image on Windows and macOS ([modules/containers.md](agent/modules/containers.md), "What the install puts on the computer") and its `runc` on Linux ([modules/containers.md](agent/modules/containers.md), "Linux"), the version switch when a `hub` module's kept version differs from its recipe's, then the configure steps under `stopped` and `running`, then `start` or `stop`. | The decision is the same for every module, and only the work is cut into steps. A part the install adds comes at the press that needs it: a join adopts a person's Podman `stopped` and fetches and installs nothing. |
 | A task whose entry carries `is_taken_over` plans no install and no version switch, whatever the machine shows, the install a runner owes among them. Under `stopped` and `running` its plan is one step, `configure`, which runs the module's `validate`, the check the hub asks before it stores a configuration ([protocol.md](protocol.md), "The verbs on a `command` stream"), and writes nothing, whatever the `want`: no file, no unit, no account, no record of the module's and no `systemctl`. No `wait_module`, `account`, `start` or `stop` step follows it, and the task runs no package manager and fetches no artifact. The task writes no configured mark, and while the mark stands the module reads `running` or `stopped` by its unit, as a configured module does. The person's first press on the module ends the mark ([protocol.md](protocol.md), "The sections"), and the next plan takes the install the row above owes and the `configure` that writes, the module's first apply. The rule holds for every module the hub takes over, Containers, the file share and Gitea alike, and the module's state and the software it runs are read and reported as the machine shows them meanwhile. | A join changes nothing on the machine. On the lab's Ubuntu 22.04 a person's running Podman was taken over `running`: its task installed `runc` at the join with no press, and its `configure` wrote a unit and an environment file for a container the person had started by hand. The first apply is where a module starts from what it made before, as the file share's sweep of its accounts. |
-| A command line program's plan under `running` is a `hub` module's: the install or the version switch of the module's copy, then `configure` and one `account` step per enabled account, which puts the module's copy first on the account's `PATH` and reads which copy the account's shell runs ("Parallel, never take over"). | Every enabled account runs the module's copy, and only a step that runs as the account sees which copy its shell finds. |
+| A command line program's plan under `running` is a `hub` module's: the install or the version switch of the module's copy, then `configure` and one `account` step per enabled account, which puts the module's copy first on the account's `PATH` ("Parallel, never take over"). | Every enabled account runs the module's copy, and the account's own files are written as the account. |
 | Each task runs on a thread of its own from its first step, and any number of tasks run at once. | The steps of two modules then wait only for what they share ("Step locks"), and the long steps wait on the network or inside a container. |
 | A task is not kept on disk. After a restart the next state plans each module again from what the machine shows. | Every step is safe to run again (below), so a record of the task would only be survival machinery ([../kill_on_sight.md](../kill_on_sight.md)). |
 | A module's task opens one `log {module}` stream for its whole run, writes `step <i>/<n>: <name> <params>` once the step has taken its step locks, and then the step's output line by line. A step that runs again after its check writes its line once. | The hub's task record keeps the steps in order, configure and start among them. |
@@ -486,7 +486,7 @@ that can pass 30 seconds by the lab's times:
 | AstrBot | `wait_module podman`, `pull astrbot`, `verify`, `settings`, `render`, `start`, `first_start` | `pull astrbot` 77 seconds on Linux and 198 on Windows, `first_start` 50 seconds on Windows |
 | VS Code, code-server, Codeg, SiYuan | `artifact <name>` per archive, `verify`, `configure`, then `account {account}` per enabled account | an archive, up to 42 seconds for Codeg's |
 | CloudCLI | the same, with `npm {account}` before each `account {account}` | `npm`, 2 to 3.5 minutes on Linux |
-| Codex, Claude Code, OpenCode | `artifact <name>` and `verify` while the module's copy is missing, `configure`, then `account {account}` per enabled account | the tarball, 127 MiB for Claude Code, 164 MiB for Codex and 75.5 MiB for OpenCode on Linux amd64; an `account` step, up to 5 seconds for the account's login shell |
+| Codex, Claude Code, OpenCode | `artifact <name>` and `verify` while the module's copy is missing, `configure`, then `account {account}` per enabled account | the tarball, 127 MiB for Claude Code, 164 MiB for Codex and 75.5 MiB for OpenCode on Linux amd64 |
 
 Gitea's `account` is a step apart from its `configure`, so `system_accounts`
 is held for the one command that makes the account and not for Gitea's
@@ -675,24 +675,19 @@ way.
 
 A person's own copy of the software a module installs is treated by one
 question: can two copies live on one machine side by side? A command line
-program can, one per place on `PATH`. A server with a fixed port, unit,
-system account or GPU cannot.
-
-| What the module finds | Software two copies of run side by side: a command line program, Codex, Claude Code or OpenCode | Software of which one copy runs on a machine: a server, such as Samba, Ollama or a Podman machine |
-| --- | --- | --- |
-| no copy | installs its own | installs its own |
-| the person's copy | enables the default account at **Install** as on a machine with no copy, and asks before it enables any other account; on the yes the account's shell runs the module's copy first, and the person's copy stays as it is | adopts it, as the file share adopts a person's Samba, or refuses with a code that names it and never runs a second server |
-| another copy the account's shell runs first, after the account was enabled | shows it on the account's row and changes nothing until the person presses to put the module's copy first again | reports a code that names it, and the person decides |
+program can, one per place on `PATH`, and its module takes the machine as a
+clean one: it installs its own copy and puts it first on each enabled
+account's `PATH`, and looks for no copy of the person's. A server with a
+fixed port, unit, system account or GPU cannot: a person's server, such as
+Samba, Ollama or a Podman machine, is adopted, as the file share adopts a
+person's Samba, or refused with a code that names it, and the module never
+runs a second server. One that appears later is reported by a code that
+names it, and the person decides.
 
 | Rule | Reason |
 | --- | --- |
-| Checking an account in a command line program's panel first reads, at once through the agent, whether the account's shell finds a program of that name that is not the module's: in every directory of the `PATH` the account's login shell prints, in order, then in the places its publisher's installers and the usual package managers put it, as the account and never as root. A copy found is named in a dialog with its version, and the account is checked only on the person's yes ([ui_behavior.md](ui_behavior.md), "The machine page"). | From then on the module's copy runs in its place, so the person decides first. A version manager, nvm or mise among them, adds its directory in the person's shell profile, which only the person's own shell reads. |
 | The module's copy is reached from a person's shell by `PATH`. On Linux and macOS one file per account, `env.sh` in the account's own Neutrino tree, written as the account, puts the launcher folder of every command line program the account is enabled in at the front of `PATH`. A line carrying Neutrino's mark at the end of each startup file the account's login shell reads loads it ("The account's startup files"). On Windows the launcher folder is put at the front of the account's user `PATH`. | rustup's `. "$HOME/.cargo/env"` reaches its programs the same way. A folder at the front of `PATH` is found before every other copy, the one in `~/.local/bin` too. |
-| A copy in Windows' system `PATH` cannot be put behind the module's: the dialog says so with `copy_in_system_path {account, path, version}`, and the account is not checked. | Windows puts the system `PATH` before every user `PATH`, and the module changes no setting of the machine's. |
-| **Install** enables the default account with no read of a copy, as on a clean system, and its row then reads the code of the copy its shell runs, `copy_in_system_path` among them. | The default is enabled in the write that installs the module ([agent/accounts.md](agent/accounts.md), "The default account"), and the row and **Put this module's copy first** stay the person's way to see and change which copy runs. |
 | The module never updates, moves, relinks or removes the person's copy. Of the person's files it writes only its line in each startup file and its entry in the user `PATH`: its settings and the gateway's are the machine's AI tools setting's ([agent/ai_tools.md](agent/ai_tools.md)). The person updates or uninstalls their copy with its own tools while the module is enabled. | The person's copy and its own updates are the person's, before, during and after the module. |
-| After an account is enabled the module never fights. Each `account` step reads which copy the account's shell runs, the first on the `PATH` its login shell prints, and for bash also on that of `bash -i`. While that is not the module's launcher, the account's row reads `copy_runs_first {account, path, version}`, `copy_unreached {account}` when the shell finds no copy, or `copy_in_system_path` on Windows. **Put this module's copy first** then moves the line to the end of each file again, or the entry to the front of the user `PATH`. The module does neither by itself. | A line the person adds after the module's, or a copy the person installs, stays the person's choice until the person presses. |
-| A read compares the size, time and inode of each startup file and `env.sh` with what the account's last `account` step recorded, and asks for a task of the module's own when one changed ("The kinds of module"). On Windows the copy is read again at the module's next task. | A person who edits a startup file sees the row change with no press. A file's stat costs nothing, where a login shell costs up to 5 seconds. |
 | Neutrino's own sessions, a Terminal shell, an `exec` command and an SSH server session, start with the launcher folders of the command line programs the account is enabled in at the front of `PATH`, read as each session starts. Checking or unchecking a program starts no SSH server instance again ([agent/module_template.md](agent/module_template.md), "The launcher and the account's `PATH`"). | Those sessions run the module's copy whatever the startup files hold, and a session the person has open stays connected. |
 | When an account has no command line program enabled any more, unchecked, at **Uninstall** or at `nagent service uninstall`, the module removes its line from each file and the env file, and on Windows the entry. Each startup file is then byte for byte what it was. The person's copy, `~/.claude`, `~/.codex`, `~/.config/opencode` and every other file of theirs stay. | The module removes what it made and nothing else, and an account that ran the module's copy runs none afterwards, as after any uninstall. |
 
@@ -759,8 +754,6 @@ the kind chip").
 | --- | --- |
 | The module's own copy, at the version the hub sets, is on the machine while the module is installed, whatever copies the accounts have, and its source chip reads Upstream. | Every enabled account runs the module's copy, and the module installs what the press names. |
 | The module's copy never updates itself. Its version moves in the hub, as every `hub` module's does ([agent/module_install.md](agent/module_install.md), "Module versions"), and the launcher sets what the program reads to leave its updater off. | The unpack is root's and read-only, and a program whose updater writes beside it in the account's home ends with a copy the hub never chose. |
-| The module keeps, for each enabled account, whether its `PATH` was put first, the code of the copy its shell runs, and the size, time and inode of each startup file and `env.sh` after its last `account` step, in its record under the state root. A read compares them and runs no shell. | The agent reads every module at each report, and a login shell costs up to 5 seconds per account. |
-| A read that finds a startup file or `env.sh` of an enabled account changed makes the module ask for a task of its own, as a forwarder asks for a configure task ("From a state to tasks"). That task's `account` step reads again which copy the shell runs, and puts nothing first. Any other change is read at the module's next task: a press, the panel's apply, a new state, or an agent of another build. | A line the person adds puts another copy first with no press on the panel, and the account's row shows it. |
 | Installing a command line program changes no account's AI tools switch. Its tab shows each account's switch as the account's form set it. | The switch is the person's choice per account, and one mechanism, the machine's AI tools setting, writes the gateway into the tools' files ([agent/ai_tools.md](agent/ai_tools.md)). |
 
 Terminal, Remote desktop and the SSH server install nothing: their platform
@@ -786,8 +779,8 @@ hooks, the account service layer
 definition and starts, stops, removes and queries it, and
 `modules/shared/http_forward.py` is in front of each instance on
 `127.0.0.1`. A command line program keeps the same three files, and
-`modules/shared/programs.py` runs every one through its hooks: the `find`,
-the module's copy, the launcher, the record and the Windows `PATH` entries,
+`modules/shared/programs.py` runs every one through its hooks: the module's
+copy, the launcher, the record and the Windows `PATH` entries,
 with `modules/shared/program_path.py` for the startup files on Linux and
 macOS. `modules/shared/` is the one package of what every module
 runner shares, each file one concept.
@@ -1031,12 +1024,10 @@ script that writes into the machine, run as that account through
 keeper that starts the machine at boot is an account service; and the
 agent reads the machine itself, as SYSTEM or root, with that account's
 machine key ([modules/containers.md](agent/modules/containers.md)).
-The sixth is a command line program: its `find`, which runs the account's
-login shell to print its `PATH` and runs a found copy with `--version`, and
-`env.sh` and the line it writes and removes in the account's home, on Linux
-and macOS through the step-down; on Windows one `run_as_account` per account
-reads the system's and the account's `PATH`, runs a found copy, and writes,
-moves or removes the module's entry ("Parallel, never take over").
+The sixth is a command line program: `env.sh` and the line it writes and
+removes in the account's home, on Linux and macOS through the step-down; on
+Windows one `run_as_account` per account writes or removes the module's
+entry in the account's user `PATH` ("Parallel, never take over").
 The seventh is every read, write, `chmod`, `chown`, rename and removal in a
 place an account can write, its home and every folder it owns, whichever
 module makes it: its RustDesk settings, Codeg's data directory, the access

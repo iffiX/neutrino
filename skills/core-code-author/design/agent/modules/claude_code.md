@@ -5,32 +5,17 @@ terminal, ready for each enabled account on Linux (amd64 and arm64), macOS
 (arm64 and amd64, macOS 13 or later) and Windows (amd64 and arm64, Windows
 10 1809 or later), tested at 2.1.311. Claude Code is proprietary, and
 Anthropic's legal agreements govern its use. It is a command line program
-([../module_template.md](../module_template.md), "A command line
-program"): `agent/neutrino_agent/modules/claude_code/` holds `config.py`,
+([../module_template.md](../module_template.md), "The launcher and the
+account's `PATH`"): `agent/neutrino_agent/modules/claude_code/` holds `config.py`,
 `constants.py` and `hooks.py`, and `modules/shared/programs.py` does the
 rest. Its configuration is `{accounts: [{account, password}]}`, `password`
 being the account's login, sent to a Windows machine alone
 ([../../protocol.md](../../protocol.md), "The account layer in the state").
 
-**The module's copy runs first for each enabled account.** Before an
-account other than the default is checked, `find` reads the account's
-`PATH`, then these places, as the account, and a copy found is named in the
-panel's dialog; **Install** enables the default account with no such read,
-as on a clean system ([../accounts.md](../accounts.md), "The default
-account")
-([../../agent.md](../../agent.md), "Parallel, never take over"):
-
-| System | The places after `PATH` |
-| --- | --- |
-| Linux | `~/.local/bin/claude`, the native installer's; `/usr/local/bin/claude`; `/usr/bin/claude`, the apt, dnf and apk packages' |
-| macOS | `~/.local/bin/claude`, the native installer's; `/opt/homebrew/bin/claude` and `/usr/local/bin/claude`, Homebrew's casks |
-| Windows | `%USERPROFILE%\.local\bin\claude.exe`, the native installer's; `%LOCALAPPDATA%\Microsoft\WinGet\Links\claude.exe`, WinGet's; `%APPDATA%\npm\claude.cmd`, npm's |
-
-On the person's yes the account's `PATH` names the module's launcher
-folder first, and the person's copy stays where it is. It keeps its own
-updater: the native installer and npm update it in the background, and
-Homebrew, WinGet, apt, dnf and apk when the person upgrades, and each of them
-removes it.
+**The module's copy runs first for each enabled account.** Installing the
+module and checking an account put the module's launcher folder first on
+the account's `PATH`, as on a clean system: no copy of the person's is
+looked for ([../../agent.md](../../agent.md), "Parallel, never take over").
 
 **The module's copy is Anthropic's npm package for the platform.**
 `data/manifests/claude_code.json` names one artifact per platform, of kind
@@ -106,10 +91,8 @@ line, `env.sh` and Windows entry as [../module_install.md](../module_install.md)
 is "Each account's settings in ~/.claude stay, and so does a copy of Claude
 Code installed outside this module."
 
-`details` is `{has_module_copy, version, accounts: [{account, code,
-params}]}`, `version` being the module's copy's, empty while it has none, and
-an account's `code` the copy its shell runs before the module's
-([../module_template.md](../module_template.md), "The find"). An apply refuses
+`details` is `{has_module_copy, version}`, `version` being the module's
+copy's, empty while it has none. An apply refuses
 `account_unknown {account}` for an account the machine does not have, and
 on Windows `account_no_profile {account}`, `credential_missing {account}`
 and `credential_invalid {account}`, as Codeg's does. Its journal is the
