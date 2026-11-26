@@ -167,7 +167,7 @@ while :; do
     fi
     if [ -z "$holder" ]; then
         rm -f {lock}
-        out=$(pacman -U --noconfirm {package} 2>&1); code=$?
+        out=$(pacman -U{needed} --noconfirm {package} 2>&1); code=$?
         [ -z "$out" ] || printf '%s\\n' "$out"
         [ $code != 0 ] && [ $waited -lt {limit} ] || break
         case "$out" in *{text}*) ;; *) break ;; esac
@@ -680,13 +680,15 @@ def _package_manager_line(kind: str, path: str, *, is_reinstall: bool) -> str:
     Returns:
         The command line; dnf's runs again each second while what it said
         names the rpm lock, for as long as apt waits for the dpkg lock, and
-        pacman's waits as long while a process holds its lock file.
+        pacman's waits as long while a process holds its lock file. Every
+        line but a reinstall's installs nothing over the same version.
     """
     package = shlex.quote(path)
     if kind == "pkg":
         return f"installer -pkg {package} -target /"
     if kind == "arch":
         return _PACMAN_INSTALL.format(
+            needed="" if is_reinstall else " --needed",
             lock=shlex.quote(AGENT_PACMAN_LOCK_PATH),
             proc=shlex.quote(PROC_DIR),
             holders=" | ".join(AGENT_PACMAN_LOCK_HOLDERS),

@@ -394,7 +394,18 @@ def test_the_arch_package_lands_under_the_extension_pacman_reads(tmp_path):
     )
 
     assert path == str(tmp_path / "packages" / "neutrino_agent.pkg.tar.zst")
-    assert "pacman -U --noconfirm /s/update.pkg.tar.zst" in what_installs("arch", path)
+    assert "pacman -U --needed --noconfirm /s/update.pkg.tar.zst" in (
+        what_installs("arch", path)
+    )
+
+
+def test_an_arch_reinstall_reinstalls_the_same_version(tmp_path):
+    """An update installs nothing over the version the hub's own script put in
+    while the update waited for pacman's lock; a reinstall installs it again."""
+    install = what_installs("arch", "/p/a.pkg.tar.zst", is_reinstall=True)
+
+    assert "pacman -U --noconfirm /s/update.pkg.tar.zst" in install
+    assert "--needed" not in install
 
 
 RELEASE_NAMES = {
@@ -936,7 +947,7 @@ def test_the_arch_update_is_pacman_upgrade_and_the_version_decides(
     written = json.loads(run())
 
     assert calls.read_text().splitlines() == [
-        f"-U --noconfirm {tmp_path}/update.pkg.tar.zst"
+        f"-U --needed --noconfirm {tmp_path}/update.pkg.tar.zst"
     ]
     assert written["kind"] == "arch"
     assert written["exit_code"] == 1
