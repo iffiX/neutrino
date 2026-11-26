@@ -9,8 +9,8 @@ two alone, by open descriptor following no link. The account is
 counts, as Gitea's is. The LaunchDaemon ``com.neutrino.ollama`` runs
 ``ollama serve`` as that account with the module's environment. A person's
 Ollama here is the publisher's app, taken over while the module is installed:
-its login job disabled, its processes ended, both given back at the
-uninstall.
+its login job disabled and booted out of each account's gui domain within a
+second of a login, its processes ended, both given back at the uninstall.
 
 Not pure: writes under ``/Library``, drives ``sysadminctl``, ``dscl`` and
 launchd.
@@ -27,6 +27,7 @@ import plistlib
 import re
 import secrets
 import subprocess
+import threading
 import time
 
 from neutrino_agent.exceptions import ModuleApplyError
@@ -39,6 +40,7 @@ from neutrino_agent.modules.ollama.constants import (
     OLLAMA_DARWIN_FIRST_UID,
     OLLAMA_DARWIN_LABEL,
     OLLAMA_DARWIN_LAUNCHD_DIR,
+    OLLAMA_DARWIN_LOGIN_WATCH_S,
     OLLAMA_DARWIN_OUTPUT_PATH,
     OLLAMA_DARWIN_OWN_PARTS,
     OLLAMA_DARWIN_PATH,
@@ -169,6 +171,7 @@ class OllamaDarwinApplier:
         sleep=time.sleep,
         accounts=people_accounts,
         kill=_end_process,
+        log=print,
     ):
         """
         Args:
@@ -188,6 +191,7 @@ class OllamaDarwinApplier:
             accounts: Called with no argument; the accounts a person logs
                 in with, ``(name, uid)``.
             kill: Called with a pid; ends that process.
+            log: Called with a line for each login job booted out.
         """
         self.module_dir = os.path.join(state_dir, OLLAMA_NAME)
         self.data_dir = os.path.join(state_dir, OLLAMA_DATA_DIR_NAME)
@@ -204,7 +208,11 @@ class OllamaDarwinApplier:
         self._sleep = sleep
         self._accounts = accounts
         self._kill = kill
+        self._log = log
         self._kept_dir = os.path.join(self.module_dir, OLLAMA_KEPT_DIR_NAME)
+        self._watch_lock = threading.Lock()
+        self._watch = None
+        self._is_watch_ended = threading.Event()
 
     def person_unit_path(self) -> str:
         """Empty: a person's unit is Linux's."""
@@ -296,6 +304,67 @@ class OllamaDarwinApplier:
         for pid in pids:
             self._kill(pid)
         return pids
+
+    def watch_login_jobs(self) -> None:
+        """Start the login watch on a thread of its own, unless it runs.
+
+        Every :data:`OLLAMA_DARWIN_LOGIN_WATCH_S` it boots the app's login
+        job out of the gui domain of each account taken over and disables it
+        again, for as long as the module's program and the take-over's
+        record are there.
+        """
+        with self._watch_lock:
+            if self._watch is not None and self._watch.is_alive():
+                return
+            self._is_watch_ended.clear()
+            self._watch = threading.Thread(
+                target=self._run_login_watch, name="ollama_login_watch", daemon=True
+            )
+            self._watch.start()
+
+    def keep_login_jobs_out(self) -> list:
+        """Boot the app's login job out of the gui domain of each account taken over, where it is loaded.
+
+        The system loads the job again at each login, whatever ``launchctl
+        disable`` set, and launches the app about 12 seconds later.
+
+        Returns:
+            The accounts whose job was booted out now, by name.
+        """
+        records = read_kept(os.path.join(self._kept_dir, OLLAMA_KEPT_RECORD_NAME))
+        booted = []
+        for name, held in sorted(records.items()):
+            uid = held.get("uid") if isinstance(held, dict) else None
+            if not isinstance(uid, int):
+                continue
+            domain = f"gui/{uid}/{OLLAMA_DARWIN_APP_JOB}"
+            if not self._run(
+                ["launchctl", "print", domain], is_checked=False
+            ).is_success:
+                continue
+            self._run(["launchctl", "bootout", domain], is_checked=False)
+            self._run(["launchctl", "disable", domain], is_checked=False)
+            booted.append(name)
+        return booted
+
+    def _run_login_watch(self) -> None:
+        """The thread of the login watch."""
+        record = os.path.join(self._kept_dir, OLLAMA_KEPT_RECORD_NAME)
+        while (
+            not self._is_watch_ended.is_set()
+            and os.path.isfile(self.program_path)
+            and os.path.isfile(record)
+        ):
+            try:
+                booted = self.keep_login_jobs_out()
+            except (OSError, subprocess.SubprocessError) as error:
+                booted = []
+                self._log(f"ollama: the app's login job was not read: {error}")
+            if booted:
+                self._log(
+                    f"ollama: booted the app's login job out for {', '.join(booted)}"
+                )
+            self._is_watch_ended.wait(OLLAMA_DARWIN_LOGIN_WATCH_S)
 
     def give_back_apps(self) -> list:
         """Enable each login job that was enabled, and open the app again for the account at the console whose app ran.
@@ -419,6 +488,7 @@ class OllamaDarwinApplier:
         Returns:
             Empty.
         """
+        self._is_watch_ended.set()
         self._unload()
         with contextlib.suppress(OSError):
             os.unlink(self._plist_path)

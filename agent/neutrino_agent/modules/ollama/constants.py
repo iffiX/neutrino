@@ -110,6 +110,10 @@ OLLAMA_DARWIN_APP_PATHS = ("/Applications/Ollama.app",)
 # domain, and the least uid of a person's account.
 OLLAMA_DARWIN_APP_JOB = "com.ollama.ollama"
 OLLAMA_DARWIN_FIRST_UID = 501
+# How often the login watch looks for that job loaded in the gui domain of an
+# account taken over. The system launches the job about 12 seconds after a
+# login.
+OLLAMA_DARWIN_LOGIN_WATCH_S = 1.0
 OLLAMA_DARWIN_UNLOAD_TIMEOUT_S = 30
 OLLAMA_DARWIN_UNLOAD_POLL_S = 0.5
 # The parts of the data directory a handover gives on macOS, whose data

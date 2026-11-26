@@ -123,11 +123,12 @@ def version_in(output: str) -> str:
     return ""
 
 
-def ollama_applier_for(platform):
+def ollama_applier_for(platform, log=print):
     """The applier that runs Ollama on this system.
 
     Args:
         platform: The machine's platform.
+        log: Callable used for progress messages, where the applier logs.
 
     Returns:
         The Linux, macOS or Windows applier.
@@ -139,7 +140,7 @@ def ollama_applier_for(platform):
     if platform.os_name == "linux":
         return OllamaLinuxApplier(state_dir=state_dir, platform=platform)
     if platform.os_name == "darwin":
-        return OllamaDarwinApplier(state_dir=state_dir, platform=platform)
+        return OllamaDarwinApplier(state_dir=state_dir, platform=platform, log=log)
     if platform.os_name == "windows":
         return OllamaWindowsApplier(state_dir=state_dir, platform=platform)
     raise PlatformUnsupportedError("no Ollama here")
@@ -184,7 +185,9 @@ class OllamaModuleRunner(ModuleRunner):
             PlatformUnsupportedError: On a system with no applier.
         """
         super().__init__(platform=platform, log=log, publish=publish)
-        self._applier = applier if applier is not None else ollama_applier_for(platform)
+        self._applier = (
+            applier if applier is not None else ollama_applier_for(platform, log)
+        )
         self._records = InstanceRecordStore(
             directory=record_dir or self.module_dir, fields=OLLAMA_RECORD_FIELDS
         )
@@ -485,13 +488,14 @@ class OllamaModuleRunner(ModuleRunner):
         }
 
     def _take_over_apps(self) -> None:
-        """Take each account's publisher's app over the first time, then end every process of it."""
+        """Take each account's publisher's app over the first time, end every process of it, and keep its login job out on macOS."""
         taken = self._applier.take_over_apps()
         if taken:
             self._log(f"ollama: took the publisher's app over for {', '.join(taken)}")
         ended = self._applier.stop_apps()
         if ended:
             self._log(f"ollama: ended the publisher's app, {len(ended)} processes")
+        self._applier.watch_login_jobs()
 
     def _found(self) -> str:
         """What a person's own Ollama is here: ``unit`` on Linux, or empty for none.

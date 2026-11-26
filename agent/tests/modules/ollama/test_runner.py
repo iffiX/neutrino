@@ -97,6 +97,9 @@ class FakeApplier:
         self.calls.append("stop_apps")
         return []
 
+    def watch_login_jobs(self):
+        self.calls.append("watch_login_jobs")
+
     def ensure_account(self, *, log=None):
         self.calls.append("ensure_account")
         return False
@@ -189,9 +192,19 @@ def test_a_configure_takes_the_app_over_before_the_server_starts(tmp_path):
     applier = FakeApplier(tmp_path, account="")
     runner = _runner(tmp_path, applier, os_name="windows", answers={"version": "1"})
     runner.apply({})
-    assert applier.calls == ["take_over_apps", "stop_apps", ("apply", True)]
+    assert applier.calls == [
+        "take_over_apps",
+        "stop_apps",
+        "watch_login_jobs",
+        ("apply", True),
+    ]
     runner.apply_stopped({})
-    assert applier.calls[-3:] == ["take_over_apps", "stop_apps", ("apply", False)]
+    assert applier.calls[-4:] == [
+        "take_over_apps",
+        "stop_apps",
+        "watch_login_jobs",
+        ("apply", False),
+    ]
 
 
 def test_each_report_takes_the_app_over_then_ends_it_while_the_program_is_installed(
@@ -205,7 +218,7 @@ def test_each_report_takes_the_app_over_then_ends_it_while_the_program_is_instal
     assert applier.calls == []
     _place_program(applier)
     runner.details({})
-    assert applier.calls == ["take_over_apps", "stop_apps"]
+    assert applier.calls == ["take_over_apps", "stop_apps", "watch_login_jobs"]
 
 
 def test_the_linux_archive_lands_under_ollama_through_zstd(tmp_path, monkeypatch):
@@ -267,7 +280,12 @@ def test_a_stopped_configure_writes_the_service_and_starts_nothing(tmp_path):
     runner = _runner(tmp_path, applier)
     steps = runner.configure_steps({}, "stopped", [_step("configure"), _step("stop")])
     steps[1].run(None)
-    assert applier.calls == ["take_over_apps", "stop_apps", ("apply", False)]
+    assert applier.calls == [
+        "take_over_apps",
+        "stop_apps",
+        "watch_login_jobs",
+        ("apply", False),
+    ]
 
 
 def test_a_configure_waits_for_the_server_and_fails_when_it_never_answers(

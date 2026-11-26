@@ -16,7 +16,9 @@ ran.
 
 import os
 import plistlib
+import time
 
+from neutrino_agent.modules.ollama import darwin_applier as darwin_applier_module
 from neutrino_agent.modules.ollama.config import OllamaConfig
 from neutrino_agent.modules.ollama.darwin_applier import (
     OllamaDarwinApplier,
@@ -123,6 +125,7 @@ class AppLaunchd(FakeLaunchd):
         self.disabled = {"501": False, "502": True}
         self.processes = {}
         self.console = "501"
+        self.loaded_jobs: set = set()
 
     def run(self, command, *, is_checked=True, **kwargs):
         if command[:2] == ["launchctl", "print-disabled"]:
@@ -147,6 +150,15 @@ class AppLaunchd(FakeLaunchd):
             return Result(0, lines)
         if command[:3] == ["stat", "-f", "%u"]:
             return Result(0, self.console + "\n")
+        if command[:2] in (["launchctl", "print"], ["launchctl", "bootout"]) and (
+            command[2].startswith("gui/")
+        ):
+            self.commands.append(list(command))
+            uid = command[2].split("/")[1]
+            is_loaded = uid in self.loaded_jobs
+            if command[1] == "bootout":
+                self.loaded_jobs.discard(uid)
+            return Result(0 if is_loaded else 113, "state = not running\n")
         return super().run(command, is_checked=is_checked, **kwargs)
 
 
@@ -247,3 +259,45 @@ def test_the_settings_variables_join_the_job_and_reload_it(tmp_path):
     assert applier.apply(environment={"OLLAMA_KEEP_ALIVE": "5m"}) == "restarted"
     assert applier.apply_person(environment={"OLLAMA_KEEP_ALIVE": "5m"}) == ""
     assert applier.remove_person_settings() is False
+
+
+def test_a_login_job_loaded_again_at_a_login_is_booted_out_and_disabled(tmp_path):
+    """R195 F2: at each login the system enabled the job again and opened the
+    app 13 to 18 seconds later; launchctl disable alone kept nothing out."""
+    applier, launchd, _ended = _taking_applier(tmp_path)
+    applier.take_over_apps()
+    launchd.loaded_jobs = {"501"}
+    launchd.disabled["501"] = False
+    launchd.commands.clear()
+
+    assert applier.keep_login_jobs_out() == ["ann"]
+    assert ["launchctl", "bootout", "gui/501/com.ollama.ollama"] in launchd.commands
+    assert launchd.disabled["501"] is True
+    assert ["launchctl", "bootout", "gui/502/com.ollama.ollama"] not in launchd.commands
+    assert applier.keep_login_jobs_out() == []
+
+
+def test_the_login_watch_boots_a_job_out_within_its_period_until_the_uninstall(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(darwin_applier_module, "OLLAMA_DARWIN_LOGIN_WATCH_S", 0.01)
+    applier, launchd, _ended = _taking_applier(tmp_path)
+    os.makedirs(os.path.dirname(applier.program_path))
+    with open(applier.program_path, "wb") as stream:
+        stream.write(b"program")
+    applier.take_over_apps()
+
+    applier.watch_login_jobs()
+    applier.watch_login_jobs()
+    launchd.loaded_jobs = {"501"}
+    for _turn in range(500):
+        if not launchd.loaded_jobs:
+            break
+        time.sleep(0.01)
+
+    assert launchd.loaded_jobs == set()
+    watch = applier._watch
+    applier.uninstall()
+    watch.join(timeout=2)
+    assert not watch.is_alive()
+    assert ["launchctl", "enable", "gui/501/com.ollama.ollama"] in launchd.commands

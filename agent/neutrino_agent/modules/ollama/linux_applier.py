@@ -277,6 +277,9 @@ class OllamaLinuxApplier:
         """
         return []
 
+    def watch_login_jobs(self) -> None:
+        """Nothing: the app's login job is macOS's."""
+
     def stop_apps(self) -> list:
         """Nothing: the publisher's app is for Windows and macOS.
 

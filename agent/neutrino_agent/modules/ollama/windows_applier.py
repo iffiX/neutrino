@@ -285,6 +285,9 @@ class OllamaWindowsApplier:
         write_kept(record, records)
         return taken
 
+    def watch_login_jobs(self) -> None:
+        """Nothing: the app's login job is macOS's."""
+
     def stop_apps(self) -> list:
         """End every process of the publisher's app in any profile.
 
