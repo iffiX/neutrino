@@ -186,3 +186,46 @@ def test_a_machines_ollama_follows_the_stored_providers_with_no_key():
             {"name": "smollm2:135m", "alias": "smollm2:135m"},
         ],
     }
+
+
+def test_each_stored_provider_written_is_a_tier_of_its_own_down_the_list():
+    document = _render(
+        [
+            _provider(id="p1", kind="custom", name="First", base_url="https://a/v1"),
+            _provider(id="p2", kind="anthropic"),
+            _provider(id="off", kind="custom", name="Off", is_enabled=False),
+            _provider(id="keyless", kind="openai"),
+            _provider(id="p3", kind="openai"),
+            _provider(id="p4", kind="gemini"),
+            _provider(id="p5", kind="custom", name="Last", base_url="https://b/v1"),
+        ],
+        {"p1": "k1", "p2": "k2", "off": "k-off", "p3": "k3", "p4": "k4", "p5": "k5"},
+    )
+
+    # A provider turned off or with no key takes no number, and the next
+    # one moves up.
+    assert [entry["priority"] for entry in document["openai-compatibility"]] == [
+        -1,
+        -5,
+    ]
+    assert document["claude-api-key"][0]["priority"] == -2
+    assert document["codex-api-key"] == [
+        {"api-key": "k3", "priority": -3},
+    ]
+    assert document["gemini-api-key"][0]["priority"] == -4
+    assert "routing" not in document
+
+
+def test_a_drag_changes_the_tiers():
+    first = _provider(id="p1", kind="custom", name="A", base_url="https://a/v1")
+    second = _provider(id="p2", kind="custom", name="B", base_url="https://b/v1")
+
+    in_order = _render([first, second], {"p1": "k1", "p2": "k2"})
+    dragged = _render([second, first], {"p1": "k1", "p2": "k2"})
+
+    assert {
+        entry["name"]: entry["priority"] for entry in in_order["openai-compatibility"]
+    } == {"a": -1, "b": -2}
+    assert {
+        entry["name"]: entry["priority"] for entry in dragged["openai-compatibility"]
+    } == {"b": -1, "a": -2}

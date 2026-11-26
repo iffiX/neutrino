@@ -7,6 +7,11 @@ Messages protocol, ``openai`` the Responses protocol, ``gemini`` Google's,
 and ``custom`` is an OpenAI-compatible chat endpoint. Each machine's Ollama
 is an OpenAI-compatible entry of its own after them, with no key.
 
+Each stored provider written is a tier of its own: ``priority`` -1 for the
+first, -2 for the second and on down the list, below the accounts and the
+Ollama entries at the gateway's default of 0 (hub_components/ai.md, "How a
+request routes").
+
 Pure: state in, text out. The client keys arrive already resolved from the
 vault; the device keys are opened through the configuration they belong to.
 """
@@ -97,12 +102,14 @@ class CliproxyApiConfigRenderer:
                 "secret-key": self._management_key,
             }
         compatibility = []
+        priority = 0
         for provider in self._providers:
             api_key = self._api_keys.get(provider.id, "")
             if not provider.is_enabled or not api_key:
                 continue
+            priority -= 1
             if provider.kind in KIND_TO_BLOCK:
-                entry = {"api-key": api_key}
+                entry = {"api-key": api_key, "priority": priority}
                 if provider.base_url:
                     entry["base-url"] = provider.base_url
                 models = self._models(provider)
@@ -114,6 +121,7 @@ class CliproxyApiConfigRenderer:
                     "name": _slug(provider.name),
                     "base-url": provider.base_url,
                     "api-key-entries": [{"api-key": api_key}],
+                    "priority": priority,
                 }
                 models = self._models(provider)
                 if models:
@@ -122,9 +130,7 @@ class CliproxyApiConfigRenderer:
         for provider in self._ollama_providers:
             compatibility.append(
                 {
-                    "name": _slug(
-                        CLIPROXYAPI_OLLAMA_PROVIDER_PREFIX + provider["device_id"]
-                    ),
+                    "name": ollama_entry_name(provider["device_id"]),
                     "base-url": (
                         f"http://{provider['address']}{CLIPROXYAPI_OLLAMA_API_PATH}"
                     ),
@@ -150,6 +156,18 @@ class CliproxyApiConfigRenderer:
             alias = str(entry.get("alias", "")).strip() or name
             models.append({"name": name, "alias": alias})
         return models
+
+
+def ollama_entry_name(device_id: str) -> str:
+    """The name of the entry generated from one machine's Ollama.
+
+    Args:
+        device_id: The machine.
+
+    Returns:
+        ``ollama-<device id>``, as an entry's name is written.
+    """
+    return _slug(CLIPROXYAPI_OLLAMA_PROVIDER_PREFIX + device_id)
 
 
 def _slug(name: str) -> str:
