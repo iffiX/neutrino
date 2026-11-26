@@ -3,63 +3,91 @@
   container: ai_accounts / inline-size;
 }
 
-/* A table, one line per account: fixed column widths, each holding its
-   longest words in either language, and the buttons take whatever the
-   other columns leave, on one line at the right end. */
+/* A table, one line per account: the service, the label, the windows, the
+   three lines of the card stacked and right-aligned, and the buttons at the
+   line's end, each in one column every line shares. The room left stands
+   between the windows and the three lines. The table lays its lines out on
+   one grid; the colgroup's widths are what the measure of the table's
+   width reads. */
 .ai_accounts {
+  display: block;
   width: 100%;
-  border-collapse: separate;
-  border-spacing: 0;
-  table-layout: fixed;
 }
 
 .ai_accounts_col--service {
-  width: 96px;
+  width: 92px;
 }
 
 .ai_accounts_col--identity {
-  width: 240px;
+  width: 180px;
 }
 
 .ai_accounts_col--windows {
-  width: 324px;
+  width: 288px;
 }
 
-.ai_accounts_col--counts {
-  width: 156px;
+.ai_accounts_col--side {
+  width: 164px;
 }
 
-.ai_accounts_col--status {
-  width: 176px;
-}
-
-.ai_accounts_col--updated {
-  width: 128px;
-}
-
-/* No header row: each cell carries its own words. The row's cells keep the
+/* No header row: each cell carries its own words. The cells keep the
    header's padding, which the measure of the table's width reads. */
+.ai_accounts colgroup,
 .ai_accounts_head {
   display: none;
 }
 
-.ai_accounts th,
-.ai_accounts td {
-  padding: var(--space-2) 10px;
-  border-bottom: 1px solid var(--color-border);
-  vertical-align: middle;
+.ai_accounts tbody {
+  display: grid;
+  grid-template-columns: 92px 180px 288px minmax(0, 1fr) 164px max-content;
 }
 
-.ai_accounts tr:last-child td {
+.ai_account_row {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: center;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.ai_account_row:last-child {
   border-bottom: none;
 }
 
-.ai_account_cell--counts,
-.ai_account_cell--updated {
+.ai_accounts th,
+.ai_accounts td {
+  display: block;
+  min-width: 0;
+  padding: var(--space-2) 10px;
+}
+
+.ai_account_cell--service {
+  grid-column: 1;
+}
+
+.ai_account_cell--identity {
+  grid-column: 2;
+}
+
+.ai_account_cell--windows {
+  grid-column: 3;
+}
+
+/* The counts, the status and the updated time, stacked and right-aligned. */
+.ai_accounts .ai_account_cell--side {
+  display: flex;
+  flex-direction: column;
+  grid-column: 5;
+  gap: var(--space-1);
+  align-items: flex-end;
   text-align: right;
 }
 
-.ai_account_cell--status {
+.ai_account_cell--actions {
+  grid-column: 6;
+}
+
+.ai_account_status {
   white-space: nowrap;
 }
 
@@ -117,7 +145,7 @@
 .ai_account_windows {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-2) var(--space-3);
+  gap: var(--space-2);
   align-items: flex-start;
 }
 
@@ -126,7 +154,7 @@
   flex-direction: column;
   gap: 2px;
   align-items: center;
-  width: 92px;
+  width: 84px;
   min-width: 0;
 }
 
@@ -172,28 +200,13 @@
 
 /* A box too narrow for the table: a card per account on one grid every card
    shares, the service and the label with the windows under it at the left,
-   the counts, the status and the updated time right-aligned at the right,
-   and the buttons at the foot. */
-.ai_accounts_box--cards .ai_accounts,
-.ai_accounts_box--cards .ai_accounts td {
-  display: block;
-}
-
-.ai_accounts_box--cards .ai_accounts colgroup,
-.ai_accounts_box--cards .ai_accounts thead {
-  display: none;
-}
-
+   the three lines right-aligned at the right, and the buttons at the foot. */
 .ai_accounts_box--cards .ai_accounts tbody {
-  display: grid;
   grid-template-columns: max-content minmax(0, 1fr) max-content;
   gap: var(--space-2) var(--space-3);
 }
 
 .ai_accounts_box--cards .ai_account_row {
-  display: grid;
-  grid-column: 1 / -1;
-  grid-template-columns: subgrid;
   row-gap: var(--space-1);
   align-items: start;
   padding: var(--space-3);
@@ -202,10 +215,12 @@
   background: var(--color-bg);
 }
 
+.ai_accounts_box--cards .ai_account_row:last-child {
+  border-bottom: 1px solid var(--color-border);
+}
+
 .ai_accounts_box--cards .ai_accounts td {
-  min-width: 0;
   padding: 0;
-  border-bottom: none;
 }
 
 .ai_accounts_box--cards .ai_account_cell--service {
@@ -217,26 +232,18 @@
 }
 
 .ai_accounts_box--cards .ai_account_cell--windows {
-  grid-row: 2 / span 2;
+  grid-row: 2;
   grid-column: 2;
   margin-top: var(--space-1);
 }
 
-.ai_accounts_box--cards .ai_account_cell--counts {
-  grid-area: 1 / 3;
-}
-
-.ai_accounts_box--cards .ai_account_cell--status {
-  grid-area: 2 / 3;
-  justify-self: end;
-}
-
-.ai_accounts_box--cards .ai_account_cell--updated {
-  grid-area: 3 / 3;
+.ai_accounts_box--cards .ai_account_cell--side {
+  grid-row: 1 / span 2;
+  grid-column: 3;
 }
 
 .ai_accounts_box--cards .ai_account_cell--actions {
-  grid-row: 4;
+  grid-row: 3;
   grid-column: 1 / -1;
   margin-top: var(--space-1);
 }
@@ -246,7 +253,6 @@
    buttons. */
 @container ai_accounts (max-width: 520px) {
   .ai_accounts_box--cards .ai_account_cell--windows {
-    grid-row: 2;
     grid-column: 1 / -1;
   }
 
@@ -259,20 +265,13 @@
     width: 100%;
   }
 
-  .ai_accounts_box--cards .ai_account_cell--counts {
-    grid-area: 3 / 1 / auto / -1;
-  }
-
-  .ai_accounts_box--cards .ai_account_cell--status {
-    grid-area: 4 / 1 / auto / -1;
-  }
-
-  .ai_accounts_box--cards .ai_account_cell--updated {
-    grid-area: 5 / 1 / auto / -1;
+  .ai_accounts_box--cards .ai_account_cell--side {
+    grid-row: 3;
+    grid-column: 1 / -1;
   }
 
   .ai_accounts_box--cards .ai_account_cell--actions {
-    grid-row: 6;
+    grid-row: 4;
   }
 }
 

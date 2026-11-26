@@ -177,15 +177,11 @@ export function AiAccountsPanel() {
                 <col className="ai_accounts_col--service" />
                 <col className="ai_accounts_col--identity" />
                 <col className="ai_accounts_col--windows" />
-                <col className="ai_accounts_col--counts" />
-                <col className="ai_accounts_col--status" />
-                <col className="ai_accounts_col--updated" />
+                <col className="ai_accounts_col--side" />
                 <col className="ai_accounts_col--actions" />
               </colgroup>
               <thead className="ai_accounts_head">
                 <tr>
-                  <th />
-                  <th />
                   <th />
                   <th />
                   <th />
@@ -313,7 +309,7 @@ function AccountRow({ value, isBusy, onChanged, onDelete }: AccountRowProps) {
           </span>
         )}
       </td>
-      <td className="ai_account_cell--counts">
+      <td className="ai_account_cell--side">
         <span className="ai_account_counts">
           <span>{t("ui.ai.count_ok", { count: value.success_count })}</span>
           <span>·</span>
@@ -325,14 +321,12 @@ function AccountRow({ value, isBusy, onChanged, onDelete }: AccountRowProps) {
             {t("ui.ai.count_failed", { count: value.failed_count })}
           </span>
         </span>
-      </td>
-      <td
-        className="ai_account_cell--status"
-        title={hasMessage ? value.status_message : undefined}
-      >
-        <StatusDot tone={health.tone} label={health.word} />
-      </td>
-      <td className="ai_account_cell--updated">
+        <span
+          className="ai_account_status"
+          title={hasMessage ? value.status_message : undefined}
+        >
+          <StatusDot tone={health.tone} label={health.word} />
+        </span>
         {newestSeenAt !== null && (
           <span className="ai_account_updated faint">
             {t("ui.ai.quota_updated", { ago: formatTimeAgo(newestSeenAt) })}

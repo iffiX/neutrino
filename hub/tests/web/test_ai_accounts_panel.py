@@ -80,54 +80,50 @@ def test_the_accounts_are_a_table_by_the_agents_tables_measure():
     assert "ref={tableBoxRef}" in source
     assert 'ai_accounts_box ${isCards ? "ai_accounts_box--cards" : ""}' in source
     assert "container: ai_accounts / inline-size;" in rule(style, ".ai_accounts_box")
-    assert "table-layout: fixed;" in rule(style, ".ai_accounts")
     columns = re.findall(r'<col className="ai_accounts_col--(\w+)" />', source)
-    assert columns == [
-        "service",
-        "identity",
-        "windows",
-        "counts",
-        "status",
-        "updated",
-        "actions",
-    ]
-    for column in columns[:-1]:
-        assert re.search(r"width: \d+px;", rule(style, f".ai_accounts_col--{column}"))
+    assert columns == ["service", "identity", "windows", "side", "actions"]
+    # The measure reads the colgroup's widths; the lines lay out on the same
+    # widths, the room left between the windows and the three lines.
+    for column, width in zip(columns, (92, 180, 288, 164)):
+        assert f"width: {width}px;" in rule(style, f".ai_accounts_col--{column}")
+    assert (
+        "grid-template-columns: 92px 180px 288px minmax(0, 1fr) 164px max-content;"
+        in rule(style, ".ai_accounts tbody")
+    )
     # No header row: the hidden one keeps the padding the measure reads.
     assert '<thead className="ai_accounts_head">' in source
-    assert ".ai_accounts_head { display: none; }" in style
+    assert "display: none;" in rule(style, ".ai_accounts colgroup, .ai_accounts_head")
 
 
 def test_a_narrow_box_turns_each_account_into_a_card_on_one_grid():
     style = flat(STYLE_PATH)
     cards = ".ai_accounts_box--cards"
 
-    assert (
-        f"{cards} .ai_accounts, {cards} .ai_accounts td {{ display: block; }}"
-    ) in style
-    assert (
-        f"{cards} .ai_accounts colgroup, {cards} .ai_accounts thead "
-        "{ display: none; }"
-    ) in style
     assert "grid-template-columns: max-content minmax(0, 1fr) max-content;" in rule(
         style, f"{cards} .ai_accounts tbody"
     )
-    assert "grid-template-columns: subgrid;" in rule(style, f"{cards} .ai_account_row")
+    assert "grid-template-columns: subgrid;" in rule(style, ".ai_account_row")
+    assert "border-radius: var(--radius-md);" in rule(style, f"{cards} .ai_account_row")
     assert "grid-area: 1 / 1;" in rule(style, f"{cards} .ai_account_cell--service")
     assert "grid-area: 1 / 2;" in rule(style, f"{cards} .ai_account_cell--identity")
-    assert "grid-column: 2;" in rule(style, f"{cards} .ai_account_cell--windows")
-    for cell, area in (("counts", "1 / 3"), ("status", "2 / 3"), ("updated", "3 / 3")):
-        assert f"grid-area: {area};" in rule(style, f"{cards} .ai_account_cell--{cell}")
-    assert "grid-row: 4;" in rule(style, f"{cards} .ai_account_cell--actions")
+    windows = rule(style, f"{cards} .ai_account_cell--windows")
+    assert "grid-row: 2;" in windows and "grid-column: 2;" in windows
+    side = rule(style, f"{cards} .ai_account_cell--side")
+    assert "grid-row: 1 / span 2;" in side and "grid-column: 3;" in side
+    assert "grid-row: 3;" in rule(style, f"{cards} .ai_account_cell--actions")
 
 
-def test_the_three_lines_are_right_aligned():
+def test_the_three_lines_are_stacked_and_right_aligned_in_one_cell():
+    source = flat(PANEL_PATH)
     style = flat(STYLE_PATH)
+    side = source[source.index('<td className="ai_account_cell--side">') :]
+    side = side[: side.index("</td>")]
 
-    assert (
-        ".ai_account_cell--counts, .ai_account_cell--updated { text-align: right; }"
-        in (style)
-    )
+    assert side.index("ai_account_counts") < side.index("ai_account_status")
+    assert side.index("ai_account_status") < side.index("ui.ai.quota_updated")
+    cell = rule(style, ".ai_accounts .ai_account_cell--side")
+    assert "flex-direction: column;" in cell
+    assert "align-items: flex-end;" in cell
     assert "font-variant-numeric: tabular-nums;" in rule(style, ".ai_account_counts")
 
 
@@ -136,7 +132,7 @@ def test_the_buttons_are_right_aligned_in_their_cell():
     style = flat(STYLE_PATH)
 
     assert source.index('<td className="ai_account_cell--actions">') > source.index(
-        '<td className="ai_account_cell--updated">'
+        '<td className="ai_account_cell--side">'
     )
     assert "justify-content: flex-end;" in rule(style, ".ai_account_actions")
 
@@ -158,7 +154,7 @@ def test_each_window_is_a_cell_of_one_width_with_its_short_reset_time():
     source = flat(PANEL_PATH)
     style = flat(STYLE_PATH)
 
-    assert "width: 92px;" in rule(style, ".ai_account_window")
+    assert "width: 84px;" in rule(style, ".ai_account_window")
     assert "time: formatShortMoment(window.resets_at)," in source
     assert "time: formatMoment(window.resets_at)," in source
     assert "? formatHourMinute(date) : formatDay(isoTimestamp);" in source
