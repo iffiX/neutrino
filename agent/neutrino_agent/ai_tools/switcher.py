@@ -87,6 +87,12 @@ from neutrino_agent.ai_tools.constants import (
     AI_TOOLS_WORDS_LIMIT,
 )
 from neutrino_agent.exceptions import ToolSwitchError
+from neutrino_agent.modules.comfyui.constants import COMFYUI_TOOL_FILES
+from neutrino_agent.modules.comfyui.mcp_entries import (
+    command_programs,
+    entry_in,
+    without_entry,
+)
 from neutrino_agent.platforms.answered_run import plain_text
 
 
@@ -601,6 +607,7 @@ class AiToolsAccountSwitcher:
                     problem += "; not put back: " + "; ".join(undone)
                 raise self._session.failure(problem) from error
             done.append(app)
+        self._drop_gone_comfyui()
         return switched
 
     def deactivate(self) -> list:
@@ -619,6 +626,7 @@ class AiToolsAccountSwitcher:
         for app in AI_TOOLS_APPS:
             previous = self._point_away(app)
             notes.append(f"{app} → {previous or 'unset'}")
+        self._drop_gone_comfyui()
         self._session.is_own_store = True
         self._session.remove_store()
         return notes
@@ -888,6 +896,33 @@ class AiToolsAccountSwitcher:
             mode = modes.get(name)
             if isinstance(mode, int) and self._session.mode_of(path) != mode:
                 self._session.set_mode(path, mode)
+
+    def _drop_gone_comfyui(self) -> None:
+        """Take a ``comfyui`` MCP server whose program is gone out of Claude Code's, Codex's and OpenCode's files.
+
+        cc-switch writes its own store's MCP servers into every tool's file
+        at each run, the ``comfyui`` entry of a ComfyUI uninstalled since
+        among them, so this runs after the last run of a switch or a switch
+        back.
+
+        Raises:
+            ToolSwitchError: When a file cannot be written.
+        """
+        for tool, parts in COMFYUI_TOOL_FILES.items():
+            path = self._session.path(*parts)
+            if not self._session.is_file(path):
+                continue
+            text = self._session.read_text(path)
+            try:
+                entry = entry_in(tool, text)
+            except ValueError:
+                continue
+            programs = command_programs(entry) if entry is not None else []
+            if not programs or os.path.isfile(programs[0]):
+                continue
+            changed = without_entry(tool, text)
+            if changed is not None:
+                self._session.write_text(path, changed)
 
     def _remove_migration_backup(self, app: str) -> None:
         """Take away OpenCode's migration backup when it holds the hub's provider."""

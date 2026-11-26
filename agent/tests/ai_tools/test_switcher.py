@@ -993,3 +993,44 @@ def test_opencode_s_output_is_never_more_than_half_its_context():
     assert opencode_limit(
         {"model": "m"}, {"m": dict(vendor, context_length=1000000)}
     ) == {"context": 1000000, "output": 128000}
+
+
+def test_the_switch_back_takes_out_a_comfyui_entry_whose_program_is_gone(tmp_path):
+    there = tmp_path / "comfy-mcp"
+    there.write_text("")
+    gone = str(tmp_path / "gone" / "comfy-mcp")
+    codex = (
+        'model = "mine"\n\n[mcp_servers]\n\n[mcp_servers.comfyui]\n'
+        f'type = "stdio"\ncommand = "{gone}"\n\n[mcp_servers.comfyui.env]\nA = "1"\n'
+    )
+    opencode = json.dumps(
+        {"mcp": {"comfyui": {"type": "local", "command": [str(there)]}}}
+    )
+    claude = json.dumps({"mcpServers": {"comfyui": {"command": gone}, "x": {}}})
+    cc_switch = FakeCcSwitch()
+    switcher, session = switcher_for(
+        tmp_path,
+        cc_switch,
+        {
+            "/home/ann/.codex/config.toml": codex,
+            OPENCODE: opencode,
+            "/home/ann/.claude.json": claude,
+        },
+    )
+    activate(switcher)
+    assert (
+        "comfyui"
+        not in json.loads(session.files["/home/ann/.claude.json"])["mcpServers"]
+    )
+    session.files["/home/ann/.claude.json"] = claude
+
+    switcher.deactivate()
+
+    assert (
+        session.files["/home/ann/.codex/config.toml"]
+        == 'model = "mine"\n\n[mcp_servers]\n'
+    )
+    assert session.files[OPENCODE] == opencode
+    assert json.loads(session.files["/home/ann/.claude.json"]) == {
+        "mcpServers": {"x": {}}
+    }
