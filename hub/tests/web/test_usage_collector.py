@@ -18,7 +18,7 @@ from neutrino_hub.web import usage_collector as collector_module
 from neutrino_hub.web.usage_collector import PanelUsageCollector
 from tests.conftest import unlock_vault
 
-# One success and one failure, as CLIProxyAPI 7.2.146's usage-queue answers
+# One success and one failure, as CLIProxyAPI 8.1.5's usage-queue answers
 # them, trimmed to the fields the pipeline reads.
 QUEUE_ANSWER = [
     {
@@ -54,7 +54,7 @@ QUEUE_ANSWER = [
 ]
 
 
-# One request served by a subscription account instead of a key, as 7.2.146
+# One request served by a subscription account instead of a key, as 8.1.5
 # queues it: ``source`` is the account's email, and only ``auth_index`` names
 # the credential the gateway lists.
 ACCOUNT_ANSWER = [
@@ -408,7 +408,7 @@ def test_a_hub_with_no_access_key_probes_with_its_own_key(monkeypatch, tmp_path)
 
 
 # A priced request through the DeepSeek provider, one through the
-# account, and one a machine's Ollama served, in 7.2.146's v2 shape.
+# account, and one a machine's Ollama served, in 8.1.5's v2 shape.
 def priced(model: str, **fields) -> dict:
     return {
         "timestamp": "2026-09-04T06:20:00+08:00",

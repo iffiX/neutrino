@@ -1,6 +1,6 @@
 """The usage store: folding queue records, the windows, and hostile files.
 
-The record shapes come from CLIProxyAPI 7.2.146's own ``usage-queue``
+The record shapes come from CLIProxyAPI 8.1.5's own ``usage-queue``
 answers, trimmed to the fields the store reads.
 """
 
@@ -291,7 +291,7 @@ def priced_record(
     reasoning: int = 0,
     quality: str = "complete",
 ) -> dict:
-    """A record in 7.2.146's v2 shape: the breakdown with no overlap."""
+    """A record in 8.1.5's v2 shape: the breakdown with no overlap."""
     return {
         "timestamp": "2026-09-04T06:20:00Z",
         "api_key": "client-key-one",
@@ -433,6 +433,83 @@ def test_a_records_cost_is_its_breakdown_at_the_price_in_force_in_millionths(
     assert totals["cost"] == {"USD": 368}
     assert totals["api_value"] == {}
     assert totals["unpriced_requests"] == 0
+
+
+def test_a_record_as_8_1_5_queues_it_folds_its_tokens_and_cost(tmp_path):
+    # Every field 8.1.5 queued for one chat request in the lab on
+    # 2026-11-26, the keys, the upstream and the addresses replaced by the
+    # fixture's DeepSeek provider; 1000 in, 600 of them from the cache, 50 out.
+    queued = {
+        "timestamp": "2026-09-04T06:20:00.753287892Z",
+        "latency_ms": 0,
+        "ttft_ms": 0,
+        "source": "upstream-key-a",
+        "auth_index": "d373c4b9373f7213",  # scan: allow
+        "client_ip": "127.0.0.1",
+        "resolved_client_ip": "127.0.0.1",
+        "x_forwarded_for": "",
+        "user_agent": "Python-urllib/3.10",
+        "tokens": {
+            "input_tokens": 1000,
+            "output_tokens": 50,
+            "reasoning_tokens": 0,
+            "cached_tokens": 600,
+            "cache_read_tokens": 600,
+            "cache_read_tokens_present": True,
+            "cache_creation_tokens": 0,
+            "total_tokens": 1050,
+        },
+        "failed": False,
+        "generate": True,
+        "stream": False,
+        "fail": {"status_code": 200, "body": ""},
+        "accounting_version": 2,
+        "token_breakdown": {
+            "schema_version": 2,
+            "quality": "complete",
+            "total_tokens": 1050,
+            "input": {
+                "total_tokens": 1000,
+                "uncached_tokens": 400,
+                "cache_read_tokens": 600,
+                "cache_write_tokens": 0,
+            },
+            "output": {
+                "total_tokens": 50,
+                "non_reasoning_tokens": 50,
+                "reasoning_tokens": 0,
+            },
+            "unclassified_tokens": 0,
+        },
+        "provider": "openai-compatible-deepseek",
+        "base_url": "https://api.deepseek.com",
+        "auth_id": "openai-compatibility:deepseek:6487027f1a51",
+        "executor_type": "OpenAICompatExecutor",
+        "model": "deepseek-v4-pro",
+        "alias": "deepseek-v4-pro",
+        "endpoint": "POST /v1/chat/completions",
+        "auth_type": "apikey",
+        "api_key": "client-key-one",
+        "is_native_key": True,
+        "access_provider": "config-inline",
+        "request_id": "01a21a44-1748-7f18-8d71-51030c0f4c05",
+        "execution_id": "ef48896a-db59-42c4-8318-2128faa844ee",
+        "trace_id": "01a21a44-1748-7f18-8d71-51030c0f4c05",
+        "session_id": "66275e42-4475-8c11-b415-a1d7bc4df75f",
+        "reasoning_effort": "",
+        "service_tier": "auto",
+        "response_model": "deepseek-v4-pro",
+    }
+    subject = fold(tmp_path, [queued])
+    (row,) = subject.model_rows("day", now=NOW)
+    assert row["model"] == "deepseek-v4-pro"
+    assert (row["input_tokens"], row["cache_read_tokens"], row["output_tokens"]) == (
+        1000,
+        600,
+        50,
+    )
+    assert row["cost"] == {"USD": 184}
+    assert set(subject.load()["cells"]) == {"k1|p1|deepseek-v4-pro"}
 
 
 def test_reasoning_is_priced_as_output(tmp_path):

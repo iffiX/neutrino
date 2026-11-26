@@ -1,6 +1,6 @@
 """An account's quota windows: from the gateway's signals and from a vendor's usage answer.
 
-The auth-file entries are shaped as CLIProxyAPI 7.2.146 lists them
+The auth-file entries are shaped as CLIProxyAPI 8.1.5 lists them
 (``internal/api/handlers/management/auth_files.go``): the signals under
 their canonical header names, ``observed_at`` and ``next_retry_after`` with
 nanoseconds, a Codex ID token already reduced to its claims. The vendor
@@ -66,6 +66,75 @@ CODEX_ENTRY = {
     },
 }
 
+# A Codex login's entry whole, as 8.1.5 listed it in the lab on 2026-11-26
+# after its usage limit, the person's names replaced and the ten-minute
+# request counts left out.
+CODEX_ENTRY_RECORDED = {
+    "account": "person@example.com",
+    "account_type": "oauth",
+    "auth_index": "6a4a91aca5cc7abe",  # scan: allow
+    "cooldowns": [
+        {
+            "scope": "credential",
+            "reason": "credential_quota",
+            "retry_at": "2026-11-27T00:50:19.460898001Z",
+            "remaining_seconds": 3600,
+        },
+        {
+            "scope": "model",
+            "model_key": "gpt-6.2-sol",
+            "reason": "quota",
+            "retry_at": "2026-11-27T00:50:19.460898001Z",
+            "remaining_seconds": 3600,
+            "backoff_level": 0,
+            "http_status": 429,
+        },
+    ],
+    "created_at": "2026-11-26T23:48:21.289269833Z",
+    "disabled": False,
+    "email": "person@example.com",
+    "failed": 1,
+    "id": "codex-person.json",
+    "id_token": {
+        "chatgpt_account_id": "acct-1",
+        "chatgpt_subscription_active_until": "2026-12-24T00:00:00Z",
+        "plan_type": "plus",
+    },
+    "label": "person@example.com",
+    "model_quotas": {
+        "gpt-6.2-sol": {
+            "observed_at": "2026-11-26T23:50:17.664818762Z",
+            "signals": {"X-Codex-Primary-Used-Percent": "37"},
+        }
+    },
+    "modtime": "2026-11-26T23:48:21.289269833Z",
+    "name": "codex-person.json",
+    "next_retry_after": "2026-11-27T00:50:19.460898001Z",
+    "path": "/var/lib/neutrino/hub/cliproxyapi/auth/codex-person.json",
+    "provider": "codex",
+    "quota": {
+        "observed_at": "2026-11-26T23:50:17.664818762Z",
+        "signals": {
+            "X-Codex-Plan-Type": "plus",
+            "X-Codex-Primary-Reset-At": "1795744062",
+            "X-Codex-Primary-Used-Percent": "37",
+            "X-Codex-Primary-Window-Minutes": "300",
+            "X-Codex-Secondary-Reset-At": "1795909662",
+            "X-Codex-Secondary-Used-Percent": "64",
+            "X-Codex-Secondary-Window-Minutes": "10080",
+        },
+    },
+    "runtime_only": False,
+    "size": 567,
+    "source": "file",
+    "status": "error",
+    "status_message": '{"error": {"type": "usage_limit_reached"}}',
+    "success": 1,
+    "type": "codex",
+    "unavailable": True,
+    "updated_at": "2026-11-26T23:50:19.460898001Z",
+}
+
 
 def test_claudes_windows_come_from_its_signals_with_the_time_they_were_seen():
     account = _account(CLAUDE_ENTRY)
@@ -100,6 +169,35 @@ def test_codexs_windows_are_named_by_their_minutes_and_its_plan_read_from_its_to
     assert account.next_retry_after == "2026-11-26T09:30:00Z"
     assert account.plan == "plus"
     assert account.subscription_ends_at == "2026-12-01T00:00:00Z"
+    assert account.vendor_account_id == "acct-1"
+
+
+def test_a_codex_entry_as_8_1_5_lists_it_gives_its_windows_limit_and_plan():
+    account = _account(CODEX_ENTRY_RECORDED)
+
+    assert account.signal_windows == [
+        {
+            "name": "5h",
+            "used_share": 0.37,
+            "resets_at": "2026-11-27T01:47:42Z",
+            "seen_at": "2026-11-26T23:50:17Z",
+            "origin": "signal",
+        },
+        {
+            "name": "7d",
+            "used_share": 0.64,
+            "resets_at": "2026-11-28T23:47:42Z",
+            "seen_at": "2026-11-26T23:50:17Z",
+            "origin": "signal",
+        },
+    ]
+    assert account.is_unavailable is True
+    assert account.next_retry_after == "2026-11-27T00:50:19Z"
+    assert (account.auth_index, account.status) == ("6a4a91aca5cc7abe", "error")
+    assert (account.plan, account.subscription_ends_at) == (
+        "plus",
+        "2026-12-24T00:00:00Z",
+    )
     assert account.vendor_account_id == "acct-1"
 
 

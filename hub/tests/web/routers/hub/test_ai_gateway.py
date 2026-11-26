@@ -1,7 +1,7 @@
 """The gateway block of the AI page: keys, accounts, usage and the journal.
 
 The client keys are sealed where they are stored and whole where shown. The
-accounts stub answers exactly what CLIProxyAPI 7.2.146's management API
+accounts stub answers exactly what CLIProxyAPI 8.1.5's management API
 answered a probe of the pinned binary, trimmed to the fields the panel
 reads. Usage answers come from the store the panel's collector fills.
 """
@@ -471,7 +471,7 @@ def test_lists_no_accounts_and_the_flows_that_exist(accounts_client):
     assert body["accounts"] == []
     assert "anthropic" in body["login_kinds"]
     assert "codex" in body["login_kinds"]
-    # 7.2.146 carries no Gemini OAuth flow; a Google model needs a key.
+    # 8.1.5 carries no Gemini OAuth flow; a Google model needs a key.
     assert "gemini" not in body["login_kinds"]
 
 
