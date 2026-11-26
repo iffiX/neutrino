@@ -1503,6 +1503,33 @@ The AI tools of each account are its switch and its model rows in its form
 as a `StatusDot` with a word: `switched` `ok`, `switched_back` `idle`, and
 `failed` `error` with the code's words.
 
+## The Activity panel of the AI page
+
+The **Activity** panel of the AI page shows the gateway's two dots, the
+served names, today's line, the journal, and the usage tables over a range
+([hub_components/ai.md](hub_components/ai.md), "Metering" and "Cost"). It
+reads `GET /api/hub/ai/gateway` and
+`GET /api/hub/ai/gateway/usage?range=<range>`, and reads both again at each
+`ai_usage` event.
+
+| Part | Idiom |
+| --- | --- |
+| Today's line | `requests_today` with `ui.ai.requests_today`, `tokens_today` with `ui.ai.tokens_today`, `cost_today` with `ui.ai.cost_today`, and, while it holds an amount, `api_value_today` with `ui.ai.api_value_today`, faint |
+| The range | the dashboard's `RangeSwitch` of `ui.usage.range_day`, `ui.usage.range_week`, `ui.usage.range_month` and `ui.usage.range_year`, at the place of the tables' head, starting at `ui.usage.range_month` |
+| The views | `ui.ai.view_providers`, `ui.ai.view_keys` and `ui.ai.view_models`, the chips that switch the table under them |
+| **Cost** | `ui.usage.header_cost`, the last column of each of the three tables: the row's `cost` |
+| The Models table | one row per served name of the range: **Model** (`ui.usage.header_model`), the name, mono, or `ui.usage.model_unknown` faint for the days stored before the model field; then the Keys table's **Requests**, **Success**, **Tokens** and **Cache**, and **Cost**; its empty state `ui.usage.models_empty`; the sort of the other two tables |
+
+An amount reads as follows, in today's line and in every **Cost** cell:
+
+| Rule | Reason |
+| --- | --- |
+| An amount is its currency's sign and two decimals, `$3.10` or `¥12.40`; an amount above 0 and under 0.01 reads `<$0.01` or `<¥0.01`. | A cent is the least a bill names, and a sum of small requests read as `$0.00` looks free. |
+| Two currencies are two amounts joined by ` + `, USD first: `$3.10 + ¥12.40`. They are never added. | No rate converts one into the other ([hub_components/ai.md](hub_components/ai.md), "Cost"). |
+| A row's cell holds its `cost`; under it, or in its place while the row has no cost, its `api_value` as `ui.usage.api_value {amount}`, faint; and while the row has neither, `ui.usage.no_price`, faint, if its `unpriced_requests` is above 0, else nothing. A cell with an amount and `unpriced_requests` above 0 carries `ui.usage.unpriced_requests {count}` as its title. Today's cost reads `—` while today has none. | A missing price is never a 0, and a subscription's tokens are shown apart from the money spent and never added into it. A row of a machine's Ollama alone has nothing to price. |
+| A model-unknown row's **Cost** is empty. | Those days carry no model and no cost. |
+| The range is one for the panel: the three tables read the same range, and the Upstream table's health strip keeps its last 5 hours. | A cost column beside a token column of another range compares nothing. |
+
 ## The provider form of the AI page
 
 The **Providers** panel's **Add provider** and a row's **Edit** open the

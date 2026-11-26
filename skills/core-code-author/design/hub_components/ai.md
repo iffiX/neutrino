@@ -509,7 +509,7 @@ the new one.
 
 | Surface | Owns |
 | --- | --- |
-| Activity | Status dots, today's counters, the probe line (`/v1/models` as served), journal, and the chip-switched usage tables |
+| Activity | Status dots, today's counters with today's cost and API value, the probe line (`/v1/models` as served), journal, and the usage tables of upstreams, keys and models over the range its chips pick, each with its cost ("Cost") |
 | Providers | API-key provider records, their aliases, their serving order, enable/disable — staged behind the panel's apply, with the gateway-behind signal; and a read-only row for each provider generated from a machine's Ollama ("Every machine's Ollama") |
 | Accounts | Subscription sign-in (redirect flows finish by pasting the dead callback page's address; device flows show a pairing code; a timeout keeps the dialog open, [../ui_behavior.md](../ui_behavior.md), "Account sign-in on the AI page"), status, each window's quota and the time an account is limited until ("Quota on an account row"), **Refresh**, **Pause** and **Resume**, revocation; each immediate, never staged |
 | Models | The length every served name gives the AI tools ("Each model's context length") and the price each cloud name costs ("A price a person sets"): a cloud name's set length and its set input and output price, staged behind the panel's own apply; an Ollama name's computed length, read-only, with each machine's setting and the model's trained length, and no price |

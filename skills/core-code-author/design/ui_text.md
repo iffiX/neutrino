@@ -342,8 +342,8 @@ link's `app.title`.
 
 ## The AI page's words
 
-The **Access** panel, the **Models** panel, the **Gateway port**
-field, the hints of the **Providers** and **Accounts** panels, the account
+The **Access** panel, the **Models** panel, the **Activity** panel's
+cost, range and Models table, the **Gateway port** field, the hints of the **Providers** and **Accounts** panels, the account
 rows' status, quota and buttons, and the Ollama rows of the **Providers**
 panel of the AI page
 ([hub_components/ai.md](hub_components/ai.md), "What each panel surface
@@ -354,6 +354,14 @@ gateway listens on the hub's loopback alone.
 | --- | --- | --- |
 | `ui.ai.providers_hint`, the Providers panel's line under its title ([hub_components/ai.md](hub_components/ai.md), "How a request routes") | Accounts serve first, then these providers from the top while the accounts are limited. | 先用账号；账号受限时，从上到下用这些提供方。 |
 | `ui.ai.accounts_hint`, the Accounts panel's line under its title | Accounts serve before the providers' API keys. | 账号先于提供方的 API 密钥使用。 |
+| `ui.ai.cost_today`, `ui.ai.api_value_today`, today's line on Activity ([ui_behavior.md](ui_behavior.md), "The Activity panel of the AI page") | cost today, API value today | 今日费用、今日 API 价值 |
+| `ui.ai.view_models`, the view chip of the Models table | Models | 模型 |
+| `ui.usage.header_cost`, `ui.usage.header_model`, the tables' cost column and the Models table's first | Cost, Model | 费用、模型 |
+| `ui.usage.api_value`, an account's or a plan's amount, `{amount}` such as `$5.20` | API value {amount} | API 价值 {amount} |
+| `ui.usage.no_price`, a row with requests and no cost | no price | 无价格 |
+| `ui.usage.unpriced_requests`, the title of a cost with requests left unpriced | {count} requests with no price | {count} 个请求没有价格 |
+| `ui.usage.model_unknown`, the row of the days stored before the model field | model unknown | 模型未知 |
+| `ui.usage.models_empty`, the Models table with no row | No model activity yet | 还没有模型活动 |
 | `ui.ai.field_vendor`, the provider form's first field ([ui_behavior.md](ui_behavior.md), "The provider form of the AI page") | Vendor | 服务商 |
 | `ui.ai.vendor_deepseek`, `ui.ai.vendor_kimi`, `ui.ai.vendor_zhipu`, `ui.ai.vendor_qwen`, `ui.ai.vendor_doubao`, `ui.ai.vendor_minimax`, `ui.ai.vendor_openrouter`, `ui.ai.vendor_siliconflow`, `ui.ai.vendor_mistral`, `ui.ai.vendor_xai`, `ui.ai.vendor_custom`, its choices | DeepSeek, Kimi, Zhipu GLM, Qwen, Doubao, MiniMax, OpenRouter, SiliconFlow, Mistral, xAI, Custom | DeepSeek、Kimi、智谱 GLM、通义千问、豆包、MiniMax、OpenRouter、硅基流动、Mistral、xAI、自定义 |
 | `ui.ai.field_endpoint`, the picker of a vendor's endpoints | Plan and region | 套餐和地区 |
