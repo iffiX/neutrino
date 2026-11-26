@@ -250,6 +250,19 @@ tests, each in the file its source mirrors:
 | `web/test_setup_app.py` | The context carrying `accounts` and `default_account`. |
 | the panel's source tests, as `web/test_containers_account_modal.py` reads its component | The chip and no **Remove** on the default's row; the first account's confirmation; the locked row in **Enabled accounts**; the greyed tabs and **+ Add module** with `ui.modules.default_needed`; the containers dialog with no account; the sidebar's `warn` dot and `state.incomplete`, offline winning; the words in both languages. |
 
+The app forwards and the **Terminals** panel ([protocol.md](protocol.md),
+"The app forwards"; [ui_behavior.md](ui_behavior.md), "The Services page")
+owe these hub tests:
+
+| File | What its tests pin |
+| --- | --- |
+| `web/test_app_forwards.py` | Over a real loopback listener and a fake far end: `Host` written `127.0.0.1:<port>`, the forward's own `Origin` written the same way and another answered 403, every `neutrino_session_` cookie taken out and the others kept, a second request on a kept connection read the same way, a body passed by its length, `Transfer-Encoding` answered 411, an `Upgrade` carried both ways; an `https` entry's TLS ended with the given context and opened to the far end unchecked; the first free port of the range taken and a held one skipped, `forward_port_unavailable` with none free; a press keeping the forward it has; a forward idle past `WEB_APP_FORWARD_IDLE_S` on an injected clock closed with the transport forward it started, and one with an open connection kept. |
+| `web/routers/hub/test_service.py` | `entry/open` answering `{port, token}`, the token the `service` frame mints for an instance and empty for an entry with no `is_token_required`; `entry_unknown` for a `port` entry and an unknown id; `agent_offline`; `vault_locked`; and `terminals`, every online machine's sessions with the owner's name, oldest first, and none of an offline one. |
+| `web/routers/hub/test_auth.py` | `is_opened_by_client` true for a session a client's token opened and false for a password login. |
+| `web/routers/hub/test_setting.py` | A port in the app forwards' range refused `port_already_in_use`. |
+| `modules/firewall/` and `modules/router/test_nft_renderer.py` | The range in each system's form: nft's `19000-19099`, pf's `19000:19099`, firewalld's `port="19000-19099"`, and one Windows rule `neutrino_hub_app_forward` with `LocalPort` `19000-19099`. |
+| the panel's source tests | **Open** on each `web` entry and on no `port` entry, hidden while `is_opened_by_client`, the tab opened before the request; the **Terminals** panel after **Files**, with no button; the words in both languages. |
+
 ## Editions
 
 Every block runs twice in CI: on the full tree, and on the mainland tree
