@@ -679,16 +679,79 @@ same tools' files with different endpoints.
 ## Metering
 
 The panel drains the management API's usage queue (a destructive pop; the
-collector is the only reader) into per-key × per-provider cells — days kept
-forever, hours 48 h, minutes 90 min. `failed` counts upstream failures only:
-a request refused before reaching a provider (bad name, bad client key) is
-never queued. Token fields are the vendor's own accounting — `input_tokens`
-includes what the cache served, so a cache share is `cache_read / input`.
+collector is the only reader) into cells, one per client key, upstream and
+model, keyed `key|upstream|model`: days kept forever, hours 48 h, minutes
+90 min. `failed` counts upstream failures only: a request refused before
+reaching a provider (bad name, bad client key) is never queued. Token fields
+are the vendor's own accounting: `input_tokens` includes what the cache
+served, so a cache share is `cache_read / input`.
 
 Usage is counted per key id, so a device key is a row of its own in the AI
 page's usage table, beside each client's.
+
+A cell's counters are `requests`, `failed`, `input_tokens`, `output_tokens`,
+`cache_read_tokens` and `cache_write_tokens`, and three more the fold
+computes: `cost` and `api_value`, each `{<currency>: <millionths>}`, and
+`unpriced_requests` ("Cost").
+
+| Rule | Reason |
+| --- | --- |
+| A cell's model is the served name: the record's `alias`, else its `model`. | The per-model table and the Models panel name what the tools ask for. The upstream's own name, the record's `model`, is read at the fold, where the price needs it: in the lab a request for `served-a`, mapped to `real-a`, reached the stand-in as `real-a` and was queued with `model` `real-a` and `alias` `served-a`. |
+| A cell stored before the model field, keyed `key|upstream`, reads as the model `""`, which the panel shows as model unknown, with its tokens and no cost. | The store is the only record of past use, and nothing tells which model those days used. |
+| A cache read is what 7.2.146 meters as one: an OpenAI-compatible answer's `prompt_tokens_details.cached_tokens` or `input_tokens_details.cached_tokens`, and a Messages answer's `cache_read_input_tokens`. | In the lab a stand-in answering with DeepSeek's `prompt_cache_hit_tokens` alone, and one with Kimi's top-level `cached_tokens` alone, were metered with 0 cache read and all 1000 prompt tokens uncached, `quality` `complete`, while `prompt_tokens_details.cached_tokens` gave 600 of 1000 as cache read. DeepSeek's and Moonshot's API references of 2026-11-26 document `prompt_tokens_details.cached_tokens` beside their own fields, so their answers meter their cache. |
+| A Claude cache write of one hour is metered with the five-minute ones. | 7.2.146 reads `cache_creation_input_tokens` alone (`internal/runtime/executor/helps/usage_helpers.go`), so the hub cannot tell them apart, and it prices both at models.dev's `cache_write`. |
 
 The management key that unlocks the queue is machine-generated, sealed under
 the vault's data key beside the module's config, working copy in the state
 root; it is deliberately not a user-facing credential, so no cascade delete
 can switch metering off.
+
+## Prices
+
+A price is what a vendor charges for a million tokens of one model, as four
+numbers: input, output, cache read and cache write. The hub takes the prices
+from models.dev (`https://models.dev/api.json`, MIT), and a person can set a
+model's input and output price on the **Models** panel.
+
+| Rule | Reason |
+| --- | --- |
+| The hub reads `https://models.dev/api.json` at the panel's start when its copy in force is more than a day old, and every 24 hours after. A read that fails is tried again an hour later; a download the checks below refuse waits for the next day's read. | Prices change a few times a month: Gemini 4 Carbon doubles on Dec 1 and Gemini 3.8 Flash on Jan 1. A failed read is the network, which comes back; a refused file is models.dev's, and a 7 MB download every hour fixes nothing. |
+| The read is the hub's own connection, and goes the way the hub scope sends the hub's traffic ([proxy.md](proxy.md), "the hub itself"). | Every lookup and connection of the hub follows the proxy settings. |
+| The hub keeps the models of the providers "Prices from" names ("Vendor presets") and the accounts' providers below, each model's `cost.input`, `cost.output`, `cost.cache_read` and `cost.cache_write`, in USD per million tokens. A model whose cost is missing, or holds a value that is not a number of at least 0, is dropped. | The hub prices nothing else. The file held 326 providers and 10,049 models in 6,835,690 bytes on 2026-11-26, and one bad number must not refuse the rest. |
+| A download is refused, and the copy in force kept, when it is larger than 64 MiB, is not JSON, or its top level is no object; when it keeps fewer than 50 priced models; or when it keeps fewer than half the priced models of the carried snapshot. | LiteLLM refuses a downloaded price map the same way, below 50 models or below half its bundled count (`min_model_count: 50, min_reference_ratio: 0.5` in `litellm/rust/crates/model-catalog/src/catalog.rs`), so a cut, emptied or reshaped file never replaces a good one. On 2026-11-26 the kept providers held 784 priced models, so a download keeping fewer than 392 is refused. The carried snapshot is a fixed reference, so a bad day does not lower the bar for the next. |
+| A refused download writes one line to the panel's log with its reason and its counts. | The copy in force stays as it was, and the log is where a stale price shows why. |
+| A download that passes is written into `cliproxyapi/model_prices.json` under the state root, `{fetched_at, providers: {<provider>: {<model id>: {input, output, cache_read, cache_write}}}}`, a price models.dev does not give left out, as a new file renamed over the old. | The copy is what models.dev last served and no person's decision, so it stays out of `config/`. A panel stopped in the middle of the write leaves the old file whole. |
+| The hub's package carries a snapshot in the same shape, `data/model_prices.json`, made from models.dev by a developer with each hub release under the same checks. The copy in force is the one of the two with the later `fetched_at`. | A first start with no network has prices, and a hub upgraded after its stored copy went stale takes the newer snapshot. |
+| Only the four prices are read. models.dev's `tiers` and `context_over_200k`, the prices above a prompt size, and DeepSeek's off-peak price are not, and a request past such a size is priced at the base price. | iffi's decision of 2026-11-26 names four prices per model, with no one-hour cache write and no off-peak price. The cost of a prompt past 200000 or 272000 tokens is then low: OpenAI and Google charge up to twice the base price there. |
+| A mainland vendor's models.dev price is USD, converted at models.dev's own rate. A person who pays in CNY sets the CNY price on the Models panel. | models.dev stores every price in USD: its `moonshotai-cn` entry of `kimi-k3.1-pro` names the rate of 6.688225 CNY to the USD of 2026-10-23. The hub converts no currency. |
+
+A record's price is found from its upstream:
+
+| Upstream | models.dev provider |
+| --- | --- |
+| a stored provider | its endpoint's "Prices from" ("Vendor presets"); none for **Custom** |
+| a Claude login | `anthropic` |
+| a Codex login | `openai` |
+| an Antigravity login | `google` |
+| a Kimi login | `moonshotai` |
+| an xAI login | `xai` |
+| a generated Ollama provider | none, and no price |
+
+| Rule | Reason |
+| --- | --- |
+| The model id is the record's `model`, the name the upstream serves, matched whole and compared without case. | Each host prices the same model its own way: SiliconFlow and DeepSeek serve DeepSeek's models at different prices, and an alias says nothing of the upstream. |
+| A price a person set for the served name replaces the input and output price. Its cache read and cache write prices are the person's input price times models.dev's cache read, or cache write, over models.dev's input, and the person's input price itself where models.dev has none. | The person sets the two prices a vendor's page shows first. The cache discount stays the vendor's ratio, in the person's currency, since no rate converts the currencies. |
+| A cache read or cache write price models.dev does not give prices those tokens at the input price. | A vendor that names no cache price bills those tokens as input. |
+| A record with no price found has no cost and counts in `unpriced_requests`; the panel shows no price for it, never 0. | A 0 reads as free, and a `custom` relay or a model newer than the copy has a price nobody wrote down. |
+| A generated Ollama provider's record has no price, no cost and no count in `unpriced_requests`. | A machine's Ollama costs nothing per token, and a "no price" would read as a gap. |
+
+### Cost
+
+| Rule | Reason |
+| --- | --- |
+| The collector computes each record's cost as it folds the record in: uncached input times the input price, plus cache read times the cache read price, plus cache write times the cache write price, plus output times the output price, over a million. The four counts are the record's v2 `token_breakdown`, reasoning tokens counted in output. | The breakdown has no overlap (`sdk/cliproxy/usage/accounting.go`): the input total is uncached plus cache read plus cache write, and the output total is plain plus reasoning. A price can change in the middle of a range, so cost is fixed when the request is metered. |
+| A record whose breakdown is missing, or whose `quality` is `unclassified` or `inconsistent`, has no price. | Its parts do not add up, and pricing its total as input can be far off. |
+| Cost is counted in millionths of its currency, rounded per record, one counter per currency, `USD` or `CNY`, and summed per currency. | No rate converts one into the other, and a total of "¥12.40 + $3.10" says what was spent in each. |
+| A price changed counts from the next record, and the cost already counted stays. | The store keeps the sums, not the records, so nothing can be priced again. |
+| A record served by an account, or by a plan endpoint ("Vendor presets"), counts its priced amount as `api_value` and adds nothing to `cost`. | The subscription is paid whatever the tokens. The API value says what the same tokens would cost through a key, as ccusage and Claude Code's `/usage` show it, and adding it to cost would count the plan twice. |
+

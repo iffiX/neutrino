@@ -178,7 +178,9 @@ overrides both, which is what makes a second instance testable. Details of the f
         cliproxyapi/        the AI gateway's accounts and tokens, and what the
                             hub read from it: its usage, its catalog, and
                             account_quota.json, each account's last quota
-                            read from its vendor
+                            read from its vendor; and model_prices.json,
+                            the last price list read from models.dev that
+                            passed the hub's checks
         netbird/            the hub's own NetBird configuration and profile
         agent_module_cache/ the files a module's installer fetched for
                             managed machines, each named by its digest
