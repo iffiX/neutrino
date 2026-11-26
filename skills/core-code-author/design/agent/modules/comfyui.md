@@ -47,7 +47,7 @@ The service starts `venv/bin/python source/main.py --listen 127.0.0.1
 | --- | --- |
 | `--base-directory` names `data/` in the data directory, and ComfyUI writes nothing into the module's directory. | The flag moves `models/`, `custom_nodes/`, `input/`, `output/`, `temp/` and `user/` together. In the lab ComfyUI 0.46.0 wrote nothing into the sealed source, and `user/` held `comfyui.db`, the Manager's `config.ini` and `comfyui_<port>.log`. |
 | `PYTHONPYCACHEPREFIX` puts the bytecode of the source and the venv in `pycache/`. | The source is sealed, so Python cannot write its bytecode beside it. In the lab a start took 6.7 seconds with no bytecode and 4.3 seconds with this prefix. |
-| On Windows the service runs as LOCAL SERVICE, never as SYSTEM. A move to SYSTEM waits for a person's report that LOCAL SERVICE cannot use a GPU (iffi, 2026-11-26). | A custom node is code the service runs, and LOCAL SERVICE holds no right over the machine. In the lab LOCAL SERVICE read the module's directory, wrote its data and ran ComfyUI on the CPU. No GPU of the lab could show whether LOCAL SERVICE reaches one. |
+| On Windows the service runs as LOCAL SERVICE, never as SYSTEM, and the task names it by its SID, S-1-5-19, which the agent's PowerShell host turns into the account's name in the system's language. A move to SYSTEM waits for a person's report that LOCAL SERVICE cannot use a GPU (iffi, 2026-11-26). | A custom node is code the service runs, and LOCAL SERVICE holds no right over the machine. In the lab LOCAL SERVICE read the module's directory, wrote its data and ran ComfyUI on the CPU. No GPU of the lab could show whether LOCAL SERVICE reaches one. |
 | On Windows the module's directory grants the Users group read and execute, inherited, as Codeg's and CloudCLI's do. | LOCAL SERVICE's token holds the Users group. In the lab an `icacls /reset` that dropped the entry left LOCAL SERVICE with "Access is denied". |
 | `UMask=0027` on Linux and `Umask` 23 on macOS. | ComfyUI's own files are the service's and its group's alone, and the shared folders give the default account its access by their own entries ("The shared folders"). |
 | A `configure` that runs the server waits until `GET /system_stats` answers on ComfyUI's port, at most 300 seconds, and otherwise fails `apply_failed {detail}`, the detail naming the port and the last line of the server's output. | In the lab a first start reached the page in 13 to 17 seconds on Linux and in 113 seconds on Windows with Microsoft Defender on; a later start took 4 to 7 seconds on Linux and 24 on Windows. |
@@ -274,8 +274,9 @@ module's record keeps. No report carries a model.
 directory, the forwarder's record, the `comfyui` entry of each tool and the
 default account's workspace. It keeps `data/`, with the models, the inputs,
 the outputs, the custom nodes and `user/`, and removes `venv/`,
-`uv_cache/`, `tmp/` and `pycache/`; the manifest's `uninstall_data` names
-`is_deleted: false`.
+`uv_cache/`, `tmp/` and `pycache/`, and on Windows `step.log`, the file
+uv's output went to; `comfyui.log` stays with `data/`. The manifest's
+`uninstall_data` names `is_deleted: false`.
 
 | Rule | Reason |
 | --- | --- |
