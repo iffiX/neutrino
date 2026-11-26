@@ -1374,6 +1374,7 @@ being locked. It holds no link to the page: a client opens it from its
 | --- | --- |
 | **Runs on** (`ui.comfyui.torch_build`) | the panel's picker over the view's `torch_builds`, in their order, each worded `ui.comfyui.torch_build_<build>`, the view's `torch_build` chosen. The row is not drawn on macOS |
 | **Idle unload time** (`ui.comfyui.idle_unload`) | the panel's picker over `ui.comfyui.idle_unload_5m`, `_30m`, `_1h`, `_4h` and `_never`, the view's `idle_unload` chosen |
+| **Models folder** (`ui.comfyui.models_dir`) | the view's `models_dir` as read-only text, which the apply bar does not count (iffi, 2026-11-26) |
 
 The bar's label is `ui.comfyui.settings_apply` and its hint
 `ui.comfyui.settings_apply_hint`, or `ui.modules.stopped_hint` while the

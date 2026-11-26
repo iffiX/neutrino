@@ -487,7 +487,7 @@ where they fit.
 | `code.download_failed` | No source served {file}: {sources} | 没有来源能提供 {file}：{sources} |
 | `code.version_switch_failed` | Version {version} did not start, so the previous version runs again: {detail} | 版本 {version} 没能启动，已换回原来的版本：{detail} |
 | `code.version_unknown` | Version {version} is not listed for this machine. | 这个系统没有版本 {version}。 |
-| `code.version_locked` | The version of {module} follows the system or the agent and cannot be chosen. | {module} 的版本跟随系统或被控端，不能选择。 |
+| `code.version_locked` | The version of {module} is fixed and cannot be chosen. | {module} 的版本是固定的，不能选择。 |
 | `code.version_older_than_run` | {module} has run {newest_run} on this machine and moved its data forward, so it cannot install the older {version}. | {module} 在这个系统上运行过 {newest_run}，数据已经往前迁移，不能安装更旧的 {version}。 |
 | `ui.modules.stopped_hint`, the hint of every apply bar of a module's panel while its module's `want` is not `running`, and under the file share's folder shares. The panels of the modules the agent carries keep their own hint | The module is stopped; these settings take effect at the next Start. | 模块已停止，这些设置在下次启动时生效。 |
 
@@ -776,6 +776,7 @@ are in `locales/<language>/modules.json`, and the Services page's line in
 | `ui.comfyui.torch_build_nvidia`, `_amd`, `_intel`, `_cpu` | NVIDIA GPU (CUDA), AMD GPU (ROCm), Intel Arc GPU (XPU), CPU | NVIDIA 显卡（CUDA）、AMD 显卡（ROCm）、Intel Arc 显卡（XPU）、CPU |
 | `ui.comfyui.idle_unload` | Idle unload time | 空闲多久后移出内存 |
 | `ui.comfyui.idle_unload_5m`, `_30m`, `_1h`, `_4h`, `_never` | 5 minutes, 30 minutes, 1 hour, 4 hours, Never | 5 分钟、30 分钟、1 小时、4 小时、从不 |
+| `ui.comfyui.models_dir` | Models folder | 模型文件夹 |
 | `ui.comfyui.settings_apply` | Apply settings | 应用设置 |
 | `ui.comfyui.settings_apply_hint` | A new Runs on installs its PyTorch and restarts ComfyUI. The idle unload time takes effect at once. | 换了“运行在”会安装对应的 PyTorch 并重启 ComfyUI。空闲时间立即生效。 |
 | `ui.comfyui.torch_build_warning` | ComfyUI stops while the new PyTorch downloads, several GB of it. | 下载新的 PyTorch 期间 ComfyUI 会停止，要下载几 GB。 |

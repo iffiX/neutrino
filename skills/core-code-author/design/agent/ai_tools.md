@@ -133,6 +133,14 @@ cannot run cc-switch, or cannot read its list of providers, is the
 account's `failed` with `switch_failed {account, detail}`, and the records,
 with the kept files, stay for the next try.
 
+A kept file can name an MCP server `comfyui` whose program is gone, from a
+ComfyUI uninstalled after the tool's first switch. Once Codex's
+`config.toml` and OpenCode's `opencode.json` are back, the switch back
+takes out of each, as the account, a `comfyui` entry whose `command` names
+a program file that is not there, and changes nothing else of the file.
+ComfyUI writes its entry again at its next `configure` while it is
+installed ([modules/comfyui.md](modules/comfyui.md), "comfy-mcp").
+
 Each account's switch or switch back holds that account's lock from its
 first step to its last: the file `ai_tools/.locks/<account>` under the state
 root, locked with `flock` on Linux and macOS and `msvcrt.locking` on
