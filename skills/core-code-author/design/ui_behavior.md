@@ -195,6 +195,15 @@ card puts its fields in five tracks, three under 624 px and two under 380 px.
 | The page measures the width the fixed columns and the widest row's actions need (`use_table_cards.ts`), and container queries lay out the cards' grids. | The actions' width depends on the language and on the buttons a row has, which a container query cannot know. |
 | Every card shares one grid, so a field starts at the same place in every card. | An offline machine's short status moved the fields after it left of the cards above. |
 
+The **Accounts** panel of the AI page lays its accounts out the same way, by
+its own box and with the same measure (`use_table_cards.ts`): a table of one
+line per account while the box holds every column and each line's buttons
+on one line, and a card per account in a narrower box ("The Accounts panel
+of the AI page"). Its table has no header row: each cell carries its own
+words. With the panel's fonts it needs about 1336 px in Chinese and 1397 px
+in English, so the demo's half of the window and a 1440 px window show the
+cards.
+
 A destructive action repeated on every row arms instead of opening a dialog —
 `device_monitor`'s kill button turns red on the first click and acts on the
 second — because one modal per process is a dialog nobody reads by the third
@@ -1587,12 +1596,16 @@ gateway reports the flow `complete` or `failed`.
 
 The **Accounts** panel lists one row per signed-in account, read with
 `GET /api/hub/ai/gateway/account` every 15 seconds while the page is open.
-A row is a card, as a card of the Agents table is: at its left the service
-and the label or email, and under the label the account's windows
-([hub_components/ai.md](hub_components/ai.md), "Quota on an account row");
-at its right three lines, right-aligned; and at its foot, right-aligned, its
+In a box that holds every column, the accounts are a table, one line per
+account as the Agents table's rows are: the service, the label or email,
+the account's windows ([hub_components/ai.md](hub_components/ai.md), "Quota
+on an account row"), the counts, the status, the time the windows were
+seen, and the buttons at the line's right end, each in one column on every
+line. In a narrower box each account is a card, as an Agents card is: at
+its left the service and the label, and under the label the windows; at its
+right those three lines, right-aligned; and at its foot, right-aligned, its
 buttons. The service, the label, the three lines and the buttons stand in
-columns every row shares.
+columns every card shares.
 
 | Part | Idiom |
 | --- | --- |
@@ -1600,7 +1613,7 @@ columns every row shares.
 | The status | a `StatusDot` with its word: `ok` `state.serving`; `warn` `ui.ai.limited_until {time}` while the view's `is_unavailable` is true and its `next_retry_after` is set; `error` `state.unavailable` while it is unavailable with no time; `idle` `state.paused` while `is_disabled` is true. The gateway's `status_message` is the dot's title |
 | The plan | on a Codex row, `ui.ai.plan {plan}` and `ui.ai.plan_until {date}` after the label, faint, each while the view names it |
 | The windows | one cell of one width per window: a ring gauge, 30 px, the used percent inside and under it the window's word, `ui.ai.quota_5h`, `ui.ai.quota_7d`, `ui.ai.quota_month`, or an Antigravity model's name, then `ui.ai.quota_resets {time}` faint, the time the clock time today and else the date alone, with the whole time as the cell's title; the ring `ok` under 80 percent, `warn` from 80 and `error` at 100, as the Agents page's rings take tones |
-| The buttons | **Refresh**, **Pause** or **Resume**, then **Delete**, ghost `button--small`s at the card's foot, right-aligned, as the Agents card's actions are |
+| The buttons | **Refresh**, **Pause** or **Resume**, then **Delete**, ghost `button--small`s right-aligned at the line's end or at the card's foot, as the Agents table's actions are |
 | **Refresh** | `ui.ai.refresh`, on a Claude, Codex, Kimi or Antigravity row; busy while its read runs, then the row redrawn from the route's answer |
 | **Pause**, **Resume** | `ui.ai.pause` while the account serves and `ui.ai.resume` while it is paused, the button as wide as the wider of the two words |
 
@@ -1625,7 +1638,7 @@ sets"). It reads `GET /api/hub/ai/model`, and reads it again at each
 
 | Part | Idiom |
 | --- | --- |
-| The head row | `ui.ai.context_col_model`, `ui.ai.context_col_source` and `ui.ai.context_col_tokens`, faint, over the one grid every row shares: the name takes the room the sources, the length and the buttons leave, and the chips wrap before the name gets narrower than 12 characters |
+| The head row | `ui.ai.context_col_model`, `ui.ai.context_col_source` and `ui.ai.context_col_tokens`, faint, over the one grid every row shares, as the Agents table's columns are: the name as wide as the longest, from 12 to 36 characters, the sources and the length at their own widths, and the buttons at the right end, the room left between the length and the buttons; the chips wrap before the name gets narrower than 12 characters |
 | **Model** | the served name, mono, cut with an ellipsis, with the whole name as its title |
 | **From** of a cloud name | one chip per source, its accounts and then its providers: an account's chip is the service name the **Accounts** panel shows for its login kind, a provider's its name |
 | **From** of an Ollama name | the chip `ui.module_title.ollama`, then one chip per account or stored provider that also serves the name, as a cloud name's |
