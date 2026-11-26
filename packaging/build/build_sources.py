@@ -72,9 +72,9 @@ SOURCE_ARCHIVES = (
         "992a4997e6bb846d11469435d687f99ef812fcde1e0a009bb8e95189ea20331d",  # scan: allow
     ),
     (
-        "cliproxyapi-7.2.146-source.tar.gz",
-        "https://github.com/router-for-me/CLIProxyAPI/archive/refs/tags/v7.2.146.tar.gz",
-        "10078716be34cc7ecf488c3b50b17d5675261a36eb78cbdfd768331b989f9fca",  # scan: allow
+        "cliproxyapi-8.1.5-source.tar.gz",
+        "https://github.com/router-for-me/CLIProxyAPI/archive/refs/tags/v8.1.5.tar.gz",
+        "f3e9eaee86d986a3ac76f4142c335c905cb9fe19a47d798833ec404aa3f2233a",  # scan: allow
     ),
     (
         "frp-0.71.1-source.tar.gz",

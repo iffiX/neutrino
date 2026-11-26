@@ -5,7 +5,7 @@ from neutrino_hub.utils.constants import UTILS_STATE_ROOT, carried_program
 # What the hub's package carries, what the panel reports and what the
 # provisioner would fetch on a machine running from a checkout. The
 # packaging reads CLIPROXYAPI_ASSETS below.
-CLIPROXYAPI_VERSION = "7.2.146"
+CLIPROXYAPI_VERSION = "8.1.5"
 # Carried by the hub's package, under the hub's own prefix rather than
 # /usr/local, which belongs to whoever administers the machine.
 CLIPROXYAPI_BINARY_PATH = carried_program("cli-proxy-api")
@@ -93,7 +93,7 @@ CLIPROXYAPI_WINDOW_NAMES = {300: "5h", 10080: "7d"}
 # Where a window's number came from.
 CLIPROXYAPI_WINDOW_SIGNAL = "signal"
 CLIPROXYAPI_WINDOW_READ = "read"
-# The flows 7.2.146 starts, each named after the route that starts it. Gemini
+# The flows the hub starts, each named after the route that starts it. Gemini
 # is absent because the binary carries no Gemini OAuth flow: a Google model is
 # reached with an API key provider instead.
 CLIPROXYAPI_LOGIN_KINDS = ("anthropic", "codex", "antigravity", "kimi", "xai")
@@ -170,23 +170,23 @@ CLIPROXYAPI_RELEASE_URL = (
 )
 CLIPROXYAPI_ASSETS = {
     ("linux", "amd64"): (
-        "CLIProxyAPI_7.2.146_linux_amd64.tar.gz",
-        "43e112686b4a5b7b818531144cd695eeaacdd54c46dced87be6fb3967c22e149",  # scan: allow
+        "CLIProxyAPI_8.1.5_linux_amd64.tar.gz",
+        "47d9dbfc407a924fc225f5a6e60640ad809a92454fe69c37166a42b40e41bf00",  # scan: allow
     ),
     ("linux", "arm64"): (
-        "CLIProxyAPI_7.2.146_linux_aarch64.tar.gz",
-        "086ae6513aa522bbd1000f4e83e5b5223df6038bd69f1c6cad56619b84c06947",  # scan: allow
+        "CLIProxyAPI_8.1.5_linux_aarch64.tar.gz",
+        "04dea9e790b5b496649f0e42935605e651f227869afe3f31d08a4c5a731c0b10",  # scan: allow
     ),
     ("darwin", "amd64"): (
-        "CLIProxyAPI_7.2.146_darwin_amd64.tar.gz",
-        "1985f14f3a7caa40c4f7e6959c7c993db0b735317a1e690365d4c08d631849db",  # scan: allow
+        "CLIProxyAPI_8.1.5_darwin_amd64.tar.gz",
+        "d75a9fa7e35cb55c181606ab2e31f54bc14864e749f5b3ae6adeccd051413423",  # scan: allow
     ),
     ("darwin", "arm64"): (
-        "CLIProxyAPI_7.2.146_darwin_aarch64.tar.gz",
-        "faf4c735b289cb88344f87fd6d745cf9a11d28a231d000173d8045910503b543",  # scan: allow
+        "CLIProxyAPI_8.1.5_darwin_aarch64.tar.gz",
+        "ad76b292a6af7fdda23664e9b3a68dea112a57cdbfcbb85589e6a827d4af0670",  # scan: allow
     ),
     ("windows", "amd64"): (
-        "CLIProxyAPI_7.2.146_windows_amd64.zip",
-        "d6816c59d155bcf3d1f5f47242770d4b13c9bf68ce310ae86873bdb0b52e5a50",  # scan: allow
+        "CLIProxyAPI_8.1.5_windows_amd64.zip",
+        "4a56d0ddc7cecc7d155d91439c9585fd3758371a7142cd7115c5237edb409cd5",  # scan: allow
     ),
 }

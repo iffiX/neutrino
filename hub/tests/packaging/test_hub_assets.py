@@ -224,7 +224,7 @@ def test_an_intel_mac_takes_the_x86_64_builds(tmp_path, fetched):
         "https://github.com/XTLS/Xray-core/releases/download/"
         "v26.3.27/Xray-macos-64.zip",
         "https://github.com/router-for-me/CLIProxyAPI/releases/download/"
-        "v7.2.146/CLIProxyAPI_7.2.146_darwin_amd64.tar.gz",
+        "v8.1.5/CLIProxyAPI_8.1.5_darwin_amd64.tar.gz",
         "https://github.com/netbirdio/netbird/releases/download/"
         "v0.78.1/netbird_0.78.1_darwin_amd64.tar.gz",
         "https://github.com/EasyTier/EasyTier/releases/download/"
