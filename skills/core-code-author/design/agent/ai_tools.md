@@ -133,13 +133,15 @@ cannot run cc-switch, or cannot read its list of providers, is the
 account's `failed` with `switch_failed {account, detail}`, and the records,
 with the kept files, stay for the next try.
 
-A kept file can name an MCP server `comfyui` whose program is gone, from a
-ComfyUI uninstalled after the tool's first switch. Once Codex's
-`config.toml` and OpenCode's `opencode.json` are back, the switch back
-takes out of each, as the account, a `comfyui` entry whose `command` names
-a program file that is not there, and changes nothing else of the file.
-ComfyUI writes its entry again at its next `configure` while it is
-installed ([modules/comfyui.md](modules/comfyui.md), "comfy-mcp").
+cc-switch takes the account's MCP servers into its store at its first run
+and writes them into every tool's file at each run, ComfyUI's `comfyui`
+among them, after ComfyUI is uninstalled too. After the last cc-switch run
+of a switch and of a switch back, the agent takes out of Claude Code's
+`~/.claude.json`, Codex's `config.toml` and OpenCode's `opencode.json`, as
+the account, a `comfyui` entry whose `command` names a program file that is
+not there, and changes nothing else of the file. ComfyUI writes its entry
+again at its next `configure` while it is installed
+([modules/comfyui.md](modules/comfyui.md), "comfy-mcp").
 
 Each account's switch or switch back holds that account's lock from its
 first step to its last: the file `ai_tools/.locks/<account>` under the state
