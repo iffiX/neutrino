@@ -262,7 +262,7 @@ owe these hub tests:
 | `web/routers/hub/test_auth.py` | `is_opened_by_client` true for a session a client's token opened and false for a password login. |
 | `web/routers/hub/test_setting.py` | A port in the app forwards' range refused `port_already_in_use`. |
 | `modules/firewall/` and `modules/router/test_nft_renderer.py` | The range in each system's form: nft's `19000-19099`, pf's `19000:19099`, firewalld's `port="19000-19099"`, and one Windows rule `neutrino_hub_app_forward` with `LocalPort` `19000-19099`. |
-| the panel's source tests | **Open** on each `web` entry and on no `port` entry, hidden while `is_opened_by_client`, the tab opened before the request; the **Terminals** panel after **Files**, with no button; the words in both languages. |
+| the panel's source tests | **Open** at the row's right before **Share** for the app's first `web` entry and on no app without one, hidden while `is_opened_by_client`, the tab opened before the request; the **Terminals** panel after **Files**, with no button; the words in both languages. |
 
 ## Editions
 

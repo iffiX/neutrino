@@ -908,7 +908,7 @@ keys are in `locales/<language>/devices.json` beside the page's other
 
 | Key | English | Chinese |
 | --- | --- | --- |
-| `ui.services.open`, on a `web` entry | Open | 打开 |
+| `ui.services.open`, on an app's row with a `web` entry | Open | 打开 |
 | `code.entry_unknown` | This app's page is no longer published. | 这个应用的网页已经不再发布。 |
 | `code.forward_port_unavailable` | Every port from {minimum} to {maximum} is in use; try again later. | {minimum} 到 {maximum} 的端口都在用，稍后再试。 |
 
