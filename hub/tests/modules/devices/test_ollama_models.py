@@ -9,9 +9,13 @@ loaded marked; the client's calls over real HTTP, a load with
 per machine in the order asked, its progress summed over every layer, a
 further pull waiting behind the running one, a cancel ending the running
 pull by closing its connection or taking a waiting one off, and a failed
-pull kept with ``ollama_pull_failed`` until it is taken off.
+pull kept with ``ollama_pull_failed`` until it is taken off; a cancel while
+the pull reads the size line of a chunk raising nothing out of the worker,
+the queue running on after it.
 """
 
+import logging
+import sys
 import threading
 import time
 
@@ -49,6 +53,22 @@ def _until(predicate, timeout=10.0):
         if predicate():
             return True
         time.sleep(0.02)
+    return False
+
+
+def _threads(name):
+    return [thread for thread in threading.enumerate() if thread.name == name]
+
+
+def _waits_for_a_chunk(name):
+    """Whether a thread of the name is reading the size line of the next chunk."""
+    frames = sys._current_frames()
+    for thread in _threads(name):
+        frame = frames.get(thread.ident)
+        while frame is not None:
+            if frame.f_code.co_name == "_read_next_chunk_size":
+                return True
+            frame = frame.f_back
     return False
 
 
@@ -205,6 +225,32 @@ def test_a_running_pull_keeps_its_progress_and_a_cancel_ends_it(ollama):
     time.sleep(0.2)
     assert queue.pulls("dev") == []
     assert not any(model["name"] == "a:1" for model in ollama.models)
+
+
+def test_a_cancel_while_the_pull_waits_for_a_chunk_leaves_the_queue_running(
+    ollama, monkeypatch, caplog
+):
+    escaped = []
+    monkeypatch.setattr(threading, "excepthook", escaped.append)
+    ollama.pull_lines["a:1"] = [PULL[2], PULL[-1]]
+    ollama.pull_lines["b:1"] = [PULL[-1]]
+    ollama.gate.clear()
+    queue = OllamaPullQueue(address_of=lambda device: ollama.address)
+    queue.add("cut", "a:1")
+    assert _until(lambda: queue.pulls("cut")[0]["total_bytes"] == 1000)
+    assert _until(lambda: _waits_for_a_chunk("ollama_pull_cut"))
+    assert queue.cancel("cut", "a:1") is True
+    for worker in _threads("ollama_pull_cut"):
+        worker.join(10)
+    assert _threads("ollama_pull_cut") == []
+    assert escaped == []
+    assert [
+        record for record in caplog.records if record.levelno >= logging.ERROR
+    ] == []
+    assert queue.pulls("cut") == []
+    queue.add("cut", "b:1")
+    assert _until(lambda: any(model["name"] == "b:1" for model in ollama.models))
+    assert _until(lambda: queue.pulls("cut") == [])
 
 
 def test_the_progress_is_the_sum_of_the_layers(ollama):

@@ -16,6 +16,7 @@ Not pure: holds connections and threads.
 import http.client
 import json
 import re
+import socket
 import threading
 import time
 from dataclasses import dataclass, field
@@ -223,8 +224,9 @@ class OllamaApiClient:
         Args:
             name: The model.
             on_line: Called with each JSON line Ollama streams.
-            on_open: Called with the connection once the request is sent, so
-                another thread can close it.
+            on_open: Called with the connection once it is connected, before
+                the request, so another thread can shut its socket down; a
+                ``ConnectionError`` it raises ends the pull.
 
         Raises:
             ConnectionError: When the API does not answer, the connection
@@ -234,6 +236,7 @@ class OllamaApiClient:
             self._host, self._port, timeout=DEVICE_OLLAMA_PULL_READ_TIMEOUT_S
         )
         try:
+            connection.connect()
             if on_open is not None:
                 on_open(connection)
             body = json.dumps({"model": name, "stream": True}).encode("utf-8")
@@ -439,7 +442,7 @@ class OllamaPullQueue:
                 else None
             )
         if connection is not None:
-            _close(connection)
+            _shut_down(connection)
         return True
 
     def _serve(self, device_id: str) -> None:
@@ -483,6 +486,8 @@ class OllamaPullQueue:
 
         def opened(connection) -> None:
             with self._lock:
+                if pull not in self._queues.get(device_id, []):
+                    raise ConnectionError("the pull was cancelled")
                 self._connections[device_id] = connection
 
         try:
@@ -508,16 +513,15 @@ class OllamaPullQueue:
             self._on_pulled(device_id)
 
 
-def _close(connection) -> None:
-    """Close a pull's connection from another thread, ending its read."""
+def _shut_down(connection) -> None:
+    """Shut a pull's socket down from another thread, ending its read."""
+    # The pull's own thread closes the connection. A close from here takes the
+    # response's file away while that thread still reads it.
     sock = getattr(connection, "sock", None)
+    if sock is None:
+        return
     try:
-        if sock is not None:
-            sock.shutdown(2)
-    except OSError:
-        pass
-    try:
-        connection.close()
+        sock.shutdown(socket.SHUT_RDWR)
     except OSError:
         pass
 

@@ -6,7 +6,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
 class FakeOllama:
-    """Ollama's API over real HTTP: tags, ps, show, delete, generate and a streamed pull.
+    """Ollama's API over real HTTP/1.1: tags, ps, show, delete, generate and a chunked pull.
 
     Attributes:
         models: The pulled models, as ``/api/tags`` lists them.
@@ -35,6 +35,8 @@ class FakeOllama:
         fake = self
 
         class Handler(BaseHTTPRequestHandler):
+            protocol_version = "HTTP/1.1"
+
             def log_message(self, *args):
                 return
 
@@ -107,6 +109,7 @@ class FakeOllama:
                     return
                 self.send_response(200)
                 self.send_header("Content-Type", "application/x-ndjson")
+                self.send_header("Transfer-Encoding", "chunked")
                 self.end_headers()
                 lines = fake.pull_lines.get(body.get("model"))
                 if lines is None:
@@ -114,11 +117,17 @@ class FakeOllama:
                 for index, line in enumerate(lines):
                     if index == 1:
                         fake.gate.wait(10)
+                    data = json.dumps(line).encode("utf-8") + b"\n"
                     try:
-                        self.wfile.write(json.dumps(line).encode("utf-8") + b"\n")
+                        self.wfile.write(b"%x\r\n%s\r\n" % (len(data), data))
                         self.wfile.flush()
                     except OSError:
                         return
+                try:
+                    self.wfile.write(b"0\r\n\r\n")
+                    self.wfile.flush()
+                except OSError:
+                    return
                 if lines and lines[-1].get("status") == "success":
                     fake.models.append(
                         {
