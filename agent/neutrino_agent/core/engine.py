@@ -150,6 +150,9 @@ from neutrino_agent.platforms.detect import platform_tuple
 # a Raspberry Pi busy doing nothing.
 IDLE_RECHECK_INTERVAL_S = 60
 
+# The states in which a start's watch reads the row again.
+STARTED_REREAD_STATES = (AGENT_MODULE_STATE_STOPPED, AGENT_MODULE_STATE_INSTALLED)
+
 # The methods whose presence check is the recipe's ``verify`` command.
 VERIFIED_METHODS = (AGENT_METHOD_SYSTEM, AGENT_METHOD_HUB)
 # The methods an install runs by; ``agent`` takes no operation.
@@ -682,7 +685,6 @@ class ModuleEngine(ReconcileWorker):
             is_start_ended = (
                 was_running
                 and not self._is_task_running(name)
-                and name in self._container_runners
                 and _has_step(task, AGENT_STEP_START)
             )
         if state:
@@ -731,7 +733,7 @@ class ModuleEngine(ReconcileWorker):
             self._read_and_publish(name, observed[name])
 
     def _watch_start(self, name: str) -> None:
-        """Read one container module again while it reads stopped after its start task.
+        """Read one module again while it reads stopped or installed after its start task.
 
         The row is read every :data:`AGENT_STARTED_REREAD_S` for
         :data:`AGENT_STARTED_WATCH_S`, on a thread of its own, until it reads
@@ -757,7 +759,7 @@ class ModuleEngine(ReconcileWorker):
                 is_replaced = self._start_watches.get(name) is not watch
                 is_tasked = self._is_task_running(name)
                 state = (self._statuses.get(name) or {}).get("state")
-            if is_replaced or is_tasked or state != AGENT_MODULE_STATE_STOPPED:
+            if is_replaced or is_tasked or state not in STARTED_REREAD_STATES:
                 break
             self.refresh_one(name)
         with self._lock:

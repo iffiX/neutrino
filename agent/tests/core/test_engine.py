@@ -2568,6 +2568,50 @@ def test_the_watch_after_a_start_ends_once_a_task_of_the_module_runs(
     assert not state_within(engine, "demo", "running", 0.3)
 
 
+SHARE_START_TASK = {
+    "steps": [{"name": "configure", "params": {}}, {"name": "start", "params": {}}],
+    "index": 2,
+    "wait": {},
+    "is_running": True,
+}
+
+
+def test_a_module_read_stopped_after_its_start_task_is_read_again(
+    tmp_path, monkeypatch
+):
+    """SiYuan read stopped for 9 seconds and CloudCLI for 36 after every step of
+    their start was done."""
+    monkeypatch.setattr(engine_module, "AGENT_STARTED_REREAD_S", 0.02)
+    runner = ConfigurableRunner(is_active_now=False)
+    engine = module_engine(runner, module_wanted("running"), tmp_path)
+    engine.mark_configured("samba")
+    engine.publish_task("samba", SHARE_START_TASK, "", {})
+    engine.publish_task("samba", dict(SHARE_START_TASK, is_running=False), "", {})
+    engine.refresh_one("samba")
+    ended = engine._statuses["samba"]["state"]
+
+    runner.is_active_now = True
+
+    assert ended == "stopped"
+    assert state_within(engine, "samba", "running", 2)
+
+
+def test_a_row_read_installed_after_the_start_task_is_read_again(tmp_path, monkeypatch):
+    """A read that began before the task's end wrote the configured mark."""
+    monkeypatch.setattr(engine_module, "AGENT_STARTED_REREAD_S", 0.02)
+    runner = ConfigurableRunner(is_active_now=True)
+    engine = module_engine(runner, module_wanted("running"), tmp_path)
+    engine.publish_task("samba", SHARE_START_TASK, "", {})
+    engine.publish_task("samba", dict(SHARE_START_TASK, is_running=False), "", {})
+    engine.refresh_one("samba")
+    ended = engine._statuses["samba"]["state"]
+
+    engine.mark_configured("samba")
+
+    assert ended == "installed"
+    assert state_within(engine, "samba", "running", 2)
+
+
 # --- the steps of Containers, Ayakaleaf and Hermes WebUI ---
 
 CONTAINERS_ALONE = ("containers", "alone")
