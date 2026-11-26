@@ -45,7 +45,7 @@ A platform entry is `{runner, min_version, install, requires}`:
 | Every manifest of a module a person can uninstall names `uninstall_data`, with a line in both languages; a module whose entries name the method `agent` names none. The loader refuses a manifest without it, and one whose `is_deleted` disagrees with its entries: true beside a `system` or `builtin` entry or a `hub` entry whose `is_data_kept` is true, false beside a `container` entry or a `hub` entry whose `is_data_kept` is false. | Every module's uninstall shows one dialog, and the line in it is the one place a person reads what happens to their data before it happens. |
 | A line names the data by what the person keeps in it, and where it stays when it stays. `{data_dir}` in a line is the module's per-account data directory on the machine's system ([module_template.md](module_template.md), "Disk layout"), which the hub writes in before it sends the row. | A path is the answer to "where are my notes now"; the hub knows the machine's system, and one line serves all three. |
 | Every module with a page names `web_share`, so an App share can offer every `web` entry; a module without a page names none. | A person shares the app they use, and the share dialog says what a visitor holds in it ([../ui_behavior.md](../ui_behavior.md), "The Clients page"). |
-| code-server, VS Code, Codeg, CloudCLI, Hermes WebUI, AstrBot and SiYuan name `{guest_login: run_account}`. | Each has one user, the account it runs as, and signs every browser in as that user, a visitor's as the owner's; the visitor can do whatever the app lets that account do until the share ends. |
+| code-server, VS Code, Codeg, CloudCLI, Hermes WebUI, AstrBot, SiYuan and ComfyUI name `{guest_login: run_account}`. | Each has one user, the account it runs as, and signs every browser in as that user, a visitor's as the owner's; the visitor can do whatever the app lets that account do until the share ends. ComfyUI has no user at all, and its forwarder signs every browser into its one workspace ([modules/comfyui.md](modules/comfyui.md), "The page"). |
 | Ayakaleaf names `{guest_login: guest_account}` ([modules/ayakaleaf.md](modules/ayakaleaf.md), "The guest account"). | The app has accounts of its own and shares a project with an account, so a visitor works in what the owner shares with that account and sees nothing else. |
 | Gitea names `{guest_login: app}`, and a declared app's `web` entry and a container's, declared or started by hand, are offered as they are, with `guest_login` `app`, and have no manifest. | Gitea has accounts and a login page of its own, and the hub holds no login of the others, so the visitor meets the app's own login page, the guard the person already set. |
 | The loader refuses a `web_share` of another shape, and a `guest_login` outside the three. | A manifest decides what a visitor holds, so a wrong one fails the suite. |
@@ -66,7 +66,7 @@ client's own pin.
 | `agent` | `{}` | the agent's own package | the agent's install | Terminal, Remote desktop, the SSH server |
 | `builtin` | `{}` | the system itself | nothing; the runner checks that the software is there | the file share on Windows and macOS |
 | `system` | `{version: "system", packages, pre_install, verify, uninstall: {packages, post_uninstall}}` | the system's package repositories | the system's package manager, run by the agent | the file share and Containers on Linux |
-| `hub` | `{version, releases, artifacts, packages, verify, uninstall: {post_uninstall, is_data_kept}}` | the publisher's release, fetched into the hub's cache | the agent, from the `package` stream | Gitea, Ollama, VS Code, code-server, CloudCLI, Codeg, SiYuan, Codex, Claude Code, OpenCode, Containers on Windows and macOS |
+| `hub` | `{version, releases, artifacts, packages, verify, uninstall: {post_uninstall, is_data_kept}}` | the publisher's release, fetched into the hub's cache | the agent, from the `package` stream | Gitea, Ollama, ComfyUI, VS Code, code-server, CloudCLI, Codeg, SiYuan, Codex, Claude Code, OpenCode, Containers on Windows and macOS |
 | `container` | `{version, releases, artifacts, source_sets}`, `releases` and `source_sets` optional | the registries each image's `sources` name | the Containers module's Podman | Hermes WebUI ([modules/hermes_webui.md](modules/hermes_webui.md)), Ayakaleaf ([modules/ayakaleaf.md](modules/ayakaleaf.md)), AstrBot ([modules/astrbot.md](modules/astrbot.md)) |
 
 `pre_install` is optional, for a system that needs a step before its package
@@ -108,23 +108,27 @@ in [../ui_text.md](../ui_text.md), "The machine page's words".
 An artifact is one file a `hub` or `container` entry installs:
 `{name, kind, digest, sources}`, with `file` where its sources name it,
 `directory` where its kind needs one, and `member`, the folder a `dmg` holds
-the program in. An artifact whose sources are an
+the program in, or the folder of a `zip` whose files the artifact places, as
+ComfyUI's Visual C++ runtime does ([modules/comfyui.md](modules/comfyui.md)).
+An artifact whose sources are an
 ecosystem's names `source_set`, the set's name, in place of `sources`
-("Source sets").
+("Source sets"), and a `uv_lock` names `source_sets`, the sets its lock's
+files come from ("A Python environment").
 
-Each kind belongs to one of seven classes, by how the agent places the
+Each kind belongs to one of eight classes, by how the agent places the
 software it holds. Where each class lands on each system is
 [module_template.md](module_template.md), "Disk layout".
 
 | Class | Kinds | What the agent does with it | Used today by |
 | --- | --- | --- | --- |
-| archive (压缩包) | `tar_gz`, `zip` | unpacks it into the module's directory and seals it | VS Code, code-server, Codeg's server, SiYuan on Linux, Codex, Claude Code, OpenCode, the Node.js of CloudCLI and Codeg, and Gitea's MinGit on Windows |
+| archive (压缩包) | `tar_gz`, `zip` | unpacks it into the module's directory and seals it | VS Code, code-server, Codeg's server, SiYuan on Linux, Codex, Claude Code, OpenCode, the Node.js of CloudCLI and Codeg, Gitea's MinGit on Windows, and ComfyUI's Python, uv, source and, on Windows, Visual C++ runtime |
 | installer (安装包) | `msi`, `pkg` | keeps it in the module's directory and has the system's installer install it | Containers: Podman and WSL on Windows, Podman on macOS |
 | disk image (磁盘映像) | `dmg`, `nsis` | copies the program out of it into the module's directory and seals it; nothing in it runs | SiYuan on macOS and Windows |
 | machine image (虚拟机映像) | `tar_zst`, `raw_zst` | keeps it in the module's directory, and Podman builds its machine from it | Containers on Windows and macOS; Ollama's Linux archive is a `tar_zst` its module unpacks (below) |
 | container image (容器镜像) | `image` | has the Containers module's Podman pull it from a registry | Hermes WebUI, Ayakaleaf, AstrBot |
 | single program (单个程序文件) | `binary` | keeps the publisher's bytes as one program and makes it executable | Gitea |
 | npm package (npm 包) | `npm` | installs it with npm, run as the account the module runs as | CloudCLI |
+| Python environment (Python 环境) | `uv_lock` | installs the Python packages its lock names into a virtual environment with the module's own uv, each file checked against its hash | ComfyUI's environment and comfy-mcp's |
 
 | Rule | Reason |
 | --- | --- |
@@ -144,16 +148,19 @@ software it holds. Where each class lands on each system is
 | `nsis` | a Windows installer made with NSIS that holds a 7z archive stored whole, such as SiYuan's | the 7z archive found inside the installer by its signature and read by the agent's own reader with Python's `lzma`, its files unpacked under `agent/<module>/<directory>/` and sealed; nothing in the installer runs |
 | `image` | a container image, its `sources` image references with no tag | pulled by the Containers module's Podman |
 | `npm` | an npm package, named by `package`, its `source_set` the `npm` set | installed by npm, run as the account the module runs as, where [module_template.md](module_template.md), "Disk layout", puts a runtime environment of the module's kind |
+| `uv_lock` | a lock of Python packages in the requirements format, every file of each version with its hash and each package's index in a `# from` line, which the hub keeps beside the manifest | installed by the module's uv into a virtual environment, where [module_template.md](module_template.md), "Disk layout", puts a runtime environment of the module's kind, each file fetched from the first ranked source of the set its index belongs to ("A Python environment") |
 
 | Rule | Reason |
 | --- | --- |
 | A digest is `sha256:<hex>`, and the digest of an artifact from the `npm` set, an `npm` artifact or an npm package's tarball of kind `tar_gz`, is npm's `integrity` as the registry gives it, `sha512-<base64>`. The hub's cache checks a tarball's integrity itself, and names the file by the hex of the digest's bytes. | The digest pins the bytes on every source; npm publishes no sha256 of a tarball, and every npm registry serves a published tarball under the integrity the publisher's upload fixed. |
-| The digest is the publisher's: the sha256 file it publishes, the `digest` GitHub's API gives a release asset, Microsoft's `sha256hash`, an OCI manifest digest, or npm's `integrity`. A mirror serves bytes and names no digest. | A mirror that names its own digest can serve anything. |
+| The digest is the publisher's: the sha256 file it publishes, the `digest` GitHub's API gives a release asset, Microsoft's `sha256hash`, an OCI manifest digest, npm's `integrity`, PyPI's sha256 of a file, or the tree of a tag's commit. A mirror serves bytes and names no digest. | A mirror that names its own digest can serve anything. |
+| An archive of a tag that a repository's host makes on request, ComfyUI's source, has the tree hash of the tag's commit as its digest, `git-tree:<hex>`, the SHA-1 git computes over the tree. The hub's cache computes it over the archive's files before it keeps the file, names the file by it, and the agent computes it again over the unpacked files before the seal. A file of the archive the tree lacks, or a mode git does not record, fails the check. | The host can compress the archive again and change its bytes, and the commit's tree is the same in every copy of the repository. It is the publisher's own object id. In the lab a script of 40 lines of the standard library computed ComfyUI 0.46.0's tree from GitHub's archive in 0.4 seconds ([modules/comfyui.md](modules/comfyui.md), "The Python environment"). |
+| A `uv_lock`'s digest is the sha256 of the lock, a file of the hub's own package; each file the lock names carries its publisher's hash. | The lock is Neutrino's, and the hashes in it pin the publisher's bytes on every source. |
 | The cache checks the head of each file before it keeps it: `msi` and `pkg` by the magic bytes it checks for the agent's own packages, `binary` by the ELF, Mach-O or PE header, the two zstd kinds by `28 b5 2f fd`, `nsis` by the PE header, and `dmg` by `koly` at the start of its last 512 bytes. | A source that answers with an error page passes no head check. |
 | An archive whose members all sit under one top directory is unpacked without it, so its files sit directly under `<directory>`. | A path in `verify` and in a service definition stays the same for every version. |
 | The unpack is owned by the agent's own account, root or SYSTEM, readable and executable by every account, writable by none, and on no `PATH`. A command line program's launcher folder, `bin/` beside its unpack, is the one folder named on a `PATH`: at the front of each enabled account's `PATH` and of Neutrino's own sessions' ([module_template.md](module_template.md), "The launcher and the account's `PATH`"). | Every account runs the program, and none can change it. A person runs a command line program by its name. |
 | Each member of a `zip` keeps the permission bits its entry names, less the setuid, setgid and sticky bits, as a tarball's members do; the seal then takes every write bit away. | VS Code's CLI for macOS comes as a zip whose `code` is 0755. Unpacked without its bits it read `-r--r--r--`, and VS Code did not start. |
-| The recipe the state holds for a `hub` entry drops each artifact's `sources`, and the `source_set` of an archive the hub's cache fetches, since the bytes come down the `package` stream. A `container` or an `npm` artifact keeps its `sources` or its `source_set`, since the machine fetches it, and the state's `source_sets` section holds each set a recipe names. | The agent fetches only what the hub cannot send. |
+| The recipe the state holds for a `hub` entry drops each artifact's `sources`, and the `source_set` of an archive the hub's cache fetches, since the bytes come down the `package` stream. A `container` or an `npm` artifact keeps its `sources` or its `source_set`, and a `uv_lock` its `source_sets`, since the machine fetches their files, and the state's `source_sets` section holds each set a recipe names. A `uv_lock`'s lock itself comes down the `package` stream. | The agent fetches only what the hub cannot send. |
 
 A runtime a module needs, Node.js among them, is one of its artifacts,
 pinned in its own manifest. Two modules that need the same runtime each hold
@@ -176,6 +183,33 @@ lands.
 | Rule | Reason |
 | --- | --- |
 | npm runs as the account the module runs as, never as root. A Program's package is unpacked by the agent, as every archive is. | A program writes in its environment as it runs, as Codeg's npm writes its adapters, and it writes only where its own account can. A Program is one copy that every account runs and none can change. |
+
+### A Python environment
+
+A Python environment is a virtual environment of a module's own Python,
+made with the module's own uv from one `uv_lock` artifact. The module
+carries the Python and uv as archives pinned in its own manifest, two
+modules that need them each hold their own, and the lock names every
+package with every file's hash. A module of every kind can install one,
+and [module_template.md](module_template.md), "Disk layout", names where it
+lands.
+
+| Kind | How the environment reaches the machine | Used today by |
+| --- | --- | --- |
+| System service | uv, run as the module's service account, makes the environment and installs the lock | ComfyUI's `venv` ([modules/comfyui.md](modules/comfyui.md)) |
+| Account service | uv, run as each enabled account | no module |
+| Program, and a program a person runs that a System service carries | uv, run as root with wheels alone, then the environment sealed | comfy-mcp in ComfyUI's `mcp` |
+
+| Rule | Reason |
+| --- | --- |
+| The environment is made with no seed, `uv venv --python <module's python> <folder>`, and every package, pip among them, comes from the lock. | `uv venv --seed` fetches pip from the default index at no pinned version and with no hash. |
+| uv runs with `UV_PYTHON_DOWNLOADS=never`, `UV_NO_CONFIG=1`, and `UV_CACHE_DIR` the `uv_cache/` beside the environment. | uv then runs the module's Python alone and reads no configuration of an account's or of the system's. In the lab it fetched no Python. |
+| The lock installs in one part per source set its `# from` lines name, each with `uv pip install --require-hashes --no-deps --index-url <source>`, `<source>` the set's first ranked source, then `uv pip check`. `uv pip sync` never runs. | In the lab uv refused a file whose hash differed and a line with no hash. `sync` removes every package the lock does not name, the packages a program installed into its own environment among them. |
+| uv run as root installs wheels alone, with `--no-build`. | A wheel runs no code of its package at its install, and the build of a source distribution runs its code as root. |
+| A lock is compiled ahead, one per platform and per build where the module names builds, with `uv pip compile --generate-hashes --emit-index-annotation --exclude-newer <date>`, and sits beside the manifest as `data/manifests/<module>/<version>/<name>.txt`. The hub sends it down the `package` stream as it sends an archive. | A lock made ahead pins every file published by its date, and the machine runs no resolver. |
+| The hub's cache holds none of the files a lock names: the machine's uv fetches each from the ranked source of its set. | One PyTorch build is up to 6.2 GB, past the cache's 2 GiB a file, and an environment is about a hundred files. |
+| A source that lacks one file of a lock fails the install, and the install runs again on the next ranked source ("Choosing a source"). | In the lab Tsinghua's PyPI mirror lacked `comfyui-workflow-templates-media-assets-02`. |
+| On Windows uv runs with `UV_STACK_SIZE=16777216`, its output to a file. | In the lab uv crashed with `0xC0000409` as LOCAL SERVICE with the default stack and through PowerShell's own redirect of its output ([modules/comfyui.md](modules/comfyui.md), "The Python environment"). |
 
 ## Sources
 
@@ -203,6 +237,10 @@ lands.
 | a container image | the agent, for Podman to pull | each image reference the artifact names, the publisher's registry first |
 | CloudCLI's npm package | the agent, for npm to install | the `npm` set |
 | the packages a container's own tools fetch | the agent, into the container's environment | each set the module lists: Hermes WebUI's `pypi` |
+| ComfyUI's Python and uv | the hub's cache | python-build-standalone's and Astral's GitHub releases, each its one address ([modules/comfyui.md](modules/comfyui.md)) |
+| ComfyUI's source | the hub's cache | GitHub's archive of the tag on `codeload.github.com` |
+| ComfyUI's Visual C++ runtime on Windows | the hub's cache | the wheel's address on PyPI's file host, `files.pythonhosted.org` |
+| the files of a Python environment's lock | the agent, for uv to install | the `pytorch` set for the files of PyTorch's own index, the `pypi` set for the rest ("A Python environment") |
 | the TeX packages Ayakaleaf's first start adds | the agent, for `tlmgr` in the app's container | the `ctan` set, its first ranked source on `tlmgr`'s command line ([modules/ayakaleaf.md](modules/ayakaleaf.md), "The first start") |
 | the Python packages AstrBot's plugins require | the agent, into `pypi_index_url` of AstrBot's settings file before its first start, for the pip AstrBot runs | the `pypi` set, its first ranked source ([modules/astrbot.md](modules/astrbot.md), "Plugin requirements") |
 | better-sqlite3's prebuilt binary | the agent, for prebuild-install to fetch | its GitHub releases, then npmmirror's copy ([modules/cloudcli.md](modules/cloudcli.md)) |
@@ -243,6 +281,11 @@ ecosystem's packages, such as PyPI's, for the whole system.
     "probe": "/systems/texlive/tlnet/tlpkg/texlive.tlpdb.xz",
     "sources": ["https://mirror.ctan.org", "https://mirrors.mit.edu/CTAN", "https://mirrors.tuna.tsinghua.edu.cn/CTAN", "https://mirrors.ustc.edu.cn/CTAN", "https://mirrors.aliyun.com/CTAN", "https://mirrors.cloud.tencent.com/CTAN", "https://mirrors.sjtug.sjtu.edu.cn/ctan", "https://mirror.nju.edu.cn/CTAN"],
     "variables": []
+  },
+  "pytorch": {
+    "probe": "/cpu/torch/",
+    "sources": ["https://download.pytorch.org/whl", "https://mirror.sjtu.edu.cn/pytorch-wheels", "https://mirror.nju.edu.cn/pytorch/whl"],
+    "variables": []
   }
 }
 ```
@@ -252,7 +295,7 @@ ecosystem's packages, such as PyPI's, for the whole system.
 | `probe` | the path of the file a probe reads under each source ("The file a probe reads") |
 | `latency_probes` | optional: the paths of the small documents whose mean time to the first byte is a source's latency ("Choosing a source"); without it the latency is the probe's own first byte |
 | `sources` | the addresses, the publisher's first |
-| `variables` | the environment variables the ecosystem's tools read the address from: pip and uv for `pypi`; npm, pnpm and Yarn 1 (`npm_config_registry`), Yarn 2 and later, and Bun for `npm`; the Hugging Face libraries for `huggingface`; none for `ctan`, since `tlmgr` reads its repository from its command line |
+| `variables` | the environment variables the ecosystem's tools read the address from: pip and uv for `pypi`; npm, pnpm and Yarn 1 (`npm_config_registry`), Yarn 2 and later, and Bun for `npm`; the Hugging Face libraries for `huggingface`; none for `ctan` and `pytorch`, since `tlmgr` reads its repository and the agent gives uv its index on the command line |
 
 | Rule | Reason |
 | --- | --- |
@@ -267,6 +310,8 @@ ecosystem's packages, such as PyPI's, for the whole system.
 | A set exists for an ecosystem a module fetches from. Go's module proxy, crates.io, conda channels and Ollama's library have none. | A set no module names is a list nobody keeps true. |
 | A set with no `variables` is ranked when a module's hook asks for it, and the hook gives the first ranked source to its tool on the tool's command line: Ayakaleaf's `tlmgr --repository`. | A tool that reads no variable for its address takes it where it reads it. |
 | A tool that reads its address from its app's own settings file gets the first ranked source of the set there, written by the module's hook before the app's first start: AstrBot's `pypi_index_url`. | AstrBot runs pip with `-i` from that key, so the set's variables change nothing for it ([modules/astrbot.md](modules/astrbot.md), "Plugin requirements"). |
+| The `pytorch` set names PyTorch's own index first, then the mirrors at SJTU and Nanjing. Under each source `/<build>/` is the index of one PyTorch build, such as `/cu132/`, and the agent gives uv the first ranked source with the build after it, `--index-url <source>/<build>`. | uv's `--torch-backend` reaches download.pytorch.org alone, so the install names each index itself. In the lab both mirrors served `cpu`, `cu130`, `cu132`, `rocm7.2` and `xpu` with the same sha256 for torch, triton, triton-rocm and triton-xpu, and a lock made against download.pytorch.org installed from each. |
+| No other mirror of PyTorch's index is in the set. | Aliyun serves each build as a flat list of files with no hash, which uv reads only with `--no-index --find-links`, under a layout no other source of the set has. Tsinghua, USTC, Tencent, BFSU, ZJU and ISCAS answered 404, and Huawei an app's page. AMD's Windows index has no mirror and serves no hash ([modules/comfyui.md](modules/comfyui.md), "The PyTorch build"). |
 | The `ctan` set's first source is CTAN's own redirector, then the MIT mirror and the mirrors at Tsinghua, USTC, Aliyun, Tencent, SJTU and Nanjing. Its sources can hold snapshots of TeX Live a day apart, and `tlmgr` checks every package it installs against the signed package database of the one source it reads. | In the lab the eight sources served two `texlive.tlpdb.sha512` a day apart, so no digest names the same bytes on every source, and the signature makes each source safe alone. |
 
 better-sqlite3's prebuilt binary host serves that one package alone, so it
@@ -286,7 +331,7 @@ One method chooses among the sources of every download:
 | Each measure is scored against the best source's: the speed score is the source's speed over the best speed, and the latency score the best latency over the source's latency. The total is half the one and half the other, and the source with the highest total ranks first; the download, the pull or the tool starts on it. The same rule ranks every list: a set's sources, npm registries, an image's registries, an npm setting's hosts and a `hub` artifact's sources. | iffi's design. In R168 one CloudCLI upgrade took 13.9 minutes on Tencent's npm mirror, which won on one document's speed and answers every request slowly; in R65 the same install took 1870 s there against 95 s on registry.npmjs.org. |
 | While a download has at least 30 seconds left at its speed now, the fetcher measures the other sources every 30 seconds. Each measure is a 1 MiB Range request at the current offset, to every source that has not failed. | A short download ends before a change pays back; 1 MiB per source every 30 seconds costs a few percent of the transfer. |
 | A source takes over when its total is at least 1.5 times the current source's, the totals scored over each measured source's speed and first byte and over the current source's speed in the last 10 seconds and the latency of its last probe or measure. The download resumes there by a Range request at the current offset, and the next measure comes 30 seconds later. | A short probe measures low against a running transfer, and a smaller gap changes source on noise. |
-| An install that a tool runs, npm, pip in a container or `tlmgr`, keeps the source it started on until it ends; the next ranked source is tried only by a new install after one fails. | Each of its thousands of requests goes to the source it was told, and a change in the middle would leave half the files from each. |
+| An install that a tool runs, npm, pip in a container, uv or `tlmgr`, keeps the source it started on until it ends; the next ranked source is tried only by a new install after one fails. | Each of its thousands of requests goes to the source it was told, and a change in the middle would leave half the files from each. |
 | A source fails when it sends no byte for 20 seconds, answers with an error, or serves a file whose digest differs; the download resumes on the next ranked source by a Range request. A source that did not answer the probe in time has not failed, and the next measure asks it again. | The bytes are the same on every source, and a source slow to answer once can be the fastest later. |
 | A source that answers a Range request with the whole file serves a download from its start alone, and is never moved to while a download runs. | It cannot resume at an offset. |
 | The digest is checked when the last byte arrives. A mismatch drops that source and fetches the file again from the next one. | A source serving other bytes is wrong for this file alone. |
@@ -331,6 +376,7 @@ Each list names its probe file once, in the data file that holds the list.
 | `npm`'s `latency_probes` | `/wrappy`, `/once`, `/inherits` | 7 to 16 KB each | Each is the document of a small package that changes seldom, and every npm registry serves it at that path. |
 | `huggingface` | `/openai-community/gpt2/resolve/607a30d783dfa663caf39e06633721c8d4cfcd7e/tokenizer.json` | 1.4 MB | A file at a commit does not change. | <!-- scan: allow -->
 | `ctan` | `/systems/texlive/tlnet/tlpkg/texlive.tlpdb.xz` | 2.8 MB | The bytes change each day and the path does not: `tlmgr` reads this package database from the repository first. |
+| `pytorch` | `/cpu/torch/` | the page's; it grows with each release | The CPU build's index page of torch is a page every source of the set serves under the same path, and uv reads such a page first. |
 | better-sqlite3's hosts | `/v12.6.2/better-sqlite3-v12.6.2-node-v127-linux-x64.tar.gz` | 1.1 MB | A release's file does not change. |
 | an image's registries | its largest layer, by its digest | the layer's | The digest names the bytes, and the layer goes only with the image. |
 | CloudCLI's registries | the package's document | 220 to 296 KB | The install needs this document, and the probe checks its integrity. |
@@ -427,6 +473,7 @@ The tools inside its containers fetch from the source sets its entry lists
 | --- | --- |
 | The method's presence check is the one test that the software is there: `verify` for `system` and `hub`, every image's digest for `container`. On Windows and macOS, while Containers' machine does not answer the read, the digests are read from the list Containers saved at its last read ([modules/containers.md](modules/containers.md), "The keeper"). | Two checks that disagree give a module that is present and never `running`. A stopped machine lists no images. |
 | A `verify` that names its program by an absolute path, as every `hub` entry's does, runs again only once that file changes its size, its time or its inode. A pass stands until then, and a failure runs again at the next read. | The agent reads every module at each report, every 5 seconds: on the lab Mac `gitea --version` and `code --version` each ran 12 times a minute as root. |
+| The `verify` of a module with a Python environment runs the module's own Python with `--version`, never the environment's. | The environment is the account's that runs the software, and code that runs as that account, a custom node among it, can change it. Root runs no program another account can change. |
 | A `verify` also passes on a person's copy of the software in its publisher's place by a test of a file, which runs nothing of the person's: Ollama's Linux `verify` tests for the person's unit file ([modules/ollama.md](modules/ollama.md)). | The check says whether the software is there, whoever installed it, and root runs no program a person could have changed. |
 | `is_active` and `details` are read whenever the presence check passes, and a runner adds no check of its own in front of them. | A runner check stricter than `verify` read Containers as `stopped` with an empty list on a machine whose Docker CE kept `podman-docker` off. |
 | A runner's own check answers only for a `builtin` entry and for a module the hub does not name in the machine's state, which the agent still observes and reports, such as a Samba a person installed by hand. A container module the state does not name is read against the recipe the agent kept ("From container images"). | Neither comes with a `verify` to run. |
@@ -439,7 +486,7 @@ and no folder but one of Neutrino's own.
 
 | Rule | Reason |
 | --- | --- |
-| An uninstall removes only directories whose name shows they are Neutrino's: the module's directory under the state root, `agent/<module>/`, and the module's folder in an account's own Neutrino tree, `~/.local/share/neutrino/agent/<module>/` on Linux, `~/Library/Application Support/Neutrino/agent/<module>/` on macOS and `%LOCALAPPDATA%\Neutrino\agent\<module>\` on Windows ([module_template.md](module_template.md), "Disk layout"). A shared directory, `~/.local/bin`, `~/.local`, `~/.config`, an account's home or `/usr/local/bin`, is never removed, whoever made it, and only the module's own files in it go, such as a unit file, a launcher or a line. On Linux, writing a command line program's env file makes `~/.local/share` and `~/.local` for an account that had neither, and both stay after an uninstall, as every shared directory does; on macOS the env file sits in `~/Library/Application Support/Neutrino/agent/` and makes no `~/.local`. | A shared directory may hold the person's files, and one the module made may have been taken into use since. |
+| An uninstall removes only directories whose name shows they are Neutrino's: the module's directory under the state root, `agent/<module>/`, the folders of its data directory `agent/<module>_data/` its page names, ComfyUI's `venv/`, `uv_cache/`, `tmp/` and `pycache/` ([modules/comfyui.md](modules/comfyui.md), "Uninstall"), and the module's folder in an account's own Neutrino tree, `~/.local/share/neutrino/agent/<module>/` on Linux, `~/Library/Application Support/Neutrino/agent/<module>/` on macOS and `%LOCALAPPDATA%\Neutrino\agent\<module>\` on Windows ([module_template.md](module_template.md), "Disk layout"). A shared directory, `~/.local/bin`, `~/.local`, `~/.config`, an account's home or `/usr/local/bin`, is never removed, whoever made it, and only the module's own files in it go, such as a unit file, a launcher or a line. On Linux, writing a command line program's env file makes `~/.local/share` and `~/.local` for an account that had neither, and both stay after an uninstall, as every shared directory does; on macOS the env file sits in `~/Library/Application Support/Neutrino/agent/` and makes no `~/.local`. | A shared directory may hold the person's files, and one the module made may have been taken into use since. |
 | A command line program's uninstall removes, for each account it enabled, its line from each startup file, and once no command line program names the account `env.sh`, `env.fish` and the Neutrino folders that hold nothing else; on Windows it removes the account's entry in the user `PATH` ([../agent.md](../agent.md), "The account's startup files"). | Each startup file is byte for byte what it was, and the person's copy stays as it is. |
 
 ## Module versions
@@ -451,6 +498,7 @@ version list can be read.
 
 | Rule | Reason |
 | --- | --- |
+| A `hub` entry that names a `uv_lock` names no `releases`, and has one version, its tested one, locked as a `system` entry's is. | A lock exists for the tested version alone, and a version with no lock installs with no hash. ComfyUI's new tested version reaches the machines in a hub release ([modules/comfyui.md](modules/comfyui.md)). |
 | `params.releases` is how the hub lists the publisher's versions: a list of feeds, each `{kind, sources}` and the keys of its kind. The hub reads them once a day with the method of "Choosing a source", and keeps what it read in `module_releases.json` under its state root ([../files.md](../files.md)). | A daily read follows the publisher, and a read that fails leaves the last list and the tested version. |
 | A feed's read waits up to 30 seconds for data at each wait, where a probe and every other fetch wait 5. | A feed can be a large document: GitHub's release list of Gitea is about 15 MB, and GitHub at times sends nothing for more than 5 seconds. In R170 a new hub's first read of it timed out at 5 seconds, while the same read with a 30 second wait took 6.7, 3.2, 2.2 and 47.6 seconds in four tries. |
 | While a module whose entries name a feed holds no version list, the next read comes an hour after the last, and the reads stay hourly until every such module holds one; then they are daily again. A module whose list is held keeps it through a read that fails. | A new hub that misses one read holds no list, and would offer the tested version alone for a day. |
@@ -483,6 +531,7 @@ version list can be read.
 | SiYuan | absent | Its kernel logs a downgrade at its start and goes on. |
 | Ollama | absent | Its models are files named by their digests, and its data holds no database. |
 | Hermes WebUI | absent | Its one version is locked. |
+| ComfyUI | absent | Its one version is locked. |
 
 | Feed `kind` | Its keys | The versions | A version's digest |
 | --- | --- | --- | --- |

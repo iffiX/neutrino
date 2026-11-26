@@ -16,7 +16,7 @@ a module the agent has no runner for reads `unsupported`.
 | --- | --- | --- | --- |
 | Carried by the agent | Terminal, `terminal`; Remote desktop, `remote_desktop`, which also detects a person's own AnyDesk and TeamViewer; the SSH server, `ssh_server` | runs the module's applier; the four presses are refused `module_not_optional` | its configuration file, its runner, one applier per system where the systems differ ([modules/terminal.md](modules/terminal.md), [modules/remote_desktop.md](modules/remote_desktop.md), [modules/ssh_server.md](modules/ssh_server.md)) |
 | Software the module configures | File share, `samba` on Linux and `samba_native` on Windows and macOS; Containers, `podman` on Linux and `podman_machine` on Windows and macOS | renders the module's files and drives the system's own service; on Windows and macOS the file share drives the system's SMB server, and Containers runs a Podman machine of one account | its configuration, its renderer and its applier ([modules/file_share.md](modules/file_share.md), [modules/containers.md](modules/containers.md)) |
-| A service with a system account of its own | Gitea, `gitea`; Ollama, `ollama` | makes the account and the service: Gitea in the publisher's layout on every system, Ollama in the module's directory and its data directory under the state root | its configuration, one applier per system, Gitea's rendered `app.ini` and Ollama's environment ([modules/gitea.md](modules/gitea.md), [modules/ollama.md](modules/ollama.md)) |
+| A service with a system account of its own | Gitea, `gitea`; Ollama, `ollama`; ComfyUI, `comfyui` | makes the account and the service: Gitea in the publisher's layout on every system, Ollama and ComfyUI in the module's directory and its data directory under the state root, ComfyUI's Python environment in its data directory, and ComfyUI's forwarder | its configuration, one applier per system, Gitea's rendered `app.ini`, Ollama's and ComfyUI's environment, and ComfyUI's shared folders and comfy-mcp ([modules/gitea.md](modules/gitea.md), [modules/ollama.md](modules/ollama.md), [modules/comfyui.md](modules/comfyui.md)) |
 | A program run as a person's account | VS Code, `vscode`; code-server, `code_server`; CloudCLI, `cloudcli`; Codeg, `codeg`; SiYuan, `siyuan` | the whole flow of this page: one account service per instance, the forwarder, the `web` entry, the shared router and the shared panel | `config.py`, `constants.py` and `hooks.py` ([modules/vscode.md](modules/vscode.md), [modules/code_server.md](modules/code_server.md), [modules/cloudcli.md](modules/cloudcli.md), [modules/codeg.md](modules/codeg.md), [modules/siyuan.md](modules/siyuan.md)) |
 | Container images | Hermes WebUI, Ayakaleaf and AstrBot, `container` | runs the images as hub containers on the Containers module, one network per module, and the forwarder where the module has a page | its images in the manifest, the containers it composes on the hub, and its `hooks.py` where it has a page or a step after its first start ([module_install.md](module_install.md), "From container images", [modules/hermes_webui.md](modules/hermes_webui.md), [modules/ayakaleaf.md](modules/ayakaleaf.md), [modules/astrbot.md](modules/astrbot.md)) |
 | A command line program per account | Codex, `codex`; Claude Code, `claude_code`; OpenCode, `opencode` | `modules/shared/programs.py` and `modules/shared/program_path.py`: the module's copy, the launcher, the record and each enabled account's `PATH` put first ([agent.md](../agent.md), "Parallel, never take over"); no service, no port, no forwarder and no published entry | `config.py`, `constants.py` and `hooks.py`: the program's name, how its version reads, and what its launcher sets ([modules/codex.md](modules/codex.md), [modules/claude_code.md](modules/claude_code.md), [modules/opencode.md](modules/opencode.md)) |
@@ -329,6 +329,7 @@ path without `<directory>`. Each install class
 | machine image | kept as `<directory>/<name>.tar.zst` or `<directory>/<name>.raw.zst` in the module's directory, which `podman machine init --image` reads; Podman keeps the machine it builds in its own place for the run account |
 | container image | Podman's own store, root's on Linux and the Podman machine's on Windows and macOS; nothing lands in the module's directory |
 | single program | on Linux `/usr/local/bin/<program>`; on macOS `<program>` and on Windows `<program>.exe` in the module's directory; a new version replaces it in one rename |
+| Python environment | as the account the module's kind names (below), in the folder it names, in one layout for every module: `venv/`, the environment, and `uv_cache/` beside it, uv's cache; for a Program, the environment alone, unpacked into `<directory>/` of the module's directory and sealed. ComfyUI's `venv` lands in `comfyui_data/` and comfy-mcp's in `comfyui/mcp/` ([modules/comfyui.md](modules/comfyui.md)) |
 | npm package | as the account the module runs as, in the folder the module's kind names (below), in one layout for every module: `npm/`, npm's prefix, which holds what npm installs; `npm_cache/` beside it, npm's cache; and, where the agent runs npm itself, `npmrc` beside them, an empty file npm reads as the user configuration. CloudCLI's `npm` artifact is installed into `npm/` with `--prefix`, and Codeg's own npm installs its adapters there through `NPM_CONFIG_PREFIX` |
 
 | Rule | Reason |
@@ -337,18 +338,18 @@ path without `<directory>`. Each install class
 | `npmrc` is written only where the agent runs npm, as for CloudCLI. Where the program runs npm itself, as Codeg does, npm reads the account's own `~/.npmrc`. | The agent's npm takes its registry from the `npm` set and nothing else, and a program's own npm follows the settings the person gave it, a proxy among them. |
 | The layout holds for every module from the version that brings it, and the code installs into no other. An install an earlier version left elsewhere, CloudCLI's `app/`, is removed, and the module installs again in `npm/` at its next apply ([modules/cloudcli.md](modules/cloudcli.md), "`npm/` is the one prefix"). | Code that keeps two layouts keeps them for as long as one machine holds the old one. |
 
-A module of every kind can install a runtime environment with npm
-([module_install.md](module_install.md), "Artifacts"). Where the environment
-lands follows the module's kind
-([module_install.md](module_install.md), "The source chip and the kind
-chip"):
+A module of every kind can install a runtime environment with npm or with
+uv, a Python environment ([module_install.md](module_install.md),
+"Artifacts", "A Python environment"). Where the environment lands follows
+the module's kind ([module_install.md](module_install.md), "The source chip
+and the kind chip"):
 
-| Kind | Where the environment lands | Owned by |
-| --- | --- | --- |
-| System service | `npm/` and `npm_cache/` in the module's data directory, `<module>_data/` under the state root | the module's service account, as the rest of its data |
-| Account service | `npm/` and `npm_cache/` in the module's per-account data directory, the second row of the first table | the account |
-| Program | the package's tarball unpacked into `<directory>/` in the module's directory and sealed, as every archive is | root or SYSTEM, read-only to every account |
+| Kind | Where an npm environment lands | Where a Python environment lands | Owned by |
+| --- | --- | --- | --- |
+| System service | `npm/` and `npm_cache/` in the module's data directory, `<module>_data/` under the state root | `venv/` and `uv_cache/` in the module's data directory | the module's service account, as the rest of its data |
+| Account service | `npm/` and `npm_cache/` in the module's per-account data directory, the second row of the first table | `venv/` and `uv_cache/` in the module's per-account data directory | the account |
+| Program | the package's tarball unpacked into `<directory>/` in the module's directory and sealed, as every archive is | the environment made into `<directory>/` in the module's directory and sealed | root or SYSTEM, read-only to every account |
 
 | Rule | Reason |
 | --- | --- |
-| The module's kind picks the folder of its runtime environment, and no module installs one anywhere else. | The account that runs the software writes its environment, in a folder that account owns: a service account's data directory, an account's own files. A Program is one copy that every account runs and none can change. |
+| The account that runs an environment's program picks its folder: the module's kind for the module's own program, and a Program's row for a program a person runs that a System service carries, comfy-mcp in ComfyUI. No module installs an environment anywhere else. | The account that runs the software writes its environment, in a folder that account owns: a service account's data directory, an account's own files. A Program is one copy that every account runs and none can change, and comfy-mcp runs as the default account, beside a service whose environment is the service account's. |
