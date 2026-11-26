@@ -569,8 +569,8 @@ AGENT_CONTAINERS_MODULE = "podman"
 # under the module's directory, two archives, a macOS disk image whose one
 # folder is copied out and a Windows installer whose 7z archive is read, a
 # program kept as the publisher's bytes, the two installer packages, the two
-# zstd files kept as they came, and an npm package the module's runner
-# installs.
+# zstd files kept as they came, an npm package the module's runner
+# installs, and a lock of Python packages its runner installs with uv.
 AGENT_ARTIFACT_KIND_TAR_GZ = "tar_gz"
 AGENT_ARTIFACT_KIND_ZIP = "zip"
 AGENT_ARTIFACT_KIND_DMG = "dmg"
@@ -580,6 +580,7 @@ AGENT_ARTIFACT_KIND_MSI = "msi"
 AGENT_ARTIFACT_KIND_PKG = "pkg"
 AGENT_ARTIFACT_KIND_NPM = "npm"
 AGENT_ARTIFACT_KIND_TAR_ZST = "tar_zst"
+AGENT_ARTIFACT_KIND_UV_LOCK = "uv_lock"
 AGENT_ARTIFACT_ARCHIVE_KINDS = (
     AGENT_ARTIFACT_KIND_TAR_GZ,
     AGENT_ARTIFACT_KIND_ZIP,
@@ -599,6 +600,9 @@ AGENT_DIGEST_SHA256_PREFIX = "sha256:"
 # An npm tarball's digest is npm's integrity: this prefix and the SHA-512 of
 # its bytes in base64.
 AGENT_DIGEST_SHA512_PREFIX = "sha512-"
+# The digest of a tag's archive a repository's host makes on request: this
+# prefix and the SHA-1 git computes over the tree of the tag's commit, in hex.
+AGENT_DIGEST_GIT_TREE_PREFIX = "git-tree:"
 # The probe of a source: how long it waits for an answer, and how much of a
 # file and of a document it reads.
 AGENT_SOURCE_PROBE_TIMEOUT_S = 5.0

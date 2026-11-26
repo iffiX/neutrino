@@ -41,10 +41,13 @@ from neutrino_agent.constants import (
     AGENT_ARTIFACT_KEPT_SUFFIXES,
     AGENT_ARTIFACT_KIND_BINARY,
     AGENT_ARTIFACT_KIND_NPM,
+    AGENT_ARTIFACT_KIND_TAR_GZ,
+    AGENT_DIGEST_GIT_TREE_PREFIX,
     AGENT_DIGEST_SHA256_PREFIX,
     AGENT_DIGEST_SHA512_PREFIX,
 )
 from neutrino_agent.exceptions import ModuleApplyError
+from neutrino_agent.modules.shared.git_tree import archive_tree
 from neutrino_agent.modules.shared.unpacked_tree import (
     remove_tree,
     unpack_beside,
@@ -256,8 +259,10 @@ def integrity_of(path: str) -> str:
 def check_received(artifact: dict, received: dict) -> "dict | None":
     """Whether the bytes a package stream brought are the recipe's.
 
-    A ``sha256:`` digest is checked against the stream's SHA-256, and npm's
-    ``sha512-`` integrity against the received file's.
+    A ``sha256:`` digest is checked against the stream's SHA-256, npm's
+    ``sha512-`` integrity against the received file's, and a ``git-tree:``
+    digest of a ``tar_gz`` against the tree its members hold, before any
+    of them is unpacked.
 
     Args:
         artifact: The recipe's artifact.
@@ -272,6 +277,15 @@ def check_received(artifact: dict, received: dict) -> "dict | None":
         path = str(received.get("path", "") or "")
         if path and integrity_of(path) == digest:
             return None
+    if digest.startswith(AGENT_DIGEST_GIT_TREE_PREFIX):
+        path = str(received.get("path", "") or "")
+        if path and artifact.get("kind") == AGENT_ARTIFACT_KIND_TAR_GZ:
+            expected = digest[len(AGENT_DIGEST_GIT_TREE_PREFIX) :].lower()
+            try:
+                if archive_tree(path) == expected:
+                    return None
+            except (OSError, ValueError, tarfile.TarError):
+                pass
     expected = digest_hex(digest)
     if expected and str(received.get("sha256", "") or "").lower() == expected:
         return None
