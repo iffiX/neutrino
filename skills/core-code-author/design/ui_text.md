@@ -343,13 +343,16 @@ link's `app.title`.
 ## The AI page's words
 
 The **Access** panel, the **Context length** panel, the **Gateway port**
-field and the Ollama rows of the **Providers** panel of the AI page
+field, the hints of the **Providers** and **Accounts** panels and the Ollama
+rows of the **Providers** panel of the AI page
 ([hub_components/ai.md](hub_components/ai.md), "What each panel surface
 owns"). `ui.ai.endpoint`'s line shows `http://127.0.0.1:<port>`, since the
 gateway listens on the hub's loopback alone.
 
 | Key | English | Chinese |
 | --- | --- | --- |
+| `ui.ai.providers_hint`, the Providers panel's line under its title ([hub_components/ai.md](hub_components/ai.md), "How a request routes") | Accounts serve first, then these providers from the top while the accounts are limited. | 先用账号；账号受限时，从上到下用这些提供方。 |
+| `ui.ai.accounts_hint`, the Accounts panel's line under its title | Accounts serve before the providers' API keys. | 账号先于提供方的 API 密钥使用。 |
 | `ui.ai.access_hint` | For a tool on the hub's machine, or one using an SSH tunnel to it. | 给中枢所在系统上的工具用，或经 SSH 隧道连到它的工具用。 |
 | `ui.ai.keys_empty_hint` | Generate one for a tool on the hub's machine. | 给中枢所在系统上的工具生成一个。 |
 | `ui.ai.key_default_name` | tool | 工具 |

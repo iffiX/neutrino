@@ -1520,7 +1520,7 @@ read again at each `ai_usage` event.
 | Rule | Reason |
 | --- | --- |
 | A row has no grip, no switch, no **Edit** and no **Delete**, and belongs to no draft: the panel's apply bar does not light for it. | The hub generates the row from the machine's Ollama, and its models change on the machine's Models panel. |
-| The rows come after the stored rows, and a drag moves the stored rows alone. | The stored rows' order is their serving order, and a generated provider rotates in its names' pool. |
+| The rows come after the stored rows, and a drag moves the stored rows alone. | The stored rows' order is their serving order, and a generated provider serves its names at 0, with the accounts and ahead of every stored row ([hub_components/ai.md](hub_components/ai.md), "How a request routes"). |
 | The panel's empty state shows while it has neither a stored provider nor a generated one. | A generated row is a provider the gateway serves. |
 | A row goes when its machine goes offline, its Ollama stops or holds no model, and comes back with them, at the event the change publishes. | The page draws the gateway as it serves now ("Nothing asks for a refresh"). |
 

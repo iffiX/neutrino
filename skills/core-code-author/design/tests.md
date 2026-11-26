@@ -264,6 +264,14 @@ owe these hub tests:
 | `modules/firewall/` and `modules/router/test_nft_renderer.py` | The range in each system's form: nft's `19000-19099`, pf's `19000:19099`, firewalld's `port="19000-19099"`, and one Windows rule `neutrino_hub_app_forward` with `LocalPort` `19000-19099`. |
 | the panel's source tests | **Open** at the row's right before **Share** for the app's first `web` entry and on no app without one, hidden while `is_opened_by_client`, the tab opened before the request; the **Terminals** panel after **Files**, with no button; the words in both languages. |
 
+The AI page's providers, accounts, prices and usage
+([hub_components/ai.md](hub_components/ai.md)) owe these hub tests, each in
+the file its source mirrors:
+
+| File | What its tests pin |
+| --- | --- |
+| `modules/cliproxyapi/test_renderer.py` | `priority` -1, -2 and on down on the entries the renderer writes, in the list's order, on each of the four blocks; a provider turned off or with no key taking no number and moving the next one up; no `priority` on a generated Ollama entry; no `routing` block. |
+
 ## Editions
 
 Every block runs twice in CI: on the full tree, and on the mainland tree
@@ -379,6 +387,7 @@ show:
 | Ubuntu 22.04, Rocky 9 and Windows with SiYuan for two accounts whose switches differ | one account's settings with the provider and the other's with none, each kernel restarting once per change |
 | an Ubuntu 22.04 hub upgraded from 0.6.1, with a machine of two accounts and the three apps, one with no account, and one offline | the two-account machine taking its first account as the default, added to its installed modules, and its apps following that account's switch; the machine with no account incomplete; the offline machine grey |
 | a box installed from the `cn` packages | no proxy and no side gateway mode anywhere, NetBird on the hub, the desktop client and the phone, and its update, Node.js and CloudCLI each fetched from the fastest of their sources |
+| an Ubuntu 22.04 hub with three OpenAI-compatible stand-ins on its loopback that log each request, two serving one name | ten requests per run: all on the first row, all on the other after a drag and an apply, all on the second row while the first answers 429 or 500 with every request answered 200, and all on a name's account or Ollama ahead of both ([hub_components/ai.md](hub_components/ai.md), "The lab proof") |
 
 What belongs here is only what the in-process blocks cannot see: a real
 `dpkg` refusing, a real systemd unit flapping, a lease on a served wire,

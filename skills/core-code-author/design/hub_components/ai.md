@@ -70,19 +70,61 @@ Its usage is a row of its own under the device, the module and the account.
 
 ## How a request routes
 
-1. **The model name picks the upstream family.** A name only one family
-   serves goes there; families never compete for a name they do not claim.
-2. **Inside a family, every credential is one pool.** Accounts and API-key
-   providers deduplicate into the pool and rotate round-robin; the only
-   ordering hook is a per-credential `priority` (default 0, not surfaced in
-   the panel). A credential that fails is marked (`failed`, `unavailable`,
-   `quota` — the account row's status dot) and the rotation skips it.
-3. A name nothing claims is refused: `400 unknown provider for model`.
+1. **The model name picks the credentials.** Every signed-in account, every
+   stored provider turned on with a key, and every generated Ollama provider
+   that serves the name is a candidate. The gateway rejects a name nothing
+   serves with `400 unknown provider for model`.
+1. **The highest tier serves.** Each candidate has a `priority`, and the
+   gateway sends the request to the highest priority among the candidates
+   that are not cooling. Inside one tier it takes turns, round-robin.
+1. **A credential that fails cools, and the next one takes the same
+   request.** After a 403, 408, 429 or 5xx answer the gateway tries the
+   next candidate inside the same request, up to 3 more rounds, and the
+   failed credential sits out its cooldown. An account row shows it as
+   unavailable.
 
-The Providers panel's list order is the serving order **among API-key
-providers**; it does not rank accounts against them, and the panel says so
-in one hint sentence rather than pretending to a cross-kind ordering the
-binary does not have.
+The renderer writes the tiers:
+
+| Credential | `priority` |
+| --- | --- |
+| a signed-in account | 0, the gateway's default; the token file carries none |
+| a generated Ollama provider | 0, none written |
+| the first stored provider of the Providers list that the renderer writes | -1 |
+| the second | -2, and so on down the list |
+
+| Rule | Reason |
+| --- | --- |
+| The renderer writes `priority` on each stored provider's entry: on the item of `claude-api-key`, `codex-api-key` or `gemini-api-key`, and on the `openai-compatibility` entry of a `custom` one. The numbers count the rows it writes, the first -1, so a provider turned off or with no key takes no number. | 7.2.146 reads `priority` there, "Higher values are preferred; defaults to 0" (`OpenAICompatibility` in `internal/config/config_types.go`), and compares it across every credential that serves the name. Without it every stored provider is at 0 and they take turns: in the lab two `custom` entries serving one name took 5 and 5 of ten requests, and 5 and 5 again after a drag reversed them. |
+| Accounts and generated Ollama providers stay at 0, above every stored provider. | A subscription is paid for already and a machine's Ollama costs nothing per token, so both serve before a key spends money; a key takes over while they are limited. Numbers 1 and up for the providers would put every key above every subscription. |
+| Each stored provider is a tier of its own. | The list is then the serving order the Providers panel shows: in the lab, with -1 and -2 written, the first row took 10 of 10 requests, plain and streamed, and with the two swapped the other row took 10 of 10. |
+| A request the first tier fails is served by the next tier in the same request. | In the lab the -1 row answering 429, then 500, the -2 row served all ten requests of each run and the client saw ten 200s. An entry at 0 took 10 of 10 ahead of -1 and -2, and while it answered 429 the -1 row took all ten. |
+| A credential cools after a failure for: 1 second after a 429 with no reset named, doubling at each 429 in a row up to 30 minutes; until the window's reset after a Claude or Codex login's limit; 1 minute after a 408 or 5xx; 30 minutes after a 401, 402 or 403; 12 hours after a 404. When the cooldown ends its tier serves again. | These are 7.2.146's own (`sdk/cliproxy/auth/conductor_cooldown.go`). In the lab a 429 kept its row out for 1 second, then 2, though the stand-in named `Retry-After: 120`; a 500 kept it out for a minute: a run about 30 seconds later went past it to the -2 row, and one 65 seconds later came back to it. |
+| The hub sets no `routing` block: the strategy stays round-robin and session affinity off. | Tiers already order the providers. Fill-first picks the first credential by a hash of its key and URL (`selector.go`), not by the list, and affinity keeps a session on a lower tier after a higher one recovers. |
+| A change of the order is a change of the providers: the Providers panel's apply renders it and restarts the gateway. | The order is the rendered entries' `priority`, which 7.2.146 reads at its start and at a reload alike: in the lab a file rewritten in place served the new order within a second. |
+
+The Providers panel's list is this order, and its hint says so: accounts
+first, then the providers top to bottom while the accounts are limited
+([../ui_text.md](../ui_text.md), "The AI page's words").
+
+### The lab proof
+
+On 2026-11-26 a released 0.6.2 hub on Ubuntu 22.04 served three `custom`
+providers, A, B and C, each a small OpenAI-compatible stand-in on the hub's
+loopback that logged every request. A and B served one name, and C a name of
+its own until the last two runs. `priority` was written by hand into the
+served file, as this page has the renderer write it. Each run sent ten
+requests, and the client got ten 200s in every run.
+
+| Run | A | B | C |
+| --- | --- | --- | --- |
+| as 0.6.2 renders, no `priority`, A listed first | 5 | 5 | |
+| the same after a drag put B first | 5 | 5 | |
+| A -1, B -2, plain and streamed | 10 | 0 | |
+| A -2, B -1, the file reloaded with no restart | 0 | 10 | |
+| A -1 answering 429, B -2 | 2 refused | 10 | |
+| A -1 answering 500, B -2 | 1 refused | 10 | |
+| C at 0 serving the name too, A -1, B -2 | 0 | 0 | 10 |
+| C at 0 answering 429, after A's cooldown of the 500 ended | 10 | 0 | 1 refused |
 
 ## Names are the gateway's to define
 
@@ -91,9 +133,10 @@ The gateway is the single namespace for model names. A provider record's
 what `/v1/models` then shows **is** the catalog every machine sees. A device
 never invents a name; its tools pick from the gateway's list.
 
-An alias that collides with a name an account already serves joins that
-name's pool and rotates with it — so borrowing a family's real names for
-another upstream is only clean while no account of that family is signed in.
+An alias that collides with a name an account already serves becomes a
+candidate for that name: it serves the name while the account is limited.
+Borrowing a family's real names for another upstream is clean only while no
+account of that family is signed in.
 
 Client menus (Claude Code's `/model`, Codex's picker) enumerate their own
 built-in slots, not the gateway's catalog. A slot's meaning is remapped in
@@ -138,7 +181,7 @@ gateway's render writes each beside the stored providers.
 | --- | --- |
 | A machine has a provider while its agent's session is live, its Ollama row reports `is_running`, the hub holds its forward to Ollama's port, and `GET /api/tags` lists at least one model it serves. The provider's address is that forward, `http://127.0.0.1:<port>/v1`, and its models are the names `/api/tags` returns, but a model whose `/api/show` answer lists `capabilities` without `completion`. | The forward is the hub's one way to the machine's port (ollama.md, "The model list is the hub's, through a forward of its own"). Ollama serves the OpenAI chat API under `/v1` with no setting. |
 | A model whose `capabilities` lack `completion`, such as an embedding model, is in no provider and in no Ollama name's pool. A model whose `/api/show` the hub has not read, or whose answer lists no `capabilities`, is served. | Ollama names `embedding` alone for an embedding model, which answers no chat request: a tool given its name as its model fails on every request. The Models panel of the machine's tab still lists it ([../agent/modules/ollama.md](../agent/modules/ollama.md)). |
-| A model's name is Ollama's own, with no machine name in front. The same name on two machines joins one pool and rotates round-robin, as the credentials of one family do ("How a request routes"). | A tool asks for `qwen2.5:7b` whichever machine runs it, and a second machine with the same model shares the requests. |
+| A model's name is Ollama's own, with no machine name in front. The same name on two machines is two candidates at 0, and they take turns, round-robin ("How a request routes"). | A tool asks for `qwen2.5:7b` whichever machine runs it, and a second machine with the same model shares the requests. |
 | The renderer writes a generated provider as an `openai-compatibility` entry named `ollama-<device id>`, with no `api-key-entries`, after the stored providers. | Ollama's API takes no key, and 7.2.146 serves an entry with none. A probe of the binary on 2026-11-14 listed a name of two such entries once in `/v1/models`, rotated requests between them, skipped one at a closed port, and translated the Messages and Responses formats to Ollama's chat API. |
 | The hub never writes these providers into `config/ai/providers.json`. It stores the generated list in `cliproxyapi/ollama_providers.json` under the state root, `{providers: [{device_id, address, models}]}`, and every render reads it, the panel's and `nhub apply`'s alike. | The list is what the machines last reported and no person's decision, so it stays out of `config/` and out of a backup. A render reads only files, and a render without the list drops every machine's models until the list next changes. |
 | A change of the list is written into the served file in place, as a change of keys is, and the gateway reloads it within a second. The reload also serves the stored providers as they stand. | The list changes each time a machine comes or goes, and a restart cuts every request in flight. |
@@ -227,7 +270,7 @@ turned on with a key that serves the name.
 | --- | --- |
 | A length is `{context_length, input_limit, output_limit}`: the window, the longest prompt where the vendor states one apart from the window, and the longest answer. `input_limit` and `output_limit` are 0 where nothing names them. | OpenAI and Qwen state a window and a smaller longest prompt: `gpt-6.2-astra` takes 1050000 tokens with at most 922000 of prompt. OpenCode takes all three, and a tool with one number takes the smaller of the window and the prompt. |
 | Each source gives a length: the hub's table of known models when it names the source's name, else the gateway's catalog when its entry names a window, else 200000 with no `input_limit` or `output_limit`. | The table holds the numbers the vendors state, and it wins where the catalog's are too high: the catalog gives `grok-4.20-0309-reasoning` 2000000 where xAI states 1000000, and Antigravity's `gemini-4-neon-xhigh` 1048576 where Google states 512000 for Antigravity. The catalog follows the account names that arrive between hub releases. 200000 is OpenCode's own length for a name it does not know, and every current model under it on the vendors' pages of 2026-11-22 is in the table or the catalog. |
-| The default is, for each of the three numbers, the smallest its sources give, 0 counting as none. | A name an account and a provider both serve is one pool ("How a request routes"), and a request goes to either. |
+| The default is, for each of the three numbers, the smallest its sources give, 0 counting as none. | A name an account and a provider both serve goes to either: the provider takes the requests while the account is limited ("How a request routes"). |
 | A source's name is the served name, or for a provider's alias the upstream name its entry maps in `providers.json` (`{name, alias}`). The hub matches a name whole and compared without case. | The upstream decides the window, whatever the alias. CLIProxyAPI treats two names that differ in case as one alias. |
 | An account's length from the table is the row's **Through an account** numbers where the row has them, else the row's own; a provider's is the row's own. | A login can serve a model with a smaller window than an API key: `claude-opus-4-6` takes 200000 tokens through a Claude login and 1000000 through the API, and `gpt-6.2-astra` 272000 through a Codex login. |
 | Where a window depends on the plan, the table names the smallest plan's window. A person raises it on the panel. | A window too large overflows, and the vendor rejects the request: Kimi's Plus plan answers 403 above 256K for `kimi-k3.1-pro`, which Pro serves at 1048576. A window too small only compacts early. |
@@ -308,7 +351,7 @@ sets where the largest is a batch or a long-answer mode.
 | --- | --- |
 | On one machine an Ollama name's length is the smaller of the model's setting and its trained length. The setting is the `num_ctx` its Modelfile sets, and the machine's `context_length` setting ([../agent/modules/ollama.md](../agent/modules/ollama.md), "The settings are the hub's") while the Modelfile sets none. | Ollama starts a model with the server's length, then the Modelfile's own parameters, then the request's, each one replacing the one before (`server/routes.go` of 0.40.16), and lowers a length above the trained one to it. A request through the gateway names no length. |
 | The name's pool is every machine whose Ollama holds the model while its Ollama module is installed, online or not: from the first `/api/tags` read that lists the model until a read no longer lists it, an **Uninstall** of the module, or the machine's removal from the hub. The name's `context_length` is the smallest over the pool, and its `input_limit` and `output_limit` are 0. | The gateway rotates a name between every machine that serves it, so a request can reach any of them. A machine that sleeps comes back into the rotation within seconds of its report, before the tools could be switched again, and a pool of the machines online now raises the length while a small machine sleeps and switches every account twice for each sleep. Ollama answers until the window is full and states no longest answer. |
-| A name an account or a stored provider also serves is an Ollama row on the panel, with no field. Each of its three numbers is the smaller of the Ollama pool's and the cloud default's ("A cloud name's length"), 0 counting as none, and a length a person set for the name does not apply. | A request for the name goes to the cloud sources or to the machines, since they are one pool. A number set on the panel can exceed what the machines load the model at. |
+| A name an account or a stored provider also serves is an Ollama row on the panel, with no field. Each of its three numbers is the smaller of the Ollama pool's and the cloud default's ("A cloud name's length"), 0 counting as none, and a length a person set for the name does not apply. | A request for the name goes to the machines or to the cloud sources: an account takes turns with the machines at 0, and a stored provider serves while they are limited ("How a request routes"). A number set on the panel can exceed what the machines load the model at. |
 | The hub reads `POST /api/show {model}` through the machine's forward, on the thread of the `/api/tags` reads, for each name `/api/tags` lists under a digest the hub has not read for it. The trained length is the `<architecture>.context_length` of `model_info`, `<architecture>` being its `general.architecture`, the Modelfile's length is the `num_ctx` line of `parameters`, and `is_completion` is false when `capabilities` is a list without `completion`. | `/api/show` reads the model's file, and both numbers stay until a pull of a new version changes the digest. |
 | The hub stores the read in `cliproxyapi/ollama_lengths.json` under the state root, `{machines: [{device_id, models: {<model>: {digest, trained_context_length, modelfile_context_length, is_completion}}}]}`, each number 0 where the answer names none, for every machine whose Ollama module is installed, offline machines among them. A stored model with no `is_completion` is read again. | The pool counts machines that are offline, which the generated providers no longer list. A restarted panel computes the same lengths before it reads any machine again. The read is what the machines last reported and no person's decision, so it stays out of `config/`. |
 | A model whose answer the hub has not read, or names no trained length, counts with its setting alone. | The setting is the longest Ollama loads a model at. |

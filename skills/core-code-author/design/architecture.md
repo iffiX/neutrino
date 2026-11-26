@@ -661,10 +661,11 @@ given, and nothing protects an archive once it has left the box. Signing in is
 therefore never a configuration change, and nothing about it lights an apply
 bar.
 
-Both kinds land in one pool per upstream, and the gateway rotates across it
-rather than ranking accounts above keys or below them. The panel does not
-model an order it does not control: it lists accounts beside providers and
-says what the gateway does.
+Both kinds serve the same names, and the renderer ranks them: accounts
+first, then the providers in the order the Providers panel lists them, each
+taking over while the ones above it are limited
+([hub_components/ai.md](hub_components/ai.md), "How a request routes"). A
+subscription is paid for already, so it is spent before a key spends money.
 
 ## The panel heals itself; nothing ever asks for a manual refresh
 
