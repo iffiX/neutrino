@@ -126,8 +126,10 @@ browser reached the panel through a client's forward.
 An app forward is a listener of the hub's own in front of one `web` entry,
 which the Services page's **Open** starts for a browser that reached the
 panel directly ([ui_behavior.md](ui_behavior.md), "The Services page"). It
-listens on the address the panel listens on, at the first free port from
-`WEB_APP_FORWARD_PORT_MIN`, 19000, to `WEB_APP_FORWARD_PORT_MAX`, 19099,
+listens on the address the panel listens on, and on `[::1]` at the same port
+where that address is an IPv4 one and the machine has IPv6, at the first
+port free on both from `WEB_APP_FORWARD_PORT_MIN`, 19000, to
+`WEB_APP_FORWARD_PORT_MAX`, 19099,
 and joins each connection it accepts to the far end a client's `connect`
 of the entry reaches ("The connect stream"): a managed machine's port
 through a forward of the hub's transport, `forward_start` on the hub's
@@ -150,6 +152,7 @@ written, and a panel that starts again has none.
 | --- | --- |
 | The forward reads the head of each request a browser sends and passes the bytes after it on unread, the body by its `Content-Length`. It writes `Host` as `127.0.0.1:<port>`, and an `Origin` naming the forward's own scheme, host and port as `<scheme>://127.0.0.1:<port>`; it answers any other `Origin` 403 and closes the connection. It takes each cookie whose name starts with `neutrino_session_` out of `Cookie`. A request with `Transfer-Encoding` is answered 411, and an `Upgrade` request's connection carries its bytes both ways unread after its head. Answers pass unread. | The agent's forwarder answers 421 to a `Host` that is neither loopback nor the instance's local name ([agent/module_template.md](agent/module_template.md), "The run"), and an app behind the forward sees the `Host` a macOS client gives it. A browser sends the panel's session cookie to every port of the panel's host, and an app's server that received it would hold the panel. |
 | An `https` entry's forward ends the browser's TLS with the panel's served certificate and opens TLS to the app without checking the app's certificate. | The forward reads the requests of an `https` entry as of an `http` one, the panel's cookie among them. The hop to the app runs over the agent's session, or over the networks the hub serves for a declared app. |
+| A forward listens on `[::1]` beside the panel's IPv4 address, and a port whose `[::1]` another program holds is skipped for the next. | A browser that opens the panel at `localhost` opens the forward at `localhost` too, and reaches `::1` first. A program of another account listening on `[::1]` at the port would receive the page and its `?tkn=`. |
 | A forward with no open connection for `WEB_APP_FORWARD_IDLE_S`, 30 minutes, ends: its listener closes, and so does the forward of the hub's transport it started. **Open** on an entry whose forward ended starts it again. | A tab left open keeps its forward through its WebSocket or its next request, and a port nobody uses stops answering by itself. No button stops a forward. |
 | The firewall governs the range as it governs the panel's ports ([hub_components/network.md](hub_components/network.md), "What answers, and where"): a forward answers loopback and the senders inside an exposed segment, and no other sender. The app's own login, or the forwarder's token, guards the app behind it, as on a client's loopback. | Exposure is the only control plane for the hub's own ports. |
 | The range lies outside the clients' local ports, 20000 to 31999 ([client.md](client.md), "The local port table"), and below every system's dynamic ports, 32768 up on Linux and 49152 up on Windows and macOS. A listener's port that another program holds is skipped for the next. | A client on the hub's own machine holds its fixed local ports on `127.0.0.1`, which a listener on every address of the hub cannot take. |

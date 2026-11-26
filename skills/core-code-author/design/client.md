@@ -365,7 +365,7 @@ each hub's panel keeps its own session cookie in the browser.
 | Rule | Reason |
 | --- | --- |
 | The panel opens on a host no app opens on: `panel-<hub-id>.localhost`, and `localhost` on macOS and iOS, where every app opens on `127.0.0.1` ("The Apps page"). | A browser sends a host's cookies to every port of that host. An app's server on the panel's host would receive the panel's session cookie and could act on the panel with it. WebKit resolves `localhost` and no other `.localhost` name. |
-| The panel's forward listens on `127.0.0.1` alone, as every forward does. | macOS and iOS resolve `localhost` to `::1` and `127.0.0.1`, and a browser refused on `::1` connects to `127.0.0.1`. |
+| The panel's forward listens on `127.0.0.1` and on `[::1]`, as every forward a browser opens does ("The local port table"). | macOS and iOS resolve `localhost` to `::1` and `127.0.0.1`, and a browser tries `::1` first. |
 
 The row of the hub whose gateway the AI tools point at shows `ui.hub_is_exit`
 under its mono line; the AI page sets it.
@@ -476,7 +476,8 @@ while the app is in use, and one `connect` stream:
 
 ## The local port table
 
-A forward is a listener on `127.0.0.1:<local-port>` that opens one
+A forward is a listener on `127.0.0.1:<local-port>`, and on `[::1]` at
+the same number for a forward a browser opens, that opens one
 `connect` stream to the hub for every connection it accepts and relays the
 bytes both ways, or, for a UDP `port` entry, one UDP socket with one stream
 for every datagram it carries ([protocol.md](protocol.md), "The connect
@@ -516,6 +517,7 @@ The local port is the client's to manage:
 | An `ssh` entry's forward listens at the hub's `local_port` for it, the address `nclient ssh list` prints, and has no **Configure**. A number another program or entry holds fails the forward `port_taken {port}`; the client writes the code to its log and tries again at the hub's next state. | A program given a host and a port keeps them, and every program that reads the SSH configuration needs no port at all. |
 | A forward with no hub number, `ai`, `rdp`, every `file` entry, a declared app's among them, and the panel's, takes the first free port from 20000 to 23999, and the client keeps the pick for it and gives it the same port on every later forward and after a restart. | Those forwards are reached by the client's own programs, which read the port from the client. |
 | A port is free only when nothing listens on it on any address of the machine: a probe binds it on the IPv4 wildcard address, and on the IPv6 one where the machine has IPv6, with no address-reuse option, and closes it; a TCP entry's probe binds TCP sockets and a UDP entry's binds UDP sockets. On Windows a UDP number is not bound at all: it is looked up in the system's own table of UDP endpoints (`GetExtendedUdpTable`, IPv4 and IPv6), and is free only when no endpoint on any address holds it. The forward itself listens on `127.0.0.1` alone. | A loopback listener beside a server on every address takes that server's local traffic, and on macOS a loopback bind succeeds beside it. A UDP socket bound to a wildcard address makes the Windows firewall ask the person whether to let the client reach their networks. |
+| A forward a browser opens, an app's `web` entry's and the panel's, also listens on `[::1]` at the same number, on every client, where the machine has IPv6. A `[::1]` that another program holds fails the forward `port_taken {port}`, as a held `127.0.0.1` does, and a `[::1]` listener that ends ends the forward. | A browser reaches a `.localhost` name and `localhost` on `::1` before `127.0.0.1`. A program of another account listening on `[::1]` at the number would receive the page, its `?tkn=` and its cookies. |
 | A number is probed again each time its forward is about to listen, with the address-reuse option off Windows so the client's own closed connections still on the port do not count. An app entry's number another program listens on, or another entry of the same protocol holds, is not listened on: that forward fails `port_taken {port}` on the app's error line, and the number never moves by itself. A kept pick of no app that another program now holds is picked again from 20000 to 23999. | A port moved silently breaks a saved address, a clone address or a tool's setting; the person moves it, in **Configure**. |
 | The client keeps one table of local ports: the numbers the person set and the picks of forwards of no app, each with its protocol. The dialog refuses with `ui.reason.port_taken` a number that another entry of the same protocol holds in the table or has as its hub number; two entries whose hub numbers collide stay as they are until the person moves one. A TCP entry and a UDP entry can hold one number. The stored table reads an entry with no protocol as TCP. | One table is the only way two forwards never collide that the person can see, and a TCP port and a UDP port of one number are two ports. |
 
