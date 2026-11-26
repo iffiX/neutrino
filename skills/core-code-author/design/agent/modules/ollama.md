@@ -170,7 +170,8 @@ for the models: no verb and no field of the report.
 **Every machine's Ollama feeds the hub's AI gateway.** While the machine is
 online and its Ollama runs with at least one model, the hub adds an
 OpenAI-compatible provider to the gateway at the forward above, under
-`/v1`, serving the names `/api/tags` returns with no machine name in front
+`/v1`, serving the names `/api/tags` returns with no machine name in front,
+but an embedding model
 ([../../hub_components/ai.md](../../hub_components/ai.md), "Every machine's
 Ollama"). Every program that goes through the gateway can then use them,
 the AI tools of a client and of a managed machine among them, and the same
