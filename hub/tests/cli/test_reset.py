@@ -14,6 +14,8 @@ import pytest
 
 from neutrino_hub.cli import password, reset
 from neutrino_hub.cli import stop as stop_module
+from neutrino_hub.platforms.linux import LinuxHubPlatform
+from neutrino_hub.platforms.windows import WindowsHubPlatform
 
 
 @pytest.fixture
@@ -179,6 +181,29 @@ def test_reset_all_clears_the_password_so_setup_runs_again(box):
     reset._reset_all()
 
     assert not password.is_password_set()
+
+
+def test_reset_all_names_setup_as_linux_runs_it(monkeypatch, box, capsys):
+    monkeypatch.setattr(reset, "hub_platform", LinuxHubPlatform)
+
+    reset._reset_all()
+
+    assert capsys.readouterr().out.splitlines()[-1] == (
+        "the panel password is cleared; run sudo nhub setup"
+    )
+
+
+def test_reset_all_names_setup_as_windows_runs_it(monkeypatch, box, capsys):
+    monkeypatch.setattr(reset, "hub_platform", WindowsHubPlatform)
+
+    reset._reset_all()
+
+    last = capsys.readouterr().out.splitlines()[-1]
+    assert "sudo" not in last
+    assert last == (
+        "the panel password is cleared; "
+        "run nhub setup   (in an administrator PowerShell)"
+    )
 
 
 def test_reset_password_leaves_every_other_setting_alone(box):

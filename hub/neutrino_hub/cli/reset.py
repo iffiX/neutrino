@@ -230,7 +230,9 @@ def _reset_all() -> int:
     # Leaving the panel up would leave the one part of a reset box that
     # answers, on a configuration nobody chose.
     stop_everything()
-    print("the panel password is cleared; run `sudo nhub setup`")
+    print(
+        f"the panel password is cleared; run {hub_platform().elevation_hint('setup')}"
+    )
     return 0
 
 
