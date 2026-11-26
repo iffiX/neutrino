@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { DeviceGauge } from "./device_gauge";
 import { DialogLayer } from "./dialog_layer";
@@ -14,6 +14,7 @@ import { formatDuration, formatTimeAgo } from "../format_duration";
 import { t, useLanguage } from "../i18n";
 import { usePolledResource } from "../use_polled_resource";
 import { useConfirm } from "../use_confirm";
+import { useTableCards } from "../use_table_cards";
 import type { StatusTone } from "./status_dot";
 import type {
   CliproxyApiAccountView,
@@ -33,9 +34,11 @@ import "./confirm_modal.css";
  * nothing here stages: signing in writes the credential the moment the
  * provider hands it over, a refresh, a pause and a resume write at once, and
  * deleting one is a revocation, which never waits behind an apply bar. The
- * panel therefore carries no frame to light. Each account is a card: the
- * service and the label with the limit windows under it, the counts, the
- * status and the updated time at the right, and the buttons at its foot.
+ * panel therefore carries no frame to light. The accounts are a table of
+ * one line each while the panel's box holds every column and each line's
+ * buttons, and a card each in a narrower box: the service and the label
+ * with the limit windows under it, the counts, the status and the updated
+ * time at the right, and the buttons at its foot.
  *
  * A sign-in is one interaction that has to finish, so it happens in a modal:
  * the provider decides how — a redirect the person brings back, or a code they
@@ -85,6 +88,8 @@ export function AiAccountsPanel() {
   const [error, setError] = useState<string | null>(null);
 
   const { reload, setData } = resource;
+  const tableBoxRef = useRef<HTMLDivElement>(null);
+  const isCards = useTableCards(tableBoxRef, ".ai_account_actions");
   const accounts = resource.data?.accounts ?? [];
   const loginKinds = resource.data?.login_kinds ?? [];
   const hasKinds = loginKinds.length > 0;
@@ -123,7 +128,7 @@ export function AiAccountsPanel() {
   };
 
   return (
-    <section className="settings_group ai_accounts_group">
+    <section className="settings_group">
       <div className="settings_group_title">
         <h2>{t("ui.ai.accounts_title")}</h2>
         <button
@@ -163,18 +168,45 @@ export function AiAccountsPanel() {
             <span className="faint">{t("ui.ai.accounts_empty_hint")}</span>
           </div>
         ) : (
-          <div className="ai_accounts">
-            {accounts.map((account) => (
-              <AccountRow
-                key={account.name}
-                value={account}
-                isBusy={isBusy}
-                onChanged={setData}
-                onDelete={() => {
-                  askDelete(account);
-                }}
-              />
-            ))}
+          <div
+            ref={tableBoxRef}
+            className={`ai_accounts_box ${isCards ? "ai_accounts_box--cards" : ""}`}
+          >
+            <table className="ai_accounts">
+              <colgroup>
+                <col className="ai_accounts_col--service" />
+                <col className="ai_accounts_col--identity" />
+                <col className="ai_accounts_col--windows" />
+                <col className="ai_accounts_col--counts" />
+                <col className="ai_accounts_col--status" />
+                <col className="ai_accounts_col--updated" />
+                <col className="ai_accounts_col--actions" />
+              </colgroup>
+              <thead className="ai_accounts_head">
+                <tr>
+                  <th />
+                  <th />
+                  <th />
+                  <th />
+                  <th />
+                  <th />
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {accounts.map((account) => (
+                  <AccountRow
+                    key={account.name}
+                    value={account}
+                    isBusy={isBusy}
+                    onChanged={setData}
+                    onDelete={() => {
+                      askDelete(account);
+                    }}
+                  />
+                ))}
+              </tbody>
+            </table>
           </div>
         ))}
 
@@ -224,26 +256,64 @@ function AccountRow({ value, isBusy, onChanged, onDelete }: AccountRowProps) {
   };
 
   return (
-    <div className="ai_account_row">
-      <span className="key_card_type ai_account_service">
-        {providerLabel(value.provider)}
-      </span>
-      <span className="ai_account_identity">
-        <span className="ai_account_name">{accountLabel(value)}</span>
-        {value.plan.length > 0 && (
-          <span className="ai_account_plan faint">
-            {t("ui.ai.plan", { plan: value.plan })}
+    <tr className="ai_account_row">
+      <td className="ai_account_cell--service">
+        <span className="key_card_type">{providerLabel(value.provider)}</span>
+      </td>
+      <td className="ai_account_cell--identity">
+        <span className="ai_account_identity">
+          <span className="ai_account_name">{accountLabel(value)}</span>
+          {value.plan.length > 0 && (
+            <span className="ai_account_plan faint">
+              {t("ui.ai.plan", { plan: value.plan })}
+            </span>
+          )}
+          {value.subscription_ends_at.length > 0 && (
+            <span className="ai_account_plan faint">
+              {t("ui.ai.plan_until", {
+                date: formatDay(value.subscription_ends_at),
+              })}
+            </span>
+          )}
+        </span>
+        {error !== null && (
+          <span className="field_error ai_account_error">{error}</span>
+        )}
+      </td>
+      <td className="ai_account_cell--windows">
+        {value.windows.length > 0 && (
+          <span className="ai_account_windows">
+            {value.windows.map((window) => (
+              <span
+                key={window.name}
+                className="ai_account_window"
+                title={
+                  window.resets_at.length > 0
+                    ? t("ui.ai.quota_resets", {
+                        time: formatMoment(window.resets_at),
+                      })
+                    : undefined
+                }
+              >
+                <DeviceGauge
+                  label={windowWord(window.name)}
+                  reading={window.used_share * 100}
+                  warnAt={QUOTA_WARN_PERCENT}
+                  errorAt={QUOTA_ERROR_PERCENT}
+                />
+                {window.resets_at.length > 0 && (
+                  <span className="ai_account_resets faint">
+                    {t("ui.ai.quota_resets", {
+                      time: formatShortMoment(window.resets_at),
+                    })}
+                  </span>
+                )}
+              </span>
+            ))}
           </span>
         )}
-        {value.subscription_ends_at.length > 0 && (
-          <span className="ai_account_plan faint">
-            {t("ui.ai.plan_until", {
-              date: formatDay(value.subscription_ends_at),
-            })}
-          </span>
-        )}
-      </span>
-      <span className="ai_account_side">
+      </td>
+      <td className="ai_account_cell--counts">
         <span className="ai_account_counts">
           <span>{t("ui.ai.count_ok", { count: value.success_count })}</span>
           <span>·</span>
@@ -255,102 +325,69 @@ function AccountRow({ value, isBusy, onChanged, onDelete }: AccountRowProps) {
             {t("ui.ai.count_failed", { count: value.failed_count })}
           </span>
         </span>
-        <span
-          className="ai_account_status"
-          title={hasMessage ? value.status_message : undefined}
-        >
-          <StatusDot tone={health.tone} label={health.word} />
-        </span>
+      </td>
+      <td
+        className="ai_account_cell--status"
+        title={hasMessage ? value.status_message : undefined}
+      >
+        <StatusDot tone={health.tone} label={health.word} />
+      </td>
+      <td className="ai_account_cell--updated">
         {newestSeenAt !== null && (
           <span className="ai_account_updated faint">
             {t("ui.ai.quota_updated", { ago: formatTimeAgo(newestSeenAt) })}
           </span>
         )}
-      </span>
-
-      {value.windows.length > 0 && (
-        <div className="ai_account_windows">
-          {value.windows.map((window) => (
-            <span
-              key={window.name}
-              className="ai_account_window"
-              title={
-                window.resets_at.length > 0
-                  ? t("ui.ai.quota_resets", {
-                      time: formatMoment(window.resets_at),
-                    })
-                  : undefined
+      </td>
+      <td className="ai_account_cell--actions">
+        <span className="ai_account_actions">
+          {value.has_quota_read && (
+            <button
+              type="button"
+              className="button button--ghost button--small"
+              disabled={isBusy || pending !== null}
+              onClick={() =>
+                void write("/hub/ai/gateway/account/quota/scan", "refresh")
               }
             >
-              <DeviceGauge
-                label={windowWord(window.name)}
-                reading={window.used_share * 100}
-                warnAt={QUOTA_WARN_PERCENT}
-                errorAt={QUOTA_ERROR_PERCENT}
-              />
-              {window.resets_at.length > 0 && (
-                <span className="ai_account_resets faint">
-                  {t("ui.ai.quota_resets", {
-                    time: formatShortMoment(window.resets_at),
-                  })}
-                </span>
+              {pending === "refresh" ? (
+                <Spinner size={12} />
+              ) : (
+                <Icon name="refresh" size={13} />
               )}
-            </span>
-          ))}
-        </div>
-      )}
-
-      {error !== null && (
-        <span className="field_error ai_account_error">{error}</span>
-      )}
-
-      <span className="ai_account_actions">
-        {value.has_quota_read && (
+              {t("ui.ai.refresh")}
+            </button>
+          )}
           <button
             type="button"
             className="button button--ghost button--small"
             disabled={isBusy || pending !== null}
             onClick={() =>
-              void write("/hub/ai/gateway/account/quota/scan", "refresh")
+              void write(
+                value.is_disabled
+                  ? "/hub/ai/gateway/account/enable"
+                  : "/hub/ai/gateway/account/disable",
+                "pause",
+              )
             }
           >
-            {pending === "refresh" ? (
-              <Spinner size={12} />
-            ) : (
-              <Icon name="refresh" size={13} />
-            )}
-            {t("ui.ai.refresh")}
+            <span className="ai_account_pause_words">
+              <span aria-hidden={value.is_disabled}>{t("ui.ai.pause")}</span>
+              <span aria-hidden={!value.is_disabled}>{t("ui.ai.resume")}</span>
+            </span>
           </button>
-        )}
-        <button
-          type="button"
-          className="button button--ghost button--small"
-          disabled={isBusy || pending !== null}
-          onClick={() =>
-            void write(
-              value.is_disabled
-                ? "/hub/ai/gateway/account/enable"
-                : "/hub/ai/gateway/account/disable",
-              "pause",
-            )
-          }
-        >
-          <span className="ai_account_pause_words">
-            <span aria-hidden={value.is_disabled}>{t("ui.ai.pause")}</span>
-            <span aria-hidden={!value.is_disabled}>{t("ui.ai.resume")}</span>
-          </span>
-        </button>
-        <button
-          type="button"
-          className="button button--ghost button--small button--danger"
-          disabled={isBusy || pending !== null}
-          onClick={onDelete}
-        >
-          <Icon name="trash" size={13} />
-          {t("ui.ai.delete")}
-        </button>
-      </span>
-    </div>
+          <button
+            type="button"
+            className="button button--ghost button--small button--danger"
+            disabled={isBusy || pending !== null}
+            onClick={onDelete}
+          >
+            <Icon name="trash" size={13} />
+            {t("ui.ai.delete")}
+          </button>
+        </span>
+      </td>
+    </tr>
   );
 }
 

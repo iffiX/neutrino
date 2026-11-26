@@ -1,39 +1,71 @@
-.ai_accounts_group {
+/* The box the accounts lay themselves out by, as the Agents table's is. */
+.ai_accounts_box {
   container: ai_accounts / inline-size;
 }
 
-/* One grid for every card: the service, the label with the windows under
-   it, and the three lines at the right each take one column the cards
-   share, so each part starts at one x down the panel. */
+/* A table, one line per account: fixed column widths, each holding its
+   longest words in either language, and the buttons take whatever the
+   other columns leave, on one line at the right end. */
 .ai_accounts {
-  display: grid;
-  grid-template-columns: max-content minmax(0, 1fr) max-content;
-  gap: var(--space-2) var(--space-3);
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
 }
 
-.ai_account_row {
-  display: grid;
-  grid-column: 1 / -1;
-  grid-template-columns: subgrid;
-  row-gap: var(--space-2);
-  align-items: start;
-  padding: var(--space-3);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-bg);
+.ai_accounts_col--service {
+  width: 96px;
 }
 
-.ai_account_service {
-  grid-row: 1;
-  grid-column: 1;
-  justify-self: start;
+.ai_accounts_col--identity {
+  width: 240px;
+}
+
+.ai_accounts_col--windows {
+  width: 324px;
+}
+
+.ai_accounts_col--counts {
+  width: 156px;
+}
+
+.ai_accounts_col--status {
+  width: 176px;
+}
+
+.ai_accounts_col--updated {
+  width: 128px;
+}
+
+/* No header row: each cell carries its own words. The row's cells keep the
+   header's padding, which the measure of the table's width reads. */
+.ai_accounts_head {
+  display: none;
+}
+
+.ai_accounts th,
+.ai_accounts td {
+  padding: var(--space-2) 10px;
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: middle;
+}
+
+.ai_accounts tr:last-child td {
+  border-bottom: none;
+}
+
+.ai_account_cell--counts,
+.ai_account_cell--updated {
+  text-align: right;
+}
+
+.ai_account_cell--status {
+  white-space: nowrap;
 }
 
 .ai_account_identity {
   display: flex;
   flex-wrap: wrap;
-  grid-row: 1;
-  grid-column: 2;
   gap: 2px var(--space-2);
   align-items: baseline;
   min-width: 0;
@@ -41,6 +73,7 @@
 
 .ai_account_name {
   min-width: 0;
+  max-width: 100%;
   overflow: hidden;
   font-size: 13px;
   font-weight: 600;
@@ -54,16 +87,10 @@
   white-space: nowrap;
 }
 
-/* The counts, the status and the updated time, right-aligned at the
-   card's right. */
-.ai_account_side {
-  display: flex;
-  flex-direction: column;
-  grid-row: 1 / span 2;
-  grid-column: 3;
-  gap: var(--space-1);
-  align-items: flex-end;
-  text-align: right;
+.ai_account_error {
+  display: block;
+  margin-top: var(--space-1);
+  white-space: normal;
 }
 
 .ai_account_counts {
@@ -80,22 +107,16 @@
   color: var(--color-error);
 }
 
-.ai_account_status {
-  white-space: nowrap;
-}
-
 .ai_account_updated {
   font-size: 11px;
   white-space: nowrap;
 }
 
-/* The windows under the label: one cell of one width each, the ring
-   centred, its word and its reset time under it. */
+/* The windows: one cell of one width each, the ring centred, its word and
+   its reset time under it. */
 .ai_account_windows {
   display: flex;
   flex-wrap: wrap;
-  grid-row: 2;
-  grid-column: 2;
   gap: var(--space-2) var(--space-3);
   align-items: flex-start;
 }
@@ -126,16 +147,11 @@
   font-size: 10px;
 }
 
-.ai_account_error {
-  grid-column: 2 / -1;
-}
-
-/* The buttons at the card's foot, right-aligned, as an Agents card's
-   actions are. */
+/* The buttons right-aligned in their cell, on the table's line or at the
+   card's foot, as the Agents table's actions are. */
 .ai_account_actions {
   display: flex;
   flex-wrap: wrap;
-  grid-column: 1 / -1;
   gap: var(--space-2);
   justify-content: flex-end;
 }
@@ -154,35 +170,109 @@
   visibility: hidden;
 }
 
-/* A phone: the same parts stacked in the same order, the service and the
+/* A box too narrow for the table: a card per account on one grid every card
+   shares, the service and the label with the windows under it at the left,
+   the counts, the status and the updated time right-aligned at the right,
+   and the buttons at the foot. */
+.ai_accounts_box--cards .ai_accounts,
+.ai_accounts_box--cards .ai_accounts td {
+  display: block;
+}
+
+.ai_accounts_box--cards .ai_accounts colgroup,
+.ai_accounts_box--cards .ai_accounts thead {
+  display: none;
+}
+
+.ai_accounts_box--cards .ai_accounts tbody {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
+  gap: var(--space-2) var(--space-3);
+}
+
+.ai_accounts_box--cards .ai_account_row {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  row-gap: var(--space-1);
+  align-items: start;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+}
+
+.ai_accounts_box--cards .ai_accounts td {
+  min-width: 0;
+  padding: 0;
+  border-bottom: none;
+}
+
+.ai_accounts_box--cards .ai_account_cell--service {
+  grid-area: 1 / 1;
+}
+
+.ai_accounts_box--cards .ai_account_cell--identity {
+  grid-area: 1 / 2;
+}
+
+.ai_accounts_box--cards .ai_account_cell--windows {
+  grid-row: 2 / span 2;
+  grid-column: 2;
+  margin-top: var(--space-1);
+}
+
+.ai_accounts_box--cards .ai_account_cell--counts {
+  grid-area: 1 / 3;
+}
+
+.ai_accounts_box--cards .ai_account_cell--status {
+  grid-area: 2 / 3;
+  justify-self: end;
+}
+
+.ai_accounts_box--cards .ai_account_cell--updated {
+  grid-area: 3 / 3;
+}
+
+.ai_accounts_box--cards .ai_account_cell--actions {
+  grid-row: 4;
+  grid-column: 1 / -1;
+  margin-top: var(--space-1);
+}
+
+/* A phone: the card's parts stacked in the same order, the service and the
    label, the windows three across, the three lines right-aligned, then the
    buttons. */
 @container ai_accounts (max-width: 520px) {
-  .ai_account_windows {
-    display: grid;
-    grid-row: auto;
+  .ai_accounts_box--cards .ai_account_cell--windows {
+    grid-row: 2;
     grid-column: 1 / -1;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    order: 1;
   }
 
-  .ai_account_window {
+  .ai_accounts_box--cards .ai_account_windows {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .ai_accounts_box--cards .ai_account_window {
     width: 100%;
   }
 
-  .ai_account_side {
-    grid-row: auto;
-    grid-column: 1 / -1;
-    order: 2;
+  .ai_accounts_box--cards .ai_account_cell--counts {
+    grid-area: 3 / 1 / auto / -1;
   }
 
-  .ai_account_error {
-    grid-column: 1 / -1;
-    order: 3;
+  .ai_accounts_box--cards .ai_account_cell--status {
+    grid-area: 4 / 1 / auto / -1;
   }
 
-  .ai_account_actions {
-    order: 4;
+  .ai_accounts_box--cards .ai_account_cell--updated {
+    grid-area: 5 / 1 / auto / -1;
+  }
+
+  .ai_accounts_box--cards .ai_account_cell--actions {
+    grid-row: 6;
   }
 }
 

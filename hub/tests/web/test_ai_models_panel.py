@@ -216,8 +216,14 @@ def test_details_stands_in_one_column_on_every_row():
         .split()
     )
 
-    assert ".ai_models_configure { grid-column: 4; }" in style
-    assert ".ai_models_details { grid-column: 5; }" in style
+    assert ".ai_models_configure { grid-column: 5; }" in style
+    assert ".ai_models_details { grid-column: 6; }" in style
+    # The name as wide as the longest, the room left before the buttons.
+    assert (
+        "grid-template-columns: minmax(12ch, max-content) minmax(0, max-content) "
+        "max-content minmax(0, 1fr) max-content max-content;"
+    ) in style
+    assert "max-width: 36ch;" in style
 
 
 def test_the_details_dialog_reads_the_activity_range_and_edits_nothing():

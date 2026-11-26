@@ -1,12 +1,12 @@
-/* One grid for every row: the name takes the room left and never less
-   than 12 characters, the sources wrap within theirs, and the length and
-   the two buttons take their own widths, so each column lines up down the
-   panel. */
+/* One grid for every row, as the Agents table's columns are: the name as
+   wide as the longest, at least 12 and at most 36 characters, then the
+   sources and the length at their own widths, and the two buttons at the
+   right end, the room left between the length and the buttons. */
 .ai_models_list {
   display: grid;
   grid-template-columns:
-    minmax(12ch, 1fr) minmax(0, max-content) max-content
-    max-content max-content;
+    minmax(12ch, max-content) minmax(0, max-content) max-content
+    minmax(0, 1fr) max-content max-content;
   gap: var(--space-2) var(--space-3);
 }
 
@@ -40,6 +40,7 @@
 
 .ai_models_model {
   min-width: 0;
+  max-width: 36ch;
   overflow: hidden;
   font-size: 12.5px;
   font-weight: 600;
@@ -62,11 +63,11 @@
 /* Configure and Details each in a column of its own, so Details stands at
    one x whether a row has Configure or not. */
 .ai_models_configure {
-  grid-column: 4;
+  grid-column: 5;
 }
 
 .ai_models_details {
-  grid-column: 5;
+  grid-column: 6;
 }
 
 /* --- The dialog of a cloud name --- */
