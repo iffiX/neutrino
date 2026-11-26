@@ -187,6 +187,18 @@ def test_another_accounts_own_entries_go_from_the_shared_folders(tmp_path):
     assert access.grants == []
 
 
+def test_the_uninstall_deletes_the_steps_output_and_keeps_the_servers_log(tmp_path):
+    applier = windows(tmp_path, Host())
+    os.makedirs(os.path.join(applier.data_dir, "data", "models"))
+    os.makedirs(applier.module_dir)
+    open(os.path.join(applier.data_dir, "step.log"), "w").write("uv")
+    open(applier.log_path, "w").write("comfyui")
+    applier.uninstall()
+    assert sorted(os.listdir(applier.data_dir)) == ["comfyui.log", "data"]
+    assert not os.path.exists(applier.module_dir)
+    applier.uninstall()
+
+
 def test_a_service_task_names_its_account_by_its_sid_in_the_systems_language():
     from pathlib import Path
 

@@ -400,7 +400,7 @@ class ComfyuiWindowsApplier:
         return held.get("state") == TASK_RUNNING
 
     def uninstall(self) -> None:
-        """Unregister the task and delete the module's directory; the data directory stays."""
+        """Unregister the task and delete the module's directory and the steps' output file; the data directory stays."""
         self._end()
         self._powershell.call("task_remove", {"task": COMFYUI_WINDOWS_TASK})
         for _turn in range(COMFYUI_WINDOWS_REMOVE_TRIES):
@@ -408,6 +408,8 @@ class ComfyuiWindowsApplier:
             if not os.path.exists(self.module_dir):
                 break
             self._sleep(COMFYUI_WINDOWS_REMOVE_RETRY_S)
+        with contextlib.suppress(FileNotFoundError):
+            os.remove(self._step_output)
 
     def journal_units(self) -> list:
         """No journal: Windows runs no unit."""
