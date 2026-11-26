@@ -13,7 +13,9 @@ nothing; and the thread settling a follow by itself. Beside the providers:
 ``/api/show`` read once per digest, its trained length and its Modelfile's
 ``num_ctx`` stored in ``cliproxyapi/ollama_lengths.json``, a new digest read
 again, a model kept while its machine is dropped, taken out once a read no
-longer lists it, and a machine taken out by :meth:`forget_lengths`.
+longer lists it, and a machine taken out by :meth:`forget_lengths`. An
+embedding model, whose ``capabilities`` lack ``completion``, in no provider,
+and a model stored with no ``is_completion`` read again.
 """
 
 import json
@@ -297,11 +299,13 @@ def test_each_model_s_lengths_are_read_once_per_digest_and_stored(state, ollama)
                 "digest": "d1",
                 "trained_context_length": 32768,
                 "modelfile_context_length": 0,
+                "is_completion": True,
             },
             "qwen-8k": {
                 "digest": "d2",
                 "trained_context_length": 32768,
                 "modelfile_context_length": 8192,
+                "is_completion": True,
             },
         }
     }
@@ -353,3 +357,76 @@ def test_a_forgotten_machine_leaves_the_stored_lengths(state, ollama):
 
     assert _lengths(state) == {}
     assert lengths_changes.count == 2
+
+
+EMBEDDING_SHOWN = {
+    "capabilities": ["embedding"],
+    "model_info": {"general.architecture": "bert", "bert.context_length": 512},
+}
+
+
+def test_an_embedding_model_is_in_no_provider(state, ollama):
+    """A tool given an embedding model's name as its model fails every chat."""
+    ollama.models = [
+        dict(QWEN, digest="d1"),
+        {"name": "nomic-embed-text:latest", "digest": "d2"},
+    ]
+    ollama.shown = {
+        "qwen2.5:0.5b": dict(QWEN_SHOWN, capabilities=["completion", "tools"]),
+        "nomic-embed-text:latest": EMBEDDING_SHOWN,
+    }
+    table = OllamaGatewayProviderTable(on_change=Changes())
+    table.follow("dev", ollama.address)
+    table.settle()
+
+    assert [held["models"] for held in table.providers()] == [["qwen2.5:0.5b"]]
+    assert _stored(state)[0]["models"] == ["qwen2.5:0.5b"]
+    assert _lengths(state)["dev"]["nomic-embed-text:latest"]["is_completion"] is False
+
+
+def test_a_machine_holding_embedding_models_alone_is_no_provider(state, ollama):
+    ollama.models = [{"name": "nomic-embed-text:latest", "digest": "d2"}]
+    ollama.shown = {"nomic-embed-text:latest": EMBEDDING_SHOWN}
+    table = OllamaGatewayProviderTable(on_change=Changes())
+    table.follow("dev", ollama.address)
+    table.settle()
+
+    assert table.providers() == []
+
+
+def test_a_model_stored_before_its_capabilities_were_read_is_read_again(state, ollama):
+    """The stored lists of an earlier hub hold no ``is_completion``."""
+    (state / "cliproxyapi").mkdir(parents=True, exist_ok=True)
+    (state / "cliproxyapi" / "ollama_lengths.json").write_text(
+        json.dumps(
+            {
+                "machines": [
+                    {
+                        "device_id": "dev",
+                        "models": {
+                            "nomic-embed-text:latest": {
+                                "digest": "d2",
+                                "trained_context_length": 512,
+                                "modelfile_context_length": 0,
+                            }
+                        },
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    ollama.models = [
+        dict(QWEN, digest="d1"),
+        {"name": "nomic-embed-text:latest", "digest": "d2"},
+    ]
+    ollama.shown = {
+        "qwen2.5:0.5b": QWEN_SHOWN,
+        "nomic-embed-text:latest": EMBEDDING_SHOWN,
+    }
+    table = OllamaGatewayProviderTable(on_change=Changes())
+    table.follow("dev", ollama.address)
+    table.settle()
+
+    assert "nomic-embed-text:latest" in _show_reads(ollama)
+    assert [held["models"] for held in table.providers()] == [["qwen2.5:0.5b"]]

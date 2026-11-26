@@ -23,6 +23,8 @@ from neutrino_hub.utils.json_file import write_generated
 
 # The parameter of a Modelfile that sets the window a model loads at.
 MODELFILE_CONTEXT_PARAMETER = "num_ctx"
+# The capability of a model that answers a chat request.
+COMPLETION_CAPABILITY = "completion"
 
 
 def tag_digests(tags: dict) -> dict:
@@ -73,12 +75,27 @@ def shown_lengths(answer: dict) -> dict:
     }
 
 
+def is_completion_model(answer: dict) -> bool:
+    """Whether a model answers a chat request, from ``/api/show``. Pure.
+
+    Args:
+        answer: ``/api/show``'s answer.
+
+    Returns:
+        False when ``capabilities`` is a list without ``completion``, as for
+        an embedding model; True otherwise.
+    """
+    capabilities = answer.get("capabilities")
+    return not isinstance(capabilities, list) or COMPLETION_CAPABILITY in capabilities
+
+
 def read_ollama_lengths() -> dict:
     """Each machine's stored Ollama models.
 
     Returns:
         Device id to model name to ``{digest, trained_context_length,
-        modelfile_context_length}``; empty when none is stored or the file
+        modelfile_context_length, is_completion}``, ``is_completion`` left
+        out where the file names none; empty when none is stored or the file
         does not read.
     """
     try:
@@ -97,17 +114,23 @@ def read_ollama_lengths() -> dict:
         if not isinstance(models, dict):
             continue
         found[device_id] = {
-            str(name): {
-                "digest": str(model.get("digest", "") or ""),
-                "trained_context_length": _count(model.get("trained_context_length")),
-                "modelfile_context_length": _count(
-                    model.get("modelfile_context_length")
-                ),
-            }
+            str(name): _stored_model(model)
             for name, model in models.items()
             if isinstance(model, dict)
         }
     return found
+
+
+def _stored_model(model: dict) -> dict:
+    """One stored model as the file holds it, ``is_completion`` kept only where it is a bool."""
+    held = {
+        "digest": str(model.get("digest", "") or ""),
+        "trained_context_length": _count(model.get("trained_context_length")),
+        "modelfile_context_length": _count(model.get("modelfile_context_length")),
+    }
+    if isinstance(model.get("is_completion"), bool):
+        held["is_completion"] = model["is_completion"]
+    return held
 
 
 def write_ollama_lengths(machines: dict) -> None:
@@ -115,7 +138,8 @@ def write_ollama_lengths(machines: dict) -> None:
 
     Args:
         machines: Device id to model name to ``{digest,
-            trained_context_length, modelfile_context_length}``.
+            trained_context_length, modelfile_context_length,
+            is_completion}``.
 
     Raises:
         OSError: If the state file cannot be written.
@@ -136,7 +160,8 @@ def pool_machines(
     """Every machine whose Ollama module is installed, with the models it holds. Pure.
 
     Args:
-        stored: :func:`read_ollama_lengths`'s answer.
+        stored: :func:`read_ollama_lengths`'s answer; a model whose
+            ``is_completion`` is false is left out.
         providers: The generated providers, ``{device_id, address,
             models}`` each; a model one lists that the store does not hold
             counts with the setting alone.
@@ -151,7 +176,11 @@ def pool_machines(
     """
     models: dict = {}
     for device_id, held in stored.items():
-        models[device_id] = {name: dict(model) for name, model in held.items()}
+        models[device_id] = {
+            name: dict(model)
+            for name, model in held.items()
+            if model.get("is_completion", True)
+        }
     for provider in providers:
         held = models.setdefault(provider["device_id"], {})
         for name in provider.get("models") or []:

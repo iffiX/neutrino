@@ -10,6 +10,7 @@ left out.
 """
 
 from neutrino_hub.modules.devices.ollama_lengths import (
+    is_completion_model,
     pool_machines,
     read_ollama_lengths,
     shown_lengths,
@@ -46,6 +47,13 @@ def test_show_gives_the_trained_length_and_the_modelfile_s_num_ctx():
     }
 
 
+def test_show_s_capabilities_say_whether_a_model_answers_a_chat():
+    assert is_completion_model({"capabilities": ["completion", "tools"]}) is True
+    assert is_completion_model({"capabilities": ["embedding"]}) is False
+    assert is_completion_model({"capabilities": []}) is False
+    assert is_completion_model({}) is True
+
+
 def test_the_stored_lengths_are_read_back(monkeypatch, tmp_path):
     unlock_vault(monkeypatch, tmp_path)
     assert read_ollama_lengths() == {}
@@ -55,7 +63,13 @@ def test_the_stored_lengths_are_read_back(monkeypatch, tmp_path):
                 "digest": "d",
                 "trained_context_length": 32768,
                 "modelfile_context_length": 0,
-            }
+                "is_completion": False,
+            },
+            "older": {
+                "digest": "e",
+                "trained_context_length": 0,
+                "modelfile_context_length": 0,
+            },
         },
         "gone": {},
     }
@@ -89,3 +103,18 @@ def test_the_pool_holds_every_machine_whose_module_is_installed():
     assert by_id["online"].models["new"] == {}
     assert by_id["online"].model_window("new") == 65536
     assert by_id["offline"].model_window("m") == 16384
+
+
+def test_an_embedding_model_is_in_no_pool():
+    stored = {
+        "dev": {
+            "m": {"trained_context_length": 32768, "is_completion": True},
+            "embed": {"trained_context_length": 512, "is_completion": False},
+        }
+    }
+
+    machines = pool_machines(
+        stored, [], names={"dev": "Dev"}, settings={}, wants={"dev": "running"}
+    )
+
+    assert sorted(machines[0].models) == ["m"]

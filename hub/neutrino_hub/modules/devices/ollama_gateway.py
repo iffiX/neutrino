@@ -2,8 +2,9 @@
 
 One OpenAI-compatible provider per machine whose Ollama runs and lists at
 least one model: its address the hub's forward to the machine's Ollama port,
-its models the names ``/api/tags`` returns (hub_components/ai.md, "Every
-machine's Ollama"). The table follows each machine by its reports, reads
+its models the names ``/api/tags`` returns but a model whose ``/api/show``
+names no ``completion`` capability (hub_components/ai.md, "Every machine's
+Ollama"). The table follows each machine by its reports, reads
 ``/api/tags`` through the forward on a thread of its own, and stores the
 list under the state root, where every render of the gateway reads it. On
 the same thread it reads ``/api/show`` for each model listed under a digest
@@ -25,6 +26,7 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_OLLAMA_GATEWAY_READ_INTERVAL_S,
 )
 from neutrino_hub.modules.devices.ollama_lengths import (
+    is_completion_model,
     read_ollama_lengths,
     shown_lengths,
     tag_digests,
@@ -216,11 +218,16 @@ class OllamaGatewayProviderTable:
                     lengths[device_id] = read[device_id]
                 else:
                     lengths.pop(device_id, None)
-                if digests:
+                served = sorted(
+                    name
+                    for name in digests
+                    if read[device_id].get(name, {}).get("is_completion", True)
+                )
+                if served:
                     providers[device_id] = {
                         "device_id": device_id,
                         "address": address,
-                        "models": sorted(digests),
+                        "models": served,
                     }
                 else:
                     providers.pop(device_id, None)
@@ -296,26 +303,37 @@ class OllamaGatewayProviderTable:
         return tag_digests(tags)
 
     def _read_lengths(self, address: str, digests: dict, known: dict) -> dict:
-        """One machine's models with their lengths, ``/api/show`` read for each digest not read before.
+        """One machine's models with their lengths and whether each answers a chat, ``/api/show`` read for each digest not read before.
 
-        A model whose read fails is kept with no lengths, and read again
-        at the next read of the machine.
+        A model whose read fails is kept with no lengths and served, and
+        read again at the next read of the machine, as a stored model with
+        no ``is_completion`` is.
         """
         models = {}
         for name, digest in digests.items():
             held = known.get(name)
-            if held is not None and held.get("digest") == digest and digest:
+            if (
+                held is not None
+                and held.get("digest") == digest
+                and digest
+                and "is_completion" in held
+            ):
                 models[name] = dict(held)
                 continue
             try:
-                shown = shown_lengths(self._client_class(address).show(name))
+                answer = self._client_class(address).show(name)
             except (ConnectionError, KeyError, OSError, ValueError) as error:
                 LOGGER.info("Ollama at %s did not show %s: %s", address, name, error)
                 models[name] = {
                     "digest": "",
                     "trained_context_length": 0,
                     "modelfile_context_length": 0,
+                    "is_completion": True,
                 }
                 continue
-            models[name] = {"digest": digest, **shown}
+            models[name] = {
+                "digest": digest,
+                **shown_lengths(answer),
+                "is_completion": is_completion_model(answer),
+            }
         return models
