@@ -77,19 +77,22 @@ def state_source_sets(modules: dict, sets: "dict | None" = None) -> dict:
         sets: The source sets by name; None reads the file.
 
     Returns:
-        Each set an artifact's ``source_set`` or an entry's ``source_sets``
-        names, as the file defines it, by name; empty while no recipe names
-        one.
+        Each set an artifact's ``source_set``, a lock's ``source_sets`` or an
+        entry's ``source_sets`` names, as the file defines it, by name; empty
+        while no recipe names one.
     """
     names = []
     for entry in modules.values():
         params = ((entry or {}).get("install") or {}).get("params") or {}
-        for name in params.get("source_sets") or []:
-            if name not in names:
-                names.append(str(name))
+        named = list(params.get("source_sets") or [])
         for artifact in params.get("artifacts") or []:
-            name = artifact.get("source_set") if isinstance(artifact, dict) else None
-            if name and name not in names:
+            if not isinstance(artifact, dict):
+                continue
+            if artifact.get("source_set"):
+                named.append(artifact["source_set"])
+            named += list(artifact.get("source_sets") or [])
+        for name in named:
+            if name not in names:
                 names.append(str(name))
     if not names:
         return {}

@@ -6,6 +6,8 @@ cache's root is a temporary directory. What is pinned is the judgment
 around the fetch: which entry and which artifact a ``package {module,
 artifact, digest}`` names, the file named by its digest, the head check, the
 2 GiB limit, two askers sharing one fetch, and the files a new one leaves.
+A lock comes from the hub's own package while its sha256 holds, and a tag's
+archive is checked and kept by the git tree of its files.
 """
 
 import base64
@@ -798,3 +800,168 @@ def test_clearing_the_cache_drops_every_file(manifests, root):
     clear_module_cache(root)
 
     assert not root.exists()
+
+
+# --- a lock in the hub's package and a tag's archive named by its tree ---
+
+
+def lock_manifest(manifests_dir, source_url: str = "") -> dict:
+    """A module whose entry names a tag's archive by its tree and two locks."""
+    locks = manifests_dir / "lockdesk" / "3.0"
+    locks.mkdir(parents=True, exist_ok=True)
+    (locks / "tool.txt").write_bytes(b"tool==1\n")
+    (locks / "cpu_x.txt").write_bytes(b"torch==2 cpu\n")
+    (locks / "gpu_x.txt").write_bytes(b"torch==2 gpu\n")
+    return {
+        "name": "lockdesk",
+        "title": "Lock desk",
+        "platforms": {
+            "linux-amd64": hub_entry(
+                "3.0",
+                [
+                    {
+                        "name": "source",
+                        "kind": "tar_gz",
+                        "directory": "source",
+                        "file": "v{version}",
+                        "digest": f"git-tree:{GIT_TREE}",
+                        "sources": [source_url or "https://host.example/{file}"],
+                    },
+                    {
+                        "name": "tool",
+                        "kind": "uv_lock",
+                        "file": "tool.txt",
+                        "digest": digest(b"tool==1\n"),
+                        "source_sets": ["pypi"],
+                    },
+                    {
+                        "name": "venv",
+                        "kind": "uv_lock",
+                        "file": "{build}_x.txt",
+                        "builds": {
+                            "gpu": digest(b"torch==2 gpu\n"),
+                            "cpu": digest(b"torch==2 cpu\n"),
+                        },
+                        "source_sets": ["pytorch", "pypi"],
+                    },
+                ],
+            )
+        },
+    }
+
+
+def tag_archive() -> bytes:
+    """A tag's archive of one file, whose tree is :data:`GIT_TREE`."""
+    import io
+    import tarfile
+
+    held = io.BytesIO()
+    with tarfile.open(fileobj=held, mode="w:gz") as tar:
+        folder = tarfile.TarInfo("desk-3.0")
+        folder.type = tarfile.DIRTYPE
+        tar.addfile(folder)
+        member = tarfile.TarInfo("desk-3.0/a.txt")
+        member.size = 6
+        member.mode = 0o664
+        tar.addfile(member, io.BytesIO(b"hello\n"))
+    return held.getvalue()
+
+
+# The tree ``git write-tree`` gives a repository holding ``a.txt``,
+# ``hello\n``.
+GIT_TREE = "2e81171448eb9f2ee3821e3d447aa6b2fe3ddba1"  # scan: allow
+
+
+@pytest.fixture
+def lock_manifests(monkeypatch, tmp_path):
+    held = {"lockdesk": lock_manifest(tmp_path / "manifests")}
+    monkeypatch.setattr(agent_module_cache, "load_module_manifests", lambda: held)
+    monkeypatch.setattr(agent_module_cache, "load_tool_manifests", lambda: {})
+    monkeypatch.setattr(
+        "neutrino_hub.modules.devices.manifests.MANIFESTS_DIR", tmp_path / "manifests"
+    )
+    return held
+
+
+def test_a_lock_is_served_from_the_hub_s_package_with_no_fetch(lock_manifests, root):
+    fetcher = FakeSourceFetcher()
+    lines: list = []
+    cache = make_cache(root, fetcher)
+
+    gpu = cache.artifact(
+        module="lockdesk",
+        artifact="venv",
+        digest=digest(b"torch==2 gpu\n"),
+        platform=LINUX,
+        on_progress=lines.append,
+    )
+    tool = cache.artifact(
+        module="lockdesk",
+        artifact="tool",
+        digest=digest(b"tool==1\n"),
+        platform=LINUX,
+    )
+
+    assert gpu.path.read_bytes() == b"torch==2 gpu\n"
+    assert (gpu.file, gpu.title) == ("gpu_x.txt", "Lock desk 3.0 (venv)")
+    assert tool.path.read_bytes() == b"tool==1\n"
+    assert fetcher.asked == []
+    assert lines == ["hub: Lock desk 3.0 (venv) is in the hub's package"]
+    assert not root.exists()
+
+
+def test_a_lock_whose_file_no_longer_hashes_to_its_digest_is_refused(
+    lock_manifests, tmp_path, root
+):
+    (tmp_path / "manifests/lockdesk/3.0/cpu_x.txt").write_bytes(b"torch==3\n")
+
+    with pytest.raises(AgentArtifactFetchError) as refusal:
+        make_cache(root, FakeSourceFetcher()).artifact(
+            module="lockdesk",
+            artifact="venv",
+            digest=digest(b"torch==2 cpu\n"),
+            platform=LINUX,
+        )
+
+    assert refusal.value.code == "module_artifact_unknown"
+
+
+def test_a_tag_s_archive_is_checked_by_its_tree_and_kept_under_it(
+    monkeypatch, tmp_path, root
+):
+    """The real fetcher on loopback: an archive whose files make the tree is
+    kept under the tree's hex whatever its bytes; one whose files differ is
+    dropped for the next source."""
+    body = tag_archive()
+    wrong = Source(Behaviour(body=GZIP + b"x" * 64))
+    right = Source(Behaviour(body=body))
+    try:
+        held = {"lockdesk": lock_manifest(tmp_path / "manifests", right.url)}
+        held["lockdesk"]["platforms"]["linux-amd64"]["install"]["params"]["artifacts"][
+            0
+        ]["sources"] = [wrong.url, right.url]
+        monkeypatch.setattr(agent_module_cache, "load_module_manifests", lambda: held)
+        monkeypatch.setattr(agent_module_cache, "load_tool_manifests", lambda: {})
+        cache = make_cache(root, loopback_fetcher())
+        served = cache.artifact(
+            module="lockdesk",
+            artifact="source",
+            digest=f"git-tree:{GIT_TREE}",
+            platform=LINUX,
+        )
+        lines: list = []
+        again = cache.artifact(
+            module="lockdesk",
+            artifact="source",
+            digest=f"git-tree:{GIT_TREE}",
+            platform=LINUX,
+            on_progress=lines.append,
+        )
+    finally:
+        wrong.close()
+        right.close()
+
+    assert served.path == root / GIT_TREE
+    assert served.path.read_bytes() == body
+    assert again.path == served.path
+    assert lines == ["hub: Lock desk 3.0 (source) is in the cache"]

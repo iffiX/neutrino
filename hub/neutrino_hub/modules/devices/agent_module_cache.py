@@ -8,7 +8,10 @@ not held: every source the manifest names, filled in, through the method
 every download uses (:mod:`neutrino_hub.utils.source_fetch`), the digest and
 the head checked, a file larger than 2 GiB refused. A tarball on the npm
 source set is read under each of the set's registries and checked by npm's
-integrity, its SHA-512. Once a new file is in
+integrity, its SHA-512, and a tag's archive named by a git tree is checked
+and kept by the tree of its files. A lock of Python packages is a file of
+the hub's own package beside its manifest, served once its sha256 holds.
+Once a new file is in
 place, the files of no module some machine names, and of no version the
 manifests pin, are deleted; cc-switch's pinned files stay.
 
@@ -38,6 +41,7 @@ from neutrino_hub.modules.devices.constants import (
     AGENT_MODULE_PROGRESS_INTERVAL_S,
     AGENT_MODULE_PROGRESS_PERCENT_STEP,
     DEVICE_ARTIFACT_FILE_KINDS,
+    DEVICE_ARTIFACT_KIND_UV_LOCK,
 )
 from neutrino_hub.modules.devices.module_releases import ModuleReleaseStore
 from neutrino_hub.modules.devices.manifests import (
@@ -46,6 +50,8 @@ from neutrino_hub.modules.devices.manifests import (
     entry_artifacts,
     entry_version,
     load_module_manifests,
+    lock_digest,
+    lock_path,
     load_tool_manifests,
     resolve_platform_entry,
 )
@@ -60,8 +66,8 @@ from neutrino_hub.utils.source_fetch import (
 LOGGER = logging.getLogger(__name__)
 
 # A file the cache keeps is named by the hex of its digest's bytes: a
-# sha256 digest's, or the SHA-512 an npm integrity names.
-CACHE_NAME_PATTERN = re.compile(r"[0-9a-f]{64}|[0-9a-f]{128}")
+# sha256 digest's, the SHA-512 an npm integrity names, or a git tree's SHA-1.
+CACHE_NAME_PATTERN = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}|[0-9a-f]{128}")
 # A file a 0.5 hub kept, ``<module>-<platform>-<16 hex of its digest>``,
 # which no hub serves any more.
 CACHE_OLD_NAME_PATTERN = re.compile(r"[a-z0-9_]+(?:-[a-z0-9_]+)+-[0-9a-f]{16}")
@@ -283,7 +289,8 @@ class AgentModuleCache:
                 manifest names, ``no_platform_build {module}`` when the
                 manifest names no entry for the platform,
                 ``module_artifact_unknown {module, artifact, digest}`` when
-                the entry names no such artifact with that digest,
+                the entry names no such artifact with that digest or a lock
+                whose file does not hash to it,
                 ``download_failed {file, sources}`` when no source serves
                 it, ``module_fetch_too_large {limit_mb}`` for a file past 2
                 GiB, and ``module_cache_unwritable {detail}`` when the cache
@@ -298,6 +305,11 @@ class AgentModuleCache:
         if entry is None:
             raise AgentArtifactFetchError("no_platform_build", module=module)
         version = entry_version(manifest, entry)
+        lock = self._lock(manifest, entry, artifact, digest, version)
+        if lock is not None:
+            if on_progress is not None:
+                on_progress(f"hub: {lock.title} is in the hub's package")
+            return lock
         named = self._named_artifact(manifest, entry, artifact, digest)
         sources = None
         if named is None:
@@ -393,6 +405,45 @@ class AgentModuleCache:
                 sources = held.get("sources") or artifact_sources(artifact, version)
                 return artifact, version, list(sources)
         return None, "", None
+
+    @staticmethod
+    def _lock(
+        manifest: dict, entry: dict, name: str, digest: str, version: str
+    ) -> "AgentModuleArtifact | None":
+        """The entry's lock of that name and digest in the hub's package, or None.
+
+        Raises:
+            AgentArtifactFetchError: ``module_artifact_unknown`` for a lock
+                whose file is missing or does not hash to the digest.
+        """
+        for artifact in entry_artifacts(manifest, entry):
+            if (
+                artifact.get("name") != name
+                or artifact.get("kind") != DEVICE_ARTIFACT_KIND_UV_LOCK
+            ):
+                continue
+            for build in artifact.get("builds") or [""]:
+                if lock_digest(artifact, build) != digest:
+                    continue
+                path = lock_path(manifest, version, artifact, build)
+                try:
+                    is_held = file_hex(path, digest) == hex_of(digest)
+                except OSError:
+                    is_held = False
+                if not is_held:
+                    raise AgentArtifactFetchError(
+                        "module_artifact_unknown",
+                        module=str(manifest.get("name", "")),
+                        artifact=name,
+                        digest=digest,
+                    )
+                return AgentModuleArtifact(
+                    path=path,
+                    digest=digest,
+                    file=path.name,
+                    title=artifact_title(manifest, entry, artifact, version=version),
+                )
+        return None
 
     @staticmethod
     def _named_artifact(manifest: dict, entry: dict, name: str, digest: str):

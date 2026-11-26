@@ -329,7 +329,9 @@ def is_locked(manifest: dict, entry: "dict | None") -> bool:
 
     Returns:
         True for an ``agent``, ``builtin`` or ``system`` entry, for a
-        ``container`` entry that names no ``releases``, and for no entry.
+        ``container`` entry that names no ``releases``, for a ``hub`` entry
+        that names a ``uv_lock``, which names no ``releases``, and for no
+        entry.
     """
     method = entry_method(entry)
     if not method or method in LOCKED_METHODS:

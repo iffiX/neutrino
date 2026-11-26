@@ -20,5 +20,10 @@
     "probe": "/systems/texlive/tlnet/tlpkg/texlive.tlpdb.xz",
     "sources": ["https://mirror.ctan.org", "https://mirrors.mit.edu/CTAN", "https://mirrors.tuna.tsinghua.edu.cn/CTAN", "https://mirrors.ustc.edu.cn/CTAN", "https://mirrors.aliyun.com/CTAN", "https://mirrors.cloud.tencent.com/CTAN", "https://mirrors.sjtug.sjtu.edu.cn/ctan", "https://mirror.nju.edu.cn/CTAN"], "_ctan_scan": "scan: allow",
     "variables": []
+  },
+  "pytorch": {
+    "probe": "/cpu/torch/",
+    "sources": ["https://download.pytorch.org/whl", "https://mirror.sjtu.edu.cn/pytorch-wheels", "https://mirror.nju.edu.cn/pytorch/whl"], "_pytorch_scan": "scan: allow",
+    "variables": []
   }
 }

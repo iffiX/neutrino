@@ -1,10 +1,12 @@
 """The source sets: the one list of sources of each ecosystem, and the ones a state carries.
 
-What these pin: the shipped file holds the three sets the standard writes,
-each source an https address and the publisher's first; the loader refuses a
+What these pin: the shipped file holds the five sets the standard writes,
+each source an https address and the publisher's first, the ``pytorch``
+set's three indexes with its probe and no variable; the loader refuses a
 file outside the shape; a state carries each set its recipes name, by an
-artifact's ``source_set`` or an entry's ``source_sets``, and no other; and a
-placeholder names a set as ``{<set>}``.
+artifact's ``source_set``, a lock's ``source_sets`` or an entry's
+``source_sets``, and no other; and a placeholder names a set as
+``{<set>}``.
 """
 
 import json
@@ -19,7 +21,7 @@ from neutrino_hub.modules.devices.source_sets import (
 )
 
 
-def test_the_shipped_file_holds_the_four_sets_of_the_standard():
+def test_the_shipped_file_holds_the_five_sets_of_the_standard():
     sets = load_source_sets()
 
     assert sets == {
@@ -64,6 +66,15 @@ def test_the_shipped_file_holds_the_four_sets_of_the_standard():
                 "https://mirrors.cloud.tencent.com/CTAN",
                 "https://mirrors.sjtug.sjtu.edu.cn/ctan",
                 "https://mirror.nju.edu.cn/CTAN",
+            ],
+            "variables": [],
+        },
+        "pytorch": {
+            "probe": "/cpu/torch/",
+            "sources": [
+                "https://download.pytorch.org/whl",
+                "https://mirror.sjtu.edu.cn/pytorch-wheels",
+                "https://mirror.nju.edu.cn/pytorch/whl",
             ],
             "variables": [],
         },
@@ -134,13 +145,23 @@ def test_a_state_carries_each_set_its_recipes_name_and_no_other():
             "install": {"params": {"artifacts": [{"kind": "npm", "source_set": "npm"}]}}
         },
         "demo": {"install": {"params": {"artifacts": [], "source_sets": ["pypi"]}}},
+        "comfyui": {
+            "install": {
+                "params": {
+                    "artifacts": [
+                        {"kind": "uv_lock", "source_sets": ["pytorch", "pypi"]}
+                    ]
+                }
+            }
+        },
         "samba": {"install": {"params": {"packages": ["samba"]}}},
         "terminal": {"want": "running"},
     }
 
     carried = state_source_sets(modules)
 
-    assert list(carried) == ["npm", "pypi"]
+    assert list(carried) == ["npm", "pypi", "pytorch"]
+    assert carried["pytorch"]["probe"] == "/cpu/torch/"
     assert carried["pypi"]["probe"] == "/numpy/"
     assert state_source_sets({"samba": modules["samba"]}) == {}
 

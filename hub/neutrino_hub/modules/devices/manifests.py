@@ -4,7 +4,10 @@ The manifests under ``manifests/`` are the one record of where a module's
 software comes from and how a machine checks for it: the module's identity
 at the top, and one entry per platform, ``{runner, min_version, install:
 {method, params}, requires}``, the ``params`` shaped by the method and
-``requires`` naming the modules the entry runs on. A manifest that
+``requires`` naming the modules the entry runs on. A ``uv_lock`` artifact
+names a lock of Python packages beside the manifest, under
+``<module>/<version>/``, one per build where it names ``builds``; an entry
+that names one names no ``releases``. A manifest that
 says ``is_module: false`` names a program the agent runs itself, cc-switch,
 with its version at the top and ``artifacts`` alone in each entry. A
 ``hub`` artifact whose file is a package of an ecosystem with a source set
@@ -36,6 +39,8 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_ARTIFACT_KIND_IMAGE,
     DEVICE_ARTIFACT_KIND_NPM,
     DEVICE_ARTIFACT_KIND_TAR_GZ,
+    DEVICE_ARTIFACT_KIND_UV_LOCK,
+    DEVICE_ARTIFACT_KIND_ZIP,
     DEVICE_FEED_KEYS,
     DEVICE_GUEST_LOGINS,
     DEVICE_METHOD_AGENT,
@@ -62,6 +67,13 @@ MANIFEST_VERSION_PATTERN = r"\d+(\.\d+)*"
 MANIFEST_PLATFORM_PATTERN = r"[a-z]+(-[a-z0-9]+){0,2}"
 MANIFEST_SHA256_PATTERN = r"sha256:[0-9a-f]{64}"
 MANIFEST_INTEGRITY_PATTERN = r"sha512-[A-Za-z0-9+/]+={0,2}"
+MANIFEST_GIT_TREE_PATTERN = r"git-tree:[0-9a-f]{40}"
+# A build a lock names, and the place its name takes in the lock's file.
+MANIFEST_BUILD_PATTERN = r"[a-z][a-z0-9_]*"
+MANIFEST_BUILD_PLACEHOLDER = "{build}"
+# A lock's file under ``<module>/<version>/``: letters, digits and ``._-``,
+# with ``{build}`` in it where the lock names builds.
+MANIFEST_LOCK_FILE_PATTERN = r"[A-Za-z0-9._{}-]+\.txt"
 # The path of the file a probe reads under each host.
 MANIFEST_PROBE_PATTERN = r"/.+"
 MODULE_KEYS = {
@@ -92,12 +104,12 @@ PARAMS_REQUIRED = {
     DEVICE_METHOD_AGENT: set(),
     DEVICE_METHOD_BUILTIN: set(),
     DEVICE_METHOD_SYSTEM: {"version", "packages", "verify", "uninstall"},
-    DEVICE_METHOD_HUB: {"version", "releases", "artifacts", "verify", "uninstall"},
+    DEVICE_METHOD_HUB: {"version", "artifacts", "verify", "uninstall"},
     DEVICE_METHOD_CONTAINER: {"version", "artifacts"},
 }
 PARAMS_OPTIONAL = {
     DEVICE_METHOD_SYSTEM: {"pre_install"},
-    DEVICE_METHOD_HUB: {"packages"},
+    DEVICE_METHOD_HUB: {"packages", "releases"},
     DEVICE_METHOD_CONTAINER: {"releases", "source_sets"},
 }
 UNINSTALL_KEYS = {
@@ -127,9 +139,22 @@ NPM_ARTIFACT_KEYS = {
     "hosts_probe",
 }
 IMAGE_ARTIFACT_KEYS = {"name", "kind", "digest", "sources"}
+# A lock of Python packages: ``digest``, or ``builds`` naming each build's
+# digest, and the sets the files it names come from.
+LOCK_ARTIFACT_KEYS = {
+    "name",
+    "kind",
+    "file",
+    "digest",
+    "builds",
+    "directory",
+    "source_sets",
+}
 # What the recipe keeps of a hub artifact the agent takes from the package
-# stream: the bytes come down the stream, so no source is sent.
+# stream: the bytes come down the stream, so no source is sent. A lock keeps
+# the sets its files come from, which the machine fetches.
 RECIPE_FILE_ARTIFACT_KEYS = ("name", "kind", "digest", "directory", "member")
+RECIPE_LOCK_ARTIFACT_KEYS = ("name", "kind", "digest", "directory", "source_sets")
 
 
 def load_module_manifests() -> dict:
@@ -406,16 +431,19 @@ def artifact_sources(
     return filled
 
 
-def module_recipe(entry: "dict | None") -> dict:
+def module_recipe(entry: "dict | None", *, build: str = "") -> dict:
     """The recipe the state carries for one module on one machine.
 
     Args:
         entry: The module's entry for the machine's platform.
+        build: The build a lock that names ``builds`` is sent for; a lock
+            naming no such build is left out.
 
     Returns:
         ``{runner, method, params}``: the params without ``releases``, each
         artifact the agent takes from the package stream without its file
-        and sources, and an ``npm`` or ``image`` artifact with its sources;
+        and sources, a lock with its digest and the sets its files come
+        from, and an ``npm`` or ``image`` artifact with its sources;
         ``requires`` beside them where the entry names it; empty for no
         entry.
     """
@@ -426,7 +454,11 @@ def module_recipe(entry: "dict | None") -> dict:
         key: value for key, value in entry_params(entry).items() if key != "releases"
     }
     if "artifacts" in params:
-        params["artifacts"] = [_recipe_artifact(item) for item in params["artifacts"]]
+        params["artifacts"] = [
+            sent
+            for sent in (_recipe_artifact(item, build) for item in params["artifacts"])
+            if sent is not None
+        ]
     recipe = {
         "runner": str(entry.get("runner", "") or ""),
         "method": method,
@@ -435,6 +467,62 @@ def module_recipe(entry: "dict | None") -> dict:
     if entry_requires(entry):
         recipe["requires"] = entry_requires(entry)
     return recipe
+
+
+def lock_builds(manifest: dict, entry: "dict | None") -> list:
+    """The builds one entry's locks name.
+
+    Args:
+        manifest: The module's manifest.
+        entry: Its entry for one platform.
+
+    Returns:
+        Each build a ``uv_lock`` artifact's ``builds`` names, in the
+        manifest's order; empty for an entry whose locks name none.
+    """
+    builds = []
+    for artifact in entry_artifacts(manifest, entry):
+        if artifact.get("kind") != DEVICE_ARTIFACT_KIND_UV_LOCK:
+            continue
+        for build in artifact.get("builds") or {}:
+            if build not in builds:
+                builds.append(str(build))
+    return builds
+
+
+def lock_path(manifest: dict, version: str, artifact: dict, build: str = ""):
+    """Where the hub's package holds one lock.
+
+    Args:
+        manifest: The module's manifest.
+        version: The version the lock is of.
+        artifact: The ``uv_lock`` artifact.
+        build: The build, for a lock that names ``builds``.
+
+    Returns:
+        ``manifests/<module>/<version>/<file>``, ``{build}`` in the file
+        filled in.
+    """
+    file = str(artifact.get("file", "") or "").replace(
+        MANIFEST_BUILD_PLACEHOLDER, build
+    )
+    return MANIFESTS_DIR / str(manifest.get("name", "")) / version / file
+
+
+def lock_digest(artifact: dict, build: str = "") -> str:
+    """The digest of one lock for one build.
+
+    Args:
+        artifact: The ``uv_lock`` artifact.
+        build: The build, for a lock that names ``builds``.
+
+    Returns:
+        Its ``sha256:<hex>``; empty for a build the lock does not name.
+    """
+    builds = artifact.get("builds")
+    if isinstance(builds, dict):
+        return str(builds.get(build, "") or "")
+    return str(artifact.get("digest", "") or "")
 
 
 def manifest_methods(manifest: dict) -> list:
@@ -500,11 +588,20 @@ def manifests_stamp() -> tuple:
     return tuple(entries)
 
 
-def _recipe_artifact(artifact: dict) -> dict:
-    """One artifact as the recipe carries it."""
+def _recipe_artifact(artifact: dict, build: str) -> "dict | None":
+    """One artifact as the recipe carries it, None for a lock of no such build."""
     kind = artifact.get("kind")
     if kind in (DEVICE_ARTIFACT_KIND_NPM, DEVICE_ARTIFACT_KIND_IMAGE):
         return dict(artifact)
+    if kind == DEVICE_ARTIFACT_KIND_UV_LOCK:
+        digest = lock_digest(artifact, build)
+        if not digest:
+            return None
+        sent = {
+            key: artifact[key] for key in RECIPE_LOCK_ARTIFACT_KEYS if key in artifact
+        }
+        sent["digest"] = digest
+        return sent
     return {key: artifact[key] for key in RECIPE_FILE_ARTIFACT_KEYS if key in artifact}
 
 
@@ -774,6 +871,15 @@ def _check_params(file_name: str, where: str, method: str, params) -> None:
                 _check_texts(file_name, f"{where} uninstall {field}", removal[field])
         if "is_data_kept" in keys and not isinstance(removal["is_data_kept"], bool):
             _refuse(file_name, f"{where} is_data_kept", "must be true or false")
+    has_lock = any(
+        isinstance(artifact, dict)
+        and artifact.get("kind") == DEVICE_ARTIFACT_KIND_UV_LOCK
+        for artifact in params.get("artifacts") or []
+    )
+    if method == DEVICE_METHOD_HUB and has_lock and "releases" in params:
+        _refuse(file_name, f"{where} releases", "is named beside a uv_lock")
+    if method == DEVICE_METHOD_HUB and not has_lock and "releases" not in params:
+        _refuse(file_name, f"{where} params", "must name releases")
     if "releases" in params:
         feeds = params["releases"]
         if not isinstance(feeds, list) or not feeds:
@@ -791,9 +897,16 @@ def _check_params(file_name: str, where: str, method: str, params) -> None:
         kinds = (
             (DEVICE_ARTIFACT_KIND_IMAGE,)
             if method == DEVICE_METHOD_CONTAINER
-            else DEVICE_ARTIFACT_FILE_KINDS + (DEVICE_ARTIFACT_KIND_NPM,)
+            else DEVICE_ARTIFACT_FILE_KINDS
+            + (DEVICE_ARTIFACT_KIND_NPM, DEVICE_ARTIFACT_KIND_UV_LOCK)
         )
-        _check_artifacts(file_name, where, params["artifacts"], kinds)
+        _check_artifacts(
+            file_name,
+            where,
+            params["artifacts"],
+            kinds,
+            locks=MANIFESTS_DIR / file_name.removesuffix(".json") / params["version"],
+        )
 
 
 def _check_feed(file_name: str, where: str, feed) -> None:
@@ -814,14 +927,17 @@ def _check_feed(file_name: str, where: str, feed) -> None:
         _check_text(file_name, f"{where} {kind} {key}", feed[key])
 
 
-def _check_artifacts(file_name: str, where: str, artifacts, kinds: tuple) -> None:
-    """Refuse an artifact list the cache, Podman or npm could not act on.
+def _check_artifacts(
+    file_name: str, where: str, artifacts, kinds: tuple, *, locks=None
+) -> None:
+    """Refuse an artifact list the cache, Podman, npm or uv could not act on.
 
     Raises:
         ValueError: For an empty list, an artifact of a kind the method does
             not take, a key outside its kind's, a digest not of its kind's
-            form, a source that does not name the file, or two artifacts
-            sharing a name or a directory.
+            form, a source that does not name the file, a lock whose file is
+            not under ``locks``, or two artifacts sharing a name or a
+            directory, a zip naming ``member`` aside.
     """
     if not isinstance(artifacts, list) or not artifacts:
         _refuse(file_name, f"{where} artifacts", "must list at least one artifact")
@@ -875,6 +991,17 @@ def _check_artifacts(file_name: str, where: str, artifacts, kinds: tuple) -> Non
                     pattern=MANIFEST_PROBE_PATTERN,
                 )
             continue
+        if kind == DEVICE_ARTIFACT_KIND_UV_LOCK:
+            _check_lock(file_name, named, artifact, locks)
+            if "directory" in artifact:
+                if artifact["directory"] in directories:
+                    _refuse(
+                        file_name,
+                        named,
+                        f"unpacks into {artifact['directory']!r} beside another",
+                    )
+                directories.add(artifact["directory"])
+            continue
         if kind == DEVICE_ARTIFACT_KIND_IMAGE:
             _check_keys(
                 file_name, named, artifact, IMAGE_ARTIFACT_KEYS, IMAGE_ARTIFACT_KEYS
@@ -889,6 +1016,8 @@ def _check_artifacts(file_name: str, where: str, artifacts, kinds: tuple) -> Non
                 allowed = FILE_ARTIFACT_KEYS - {"directory", "member"}
             if kind == DEVICE_ARTIFACT_KIND_DMG:
                 required = required | {"member"}
+                allowed = FILE_ARTIFACT_KEYS
+            if kind == DEVICE_ARTIFACT_KIND_ZIP:
                 allowed = FILE_ARTIFACT_KEYS
             if is_on_set:
                 required = (required - {"sources"}) | {"source_set"}
@@ -909,7 +1038,8 @@ def _check_artifacts(file_name: str, where: str, artifacts, kinds: tuple) -> Non
                 _check_text(
                     file_name, f"{named} directory", directory, pattern=r"[a-z0-9_]+"
                 )
-                if directory in directories:
+                is_placed = kind == DEVICE_ARTIFACT_KIND_ZIP and "member" in artifact
+                if directory in directories and not is_placed:
                     _refuse(
                         file_name, named, f"unpacks into {directory!r} beside another"
                     )
@@ -921,7 +1051,11 @@ def _check_artifacts(file_name: str, where: str, artifacts, kinds: tuple) -> Non
             file_name,
             f"{named} digest",
             artifact["digest"],
-            pattern=MANIFEST_SHA256_PATTERN,
+            pattern=(
+                f"{MANIFEST_SHA256_PATTERN}|{MANIFEST_GIT_TREE_PATTERN}"
+                if kind == DEVICE_ARTIFACT_KIND_TAR_GZ
+                else MANIFEST_SHA256_PATTERN
+            ),
         )
         _check_texts(
             file_name, f"{named} sources", artifact["sources"], is_empty_allowed=False
@@ -934,6 +1068,76 @@ def _check_artifacts(file_name: str, where: str, artifacts, kinds: tuple) -> Non
                         f"{named} source",
                         f"must name {{file}}, not {source!r}",
                     )
+
+
+def _check_lock(file_name: str, named: str, artifact: dict, locks) -> None:
+    """Refuse a lock of another shape, or one whose file is not under ``locks``.
+
+    Raises:
+        ValueError: For keys outside a lock's, both or neither of ``digest``
+            and ``builds``, a file without ``{build}`` beside ``builds`` or
+            with it beside none, a build or a digest not of its form, a set
+            no file defines, or a lock file missing.
+    """
+    _check_keys(
+        file_name,
+        named,
+        artifact,
+        LOCK_ARTIFACT_KEYS,
+        {"name", "kind", "file", "source_sets"},
+    )
+    if ("digest" in artifact) == ("builds" in artifact):
+        _refuse(file_name, named, "must name digest or builds, and not both")
+    _check_text(
+        file_name, f"{named} file", artifact["file"], pattern=MANIFEST_LOCK_FILE_PATTERN
+    )
+    is_built = "builds" in artifact
+    if (MANIFEST_BUILD_PLACEHOLDER in artifact["file"]) != is_built:
+        _refuse(file_name, f"{named} file", "must name {build} beside builds alone")
+    if "directory" in artifact:
+        _check_text(
+            file_name,
+            f"{named} directory",
+            artifact["directory"],
+            pattern=r"[a-z0-9_]+",
+        )
+    _check_texts(
+        file_name,
+        f"{named} source_sets",
+        artifact["source_sets"],
+        is_empty_allowed=False,
+    )
+    defined = load_source_sets()
+    for name in artifact["source_sets"]:
+        if name not in defined:
+            _refuse(file_name, f"{named} source_sets", f"names no set, {name!r}")
+    if is_built:
+        builds = artifact["builds"]
+        if not isinstance(builds, dict) or not builds:
+            _refuse(file_name, f"{named} builds", "must name at least one build")
+        for build, digest in builds.items():
+            _check_text(
+                file_name, f"{named} build", build, pattern=MANIFEST_BUILD_PATTERN
+            )
+            _check_text(
+                file_name,
+                f"{named} build {build}",
+                digest,
+                pattern=MANIFEST_SHA256_PATTERN,
+            )
+    else:
+        _check_text(
+            file_name,
+            f"{named} digest",
+            artifact["digest"],
+            pattern=MANIFEST_SHA256_PATTERN,
+        )
+    if locks is None:
+        return
+    for build in artifact["builds"] if is_built else [""]:
+        file = artifact["file"].replace(MANIFEST_BUILD_PLACEHOLDER, build)
+        if not (locks / file).is_file():
+            _refuse(file_name, f"{named} file", f"names no lock, {file!r}")
 
 
 def _check_set_tarball(file_name: str, named: str, artifact: dict) -> None:

@@ -77,6 +77,13 @@ DEVICE_ARTIFACT_KIND_DMG = "dmg"
 DEVICE_ARTIFACT_KIND_TAR_GZ = "tar_gz"
 DEVICE_ARTIFACT_KIND_NPM = "npm"
 DEVICE_ARTIFACT_KIND_IMAGE = "image"
+# The kind whose ``member`` names the folder of a zip whose files it places
+# in another artifact's directory.
+DEVICE_ARTIFACT_KIND_ZIP = "zip"
+# A lock of Python packages, a file of the hub's own package beside the
+# module's manifest, under ``<module>/<version>/``. The machine's uv fetches
+# each file the lock names from the sets the artifact names.
+DEVICE_ARTIFACT_KIND_UV_LOCK = "uv_lock"
 # A source set's name, and a variable its ecosystem's tools read the
 # address from (design/agent/module_install.md, "Source sets").
 DEVICE_SOURCE_SET_NAME_PATTERN = r"[a-z][a-z0-9_]*"

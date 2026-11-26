@@ -7,7 +7,9 @@ three the system holds or installs, Gitea as a pinned release binary, the
 programs run as an account from their pinned archives, and cc-switch beside
 them as no module. Every platform entry names a runner and one of the five
 install methods with the params its method fixes, and every artifact a kind
-and a digest of its kind's form, or the loader refuses the manifest.
+and a digest of its kind's form, or the loader refuses the manifest. A
+``uv_lock`` names its lock beside the manifest and its entry no
+``releases``, and a ``git-tree:`` digest stands on a ``tar_gz`` alone.
 """
 
 import copy
@@ -2457,3 +2459,132 @@ def test_the_loader_takes_each_guest_login(manifests_dir):
         write_manifest(manifests_dir, "sample", manifest)
 
         assert guest_login_of(load_module_manifests(), "sample") == login
+
+
+# --- locks of Python packages, trees of a tag and zips that place files ---
+
+# A tree digest of the form a manifest names.
+TREE = "git-tree:" + "a" * 40
+
+
+def lock_manifest(manifests_dir, **lock) -> dict:
+    """The sample manifest whose hub entry names a lock beside it and no releases."""
+    manifest = valid_manifest()
+    params = hub_params(manifest)
+    params.pop("releases")
+    locks = manifests_dir / "sample" / "2.0"
+    locks.mkdir(parents=True, exist_ok=True)
+    (locks / "cpu_x.txt").write_text("a==1 --hash=sha256:" + "c" * 64 + "\n")
+    (locks / "gpu_x.txt").write_text("a==1 --hash=sha256:" + "d" * 64 + "\n")
+    params["artifacts"] = [
+        sample_artifact(),
+        {
+            "name": "venv",
+            "kind": "uv_lock",
+            "file": "{build}_x.txt",
+            "builds": {"gpu": "sha256:" + "1" * 64, "cpu": "sha256:" + "2" * 64},
+            "source_sets": ["pypi"],
+            **lock,
+        },
+    ]
+    return manifest
+
+
+def test_the_loader_takes_a_lock_beside_the_manifest(manifests_dir):
+    write_manifest(manifests_dir, "sample", lock_manifest(manifests_dir))
+
+    manifest = load_module_manifests()["sample"]
+    entry = manifest["platforms"]["windows-amd64"]
+
+    assert manifests_module.lock_builds(manifest, entry) == ["gpu", "cpu"]
+    assert module_recipe(entry, build="cpu")["params"]["artifacts"][-1]["digest"] == (
+        "sha256:" + "2" * 64
+    )
+
+
+@pytest.mark.parametrize(
+    "lock, said",
+    [
+        ({"builds": {}}, "builds"),
+        ({"builds": {"Gpu": "sha256:" + "1" * 64}}, "build"),
+        ({"builds": {"gpu": "sha1:x"}}, "build gpu"),
+        ({"digest": "sha256:" + "1" * 64}, "digest or builds"),
+        ({"file": "cpu_x.txt"}, "{build}"),
+        ({"file": "{build}_y.txt"}, "names no lock"),
+        ({"source_sets": []}, "source_sets"),
+        ({"source_sets": ["conda"]}, "names no set"),
+        ({"sources": ["https://a.example/{file}"]}, "sources"),
+        ({"directory": "Mcp"}, "directory"),
+    ],
+)
+def test_the_loader_refuses_a_lock_of_another_shape(manifests_dir, lock, said):
+    write_manifest(manifests_dir, "sample", lock_manifest(manifests_dir, **lock))
+
+    with pytest.raises(ValueError) as refusal:
+        load_module_manifests()
+
+    assert "sample.json" in str(refusal.value) and said in str(refusal.value)
+
+
+def test_a_hub_entry_naming_a_lock_is_refused_with_releases(manifests_dir):
+    manifest = lock_manifest(manifests_dir)
+    hub_params(manifest)["releases"] = hub_params(valid_manifest())["releases"]
+    write_manifest(manifests_dir, "sample", manifest)
+
+    with pytest.raises(ValueError) as refusal:
+        load_module_manifests()
+
+    assert "releases is named beside a uv_lock" in str(refusal.value)
+
+
+def test_a_hub_entry_naming_no_lock_still_names_its_releases(manifests_dir):
+    manifest = valid_manifest()
+    hub_params(manifest).pop("releases")
+    write_manifest(manifests_dir, "sample", manifest)
+
+    with pytest.raises(ValueError) as refusal:
+        load_module_manifests()
+
+    assert "must name releases" in str(refusal.value)
+
+
+@pytest.mark.parametrize("kind", ["tar_gz"])
+def test_a_git_tree_digest_is_taken_on_a_tar_gz(manifests_dir, kind):
+    manifest = valid_manifest()
+    hub_params(manifest)["artifacts"][0] = sample_artifact(kind=kind, digest=TREE)
+    write_manifest(manifests_dir, "sample", manifest)
+
+    assert load_module_manifests()["sample"]
+
+
+@pytest.mark.parametrize("kind", ["zip", "binary", "nsis"])
+def test_a_git_tree_digest_is_refused_on_any_other_kind(manifests_dir, kind):
+    manifest = valid_manifest()
+    artifact = sample_artifact(kind=kind, digest=TREE)
+    if kind == "binary":
+        artifact.pop("directory")
+    hub_params(manifest)["artifacts"][0] = artifact
+    write_manifest(manifests_dir, "sample", manifest)
+
+    with pytest.raises(ValueError) as refusal:
+        load_module_manifests()
+
+    assert "digest" in str(refusal.value)
+
+
+def test_a_zip_naming_a_member_places_its_files_in_another_s_directory(
+    manifests_dir,
+):
+    manifest = valid_manifest()
+    artifacts = hub_params(manifest)["artifacts"]
+    artifacts.append(
+        sample_artifact(name="runtime", kind="zip", member="lib/data", file="r.whl")
+    )
+    write_manifest(manifests_dir, "sample", manifest)
+
+    assert load_module_manifests()["sample"]
+    artifacts[-1].pop("member")
+    write_manifest(manifests_dir, "sample", manifest)
+    with pytest.raises(ValueError) as refusal:
+        load_module_manifests()
+    assert "beside another" in str(refusal.value)

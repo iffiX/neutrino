@@ -7,7 +7,8 @@ bytes, ranks the ones that answered by a total of half the speed score and
 half the latency score, starts on the first, measures the others again at
 the current offset while enough of the download is left, moves to one whose
 total is clearly higher, resumes on the next source when one
-stalls or fails, and checks the digest when the last byte arrives. A
+stalls or fails, and checks the digest when the last byte arrives: a
+sha256, npm's SHA-512 integrity, or the git tree of a gzip tarball's files. A
 document, a version list or a ``latest.json``, is read from every source at
 once and the first valid answer wins. Nothing remembers a past result.
 
@@ -54,12 +55,15 @@ from neutrino_hub.utils.constants import (
     UTILS_FETCH_SPEED_WINDOW_S,
     UTILS_FETCH_STALL_S,
 )
+from neutrino_hub.utils.git_tree import GIT_TREE_PREFIX, is_git_tree, tar_gz_tree_hex
 from neutrino_hub.utils.tls_trust import public_ssl_context
 
 DIGEST_PREFIX = "sha256:"
 # npm's ``integrity``: the base64 of a tarball's SHA-512.
 INTEGRITY_PREFIX = "sha512-"
 INTEGRITY_BYTES = 64
+# The hex characters of a git tree's SHA-1.
+GIT_TREE_HEX_CHARS = 40
 PARTIAL_PREFIX = ".partial_"
 # The reasons a source fails, as ``download_failed`` names them.
 REASON_UNREACHABLE = "unreachable"
@@ -184,19 +188,26 @@ def file_sha256(path: Path) -> str:
 
 
 def hex_of(digest: str) -> str:
-    """The hex of a ``sha256:<hex>`` digest, or of an npm ``sha512-<base64>`` integrity.
+    """The hex of a ``sha256:<hex>`` digest, of an npm ``sha512-<base64>`` integrity, or of a ``git-tree:<hex>`` tree.
 
     Args:
         digest: The digest as a manifest names it.
 
     Returns:
         The lowercase hex of the digest's bytes: 64 characters for a
-        sha256 digest, 128 for an integrity.
+        sha256 digest, 128 for an integrity, 40 for a tree.
 
     Raises:
         ValueError: For a digest of another form.
     """
     value = str(digest or "")
+    if is_git_tree(value):
+        hexed = value[len(GIT_TREE_PREFIX) :].lower()
+        if len(hexed) != GIT_TREE_HEX_CHARS or any(
+            letter not in "0123456789abcdef" for letter in hexed
+        ):
+            raise ValueError(f"{digest!r} is no git tree")
+        return hexed
     if value.startswith(INTEGRITY_PREFIX):
         try:
             held = base64.b64decode(value[len(INTEGRITY_PREFIX) :], validate=True)
@@ -232,14 +243,21 @@ def file_hex(path: Path, digest: str) -> str:
 
     Args:
         path: The file.
-        digest: The digest whose algorithm the file is hashed with.
+        digest: The digest whose algorithm the file is hashed with; a git
+            tree's hashes the files of the gzip tarball the file is.
 
     Returns:
-        The hex.
+        The hex; empty for a git tree's file that is no tarball git could
+        record.
 
     Raises:
         OSError: When it cannot be read.
     """
+    if is_git_tree(digest):
+        try:
+            return tar_gz_tree_hex(path)
+        except ValueError:
+            return ""
     hashed = digest_hash(digest)
     with open(path, "rb") as stream:
         while True:
@@ -530,7 +548,7 @@ class SourceFetcher:
                                 for item in listed
                             ],
                         )
-                    if self._is_digest(stream, digest, source, state):
+                    if self._is_digest(stream, path, digest, source, state):
                         break
                     source = None
                 stream.seek(0)
@@ -761,11 +779,14 @@ class SourceFetcher:
         return fastest.source if fastest.is_complete else None
 
     @staticmethod
-    def _is_digest(stream, wanted: str, source: str, state: _Download) -> bool:
+    def _is_digest(
+        stream, path: Path, wanted: str, source: str, state: _Download
+    ) -> bool:
         """Whether the file holds the wanted bytes; a mismatch drops its source.
 
         Args:
             stream: The temporary file.
+            path: Where it is, which a git tree's check reads.
             wanted: The digest, whose form names the algorithm.
             source: The source that served the last byte.
             state: The download, whose offset goes back to the start on a
@@ -775,15 +796,20 @@ class SourceFetcher:
             True when the digest matches.
         """
         stream.flush()
-        stream.seek(0)
-        digest = digest_hash(wanted)
-        for chunk in iter(functools.partial(stream.read, UTILS_FETCH_CHUNK_BYTES), b""):
-            digest.update(chunk)
-        if digest.hexdigest() == hex_of(wanted):
+        if is_git_tree(wanted):
+            found = file_hex(path, wanted)
+        else:
+            stream.seek(0)
+            digest = digest_hash(wanted)
+            for chunk in iter(
+                functools.partial(stream.read, UTILS_FETCH_CHUNK_BYTES), b""
+            ):
+                digest.update(chunk)
+            found = digest.hexdigest()
+        if found == hex_of(wanted):
             return True
-        state.failures[source] = failure_entry(
-            source, REASON_DIGEST_MISMATCH, f"the file hashes to {digest.hexdigest()}"
-        )
+        said = f"the file hashes to {found}" if found else "the file is no tarball"
+        state.failures[source] = failure_entry(source, REASON_DIGEST_MISMATCH, said)
         state.offset = 0
         return False
 
