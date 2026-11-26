@@ -9,7 +9,7 @@ import type { PanelSettings } from "./api_types";
  * its address bar. A page on another port came through a forward, where that
  * host is not where the hub's ports are, so the hub is named by a
  * placeholder. A forward to a loopback host is a client's Panel button: the
- * client opens `panel-<hub id>.localhost` or `127.0.0.1` on a port of its
+ * client opens `panel-<hub id>.localhost` or `localhost` on a port of its
  * own. Any other host on a foreign port is a port forward, such as a
  * router's.
  */

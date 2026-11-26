@@ -31,7 +31,8 @@ app's local name, a token page opened with the token a ``service`` reply
 gives, a number another program holds refused ``port_taken`` with the
 other forwards kept, Stop ending them, and Configure's numbers judged
 before any is kept. The panel's sign-in asked with a ``service`` frame
-before its forward, the terminals' streams opened through the transport
+before its forward, the panel opened at ``localhost`` on macOS, where
+every app opens at ``127.0.0.1``, the terminals' streams opened through the transport
 with their account, the window terminal's Clear, the shares on Windows
 through the files adapter, and the Settings page's values.
 """
@@ -3482,17 +3483,18 @@ def test_panel_asks_its_sign_in_then_makes_the_forward_and_opens_its_address(
     }
 
 
-def test_panel_on_a_mac_opens_the_loopback(two_hubs_up):
+def test_panel_on_a_mac_opens_localhost_apart_from_the_apps_loopback(two_hubs_up):
     resident, transport = two_hubs_up
-    panel_allowed(resident, transport)
+    steps = panel_allowed(resident, transport)
     resident.platform.os_name = "darwin"
 
     assert resident.open_panel("h1") == {}
 
     port = resident.hubs()[0]["panel_forward"]
     assert resident.platform.opened_urls == [
-        f"http://127.0.0.1:{port}/?tkn={PANEL_TOKEN}"
+        f"http://localhost:{port}/?tkn={PANEL_TOKEN}"
     ]
+    assert steps[1][1]["listen"] == f"127.0.0.1:{port}"
 
 
 def test_panel_is_refused_without_the_permission_or_the_hub(two_hubs_up):

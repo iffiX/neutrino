@@ -154,10 +154,10 @@ final class AppForwardsTests: XCTestCase {
         ) { error in XCTAssertEqual((error as? ClientError)?.code, "disconnect_first") }
     }
 
-    func testPanelSignsInAtAPickedPortOnTheLoopback() throws {
+    func testPanelSignsInAtAPickedPortOnLocalhostApartFromTheApps() throws {
         let forwards = try XCTUnwrap(self.forwards)
         forwards.openPanel(bindingId: "b1") { self.opened.append($0) }
-        XCTAssertEqual(opened, ["http://127.0.0.1:20000/?tkn=one-time"])
+        XCTAssertEqual(opened, ["http://localhost:20000/?tkn=one-time"])
         XCTAssertEqual(forwarder.started.first?.open["is_panel"], .bool(true))
         XCTAssertEqual(forwards.rows["b1/#panel"]?.localPort, 20000)
         XCTAssertEqual(asked.first?["is_panel"], .bool(true))

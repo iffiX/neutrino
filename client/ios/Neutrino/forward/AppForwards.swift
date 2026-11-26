@@ -4,9 +4,9 @@ import Foundation
 /// `port` entries at its local port, the person's number or the hub's, and the app is in use until Stop, its hub's
 /// leave or the app's quit; Open opens the in-app browser at `127.0.0.1` on the app's first `http` or `https`
 /// entry, with a fresh token for an entry that takes one. The hub's panel's forward lives from the first press of
-/// Panel until the hub is left, on a number picked from 20000 to 23999 and kept. A forward stops when its hub is
-/// left and when its entry leaves the hub's state; every listener stops when the app is suspended and listens
-/// again on its number when the app comes back. Every call runs on the main queue.
+/// Panel until the hub is left, on a number picked from 20000 to 23999 and kept, and Panel opens it at `localhost`.
+/// A forward stops when its hub is left and when its entry leaves the hub's state; every listener stops when the
+/// app is suspended and listens again on its number when the app comes back. Every call runs on the main queue.
 final class AppForwards {
     private let table: LocalPortTable
     private let forwarder: LocalForwarder
@@ -161,7 +161,7 @@ final class AppForwards {
 
     /// Press Panel on a hub's row: a one-time `{token}` is read on a `service` frame with `{is_panel: true}`, the
     /// panel's forward is made when the hub has none, and the in-app browser opens
-    /// `http://127.0.0.1:<local port>/?tkn=<token>`. A refusal of either is the row's error and opens nothing.
+    /// `http://localhost:<local port>/?tkn=<token>`. A refusal of either is the row's error and opens nothing.
     ///
     /// - Parameters:
     ///   - bindingId: The hub.
@@ -194,7 +194,7 @@ final class AppForwards {
                     case .failure(let refusal):
                         settle(nil, refusal)
                     case .success(let port):
-                        onOpen(Self.tokenUrl("http://\(Forward.bindHost):\(port)/", token: token))
+                        onOpen(Self.tokenUrl("http://\(Forward.panelHost):\(port)/", token: token))
                         settle(port, nil)
                     }
                 }

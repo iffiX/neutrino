@@ -40,6 +40,8 @@ APP_ENTRY_KINDS = ("web", "port")
 # The host the hub's panel opens on, before the hub's id.
 APP_PANEL_HOST_PREFIX = "panel-"
 APP_LOCALHOST_SUFFIX = ".localhost"
+# The host the hub's panel opens on macOS, apart from every app's.
+APP_PANEL_MAC_HOST = "localhost"
 
 
 def entry_protocol(entry: dict) -> str:
@@ -112,9 +114,11 @@ def panel_url(hub_id: str, port: int, token: str, os_name: str) -> str:
 
     Returns:
         ``http://panel-<hub-id>.localhost:<port>/?tkn=<token>``; on macOS
-        the host is ``127.0.0.1``.
+        the host is ``localhost``.
     """
-    host = browser_host(APP_PANEL_HOST_PREFIX + hub_id + APP_LOCALHOST_SUFFIX, os_name)
+    host = APP_PANEL_HOST_PREFIX + hub_id + APP_LOCALHOST_SUFFIX
+    if os_name == APP_NO_LOCALHOST_NAMES_OS:
+        host = APP_PANEL_MAC_HOST
     return local_url("http://panel/", host, port, token)
 
 

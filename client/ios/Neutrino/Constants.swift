@@ -356,6 +356,9 @@ enum Forward {
     /// The address every forward listens on.
     static let bindHost = "127.0.0.1"
 
+    /// The host the hub's panel opens on, apart from every app's.
+    static let panelHost = "localhost"
+
     /// The numbers a person may fix a local port to.
     static let fixedPorts = 1024...65535
 
