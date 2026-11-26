@@ -247,6 +247,8 @@ const STATE_KEYS: Record<string, string> = {
   installing: "state.installing",
   uninstalling: "state.uninstalling",
   queued: "state.queued",
+  starting: "state.starting",
+  stopping: "state.stopping",
   failed: "state.failed",
   install_failed: "state.install_failed",
   unsupported: "state.unsupported",
@@ -262,7 +264,13 @@ const CONFIGURING_WANTS = ["running", "stopped"];
 
 /** The states in transit: the tab turns a spinner beside its word and
  * every button of the tab but a first install's Cancel is disabled. */
-const BUSY_STATES = ["installing", "uninstalling", "queued"];
+const BUSY_STATES = [
+  "installing",
+  "uninstalling",
+  "queued",
+  "starting",
+  "stopping",
+];
 
 /** The states a first install reads while its task runs. */
 const FIRST_INSTALL_STATES = ["installing", "queued"];
@@ -299,8 +307,8 @@ const CANCEL_BUSY = "cancel";
 const PRESSED_STATES: Record<ModuleAction, string> = {
   install: "installing",
   uninstall: "uninstalling",
-  start: "queued",
-  stop: "queued",
+  start: "starting",
+  stop: "stopping",
 };
 
 /** The states whose code the tab words as a notice at its top: what holds

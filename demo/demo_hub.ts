@@ -1880,7 +1880,7 @@ export class DemoHub {
       this.runTask(
         device,
         spec,
-        "queued",
+        held.state,
         [{ name: "start", params: {} }],
         "running",
       );
@@ -1891,7 +1891,7 @@ export class DemoHub {
       this.runTask(
         device,
         spec,
-        "queued",
+        held.state,
         [{ name: "stop", params: {} }],
         "stopped",
       );

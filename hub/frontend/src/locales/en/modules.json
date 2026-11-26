@@ -25,6 +25,8 @@
   "state.queued": "queued",
   "state.quiet": "quiet",
   "state.serving": "serving",
+  "state.starting": "starting",
+  "state.stopping": "stopping",
   "state.unavailable": "unavailable",
   "state.uninstalling": "uninstalling",
   "state.unsupported": "unsupported",

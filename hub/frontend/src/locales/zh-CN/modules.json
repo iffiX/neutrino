@@ -25,6 +25,8 @@
   "state.queued": "排队中",
   "state.quiet": "安静",
   "state.serving": "服务中",
+  "state.starting": "启动中",
+  "state.stopping": "停止中",
   "state.unavailable": "不可用",
   "state.uninstalling": "卸载中",
   "state.unsupported": "不支持",
