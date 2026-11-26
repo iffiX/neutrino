@@ -1605,7 +1605,7 @@ row").
 | **Refresh**, **Pause** and **Resume** write at once, with no confirmation and no apply bar. A refusal shows the code's words under the row, and the button stays live. | Signing in is never staged ([architecture.md](architecture.md)), and a pause is undone by **Resume**. |
 | The 15-second read sends no request to a vendor. Only **Refresh** does. | The windows of a Claude or Codex row follow the account's own requests through the gateway's signals, and the vendors' endpoints are read at a press alone ([hub_components/ai.md](hub_components/ai.md), "Quota on an account row"). |
 | A row with no window draws no rings and no updated line. | A Kimi or Antigravity row has windows only after its first **Refresh**, and an xAI row has none. |
-| Under 640 px the rings go under the label, the buttons keep the end of the line. | Five parts on one line leave a phone's label a few characters wide. |
+| In a panel under 860 px wide the counts and the status take a second line under the label, and the buttons keep the end of the first line. Under 520 px the label takes the second line whole, the counts and the status the third, and the rings go three across with the updated time on a line of its own. | Five parts on one line leave a narrow panel's label a few characters wide. |
 
 ## The Models panel of the AI page
 
