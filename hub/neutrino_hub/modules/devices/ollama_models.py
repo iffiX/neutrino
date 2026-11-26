@@ -15,6 +15,7 @@ Not pure: holds connections and threads.
 
 import http.client
 import json
+import logging
 import re
 import socket
 import threading
@@ -30,6 +31,8 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_OLLAMA_PULL_RUNNING,
     DEVICE_OLLAMA_SPEED_WINDOW_S,
 )
+
+LOGGER = logging.getLogger(__name__)
 
 # The words a refused name and a failed pull carry, as the panel words them.
 CODE_PULL_FAILED = "ollama_pull_failed"
@@ -446,7 +449,7 @@ class OllamaPullQueue:
         return True
 
     def _serve(self, device_id: str) -> None:
-        """Run the machine's pulls one after another until none waits."""
+        """Run the machine's pulls one after another until none waits, failing one that raises."""
         while True:
             with self._lock:
                 queue = self._queues.get(device_id, [])
@@ -458,7 +461,13 @@ class OllamaPullQueue:
                     self._workers.discard(device_id)
                     return
                 pull.state = DEVICE_OLLAMA_PULL_RUNNING
-            self._run(device_id, pull)
+            try:
+                self._run(device_id, pull)
+            except Exception as error:  # noqa: BLE001 - the worker outlives one pull
+                LOGGER.exception(
+                    "device %s: the pull of %s raised", device_id, pull.name
+                )
+                self._fail(device_id, pull, error)
 
     def _run(self, device_id: str, pull: OllamaPull) -> None:
         """Run one pull to its end, keeping its progress; a failure stays in the queue."""
@@ -494,15 +503,7 @@ class OllamaPullQueue:
             client = self._client_class(self._address_of(device_id))
             client.pull(pull.name, on_line=take, on_open=opened)
         except (ConnectionError, OSError, ValueError) as error:
-            with self._lock:
-                self._connections.pop(device_id, None)
-                if pull in self._queues.get(device_id, []):
-                    pull.state = DEVICE_OLLAMA_PULL_FAILED
-                    pull.code = CODE_PULL_FAILED
-                    pull.params = {
-                        "name": pull.name,
-                        "detail": str(error)[:DETAIL_LIMIT],
-                    }
+            self._fail(device_id, pull, error)
             return
         with self._lock:
             self._connections.pop(device_id, None)
@@ -511,6 +512,18 @@ class OllamaPullQueue:
                 queue.remove(pull)
         if self._on_pulled is not None:
             self._on_pulled(device_id)
+
+    def _fail(self, device_id: str, pull: OllamaPull, error: Exception) -> None:
+        """Drop the machine's connection, and mark the pull failed while the queue holds it."""
+        with self._lock:
+            self._connections.pop(device_id, None)
+            if pull in self._queues.get(device_id, []):
+                pull.state = DEVICE_OLLAMA_PULL_FAILED
+                pull.code = CODE_PULL_FAILED
+                pull.params = {
+                    "name": pull.name,
+                    "detail": str(error)[:DETAIL_LIMIT],
+                }
 
 
 def _shut_down(connection) -> None:

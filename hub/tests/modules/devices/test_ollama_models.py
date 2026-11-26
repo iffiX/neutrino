@@ -11,7 +11,8 @@ further pull waiting behind the running one, a cancel ending the running
 pull by closing its connection or taking a waiting one off, and a failed
 pull kept with ``ollama_pull_failed`` until it is taken off; a cancel while
 the pull reads the size line of a chunk raising nothing out of the worker,
-the queue running on after it.
+and a pull that raises an unexpected kind marked failed, the queue running on
+in both cases.
 """
 
 import logging
@@ -251,6 +252,34 @@ def test_a_cancel_while_the_pull_waits_for_a_chunk_leaves_the_queue_running(
     queue.add("cut", "b:1")
     assert _until(lambda: any(model["name"] == "b:1" for model in ollama.models))
     assert _until(lambda: queue.pulls("cut") == [])
+
+
+def test_an_unexpected_failure_of_a_pull_fails_it_and_the_queue_runs_on(ollama):
+    ollama.pull_lines["b:1"] = PULL
+    ollama.pull_lines["c:1"] = PULL
+
+    class BrokenClient(OllamaApiClient):
+        def pull(self, name, **kwargs):
+            if name == "a:1":
+                raise AttributeError("'NoneType' object has no attribute 'close'")
+            super().pull(name, **kwargs)
+
+    queue = OllamaPullQueue(
+        address_of=lambda device: ollama.address, client_class=BrokenClient
+    )
+    queue.add("dev", "a:1")
+    queue.add("dev", "b:1")
+    assert _until(lambda: [pull["name"] for pull in queue.pulls("dev")] == ["a:1"])
+    failed = queue.pulls("dev")[0]
+    assert failed["state"] == "failed"
+    assert failed["code"] == "ollama_pull_failed"
+    assert failed["params"] == {
+        "name": "a:1",
+        "detail": "'NoneType' object has no attribute 'close'",
+    }
+    queue.add("dev", "c:1")
+    assert _until(lambda: [pull["name"] for pull in queue.pulls("dev")] == ["a:1"])
+    assert _until(lambda: {"b:1", "c:1"} <= {model["name"] for model in ollama.models})
 
 
 def test_the_progress_is_the_sum_of_the_layers(ollama):
