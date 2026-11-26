@@ -4,6 +4,7 @@ import type {
   AiUsageAmounts,
   AiUsageBucket,
   AiUsageCounters,
+  AiUsageModelUpstream,
   AiUsageHealthBucket,
   AiUsageRange,
   AiUsageResponse,
@@ -325,8 +326,8 @@ function usageHealth(seed: number): AiUsageHealthBucket[] {
 }
 
 /** How a sample slice of the traffic is counted: as cost, as an API value,
- * unpriced, or with no model. */
-type DemoPricing = "cost" | "api_value" | "unpriced" | "no_model";
+ * unpriced, with no model, or a machine's Ollama counted in none. */
+type DemoPricing = "cost" | "api_value" | "unpriced" | "no_model" | "none";
 
 /** A slice of the traffic: one model on one upstream. */
 interface DemoUsageSlice {
@@ -342,13 +343,15 @@ interface DemoUsageSlice {
 
 /** The sample traffic, sliced by upstream and model; the shares sum to 1. */
 const DEMO_USAGE_SLICES: DemoUsageSlice[] = [
-  slice("provider_deepseek", "deepseek-flash", 0.2, "cost", 0.28, 1.1),
+  slice("provider_deepseek", "deepseek-flash", 0.15, "cost", 0.28, 1.1),
   slice("provider_deepseek", "deepseek-v4-pro", 0.1, "cost", 0.55, 2.2),
   slice("provider_deepseek", "", 0.04, "no_model", 0, 0),
   slice("provider_kimi", "kimi-k3.1-pro", 0.1, "cost", 4, 16, "CNY"),
   slice("provider_kimi", "kimi-k3", 0.06, "cost", 0.58, 2.32),
   slice("provider_zhipu", "glm-5.3", 0.12, "api_value", 0.6, 2.2),
   slice("provider_relay", "claude-fable-5-2", 0.06, "unpriced", 0, 0),
+  slice("ollama:dev_desktop", "qwen2.5:7b", 0.03, "none", 0, 0),
+  slice("ollama:dev_laptop", "qwen2.5:7b", 0.02, "none", 0, 0),
   slice(
     "codex-xiaoming@example.com.json",
     "gpt-6.2-astra",
@@ -480,9 +483,12 @@ export function demoAiUsage(
       share * (bucket.requests / Math.max(1, tokenTotals.requests)),
     ),
   }));
-  const models = new Map<string, AiUsageCounters[]>();
+  const models = new Map<string, AiUsageModelUpstream[]>();
   for (const { entry, counters } of slices) {
-    models.set(entry.model, [...(models.get(entry.model) ?? []), counters]);
+    models.set(entry.model, [
+      ...(models.get(entry.model) ?? []),
+      { upstream: entry.upstream, ...counters },
+    ]);
   }
   return {
     range,
@@ -524,9 +530,10 @@ export function demoAiUsage(
           .map((item) => item.counters),
       ),
     })),
-    models: [...models.entries()].map(([model, rows]) => ({
+    models: [...models.entries()].map(([model, upstreams]) => ({
       model,
-      ...sumCounters(rows),
+      ...sumCounters(upstreams),
+      upstreams,
     })),
   };
 }

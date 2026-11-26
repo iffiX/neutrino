@@ -33,8 +33,9 @@ import "./confirm_modal.css";
  * nothing here stages: signing in writes the credential the moment the
  * provider hands it over, a refresh, a pause and a resume write at once, and
  * deleting one is a revocation, which never waits behind an apply bar. The
- * panel therefore carries no frame to light. Under each account's line come
- * its limit windows as rings.
+ * panel therefore carries no frame to light. Each account is a card: the
+ * service and the label with the limit windows under it, the counts, the
+ * status and the updated time at the right, and the buttons at its foot.
  *
  * A sign-in is one interaction that has to finish, so it happens in a modal:
  * the provider decides how — a redirect the person brings back, or a code they
@@ -242,68 +243,29 @@ function AccountRow({ value, isBusy, onChanged, onDelete }: AccountRowProps) {
           </span>
         )}
       </span>
-      <span className="ai_account_counts">
-        <span>{t("ui.ai.count_ok", { count: value.success_count })}</span>
-        <span>·</span>
-        <span
-          className={
-            value.failed_count > 0 ? "ai_account_counts--failed" : undefined
-          }
-        >
-          {t("ui.ai.count_failed", { count: value.failed_count })}
-        </span>
-      </span>
-      <span
-        className="ai_account_status"
-        title={hasMessage ? value.status_message : undefined}
-      >
-        <StatusDot tone={health.tone} label={health.word} />
-      </span>
-      <span className="ai_account_actions">
-        {value.has_quota_read && (
-          <button
-            type="button"
-            className="button button--ghost button--small ai_account_refresh"
-            disabled={isBusy || pending !== null}
-            onClick={() =>
-              void write("/hub/ai/gateway/account/quota/scan", "refresh")
+      <span className="ai_account_side">
+        <span className="ai_account_counts">
+          <span>{t("ui.ai.count_ok", { count: value.success_count })}</span>
+          <span>·</span>
+          <span
+            className={
+              value.failed_count > 0 ? "ai_account_counts--failed" : undefined
             }
           >
-            {pending === "refresh" ? (
-              <Spinner size={12} />
-            ) : (
-              <Icon name="refresh" size={13} />
-            )}
-            {t("ui.ai.refresh")}
-          </button>
-        )}
-        <button
-          type="button"
-          className="button button--ghost button--small ai_account_pause"
-          disabled={isBusy || pending !== null}
-          onClick={() =>
-            void write(
-              value.is_disabled
-                ? "/hub/ai/gateway/account/enable"
-                : "/hub/ai/gateway/account/disable",
-              "pause",
-            )
-          }
-        >
-          <span className="ai_account_pause_words">
-            <span aria-hidden={value.is_disabled}>{t("ui.ai.pause")}</span>
-            <span aria-hidden={!value.is_disabled}>{t("ui.ai.resume")}</span>
+            {t("ui.ai.count_failed", { count: value.failed_count })}
           </span>
-        </button>
-        <button
-          type="button"
-          className="button button--ghost button--small button--danger ai_account_delete"
-          disabled={isBusy || pending !== null}
-          onClick={onDelete}
+        </span>
+        <span
+          className="ai_account_status"
+          title={hasMessage ? value.status_message : undefined}
         >
-          <Icon name="trash" size={13} />
-          {t("ui.ai.delete")}
-        </button>
+          <StatusDot tone={health.tone} label={health.word} />
+        </span>
+        {newestSeenAt !== null && (
+          <span className="ai_account_updated faint">
+            {t("ui.ai.quota_updated", { ago: formatTimeAgo(newestSeenAt) })}
+          </span>
+        )}
       </span>
 
       {value.windows.length > 0 && (
@@ -335,17 +297,59 @@ function AccountRow({ value, isBusy, onChanged, onDelete }: AccountRowProps) {
               )}
             </span>
           ))}
-          {newestSeenAt !== null && (
-            <span className="ai_account_updated faint">
-              {t("ui.ai.quota_updated", { ago: formatTimeAgo(newestSeenAt) })}
-            </span>
-          )}
         </div>
       )}
 
       {error !== null && (
         <span className="field_error ai_account_error">{error}</span>
       )}
+
+      <span className="ai_account_actions">
+        {value.has_quota_read && (
+          <button
+            type="button"
+            className="button button--ghost button--small"
+            disabled={isBusy || pending !== null}
+            onClick={() =>
+              void write("/hub/ai/gateway/account/quota/scan", "refresh")
+            }
+          >
+            {pending === "refresh" ? (
+              <Spinner size={12} />
+            ) : (
+              <Icon name="refresh" size={13} />
+            )}
+            {t("ui.ai.refresh")}
+          </button>
+        )}
+        <button
+          type="button"
+          className="button button--ghost button--small"
+          disabled={isBusy || pending !== null}
+          onClick={() =>
+            void write(
+              value.is_disabled
+                ? "/hub/ai/gateway/account/enable"
+                : "/hub/ai/gateway/account/disable",
+              "pause",
+            )
+          }
+        >
+          <span className="ai_account_pause_words">
+            <span aria-hidden={value.is_disabled}>{t("ui.ai.pause")}</span>
+            <span aria-hidden={!value.is_disabled}>{t("ui.ai.resume")}</span>
+          </span>
+        </button>
+        <button
+          type="button"
+          className="button button--ghost button--small button--danger"
+          disabled={isBusy || pending !== null}
+          onClick={onDelete}
+        >
+          <Icon name="trash" size={13} />
+          {t("ui.ai.delete")}
+        </button>
+      </span>
     </div>
   );
 }

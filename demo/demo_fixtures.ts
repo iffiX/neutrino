@@ -570,6 +570,60 @@ export const DEMO_MODEL_PRICES: Record<string, AiModelDefaultPrice> = {
   },
 };
 
+/** The models.dev price of each sample source's records of a name, by
+ * `<source id>|<name>`; a source left out has none. */
+export const DEMO_SOURCE_PRICES: Record<string, AiModelDefaultPrice> = {
+  "claude-xiaoming@example.com.json|claude-fable-5-2": {
+    input: 5,
+    output: 25,
+    cache_read: 0.5,
+    cache_write: 6.25,
+    currency: "USD",
+  },
+  "provider_deepseek|deepseek-flash": {
+    input: 0.28,
+    output: 1.1,
+    cache_read: 0.028,
+    currency: "USD",
+  },
+  "provider_deepseek|deepseek-v4-pro": {
+    input: 0.55,
+    output: 2.2,
+    cache_read: 0.14,
+    currency: "USD",
+  },
+  "provider_zhipu|glm-5.3": {
+    input: 0.6,
+    output: 2.2,
+    cache_read: 0.11,
+    currency: "USD",
+  },
+  "codex-xiaoming@example.com.json|gpt-6.2-astra": {
+    input: 1.25,
+    output: 10,
+    cache_read: 0.125,
+    currency: "USD",
+  },
+  "provider_kimi|kimi-k3": {
+    input: 0.58,
+    output: 2.32,
+    cache_read: 0.1,
+    currency: "USD",
+  },
+  "provider_kimi|kimi-k3.1-pro": {
+    input: 0.58,
+    output: 2.32,
+    cache_read: 0.1,
+    currency: "USD",
+  },
+  "kimi-xiaoming.json|kimi-k3.1-pro": {
+    input: 0.6,
+    output: 2.5,
+    cache_read: 0.15,
+    currency: "USD",
+  },
+};
+
 /** The prices a person set, by cloud name. */
 export const DEMO_PRICES_SAVED: Record<string, AiModelPrice> = {
   "kimi-k3.1-pro": { input: 4, output: 16, currency: "CNY" },

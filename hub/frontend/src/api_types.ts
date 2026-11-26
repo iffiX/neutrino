@@ -816,16 +816,6 @@ export interface AiOllamaProvidersResponse {
   providers: AiOllamaProviderView[];
 }
 
-/** An account or a stored provider that serves a name. */
-export interface AiModelSourceView {
-  origin: "account" | "provider";
-  /** The account's token file, or the provider's id. */
-  id: string;
-  /** The gateway's provider name of the account's login (`claude`,
-   * `codex`, …), or the provider's name. */
-  name: string;
-}
-
 export type AiPriceCurrency = "USD" | "CNY";
 
 /** A price a person set, per million tokens. */
@@ -843,6 +833,19 @@ export interface AiModelDefaultPrice {
   cache_read?: number;
   cache_write?: number;
   currency: AiPriceCurrency;
+}
+
+/** An account or a stored provider that serves a name. */
+export interface AiModelSourceView {
+  origin: "account" | "provider";
+  /** The account's token file, or the provider's id. */
+  id: string;
+  /** The gateway's provider name of the account's login (`claude`,
+   * `codex`, …), or the provider's name. */
+  name: string;
+  /** The price the source's records of the name are priced at; null while
+   * it has none. */
+  price: AiModelDefaultPrice | null;
 }
 
 /** A cloud name the gateway serves, with the context length the AI tools
@@ -978,10 +981,19 @@ export interface AiUsageProvider extends AiUsageCounters {
   health: AiUsageHealthBucket[];
 }
 
+/** One upstream's usage of a served name over the range. */
+export interface AiUsageModelUpstream extends AiUsageCounters {
+  /** A stored provider's id, an account's token file, `ollama:<device id>`
+   * for a machine's Ollama, or empty for records of no known upstream. */
+  upstream: string;
+}
+
 /** One served name's usage over the range; `model` is empty for the days
  * stored before the model field. */
 export interface AiUsageModel extends AiUsageCounters {
   model: string;
+  /** The same counters per upstream that served the name. */
+  upstreams: AiUsageModelUpstream[];
 }
 
 /** The `/cliproxyapi/usage` payload. */

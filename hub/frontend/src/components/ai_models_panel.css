@@ -1,12 +1,12 @@
 /* One grid for every row: the name takes the room left and never less
    than 12 characters, the sources wrap within theirs, and the length and
-   the button take their own widths, so each column lines up down the
+   the two buttons take their own widths, so each column lines up down the
    panel. */
 .ai_models_list {
   display: grid;
   grid-template-columns:
     minmax(12ch, 1fr) minmax(0, max-content) max-content
-    max-content;
+    max-content max-content;
   gap: var(--space-2) var(--space-3);
 }
 
@@ -59,49 +59,14 @@
   font-size: 12.5px;
 }
 
-/* Each machine of an Ollama name under the name, one line each: the
-   machine's name, its setting and the model's trained length in three
-   columns of fixed width, so every machine line of every row lines up; the
-   number in force is the bright one. */
-.ai_models_machines {
-  display: flex;
-  flex-direction: column;
-  grid-column: 1 / -1;
-  gap: 2px;
+/* Configure and Details each in a column of its own, so Details stands at
+   one x whether a row has Configure or not. */
+.ai_models_configure {
+  grid-column: 4;
 }
 
-.ai_models_machine {
-  display: grid;
-  grid-template-columns: 9rem 16ch 18ch;
-  column-gap: var(--space-3);
-  align-items: baseline;
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-}
-
-.ai_models_machine_name {
-  display: block;
-  min-width: 0;
-  overflow: hidden;
-  color: var(--color-text-muted);
-  font-family: var(--font-sans);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.ai_models_machine_name:hover {
-  color: var(--color-accent);
-}
-
-.ai_models_source {
-  color: var(--color-text-faint);
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-  white-space: nowrap;
-}
-
-.ai_models_source--in_force {
-  color: var(--color-text);
+.ai_models_details {
+  grid-column: 5;
 }
 
 /* --- The dialog of a cloud name --- */
@@ -127,16 +92,125 @@
   gap: var(--space-3);
 }
 
+/* --- The Details dialog --- */
+
+.ai_model_details_range {
+  margin-top: calc(-1 * var(--space-2));
+  font-size: 12px;
+}
+
+/* The name's figures in large type, each its label above it. */
+.ai_model_figures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-6);
+}
+
+.ai_model_figure {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ai_model_figure_label {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.ai_model_figure_value {
+  color: var(--color-text);
+  font-size: 22px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.ai_model_figure_unit {
+  font-size: 11px;
+}
+
+/* One box per source, two across. */
+.ai_model_boxes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.ai_model_box {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+}
+
+.ai_model_box_head {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.ai_model_box_name {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A box's figures: the word at the left, the number at the right. */
+.ai_model_box_lines {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 2px var(--space-3);
+  margin: 0;
+  font-size: 12px;
+}
+
+.ai_model_box_lines dt {
+  color: var(--color-text-faint);
+}
+
+.ai_model_box_lines dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.ai_model_box_lengths {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px var(--space-3);
+  justify-content: space-between;
+  font-size: 12px;
+}
+
+.ai_model_box_in_force {
+  color: var(--color-text);
+}
+
 /* Portrait: the head row goes, the sources drop under the name, the length
-   and Configure keep the first line's end, a machine's two values take the
-   line under its name, and the dialog's prices stack. */
+   and the two buttons keep the first line's end, and the dialogs' prices
+   and boxes stack. */
 @media (max-width: 640px) {
   .ai_models_list {
-    grid-template-columns: minmax(0, 1fr) max-content max-content;
+    grid-template-columns: minmax(0, 1fr) max-content max-content max-content;
   }
 
   .ai_models_head {
     display: none;
+  }
+
+  .ai_models_configure {
+    grid-column: 3;
+  }
+
+  .ai_models_details {
+    grid-column: 4;
   }
 
   .ai_models_sources {
@@ -144,15 +218,11 @@
     grid-column: 1 / -1;
   }
 
-  .ai_models_machine {
-    grid-template-columns: 16ch 18ch;
-  }
-
-  .ai_models_machine_name {
-    grid-column: 1 / -1;
-  }
-
   .ai_model_dialog_prices {
     grid-template-columns: 1fr;
+  }
+
+  .ai_model_boxes {
+    grid-template-columns: minmax(0, 1fr);
   }
 }

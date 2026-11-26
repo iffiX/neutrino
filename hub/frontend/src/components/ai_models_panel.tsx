@@ -7,18 +7,25 @@ import { Icon } from "./icon";
 import { Picker } from "./picker";
 import { Spinner } from "./spinner";
 import { providerLabel } from "../ai_provider_labels";
-import { apiPost, describeError } from "../api_client";
+import { formatAmounts, hasAmount, tokensOf } from "../ai_usage";
+import { apiPath, apiPost, describeError } from "../api_client";
+import { formatCompact } from "../format_compact";
 import { t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
 import { HUB_EVENT_AI_USAGE, HUB_EVENT_CONFIG } from "../use_hub_events";
 import type {
   AiCloudModelView,
+  AiModelDefaultPrice,
   AiModelPrice,
   AiModelResponse,
   AiModelSourceView,
   AiModelUpdate,
+  AiOllamaModelMachineView,
   AiOllamaModelView,
   AiPriceCurrency,
+  AiUsageCounters,
+  AiUsageRange,
+  AiUsageResponse,
 } from "../api_types";
 
 import "./ai_models_panel.css";
@@ -29,12 +36,23 @@ import "./ai_models_panel.css";
  * with where it comes from and the length every machine's AI tools are
  * given for it. A cloud row's Configure opens a dialog with the name's
  * length and its input and output price per million tokens, and its Save
- * writes that one name. An Ollama name's length is read-only, with each
- * machine of its pool under the name, and it has no price.
+ * writes that one name. Every row's Details opens a dialog of the name's use
+ * over the Activity panel's range and each source's use and price. An Ollama
+ * name's length is read-only, and it has no price.
  */
 
 const MODEL_PATH = "/hub/ai/model";
 const MODEL_SET_PATH = "/hub/ai/model/set";
+const USAGE_PATH = "/hub/ai/gateway/usage";
+/** A usage upstream of a machine's Ollama: this before its device id. */
+const OLLAMA_UPSTREAM_PREFIX = "ollama:";
+/** The words of each range the Details dialog's figures cover. */
+const RANGE_WORD_KEYS: Record<AiUsageRange, string> = {
+  day: "ui.ai.details_range_day",
+  week: "ui.ai.details_range_week",
+  month: "ui.ai.details_range_month",
+  year: "ui.ai.details_range_year",
+};
 // What moves the lengths and the prices: the gateway's counters or served
 // list, and any write under config/.
 const MODEL_INVALIDATE_ON = [
@@ -150,13 +168,14 @@ function isPriceChanged(row: AiCloudModelView, text: ModelText): boolean {
 }
 
 /** A price with its sign: two decimals, or more where it has them. */
-function formatPrice(currency: AiPriceCurrency, value: number): string {
+function formatPrice(currency: string, value: number): string {
   const cents = value * 100;
   const digits =
     Math.abs(cents - Math.round(cents)) < 1e-9
       ? value.toFixed(2)
       : String(value);
-  return `${CURRENCY_SIGNS[currency]}${digits}`;
+  const sign = CURRENCY_SIGNS[currency as AiPriceCurrency] ?? `${currency} `;
+  return `${sign}${digits}`;
 }
 
 /** A source's chip: an account's service name, or a provider's name. */
@@ -169,18 +188,38 @@ function ollamaSettingsPath(deviceId: string): string {
   return `/agents/${encodeURIComponent(deviceId)}?module=ollama&configure=1`;
 }
 
-export function AiModelsPanel() {
+interface AiModelsPanelProps {
+  /** The range the Activity panel's chips picked. */
+  range: AiUsageRange;
+}
+
+export function AiModelsPanel({ range }: AiModelsPanelProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
   const resource = useApiResource<AiModelResponse>(MODEL_PATH, {
     invalidateOn: MODEL_INVALIDATE_ON,
   });
   const [configuring, setConfiguring] = useState<string | null>(null);
+  const [detailing, setDetailing] = useState<string | null>(null);
 
   const view = resource.data;
   const cloud = view?.cloud ?? [];
   const ollama = view?.ollama ?? [];
   const configured = cloud.find((row) => row.model === configuring) ?? null;
+  const detailedCloud = cloud.find((row) => row.model === detailing) ?? null;
+  const detailedOllama = ollama.find((row) => row.model === detailing) ?? null;
+
+  const detailsButton = (model: string) => (
+    <button
+      type="button"
+      className="button button--ghost button--small ai_models_details"
+      onClick={() => {
+        setDetailing(model);
+      }}
+    >
+      {t("ui.ai.model_details")}
+    </button>
+  );
 
   return (
     <section className="settings_group">
@@ -226,10 +265,20 @@ export function AiModelsPanel() {
                 >
                   {t("ui.ai.model_configure")}
                 </button>
+                {detailsButton(row.model)}
               </div>
             ))}
             {ollama.map((row) => (
-              <OllamaModelRow key={row.model} row={row} />
+              <div key={row.model} className="ai_models_row">
+                <span className="ai_models_model mono" title={row.model}>
+                  {row.model}
+                </span>
+                <SourceChips sources={row.sources} isOllama />
+                <span className="ai_models_value mono">
+                  {row.context_length}
+                </span>
+                {detailsButton(row.model)}
+              </div>
             ))}
           </div>
         ))}
@@ -243,6 +292,17 @@ export function AiModelsPanel() {
           }}
           onCancel={() => {
             setConfiguring(null);
+          }}
+        />
+      )}
+
+      {(detailedCloud !== null || detailedOllama !== null) && (
+        <ModelDetailsDialog
+          cloud={detailedCloud}
+          ollama={detailedOllama}
+          range={range}
+          onClose={() => {
+            setDetailing(null);
           }}
         />
       )}
@@ -451,46 +511,230 @@ function ModelDialog({ row, onSaved, onCancel }: ModelDialogProps) {
   );
 }
 
-/** An Ollama name: the Ollama chip and its cloud sources, its length, and
- * under the name one line per machine of its pool. */
-function OllamaModelRow({ row }: { row: AiOllamaModelView }) {
-  const valueClass = (length: number) =>
-    `ai_models_source mono ${length === row.context_length ? "ai_models_source--in_force" : ""}`;
+interface ModelDetailsDialogProps {
+  /** The cloud name shown, or null for an Ollama name. */
+  cloud: AiCloudModelView | null;
+  /** The Ollama name shown, or null for a cloud name. */
+  ollama: AiOllamaModelView | null;
+  range: AiUsageRange;
+  onClose: () => void;
+}
+
+/** A name's use over the range, in large type, then one box per source with
+ * its use and its prices, or a machine's lengths. Edits nothing. */
+function ModelDetailsDialog({
+  cloud,
+  ollama,
+  range,
+  onClose,
+}: ModelDetailsDialogProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
+  const usage = useApiResource<AiUsageResponse>(apiPath(USAGE_PATH, { range }));
+  const model = cloud?.model ?? ollama?.model ?? "";
+  const sources = cloud?.sources ?? ollama?.sources ?? [];
+  const machines = ollama?.machines ?? [];
+  const row = usage.data?.models.find((entry) => entry.model === model);
+  const upstreams = new Map(
+    (row?.upstreams ?? []).map((entry) => [entry.upstream, entry]),
+  );
+  const price = cloud === null ? null : (cloud.price ?? cloud.default_price);
+
   return (
-    <div className="ai_models_row">
-      <span className="ai_models_model mono" title={row.model}>
-        {row.model}
+    <DialogFrame
+      title={t("ui.ai.model_details_title", { model })}
+      onClose={onClose}
+    >
+      <span className="ai_model_details_range faint">
+        {t(RANGE_WORD_KEYS[range])}
       </span>
-      <SourceChips sources={row.sources} isOllama />
-      <span className="ai_models_value mono">{row.context_length}</span>
-      <span className="ai_models_machines">
-        {row.machines.map((machine) => (
-          <span key={machine.device_id} className="ai_models_machine">
-            <Link
-              to={ollamaSettingsPath(machine.device_id)}
-              className="ai_models_machine_name"
-            >
-              {machine.name}
-            </Link>
-            <span className={valueClass(machine.setting_context_length)}>
-              {t("ui.ai.context_setting", {
-                length: machine.setting_context_length,
-              })}
-            </span>
-            {machine.trained_context_length > 0 ? (
-              <span className={valueClass(machine.trained_context_length)}>
-                {t("ui.ai.context_trained", {
-                  length: machine.trained_context_length,
-                })}
-              </span>
-            ) : (
-              <span />
+      {usage.data === null ? (
+        <div className="skeleton" style={{ height: 120 }} />
+      ) : (
+        <>
+          <div className="ai_model_figures">
+            <Figure
+              label={t("ui.usage.header_requests")}
+              value={formatCompact(row?.requests ?? 0)}
+            />
+            <Figure
+              label={t("ui.usage.header_tokens")}
+              value={formatCompact(row === undefined ? 0 : tokensOf(row))}
+            />
+            <Figure
+              label={t("ui.usage.header_cost")}
+              value={amountText(row?.cost)}
+            />
+            {hasAmount(row?.api_value) && (
+              <Figure
+                label={t("ui.ai.details_api_value")}
+                value={amountText(row?.api_value)}
+              />
             )}
-          </span>
-        ))}
-      </span>
+            {cloud !== null && (
+              <Figure
+                label={t("ui.ai.details_price")}
+                value={priceText(price)}
+                unit={price === null ? undefined : t("ui.ai.price_unit")}
+              />
+            )}
+          </div>
+          <div className="ai_model_boxes">
+            {sources.map((source) => (
+              <SourceBox
+                key={`${source.origin}:${source.id}`}
+                source={source}
+                counters={upstreams.get(source.id)}
+              />
+            ))}
+            {ollama !== null &&
+              machines.map((machine) => (
+                <MachineBox
+                  key={machine.device_id}
+                  machine={machine}
+                  length={ollama.context_length}
+                  counters={upstreams.get(
+                    OLLAMA_UPSTREAM_PREFIX + machine.device_id,
+                  )}
+                />
+              ))}
+          </div>
+        </>
+      )}
+    </DialogFrame>
+  );
+}
+
+interface FigureProps {
+  label: string;
+  value: string;
+  unit?: string;
+}
+
+/** One figure in large type, its label above it. */
+function Figure({ label, value, unit }: FigureProps) {
+  return (
+    <span className="ai_model_figure">
+      <span className="ai_model_figure_label faint">{label}</span>
+      <span className="ai_model_figure_value mono">{value}</span>
+      {unit !== undefined && (
+        <span className="ai_model_figure_unit faint">{unit}</span>
+      )}
+    </span>
+  );
+}
+
+interface SourceBoxProps {
+  source: AiModelSourceView;
+  counters: AiUsageCounters | undefined;
+}
+
+/** An account's or a provider's box: its use of the name and its prices. */
+function SourceBox({ source, counters }: SourceBoxProps) {
+  return (
+    <div className="ai_model_box">
+      <div className="ai_model_box_head">
+        <span className="ai_model_box_name">{sourceLabel(source)}</span>
+        <span className="key_card_type">
+          {source.origin === "account"
+            ? t("ui.ai.source_account")
+            : t("ui.ai.source_provider")}
+        </span>
+      </div>
+      <BoxUsage counters={counters} />
+      <dl className="ai_model_box_lines">
+        <dt>{t("ui.ai.price_input")}</dt>
+        <dd className="mono">
+          {source.price === null
+            ? t("ui.ai.no_price")
+            : formatPrice(source.price.currency, source.price.input)}
+        </dd>
+        <dt>{t("ui.ai.price_output")}</dt>
+        <dd className="mono">
+          {source.price === null
+            ? t("ui.ai.no_price")
+            : formatPrice(source.price.currency, source.price.output)}
+        </dd>
+      </dl>
     </div>
   );
+}
+
+interface MachineBoxProps {
+  machine: AiOllamaModelMachineView;
+  /** The name's length. */
+  length: number;
+  counters: AiUsageCounters | undefined;
+}
+
+/** A machine's box: its use of the name, its setting and the model's
+ * trained length, the one that sets the name's length bright. */
+function MachineBox({ machine, length, counters }: MachineBoxProps) {
+  const valueClass = (value: number) =>
+    `mono ${value === length ? "ai_model_box_in_force" : "faint"}`;
+  return (
+    <div className="ai_model_box">
+      <div className="ai_model_box_head">
+        <Link
+          to={ollamaSettingsPath(machine.device_id)}
+          className="ai_model_box_name"
+        >
+          {machine.name}
+        </Link>
+        <span className="key_card_type">{t("ui.module_title.ollama")}</span>
+      </div>
+      <BoxUsage counters={counters} />
+      <div className="ai_model_box_lengths">
+        <span className={valueClass(machine.setting_context_length)}>
+          {t("ui.ai.context_setting", {
+            length: machine.setting_context_length,
+          })}
+        </span>
+        {machine.trained_context_length > 0 && (
+          <span className={valueClass(machine.trained_context_length)}>
+            {t("ui.ai.context_trained", {
+              length: machine.trained_context_length,
+            })}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** A box's requests, tokens, and cost or API value, 0 and — without use. */
+function BoxUsage({ counters }: { counters: AiUsageCounters | undefined }) {
+  const isValue = !hasAmount(counters?.cost) && hasAmount(counters?.api_value);
+  return (
+    <dl className="ai_model_box_lines">
+      <dt>{t("ui.usage.header_requests")}</dt>
+      <dd className="mono">{formatCompact(counters?.requests ?? 0)}</dd>
+      <dt>{t("ui.usage.header_tokens")}</dt>
+      <dd className="mono">
+        {formatCompact(counters === undefined ? 0 : tokensOf(counters))}
+      </dd>
+      <dt>
+        {isValue ? t("ui.ai.details_api_value") : t("ui.usage.header_cost")}
+      </dt>
+      <dd className="mono">
+        {amountText(isValue ? counters?.api_value : counters?.cost)}
+      </dd>
+    </dl>
+  );
+}
+
+/** Amounts as the Cost column writes them, `—` for none. */
+function amountText(amounts: Record<string, number> | undefined): string {
+  const text = formatAmounts(amounts);
+  return text === "" ? "—" : text;
+}
+
+/** A price in force as its input and output joined by ` / `. */
+function priceText(price: AiModelDefaultPrice | AiModelPrice | null): string {
+  if (price === null) {
+    return t("ui.ai.no_price");
+  }
+  return `${formatPrice(price.currency, price.input)} / ${formatPrice(price.currency, price.output)}`;
 }
 
 interface SourceChipsProps {

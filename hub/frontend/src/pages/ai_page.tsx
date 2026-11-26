@@ -399,7 +399,7 @@ export function AiPage() {
 
       <AiAccountsPanel />
 
-      <AiModelsPanel />
+      <AiModelsPanel range={range} />
 
       <AiAccessPanel
         endpoint={endpoint}

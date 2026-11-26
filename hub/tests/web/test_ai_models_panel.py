@@ -35,7 +35,7 @@ PAGE_PATH = FRONTEND_SRC_DIR / "pages/ai_page.tsx"
 UI_TEXT = HUB_DIR.parent / "skills/core-code-author/design/ui_text.md"
 # The keys of the panel's words in ui_text.md.
 PANEL_KEY_PATTERN = re.compile(
-    r"^(ui\.ai\.(models_|model_|context_|price_|currency_|no_price)"
+    r"^(ui\.ai\.(models_|model_|context_|price_|currency_|no_price|details_|source_)"
     r"|code\.(context_length_invalid|price_invalid|currency_invalid))"
 )
 
@@ -81,7 +81,7 @@ def test_every_word_of_the_panel_says_what_ui_text_writes(language):
     words = ui_text_words()[language]
     catalog = worded(language)
 
-    assert len(words) == 23
+    assert len(words) == 33
     for key, sentence in words.items():
         assert catalog[key] == sentence
 
@@ -100,6 +100,12 @@ def test_every_word_the_panel_uses_is_written_in_ui_text():
         "ui.ai.price_reset",
         "ui.ai.currency_cny",
         "ui.ai.model_save",
+        "ui.ai.model_details",
+        "ui.ai.model_details_title",
+        "ui.ai.details_api_value",
+        "ui.ai.details_price",
+        "ui.ai.source_account",
+        "ui.ai.source_provider",
         "code.price_invalid",
     ):
         assert key in used
@@ -124,6 +130,7 @@ def test_a_cloud_row_holds_the_name_the_sources_the_length_and_configure():
     assert '<span className="ai_models_value mono">{lengthOf(row)}</span>' in row
     assert 't("ui.ai.model_configure")' in row
     assert "setConfiguring(row.model);" in row
+    assert "{detailsButton(row.model)}" in row
     assert "<input" not in row
 
 
@@ -135,7 +142,7 @@ def test_the_panel_has_no_apply_bar_and_no_draft():
 
 
 def test_save_writes_the_one_name_with_defaults_as_null():
-    dialog = part("function ModelDialog(", "function OllamaModelRow(")
+    dialog = part("function ModelDialog(", "interface ModelDetailsDialogProps")
 
     assert (
         "update.lengths = { [row.model]: length === row.default_context_length "
@@ -159,7 +166,7 @@ def test_save_writes_the_one_name_with_defaults_as_null():
 
 def test_cancel_escape_and_the_backdrop_write_nothing():
     source = panel_source()
-    dialog = part("function ModelDialog(", "function OllamaModelRow(")
+    dialog = part("function ModelDialog(", "interface ModelDetailsDialogProps")
 
     assert "<DialogFrame" in dialog
     assert "hasHeadClose={false} onClose={onCancel}" in dialog
@@ -193,28 +200,53 @@ def test_a_price_out_of_range_or_half_empty_shows_the_refusal():
     assert "if (input === null || output === null) { return undefined; }" in source
 
 
-def test_an_ollama_row_has_no_configure():
-    ollama_row = part("function OllamaModelRow(", "interface SourceChipsProps")
+def test_an_ollama_row_has_details_and_no_configure():
+    ollama_row = part("{ollama.map((row) => (", "{configured !== null")
 
-    assert "<button" not in ollama_row
+    assert "{detailsButton(row.model)}" in ollama_row
     assert "model_configure" not in ollama_row
+    assert "<input" not in ollama_row
     assert "price" not in ollama_row
 
 
-def test_the_machine_lines_share_three_fixed_columns():
+def test_details_stands_in_one_column_on_every_row():
     style = " ".join(
         (FRONTEND_SRC_DIR / "components/ai_models_panel.css")
         .read_text(encoding="utf-8")
         .split()
     )
 
-    assert "grid-template-columns: 9rem 16ch 18ch;" in style
-    assert (
-        ".ai_models_source { color: var(--color-text-faint); "
-        "font-variant-numeric: tabular-nums; text-align: right;"
-    ) in style
-    assert "text-overflow: ellipsis;" in style
-    assert "grid-template-columns: 16ch 18ch;" in style
+    assert ".ai_models_configure { grid-column: 4; }" in style
+    assert ".ai_models_details { grid-column: 5; }" in style
+
+
+def test_the_details_dialog_reads_the_activity_range_and_edits_nothing():
+    dialog = part("function ModelDetailsDialog(", "interface FigureProps")
+    page = " ".join(PAGE_PATH.read_text(encoding="utf-8").split())
+
+    assert "<AiModelsPanel range={range} />" in page
+    assert "useApiResource<AiUsageResponse>(apiPath(USAGE_PATH, { range }))" in dialog
+    assert "t(RANGE_WORD_KEYS[range])" in dialog
+    assert "<DialogFrame" in dialog
+    assert "hasHeadClose" not in dialog
+    assert "apiPost" not in dialog
+    assert 'const OLLAMA_UPSTREAM_PREFIX = "ollama:";' in panel_source()
+    assert "OLLAMA_UPSTREAM_PREFIX + machine.device_id" in dialog
+    assert "counters={upstreams.get(source.id)}" in dialog
+
+
+def test_the_details_figures_and_boxes():
+    dialog = part("function ModelDetailsDialog(", "interface FigureProps")
+    source_box = part("function SourceBox(", "interface MachineBoxProps")
+    machine_box = part("function MachineBox(", "/** A box's requests")
+
+    assert 't("ui.usage.header_requests")' in dialog
+    assert "{hasAmount(row?.api_value) && (" in dialog
+    assert '{cloud !== null && ( <Figure label={t("ui.ai.details_price")}' in (dialog)
+    assert 'source.price === null ? t("ui.ai.no_price")' in source_box
+    assert 't("ui.ai.context_setting", {' in machine_box
+    assert 'value === length ? "ai_model_box_in_force" : "faint"' in machine_box
+    assert "price" not in machine_box
 
 
 def test_an_ollama_machine_links_to_its_ollama_tab_with_its_panels_open():
@@ -228,6 +260,6 @@ def test_the_panel_stands_after_accounts_and_before_access():
     page = " ".join(PAGE_PATH.read_text(encoding="utf-8").split())
 
     accounts = page.index("<AiAccountsPanel />")
-    models = page.index("<AiModelsPanel />")
+    models = page.index("<AiModelsPanel")
     access = page.index("<AiAccessPanel")
     assert accounts < models < access

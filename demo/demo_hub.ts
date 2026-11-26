@@ -39,6 +39,7 @@ import {
   DEMO_SAKURAFRP,
   DEMO_SAKURAFRP_TUNNELS,
   DEMO_SETTINGS,
+  DEMO_SOURCE_PRICES,
   DEMO_TERMINAL_SESSIONS,
   DEMO_TOKENS,
   demoAbout,
@@ -61,6 +62,7 @@ import type { DemoFrameReadings } from "./demo_traffic";
 import type {
   AccountListView,
   AiCloudModelView,
+  AiModelDefaultPrice,
   AiModelPrice,
   AiModelResponse,
   AiModelSourceView,
@@ -1262,6 +1264,7 @@ export class DemoHub {
         origin: "account" as const,
         id: account.name,
         name: account.provider,
+        price: this.sourcePrice(account.name, model),
       }));
     const providers = DEMO_AI_PROVIDERS.providers
       .filter((provider) =>
@@ -1271,8 +1274,27 @@ export class DemoHub {
         origin: "provider" as const,
         id: provider.id,
         name: provider.name,
+        price: this.sourcePrice(provider.id, model),
       }));
     return [...accounts, ...providers];
+  }
+
+  /** The price a sample source's records of a name are priced at: the
+   * price a visitor set in place of the input and output, else the
+   * source's own. */
+  private sourcePrice(
+    sourceId: string,
+    model: string,
+  ): AiModelDefaultPrice | null {
+    const held = this.modelPrices[model];
+    if (held !== undefined) {
+      return {
+        input: held.input,
+        output: held.output,
+        currency: held.currency,
+      };
+    }
+    return DEMO_SOURCE_PRICES[`${sourceId}|${model}`] ?? null;
   }
 
   /** Keeps the lengths and the prices a visitor applied; a null takes a
