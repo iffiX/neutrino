@@ -793,14 +793,6 @@ class AiOllamaProviderListView(BaseModel):
     providers: list[AiOllamaProviderView]
 
 
-class AiModelSourceView(BaseModel):
-    """An account or a stored provider that serves a name."""
-
-    origin: str
-    id: str
-    name: str
-
-
 class AiModelPriceView(BaseModel):
     """A price a person set: input and output per million tokens, in USD or CNY."""
 
@@ -825,6 +817,15 @@ class AiModelDefaultPriceView(BaseModel):
             if data.get(field) is None:
                 data.pop(field, None)
         return data
+
+
+class AiModelSourceView(BaseModel):
+    """An account or a stored provider that serves a name, and the price its records of the name are priced at."""
+
+    origin: str
+    id: str
+    name: str
+    price: AiModelDefaultPriceView | None = None
 
 
 class AiCloudModelView(BaseModel):
@@ -1023,10 +1024,22 @@ class CliproxyApiUsageProvider(CliproxyApiUsageTotals):
     health: list[CliproxyApiHealthBucket] = Field(default_factory=list)
 
 
+class CliproxyApiUsageModelUpstream(CliproxyApiUsageTotals):
+    """One upstream's usage of a served name over the range.
+
+    ``upstream`` is a stored provider's id, an account's token file,
+    ``ollama:<device id>`` for a machine's Ollama, or ``""`` for records of
+    no known upstream.
+    """
+
+    upstream: str
+
+
 class CliproxyApiUsageModel(CliproxyApiUsageTotals):
     """One served name's usage over the range; ``""`` for the days stored before the model field."""
 
     model: str
+    upstreams: list[CliproxyApiUsageModelUpstream] = Field(default_factory=list)
 
 
 class CliproxyApiUsageView(BaseModel):

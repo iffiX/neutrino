@@ -136,6 +136,8 @@ CLIPROXYAPI_CATALOG_RETRY_S = 10
 # Ollama's OpenAI-compatible API after its forward's address.
 CLIPROXYAPI_OLLAMA_PROVIDER_PREFIX = "ollama-"
 CLIPROXYAPI_OLLAMA_API_PATH = "/v1"
+# A usage cell's upstream for a machine's Ollama: this before its device id.
+CLIPROXYAPI_OLLAMA_UPSTREAM_PREFIX = "ollama:"
 # What the gateway names an OpenAI-compatible entry in its usage records:
 # this before the entry's name.
 CLIPROXYAPI_COMPATIBLE_PROVIDER_PREFIX = "openai-compatible-"

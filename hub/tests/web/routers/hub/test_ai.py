@@ -316,7 +316,7 @@ def test_the_model_view_names_each_cloud_name_s_sources_and_each_ollama_name_s_m
 
     assert [row["model"] for row in view["cloud"]] == ["gpt-x", "lab-mini"]
     assert view["cloud"][0]["sources"] == [
-        {"origin": "provider", "id": "p1", "name": "relay"}
+        {"origin": "provider", "id": "p1", "name": "relay", "price": None}
     ]
     assert view["ollama"][0]["machines"][0]["name"] == "argon"
 
@@ -641,6 +641,50 @@ def test_a_default_price_is_the_first_source_in_serving_order_that_has_one(
         "output": 2.5,
         "currency": "USD",
     }
+
+
+def source_prices(client, model: str) -> dict:
+    """Each source's price of a name, by the source's id."""
+    rows = client.get("/api/hub/ai/model").json()["cloud"]
+    (row,) = [row for row in rows if row["model"] == model]
+    return {source["id"]: source["price"] for source in row["sources"]}
+
+
+def test_each_source_carries_the_price_of_its_own_upstream(priced_client):
+    prices = source_prices(priced_client, "shared")
+
+    assert prices["relay"] is None
+    assert prices["ds-plan"] == {
+        "input": 4.0,
+        "output": 18.0,
+        "cache_read": 0.8,
+        "currency": "USD",
+    }
+    assert prices["ds"] == {"input": 0.28, "output": 1.1, "currency": "USD"}
+    assert source_prices(priced_client, "kimi-k3")["kimi-person.json"] == {
+        "input": 0.6,
+        "output": 2.5,
+        "currency": "USD",
+    }
+
+
+def test_a_persons_price_replaces_each_sources_input_and_output(priced_client):
+    answer = priced_client.post(
+        "/api/hub/ai/model/set",
+        json={"prices": {"shared": {"input": 2, "output": 9, "currency": "CNY"}}},
+    )
+    assert answer.status_code == 200
+
+    prices = source_prices(priced_client, "shared")
+    # The cache read keeps models.dev's ratio to the input, in the person's currency.
+    assert prices["ds-plan"] == {
+        "input": 2.0,
+        "output": 9.0,
+        "cache_read": 0.4,
+        "currency": "CNY",
+    }
+    assert prices["ds"] == {"input": 2.0, "output": 9.0, "currency": "CNY"}
+    assert prices["relay"] == {"input": 2.0, "output": 9.0, "currency": "CNY"}
 
 
 def test_a_price_equal_to_a_real_default_is_stored_as_none(priced_client, tmp_path):

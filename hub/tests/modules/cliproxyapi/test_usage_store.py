@@ -388,6 +388,7 @@ def fold(tmp_path, records, *, subject_pricer=None):
             "upstream-key-c": "p3",
         },
         account_ids={"idx-claude": "claude-person.json"},
+        ollama_ids={"openai-compatible-ollama-dev-1": "dev-1"},
         pricer=subject_pricer or pricer(),
         now=NOW,
     )
@@ -526,3 +527,53 @@ def test_every_range_serves_the_models_rows(tmp_path):
         assert rows["deepseek-v4-pro"]["requests"] == 2
         assert rows["deepseek-v4-pro"]["cost"] == {"USD": 368}
     assert subject.model_rows("day", key_id="k2", now=NOW) == []
+
+
+def test_an_ollama_record_is_the_upstream_of_its_machine(tmp_path):
+    subject = fold(
+        tmp_path,
+        [
+            priced_record(
+                model="qwen2.5:7b",
+                source="",
+                provider="OpenAI-Compatible-Ollama-Dev-1",
+            ),
+            priced_record(model="qwen2.5:7b", source="", provider="unknown"),
+        ],
+    )
+
+    assert set(subject.load()["cells"]) == {
+        "k1|ollama:dev-1|qwen2.5:7b",
+        "k1||qwen2.5:7b",
+    }
+
+
+def test_each_models_row_carries_its_upstreams(tmp_path):
+    subject = fold(
+        tmp_path,
+        [
+            priced_record(),
+            priced_record(),
+            priced_record(source="upstream-key-c"),
+            priced_record(
+                model="qwen2.5:7b",
+                source="",
+                provider="openai-compatible-ollama-dev-1",
+            ),
+        ],
+    )
+    rows = {row["model"]: row for row in subject.model_rows("week", now=NOW)}
+
+    upstreams = {
+        entry["upstream"]: entry for entry in rows["deepseek-v4-pro"]["upstreams"]
+    }
+    assert set(upstreams) == {"p1", "p3"}
+    assert upstreams["p1"]["requests"] == 2
+    assert upstreams["p1"]["cost"] == {"USD": 368}
+    assert upstreams["p3"]["unpriced_requests"] == 1
+    assert (
+        sum(entry["requests"] for entry in upstreams.values())
+        == rows["deepseek-v4-pro"]["requests"]
+    )
+    ((ollama),) = rows["qwen2.5:7b"]["upstreams"]
+    assert (ollama["upstream"], ollama["requests"]) == ("ollama:dev-1", 1)

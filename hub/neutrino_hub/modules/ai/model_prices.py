@@ -475,6 +475,38 @@ def default_price(sources: list, table: AiPriceTable) -> "dict | None":
     return None
 
 
+def source_price(
+    provider: str, upstream: str, held: "dict | None", table: AiPriceTable
+) -> "dict | None":
+    """The price one source's records of a name are priced at.
+
+    Args:
+        provider: The models.dev provider the source is priced at.
+        upstream: The name the source's upstream serves.
+        held: The price a person set for the name, None for none.
+        table: The copy in force.
+
+    Returns:
+        ``{input, output, cache_read, cache_write, currency}`` with a cache
+        price absent where models.dev gives none, and the person's price in
+        place of the input and output; None while the source has neither.
+    """
+    base = table.price(provider, upstream)
+    if held is not None:
+        price = {
+            "input": held["input"],
+            "output": held["output"],
+            "currency": held["currency"],
+        }
+        for field in ("cache_read", "cache_write"):
+            if base is not None and field in base:
+                price[field] = float(_scaled(held["input"], base, field))
+        return price
+    if base is None:
+        return None
+    return {**base, "currency": AI_PRICE_DEFAULT_CURRENCY}
+
+
 class AiRecordPricer:
     """Prices each queue record as the collector folds it in."""
 

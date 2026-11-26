@@ -145,6 +145,7 @@ class PanelUsageCollector:
             key_names={key.id: key.name for key in keys},
             provider_ids=self._provider_ids,
             account_ids=self._account_ids,
+            ollama_ids=_ollama_ids(),
             pricer=self._pricer(),
         )
 
@@ -265,3 +266,14 @@ class PanelUsageCollector:
             port=config.listen_port, client_key=key
         )
         return is_answered, list(names)
+
+
+def _ollama_ids() -> dict[str, str]:
+    """Each generated Ollama entry's provider name in the usage records, lowercased, to its device id."""
+    return {
+        (
+            CLIPROXYAPI_COMPATIBLE_PROVIDER_PREFIX
+            + ollama_entry_name(provider["device_id"])
+        ).lower(): provider["device_id"]
+        for provider in read_ollama_providers()
+    }

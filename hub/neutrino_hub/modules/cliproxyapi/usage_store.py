@@ -36,6 +36,7 @@ from neutrino_hub.modules.ai.constants import (
 )
 from neutrino_hub.modules.ai.model_prices import AiRecordCharge
 from neutrino_hub.modules.cliproxyapi.constants import (
+    CLIPROXYAPI_OLLAMA_UPSTREAM_PREFIX,
     CLIPROXYAPI_USAGE_HOURS_KEPT,
     CLIPROXYAPI_USAGE_MINUTES_KEPT,
     CLIPROXYAPI_USAGE_RELATIVE,
@@ -92,6 +93,7 @@ class CliproxyApiUsageStore:
         key_names: dict[str, str],
         provider_ids: dict[str, str],
         account_ids: dict[str, str] | None = None,
+        ollama_ids: dict[str, str] | None = None,
         pricer=None,
         now: datetime | None = None,
     ) -> int:
@@ -107,6 +109,9 @@ class CliproxyApiUsageStore:
             account_ids: Credential handle (the record's ``auth_index``) to
                 account id, resolved from the gateway's auth files; None where
                 the gateway could not be asked.
+            ollama_ids: The gateway's provider name of each generated Ollama
+                entry (the record's ``provider``), lowercased, to its
+                machine's device id; None for none.
             pricer: Prices each record, an
                 :class:`neutrino_hub.modules.ai.model_prices.AiRecordPricer`;
                 None counts every record among the requests with no price.
@@ -125,6 +130,7 @@ class CliproxyApiUsageStore:
                 key_ids=key_ids,
                 provider_ids=provider_ids,
                 account_ids=account_ids or {},
+                ollama_ids=ollama_ids or {},
                 pricer=pricer,
             ):
                 folded += 1
@@ -313,24 +319,42 @@ class CliproxyApiUsageStore:
             now: The moment the range ends at; None is the real clock.
 
         Returns:
-            One ``{"model", **counters}`` row per name with a request in the
-            range, by name; ``model`` is ``""`` for the days stored before the
-            model field.
+            One ``{"model", "upstreams", **counters}`` row per name with a
+            request in the range, by name; ``model`` is ``""`` for the days
+            stored before the model field, and ``upstreams`` the same
+            counters per upstream with a request, ``{"upstream",
+            **counters}`` by upstream.
         """
         data = self.load()
         wanted = set(self._bucket_keys(range_name, now=now))
         is_hourly = range_name == "day"
         rows: dict[str, dict] = {}
+        # Each name's counters per upstream, by name and then upstream.
+        upstreams: dict[str, dict[str, dict]] = {}
         for cell_key, cell in data["cells"].items():
             if not self._cell_matches(cell_key, key_id):
                 continue
-            model = _cell_parts(cell_key)[2]
+            _, upstream, model = _cell_parts(cell_key)
             buckets = cell["hours"] if is_hourly else cell["days"]
             for bucket, counters in buckets.items():
                 if bucket in wanted:
                     self._add(rows.setdefault(model, zero_counters()), counters)
+                    self._add(
+                        upstreams.setdefault(model, {}).setdefault(
+                            upstream, zero_counters()
+                        ),
+                        counters,
+                    )
         return [
-            {"model": model, **rows[model]}
+            {
+                "model": model,
+                "upstreams": [
+                    {"upstream": upstream, **summed}
+                    for upstream, summed in sorted(upstreams[model].items())
+                    if summed["requests"]
+                ],
+                **rows[model],
+            }
             for model in sorted(rows)
             if rows[model]["requests"]
         ]
@@ -405,6 +429,7 @@ class CliproxyApiUsageStore:
         key_ids: dict[str, str],
         provider_ids: dict[str, str],
         account_ids: dict[str, str],
+        ollama_ids: dict[str, str],
         pricer,
     ) -> bool:
         if not isinstance(record, dict):
@@ -417,9 +442,13 @@ class CliproxyApiUsageStore:
         # account is named by the credential handle instead: its ``source`` is
         # the account's email, which a login need not carry, and which the
         # gateway then fills with the client's own key.
-        provider_id = provider_ids.get(
-            str(record.get("source", "")), ""
-        ) or account_ids.get(str(record.get("auth_index", "")), "")
+        # A generated Ollama entry has no key and no credential. Its provider
+        # name maps to its machine.
+        provider_id = (
+            provider_ids.get(str(record.get("source", "")), "")
+            or account_ids.get(str(record.get("auth_index", "")), "")
+            or _ollama_upstream(record, ollama_ids)
+        )
         counters = self._record_counters(record)
         charge = (
             pricer.charge(record, provider_id)
@@ -668,6 +697,12 @@ def _cell_parts(cell_key: str) -> tuple:
     while len(parts) < 3:
         parts.append("")
     return tuple(parts)
+
+
+def _ollama_upstream(record: dict, ollama_ids: dict[str, str]) -> str:
+    """The upstream of a machine's Ollama a record names by its provider, empty for none."""
+    device_id = ollama_ids.get(str(record.get("provider", "")).lower(), "")
+    return CLIPROXYAPI_OLLAMA_UPSTREAM_PREFIX + device_id if device_id else ""
 
 
 def _add_charge(counters: dict, charge: AiRecordCharge) -> None:

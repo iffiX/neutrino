@@ -55,6 +55,7 @@ from neutrino_hub.modules.ai.model_prices import (
     default_price,
     prices_in_force,
     read_set_prices,
+    source_price,
     source_price_provider,
 )
 from neutrino_hub.modules.ai.vendors import load_vendors, vendor_endpoints
@@ -1180,7 +1181,8 @@ class PanelRuntime:
             ``{cloud, ollama}``, as ``GET /api/hub/ai/model`` answers: each
             cloud name with ``price``, the one a person set, and
             ``default_price``, the models.dev price of its first source in
-            serving order that has one.
+            serving order that has one; each source of a name with
+            ``price``, the price its records of the name are priced at.
         """
         resolver = self._context_resolver()
         view = resolver.view(gateway_models(self.served_models))
@@ -1188,21 +1190,36 @@ class PanelRuntime:
         table = AiPriceTable(prices_in_force()["providers"])
         endpoints = vendor_endpoints(load_vendors())
         records = {record.id: record for record in resolver.providers()}
-        for entry in view["cloud"]:
-            sources = [
+        for entry in view["cloud"] + view["ollama"]:
+            # An Ollama name's records take no price a person set.
+            is_cloud = entry in view["cloud"]
+            held = set_prices.get(entry["model"]) if is_cloud else None
+            priced = [
                 (
+                    source,
                     source_price_provider(
                         source.origin == AI_CONTEXT_ORIGIN_ACCOUNT,
                         source.name,
                         records.get(source.id),
                         endpoints,
                     ),
-                    source.upstream,
                 )
                 for source in resolver.serving_sources(entry["model"])
             ]
-            entry["price"] = set_prices.get(entry["model"])
-            entry["default_price"] = default_price(sources, table)
+            prices = {
+                (source.origin, source.id): source_price(
+                    provider, source.upstream, held, table
+                )
+                for source, provider in priced
+            }
+            for shown in entry["sources"]:
+                shown["price"] = prices.get((shown["origin"], shown["id"]))
+            if is_cloud:
+                entry["price"] = held
+                entry["default_price"] = default_price(
+                    [(provider, source.upstream) for source, provider in priced],
+                    table,
+                )
         return view
 
     def note_context_lengths(self) -> None:
