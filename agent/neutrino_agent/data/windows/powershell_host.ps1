@@ -114,6 +114,36 @@ function Register-NeutrinoSystemTask($Request) {
     return @{}
 }
 
+# Registers a task of a service account's, LOCAL SERVICE's among them, by its
+# SID: at startup, no time limit, started again a minute after it stops, at the
+# normal priority.
+function Register-NeutrinoServiceTask($Request) {
+    $action = New-ScheduledTaskAction -Execute $Request.program -Argument $Request.arguments
+    $trigger = New-ScheduledTaskTrigger -AtStartup
+    $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) `
+        -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -Priority 4 `
+        -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
+    $principal = New-ScheduledTaskPrincipal -UserId $Request.account -LogonType ServiceAccount
+    Register-ScheduledTask -TaskName $Request.task -Description $Request.description `
+        -Action $action -Trigger $trigger -Settings $settings -Principal $principal `
+        -Force | Out-Null
+    return @{}
+}
+
+# Registers a one-shot task of a service account's with a time limit, and
+# starts it.
+function Invoke-NeutrinoServiceOneShotTask($Request) {
+    $action = New-ScheduledTaskAction -Execute $Request.program -Argument $Request.arguments
+    $settings = New-ScheduledTaskSettingsSet `
+        -ExecutionTimeLimit (New-TimeSpan -Seconds $Request.timeout_s) `
+        -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+    $principal = New-ScheduledTaskPrincipal -UserId $Request.account -LogonType ServiceAccount
+    Register-ScheduledTask -TaskName $Request.task -Action $action -Settings $settings `
+        -Principal $principal -Force | Out-Null
+    Start-ScheduledTask -TaskName $Request.task | Out-Null
+    return @{}
+}
+
 # Registers a one-shot task under the account's login with a time limit and a
 # limited token, and starts it.
 function Invoke-NeutrinoOneShotTask($Request) {
@@ -710,6 +740,8 @@ $NeutrinoOperations = @{
     'task_write' = 'Register-NeutrinoTask'
     'task_write_system' = 'Register-NeutrinoSystemTask'
     'task_run_once' = 'Invoke-NeutrinoOneShotTask'
+    'task_write_service' = 'Register-NeutrinoServiceTask'
+    'task_run_service' = 'Invoke-NeutrinoServiceOneShotTask'
     'task_start' = 'Start-NeutrinoTask'
     'task_stop' = 'Stop-NeutrinoTask'
     'task_remove' = 'Unregister-NeutrinoTask'

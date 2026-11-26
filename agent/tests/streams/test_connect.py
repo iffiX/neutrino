@@ -63,6 +63,10 @@ AYAKALEAF = {
     "details": {"version": "6.3.2", "port": 8900, "guests": []},
 }
 ASTRBOT = {"state": "running", "details": {"version": "4.29.4", "port": 6185}}
+COMFYUI = {
+    "state": "running",
+    "details": {"is_running": True, "port": 8188, "version": "0.46.0"},
+}
 DESKTOP = {"is_shared": True, "port": 21118}
 
 
@@ -76,6 +80,7 @@ def everything() -> dict:
         hermes_webui=HERMES,
         ayakaleaf=AYAKALEAF,
         astrbot=ASTRBOT,
+        comfyui=COMFYUI,
     )
 
 
@@ -95,6 +100,7 @@ def test_every_kind_of_published_port_is_in_the_table():
         8787: "127.0.0.1",
         8900: "127.0.0.1",
         6185: "127.0.0.1",
+        8188: "127.0.0.1",
         5432: "192.168.1.5",
         8080: "127.0.0.1",
         8081: "127.0.0.1",

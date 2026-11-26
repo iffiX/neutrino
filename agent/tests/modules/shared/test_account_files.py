@@ -14,6 +14,7 @@ login, and a write there lands whole too.
 
 import os
 import stat
+import struct
 
 import pytest
 
@@ -155,3 +156,40 @@ def test_on_windows_each_step_runs_acting_as_the_account_with_its_login(tmp_path
     assert not os.path.exists(path + ".new")
     with pytest.raises(OSError):
         files.run(["true"])
+
+
+def test_a_link_is_pointed_as_the_account_and_a_file_standing_there_is_left(tmp_path):
+    files = files_of()
+    target = tmp_path / "source"
+    target.mkdir()
+    link = tmp_path / "workspace" / "comfy"
+    link.parent.mkdir()
+
+    assert files.link(str(target), str(link)) is True
+    assert os.readlink(link) == str(target)
+    assert files.link(str(target), str(link)) is True
+    other = tmp_path / "other"
+    other.mkdir()
+    assert files.link(str(other), str(link)) is True
+    assert os.readlink(link) == str(other)
+    standing = tmp_path / "workspace" / "models"
+    standing.mkdir()
+    assert files.link(str(target), str(standing)) is False
+    assert standing.is_dir() and not standing.is_symlink()
+    assert all(account == "ann" for account, _argv in files._platform.asked)
+
+
+def test_a_junctions_reparse_point_names_its_folder_twice():
+    from neutrino_agent.modules.shared.account_files import junction_data
+
+    data = junction_data("C:\\ProgramData\\comfyui\\source\\comfy")
+    tag, length, _reserved = struct.unpack("<IHH", data[:8])
+    offset, size, print_offset, print_size = struct.unpack("<HHHH", data[8:16])
+    names = data[16:]
+    assert tag == 0xA0000003 and length == len(data) - 8
+    assert names[offset : offset + size].decode("utf-16-le") == (
+        "\\??\\C:\\ProgramData\\comfyui\\source\\comfy"
+    )
+    assert names[print_offset : print_offset + print_size].decode("utf-16-le") == (
+        "C:\\ProgramData\\comfyui\\source\\comfy"
+    )

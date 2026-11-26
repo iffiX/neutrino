@@ -41,6 +41,7 @@ import time
 from neutrino_agent.constants import (
     AGENT_ARTIFACT_KEPT_SUFFIXES,
     AGENT_ARTIFACT_KIND_BINARY,
+    AGENT_ARTIFACT_KIND_UV_LOCK,
     AGENT_ARTIFACT_KIND_MSI,
     AGENT_ARTIFACT_KIND_PKG,
     AGENT_CONFIGURED_DIR,
@@ -98,6 +99,7 @@ from neutrino_agent.modules.codex.hooks import CodexHooks
 from neutrino_agent.modules.gitea.runner import GiteaModuleRunner
 from neutrino_agent.modules.hermes_webui.constants import HERMES_WEBUI_NAME
 from neutrino_agent.modules.hermes_webui.hooks import HermesWebuiHooks
+from neutrino_agent.modules.comfyui.runner import ComfyuiModuleRunner
 from neutrino_agent.modules.ollama.runner import OllamaModuleRunner
 from neutrino_agent.modules.opencode.hooks import OpencodeHooks
 from neutrino_agent.modules.podman.container_runner import (
@@ -360,6 +362,7 @@ class ModuleEngine(ReconcileWorker):
                 SambaModuleRunner,
                 GiteaModuleRunner,
                 OllamaModuleRunner,
+                ComfyuiModuleRunner,
                 PodmanModuleRunner,
                 VscodeModuleRunner,
                 CodeServerModuleRunner,
@@ -376,6 +379,7 @@ class ModuleEngine(ReconcileWorker):
             if "hub_packages" in platform.capabilities:
                 kinds.append(GiteaModuleRunner)
                 kinds.append(OllamaModuleRunner)
+                kinds.append(ComfyuiModuleRunner)
                 kinds.append(VscodeModuleRunner)
                 if platform.os_name == "darwin":
                     kinds.append(CodeServerModuleRunner)
@@ -1050,12 +1054,18 @@ class ModuleEngine(ReconcileWorker):
             entry: The state's entry the task plans from.
 
         Returns:
-            True when the kept version differs from the recipe's.
+            True when the kept version differs from the recipe's; False for
+            a recipe that names a ``uv_lock``, whose one version is locked.
         """
         recipe = _recipe_of(entry)
         if str(recipe.get("method", "") or "") != AGENT_METHOD_HUB:
             return False
         if self._runner_for(name, recipe) is None:
+            return False
+        if any(
+            artifact.get("kind") == AGENT_ARTIFACT_KIND_UV_LOCK
+            for artifact in received_artifacts(recipe)
+        ):
             return False
         wanted = str(params_of(recipe).get("version", "") or "")
         held = self.installed_version(name)

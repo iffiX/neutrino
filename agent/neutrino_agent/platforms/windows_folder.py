@@ -31,7 +31,7 @@ FOLDER_FLAGS = win32.FILE_FLAG_BACKUP_SEMANTICS | win32.FILE_FLAG_OPEN_REPARSE_P
 # The access mask each folder right names, as icacls spells the right.
 FOLDER_RIGHT_MASKS = {"(OI)(CI)M": 0x1301BF, "(OI)(CI)RX": 0x1200A9}
 # The mask of each right a folder is left to an account with, and of full
-# control.
+# control. A file or a folder granted one right alone takes the same masks.
 LEFT_RIGHT_MASKS = {"R": 0x120089, "RX": 0x1200A9, "M": 0x1301BF}
 FULL_CONTROL_MASK = 0x1F01FF
 # SYSTEM and the administrators, by their well-known SIDs.
@@ -43,6 +43,11 @@ FINAL_PATH_PREFIX = "\\\\?\\"
 FINAL_PATH_CHARS = 32768
 # The index AddAce takes to put an entry at the end.
 ACE_AT_END = 0xFFFFFFFF
+# What an account named by its SID starts with, as icacls spells it.
+SID_ACCOUNT_PREFIX = "*"
+# The type of an entry that allows, and where its SID starts in it.
+ACCESS_ALLOWED_ACE_TYPE = 0
+ACE_SID_OFFSET = 8
 
 
 def same_path(one: str, other: str) -> bool:
@@ -78,6 +83,71 @@ class WindowsFolderAccess:
         entry = self._entry(account, win32.SET_ACCESS, FOLDER_RIGHT_MASKS[right])
         entry.grfInheritance = win32.SUB_CONTAINERS_AND_OBJECTS_INHERIT
         self._set_entries(path, [entry])
+
+    def grant_rights(
+        self, path: str, rights: list, *, is_folder: bool, is_inherited: bool
+    ) -> None:
+        """Replace each account's own entries on a folder or a file with one right.
+
+        Args:
+            path: The folder or the file.
+            rights: ``[(account, right)]``, ``right`` one of ``R``, ``RX`` and
+                ``M``; an account written ``*<SID>`` is named by its SID.
+            is_folder: Whether the path is a folder.
+            is_inherited: Whether what a folder holds inherits the rights.
+
+        Raises:
+            OSError: ``ELOOP`` for a path that is a reparse point or is
+                reached through one; ``ENOTDIR`` or ``EISDIR`` for the
+                other kind; any other when Windows refuses.
+        """
+        libraries = self._bound()
+        held = []
+        try:
+            entries = []
+            for account, right in rights:
+                entry = self._entry(
+                    "" if account.startswith(SID_ACCOUNT_PREFIX) else account,
+                    win32.SET_ACCESS,
+                    LEFT_RIGHT_MASKS[right],
+                )
+                if account.startswith(SID_ACCOUNT_PREFIX):
+                    sid = _sid(account[len(SID_ACCOUNT_PREFIX) :], libraries.advapi32)
+                    held.append(sid)
+                    entry.Trustee.TrusteeForm = win32.TRUSTEE_IS_SID
+                    entry.Trustee.ptstrName = sid.value
+                if is_inherited:
+                    entry.grfInheritance = win32.SUB_CONTAINERS_AND_OBJECTS_INHERIT
+                entries.append(entry)
+            self._set_entries(path, entries, is_folder=is_folder)
+        finally:
+            for sid in held:
+                libraries.kernel32.LocalFree(sid)
+
+    def allowed_sids(self, path: str, *, is_folder: bool = True) -> list:
+        """The SIDs a folder's or a file's own allow entries name, inherited ones left out.
+
+        Args:
+            path: The folder or the file.
+            is_folder: Whether the path is a folder.
+
+        Returns:
+            The SIDs as text, in the list's order.
+
+        Raises:
+            OSError: ``ELOOP`` for a path that is a reparse point or is
+                reached through one; any other when Windows refuses.
+        """
+        libraries = self._bound()
+        handle = self.open(path, is_folder=is_folder)
+        try:
+            dacl, descriptor = self._dacl(handle)
+            try:
+                return _allowed_sids(dacl, libraries.advapi32, libraries.kernel32)
+            finally:
+                libraries.kernel32.LocalFree(descriptor)
+        finally:
+            libraries.kernel32.CloseHandle(handle)
 
     def revoke(self, path: str, accounts: list) -> None:
         """Take every allow entry of these accounts off a folder.
@@ -203,19 +273,21 @@ class WindowsFolderAccess:
         libraries = self._bound()
         libraries.kernel32.CloseHandle(self.open(path))
 
-    def open(self, path: str):
-        """One folder's handle, its reparse point opened and never followed.
+    def open(self, path: str, *, is_folder: bool = True):
+        """One folder's or file's handle, its reparse point opened and never followed.
 
         Args:
-            path: The folder.
+            path: The folder, or the file.
+            is_folder: Whether the path is a folder.
 
         Returns:
             The handle; the caller closes it.
 
         Raises:
-            OSError: ``ELOOP`` for a folder that is a reparse point, or
+            OSError: ``ELOOP`` for a path that is a reparse point, or
                 whose final path is not ``path``; ``ENOTDIR`` for no
-                folder; any other when it cannot be opened.
+                folder and ``EISDIR`` for a folder in place of a file; any
+                other when it cannot be opened.
         """
         libraries = self._bound()
         handle = libraries.kernel32.CreateFileW(
@@ -237,8 +309,11 @@ class WindowsFolderAccess:
                 raise win32.last_error()
             if facts.dwFileAttributes & win32.FILE_ATTRIBUTE_REPARSE_POINT:
                 raise OSError(errno.ELOOP, f"{path} is a junction or a link")
-            if not facts.dwFileAttributes & win32.FILE_ATTRIBUTE_DIRECTORY:
+            is_directory = bool(facts.dwFileAttributes & win32.FILE_ATTRIBUTE_DIRECTORY)
+            if is_folder and not is_directory:
                 raise OSError(errno.ENOTDIR, f"{path} is no folder")
+            if not is_folder and is_directory:
+                raise OSError(errno.EISDIR, f"{path} is a folder")
             final = _final_path(handle, libraries.kernel32)
             if not same_path(final, path):
                 raise OSError(errno.ELOOP, f"{path} leads to {final}")
@@ -247,10 +322,10 @@ class WindowsFolderAccess:
             raise
         return handle
 
-    def _set_entries(self, path: str, entries: list) -> None:
-        """Fold entries into a folder's access list, read and set on its handle."""
+    def _set_entries(self, path: str, entries: list, *, is_folder: bool = True) -> None:
+        """Fold entries into a folder's or a file's access list, read and set on its handle."""
         libraries = self._bound()
-        handle = self.open(path)
+        handle = self.open(path, is_folder=is_folder)
         try:
             dacl, descriptor = self._dacl(handle)
             try:
@@ -379,6 +454,40 @@ def _final_path(handle, kernel32) -> str:
         if final.startswith(FINAL_PATH_PREFIX)
         else final
     )
+
+
+def _allowed_sids(dacl, advapi32, kernel32) -> list:
+    """The SIDs of an access list's own allow entries, as text.
+
+    Raises:
+        OSError: When the list cannot be read.
+    """
+    size = win32.AclSizeInformation()
+    if not advapi32.GetAclInformation(
+        dacl,
+        ctypes.byref(size),
+        ctypes.sizeof(size),
+        win32.ACL_SIZE_INFORMATION_CLASS,
+    ):
+        raise win32.last_error()
+    found_sids = []
+    for index in range(int(size.AceCount)):
+        found = ctypes.c_void_p()
+        if not advapi32.GetAce(dacl, index, ctypes.byref(found)):
+            raise win32.last_error()
+        header = ctypes.string_at(found.value, 4)
+        if header[0] != ACCESS_ALLOWED_ACE_TYPE or header[1] & win32.INHERITED_ACE:
+            continue
+        text = ctypes.c_void_p()
+        if not advapi32.ConvertSidToStringSidW(
+            ctypes.c_void_p(found.value + ACE_SID_OFFSET), ctypes.byref(text)
+        ):
+            raise win32.last_error()
+        try:
+            found_sids.append(ctypes.wstring_at(text.value))
+        finally:
+            kernel32.LocalFree(text)
+    return found_sids
 
 
 def _without_inheritance(dacl, advapi32):

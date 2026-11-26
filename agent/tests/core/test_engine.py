@@ -1951,6 +1951,7 @@ def test_a_system_that_unpacks_the_hub_s_software_runs_vs_code_from_its_bytes(
         "samba",
         "gitea",
         "ollama",
+        "comfyui",
         "podman",
         "vscode",
         "cloudcli",
@@ -2027,6 +2028,7 @@ def test_a_platform_with_packages_builds_every_runner_by_its_name(tmp_path):
         "samba",
         "gitea",
         "ollama",
+        "comfyui",
         "podman",
         "vscode",
         "code_server",
@@ -2045,6 +2047,7 @@ def test_a_platform_with_packages_builds_every_runner_by_its_name(tmp_path):
         "samba",
         "gitea",
         "ollama",
+        "comfyui",
         "podman",
         "vscode",
         "code_server",
@@ -3794,3 +3797,14 @@ def test_a_program_s_verify_runs_with_the_variables_its_runner_gives(
 
     home = {"CODEX_HOME": str(tmp_path / "state" / "codex" / "verify_home")}
     assert seen == [home]
+
+
+def test_a_recipe_that_names_a_lock_is_never_switched(switched):
+    engine = switched[0]
+    recipe = switch_recipe("3.0", "33" * 32, "44" * 32)
+    recipe["params"]["artifacts"].append(
+        {"name": "venv", "kind": "uv_lock", "digest": "sha256:" + "55" * 32}
+    )
+    entry = {"want": "running", "config": {}, "install": recipe}
+
+    assert engine.take_version_switch("fakedesk", entry) is False

@@ -29,9 +29,9 @@ CONFIGURED_STATES = ("stopped", "running")
 INSTANCE_MODULES = ("vscode", "cloudcli", "code_server", "codeg", "siyuan")
 # The modules whose instances publish their port only while they run.
 RUNNING_INSTANCE_MODULES = ("ssh_server",)
-# The container modules whose page the agent's forwarder serves at the port
-# their details report.
-FORWARDED_MODULES = ("hermes_webui", "ayakaleaf", "astrbot")
+# The modules whose page the agent's forwarder serves at the port their
+# details report: the container modules and ComfyUI.
+FORWARDED_MODULES = ("hermes_webui", "ayakaleaf", "astrbot", "comfyui")
 # The module whose port is published while it reads present, a person's
 # Ollama among them, and the states that are present.
 OLLAMA_MODULE = "ollama"

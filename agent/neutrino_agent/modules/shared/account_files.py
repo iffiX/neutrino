@@ -15,9 +15,12 @@ Not pure: runs commands as an account and acts as one.
 # agent still imports on the Python 3.9 that older Raspbian ships.
 from __future__ import annotations
 
+import ctypes
 import ntpath
 import os
 import shutil
+import stat
+import struct
 import subprocess
 
 from neutrino_agent.constants import AGENT_ACCOUNT_FILE_TIMEOUT_S
@@ -51,6 +54,12 @@ EXISTING_SHELL = 'for p do [ -e "$p" ] && printf "%s\\n" "$p"; done; exit 0'
 # missing above it under the umask ``$1``; it exits 3 when the folder was
 # there.
 MAKE_DIR_SHELL = '[ -d "$0" ] && exit 3; umask "$1" && mkdir -p -- "$0"'
+# What ``sh`` runs as the account to point the link ``$1`` at ``$0``; it exits
+# 3 when something other than a link stands at ``$1``.
+LINK_SHELL = (
+    '[ -e "$1" ] && [ ! -L "$1" ] && exit 3; '
+    '[ "$(readlink -- "$1")" = "$0" ] && exit 0; exec ln -sfn -- "$0" "$1"'
+)
 # What ``sh`` runs as the account to delete the file ``$0``.
 REMOVE_SHELL = 'rm -f -- "$0"'
 # What ``sh`` runs as the account to delete the tree ``$0``.
@@ -64,6 +73,15 @@ ABSENT_EXIT = 3
 DETAIL_CHARS = 300
 # The name a file is written as beside its place until it is renamed in.
 STAGED_SUFFIX = ".new"
+# A junction on Windows: its reparse tag, the prefix of the target it holds,
+# how its folder is opened to write the reparse point, and the control code
+# that writes it.
+JUNCTION_TAG = 0xA0000003
+JUNCTION_PREFIX = "\\??\\"
+JUNCTION_ACCESS = 0x40000000
+JUNCTION_OPEN = 3
+JUNCTION_FLAGS = 0x00200000 | 0x02000000
+JUNCTION_SET = 0x000900A4
 
 
 def _step_read(path: str) -> "bytes | None":
@@ -120,6 +138,103 @@ def _step_make_dir(path: str) -> bool:
     if os.path.isdir(path):
         return False
     os.makedirs(path, exist_ok=True)
+    return True
+
+
+def junction_data(target: str) -> bytes:
+    """The reparse point of a junction pointing at a folder. Pure.
+
+    Args:
+        target: The folder.
+
+    Returns:
+        The reparse data buffer ``FSCTL_SET_REPARSE_POINT`` writes.
+    """
+    printed = ntpath.abspath(target)
+    substitute = JUNCTION_PREFIX + printed
+    names = (substitute + "\0" + printed + "\0").encode("utf-16-le")
+    body = (
+        struct.pack(
+            "<HHHH",
+            0,
+            len(substitute) * 2,
+            len(substitute) * 2 + 2,
+            len(printed) * 2,
+        )
+        + names
+    )
+    return struct.pack("<IHH", JUNCTION_TAG, len(body), 0) + body
+
+
+def _make_junction(path: str, data: bytes) -> None:
+    """Make a junction from its reparse point, with this thread's token.
+
+    Raises:
+        OSError: When Windows refuses.
+    """
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CreateFileW.restype = ctypes.c_void_p
+    kernel32.CreateFileW.argtypes = [
+        ctypes.c_wchar_p,
+        ctypes.c_uint32,
+        ctypes.c_uint32,
+        ctypes.c_void_p,
+        ctypes.c_uint32,
+        ctypes.c_uint32,
+        ctypes.c_void_p,
+    ]
+    kernel32.DeviceIoControl.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_uint32,
+        ctypes.c_char_p,
+        ctypes.c_uint32,
+        ctypes.c_void_p,
+        ctypes.c_uint32,
+        ctypes.POINTER(ctypes.c_uint32),
+        ctypes.c_void_p,
+    ]
+    kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
+    os.mkdir(path)
+    handle = kernel32.CreateFileW(
+        path, JUNCTION_ACCESS, 0, None, JUNCTION_OPEN, JUNCTION_FLAGS, None
+    )
+    if handle in (None, ctypes.c_void_p(-1).value):
+        error = ctypes.WinError(ctypes.get_last_error())
+        os.rmdir(path)
+        raise error
+    try:
+        returned = ctypes.c_uint32()
+        if not kernel32.DeviceIoControl(
+            handle, JUNCTION_SET, data, len(data), None, 0, ctypes.byref(returned), None
+        ):
+            error = ctypes.WinError(ctypes.get_last_error())
+            kernel32.CloseHandle(handle)
+            handle = None
+            os.rmdir(path)
+            raise error
+    finally:
+        if handle is not None:
+            kernel32.CloseHandle(handle)
+
+
+def _step_link(target: str, path: str, data: bytes) -> bool:
+    """Point a junction at a folder; False when something other than a reparse point stands there."""
+    try:
+        facts = os.lstat(path)
+    except FileNotFoundError:
+        _make_junction(path, data)
+        return True
+    reparse = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+    if not getattr(facts, "st_file_attributes", 0) & reparse:
+        return False
+    try:
+        held = os.readlink(path)
+    except OSError:
+        held = ""
+    if ntpath.normcase(held.replace("\\\\?\\", "")) == ntpath.normcase(target):
+        return True
+    os.rmdir(path)
+    _make_junction(path, data)
     return True
 
 
@@ -334,6 +449,35 @@ class AccountFiles:
             return False
         if result.returncode != 0:
             raise OSError(f"could not make {path}: {_detail(result)}")
+        return True
+
+    def link(self, target: str, path: str) -> bool:
+        """Point a link at a target as the account: a symbolic link on Linux and macOS, a junction to a folder on Windows.
+
+        A link that already points at the target is left as it is.
+
+        Args:
+            target: What the link points at.
+            path: The link.
+
+        Returns:
+            False when something other than a link stands at the path, which
+            is left as it is.
+
+        Raises:
+            OSError: When the link cannot be made.
+            ModuleApplyError: ``credential_invalid`` when Windows refuses
+                the account's login.
+        """
+        if self._is_windows:
+            return bool(
+                self._as_account(_step_link, target, path, junction_data(target))
+            )
+        result = self.run(["/bin/sh", "-c", LINK_SHELL, target, path])
+        if result.returncode == ABSENT_EXIT:
+            return False
+        if result.returncode != 0:
+            raise OSError(f"could not link {path}: {_detail(result)}")
         return True
 
     def remove(self, path: str) -> None:

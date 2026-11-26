@@ -53,6 +53,8 @@ HOST_CHANGES = {
     "task_write",
     "task_write_system",
     "task_run_once",
+    "task_write_service",
+    "task_run_service",
     "task_start",
     "task_stop",
     "task_remove",
