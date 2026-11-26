@@ -11,8 +11,9 @@ hub's settings. A person's own Ollama is adopted: on Linux its unit, which
 the module's Start and Stop drive, which takes the settings through a
 drop-in, and which its uninstall gives back as the first Start found it. On
 Windows and macOS the publisher's app is taken over while the module is
-installed: its start at login kept aside and its processes ended at each
-configure and report, both given back at the uninstall. The models are the hub's to read and change
+installed, by the first report or configure after the install: its start at
+login kept aside and whether it ran recorded, then its processes ended at
+each configure and report, both given back at the uninstall. The models are the hub's to read and change
 through Ollama's own API; no report carries one.
 
 Not pure: drives Ollama through its applier.
@@ -458,9 +459,9 @@ class OllamaModuleRunner(ModuleRunner):
         Args:
             recipe: The module's recipe.
 
-        While the module's program is installed, every process of the
-        publisher's app is ended first, so only the module's server holds
-        the port.
+        While the module's program is installed, each account's
+        publisher's app is taken over the first time, then every process of
+        it is ended, so only the module's server holds the port.
 
         Returns:
             ``{"is_running", "port", "version", "found",
@@ -469,9 +470,7 @@ class OllamaModuleRunner(ModuleRunner):
             false for a person's.
         """
         if os.path.isfile(self._applier.program_path):
-            ended = self._applier.stop_apps()
-            if ended:
-                self._log(f"ollama: ended the publisher's app, {len(ended)} processes")
+            self._take_over_apps()
         is_running = bool(self._is_listening())
         found = self._found()
         version = (self._server_version() or "") if is_running else ""
@@ -484,6 +483,15 @@ class OllamaModuleRunner(ModuleRunner):
             "found": found,
             "has_package_mark": not found,
         }
+
+    def _take_over_apps(self) -> None:
+        """Take each account's publisher's app over the first time, then end every process of it."""
+        taken = self._applier.take_over_apps()
+        if taken:
+            self._log(f"ollama: took the publisher's app over for {', '.join(taken)}")
+        ended = self._applier.stop_apps()
+        if ended:
+            self._log(f"ollama: ended the publisher's app, {len(ended)} processes")
 
     def _found(self) -> str:
         """What a person's own Ollama is here: ``unit`` on Linux, or empty for none.
@@ -528,11 +536,7 @@ class OllamaModuleRunner(ModuleRunner):
                     self._wait_for_server()
                 self._log(f"ollama: the machine's own Ollama {note}")
                 return
-            taken = self._applier.take_over_apps()
-            if taken:
-                self._log(
-                    f"ollama: took the publisher's app over for {', '.join(taken)}"
-                )
+            self._take_over_apps()
             note = self._applier.apply(environment=environment, is_started=is_started)
         except (OSError, subprocess.SubprocessError) as error:
             raise ModuleApplyError(

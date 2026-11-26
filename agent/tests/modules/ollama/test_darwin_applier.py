@@ -181,7 +181,8 @@ def test_the_app_of_every_account_is_taken_over_once(tmp_path):
     }
     assert applier.take_over_apps() == ["ann", "bob"]
     assert ["launchctl", "disable", "gui/501/com.ollama.ollama"] in launchd.commands
-    assert sorted(ended) == [80, 81]
+    assert ended == []
+    assert sorted(applier.stop_apps()) == [80, 81]
     launchd.commands.clear()
     assert applier.take_over_apps() == []
     assert not any(

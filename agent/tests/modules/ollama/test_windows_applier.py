@@ -205,7 +205,8 @@ def test_the_app_of_every_profile_is_taken_over_once(tmp_path):
     kept = tmp_path / "state" / "ollama" / "kept" / "ann" / "Ollama.lnk"
     assert kept.read_bytes() == b"lnk of ann"
     assert not (startup / "Ollama.lnk").exists()
-    assert sorted(processes.ended) == [50, 51]
+    assert processes.ended == []
+    assert sorted(applier.stop_apps()) == [50, 51]
     (startup / "Ollama.lnk").write_bytes(b"made again")
     assert applier.take_over_apps() == []
     assert (startup / "Ollama.lnk").read_bytes() == b"made again"
@@ -293,3 +294,19 @@ def test_the_person_s_app_takes_no_setting(tmp_path):
     assert applier.apply_person(environment={"OLLAMA_KEEP_ALIVE": "5m"}) == ""
     assert applier.remove_person_settings() is False
     assert host.calls == []
+
+
+def test_an_app_ended_before_any_start_is_opened_again_at_the_uninstall(tmp_path):
+    """R195 F1: the first report after the install ended the app, the take-over
+    ran at the first Start and recorded that the app did not run."""
+    app, _startup = _profile(tmp_path, "ann")
+    processes = FakeProcesses({70: str(app / "ollama app.exe")})
+    applier, commands = _taking_applier(tmp_path, processes)
+    applier.take_over_apps()
+    applier.stop_apps()
+
+    assert applier.take_over_apps() == []
+    applier.uninstall()
+
+    opened = [command for command in commands.commands if "/create" in command]
+    assert len(opened) == 1

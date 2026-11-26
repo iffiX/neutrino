@@ -244,10 +244,12 @@ class OllamaWindowsApplier:
         """
 
     def take_over_apps(self) -> list:
-        """Take the publisher's app of each profile over once: its Startup shortcut kept aside, its processes ended.
+        """Take the publisher's app of each profile over once: its Startup shortcut kept aside.
 
         A profile already in the record is not taken again. A Startup
-        folder that is a junction, or under one, is left as it is.
+        folder that is a junction, or under one, is left as it is. Whether
+        the profile's app runs now is recorded; the caller ends the app's
+        processes after.
 
         Returns:
             The profiles taken over now, by name.
@@ -257,11 +259,16 @@ class OllamaWindowsApplier:
         """
         record = self._join(self._kept_dir, OLLAMA_KEPT_RECORD_NAME)
         records = read_kept(record)
+        fresh = [
+            (name, profile)
+            for name, profile in self._app_profiles()
+            if name not in records
+        ]
+        if not fresh:
+            return []
         running = {self._app_profile(pid) for pid in self._app_pids()}
         taken = []
-        for name, profile in self._app_profiles():
-            if name in records:
-                continue
+        for name, profile in fresh:
             startup = self._join(profile, *OLLAMA_WINDOWS_STARTUP_PARTS)
             shortcut = self._join(startup, OLLAMA_WINDOWS_STARTUP_NAME)
             is_kept = os.path.isfile(shortcut) and self._is_plain(startup)
@@ -275,9 +282,7 @@ class OllamaWindowsApplier:
                 "was_running": profile in running,
             }
             taken.append(name)
-        if taken:
-            write_kept(record, records)
-        self.stop_apps()
+        write_kept(record, records)
         return taken
 
     def stop_apps(self) -> list:

@@ -251,10 +251,11 @@ class OllamaDarwinApplier:
         """
 
     def take_over_apps(self) -> list:
-        """Take the publisher's app over once per account: its login job disabled, its processes ended.
+        """Take the publisher's app over once per account: its login job disabled.
 
         Whether the job was disabled before, and whether the account's app
-        ran, are recorded, so an uninstall gives back only what it took.
+        runs now, are recorded, so an uninstall gives back only what it
+        took. The caller ends the app's processes after.
 
         Returns:
             The accounts taken over now, by name.
@@ -267,11 +268,12 @@ class OllamaDarwinApplier:
             return []
         record = os.path.join(self._kept_dir, OLLAMA_KEPT_RECORD_NAME)
         records = read_kept(record)
+        fresh = [(name, uid) for name, uid in self._accounts() if name not in records]
+        if not fresh:
+            return []
         running = {uid for _pid, uid in self._app_processes(app)}
         taken = []
-        for name, uid in self._accounts():
-            if name in records:
-                continue
+        for name, uid in fresh:
             domain = f"gui/{uid}/{OLLAMA_DARWIN_APP_JOB}"
             records[name] = {
                 "uid": uid,
@@ -280,9 +282,7 @@ class OllamaDarwinApplier:
             }
             self._run(["launchctl", "disable", domain], is_checked=False)
             taken.append(name)
-        if taken:
-            write_kept(record, records)
-        self.stop_apps()
+        write_kept(record, records)
         return taken
 
     def stop_apps(self) -> list:

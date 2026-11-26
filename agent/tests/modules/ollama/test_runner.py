@@ -189,19 +189,23 @@ def test_a_configure_takes_the_app_over_before_the_server_starts(tmp_path):
     applier = FakeApplier(tmp_path, account="")
     runner = _runner(tmp_path, applier, os_name="windows", answers={"version": "1"})
     runner.apply({})
-    assert applier.calls == ["take_over_apps", ("apply", True)]
+    assert applier.calls == ["take_over_apps", "stop_apps", ("apply", True)]
     runner.apply_stopped({})
-    assert applier.calls[-2:] == ["take_over_apps", ("apply", False)]
+    assert applier.calls[-3:] == ["take_over_apps", "stop_apps", ("apply", False)]
 
 
-def test_each_report_ends_the_app_while_the_program_is_installed(tmp_path):
+def test_each_report_takes_the_app_over_then_ends_it_while_the_program_is_installed(
+    tmp_path,
+):
+    """The first report after the install records whether the app ran before
+    anything ends it."""
     applier = FakeApplier(tmp_path, account="")
     runner = _runner(tmp_path, applier, os_name="windows")
     runner.details({})
-    assert "stop_apps" not in applier.calls
+    assert applier.calls == []
     _place_program(applier)
     runner.details({})
-    assert applier.calls == ["stop_apps"]
+    assert applier.calls == ["take_over_apps", "stop_apps"]
 
 
 def test_the_linux_archive_lands_under_ollama_through_zstd(tmp_path, monkeypatch):
@@ -263,7 +267,7 @@ def test_a_stopped_configure_writes_the_service_and_starts_nothing(tmp_path):
     runner = _runner(tmp_path, applier)
     steps = runner.configure_steps({}, "stopped", [_step("configure"), _step("stop")])
     steps[1].run(None)
-    assert applier.calls == ["take_over_apps", ("apply", False)]
+    assert applier.calls == ["take_over_apps", "stop_apps", ("apply", False)]
 
 
 def test_a_configure_waits_for_the_server_and_fails_when_it_never_answers(
