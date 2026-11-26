@@ -721,7 +721,7 @@ on the row changes.
 
 | Rule | Reason |
 | --- | --- |
-| **Open** shows while the session's `is_opened_by_client` is false, and is disabled while its entry reads unhealthy. | A panel a client opened is reached at the client's loopback forward, and the hub's app forwards are not; the client's Apps page opens the app there. An unhealthy entry has no app to open, as a client's button rule says ([client.md](client.md), "The button rule"). |
+| **Open** shows while the session's `is_opened_by_client` is false and the page's own address is no client's loopback forward, a loopback host on a port other than the panel's (`isThroughClient` in `origins.ts`), and is disabled while its entry reads unhealthy. | A panel a client opened is reached at the client's loopback forward, a password session there included, and the hub's app forwards are not; the client's Apps page opens the app there. An unhealthy entry has no app to open, as a client's button rule says ([client.md](client.md), "The button rule"). |
 | The tab opens before the request and with no `opener`, and goes to the app once the answer comes. | A browser blocks a tab a page opens after it waited for an answer, and the app's page gets no hold on the panel's. |
 | The chip keeps the address a client's Apps page shows. | The forward's port is the tab's alone; a program on another computer keeps the client's address. |
 
