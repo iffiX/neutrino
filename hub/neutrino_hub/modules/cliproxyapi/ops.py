@@ -452,8 +452,8 @@ class CliproxyApiConfigApplier:
 
         The fingerprint is taken of the text the applier wrote, not of the file
         as it is later found: the gateway rewrites its own copy to replace the
-        management key with a bcrypt hash of it, and that rewrite is not a
-        change anybody made. A box that has never applied, one whose render no
+        management key with a bcrypt hash of it and to add its server id, and
+        that rewrite is not a change anybody made. A box that has never applied, one whose render no
         longer matches, and one whose render fails all count as stale; a box
         with no gateway installed never does.
         """
