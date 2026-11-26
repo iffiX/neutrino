@@ -669,6 +669,7 @@ class ModuleEngine(ReconcileWorker):
                 code, ``{code, params}``; empty for none.
         """
         with self._lock:
+            previous = (self._task_rows.get(name) or {}).get("task") or {}
             was_transient = bool((self._task_rows.get(name) or {}).get("state"))
             was_running = self._is_task_running(name)
             self._task_rows[name] = {
@@ -687,12 +688,19 @@ class ModuleEngine(ReconcileWorker):
                 and not self._is_task_running(name)
                 and _has_step(task, AGENT_STEP_START)
             )
+            is_start_passed = (
+                _running_step(previous) == AGENT_STEP_START
+                and bool(task.get("is_running"))
+                and _running_step(task) != AGENT_STEP_START
+            )
         if state:
             self._publish_observed(name, _typed(state))
         elif was_transient or is_failure_hidden:
             self.refresh_one(name)
         elif status is not None:
             self._publish_observed(name, dict(status))
+        if is_start_passed:
+            threading.Thread(target=self.refresh_one, args=(name,), daemon=True).start()
         if is_start_ended:
             self._watch_start(name)
 
@@ -2041,6 +2049,16 @@ def _recipe_of(wanted: "dict | None") -> dict:
     """The install recipe one state entry carries, empty when it carries none."""
     recipe = (wanted or {}).get("install")
     return dict(recipe) if isinstance(recipe, dict) else {}
+
+
+def _running_step(task: dict) -> str:
+    """The name of the step a task's row runs now, empty while none runs."""
+    steps = task.get("steps") or []
+    index = int(task.get("index", 0) or 0)
+    if not task.get("is_running") or not 0 < index <= len(steps):
+        return ""
+    step = steps[index - 1]
+    return str(step.get("name", "") or "") if isinstance(step, dict) else ""
 
 
 def _has_step(task: dict, step: str) -> bool:

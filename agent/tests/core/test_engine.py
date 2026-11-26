@@ -2612,6 +2612,58 @@ def test_a_row_read_installed_after_the_start_task_is_read_again(tmp_path, monke
     assert state_within(engine, "samba", "running", 2)
 
 
+def test_a_start_step_followed_by_another_step_reads_the_row_at_once(
+    tmp_path, monkeypatch
+):
+    """AstrBot's first start read installed for 5 seconds after its start step,
+    while its first_start step ran."""
+    engine, reads = held_engine(tmp_path, monkeypatch)
+    reads.is_present = True
+    first_start = {
+        "steps": [
+            {"name": "wait_module", "params": {"module": "podman"}},
+            {"name": "start", "params": {}},
+            {"name": "first_start", "params": {}},
+        ],
+        "index": 2,
+        "wait": {},
+        "is_running": True,
+    }
+    engine.publish_task("demo", first_start, "", {})
+    engine.refresh_one("demo")
+    before = engine._statuses["demo"]["state"]
+    engine.mark_configured("demo")
+    reads.is_active = True
+
+    engine.publish_task("demo", dict(first_start, index=3), "", {})
+
+    assert before == "installed"
+    assert state_within(engine, "demo", "running", 2)
+
+
+def test_a_step_other_than_start_reads_nothing_more(tmp_path, monkeypatch):
+    engine, reads = held_engine(tmp_path, monkeypatch)
+    reads.is_present = True
+    pulling = {
+        "steps": [
+            {"name": "wait_module", "params": {"module": "podman"}},
+            {"name": "pull", "params": {"image": "app"}},
+            {"name": "verify", "params": {}},
+        ],
+        "index": 1,
+        "wait": {},
+        "is_running": True,
+    }
+    engine.publish_task("demo", pulling, "", {})
+    engine.refresh_one("demo")
+    engine.mark_configured("demo")
+    reads.is_active = True
+
+    engine.publish_task("demo", dict(pulling, index=2), "", {})
+
+    assert not state_within(engine, "demo", "running", 0.3)
+
+
 # --- the steps of Containers, Ayakaleaf and Hermes WebUI ---
 
 CONTAINERS_ALONE = ("containers", "alone")
