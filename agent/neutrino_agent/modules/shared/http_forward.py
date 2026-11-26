@@ -20,7 +20,8 @@ connection to the page kept for that browser's connection, its body cut at
 its ``Content-Length``; a WebSocket is passed on unchanged and relayed both
 ways until either side closes. A page whose login is a cookie of its own
 with a fixed name gets it renamed both ways: the entry's cookie name toward
-the browser, the page's own toward the page. Both of a forwarder's connections send at
+the browser, the page's own toward the page. The hub panel's session cookie
+is taken out of every request. Both of a forwarder's connections send at
 once, with ``TCP_NODELAY``. Closing a forwarder ends every connection it
 serves, both of its sockets.
 
@@ -51,6 +52,7 @@ from neutrino_agent.constants import (
     AGENT_FORWARD_JUDGED_BODY_BYTES,
     AGENT_FORWARD_LISTEN_HOST,
     AGENT_FORWARD_LISTEN_QUEUE,
+    AGENT_FORWARD_PANEL_COOKIE_PREFIX,
     AGENT_FORWARD_READY_POLL_S,
     AGENT_FORWARD_RETRY_S,
     AGENT_FORWARD_TOKEN_EXPIRY_BYTES,
@@ -455,6 +457,40 @@ def renamed_request_cookies(head: bytes, *, kept: str, page: str) -> bytes:
             if not pairs:
                 continue
             line = b"Cookie: " + "; ".join(pairs).encode("latin-1")
+        kept_lines.append(line)
+    return b"\r\n".join(kept_lines) + HEAD_END
+
+
+def without_panel_cookies(head: bytes) -> bytes:
+    """A request's head without the hub panel's session cookies.
+
+    Args:
+        head: The request's head, through its blank line.
+
+    Returns:
+        The head with every cookie whose name starts with
+        ``neutrino_session_`` taken out, a ``Cookie`` header left with none
+        taken out, and every other line as it was.
+    """
+    lines = head[: -len(HEAD_END)].split(b"\r\n")
+    kept_lines = [lines[0]]
+    for line in lines[1:]:
+        name, separator, value = line.partition(b":")
+        if separator and name.strip().lower() == b"cookie":
+            pairs = [
+                pair.strip()
+                for pair in value.decode("latin-1").split(";")
+                if pair.strip()
+            ]
+            kept = [
+                pair
+                for pair in pairs
+                if not pair.startswith(AGENT_FORWARD_PANEL_COOKIE_PREFIX)
+            ]
+            if not kept and pairs:
+                continue
+            if len(kept) < len(pairs):
+                line = b"Cookie: " + "; ".join(kept).encode("latin-1")
         kept_lines.append(line)
     return b"\r\n".join(kept_lines) + HEAD_END
 
@@ -1163,7 +1199,8 @@ class InstanceForwarder:
         return (page, kept) if page and kept else ()
 
     def _passed_head(self, head: bytes) -> bytes:
-        """A request's head as the page is sent it: the entry's cookie under the page's own name."""
+        """A request's head as the page is sent it: no panel session, the entry's cookie under the page's own name."""
+        head = without_panel_cookies(head)
         names = self._cookie_names()
         if not names:
             return head
