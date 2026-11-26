@@ -1,14 +1,15 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import { Link } from "react-router-dom";
 
-import { ApplyBar } from "./apply_bar";
+import { DialogFrame } from "./dialog_frame";
 import { ErrorPanel } from "./error_panel";
+import { Icon } from "./icon";
 import { Picker } from "./picker";
+import { Spinner } from "./spinner";
 import { providerLabel } from "../ai_provider_labels";
 import { apiPost, describeError } from "../api_client";
 import { t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
-import { useDraft } from "../use_draft";
 import { HUB_EVENT_AI_USAGE, HUB_EVENT_CONFIG } from "../use_hub_events";
 import type {
   AiCloudModelView,
@@ -26,9 +27,10 @@ import "./ai_models_panel.css";
  * The Models panel of the AI page: one row for each name the gateway
  * serves, the cloud names by name and then the Ollama names by name, each
  * with where it comes from and the length every machine's AI tools are
- * given for it. A cloud name's length and its input and output price per
- * million tokens are the panel's draft. An Ollama name's length is
- * read-only, with each machine of its pool under it, and it has no price.
+ * given for it. A cloud row's Configure opens a dialog with the name's
+ * length and its input and output price per million tokens, and its Save
+ * writes that one name. An Ollama name's length is read-only, with each
+ * machine of its pool under the name, and it has no price.
  */
 
 const MODEL_PATH = "/hub/ai/model";
@@ -64,9 +66,6 @@ interface ModelText {
   currency: AiPriceCurrency;
 }
 
-/** The typed values of each cloud name. */
-type ModelTexts = Record<string, ModelText>;
-
 /** The length in force for a cloud name: the one set, else the default. */
 function lengthOf(row: AiCloudModelView): number {
   return row.context_length ?? row.default_context_length;
@@ -81,12 +80,6 @@ function textOfRow(row: AiCloudModelView): ModelText {
     output: price === null ? "" : String(price.output),
     currency: price?.currency ?? DEFAULT_CURRENCY,
   };
-}
-
-function textsOf(view: AiModelResponse): ModelTexts {
-  return Object.fromEntries(
-    view.cloud.map((row) => [row.model, textOfRow(row)]),
-  );
 }
 
 /** A typed length as a number, or null while it is no whole number in range. */
@@ -112,8 +105,8 @@ function parsedPrice(text: string): number | null {
 }
 
 /**
- * The price a row's fields give: a set price, null for no price, or
- * undefined while the fields hold no valid price.
+ * The price the fields give: a set price, null for no price, or undefined
+ * while the fields hold no valid price.
  *
  * Both fields empty are no price on a name with no default alone.
  */
@@ -182,72 +175,15 @@ export function AiModelsPanel() {
   const resource = useApiResource<AiModelResponse>(MODEL_PATH, {
     invalidateOn: MODEL_INVALIDATE_ON,
   });
-  const { draft, setDraft, reset } = useDraft(resource.data, textsOf);
-  const [isBusy, setIsBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [configuring, setConfiguring] = useState<string | null>(null);
 
   const view = resource.data;
   const cloud = view?.cloud ?? [];
   const ollama = view?.ollama ?? [];
-  const texts = draft ?? {};
-  const textOf = (row: AiCloudModelView) => texts[row.model] ?? textOfRow(row);
-  const lengthChanged = cloud.filter((row) =>
-    isLengthChanged(row, textOf(row)),
-  );
-  const priceChanged = cloud.filter((row) => isPriceChanged(row, textOf(row)));
-  const isDirty = lengthChanged.length > 0 || priceChanged.length > 0;
-  const isValid = cloud.every(
-    (row) =>
-      parsedLength(textOf(row).length) !== null &&
-      draftPrice(row, textOf(row)) !== undefined,
-  );
-
-  const handleApply = async () => {
-    const lengths: NonNullable<AiModelUpdate["lengths"]> = {};
-    for (const row of lengthChanged) {
-      const length = parsedLength(textOf(row).length);
-      if (length === null) {
-        return;
-      }
-      lengths[row.model] =
-        length === row.default_context_length ? null : length;
-    }
-    const prices: NonNullable<AiModelUpdate["prices"]> = {};
-    for (const row of priceChanged) {
-      const price = draftPrice(row, textOf(row));
-      if (price === undefined) {
-        return;
-      }
-      prices[row.model] =
-        price === null || isDefaultPrice(row, price) ? null : price;
-    }
-    setIsBusy(true);
-    setError(null);
-    setNotice(null);
-    try {
-      resource.setData(
-        await apiPost<AiModelResponse>(MODEL_SET_PATH, { lengths, prices }),
-      );
-      setNotice(t("ui.api.applied"));
-    } catch (cause: unknown) {
-      setError(describeError(cause));
-    } finally {
-      setIsBusy(false);
-    }
-  };
-
-  const changeText = (row: AiCloudModelView, change: Partial<ModelText>) => {
-    setDraft((current) => ({
-      ...current,
-      [row.model]: { ...(current[row.model] ?? textOfRow(row)), ...change },
-    }));
-  };
+  const configured = cloud.find((row) => row.model === configuring) ?? null;
 
   return (
-    <section
-      className={`settings_group ${isDirty ? "settings_group--dirty" : ""}`}
-    >
+    <section className="settings_group">
       <div className="settings_group_title">
         <h2>{t("ui.ai.models_title")}</h2>
       </div>
@@ -270,29 +206,27 @@ export function AiModelsPanel() {
             <div className="ai_models_head">
               <span>{t("ui.ai.context_col_model")}</span>
               <span>{t("ui.ai.context_col_source")}</span>
-              <span className="ai_models_head_number">
+              <span className="ai_models_head_tokens">
                 {t("ui.ai.context_col_tokens")}
-              </span>
-              <span className="ai_models_head_number">
-                {t("ui.ai.price_col_input")}
-              </span>
-              <span className="ai_models_head_number">
-                {t("ui.ai.price_col_output")}
-              </span>
-              <span className="ai_models_head_unit">
-                {t("ui.ai.price_unit")}
               </span>
             </div>
             {cloud.map((row) => (
-              <CloudModelRow
-                key={row.model}
-                row={row}
-                text={textOf(row)}
-                isDisabled={isBusy}
-                onChange={(change) => {
-                  changeText(row, change);
-                }}
-              />
+              <div key={row.model} className="ai_models_row">
+                <span className="ai_models_model mono" title={row.model}>
+                  {row.model}
+                </span>
+                <SourceChips sources={row.sources} />
+                <span className="ai_models_value mono">{lengthOf(row)}</span>
+                <button
+                  type="button"
+                  className="button button--ghost button--small ai_models_configure"
+                  onClick={() => {
+                    setConfiguring(row.model);
+                  }}
+                >
+                  {t("ui.ai.model_configure")}
+                </button>
+              </div>
             ))}
             {ollama.map((row) => (
               <OllamaModelRow key={row.model} row={row} />
@@ -300,89 +234,194 @@ export function AiModelsPanel() {
           </div>
         ))}
 
-      <ApplyBar
-        isDirty={isDirty}
-        isBusy={isBusy}
-        isApplyDisabled={!isValid}
-        label={t("ui.ai.models_apply")}
-        hint={t("ui.ai.models_apply_hint")}
-        error={error}
-        notice={notice}
-        onReset={() => {
-          reset();
-          setError(null);
-          setNotice(null);
-        }}
-        onApply={() => void handleApply()}
-      />
+      {configured !== null && (
+        <ModelDialog
+          row={configured}
+          onSaved={(saved) => {
+            resource.setData(saved);
+            setConfiguring(null);
+          }}
+          onCancel={() => {
+            setConfiguring(null);
+          }}
+        />
+      )}
     </section>
   );
 }
 
-interface CloudModelRowProps {
+interface ModelDialogProps {
   row: AiCloudModelView;
-  text: ModelText;
-  isDisabled: boolean;
-  onChange: (change: Partial<ModelText>) => void;
+  /** The write landed, with the view it returned. */
+  onSaved: (view: AiModelResponse) => void;
+  onCancel: () => void;
 }
 
-/** A cloud name: its sources, its length and its price as fields, each
- * with the way back to its default while it holds another value. */
-function CloudModelRow({
-  row,
-  text,
-  isDisabled,
-  onChange,
-}: CloudModelRowProps) {
+/** A cloud name's dialog: its length and its price, each with the way back
+ * to its default, written for that one name by Save. */
+function ModelDialog({ row, onSaved, onCancel }: ModelDialogProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
+  const lengthId = useId();
+  const [text, setText] = useState<ModelText>(() => textOfRow(row));
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
   const fallback = row.default_price;
+  const length = parsedLength(text.length);
+  const price = draftPrice(row, text);
+  const isLengthValid = length !== null;
+  const isPriceValid = price !== undefined;
+  const isChanged = isLengthChanged(row, text) || isPriceChanged(row, text);
   const isDefaultLength =
     text.length.trim() === String(row.default_context_length);
-  const isLengthValid = parsedLength(text.length) !== null;
-  const isPriceValid = draftPrice(row, text) !== undefined;
   const isPriceDefault =
     fallback === null ||
     (text.input.trim() === String(fallback.input) &&
       text.output.trim() === String(fallback.output) &&
       text.currency === fallback.currency);
+
+  const change = (next: Partial<ModelText>) => {
+    setText((current) => ({ ...current, ...next }));
+  };
+
+  const handleSave = async () => {
+    if (length === null || price === undefined) {
+      return;
+    }
+    const update: AiModelUpdate = {};
+    if (isLengthChanged(row, text)) {
+      update.lengths = {
+        [row.model]: length === row.default_context_length ? null : length,
+      };
+    }
+    if (isPriceChanged(row, text)) {
+      update.prices = {
+        [row.model]:
+          price === null || isDefaultPrice(row, price) ? null : price,
+      };
+    }
+    setIsSaving(true);
+    setError(null);
+    try {
+      onSaved(await apiPost<AiModelResponse>(MODEL_SET_PATH, update));
+    } catch (cause: unknown) {
+      setError(describeError(cause));
+      setIsSaving(false);
+    }
+  };
+
   return (
-    <div className="ai_models_row">
-      <span className="ai_models_model mono" title={row.model}>
-        {row.model}
-      </span>
-      <SourceChips sources={row.sources} />
-      <span className="ai_models_field ai_models_length">
-        {!isDefaultLength && (
+    <DialogFrame
+      title={t("ui.ai.model_configure_title", { model: row.model })}
+      hasHeadClose={false}
+      onClose={onCancel}
+      foot={
+        <>
           <button
             type="button"
-            className="button button--ghost button--small"
-            disabled={isDisabled}
-            onClick={() => {
-              onChange({ length: String(row.default_context_length) });
-            }}
+            className="button button--ghost"
+            onClick={onCancel}
           >
-            {t("ui.ai.context_reset", { length: row.default_context_length })}
+            {t("ui.ai.cancel")}
           </button>
+          <button
+            type="button"
+            className="button button--primary button--commit"
+            disabled={!isChanged || !isLengthValid || !isPriceValid || isSaving}
+            onClick={() => void handleSave()}
+          >
+            {isSaving ? <Spinner size={13} /> : <Icon name="check" size={14} />}
+            {isSaving ? t("ui.ai.saving") : t("ui.ai.model_save")}
+          </button>
+        </>
+      }
+    >
+      <div className="field">
+        <label className="field_label" htmlFor={lengthId}>
+          {t("ui.ai.model_context_length")}
+        </label>
+        <div className="ai_model_dialog_line">
+          <input
+            id={lengthId}
+            className="input ai_model_dialog_length"
+            inputMode="numeric"
+            value={text.length}
+            autoFocus
+            onChange={(event) => {
+              change({ length: event.target.value });
+            }}
+          />
+          {!isDefaultLength && (
+            <button
+              type="button"
+              className="button button--ghost button--small"
+              onClick={() => {
+                change({ length: String(row.default_context_length) });
+              }}
+            >
+              {t("ui.ai.context_reset", {
+                length: row.default_context_length,
+              })}
+            </button>
+          )}
+        </div>
+        {!isLengthValid && (
+          <span className="field_error">
+            {t("code.context_length_invalid", {
+              min: CONTEXT_LENGTH_MIN,
+              max: CONTEXT_LENGTH_MAX,
+            })}
+          </span>
         )}
-        <input
-          className="input ai_models_input ai_models_input--length"
-          inputMode="numeric"
-          aria-label={t("ui.ai.context_length_of", { model: row.model })}
-          value={text.length}
-          disabled={isDisabled}
-          onChange={(event) => {
-            onChange({ length: event.target.value });
-          }}
-        />
-      </span>
-      <div className="ai_models_prices">
-        <span className="ai_models_field">
+      </div>
+
+      <div className="field">
+        <div className="ai_model_dialog_prices">
+          <label className="field">
+            <span className="field_label">{t("ui.ai.price_input")}</span>
+            <input
+              className="input"
+              inputMode="decimal"
+              placeholder={t("ui.ai.no_price")}
+              value={text.input}
+              onChange={(event) => {
+                change({ input: event.target.value });
+              }}
+            />
+          </label>
+          <label className="field">
+            <span className="field_label">{t("ui.ai.price_output")}</span>
+            <input
+              className="input"
+              inputMode="decimal"
+              placeholder={t("ui.ai.no_price")}
+              value={text.output}
+              onChange={(event) => {
+                change({ output: event.target.value });
+              }}
+            />
+          </label>
+          <Picker
+            options={CURRENCY_OPTIONS.map((option) => ({
+              id: option.id,
+              name: t(option.labelKey),
+            }))}
+            value={text.currency}
+            onChange={(id) => {
+              change({ currency: id as AiPriceCurrency });
+            }}
+            label={t("ui.ai.price_currency")}
+          />
+        </div>
+        <div className="ai_model_dialog_line ai_model_dialog_line--hint">
+          <span className="field_hint">{t("ui.ai.price_unit")}</span>
           {!isPriceDefault && fallback !== null && (
             <button
               type="button"
               className="button button--ghost button--small"
-              disabled={isDisabled}
               onClick={() => {
-                onChange({
+                change({
                   input: String(fallback.input),
                   output: String(fallback.output),
                   currency: fallback.currency,
@@ -394,71 +433,26 @@ function CloudModelRow({
               })}
             </button>
           )}
-          <span className="ai_models_field_word">
-            {t("ui.ai.price_col_input")}
+        </div>
+        {!isPriceValid && (
+          <span className="field_error">
+            {t("code.price_invalid", { min: PRICE_MIN, max: PRICE_MAX })}
           </span>
-          <input
-            className="input ai_models_input"
-            inputMode="decimal"
-            aria-label={t("ui.ai.price_input_of", { model: row.model })}
-            placeholder={t("ui.ai.no_price")}
-            value={text.input}
-            disabled={isDisabled}
-            onChange={(event) => {
-              onChange({ input: event.target.value });
-            }}
-          />
-        </span>
-        <span className="ai_models_field">
-          <span className="ai_models_field_word">
-            {t("ui.ai.price_col_output")}
-          </span>
-          <input
-            className="input ai_models_input"
-            inputMode="decimal"
-            aria-label={t("ui.ai.price_output_of", { model: row.model })}
-            placeholder={t("ui.ai.no_price")}
-            value={text.output}
-            disabled={isDisabled}
-            onChange={(event) => {
-              onChange({ output: event.target.value });
-            }}
-          />
-        </span>
-        <Picker
-          className="ai_models_currency"
-          options={CURRENCY_OPTIONS.map((option) => ({
-            id: option.id,
-            name: t(option.labelKey),
-          }))}
-          value={text.currency}
-          onChange={(id) => {
-            onChange({ currency: id as AiPriceCurrency });
-          }}
-          label={t("ui.ai.price_currency_of", { model: row.model })}
-          isLabelHidden
-          isDisabled={isDisabled}
-        />
+        )}
       </div>
-      {!isLengthValid && (
-        <span className="field_error ai_models_error">
-          {t("code.context_length_invalid", {
-            min: CONTEXT_LENGTH_MIN,
-            max: CONTEXT_LENGTH_MAX,
-          })}
-        </span>
+
+      {error !== null && (
+        <div className="notice notice--error">
+          <Icon name="alert" size={15} />
+          <div className="notice_body">{error}</div>
+        </div>
       )}
-      {!isPriceValid && (
-        <span className="field_error ai_models_error">
-          {t("code.price_invalid", { min: PRICE_MIN, max: PRICE_MAX })}
-        </span>
-      )}
-    </div>
+    </DialogFrame>
   );
 }
 
 /** An Ollama name: the Ollama chip and its cloud sources, its length, and
- * under it one line per machine of its pool. */
+ * under the name one line per machine of its pool. */
 function OllamaModelRow({ row }: { row: AiOllamaModelView }) {
   const valueClass = (length: number) =>
     `ai_models_source mono ${length === row.context_length ? "ai_models_source--in_force" : ""}`;

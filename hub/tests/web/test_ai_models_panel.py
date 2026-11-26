@@ -2,14 +2,16 @@
 
 What these pin: every word of the panel says what ui_text.md writes in both
 languages; the panel reads ``/hub/ai/model`` again at each ``ai_usage`` and
-each ``config`` event; the lengths and the prices are one draft behind one
-bar written with one ``model/set``; a length field outside the hub's least
-and most set length shows ``code.context_length_invalid``, and a price
-number out of range or a pair half empty shows ``code.price_invalid``, each
-disabling the bar; a length or a price equal to the default is written as
-null; an Ollama row has no price field, and its machines link to the
-machine page's Ollama tab with its panels open; and the panel stands after
-Accounts and before Access.
+each ``config`` event; a cloud row holds the name, the sources, the
+read-only length and **Configure**, and the panel has no apply bar; the
+dialog holds the length and the prices, and its **Save** writes
+``model/set`` for its one name, a length or a price equal to the default
+written as null, and is disabled with nothing changed; a length outside the
+hub's least and most set length shows ``code.context_length_invalid``, and
+a price number out of range or a pair half empty shows ``code.price_invalid``;
+an Ollama row has no **Configure**, and its machines link to the machine
+page's Ollama tab with its panels open; and the panel stands after Accounts
+and before Access.
 """
 
 import json
@@ -33,7 +35,7 @@ PAGE_PATH = FRONTEND_SRC_DIR / "pages/ai_page.tsx"
 UI_TEXT = HUB_DIR.parent / "skills/core-code-author/design/ui_text.md"
 # The keys of the panel's words in ui_text.md.
 PANEL_KEY_PATTERN = re.compile(
-    r"^(ui\.ai\.(models_|context_|price_|currency_|no_price)"
+    r"^(ui\.ai\.(models_|model_|context_|price_|currency_|no_price)"
     r"|code\.(context_length_invalid|price_invalid|currency_invalid))"
 )
 
@@ -67,12 +69,19 @@ def panel_source() -> str:
     return " ".join(PANEL_PATH.read_text(encoding="utf-8").split())
 
 
+def part(start: str, end: str) -> str:
+    """The panel's source from one marker to the next."""
+    source = panel_source()
+    begin = source.index(start)
+    return source[begin : source.index(end, begin)]
+
+
 @pytest.mark.parametrize("language", ["en", "zh-CN"])
 def test_every_word_of_the_panel_says_what_ui_text_writes(language):
     words = ui_text_words()[language]
     catalog = worded(language)
 
-    assert len(words) == 24
+    assert len(words) == 23
     for key, sentence in words.items():
         assert catalog[key] == sentence
 
@@ -80,14 +89,17 @@ def test_every_word_of_the_panel_says_what_ui_text_writes(language):
 def test_every_word_the_panel_uses_is_written_in_ui_text():
     used = set(re.findall(r'"((?:ui\.ai|code)\.[a-z_]+)"', panel_source()))
 
-    assert used <= set(ui_text_words()["en"])
+    assert used <= set(ui_text_words()["en"]) | {"ui.ai.cancel", "ui.ai.saving"}
     for key in (
         "ui.ai.models_title",
-        "ui.ai.price_col_input",
+        "ui.ai.model_configure",
+        "ui.ai.model_configure_title",
+        "ui.ai.model_context_length",
+        "ui.ai.price_input",
         "ui.ai.price_unit",
         "ui.ai.price_reset",
         "ui.ai.currency_cny",
-        "ui.ai.models_apply",
+        "ui.ai.model_save",
         "code.price_invalid",
     ):
         assert key in used
@@ -104,20 +116,58 @@ def test_the_panel_reads_the_models_again_at_each_ai_usage_and_config_event():
     ) in source
 
 
-def test_the_lengths_and_the_prices_are_one_draft_written_by_one_bar():
+def test_a_cloud_row_holds_the_name_the_sources_the_length_and_configure():
+    row = part("{cloud.map((row) => (", "{ollama.map(")
+
+    assert '<span className="ai_models_model mono" title={row.model}>' in row
+    assert "<SourceChips sources={row.sources} />" in row
+    assert '<span className="ai_models_value mono">{lengthOf(row)}</span>' in row
+    assert 't("ui.ai.model_configure")' in row
+    assert "setConfiguring(row.model);" in row
+    assert "<input" not in row
+
+
+def test_the_panel_has_no_apply_bar_and_no_draft():
     source = panel_source()
 
-    assert source.count("useDraft(") == 1
-    assert source.count("<ApplyBar") == 1
-    assert "const isDirty = lengthChanged.length > 0 || priceChanged.length > 0;" in (
-        source
+    assert "ApplyBar" not in source
+    assert "useDraft" not in source
+
+
+def test_save_writes_the_one_name_with_defaults_as_null():
+    dialog = part("function ModelDialog(", "function OllamaModelRow(")
+
+    assert (
+        "update.lengths = { [row.model]: length === row.default_context_length "
+        "? null : length, };"
+    ) in dialog
+    assert (
+        "update.prices = { [row.model]: price === null || isDefaultPrice(row, price) "
+        "? null : price, };"
+    ) in dialog
+    assert "if (isLengthChanged(row, text)) {" in dialog
+    assert "if (isPriceChanged(row, text)) {" in dialog
+    assert "onSaved(await apiPost<AiModelResponse>(MODEL_SET_PATH, update));" in dialog
+    assert (
+        "disabled={!isChanged || !isLengthValid || !isPriceValid || isSaving}" in dialog
     )
-    assert "apiPost<AiModelResponse>(MODEL_SET_PATH, { lengths, prices })" in source
-    assert 'label={t("ui.ai.models_apply")}' in source
-    assert 'hint={t("ui.ai.models_apply_hint")}' in source
+    assert (
+        "fallback !== null && price.input === fallback.input && "
+        "price.output === fallback.output && price.currency === fallback.currency"
+    ) in panel_source()
 
 
-def test_a_length_outside_the_hub_s_bounds_shows_the_refusal_and_disables_the_bar():
+def test_cancel_escape_and_the_backdrop_write_nothing():
+    source = panel_source()
+    dialog = part("function ModelDialog(", "function OllamaModelRow(")
+
+    assert "<DialogFrame" in dialog
+    assert "hasHeadClose={false} onClose={onCancel}" in dialog
+    assert "onCancel={() => { setConfiguring(null); }}" in source
+    assert 't("ui.ai.cancel")' in dialog
+
+
+def test_a_length_outside_the_hub_s_bounds_shows_the_refusal():
     source = panel_source()
 
     assert f"const CONTEXT_LENGTH_MIN = {AI_CONTEXT_LENGTH_MIN};" in source
@@ -126,11 +176,6 @@ def test_a_length_outside_the_hub_s_bounds_shows_the_refusal_and_disables_the_ba
         't("code.context_length_invalid", { min: CONTEXT_LENGTH_MIN, '
         "max: CONTEXT_LENGTH_MAX, })"
     ) in source
-    assert "isApplyDisabled={!isValid}" in source
-    assert (
-        "lengths[row.model] = length === row.default_context_length ? null : length;"
-        in source
-    )
 
 
 def test_a_price_out_of_range_or_half_empty_shows_the_refusal():
@@ -146,30 +191,14 @@ def test_a_price_out_of_range_or_half_empty_shows_the_refusal():
         "return row.default_price === null ? null : undefined; }"
     ) in source
     assert "if (input === null || output === null) { return undefined; }" in source
-    assert "draftPrice(row, textOf(row)) !== undefined" in source
 
 
-def test_a_price_equal_to_the_default_is_written_as_null():
-    source = panel_source()
+def test_an_ollama_row_has_no_configure():
+    ollama_row = part("function OllamaModelRow(", "interface SourceChipsProps")
 
-    assert (
-        "prices[row.model] = price === null || isDefaultPrice(row, price) ? null : price;"
-        in source
-    )
-    assert (
-        "fallback !== null && price.input === fallback.input && "
-        "price.output === fallback.output && price.currency === fallback.currency"
-    ) in source
-
-
-def test_an_ollama_row_has_no_price_field():
-    source = panel_source()
-    ollama_row = source[source.index("function OllamaModelRow(") :]
-    ollama_row = ollama_row[: ollama_row.index("interface SourceChipsProps")]
-
-    assert "<input" not in ollama_row
+    assert "<button" not in ollama_row
+    assert "model_configure" not in ollama_row
     assert "price" not in ollama_row
-    assert "<Picker" not in ollama_row
 
 
 def test_an_ollama_machine_links_to_its_ollama_tab_with_its_panels_open():
