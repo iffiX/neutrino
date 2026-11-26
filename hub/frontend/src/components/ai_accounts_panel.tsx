@@ -122,7 +122,7 @@ export function AiAccountsPanel() {
   };
 
   return (
-    <section className="settings_group">
+    <section className="settings_group ai_accounts_group">
       <div className="settings_group_title">
         <h2>{t("ui.ai.accounts_title")}</h2>
         <button
@@ -224,89 +224,102 @@ function AccountRow({ value, isBusy, onChanged, onDelete }: AccountRowProps) {
 
   return (
     <div className="ai_account_row">
-      <div className="ai_account_line">
-        <span className="key_card_type">{providerLabel(value.provider)}</span>
-        <span className="ai_account_label">
-          <span className="ai_account_name">{accountLabel(value)}</span>
-          {value.plan.length > 0 && (
-            <span className="ai_account_plan faint">
-              {t("ui.ai.plan", { plan: value.plan })}
-            </span>
-          )}
-          {value.subscription_ends_at.length > 0 && (
-            <span className="ai_account_plan faint">
-              {t("ui.ai.plan_until", {
-                date: formatDay(value.subscription_ends_at),
-              })}
-            </span>
-          )}
-        </span>
-        <span className="ai_account_counts">
-          <span>{t("ui.ai.count_ok", { count: value.success_count })}</span>
-          <span>·</span>
-          <span
-            className={
-              value.failed_count > 0 ? "ai_account_counts--failed" : undefined
-            }
-          >
-            {t("ui.ai.count_failed", { count: value.failed_count })}
+      <span className="key_card_type ai_account_service">
+        {providerLabel(value.provider)}
+      </span>
+      <span className="ai_account_identity">
+        <span className="ai_account_name">{accountLabel(value)}</span>
+        {value.plan.length > 0 && (
+          <span className="ai_account_plan faint">
+            {t("ui.ai.plan", { plan: value.plan })}
           </span>
-        </span>
+        )}
+        {value.subscription_ends_at.length > 0 && (
+          <span className="ai_account_plan faint">
+            {t("ui.ai.plan_until", {
+              date: formatDay(value.subscription_ends_at),
+            })}
+          </span>
+        )}
+      </span>
+      <span className="ai_account_counts">
+        <span>{t("ui.ai.count_ok", { count: value.success_count })}</span>
+        <span>·</span>
         <span
-          className="ai_account_status"
-          title={hasMessage ? value.status_message : undefined}
+          className={
+            value.failed_count > 0 ? "ai_account_counts--failed" : undefined
+          }
         >
-          <StatusDot tone={health.tone} label={health.word} />
+          {t("ui.ai.count_failed", { count: value.failed_count })}
         </span>
-        <span className="ai_account_actions">
-          {value.has_quota_read && (
-            <button
-              type="button"
-              className="button button--ghost button--small"
-              disabled={isBusy || pending !== null}
-              onClick={() =>
-                void write("/hub/ai/gateway/account/quota/scan", "refresh")
-              }
-            >
-              {pending === "refresh" ? (
-                <Spinner size={12} />
-              ) : (
-                <Icon name="refresh" size={13} />
-              )}
-              {t("ui.ai.refresh")}
-            </button>
-          )}
+      </span>
+      <span
+        className="ai_account_status"
+        title={hasMessage ? value.status_message : undefined}
+      >
+        <StatusDot tone={health.tone} label={health.word} />
+      </span>
+      <span className="ai_account_actions">
+        {value.has_quota_read && (
           <button
             type="button"
-            className="button button--ghost button--small"
+            className="button button--ghost button--small ai_account_refresh"
             disabled={isBusy || pending !== null}
             onClick={() =>
-              void write(
-                value.is_disabled
-                  ? "/hub/ai/gateway/account/enable"
-                  : "/hub/ai/gateway/account/disable",
-                "pause",
-              )
+              void write("/hub/ai/gateway/account/quota/scan", "refresh")
             }
           >
-            {value.is_disabled ? t("ui.ai.resume") : t("ui.ai.pause")}
+            {pending === "refresh" ? (
+              <Spinner size={12} />
+            ) : (
+              <Icon name="refresh" size={13} />
+            )}
+            {t("ui.ai.refresh")}
           </button>
-          <button
-            type="button"
-            className="button button--ghost button--small button--danger"
-            disabled={isBusy || pending !== null}
-            onClick={onDelete}
-          >
-            <Icon name="trash" size={13} />
-            {t("ui.ai.delete")}
-          </button>
-        </span>
-      </div>
+        )}
+        <button
+          type="button"
+          className="button button--ghost button--small ai_account_pause"
+          disabled={isBusy || pending !== null}
+          onClick={() =>
+            void write(
+              value.is_disabled
+                ? "/hub/ai/gateway/account/enable"
+                : "/hub/ai/gateway/account/disable",
+              "pause",
+            )
+          }
+        >
+          <span className="ai_account_pause_words">
+            <span aria-hidden={value.is_disabled}>{t("ui.ai.pause")}</span>
+            <span aria-hidden={!value.is_disabled}>{t("ui.ai.resume")}</span>
+          </span>
+        </button>
+        <button
+          type="button"
+          className="button button--ghost button--small button--danger ai_account_delete"
+          disabled={isBusy || pending !== null}
+          onClick={onDelete}
+        >
+          <Icon name="trash" size={13} />
+          {t("ui.ai.delete")}
+        </button>
+      </span>
 
       {value.windows.length > 0 && (
         <div className="ai_account_windows">
           {value.windows.map((window) => (
-            <span key={window.name} className="ai_account_window">
+            <span
+              key={window.name}
+              className="ai_account_window"
+              title={
+                window.resets_at.length > 0
+                  ? t("ui.ai.quota_resets", {
+                      time: formatMoment(window.resets_at),
+                    })
+                  : undefined
+              }
+            >
               <DeviceGauge
                 label={windowWord(window.name)}
                 reading={window.used_share * 100}
@@ -316,7 +329,7 @@ function AccountRow({ value, isBusy, onChanged, onDelete }: AccountRowProps) {
               {window.resets_at.length > 0 && (
                 <span className="ai_account_resets faint">
                   {t("ui.ai.quota_resets", {
-                    time: formatMoment(window.resets_at),
+                    time: formatShortMoment(window.resets_at),
                   })}
                 </span>
               )}
@@ -330,7 +343,9 @@ function AccountRow({ value, isBusy, onChanged, onDelete }: AccountRowProps) {
         </div>
       )}
 
-      {error !== null && <span className="field_error">{error}</span>}
+      {error !== null && (
+        <span className="field_error ai_account_error">{error}</span>
+      )}
     </div>
   );
 }
@@ -773,6 +788,22 @@ function formatDay(isoTimestamp: string): string {
   });
 }
 
+/** A local clock time as `14:05` today, else its day alone as `Nov 29`. */
+function formatShortMoment(isoTimestamp: string): string {
+  const parsed = Date.parse(isoTimestamp);
+  if (Number.isNaN(parsed)) {
+    return isoTimestamp;
+  }
+  const date = new Date(parsed);
+  return date.toDateString() === new Date().toDateString()
+    ? formatHourMinute(date)
+    : formatDay(isoTimestamp);
+}
+
+function formatHourMinute(date: Date): string {
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
 /** A local clock time as `14:05`, after its day when that is not today. */
 function formatMoment(isoTimestamp: string): string {
   const parsed = Date.parse(isoTimestamp);
@@ -780,7 +811,7 @@ function formatMoment(isoTimestamp: string): string {
     return isoTimestamp;
   }
   const date = new Date(parsed);
-  const clock = `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+  const clock = formatHourMinute(date);
   return date.toDateString() === new Date().toDateString()
     ? clock
     : `${formatDay(isoTimestamp)} ${clock}`;

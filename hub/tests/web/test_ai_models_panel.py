@@ -201,6 +201,22 @@ def test_an_ollama_row_has_no_configure():
     assert "price" not in ollama_row
 
 
+def test_the_machine_lines_share_three_fixed_columns():
+    style = " ".join(
+        (FRONTEND_SRC_DIR / "components/ai_models_panel.css")
+        .read_text(encoding="utf-8")
+        .split()
+    )
+
+    assert "grid-template-columns: 9rem 16ch 18ch;" in style
+    assert (
+        ".ai_models_source { color: var(--color-text-faint); "
+        "font-variant-numeric: tabular-nums; text-align: right;"
+    ) in style
+    assert "text-overflow: ellipsis;" in style
+    assert "grid-template-columns: 16ch 18ch;" in style
+
+
 def test_an_ollama_machine_links_to_its_ollama_tab_with_its_panels_open():
     assert (
         "return `/agents/${encodeURIComponent(deviceId)}?module=ollama&configure=1`;"
