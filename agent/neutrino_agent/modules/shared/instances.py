@@ -37,6 +37,7 @@ import time
 
 from neutrino_agent.constants import (
     AGENT_PAGE_SILENT_S,
+    AGENT_STARTED_WATCH_S,
     AGENT_STEP_ACCOUNT,
     AGENT_STEP_CONFIGURE,
     AGENT_WANT_RUNNING,
@@ -76,9 +77,9 @@ except ImportError:  # Windows has no account database module.
 # How long one reading of the instances is believed.
 STATUS_TTL_S = 30.0
 # How long a reading that finds an instance not running is believed within
-# STATUS_TTL_S of an apply or a stop. A service just started can read
-# stopped for a moment.
-STATUS_SETTLING_TTL_S = 2.0
+# AGENT_STARTED_WATCH_S of an apply or a stop. A service just started can
+# read stopped for a while, and a start's watch reads it every 2 seconds.
+STATUS_SETTLING_TTL_S = 1.0
 # The account the template unit is rendered for, systemd's own name for it.
 TEMPLATE_ACCOUNT = ACCOUNT_SERVICE_TEMPLATE_ACCOUNT
 # What an account the machine does not have reads as, where a service is
@@ -1246,7 +1247,7 @@ class InstancesModuleRunner(ModuleRunner):
             ttl = STATUS_TTL_S
             if (
                 applied is not None
-                and now - self._changed_at < STATUS_TTL_S
+                and now - self._changed_at < AGENT_STARTED_WATCH_S
                 and not all(seen.get("is_running") for seen in applied.values())
             ):
                 ttl = STATUS_SETTLING_TTL_S

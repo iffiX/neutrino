@@ -1387,6 +1387,41 @@ def test_a_service_read_stopped_just_after_its_start_is_read_again(
     assert runner.is_active() is True
 
 
+def test_a_service_slow_to_start_is_read_again_until_two_minutes_after_its_apply(
+    machine, platform, systemd
+):
+    """CloudCLI read stopped for 36 seconds after every step of its start was done."""
+    now = [100.0]
+    FakeForwarder.made = []
+    HELD_PORTS.clear()
+    runner = InstancesModuleRunner(
+        hooks_class=DemoHooks,
+        platform=platform,
+        log=lambda line: None,
+        machine=machine,
+        forwarder_factory=FakeForwarder,
+        is_port_free=lambda port: port not in HELD_PORTS,
+        clock=lambda: now[0],
+    )
+    runner.apply(CONFIG)
+    FakeForwarder.made[0].is_listening = True
+    now[0] += 60
+    assert runner.is_active() is False
+
+    systemd.active.add("neutrino_demo@ann.service")
+    now[0] += 2
+    started = runner.is_active()
+
+    systemd.active.clear()
+    now[0] += 60
+    assert runner.is_active() is False
+    systemd.active.add("neutrino_demo@ann.service")
+    now[0] += 2
+
+    assert started is True
+    assert runner.is_active() is False
+
+
 @pytest.fixture
 def clocked(machine, platform, monkeypatch):
     """A running instance, its clock, and the answer of the system's next reading."""
