@@ -200,9 +200,9 @@ its own box and with the same measure (`use_table_cards.ts`): a table of one
 line per account while the box holds every column and each line's buttons
 on one line, and a card per account in a narrower box ("The Accounts panel
 of the AI page"). Its table has no header row: each cell carries its own
-words. With the panel's fonts it needs about 1336 px in Chinese and 1397 px
-in English, so the demo's half of the window and a 1440 px window show the
-cards.
+words. With the panel's fonts it needs about 940 px in Chinese and 1001 px
+in English, so a 1440 px window shows the table, and the demo's half of a
+1440 px window and a phone show the cards.
 
 A destructive action repeated on every row arms instead of opening a dialog —
 `device_monitor`'s kill button turns red on the first click and acts on the
@@ -1597,15 +1597,18 @@ gateway reports the flow `complete` or `failed`.
 The **Accounts** panel lists one row per signed-in account, read with
 `GET /api/hub/ai/gateway/account` every 15 seconds while the page is open.
 In a box that holds every column, the accounts are a table, one line per
-account as the Agents table's rows are: the service, the label or email,
-the account's windows ([hub_components/ai.md](hub_components/ai.md), "Quota
-on an account row"), the counts, the status, the time the windows were
-seen, and the buttons at the line's right end, each in one column on every
-line. In a narrower box each account is a card, as an Agents card is: at
-its left the service and the label, and under the label the windows; at its
-right those three lines, right-aligned; and at its foot, right-aligned, its
-buttons. The service, the label, the three lines and the buttons stand in
-columns every card shares.
+account as the Agents table's rows are, in the card's blocks: the service
+(92 px), the label or email with the plan under it (180 px), the account's
+windows ([hub_components/ai.md](hub_components/ai.md), "Quota on an account
+row") in cells of 84 px, three across (288 px), then the counts, the status
+and the time the windows were seen stacked and right-aligned (164 px), and
+the buttons at the line's right end, each in one column on every line. The
+room the columns leave stands between the windows and the three lines, so
+the three lines keep beside the buttons. In a narrower box each account is
+a card, as an Agents card is: at its left the service and the label, and
+under the label the windows; at its right those three lines, right-aligned;
+and at its foot, right-aligned, its buttons. The service, the label, the
+three lines and the buttons stand in columns every card shares.
 
 | Part | Idiom |
 | --- | --- |
