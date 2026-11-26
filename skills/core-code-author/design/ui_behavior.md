@@ -1067,7 +1067,11 @@ also disabled while its row's `task` runs, a configure task's among them.
 The **Cancel** of a first install, below, is the one exception to both.
 After a press, the tab's optimistic step holds until the machine reports the
 module in a state other than the one it showed at the press, at most two
-minutes.
+minutes. The step reads the press's own word: `state.installing` after
+**Install**, `state.uninstalling` after **Uninstall**, `state.starting`
+after **Start** and `state.stopping` after **Stop**. A tab reading
+`state.starting` or `state.stopping` is in transit, as one reading
+`queued` is.
 
 A module's tab shows its task's steps under the state line, one line each
 in the plan's order: done, running, waiting with the words of what it waits
