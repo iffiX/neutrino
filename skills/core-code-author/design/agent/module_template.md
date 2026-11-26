@@ -165,7 +165,13 @@ Each instance a running module serves is one app,
 and `description_code` `<module>_module` ([../protocol.md](../protocol.md),
 "Apps"). The entry exists while the device reports the instance running, and
 a client opens it at its own forward's address with the token the `service`
-frame hands.
+frame hands. The panel's **Open** on the Services page opens it at the
+hub's app forward with the same token ([../protocol.md](../protocol.md),
+"The app forwards").
+
+| Rule | Reason |
+| --- | --- |
+| A client's **Open** and the panel's are one mechanism: one function mints the token, the forwarder spends it once at `?tkn=`, and its login signs the browser in as the account. Only the forward in front of the app differs, the client's on its own loopback and the hub's on the panel's address. | A person who reaches the panel directly, with no client on that computer, opens the app as a client does, and the forwarder judges both the same. An App share's guest account is never used for it. |
 
 ## The launcher and the account's `PATH`
 

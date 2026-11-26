@@ -900,12 +900,24 @@ opinion when the row holds no health:
 A UDP port record is in neither number of the page's badge, `{healthy} of
 {total} healthy`, since the hub holds no health for it.
 
+## The Services page's Open words
+
+[ui_behavior.md](ui_behavior.md), "The Services page", places them. The
+keys are in `locales/<language>/devices.json` beside the page's other
+`ui.services.*` keys, and the codes in `codes.json`.
+
+| Key | English | Chinese |
+| --- | --- | --- |
+| `ui.services.open`, on a `web` entry | Open | 打开 |
+| `code.entry_unknown` | This app's page is no longer published. | 这个应用的网页已经不再发布。 |
+| `code.forward_port_unavailable` | Every port from {minimum} to {maximum} is in use; try again later. | {minimum} 到 {maximum} 的端口都在用，稍后再试。 |
+
 ## The Network page's words
 
 | Key | English | Chinese |
 | --- | --- | --- |
 | `ui.network.exposure_title` | Exposure | 开放范围 |
-| `ui.network.exposure_hint` | The networks whose hosts reach the hub's own ports: the panel over HTTP and HTTPS, the connection port and DNS. SSH and the other services the hub does not run are the system firewall's. | 哪些网段的主机能连到中枢自己的端口：面板的 HTTP 和 HTTPS、连接端口、DNS。SSH 等不归中枢的服务由系统防火墙管。 |
+| `ui.network.exposure_hint` | The networks whose hosts reach the hub's own ports: the panel over HTTP and HTTPS and the apps it opens, the connection port and DNS. SSH and the other services the hub does not run are the system firewall's. | 哪些网段的主机能连到中枢自己的端口：面板的 HTTP 和 HTTPS 及它打开的应用、连接端口、DNS。SSH 等不归中枢的服务由系统防火墙管。 |
 | `ui.network.unsaved_interface` | New, not in use until turned on and applied | 新网口，打开并应用后才使用 |
 | `ui.network.field_country_code` | Country code | 国家代码 |
 | `ui.network.error_country_code` | Two letters, such as DE. 5 GHz needs one. | 两个字母，例如 CN。5 GHz 需要国家代码。 |

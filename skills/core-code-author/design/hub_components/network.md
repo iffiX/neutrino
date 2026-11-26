@@ -127,6 +127,7 @@ the roles, as below.
 | the panel's HTTP port, `listen_port` | always |
 | the panel's HTTPS port, `https_listen_port` | always |
 | the agent port, `agent_listen_port`, 8443 by default | always |
+| the app forwards, 19000 to 19099 over TCP ([../protocol.md](../protocol.md), "The app forwards") | always |
 | DNS, 53 over UDP and TCP | in `router` and `side_gateway` |
 
 The AI gateway's port is not among them: the gateway listens on the hub's
@@ -349,7 +350,7 @@ routing pass renders the answer into the system's own firewall:
 
 | System | How | What |
 | --- | --- | --- |
-| Windows | `New-NetFirewallRule`, one allow rule per purpose named `neutrino_hub_<purpose>`. A hub port's rule names the exposed segments as its remote addresses, `-RemoteAddress`; a peer port's rule takes any remote address. Beside each hub port's rule, `neutrino_hub_<purpose>_link` allows `fe80::/64` on the interfaces whose IPv6 segment is exposed, `-InterfaceAlias`. Direct's rule is `neutrino_hub_agent_direct`. A port change rewrites the rule and an uninstall removes it. The profile's default inbound block is what closes a hub port to every other sender. The rules are written again whenever an exposed segment's networks change, from the pass that follows the overlay devices and the addresses | the panel's HTTP and HTTPS ports, the agent port, NetBird's UDP port, EasyTier's 11010 over TCP and UDP |
+| Windows | `New-NetFirewallRule`, one allow rule per purpose named `neutrino_hub_<purpose>`. A hub port's rule names the exposed segments as its remote addresses, `-RemoteAddress`; a peer port's rule takes any remote address. Beside each hub port's rule, `neutrino_hub_<purpose>_link` allows `fe80::/64` on the interfaces whose IPv6 segment is exposed, `-InterfaceAlias`. Direct's rule is `neutrino_hub_agent_direct`. A port change rewrites the rule and an uninstall removes it. The profile's default inbound block is what closes a hub port to every other sender. The rules are written again whenever an exposed segment's networks change, from the pass that follows the overlay devices and the addresses | the panel's HTTP and HTTPS ports, the agent port, the app forwards' range as one rule, NetBird's UDP port, EasyTier's 11010 over TCP and UDP |
 | macOS | `/usr/libexec/ApplicationFirewall/socketfilterfw --add <program>` and `--unblockapp <program>`, since that firewall allows programs rather than ports, and the pf sub-anchor `com.apple/neutrino_hub`, loaded from a file under the state root at each routing pass and when the service starts. The anchor holds the exposed segments in address tables, passes a hub port's packet from an address in them and from loopback, and blocks it from every other address, the way the agent's `com.apple/neutrino_smb` fences the file share | the programs `nhub`, `netbird`, `easytier-core`, and the same port list as Windows in the anchor |
 
 Before setup the Windows firewall holds one rule of the hub's,
@@ -402,7 +403,7 @@ image runs it already. The hub's `fail2ban` dependency stays as it is.
 
 | Rule | Reason |
 | --- | --- |
-| Each hub port is one rich rule per network of each exposed segment, in the zone of the segment's interface, its source address the network. The peer ports and Direct's agent-port rule are rich rules with no source address, in the zone of each enabled interface. DHCP is one in the zone of each network whose DHCP the hub serves. An interface in no zone is in the default zone. | firewalld decides by zone, and a zone holds the interfaces the person put in it. |
+| Each hub port, and the app forwards' range, is one rich rule per network of each exposed segment, in the zone of the segment's interface, its source address the network. The peer ports and Direct's agent-port rule are rich rules with no source address, in the zone of each enabled interface. DHCP is one in the zone of each network whose DHCP the hub serves. An interface in no zone is in the default zone. | firewalld decides by zone, and a zone holds the interfaces the person put in it. |
 | Each rule is written to the runtime and to the permanent configuration, and holds a marker the hub finds its own rules by. | A rule in one alone is lost at firewalld's next reload or at the next boot, and the marker keeps the person's own rules out of every change. |
 | The marker is the rich rule's priority, 32123. | A rich rule has no comment field. A positive priority places the rule after the zone's own rules and before its target. |
 | The router unit starts after firewalld (`After=firewalld.service`). | The first pass of a boot finds firewalld running and writes into it. |

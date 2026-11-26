@@ -707,6 +707,24 @@ An app's row with a `web` entry carries **Share** (分享), a ghost button
 that opens the Clients page's App share dialog with that entry chosen ("The
 Clients page"). An app with no `web` entry has no **Share**.
 
+Each `web` entry carries **Open** (打开), a ghost button after its chip,
+the one button the page gives an app's page. A press opens a new tab at
+once, asks `POST /api/hub/service/entry/open`, which starts the hub's app
+forward for the entry when it has none, and sends the tab to
+`<scheme>://<the panel's host>:<port><path>`, with `?tkn=<token>` when the
+answer holds a token ([protocol.md](protocol.md), "The app forwards"). The
+button shows a spinner while the request is out. A refusal closes the tab
+and writes the code's words on the row's error line. The hub ends an idle
+forward by itself, and the page has no **Use** and no **Stop**. A `port`
+entry carries no **Open** and shows its address as before, and nothing else
+on the row changes.
+
+| Rule | Reason |
+| --- | --- |
+| **Open** shows while the session's `is_opened_by_client` is false, and is disabled while its entry reads unhealthy. | A panel a client opened is reached at the client's loopback forward, and the hub's app forwards are not; the client's Apps page opens the app there. An unhealthy entry has no app to open, as a client's button rule says ([client.md](client.md), "The button rule"). |
+| The tab opens before the request and with no `opener`, and goes to the app once the answer comes. | A browser blocks a tab a page opens after it waited for an answer, and the app's page gets no hold on the panel's. |
+| The chip keeps the address a client's Apps page shows. | The forward's port is the tab's alone; a program on another computer keeps the client's address. |
+
 An address of any length stays inside its row at a phone's width, 360 px and
 up, in either language, and so does every chip and button of the row. An
 entry's chip is one line: its address shows at most 56 characters, fewer

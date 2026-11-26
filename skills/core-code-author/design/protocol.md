@@ -35,8 +35,9 @@ session and relays every stream's bytes, and it asks the hub's Python over
 the local channel whatever needs a decision ([transport.md](transport.md),
 "The local channel"). A change
 of any of the three ports through `POST /api/hub/setting/set` restarts the
-process that holds it; a port that is one of the other two, or one of the
-two frp loopback ports, is refused 400 `port_already_in_use {value}`. A new
+process that holds it; a port that is one of the other two, one of the
+two frp loopback ports, or one of the app forwards' ("The app forwards"),
+is refused 400 `port_already_in_use {value}`. A new
 port that another program on the box listens on, over IPv4 or IPv6, is
 refused with the same code before any setting changes. The **Network** page
 sets all three. The two frp loopback ports, and the file the transport
@@ -110,7 +111,51 @@ when that client is switched off, removed, leaves, or loses `panel` from its
 own permission or from the default it follows; the hub logs `panel: signed
 in by client <name>` and `panel: session of client <name> ended (<why>)`.
 Inside such a session the vault's passphrase still unlocks the vault and
-`password/set` still asks for the current password.
+`password/set` still asks for the current password. `SessionView` holds
+`is_opened_by_client`, true for a session a client's token opened and
+false for one the panel password opened; it is how a page knows that its
+browser reached the panel through a client's forward.
+
+### The app forwards
+
+An app forward is a listener of the hub's own in front of one `web` entry,
+which the Services page's **Open** starts for a browser that reached the
+panel directly ([ui_behavior.md](ui_behavior.md), "The Services page"). It
+listens on the address the panel listens on, at the first free port from
+`WEB_APP_FORWARD_PORT_MIN`, 19000, to `WEB_APP_FORWARD_PORT_MAX`, 19099,
+and joins each connection it accepts to the far end a client's `connect`
+of the entry reaches ("The connect stream"): a managed machine's port
+through a forward of the hub's transport, `forward_start` on the hub's
+loopback ([transport.md](transport.md), "The hub's local channel"), or a
+declared app's host and port, which the hub dials itself.
+
+`POST /api/hub/service/entry/open {entry_id}` starts the entry's forward,
+or keeps the one it has, and answers `ServiceEntryOpenView {port, token}`:
+`token` is the material the `service` frame hands a client for the entry
+("The service frame"), minted for this answer alone, and empty for an
+entry without `is_token_required`. The page then opens a new tab at
+`<scheme>://<the panel's host>:<port><path>`, with `?tkn=<token>` added
+when the token is not empty, `<scheme>` and `<path>` being the entry's
+url's own, so the forwarder signs the browser in as the account, as it
+signs in a client ([agent/module_template.md](agent/module_template.md),
+"The publish"). The hub keeps its forwards in memory alone: nothing is
+written, and a panel that starts again has none.
+
+| Rule | Reason |
+| --- | --- |
+| The forward reads the head of each request a browser sends and passes the bytes after it on unread, the body by its `Content-Length`. It writes `Host` as `127.0.0.1:<port>`, and an `Origin` naming the forward's own scheme, host and port as `<scheme>://127.0.0.1:<port>`; it answers any other `Origin` 403 and closes the connection. It takes each cookie whose name starts with `neutrino_session_` out of `Cookie`. A request with `Transfer-Encoding` is answered 411, and an `Upgrade` request's connection carries its bytes both ways unread after its head. Answers pass unread. | The agent's forwarder answers 421 to a `Host` that is neither loopback nor the instance's local name ([agent/module_template.md](agent/module_template.md), "The run"), and an app behind the forward sees the `Host` a macOS client gives it. A browser sends the panel's session cookie to every port of the panel's host, and an app's server that received it would hold the panel. |
+| An `https` entry's forward ends the browser's TLS with the panel's served certificate and opens TLS to the app without checking the app's certificate. | The forward reads the requests of an `https` entry as of an `http` one, the panel's cookie among them. The hop to the app runs over the agent's session, or over the networks the hub serves for a declared app. |
+| A forward with no open connection for `WEB_APP_FORWARD_IDLE_S`, 30 minutes, ends: its listener closes, and so does the forward of the hub's transport it started. **Open** on an entry whose forward ended starts it again. | A tab left open keeps its forward through its WebSocket or its next request, and a port nobody uses stops answering by itself. No button stops a forward. |
+| The firewall governs the range as it governs the panel's ports ([hub_components/network.md](hub_components/network.md), "What answers, and where"): a forward answers loopback and the senders inside an exposed segment, and no other sender. The app's own login, or the forwarder's token, guards the app behind it, as on a client's loopback. | Exposure is the only control plane for the hub's own ports. |
+| The range lies outside the clients' local ports, 20000 to 31999 ([client.md](client.md), "The local port table"), and below every system's dynamic ports, 32768 up on Linux and 49152 up on Windows and macOS. A listener's port that another program holds is skipped for the next. | A client on the hub's own machine holds its fixed local ports on `127.0.0.1`, which a listener on every address of the hub cannot take. |
+| A session whose `is_opened_by_client` is true shows no **Open**. | Its browser reaches the hub at the client's loopback forward, where the hub's other ports are not; the client's own Apps page opens the app there. |
+
+| Code | Answer |
+| --- | --- |
+| `entry_unknown {entry_id}` | 404: the id names no `web` entry the hub publishes now |
+| `agent_offline` | 409: the machine providing the entry has no session |
+| `vault_locked` | 400: the entry's secret does not open |
+| `forward_port_unavailable {minimum, maximum}` | 409: no port of the range is free |
 
 The certificate is signed by the hub's
 own certificate authority: EC P-256, valid for ten years, `CA:TRUE` with a
@@ -207,13 +252,14 @@ segment of a write, which is a verb.
 | `reveal` | none | nothing; the read of a secret the hub generated, logged |
 | `rotate` | none | a secret the hub generated, made afresh |
 | `rename` | none | a name |
+| `open` | none | an app forward of the hub's own, which the hub ends once it is idle ("The app forwards") |
 
 The whole design is symmetric where a thing has an opposite and single where
 it has none:
 
 | Layer | Paired | Single, and why |
 | --- | --- | --- |
-| HTTP verbs | `set`; `add`/`remove`; `create`/`destroy`; `join`/`leave`; `start`/`stop`; `enable`/`disable`; `share`/`unshare`; `install`/`uninstall`; `login`/`logout`; `backup`/`restore`; `download`/`upload` | `import`, `update`, `reset`, `apply`, `scan`, `test`, `probe`, `wake`, `reboot`, `shutdown`, `reinstall`, `restart`, `kill`, `rename`, `reveal`, `rotate`: none has a reverse operation |
+| HTTP verbs | `set`; `add`/`remove`; `create`/`destroy`; `join`/`leave`; `start`/`stop`; `enable`/`disable`; `share`/`unshare`; `install`/`uninstall`; `login`/`logout`; `backup`/`restore`; `download`/`upload` | `import`, `update`, `reset`, `apply`, `scan`, `test`, `probe`, `wake`, `reboot`, `shutdown`, `reinstall`, `restart`, `kill`, `rename`, `reveal`, `rotate`, `open`: none has a reverse operation |
 | Path depth | the same for the same function: `module/install`/`uninstall`, `start`/`stop`; `device/agent/install`/`reinstall`; `podman/container/start`/`stop` | |
 | Channel frames and records | `hello`/`welcome`; `join`/`joined`; `leave`/`left`; `state`/`report`; `ping`/`pong`; a question frame and its `reply`; the `open` and `close` records, `accept` between them | `refused`; the records `data`, `stderr`, `eof`, `resize`, `datagram` |
 | Stream kinds | none; installing and uninstalling follow from `want` | `control`, `shell`, `exec`, `file`, `command`, `package`, `log`, `connect` |
@@ -293,8 +339,8 @@ The HTTP status names the class of the refusal:
 | --- | --- | --- |
 | 400 | a body, a query or a path that does not validate, or a value the route refuses | `body_invalid` for what the models refuse, then the route's own: `password_wrong`, `path_invalid`, `unknown_credential`, `login_refused`, `vault_locked`, `language_unknown`, `theme_unknown`, `hub_name_required`, `invalid_range`, `unsupported_kind`, `permission_kind_unknown {kind}`, `permission_device_unknown {device_id}`, `easytier_mode_unknown {mode}`, `easytier_config_server_invalid`, `overlay_subnet_overlap {title, subnet, conflict}`, `account_unknown {account}`, `account_duplicate {account}`, `account_is_default {account}`, `account_no_login {account}`, `credential_missing {account}`, `credential_invalid {account}`, `account_logon_refused {account, detail}`, `declared_service_invalid {field}`, `relay_host_invalid {host}`, `relay_account_invalid {account}`, `relay_ssh_missing`, `direct_host_invalid {host}`, `frpc_missing {title}`, `frp_credential_refused {title}`, `frp_tunnel_unknown {title, tunnel_id}`, `no_exit_node_enabled`, `resolver_required {field}`, `resolver_address_invalid {address}`, `network_invalid {field, name}`, `shell_program_unusable {path}`, `account_not_enabled {account}`, `web_share_entry_invalid {entry_id}`, `web_share_site_invalid {site}`, `web_share_no_public_address`, `share_name_taken {name}`, `share_name_invalid {name}`, `share_account_not_enabled {account}`, `share_path_missing {name, path}`, `share_path_link {name, path}`, `key_passphrase_not_stored`, `model_not_served {model}`, `context_length_invalid {model, context_length, min, max}` |
 | 401 | a missing session | `not_authenticated` |
-| 404 | an unknown member | `device_unknown`, `https_authority_missing`, `declared_service_unknown`, `web_share_unknown`, `generated_credential_unknown`, `folder_share_unknown {name}` |
-| 409 | a state the action cannot run in | `agent_offline`, `default_account_missing`, `protocol_too_old`, `protocol_too_new`, `update_in_progress`, `release_not_latest`, `no_platform_build {module}`, `terms_not_accepted {module}`, `gateway_not_serving`, `frp_not_signed_in {title}`, `version_locked {module}`, `version_older_than_run {module, version, newest_run}`, `transport_key_missing` |
+| 404 | an unknown member | `device_unknown`, `https_authority_missing`, `declared_service_unknown`, `web_share_unknown`, `generated_credential_unknown`, `folder_share_unknown {name}`, `entry_unknown {entry_id}` |
+| 409 | a state the action cannot run in | `agent_offline`, `default_account_missing`, `protocol_too_old`, `protocol_too_new`, `update_in_progress`, `release_not_latest`, `no_platform_build {module}`, `terms_not_accepted {module}`, `gateway_not_serving`, `frp_not_signed_in {title}`, `version_locked {module}`, `version_older_than_run {module, version, newest_run}`, `transport_key_missing`, `forward_port_unavailable {minimum, maximum}` |
 | 500 | the hub could not write its own `config/` | `config_unwritable {detail}`, from the per-device module routes |
 | 502 | a service the hub asked did not answer as one | `gateway_unreachable`, `download_failed {file, sources}`, `relay_apply_failed {detail}`, `direct_apply_failed {detail}`, `frp_vendor_unreachable {title, detail}`, `frp_config_unusable {title}` |
 
@@ -365,6 +411,8 @@ walk theirs. A new code and its wording are one change.
 | `shell_unknown` | `{shell}` | a client's `command {resize}`, gone with resizes as records | removed |
 | `port_duplicate`, `port_invalid` | `{port}` | the instance lists of the account-layer modules and Hermes WebUI, gone with ports the agent takes | removed |
 | `session_unknown` | `{session_id}` | the Terminals page's `session/stop`, gone with the page; the agent's `reply` to `persist` and `stop_session` keeps it | removed from the panel |
+| `entry_unknown` | `{entry_id}` | 404 of `service/entry/open`, an id that names no `web` entry the hub publishes now ("The app forwards") | added |
+| `forward_port_unavailable` | `{minimum, maximum}` | 409 of `service/entry/open`, no port of the app forwards' range free | added |
 
 ## What exists
 
@@ -383,7 +431,7 @@ the agent group follows, then the panel's live sockets.
 | `/api/hub/ai` | The providers the gateway forwards to and their order, and under it `ollama` (the providers generated from each machine's Ollama), `context` (each served model's context length) and `gateway` (the gateway itself: keys, accounts, usage, journal) |
 | `/api/hub/device` | The **Agents** page: every managed machine, names and icons, the SSH credential the hub reaches a machine with, enrolment links, installing or reinstalling the agent over SSH, waking, rebooting, shutting down, its processes, its remote desktops, its seat password, its published services, which module tabs its machine page shows |
 | `/api/hub/client` | Enrolled client sessions, the links that enrol them, and the App shares |
-| `/api/hub/service` | The apps and the other published services, and the apps declared by hand |
+| `/api/hub/service` | The apps and the other published services, the apps declared by hand, and the app forwards the page opens |
 | `/api/hub/credential` | The secrets the box keeps for somebody, SSH keys, logins and tokens, and the ones it generated for the machines |
 | `/api/hub/setting` | The panel's own: its two ports, its scheme and certificate authority, password, hub name, backup, restore, version, and updating the hub itself from its newest release |
 | `/api/agent/file` | A machine's directory listing, for the panel's path window |
@@ -418,7 +466,7 @@ the page's whole view.
 | --- | --- | --- |
 | `POST /api/hub/auth/login` | `{password}` | opens the session; returns `SessionView` |
 | `POST /api/hub/auth/logout` | | ends it; returns `SessionView` |
-| `GET /api/hub/auth/session` | | `SessionView` |
+| `GET /api/hub/auth/session` | | `SessionView`, with `is_opened_by_client` ("The panel ports") |
 
 #### `/api/hub/display`
 
@@ -685,6 +733,7 @@ is not `true` or `false` is refused `body_invalid`.
 | Route | Parameters | Does |
 | --- | --- | --- |
 | `GET /api/hub/service` | | `ServiceListView`: `apps`, each `{id, title, source, device_id, device_name, local_name, description, entries}` with each entry `{id, name, type, payload, is_healthy, local_port, detail_code, guest_login}`, `detail_code` the probe's word on an unhealthy declared entry such as `share_missing`, else null, `guest_login` how an App share's visitor signs in to a `web` entry, `app`, `guest_account` or `run_account`, and empty on an entry of another type ("App shares"), a module's apps first, then the declared, then the manual, each group by title; and `services`, the entries of no app, the `ai` and `rdp` entries and a machine's `file` entries, as a client's list holds them |
+| `POST /api/hub/service/entry/open` | `{entry_id}`, a `web` entry's id | starts the entry's app forward, or keeps the one it has, and mints its token; `ServiceEntryOpenView`, `{port, token}`; 404 `entry_unknown {entry_id}`, 409 `agent_offline` and `forward_port_unavailable {minimum, maximum}`, 400 `vault_locked` ("The app forwards") |
 | `GET /api/hub/service/share` | | the shares devices declared |
 | `POST /api/hub/service/declaration/add` | `{name, host, description, entries}`, each entry `{type, port, scheme, path, protocol, share}`: `type` `web`, `port` or `file`; `scheme` `http` or `https` and `path` for `web`; `protocol` `tcp` or `udp` for `port`, `tcp` when absent; `share` for `file`, an SMB share's name, with `port` 445 when absent; one entry at least, no two of one type, port and protocol, and no two `file` entries whose shares give one slug ("The local name and the local port") | declares one app; `ServiceListView`; 400 `declared_service_invalid {field}` |
 | `POST /api/hub/service/declaration/remove` | `{app_id}` | `ServiceListView`; 404 `declared_service_unknown` |
