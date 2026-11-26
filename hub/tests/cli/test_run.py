@@ -66,6 +66,9 @@ def served(monkeypatch):
     monkeypatch.setattr(run, "_configured_https_port", lambda: 443)
     monkeypatch.setattr(run, "_prepare_transport", lambda: None)
     monkeypatch.setattr(run, "_follow_local_agent", lambda: None)
+    monkeypatch.setattr(
+        run, "_listen_app_forwards", lambda host: recorded.update(forward_host=host)
+    )
     monkeypatch.setattr(run, "watch_served_context", recorded["watched"].append)
     monkeypatch.setattr(
         run, "_stop_samplers", lambda: recorded["steps"].append("samplers stopped")
@@ -75,6 +78,12 @@ def served(monkeypatch):
 
 def arguments(port=None) -> argparse.Namespace:
     return argparse.Namespace(host="0.0.0.0", port=port, reload=False)
+
+
+def test_the_app_forwards_listen_where_the_panel_listens(served):
+    run._serve_panel(argparse.Namespace(host="10.0.0.2", port=None, reload=False))
+
+    assert served["forward_host"] == "10.0.0.2"
 
 
 def test_two_panel_servers_each_on_its_own_port(served, monkeypatch):

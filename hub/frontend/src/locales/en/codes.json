@@ -401,5 +401,7 @@
   "code.ollama_model_name_invalid": "{name} is not a model name.",
   "code.ollama_model_unknown": "This machine has no model named {name}.",
   "code.ollama_pull_unknown": "No pull of {name} is waiting or running.",
-  "code.ollama_pull_failed": "Ollama could not pull {name}: {detail}"
+  "code.ollama_pull_failed": "Ollama could not pull {name}: {detail}",
+  "code.entry_unknown": "This app's page is no longer published.",
+  "code.forward_port_unavailable": "Every port from {minimum} to {maximum} is in use; try again later."
 }

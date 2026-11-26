@@ -4,20 +4,24 @@ What these pin: ``GET /api/hub/service`` answers ``apps``, a module's first,
 then the declared, then the manual, each by title, with each entry's
 ``local_port``, 0 on an entry with none, and ``detail_code``, and
 ``services``, the entries of no app; no ``ssh`` entry and no row for a
-machine's SSH server; declaring an app with its entries answers the list
-with it, a bad field ``declared_service_invalid {field}``; removing and
-probing name the app by ``app_id``, an unknown one
-``declared_service_unknown``.
+machine's SSH server; declaring an app with its entries answers
+the list with it, a bad field ``declared_service_invalid {field}``;
+removing and probing name the app by ``app_id``, an unknown one
+``declared_service_unknown``; ``entry/open`` starts the entry's forward and
+answers its port and token, each refusal under its status.
 """
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from neutrino_hub.modules.clients.services import AppOpen
 from neutrino_hub.modules.services.config import DeclaredAppRegistry
 from neutrino_hub.modules.services.host_scope import HostScope
 from neutrino_hub.web.dependencies import get_runtime, require_session
+from neutrino_hub.web.app_forwards import AppForwardTarget
 from neutrino_hub.web.routers.hub import service as services
+from tests.conftest import FakeChannelSessions
 
 DEVICE = "d1"
 LAN = HostScope(
@@ -122,10 +126,27 @@ class Probe:
         return []
 
 
+class StubForwards:
+    """The app forwards as the route reaches them: each Open's target."""
+
+    def __init__(self):
+        self.opened: list = []
+        self.is_full = False
+
+    async def open(self, target):
+        if self.is_full:
+            raise OSError("no free port")
+        self.opened.append(target)
+        return 19000
+
+
 class Runtime:
     def __init__(self):
         self.published_services = StubPublished()
         self.declared_probe = Probe()
+        self.agent_sessions = FakeChannelSessions()
+        self.app_forwards = StubForwards()
+        self.device_hostname = {}
 
     def host_scopes(self):
         return [LAN]
@@ -306,3 +327,74 @@ def test_removing_and_probing_name_the_app(api):
     assert DeclaredAppRegistry().list_apps() == []
     assert unknown.status_code == 404
     assert unknown.json()["detail"]["code"] == "declared_service_unknown"
+
+
+def test_an_open_starts_the_entry_s_forward_and_answers_its_port_and_token(
+    api, monkeypatch
+):
+    client, runtime = api
+    opened = AppOpen(
+        entry_id="code_server_d1_iffi_web",
+        scheme="http",
+        device_id=DEVICE,
+        host="",
+        port=8444,
+        token="tkn-1",
+    )
+    monkeypatch.setattr(
+        services, "app_open", lambda runtime, entry_id: ("", {}, opened)
+    )
+
+    answer = client.post(
+        "/api/hub/service/entry/open", json={"entry_id": "code_server_d1_iffi_web"}
+    )
+
+    assert answer.status_code == 200
+    assert answer.json() == {"port": 19000, "token": "tkn-1"}
+    assert runtime.app_forwards.opened == [
+        AppForwardTarget(
+            entry_id="code_server_d1_iffi_web",
+            scheme="http",
+            device_id=DEVICE,
+            host="",
+            port=8444,
+        )
+    ]
+
+
+@pytest.mark.parametrize(
+    ("code", "params", "status"),
+    [
+        ("entry_unknown", {"entry_id": "x"}, 404),
+        ("agent_offline", {"device": DEVICE}, 409),
+        ("vault_locked", {}, 400),
+    ],
+)
+def test_an_open_s_refusal_carries_its_status(api, monkeypatch, code, params, status):
+    client, runtime = api
+    monkeypatch.setattr(
+        services, "app_open", lambda runtime, entry_id: (code, params, None)
+    )
+
+    answer = client.post("/api/hub/service/entry/open", json={"entry_id": "x"})
+
+    assert answer.status_code == status
+    assert answer.json()["detail"] == {"code": code, "params": params}
+    assert runtime.app_forwards.opened == []
+
+
+def test_an_open_with_no_free_port_is_forward_port_unavailable(api, monkeypatch):
+    client, runtime = api
+    opened = AppOpen(entry_id="e", scheme="http", device_id="", host="h", port=80)
+    monkeypatch.setattr(
+        services, "app_open", lambda runtime, entry_id: ("", {}, opened)
+    )
+    runtime.app_forwards.is_full = True
+
+    answer = client.post("/api/hub/service/entry/open", json={"entry_id": "e"})
+
+    assert answer.status_code == 409
+    assert answer.json()["detail"] == {
+        "code": "forward_port_unavailable",
+        "params": {"minimum": 19000, "maximum": 19099},
+    }

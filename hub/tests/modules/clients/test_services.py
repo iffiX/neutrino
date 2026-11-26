@@ -950,3 +950,89 @@ def test_an_ssh_entrys_host_key_is_its_own_accounts_instances():
     assert services.host_key_of(runtime, "d1", "ann") == "ssh-ed25519 AAAAann"
     assert services.host_key_of(runtime, "d1", "eve") == ""
     assert services.host_key_of(runtime, "d2", "ann") == ""
+
+
+class OnlineSessions:
+    """The agents' sessions as the panel's Open reads them: who is online."""
+
+    def __init__(self, online=()):
+        self.online = set(online)
+
+    def is_online(self, key):
+        return key in self.online
+
+
+def opening_runtime(entries, online=("dev",)) -> FakeRuntime:
+    runtime = FakeRuntime(entries=entries)
+    runtime.agent_sessions = OnlineSessions(online)
+    return runtime
+
+
+def test_the_panels_open_of_an_instance_mints_its_token_and_names_its_machine(
+    config_dir,
+):
+    runtime = opening_runtime((CLOUDCLI_ENTRY,))
+    runtime.desired_states = MintingDesiredStates()
+
+    first = services.app_open(runtime, "cloudcli_dev_alice")
+    second = services.app_open(runtime, "cloudcli_dev_alice")
+
+    assert first == (
+        "",
+        {},
+        services.AppOpen(
+            entry_id="cloudcli_dev_alice",
+            scheme="http",
+            device_id="dev",
+            host="",
+            port=3001,
+            token="fresh-1",
+        ),
+    )
+    assert second[2].token == "fresh-2"
+
+
+def test_the_panels_open_of_a_page_with_no_token_answers_none(config_dir):
+    entry = {**ENTRY, "device_id": "dev", "payload": {"url": "https://h:3000/"}}
+
+    code, params, opened = services.app_open(opening_runtime((entry,)), "web_gitea")
+
+    assert (code, params) == ("", {})
+    assert (opened.scheme, opened.port, opened.token) == ("https", 3000, "")
+
+
+def test_the_panels_open_of_a_declared_app_dials_its_own_host(config_dir):
+    _, _, opened = services.app_open(opening_runtime((DECLARED_ENTRY,)), "declared_nas")
+
+    assert (opened.device_id, opened.host, opened.port) == ("", "192.168.100.1", 5000)
+
+
+def test_the_panels_open_refuses_what_is_no_web_entry_published_now(config_dir):
+    runtime = opening_runtime(
+        (ENTRY, RDP_ENTRY, {**ENTRY, "id": "loose", "source": "module"})
+    )
+
+    assert services.app_open(runtime, "rdp_dev") == (
+        "entry_unknown",
+        {"entry_id": "rdp_dev"},
+        None,
+    )
+    assert services.app_open(runtime, "gone")[0] == "entry_unknown"
+    assert services.app_open(runtime, "loose")[0] == "entry_unknown"
+
+
+def test_the_panels_open_of_an_offline_machines_entry_is_agent_offline(config_dir):
+    runtime = opening_runtime((CLOUDCLI_ENTRY,), online=())
+
+    assert services.app_open(runtime, "cloudcli_dev_alice") == (
+        "agent_offline",
+        {"device": "dev"},
+        None,
+    )
+
+
+def test_the_panels_open_of_a_secret_that_does_not_open_is_vault_locked(config_dir):
+    runtime = opening_runtime((VSCODE_ENTRY,))
+    runtime.desired_states.tokens = {}
+
+    assert services.app_open(runtime, "vscode_dev_alice") == ("vault_locked", {}, None)

@@ -95,7 +95,8 @@ def session(
         runtime: The shared runtime.
 
     Returns:
-        The current authentication state.
+        The current authentication state, and whether a client's token
+        opened the session.
     """
     token = request.cookies.get(session_cookie())
     return SessionView(
@@ -105,4 +106,5 @@ def session(
         https_listen_port=int(
             runtime.settings.get(WEB_SETTING_HTTPS_PORT, WEB_DEFAULT_HTTPS_LISTEN_PORT)
         ),
+        is_opened_by_client=bool(runtime.sessions.client_of(token)),
     )

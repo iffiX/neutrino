@@ -590,6 +590,17 @@ def watch_served_context(
             _loaded_certificate = b""
 
 
+def served_context():
+    """The live TLS context the panel's HTTPS port serves with.
+
+    Returns:
+        The first context :func:`watch_served_context` registered, which a
+        renewal loads the new pair into; None while none is.
+    """
+    with _state_lock:
+        return _served_contexts[0] if _served_contexts else None
+
+
 def last_renewed_at() -> "datetime | None":
     """When the served certificate was last issued again in this process.
 

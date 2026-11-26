@@ -38,6 +38,9 @@ class SessionView(BaseModel):
     # The port the panel serves HTTPS on, where a browser still holding a
     # ``Secure`` cookie goes to have it deleted.
     https_listen_port: int = WEB_DEFAULT_HTTPS_LISTEN_PORT
+    # Whether a client's token opened this session, its browser reaching the
+    # panel through that client's forward.
+    is_opened_by_client: bool = False
 
 
 class DnsServerView(BaseModel):
@@ -1432,6 +1435,20 @@ class ServiceListView(BaseModel):
 
     apps: list[AppView] = Field(default_factory=list)
     services: list[PublishedServiceView] = Field(default_factory=list)
+
+
+class ServiceEntryOpenRequest(BaseModel):
+    """The Services page's Open of one web entry."""
+
+    entry_id: str
+
+
+class ServiceEntryOpenView(BaseModel):
+    """Where an Open's tab goes: the app forward's port, and the token the
+    forwarder signs the browser in with, empty for an entry that takes none."""
+
+    port: int
+    token: str = ""
 
 
 class JournalView(BaseModel):

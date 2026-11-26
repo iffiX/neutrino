@@ -102,6 +102,7 @@ from neutrino_hub.web.constants import (
     WEB_DEFAULT_HTTPS_LISTEN_PORT,
     WEB_DEFAULT_LISTEN_PORT,
     WEB_PANEL_TLS_SERVED_CERT_PATH,
+    WEB_DEFAULT_LISTEN_HOST,
     WEB_PANEL_TLS_SERVED_KEY_PATH,
     WEB_SETTING_HTTPS_PORT,
 )
@@ -110,7 +111,6 @@ from neutrino_hub.web.panel_tls import ensure_served, watch_served_context
 from neutrino_hub.utils.json_file import read_config
 
 # --- config ---
-DEFAULT_LISTEN_HOST = "0.0.0.0"
 GRACEFUL_SHUTDOWN_S = 5
 APPLICATION_PATH = "neutrino_hub.web.app:create_app"
 PANEL_SETTINGS_FILE = "web/settings.json"
@@ -146,7 +146,9 @@ def main() -> int:
         Process exit status.
     """
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--host", default=DEFAULT_LISTEN_HOST, help="address to bind")
+    parser.add_argument(
+        "--host", default=WEB_DEFAULT_LISTEN_HOST, help="address to bind"
+    )
     parser.add_argument(
         "--port", type=int, default=None, help="port to bind (default: from config)"
     )
@@ -523,6 +525,7 @@ def _serve_panel(arguments) -> int:
         servers.append(uvicorn.Server(https_config))
     _prepare_transport()
     _finish_first_run()
+    _listen_app_forwards(arguments.host)
     asyncio.run(_serve_together(servers))
     _stop_samplers()
     return 0
@@ -552,6 +555,13 @@ def _prepare_transport() -> None:
             f"error: the transport is not ready ({command_failure_text(error)})",
             file=sys.stderr,
         )
+
+
+def _listen_app_forwards(host: str) -> None:
+    """Have the app forwards listen on the address the panel listens on."""
+    from neutrino_hub.web.app import shared_runtime
+
+    shared_runtime().app_forwards.listen_host = host
 
 
 def _stop_samplers() -> None:

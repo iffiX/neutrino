@@ -110,6 +110,7 @@ from neutrino_hub.system.interface_traffic import traffic_interface
 from neutrino_hub.system.listening_ports import ListeningPortReader
 from neutrino_hub.web.constants import (
     WEB_DEFAULT_AGENT_LISTEN_PORT,
+    WEB_DEFAULT_LISTEN_HOST,
     WEB_EVENT_AI_USAGE,
     WEB_EVENT_CLIENTS,
     WEB_EVENT_CONFIG,
@@ -147,6 +148,8 @@ from neutrino_hub.web.web_share_access import (
     WebShareGuestSessions,
 )
 from neutrino_hub.modules.channel.hub_forwards import HubForwardTable
+from neutrino_hub.web.app_forwards import AppForwardTable
+from neutrino_hub.web.panel_tls import served_context
 from neutrino_hub.modules.channel.local_channel import LocalChannelClient
 from neutrino_hub.modules.transport.ops import (
     TransportApplier,
@@ -254,6 +257,13 @@ class PanelRuntime:
         # from each machine's Ollama follow both, and the models a person
         # loaded are loaded again through them.
         self.hub_forwards = HubForwardTable(channel=self.channel)
+        # The listeners the Services page's Open starts, each in front of
+        # one web entry, on the address the panel listens on.
+        self.app_forwards = AppForwardTable(
+            hub_forwards=self.hub_forwards,
+            tls_context_of=served_context,
+            listen_host=WEB_DEFAULT_LISTEN_HOST,
+        )
         self.ollama_gateway = OllamaGatewayProviderTable(
             on_change=self._ollama_providers_changed,
             on_lengths_change=self.note_context_lengths,

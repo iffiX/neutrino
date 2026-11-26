@@ -220,6 +220,20 @@ class SessionStore:
             return False
         return True
 
+    def client_of(self, token: str | None) -> str:
+        """The client whose sign-in opened a live session.
+
+        Args:
+            token: The cookie value, or None when absent.
+
+        Returns:
+            The client's id; empty for a session the panel password opened
+            and for a token that names no live session.
+        """
+        if not self.is_valid(token):
+            return ""
+        return self._sessions[token].client_id
+
     def update_password_hash(self, password_hash: str) -> None:
         """Adopt a new password and invalidate every existing session.
 

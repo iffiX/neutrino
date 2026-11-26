@@ -21,6 +21,19 @@ WEB_PANEL_TOKEN_PARAM = "tkn"
 WEB_PANEL_TOKEN_BYTES = 32
 WEB_PANEL_TOKEN_TTL_S = 60
 WEB_PANEL_TOKENS_MAX = 8
+# The address the panel listens on, and its app forwards with it.
+WEB_DEFAULT_LISTEN_HOST = "0.0.0.0"
+# The app forwards the Services page's Open starts: the range each takes the
+# first free port of, outside the clients' local ports and below every
+# system's dynamic ports; how long one with no open connection stays; how
+# often the forwards are checked; and the largest request head one reads.
+WEB_APP_FORWARD_PORT_MIN = 19000
+WEB_APP_FORWARD_PORT_MAX = 19099
+WEB_APP_FORWARD_IDLE_S = 1800
+WEB_APP_FORWARD_SWEEP_S = 60
+WEB_APP_FORWARD_HEAD_BYTES_MAX = 65536
+# The code of an Open that finds no free port in the range.
+WEB_CODE_FORWARD_PORT_UNAVAILABLE = "forward_port_unavailable"
 
 # --- the shape of every path ---
 # A route is `/api/<group>/<page>/...` or `/ws/<group>/...`, grouped the way
@@ -70,6 +83,7 @@ WEB_PATH_VERBS = frozenset(
         "reveal",
         "rotate",
         "rename",
+        "open",
     }
 )
 # The one code for input that does not validate, whichever route it reached:

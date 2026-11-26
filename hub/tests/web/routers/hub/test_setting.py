@@ -351,6 +351,8 @@ def test_an_agent_port_a_panel_port_holds_is_refused_by_code(port_client, body, 
         ({"listen_port": 8080, "agent_listen_port": 18444}, 18444),
         ({"listen_port": 18443}, 18443),
         ({"listen_port": 8080, "https_listen_port": 18444}, 18444),
+        ({"listen_port": 19000}, 19000),
+        ({"listen_port": 8080, "agent_listen_port": 19099}, 19099),
     ],
 )
 def test_a_port_of_a_frp_loopback_listener_is_refused_open_or_not(

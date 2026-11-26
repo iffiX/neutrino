@@ -87,6 +87,8 @@ from neutrino_hub.system.sandbox import stream_outside_sandbox
 from neutrino_hub.utils.constants import is_dev_root_set
 from neutrino_hub.web.auth import hash_password, verify_password
 from neutrino_hub.web.constants import (
+    WEB_APP_FORWARD_PORT_MAX,
+    WEB_APP_FORWARD_PORT_MIN,
     WEB_DEFAULT_AGENT_LISTEN_PORT,
     WEB_DEFAULT_HTTPS_LISTEN_PORT,
     WEB_DEFAULT_LANGUAGE,
@@ -276,7 +278,7 @@ def update_settings(
         HTTPException: 400 with ``port_out_of_range`` when a port is not one
             a listener may take, 400 with ``port_already_in_use`` when two of
             the three ports are one, a port is one of the two frp loopback
-            ports, or a new port is one another program on the box listens
+            ports or in the app forwards' range, or a new port is one another program on the box listens
             on, 400 with ``language_unknown`` for a language
             this panel does not ship, 400 with ``theme_unknown`` for a theme
             it does not have, and 400 with ``hub_name_required`` for a blank
@@ -301,7 +303,9 @@ def update_settings(
                 value=port,
             )
     for port in (request.listen_port, https_port, agent_port):
-        if port in FRP_LOOPBACK_PORTS.values():
+        if port in FRP_LOOPBACK_PORTS.values() or (
+            WEB_APP_FORWARD_PORT_MIN <= port <= WEB_APP_FORWARD_PORT_MAX
+        ):
             raise _coded_bad_request(SETTINGS_ERROR_PORT_TAKEN, value=port)
     if https_port == request.listen_port:
         raise _coded_bad_request(SETTINGS_ERROR_PORT_TAKEN, value=https_port)

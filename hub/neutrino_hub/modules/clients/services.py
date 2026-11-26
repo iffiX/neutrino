@@ -22,7 +22,7 @@ goes to the gateway while that machine's AI tools setting is on.
 from dataclasses import dataclass, field
 from urllib.parse import urlsplit
 
-from neutrino_hub.exceptions import VaultLockedError
+from neutrino_hub.exceptions import AgentOfflineError, VaultLockedError
 from neutrino_hub.modules.channel.constants import (
     CHANNEL_CODE_BINDING_UNKNOWN,
     CHANNEL_CODE_CONNECT_LIMIT,
@@ -61,6 +61,7 @@ from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.system.machine import machine_id
 from neutrino_hub.modules.services.collector import catalog_entries
 from neutrino_hub.modules.services.constants import (
+    SERVICES_CODE_ENTRY_UNKNOWN,
     SERVICES_PORT_PROTOCOLS,
     SERVICES_PROTOCOL_TCP,
     SERVICES_AI_ID,
@@ -110,6 +111,30 @@ class ConnectTarget:
     row_id: str = field(default="", compare=False)
 
 
+@dataclass(frozen=True)
+class AppOpen:
+    """What the panel's Open of one ``web`` entry needs.
+
+    Attributes:
+        entry_id: The entry's id.
+        scheme: ``http`` or ``https``, the entry's url's.
+        device_id: The managed machine that hosts it; empty for a declared
+            app.
+        host: The declared app's host, which the hub dials; empty for a
+            machine's entry.
+        port: The entry's port.
+        token: The token the forwarder signs the browser in with; empty for
+            an entry that takes none.
+    """
+
+    entry_id: str
+    scheme: str
+    device_id: str
+    host: str
+    port: int
+    token: str = ""
+
+
 def service_material(runtime, client_id: str, entry_id: str) -> tuple:
     """The material one published entry takes, judged for one client now.
 
@@ -144,23 +169,84 @@ def service_material(runtime, client_id: str, entry_id: str) -> tuple:
         return _ssh_material(runtime, raw, entry)
     if entry["type"] == SERVICES_TYPE_FILE:
         return _share_material(runtime, raw, entry)
-    page = _page_row(str(entry["description_code"] or ""))
+    return web_material(runtime, entry, str(raw.get("device_id") or ""))
+
+
+def web_material(runtime, entry: dict, device_id: str) -> tuple:
+    """The token one ``web`` entry opens with, minted now.
+
+    Args:
+        runtime: The shared runtime, which opens the instances' secrets.
+        entry: The entry, with its ``description_code`` and
+            ``description_params``.
+        device_id: The machine that hosts it.
+
+    Returns:
+        ``(code, params)``: an empty code with ``{token}`` for a VS Code,
+        code-server, CloudCLI, Codeg or SiYuan instance and for a forwarded
+        module's page, an empty code and no params for any other entry, or
+        ``vault_locked`` when the secret does not open.
+    """
+    code = str(entry.get("description_code") or "")
+    page = _page_row(code)
     if page is not None:
-        token = runtime.desired_states.module_token(
-            str(raw.get("device_id") or ""), page.name
-        )
+        token = runtime.desired_states.module_token(device_id, page.name)
         if not token:
             return VaultLockedError.code, {}
         return "", {"token": token}
-    row = _instance_row(str(entry["description_code"] or ""))
+    row = _instance_row(code)
     if row is not None:
-        device_id = str(raw.get("device_id") or "")
-        account = str(entry["description_params"].get("account", "") or "")
+        params = entry.get("description_params") or {}
+        account = str(params.get("account", "") or "")
         token = runtime.desired_states.instance_token(device_id, row.name, account)
         if not token:
             return VaultLockedError.code, {}
         return "", {"token": token}
     return "", {}
+
+
+def app_open(runtime, entry_id: str) -> tuple:
+    """What the panel's Open of one ``web`` entry needs, judged now.
+
+    Args:
+        runtime: The shared runtime.
+        entry_id: The entry's id.
+
+    Returns:
+        ``(code, params, opened)``: ``entry_unknown {entry_id}`` for an id
+        that names no ``web`` entry the hub publishes now,
+        ``agent_offline`` while its machine has no session, or
+        ``vault_locked``, each with None; else an empty code, empty params
+        and the :class:`AppOpen`.
+    """
+    entry = _unresolved_entry(runtime, entry_id)
+    if entry.get("type") != SERVICES_TYPE_WEB:
+        return SERVICES_CODE_ENTRY_UNKNOWN, {"entry_id": entry_id}, None
+    device_id = str(entry.get("device_id") or "")
+    if device_id:
+        host = ""
+        if not runtime.agent_sessions.is_online(device_id):
+            return AgentOfflineError.code, {"device": device_id}, None
+    elif entry.get("source") == SERVICES_SOURCE_DECLARED:
+        host = entry_host(entry)
+    else:
+        return SERVICES_CODE_ENTRY_UNKNOWN, {"entry_id": entry_id}, None
+    code, material = web_material(runtime, entry, device_id)
+    if code:
+        return code, material, None
+    url = urlsplit(str((entry.get("payload") or {}).get("url", "") or ""))
+    return (
+        "",
+        {},
+        AppOpen(
+            entry_id=entry_id,
+            scheme="https" if url.scheme == "https" else "http",
+            device_id=device_id,
+            host=host,
+            port=entry_port(entry),
+            token=str(material.get("token", "") or ""),
+        ),
+    )
 
 
 def panel_material(runtime, client_id: str) -> tuple:

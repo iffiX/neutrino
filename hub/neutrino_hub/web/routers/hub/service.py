@@ -1,7 +1,9 @@
 """The Services page: the apps the hub publishes, and the entries of no app.
 
 Module apps are read-only rows; declared apps are created and deleted here,
-and every write answers with the whole refreshed list. The page holds no
+and every write answers with the whole refreshed list. An Open of a web entry
+starts the hub's app forward for it and answers with the forward's port and
+the entry's token (protocol.md, "The app forwards"). The page holds no
 ``ssh`` entry and no row for a machine's SSH server, which is no app
 (protocol.md, "Apps"). Every payload host is
 resolved for the scope the asking browser's address falls in, the same
@@ -13,15 +15,23 @@ Errors carry ``{code, params}`` and never a sentence; the pages do the
 wording.
 """
 
+import asyncio
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
-from neutrino_hub.exceptions import ServiceFieldInvalidError
+from neutrino_hub.exceptions import (
+    AgentOfflineError,
+    ServiceFieldInvalidError,
+    VaultLockedError,
+)
 from neutrino_hub.modules.clients.registry import ClientRegistry
+from neutrino_hub.modules.clients.services import app_open
 from neutrino_hub.modules.devices.manifests import load_module_manifests
 from neutrino_hub.modules.services.collector import catalog_entries
 from neutrino_hub.modules.services.config import DeclaredAppRegistry
 from neutrino_hub.modules.services.constants import (
     SERVICES_APP_SOURCE_ORDER,
+    SERVICES_CODE_ENTRY_UNKNOWN,
     SERVICES_ERROR_INVALID,
     SERVICES_ERROR_SHARE_SCAN,
     SERVICES_ERROR_UNKNOWN,
@@ -29,6 +39,12 @@ from neutrino_hub.modules.services.constants import (
 )
 from neutrino_hub.modules.services.host_scope import scope_of
 from neutrino_hub.modules.services.ops import list_shares
+from neutrino_hub.web.app_forwards import AppForwardTarget
+from neutrino_hub.web.constants import (
+    WEB_APP_FORWARD_PORT_MAX,
+    WEB_APP_FORWARD_PORT_MIN,
+    WEB_CODE_FORWARD_PORT_UNAVAILABLE,
+)
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.models import (
     AppEntryView,
@@ -36,11 +52,20 @@ from neutrino_hub.web.models import (
     DeclaredAppCreate,
     DeclaredAppRequest,
     PublishedServiceView,
+    ServiceEntryOpenRequest,
+    ServiceEntryOpenView,
     ServiceListView,
     ServiceShareListView,
 )
 from neutrino_hub.web.panel_runtime import PanelRuntime
 from neutrino_hub.web.web_share_access import end_app_shares, entry_guest_login
+
+# The status of each refusal of an Open the hub judges before it listens.
+OPEN_REFUSAL_STATUSES = {
+    SERVICES_CODE_ENTRY_UNKNOWN: status.HTTP_404_NOT_FOUND,
+    AgentOfflineError.code: status.HTTP_409_CONFLICT,
+    VaultLockedError.code: status.HTTP_400_BAD_REQUEST,
+}
 
 router = APIRouter(
     prefix="/api/hub/service", tags=["service"], dependencies=[Depends(require_session)]
@@ -189,6 +214,58 @@ def probe_declared_app(
     runtime.declared_probe.probe(app)
     runtime.published_services.expire()
     return _list_view(request, runtime)
+
+
+@router.post("/entry/open", response_model=ServiceEntryOpenView)
+async def open_entry(
+    body: ServiceEntryOpenRequest,
+    runtime: PanelRuntime = Depends(get_runtime),
+) -> ServiceEntryOpenView:
+    """Start the app forward of one web entry, or keep the one it has, and
+    mint the token its tab opens with.
+
+    Args:
+        body: The entry's id.
+        runtime: The shared runtime.
+
+    Returns:
+        The forward's port, and the token the forwarder signs the browser in
+        with, empty for an entry that takes none.
+
+    Raises:
+        HTTPException: 404 with ``entry_unknown`` for an id that names no
+            web entry published now, 409 with ``agent_offline`` while its
+            machine has no session, 400 with ``vault_locked`` when its
+            secret does not open, 409 with ``forward_port_unavailable`` when
+            no port of the range is free.
+    """
+    code, params, opened = await asyncio.to_thread(app_open, runtime, body.entry_id)
+    if code:
+        raise HTTPException(
+            status_code=OPEN_REFUSAL_STATUSES.get(code, status.HTTP_409_CONFLICT),
+            detail={"code": code, "params": params},
+        )
+    target = AppForwardTarget(
+        entry_id=opened.entry_id,
+        scheme=opened.scheme,
+        device_id=opened.device_id,
+        host=opened.host,
+        port=opened.port,
+    )
+    try:
+        port = await runtime.app_forwards.open(target)
+    except OSError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": WEB_CODE_FORWARD_PORT_UNAVAILABLE,
+                "params": {
+                    "minimum": WEB_APP_FORWARD_PORT_MIN,
+                    "maximum": WEB_APP_FORWARD_PORT_MAX,
+                },
+            },
+        ) from error
+    return ServiceEntryOpenView(port=port, token=opened.token)
 
 
 def _list_view(request: Request, runtime: PanelRuntime) -> ServiceListView:

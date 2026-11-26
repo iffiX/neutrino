@@ -39,6 +39,8 @@ SERVICES_SAMBA_DEFAULT_PORT = 445
 # What the API answers with when a declared service is refused or missing.
 SERVICES_ERROR_INVALID = "declared_service_invalid"
 SERVICES_ERROR_UNKNOWN = "declared_service_unknown"
+# The panel's Open of an id that names no web entry published now.
+SERVICES_CODE_ENTRY_UNKNOWN = "entry_unknown"
 # What the API answers with when a host's exports could not be listed; its
 # params carry the reason as one of the probe detail codes below.
 SERVICES_ERROR_SHARE_SCAN = "share_scan_failed"

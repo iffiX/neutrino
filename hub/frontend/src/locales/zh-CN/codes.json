@@ -401,5 +401,7 @@
   "code.ollama_model_name_invalid": "{name} 不是模型名称。",
   "code.ollama_model_unknown": "这个系统上没有叫 {name} 的模型。",
   "code.ollama_pull_unknown": "没有在等待或进行中的 {name} 拉取。",
-  "code.ollama_pull_failed": "Ollama 没能拉取 {name}：{detail}"
+  "code.ollama_pull_failed": "Ollama 没能拉取 {name}：{detail}",
+  "code.entry_unknown": "这个应用的网页已经不再发布。",
+  "code.forward_port_unavailable": "{minimum} 到 {maximum} 的端口都在用，稍后再试。"
 }
