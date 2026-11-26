@@ -466,5 +466,6 @@
   "ui.web_shares.site_other": "Another site",
   "ui.web_shares.site_other_hint": "The https:// address of your own copy of the page.",
   "ui.web_shares.title": "App shares",
-  "ui.web_shares.until_revoked": "Until revoked"
+  "ui.web_shares.until_revoked": "Until revoked",
+  "ui.services.open": "Open"
 }

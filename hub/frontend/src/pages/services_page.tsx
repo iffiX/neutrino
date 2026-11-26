@@ -4,13 +4,16 @@ import { DeclareServiceModal } from "../components/declare_service_modal";
 import { DialogFrame } from "../components/dialog_frame";
 import { ErrorPanel } from "../components/error_panel";
 import { Icon } from "../components/icon";
+import { Spinner } from "../components/spinner";
 import { StatusDot } from "../components/status_dot";
 import type { StatusTone } from "../components/status_dot";
 import { WebShareModal } from "../components/web_share_modal";
 import { apiPost, describeError } from "../api_client";
 import { t, useLanguage } from "../i18n";
 import { moduleTitle } from "../module_title";
+import { hubHost } from "../origins";
 import { useApiResource } from "../use_api_resource";
+import { useAuth } from "../use_auth";
 import { useConfirm } from "../use_confirm";
 import { HUB_EVENT_CONFIG, HUB_EVENT_SERVICES } from "../use_hub_events";
 import type {
@@ -22,6 +25,8 @@ import type {
   PublishedService,
   PublishedServicePayload,
   PublishedServiceType,
+  ServiceEntryOpenRequest,
+  ServiceEntryOpenView,
   ServiceListView,
 } from "../api_types";
 
@@ -37,7 +42,9 @@ import "./services_page.css";
  * containers it runs; a container the hub does not manage is one app of its
  * own. An app declared here carries Test and Delete, and an app with a web
  * entry carries Share, which opens the App share dialog with that entry
- * chosen. The entries of no app
+ * chosen. Each web entry carries Open, which starts the hub's app forward for
+ * it and opens the app in a new tab, while the panel was reached directly.
+ * The entries of no app
  * follow in their own sections: the AI gateway, the machines' file shares
  * and the shared desktops. A machine's SSH server is no app, and the hub
  * sends none of its entries here. **Declare service** opens the dialog that
@@ -157,12 +164,17 @@ const INVALIDATE_ON = [
 ];
 
 const SERVICE_PATH = "/hub/service";
+/** The Open of one web entry. */
+const OPEN_PATH = "/hub/service/entry/open";
+/** The query parameter a web entry's token rides in. */
+const TOKEN_PARAM = "tkn";
 /** The Clients page's list, which holds what an App share can offer. */
 const CLIENTS_PATH = "/hub/client";
 
 export function ServicesPage() {
   // Redrawn when the panel's language changes.
   useLanguage();
+  const { isOpenedByClient } = useAuth();
   const resource = useApiResource<ServiceListView>(SERVICE_PATH, {
     invalidateOn: INVALIDATE_ON,
   });
@@ -242,6 +254,7 @@ export function ServicesPage() {
               <AppRow
                 key={app.id}
                 app={app}
+                isOpenShown={!isOpenedByClient}
                 onChanged={resource.setData}
                 onShare={setSharedEntryId}
               />
@@ -301,17 +314,21 @@ export function ServicesPage() {
 
 interface AppRowProps {
   app: AppView;
+  /** Whether each web entry carries Open: the panel was reached directly. */
+  isOpenShown: boolean;
   onChanged: (view: ServiceListView) => void;
   /** Opens the App share dialog with a web entry chosen. */
   onShare: (entryId: string) => void;
 }
 
 /** One app: its title, its machine, its entries, and where it comes from. */
-function AppRow({ app, onChanged, onShare }: AppRowProps) {
+function AppRow({ app, isOpenShown, onChanged, onShare }: AppRowProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
   const confirm = useConfirm();
   const [isBusy, setIsBusy] = useState(false);
+  // The web entry whose Open waits for the hub, null while none does.
+  const [openingId, setOpeningId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const isDeclared =
     app.source === "declared" && !app.id.startsWith(CONTAINER_APP_PREFIX);
@@ -340,6 +357,31 @@ function AppRow({ app, onChanged, onShare }: AppRowProps) {
       setError(describeDeclaredError(cause));
     } finally {
       setIsBusy(false);
+    }
+  };
+
+  const open = async (entry: AppEntryView) => {
+    // Opened before the request: a tab opened after an answer is blocked.
+    const tab = window.open("", "_blank");
+    if (tab !== null) {
+      tab.opener = null;
+    }
+    setOpeningId(entry.id);
+    setError(null);
+    const request: ServiceEntryOpenRequest = { entry_id: entry.id };
+    try {
+      const opened = await apiPost<ServiceEntryOpenView>(OPEN_PATH, request);
+      const url = openedAddress(entry, opened);
+      if (tab === null) {
+        window.open(url, "_blank", "noopener");
+      } else {
+        tab.location.replace(url);
+      }
+    } catch (cause: unknown) {
+      tab?.close();
+      setError(describeError(cause));
+    } finally {
+      setOpeningId(null);
     }
   };
 
@@ -404,12 +446,28 @@ function AppRow({ app, onChanged, onShare }: AppRowProps) {
       )}
       <div className="app_row_entries">
         {app.entries.map((entry) => (
-          <EntryChip
-            key={entry.id}
-            entry={entry}
-            address={entryAddress(app.local_name, entry)}
-            stateWord={isDeclared ? declaredStateWord(entry) : null}
-          />
+          <span key={entry.id} className="app_entry_group">
+            <EntryChip
+              entry={entry}
+              address={entryAddress(app.local_name, entry)}
+              stateWord={isDeclared ? declaredStateWord(entry) : null}
+            />
+            {isOpenShown && entry.type === "web" && (
+              <button
+                type="button"
+                className="button button--ghost button--small"
+                disabled={openingId !== null || entry.is_healthy === false}
+                onClick={() => void open(entry)}
+              >
+                {openingId === entry.id ? (
+                  <Spinner size={13} />
+                ) : (
+                  <Icon name="globe" size={13} />
+                )}
+                {t("ui.services.open")}
+              </button>
+            )}
+          </span>
         ))}
       </div>
       {details.map((key, index) => (
@@ -580,6 +638,24 @@ function entryAddress(localName: string, entry: AppEntryView): string {
   return entry.type === "port" && entry.payload.protocol === "udp"
     ? `${address}/udp`
     : address;
+}
+
+/** Where an Open's tab goes: the entry's scheme and path at the panel's own
+ * host and the forward's port, with the token where the entry takes one. */
+function openedAddress(
+  entry: AppEntryView,
+  opened: ServiceEntryOpenView,
+): string {
+  const url = WEB_URL_PATTERN.exec(entry.payload.url ?? "");
+  const scheme = url?.[1]?.toLowerCase() ?? "http";
+  const address = new URL(
+    url?.[2] || "/",
+    `${scheme}://${hubHost(false)}:${opened.port}`,
+  );
+  if (opened.token !== "") {
+    address.searchParams.set(TOKEN_PARAM, opened.token);
+  }
+  return address.toString();
 }
 
 /** The host an app with no machine the hub knows is at. */

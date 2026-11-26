@@ -21,6 +21,9 @@ export interface AuthContextValue {
   isAuthenticated: boolean;
   /** True while the initial session probe is still in flight. */
   isChecking: boolean;
+  /** Whether a client's token opened the session, its browser reaching the
+   * panel through that client's forward. */
+  isOpenedByClient: boolean;
   /** Why the session probe failed, when the API could not be reached. */
   error: string | null;
   /**

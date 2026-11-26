@@ -29,6 +29,7 @@ interface AuthProviderProps {
 export function AuthProvider({ children }: AuthProviderProps) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isChecking, setIsChecking] = useState(true);
+  const [isOpenedByClient, setIsOpenedByClient] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -49,6 +50,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         }
         if (!isCancelled) {
           setIsAuthenticated(state.is_authenticated);
+          setIsOpenedByClient(state.is_opened_by_client);
           setError(null);
         }
       })
@@ -85,6 +87,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       return { ...state, is_cookie_refused: false };
     }
     setIsAuthenticated(true);
+    setIsOpenedByClient(check.is_opened_by_client);
     setError(null);
     return { ...state, is_cookie_refused: false };
   }, []);
@@ -98,8 +101,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
   }, []);
 
   const value = useMemo<AuthContextValue>(
-    () => ({ isAuthenticated, isChecking, error, login, logout }),
-    [isAuthenticated, isChecking, error, login, logout],
+    () => ({
+      isAuthenticated,
+      isChecking,
+      isOpenedByClient,
+      error,
+      login,
+      logout,
+    }),
+    [isAuthenticated, isChecking, isOpenedByClient, error, login, logout],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

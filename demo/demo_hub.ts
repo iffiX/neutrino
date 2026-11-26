@@ -1108,6 +1108,7 @@ export class DemoHub {
       is_authenticated: this.isSignedIn,
       panel_started_at: "demo",
       https_listen_port: DEMO_HTTPS.https_listen_port,
+      is_opened_by_client: false,
     };
   }
 

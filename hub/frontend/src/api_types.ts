@@ -44,6 +44,9 @@ export interface AuthState {
   panel_started_at: string;
   /** The port the panel serves HTTPS on. */
   https_listen_port: number;
+  /** Whether a client's token opened the session, its browser reaching the
+   * panel through that client's forward. */
+  is_opened_by_client: boolean;
 }
 
 export interface LoginRequest {
@@ -1693,6 +1696,18 @@ export interface AppView {
 export interface ServiceListView {
   apps: AppView[];
   services: PublishedService[];
+}
+
+/** The Services page's Open of one web entry. */
+export interface ServiceEntryOpenRequest {
+  entry_id: string;
+}
+
+/** Where an Open's tab goes: the app forward's port, and the token the
+ * forwarder signs the browser in with, empty for an entry that takes none. */
+export interface ServiceEntryOpenView {
+  port: number;
+  token: string;
 }
 
 export type DeclaredEntryType = "web" | "port" | "file";

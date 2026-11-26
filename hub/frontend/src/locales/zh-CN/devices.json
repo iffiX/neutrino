@@ -466,5 +466,6 @@
   "ui.web_shares.site_other": "其他站点",
   "ui.web_shares.site_other_hint": "你自己托管的那份页面的 https:// 地址。",
   "ui.web_shares.title": "应用分享",
-  "ui.web_shares.until_revoked": "直到撤销"
+  "ui.web_shares.until_revoked": "直到撤销",
+  "ui.services.open": "打开"
 }
