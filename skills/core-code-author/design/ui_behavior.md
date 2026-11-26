@@ -740,6 +740,23 @@ onto a second line when the title's line is too short for them.
 | The cut is drawn, not written: the text is the whole address. | A copy of the address is the address, and the title shows it on hover. |
 | An app's row is one flex line, so each of its parts is as wide as the row. | A row that wraps sizes each part by its widest content, and a chip then grew past the row. |
 
+Below **Files**, the **Terminals** panel (终端) lists the terminal sessions
+of every online machine, `terminals` of `GET /api/hub/service`
+([protocol.md](protocol.md), "The sections"), oldest first, one row each:
+the session's title; `ui.services.terminal_where {account, machine}`;
+`ui.services.terminal_opened {owner, time}`, the owner's name and the
+start in the panel's language; `ui.services.terminal_attached {count}`;
+and the badges `ui.services.terminal_kept` on a persistent session and
+`ui.services.terminal_shared` on a shared one. The row's dot is `ok` while
+a window is attached and `idle` while none is. With no session the panel
+shows `ui.services.terminals_empty`.
+
+| Rule | Reason |
+| --- | --- |
+| The panel is visualizing and has no button. | The standard gives the panel no verb on a session: a person ends a client's kept session from a client ([protocol.md](protocol.md), "`/api/agent/module`"). |
+| It lists every session, a client's unshared one among them, and none of a machine that is offline. | The panel is the hub's own viewer, and an offline machine's report is no longer live. |
+| The page reads its list again at each `device_report` and `devices` event. | The hub publishes `device_report` when a report's sessions change and `devices` when a machine's channel opens or ends, so the panel moves by itself. |
+
 ## The Clients page
 
 The **Clients** page, at `/clients`, is who reaches the hub's machines from

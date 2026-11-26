@@ -155,7 +155,7 @@ its own word, and a string in one language carries no word of the other.
 | the two frp vendors | SakuraFrp, OpenFrp | SakuraFrp，OpenFrp | Spelled as each vendor spells itself, in both languages; never 樱花 or a shortened name. The program both run is frpc, and a sentence about the tunnel says "tunnel" (隧道). |
 | a computer joined to the hub | machine | 系统 | Chinese writes 系统 for it on every surface and never 机器, 设备 or 电脑: 这个系统, 系统页, 系统离线, {count} 个系统. The computer a client runs on is the person's own computer, 电脑 in the client's words about it: 这台电脑没有 pkexec, 一台电脑同一时间只运行一个人的客户端. 主机 stays for a host on a network and 虚拟机 for a virtual machine. 机器人, a chat bot, is another word and stays: 机器人、对话、插件和设置都会删除. The check of the panel's words counts 机器 only outside 机器人. 设备 and 电脑 stay for a host on a network the hub serves, a phone or computer named as the person's own device, and a hardware device: 对内接设备, 只给你自己的设备打开, 在这台设备上安装证书. |
 | the page of the managed machines | **Agents** | **被控端** | The page, its sidebar entry in the hub group, the header chip and the Overview card use this name, and the sidebar's machine group below carries the same word. The routes keep `device` (`/api/hub/device`) and the catalog keys keep `devices`; the panel's address is `/agents`. |
-| a managed machine's page | the machine page | 系统页 | Each machine's own page, `/agents/<id>`, which holds its modules; the panel has no Modules, Terminals or Files page. |
+| a managed machine's page | the machine page | 系统页 | Each machine's own page, `/agents/<id>`, which holds its modules; the panel has no Modules, Terminals or Files page, and the Services page's **Terminals** panel lists the sessions. |
 
 The sidebar's lines under the renamed entries, the Agents page's among them in "The Agents page's words":
 
@@ -911,6 +911,22 @@ keys are in `locales/<language>/devices.json` beside the page's other
 | `ui.services.open`, on a `web` entry | Open | 打开 |
 | `code.entry_unknown` | This app's page is no longer published. | 这个应用的网页已经不再发布。 |
 | `code.forward_port_unavailable` | Every port from {minimum} to {maximum} is in use; try again later. | {minimum} 到 {maximum} 的端口都在用，稍后再试。 |
+
+## The Services page's Terminals words
+
+The **Terminals** panel's words ([ui_behavior.md](ui_behavior.md), "The
+Services page"), in `locales/<language>/devices.json`. The two badges are
+the words a client's terminal tab wears ([client.md](client.md), "The
+Terminals page").
+
+| Key | English | Chinese |
+| --- | --- | --- |
+| `ui.services.group_terminal`, the panel's title | Terminals | 终端 |
+| `ui.services.terminals_empty` | No terminal sessions yet | 还没有终端会话 |
+| `ui.services.terminal_where` | {account} on {machine} | {machine} 上的 {account} |
+| `ui.services.terminal_opened` | Opened by {owner} at {time} | 由 {owner} 在 {time} 打开 |
+| `ui.services.terminal_attached` | {count} attached | 连接 {count} |
+| `ui.services.terminal_kept`, `ui.services.terminal_shared` | kept, shared | 持久、共享 |
 
 ## The Network page's words
 

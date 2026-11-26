@@ -431,7 +431,7 @@ the agent group follows, then the panel's live sockets.
 | `/api/hub/ai` | The providers the gateway forwards to and their order, and under it `ollama` (the providers generated from each machine's Ollama), `context` (each served model's context length) and `gateway` (the gateway itself: keys, accounts, usage, journal) |
 | `/api/hub/device` | The **Agents** page: every managed machine, names and icons, the SSH credential the hub reaches a machine with, enrolment links, installing or reinstalling the agent over SSH, waking, rebooting, shutting down, its processes, its remote desktops, its seat password, its published services, which module tabs its machine page shows |
 | `/api/hub/client` | Enrolled client sessions, the links that enrol them, and the App shares |
-| `/api/hub/service` | The apps and the other published services, the apps declared by hand, and the app forwards the page opens |
+| `/api/hub/service` | The apps and the other published services, the apps declared by hand, the app forwards the page opens, and the terminal sessions of every machine |
 | `/api/hub/credential` | The secrets the box keeps for somebody, SSH keys, logins and tokens, and the ones it generated for the machines |
 | `/api/hub/setting` | The panel's own: its two ports, its scheme and certificate authority, password, hub name, backup, restore, version, and updating the hub itself from its newest release |
 | `/api/agent/file` | A machine's directory listing, for the panel's path window |
@@ -732,7 +732,7 @@ is not `true` or `false` is refused `body_invalid`.
 
 | Route | Parameters | Does |
 | --- | --- | --- |
-| `GET /api/hub/service` | | `ServiceListView`: `apps`, each `{id, title, source, device_id, device_name, local_name, description, entries}` with each entry `{id, name, type, payload, is_healthy, local_port, detail_code, guest_login}`, `detail_code` the probe's word on an unhealthy declared entry such as `share_missing`, else null, `guest_login` how an App share's visitor signs in to a `web` entry, `app`, `guest_account` or `run_account`, and empty on an entry of another type ("App shares"), a module's apps first, then the declared, then the manual, each group by title; and `services`, the entries of no app, the `ai` and `rdp` entries and a machine's `file` entries, as a client's list holds them |
+| `GET /api/hub/service` | | `ServiceListView`: `apps`, each `{id, title, source, device_id, device_name, local_name, description, entries}` with each entry `{id, name, type, payload, is_healthy, local_port, detail_code, guest_login}`, `detail_code` the probe's word on an unhealthy declared entry such as `share_missing`, else null, `guest_login` how an App share's visitor signs in to a `web` entry, `app`, `guest_account` or `run_account`, and empty on an entry of another type ("App shares"), a module's apps first, then the declared, then the manual, each group by title; and `services`, the entries of no app, the `ai` and `rdp` entries and a machine's `file` entries, as a client's list holds them; and `terminals`, every terminal session the online machines report, oldest first, each `{device_id, device_name, session_id, account, title, started_at, owner_name, attached_count, is_persistent, is_shared}` as "The sections" names them ([ui_behavior.md](ui_behavior.md), "The Services page") |
 | `POST /api/hub/service/entry/open` | `{entry_id}`, a `web` entry's id | starts the entry's app forward, or keeps the one it has, and mints its token; `ServiceEntryOpenView`, `{port, token}`; 404 `entry_unknown {entry_id}`, 409 `agent_offline` and `forward_port_unavailable {minimum, maximum}`, 400 `vault_locked` ("The app forwards") |
 | `GET /api/hub/service/share` | | the shares devices declared |
 | `POST /api/hub/service/declaration/add` | `{name, host, description, entries}`, each entry `{type, port, scheme, path, protocol, share}`: `type` `web`, `port` or `file`; `scheme` `http` or `https` and `path` for `web`; `protocol` `tcp` or `udp` for `port`, `tcp` when absent; `share` for `file`, an SMB share's name, with `port` 445 when absent; one entry at least, no two of one type, port and protocol, and no two `file` entries whose shares give one slug ("The local name and the local port") | declares one app; `ServiceListView`; 400 `declared_service_invalid {field}` |
@@ -1309,8 +1309,9 @@ client owns, and every shared session on a machine it has terminal rights on.
 Each carries `device_id`, `device_name`, `owner_name` and `is_owned` beside
 the fields above, `is_owned` being true for the sessions this client opened
 and `owner_name` being the hub's name or the owning client's name. The panel
-is the viewer `owner: hub` and lists every session
-(`GET /api/agent/terminal/session`).
+is the viewer `owner: hub`, and the Services page's **Terminals** panel
+lists every session of every online machine, owned, shared or neither
+(`GET /api/hub/service`, `terminals`).
 
 The hub stamps `owner` on every `shell` open it sends an agent for a kept
 shell: `hub` for the panel's `/ws/agent/terminal`, `client:<id>` for a
