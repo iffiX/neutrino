@@ -69,6 +69,7 @@ from neutrino_hub.web.constants import (
     WEB_EVENT_DEVICES,
     WEB_EVENT_DEVICE_REPORT,
     WEB_TASK_LABEL_AGENT_INSTALL,
+    WEB_TASK_LABEL_AGENT_REINSTALL,
 )
 from neutrino_hub.web.dependencies import (
     get_runtime,
@@ -624,10 +625,13 @@ def _task_module(label: str, device_id: str) -> "str | None":
         device_id: The device.
 
     Returns:
-        The module name, empty for the agent's own install, or None for a
-        task that is not an install on this device.
+        The module name, empty for the agent's own install over SSH or of
+        itself, or None for a task that is not an install on this device.
     """
-    if label == WEB_TASK_LABEL_AGENT_INSTALL.format(device_id=device_id):
+    if label in (
+        WEB_TASK_LABEL_AGENT_INSTALL.format(device_id=device_id),
+        WEB_TASK_LABEL_AGENT_REINSTALL.format(device_id=device_id),
+    ):
         return ""
     prefix = module_task_label(device_id, "")
     if label.startswith(prefix):
@@ -910,7 +914,9 @@ async def reinstall_agent(
     """
     key = _require_online(runtime, request.device_id)
     return _start_task(
-        runtime, f"{CHANNEL_VERB_REINSTALL} {key}", _reinstall_stream(runtime, key)
+        runtime,
+        WEB_TASK_LABEL_AGENT_REINSTALL.format(device_id=key),
+        _reinstall_stream(runtime, key),
     )
 
 

@@ -1980,6 +1980,7 @@ def test_the_install_output_is_the_devices_install_tasks_newest_first(box_api):
         )
         runtime.tasks.start(label="install_client other", source=lines("x"))
         runtime.tasks.start(label=f"reboot {DEVICE}", source=lines("x"))
+        runtime.tasks.start(label="reinstall other", source=lines("x"))
         for _ in range(3):
             await asyncio.sleep(0)
 
@@ -1997,6 +1998,35 @@ def test_the_install_output_is_the_devices_install_tasks_newest_first(box_api):
     assert tasks[0]["is_finished"] is True
     assert tasks[0]["exit_code"] == 0
     assert tasks[1]["output"] == "[installed]\n"
+
+
+def test_the_install_output_holds_the_agents_install_of_itself(box_api, monkeypatch):
+    """Update agent on the machine page runs the agent's reinstall."""
+    import asyncio
+
+    client, runtime = box_api
+
+    async def reinstalled(runtime, key):
+        yield "reinstall launched\n"
+
+    monkeypatch.setattr(devices_router, "_require_online", lambda runtime, key: key)
+    monkeypatch.setattr(devices_router, "_reinstall_stream", reinstalled)
+
+    started = client.post(f"{DEVICE_PATH}/agent/reinstall", json={"device_id": DEVICE})
+
+    async def settle():
+        for _ in range(3):
+            await asyncio.sleep(0)
+
+    asyncio.run(settle())
+    answer = client.get(f"{DEVICE_PATH}/install_output", params={"device_id": DEVICE})
+
+    assert started.status_code == 200
+    tasks = answer.json()["tasks"]
+    assert [(task["task_id"], task["module"]) for task in tasks] == [
+        (started.json()["task_id"], "")
+    ]
+    assert tasks[0]["output"] == "reinstall launched\n"
 
 
 def link_urls(link: str) -> list:
