@@ -70,6 +70,7 @@ import type {
   AuthState,
   AyakaleafDeviceView,
   BalancerSettings,
+  ComfyuiDeviceView,
   ClientListView,
   ClientView,
   DeclaredAppCreate,
@@ -238,6 +239,27 @@ const OLLAMA_RESTART_STEPS: ModuleTask["steps"] = [
   { name: "configure", params: {} },
   { name: "start", params: {} },
 ];
+const COMFYUI_MODULE = "comfyui";
+// The PyTorch builds each system's entry has a lock of, in the page's order,
+// and the shared models folder on each system.
+const COMFYUI_TORCH_BUILDS: Record<string, string[]> = {
+  linux: ["nvidia", "amd", "intel", "cpu"],
+  windows: ["nvidia", "intel", "cpu"],
+  darwin: [],
+};
+const COMFYUI_MODELS_DIRS: Record<string, string> = {
+  linux: "/var/lib/neutrino/agent/comfyui_data/data/models/",
+  windows:
+    "%ProgramData%\\Neutrino\\agent\\state\\comfyui_data\\data\\models\\",
+  darwin:
+    "/Library/Application Support/Neutrino/agent/state/comfyui_data/data/models/",
+};
+// What a new PyTorch build runs on a machine whose ComfyUI runs.
+const COMFYUI_BUILD_STEPS: ModuleTask["steps"] = [
+  { name: "artifact", params: { name: "venv" } },
+  { name: "configure", params: {} },
+  { name: "start", params: {} },
+];
 // Each machine's memory in all, by its metrics seed, for the Ollama tab.
 const MEMORY_TOTAL_MB: Record<number, number> = { 0: 65536, 1: 16384 };
 const MEMORY_TOTAL_DEFAULT_MB = 16384;
@@ -286,6 +308,7 @@ function initialDevices(): DemoDevice[] {
         "vscode",
         "gitea",
         "ollama",
+        "comfyui",
         "opencode",
         "siyuan",
         "podman",
@@ -447,6 +470,12 @@ export class DemoHub {
   private readonly declaredApps = initialDeclaredApps();
   private readonly clients = initialClients();
   private readonly shares: WebShareView[] = [];
+  /** Each machine's ComfyUI settings, by device id, and whether the last
+   * set changed its build. */
+  private readonly comfyuiSettings = new Map<
+    string,
+    { torch_build: string; idle_unload: string; isBuildChanged: boolean }
+  >();
   /** Each machine's Ollama, by device id. */
   private readonly ollamas = new Map<string, DemoOllama>();
   /** Every client's join link, to its client id. */
@@ -898,6 +927,10 @@ export class DemoHub {
         this.pressModule(body, "uninstall"),
       "/agent/module/vscode/terms/set": (_query, body) =>
         this.setVscodeTerms(body),
+      "/agent/module/comfyui/set": (_query, body) =>
+        this.setComfyuiSettings(body),
+      "/agent/module/comfyui/apply": (_query, body) =>
+        this.applyComfyuiSettings(body),
       "/agent/module/ollama/set": (_query, body) =>
         this.setOllamaSettings(body),
       "/agent/module/ollama/apply": (_query, body) =>
@@ -1312,6 +1345,13 @@ export class DemoHub {
         version: isPresent ? spec.version : "",
       };
     }
+    if (spec.name === COMFYUI_MODULE) {
+      return {
+        is_running: device.isOnline && held?.state === "running",
+        port: spec.web?.port ?? 0,
+        version: isPresent ? spec.version : "",
+      };
+    }
     return {};
   }
 
@@ -1371,6 +1411,9 @@ export class DemoHub {
     }
     if (name === OLLAMA_MODULE) {
       return this.ollamaView(device);
+    }
+    if (name === COMFYUI_MODULE) {
+      return this.comfyuiView(device);
     }
     return this.accountsView(device, name);
   }
@@ -1629,6 +1672,85 @@ export class DemoHub {
       isRunning: this.isOllamaRunning(device),
       metrics: device.isOnline ? this.machineMetrics(device) : null,
     });
+  }
+
+  /** A machine's ComfyUI settings: the build Install picks from its GPUs,
+   * NVIDIA's first, and 30 minutes. */
+  private comfyuiSettingsOf(device: DemoDevice): {
+    torch_build: string;
+    idle_unload: string;
+    isBuildChanged: boolean;
+  } {
+    const held = this.comfyuiSettings.get(device.id);
+    if (held !== undefined) {
+      return held;
+    }
+    const builds = COMFYUI_TORCH_BUILDS[device.platformOs] ?? [];
+    const vendors = demoMetrics(device.metricsSeed, 0).gpus.map(
+      (gpu) => gpu.vendor,
+    );
+    const picked =
+      builds.find((build) => build === "cpu" || vendors.includes(build)) ?? "";
+    const settings = {
+      torch_build: picked,
+      idle_unload: "30m",
+      isBuildChanged: false,
+    };
+    this.comfyuiSettings.set(device.id, settings);
+    return settings;
+  }
+
+  private comfyuiView(device: DemoDevice): ComfyuiDeviceView {
+    const spec = demoModule(COMFYUI_MODULE);
+    const details = spec === null ? {} : this.moduleDetails(device, spec);
+    const settings = this.comfyuiSettingsOf(device);
+    return {
+      ...this.moduleDeviceState(device, COMFYUI_MODULE),
+      device_id: device.id,
+      host: device.address,
+      version: String(details.version ?? ""),
+      details,
+      port: spec?.web?.port ?? 0,
+      torch_build: settings.torch_build,
+      torch_builds: COMFYUI_TORCH_BUILDS[device.platformOs] ?? [],
+      idle_unload: settings.idle_unload,
+      resources: {
+        gpus: device.isOnline ? this.machineMetrics(device).gpus : [],
+      },
+      models_dir:
+        COMFYUI_MODELS_DIRS[device.platformOs] ??
+        COMFYUI_MODELS_DIRS.linux ??
+        "",
+    };
+  }
+
+  private setComfyuiSettings(body: DemoBody): ComfyuiDeviceView {
+    const device = this.device(textField(body, "device_id"));
+    const settings = this.comfyuiSettingsOf(device);
+    const build = textField(body, "torch_build");
+    settings.isBuildChanged = build !== settings.torch_build;
+    settings.torch_build = build;
+    settings.idle_unload =
+      textField(body, "idle_unload") || settings.idle_unload;
+    this.publish("config", COMFYUI_MODULE);
+    return this.comfyuiView(device);
+  }
+
+  /** Installs a new build's PyTorch on a running ComfyUI; a new idle unload
+   * time restarts nothing. */
+  private applyComfyuiSettings(body: DemoBody): ApplyResult {
+    const device = this.device(textField(body, "device_id"));
+    const spec = demoModule(COMFYUI_MODULE);
+    const settings = this.comfyuiSettingsOf(device);
+    if (
+      spec !== null &&
+      settings.isBuildChanged &&
+      device.modules[COMFYUI_MODULE]?.state === "running"
+    ) {
+      this.runTask(device, spec, "queued", COMFYUI_BUILD_STEPS, "running");
+    }
+    settings.isBuildChanged = false;
+    return { is_applied: true, changes: [], failures: [] };
   }
 
   private setOllamaSettings(body: DemoBody): OllamaDeviceView {
