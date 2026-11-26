@@ -171,8 +171,8 @@ holding a script and nothing else, and the desktop entry
    through `pkexec`. A declined prompt opens nothing and says the service
    was not started.
 1. The person's own session opens the default browser on
-   `http://127.0.0.1:<http-port>/`, with the setup token while the box is
-   not set up.
+   `http://127.0.0.1:<http-port>/`, and on `http://localhost:<http-port>/`
+   on macOS, with the setup token while the box is not set up.
 
 The browser opens as the person who clicked, never as root, and everything
 the page then does goes through the service's own authentication.

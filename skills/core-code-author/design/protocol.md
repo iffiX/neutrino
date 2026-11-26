@@ -68,7 +68,12 @@ on ([client.md](client.md), "The Hubs page"), and the hub's app forwards
 ("The app forwards") and the agent's forwarder
 ([agent/module_template.md](agent/module_template.md), "The run") take each
 cookie whose name starts with `neutrino_session_` out of every request they
-pass on. A panel that cannot read its identity file names
+pass on. On macOS each of the panel's ports also listens on `[::1]`, and so
+does the browser wizard of `nhub setup`, and `nhub open` and setup open them
+at `localhost`, the host a macOS client opens the panel on and no app on. A
+`[::1]` another program holds keeps the panel from starting, as a held IPv4
+port does, and the wizard takes another port. A macOS client opens every app
+on `127.0.0.1`, and a browser tries `::1` first for `localhost`. A panel that cannot read its identity file names
 the cookie `neutrino_session_`. The login page reads `/api/hub/setup`,
 `/api/hub/auth` and `/api/hub/display` before a session exists, so those
 prefixes take no session dependency, and neither do
