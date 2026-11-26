@@ -53,6 +53,8 @@ from neutrino_hub.platforms.constants import PLATFORM_OS_WINDOWS
 from neutrino_hub.platforms.detect import hub_os, hub_platform, is_linux
 from neutrino_hub.utils.json_file import read_config, write_generated
 from neutrino_hub.web.constants import (
+    WEB_APP_FORWARD_PORT_MAX,
+    WEB_APP_FORWARD_PORT_MIN,
     WEB_DEFAULT_AGENT_LISTEN_PORT,
     WEB_DEFAULT_HTTPS_LISTEN_PORT,
     WEB_DEFAULT_LISTEN_PORT,
@@ -91,6 +93,7 @@ def firewall_exposure(
             settings.get(FIREWALL_SETTING_AGENT_PORT, WEB_DEFAULT_AGENT_LISTEN_PORT)
         ),
         is_direct=direct_agent_port() is not None,
+        app_forward_ports=(WEB_APP_FORWARD_PORT_MIN, WEB_APP_FORWARD_PORT_MAX),
     )
 
 

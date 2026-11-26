@@ -25,6 +25,7 @@ from neutrino_hub.modules.firewall.constants import (
     FIREWALL_PROTOCOL_TCP,
     FIREWALL_PROTOCOL_UDP,
     FIREWALL_PURPOSE_AGENT,
+    FIREWALL_PURPOSE_APP_FORWARD,
     FIREWALL_PURPOSE_DIRECT,
     FIREWALL_PURPOSE_DNS,
     FIREWALL_PURPOSE_LINK_SUFFIX,
@@ -46,17 +47,33 @@ from neutrino_hub.modules.router.interfaces import RouterNetworkConfig
 
 @dataclass(frozen=True)
 class FirewallPort:
-    """One port the firewall rules name.
+    """One port, or one range of ports, the firewall rules name.
 
     Attributes:
         purpose: What it serves, the end of a Windows rule's name.
         protocol: ``TCP`` or ``UDP``.
-        port: The local port.
+        port: The local port, the range's first.
+        last_port: The range's last port; 0 for a single port.
     """
 
     purpose: str
     protocol: str
     port: int
+    last_port: int = 0
+
+    def spelled(self, separator: str = "-") -> str:
+        """The port as a rule names it: the number, or the range's two ends.
+
+        Args:
+            separator: What stands between a range's two ends, ``-`` for
+                nftables, firewalld and Windows, ``:`` for pf.
+
+        Returns:
+            ``19000`` or ``19000-19099``.
+        """
+        if self.last_port and self.last_port != self.port:
+            return f"{self.port}{separator}{self.last_port}"
+        return str(self.port)
 
 
 @dataclass(frozen=True)
@@ -122,7 +139,7 @@ class FirewallPortRule:
     Attributes:
         name: ``neutrino_hub_<purpose>``.
         protocol: ``TCP`` or ``UDP``.
-        port: The local port.
+        port: The local port, or a range as ``19000-19099``.
         remote_addresses: The networks whose senders the rule allows; none
             allows every sender.
         interfaces: The interfaces the rule is scoped to; none scopes it to
@@ -131,7 +148,7 @@ class FirewallPortRule:
 
     name: str
     protocol: str
-    port: int
+    port: "int | str"
     remote_addresses: tuple = ()
     interfaces: tuple = ()
 
@@ -144,6 +161,7 @@ def render_exposure(
     panel_https_port: int,
     agent_port: int,
     is_direct: bool,
+    app_forward_ports: tuple = (),
 ) -> FirewallExposure:
     """Work out what the hub's firewall answers.
 
@@ -157,6 +175,8 @@ def render_exposure(
         panel_https_port: The panel's HTTPS port.
         agent_port: The agent port.
         is_direct: Whether Direct is on.
+        app_forward_ports: The app forwards' range, ``(first, last)``;
+            empty for none.
 
     Returns:
         The exposure. DNS is a hub port in ``router`` and ``side_gateway``.
@@ -170,6 +190,16 @@ def render_exposure(
         ),
         FirewallPort(FIREWALL_PURPOSE_AGENT, FIREWALL_PROTOCOL_TCP, agent_port),
     ]
+    if app_forward_ports:
+        first, last = app_forward_ports
+        hub_ports.append(
+            FirewallPort(
+                FIREWALL_PURPOSE_APP_FORWARD,
+                FIREWALL_PROTOCOL_TCP,
+                int(first),
+                last_port=int(last),
+            )
+        )
     if network.mode != ROUTER_MODE_SERVER:
         hub_ports += [
             FirewallPort(
@@ -307,7 +337,9 @@ def render_pf_anchor(exposure: FirewallExposure) -> str:
     ]
     for protocol in (FIREWALL_PROTOCOL_TCP, FIREWALL_PROTOCOL_UDP):
         numbers = [
-            port.port for port in exposure.hub_ports if port.protocol == protocol
+            port.spelled(":")
+            for port in exposure.hub_ports
+            if port.protocol == protocol
         ]
         if not numbers:
             continue
@@ -373,7 +405,7 @@ def render_firewalld_rules(
                     firewalld_rule(
                         family=segment.family,
                         source=network,
-                        port=port.port,
+                        port=port.spelled(),
                         protocol=port.protocol,
                     ),
                 )
@@ -417,12 +449,12 @@ def render_firewalld_setup_rules(port: int, *, zones: dict, default_zone: str) -
 
 
 def firewalld_rule(
-    *, port: int, protocol: str, family: str = "", source: str = ""
+    *, port: "int | str", protocol: str, family: str = "", source: str = ""
 ) -> str:
     """One rich rule of the hub's, as firewall-cmd prints it.
 
     Args:
-        port: The local port.
+        port: The local port, or a range as ``19000-19099``.
         protocol: ``TCP`` or ``UDP``.
         family: ``ipv4`` or ``ipv6``; empty for both.
         source: The sender's network; empty for every sender.
@@ -474,7 +506,7 @@ def _rule(
     return FirewallPortRule(
         name=f"{FIREWALL_RULE_PREFIX}{purpose}",
         protocol=port.protocol,
-        port=int(port.port),
+        port=port.spelled() if port.last_port else int(port.port),
         remote_addresses=remote_addresses,
         interfaces=interfaces,
     )
@@ -482,7 +514,7 @@ def _rule(
 
 def _port_list(ports: list) -> str:
     """Ports as pf names them: one bare, several in braces, each once."""
-    unique = list(dict.fromkeys(int(port) for port in ports))
+    unique = list(dict.fromkeys(str(port) for port in ports))
     if len(unique) == 1:
-        return str(unique[0])
-    return "{ " + ", ".join(str(port) for port in unique) + " }"
+        return unique[0]
+    return "{ " + ", ".join(unique) + " }"

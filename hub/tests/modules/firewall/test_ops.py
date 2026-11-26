@@ -120,6 +120,8 @@ def test_windows_opens_the_ports_the_settings_name(on_windows, recorder, monkeyp
         ("neutrino_hub_panel_https_link", 9443),
         ("neutrino_hub_agent", 8443),
         ("neutrino_hub_agent_link", 8443),
+        ("neutrino_hub_app_forward", "19000-19099"),
+        ("neutrino_hub_app_forward_link", "19000-19099"),
         ("neutrino_hub_netbird_udp", 51820),
     ]
 
@@ -172,7 +174,8 @@ def test_macos_passes_the_hub_ports_from_the_segments_and_blocks_the_rest(
     )
     assert lines[1] == "table <neutrino_hub_ipv6> const { 2001:db8:7::/64 }"
     assert lines[-1] == (
-        "block drop in quick proto tcp from any to any port { 8080, 443, 8443 }"
+        "block drop in quick proto tcp from any to any port "
+        "{ 8080, 443, 8443, 19000:19099 }"
     )
 
 
@@ -348,12 +351,12 @@ def test_firewalld_running_gets_the_hub_ports_from_the_exposed_segment(firewalld
     notes = ops.converge_firewalld(linux_exposure())
 
     rules = firewalld.zones["public"]["runtime"]
-    assert notes == ["firewalld zone public: 3 rules added, 0 removed"]
+    assert notes == ["firewalld zone public: 4 rules added, 0 removed"]
     assert rules == [
         firewalld_rule(
             family="ipv4", source="192.168.1.0/24", port=port, protocol="TCP"
         )
-        for port in (443, 8080, 8443)
+        for port in ("19000-19099", 443, 8080, 8443)
     ]
     assert firewalld.zones["public"]["permanent"] == rules
     assert json.loads(ops.FIREWALL_FIREWALLD_RECORD_PATH.read_text()) == {
@@ -393,7 +396,7 @@ def test_a_reset_on_linux_takes_the_hubs_rules_out_of_firewalld(firewalld):
 
     notes = ops.hand_back_firewall()
 
-    assert notes == ["firewalld zone public: 0 rules added, 3 removed"]
+    assert notes == ["firewalld zone public: 0 rules added, 4 removed"]
     assert firewalld.zones["public"]["runtime"] == []
     assert firewalld.zones["public"]["permanent"] == []
     assert not ops.FIREWALL_FIREWALLD_RECORD_PATH.exists()
@@ -450,7 +453,7 @@ def test_the_first_pass_after_setup_takes_the_wizards_port_out(firewalld):
         firewalld_rule(
             family="ipv4", source="192.168.1.0/24", port=port, protocol="TCP"
         )
-        for port in (443, 8080, 8443)
+        for port in ("19000-19099", 443, 8080, 8443)
     ]
 
 

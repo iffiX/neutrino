@@ -296,3 +296,40 @@ def test_the_wizards_port_is_one_firewalld_rule_in_every_zone_and_the_default():
 
     rule = 'rule priority="32123" port port="8080" protocol="tcp" accept'
     assert rules == {"home": [rule], "public": [rule], "trusted": [rule]}
+
+
+# --- The app forwards' range ---
+
+
+def test_the_app_forwards_range_is_one_hub_port_in_each_systems_form():
+    network = server(EN0_OPEN, EN1_CLOSED)
+    exposure = render_exposure(
+        network,
+        held=HELD,
+        panel_http_port=80,
+        panel_https_port=443,
+        agent_port=8443,
+        is_direct=False,
+        app_forward_ports=(19000, 19099),
+    )
+
+    assert exposure.hub_ports[-1] == FirewallPort(
+        "app_forward", "TCP", 19000, last_port=19099
+    )
+    assert FirewallPortRule(
+        "neutrino_hub_app_forward",
+        "TCP",
+        "19000-19099",
+        ("192.168.1.0/24", "2001:db8:1::/64"),
+    ) in render_port_rules(exposure)
+    assert (
+        "block drop in quick proto tcp from any to any port "
+        "{ 80, 443, 8443, 19000:19099 }"
+    ) in render_pf_anchor(exposure).splitlines()
+    rules = render_firewalld_rules(exposure, zones={}, default_zone="public")
+    assert (
+        firewalld_rule(
+            family="ipv4", source="192.168.1.0/24", port="19000-19099", protocol="TCP"
+        )
+        in rules["public"]
+    )

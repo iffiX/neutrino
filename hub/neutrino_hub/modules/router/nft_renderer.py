@@ -310,7 +310,7 @@ class RouterNftRenderer:
             )
         for protocol in (FIREWALL_PROTOCOL_TCP, FIREWALL_PROTOCOL_UDP):
             ports = [
-                str(port.port)
+                port.spelled()
                 for port in exposure.hub_ports
                 if port.protocol == protocol
             ]

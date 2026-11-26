@@ -70,6 +70,7 @@ def render(
     is_direct=False,
     overlay_devices=None,
     engine_cgroups=None,
+    app_forward_ports=(),
     **rest,
 ) -> str:
     """The whole ruleset for these interfaces, with the exposure they give."""
@@ -90,6 +91,7 @@ def render(
             panel_https_port=PANEL_HTTPS_PORT,
             agent_port=AGENT_PORT,
             is_direct=is_direct,
+            app_forward_ports=app_forward_ports,
         ),
         overlay_devices=overlay_devices,
         engine_cgroups=engine_cgroups,
@@ -238,6 +240,20 @@ def test_a_closed_segment_drops_the_hub_ports_and_leaves_every_other_port():
         "ct state new tcp dport { 8080, 8444, 8443, 53 } drop",
         "ct state new udp dport { 53 } drop",
     ]
+
+
+def test_the_app_forwards_range_is_dropped_with_the_hub_ports():
+    chain = input_chain(
+        render(
+            wan_entry("enp2s0"),
+            lan_entry("enp1s0", address="192.168.100.1"),
+            app_forward_ports=(19000, 19099),
+        )
+    )
+
+    assert "ct state new tcp dport { 8080, 8444, 8443, 19000-19099, 53 } drop" in (
+        chain
+    )
 
 
 def test_an_exposed_uplink_segment_answers_the_senders_in_its_network_alone():

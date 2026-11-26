@@ -11,6 +11,7 @@ FIREWALL_RULE_PREFIX = "neutrino_hub_"
 FIREWALL_PURPOSE_PANEL_HTTP = "panel_http"
 FIREWALL_PURPOSE_PANEL_HTTPS = "panel_https"
 FIREWALL_PURPOSE_AGENT = "agent"
+FIREWALL_PURPOSE_APP_FORWARD = "app_forward"
 FIREWALL_PURPOSE_DNS = "dns_{protocol}"
 FIREWALL_PURPOSE_OVERLAY = "{provider}_{protocol}"
 # The Windows rule that opens the agent port to every sender on the enabled
