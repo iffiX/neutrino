@@ -402,6 +402,9 @@ walk theirs. A new code and its wording are one change.
 | `ollama_pull_failed` | `{name, detail}` | a pull's `code` in `OllamaDeviceView.pulls`, with Ollama's own words | added |
 | `model_not_served` | `{model}` | 400 of `ai/gateway/set`, a `default_model` the gateway does not serve ([hub_components/ai.md](hub_components/ai.md), "The default model"), and of `ai/context/set`, a length set for a name that is no cloud name the gateway serves | added |
 | `context_length_invalid` | `{model, context_length, min, max}` | 400 of `ai/context/set`, a length outside 4096 to 10000000 ([hub_components/ai.md](hub_components/ai.md), "Each model's context length") | added |
+| `quota_read_unsupported` | `{provider}` | 400 of `ai/gateway/account/quota/scan`, a login with no quota read, xAI ([hub_components/ai.md](hub_components/ai.md), "Quota on an account row") | added |
+| `quota_read_failed` | `{status}` | 502 of `ai/gateway/account/quota/scan`, the vendor's answer other than 2xx, `status` 0 for a request that reached no vendor | added |
+| `quota_read_unparsed` | none | 502 of `ai/gateway/account/quota/scan`, a vendor's answer with no window that parses | added |
 | `key_passphrase_not_stored` | none | 400 of `device/add` and `device/agent/install`, an encrypted SSH key the hub stores with no passphrase: a key file named in `config/devices` or an older vault entry. The Credentials page keeps `key_passphrase_needed` | added |
 | `hub_untrusted` | none | a client's or an agent's own word for a message 2 that opens under no psk | kept, now of the handshake |
 | `client_not_running` | none | `nclient`'s own, any command but `gui` while no client runs | added |
@@ -565,8 +568,11 @@ moved. Its steps and their order are [network.md](hub_components/network.md),
 | `GET /api/hub/ai/gateway/journal` | | its journal |
 | `POST /api/hub/ai/gateway/key/add` | a key's name | |
 | `POST /api/hub/ai/gateway/key/remove` | `{key_id}` | |
-| `GET /api/hub/ai/gateway/account` | | the signed-in accounts |
-| `POST /api/hub/ai/gateway/account/remove` | `{name}` | |
+| `GET /api/hub/ai/gateway/account` | | the signed-in accounts and the login kinds, `CliproxyApiAccountsView`; each account `{name, provider, label, email, account_type, status, status_message, is_disabled, is_unavailable, next_retry_after, plan, subscription_ends_at, has_quota_read, windows, failed_count, success_count, created_at, updated_at}` ([hub_components/ai.md](hub_components/ai.md), "Quota on an account row"): `next_retry_after` the time the gateway serves the account again, empty while it is not cooling; `plan` and `subscription_ends_at` a Codex login's, empty for the rest; `has_quota_read` true for a Claude, Codex, Kimi or Antigravity login; `windows` each `{name, used_share, resets_at, seen_at, origin}`, `origin` `signal` or `read`, the later of the two for a window both name. The read sends no request to a vendor |
+| `POST /api/hub/ai/gateway/account/remove` | `{name}` | removes the token file and the account's stored quota read |
+| `POST /api/hub/ai/gateway/account/quota/scan` | `{name}` | reads the vendor's usage endpoint for the account through the gateway's `api-call`, stores the windows in `cliproxyapi/account_quota.json` under the state root, and returns `CliproxyApiAccountsView`; 404 `unknown_account`, 400 `quota_read_unsupported {provider}` for a login with no read, 502 `quota_read_failed {status}` and `quota_read_unparsed`, each keeping the stored read, and 502 `gateway_unreachable` |
+| `POST /api/hub/ai/gateway/account/disable` | `{name}` | pauses the account: `PATCH /v0/management/auth-files/status {name, disabled: true}`; `CliproxyApiAccountsView`; 404 `unknown_account`, 502 `gateway_unreachable` |
+| `POST /api/hub/ai/gateway/account/enable` | `{name}` | the same with `disabled: false` |
 | `POST /api/hub/ai/gateway/account_login/start` | the provider | starts a login flow; returns its `state` |
 | `GET /api/hub/ai/gateway/account_login` | `?state=` | where that flow is |
 | `POST /api/hub/ai/gateway/account_login/code/set` | `{state, code}` | the code the provider showed |

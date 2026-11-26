@@ -343,8 +343,9 @@ link's `app.title`.
 ## The AI page's words
 
 The **Access** panel, the **Context length** panel, the **Gateway port**
-field, the hints of the **Providers** and **Accounts** panels and the Ollama
-rows of the **Providers** panel of the AI page
+field, the hints of the **Providers** and **Accounts** panels, the account
+rows' status, quota and buttons, and the Ollama rows of the **Providers**
+panel of the AI page
 ([hub_components/ai.md](hub_components/ai.md), "What each panel surface
 owns"). `ui.ai.endpoint`'s line shows `http://127.0.0.1:<port>`, since the
 gateway listens on the hub's loopback alone.
@@ -353,6 +354,18 @@ gateway listens on the hub's loopback alone.
 | --- | --- | --- |
 | `ui.ai.providers_hint`, the Providers panel's line under its title ([hub_components/ai.md](hub_components/ai.md), "How a request routes") | Accounts serve first, then these providers from the top while the accounts are limited. | 先用账号；账号受限时，从上到下用这些提供方。 |
 | `ui.ai.accounts_hint`, the Accounts panel's line under its title | Accounts serve before the providers' API keys. | 账号先于提供方的 API 密钥使用。 |
+| `state.paused`, an account's status while it is paused ([ui_behavior.md](ui_behavior.md), "The Accounts panel of the AI page") | paused | 已暂停 |
+| `ui.ai.limited_until`, an account's status while the gateway cools it, `{time}` the clock time it serves again, with the date when that is not today | limited until {time} | 受限至 {time} |
+| `ui.ai.plan`, a Codex account's plan as the vendor names it | {plan} plan | {plan} 套餐 |
+| `ui.ai.plan_until`, the end of that subscription | until {date} | {date} 到期 |
+| `ui.ai.quota_5h`, `ui.ai.quota_7d`, `ui.ai.quota_month`, the words under an account's rings | 5 h, 7 days, Month | 5 小时、7 天、本月 |
+| `ui.ai.quota_resets`, under a ring | resets {time} | {time} 重置 |
+| `ui.ai.quota_updated`, after the rings, `{ago}` the newest window's time | updated {ago} | 更新于 {ago} |
+| `ui.ai.refresh`, an account row's read of its quota | Refresh | 刷新 |
+| `ui.ai.pause`, `ui.ai.resume`, an account row's pause and its undo | Pause, Resume | 暂停、恢复 |
+| `code.quota_read_failed`, under a row whose **Refresh** failed | The quota read failed with {status}. | 额度读取失败：{status}。 |
+| `code.quota_read_unparsed` | The vendor's answer held no quota window. | 服务商的回复里没有额度窗口。 |
+| `code.quota_read_unsupported` | {provider} accounts have no quota read. | {provider} 账号不能读取额度。 |
 | `ui.ai.access_hint` | For a tool on the hub's machine, or one using an SSH tunnel to it. | 给中枢所在系统上的工具用，或经 SSH 隧道连到它的工具用。 |
 | `ui.ai.keys_empty_hint` | Generate one for a tool on the hub's machine. | 给中枢所在系统上的工具生成一个。 |
 | `ui.ai.key_default_name` | tool | 工具 |

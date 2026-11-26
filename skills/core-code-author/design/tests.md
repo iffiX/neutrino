@@ -271,6 +271,8 @@ the file its source mirrors:
 | File | What its tests pin |
 | --- | --- |
 | `modules/cliproxyapi/test_renderer.py` | `priority` -1, -2 and on down on the entries the renderer writes, in the list's order, on each of the four blocks; a provider turned off or with no key taking no number and moving the next one up; no `priority` on a generated Ollama entry; no `routing` block. |
+| `modules/cliproxyapi/test_accounts.py` | From recorded `auth-files` entries: Claude's and Codex's windows from `quota.signals` with `quota.observed_at`, a Codex window named by its minutes, `next_retry_after` kept only while `unavailable`, a Codex plan and end from a recorded `id_token`; from recorded vendor answers, each of the four reads' windows, a share from a percent and from a ratio, a field that does not parse dropping its window, an answer with none `quota_read_unparsed`; the later of a signal and a read winning. |
+| `web/routers/hub/test_ai_gateway.py` | `quota/scan` against a fake gateway: the `api-call` body with the account's `auth_index`, `$TOKEN$` and each login's URL and headers, the read stored and removed with the account, `quota_read_unsupported` for xAI, `quota_read_failed` keeping the stored read; `disable` and `enable` sending `PATCH auth-files/status` with `disabled` true and false. |
 
 ## Editions
 

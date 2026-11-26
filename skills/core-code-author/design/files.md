@@ -175,7 +175,10 @@ overrides both, which is what makes a second instance testable. Details of the f
         generated/          rendered nftables, dnsmasq, hostapd, wpa_supplicant,
                             dhcpcd, smb.conf, xray and gateway configs
         geodata/            geoip.dat and geosite.dat
-        cliproxyapi/        the AI gateway's accounts and tokens
+        cliproxyapi/        the AI gateway's accounts and tokens, and what the
+                            hub read from it: its usage, its catalog, and
+                            account_quota.json, each account's last quota
+                            read from its vendor
         netbird/            the hub's own NetBird configuration and profile
         agent_module_cache/ the files a module's installer fetched for
                             managed machines, each named by its digest

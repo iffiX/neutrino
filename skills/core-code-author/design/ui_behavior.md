@@ -1536,6 +1536,30 @@ gateway reports the flow `complete` or `failed`.
 | When the hub's session for the flow ends before the gateway reports either, the route returns `login_expired`, and the dialog stays open on the screen it was showing, with the code's words under it. It never resets to its first screen. | A person who sees the first screen again cannot tell a timeout from a click that did nothing. |
 | A flow that ends `failed` shows the gateway's own reason, the view's `message`, under the code's words when the gateway sent one. | The gateway's reason names the provider's refusal, which the code alone cannot. |
 
+## The Accounts panel of the AI page
+
+The **Accounts** panel lists one row per signed-in account, read with
+`GET /api/hub/ai/gateway/account` every 15 seconds while the page is open.
+A row's line holds the service, the label or email, the ok and failed
+counts, the status, and its buttons; under the line come the account's
+windows ([hub_components/ai.md](hub_components/ai.md), "Quota on an account
+row").
+
+| Part | Idiom |
+| --- | --- |
+| The status | a `StatusDot` with its word: `ok` `state.serving`; `warn` `ui.ai.limited_until {time}` while the view's `is_unavailable` is true and its `next_retry_after` is set; `error` `state.unavailable` while it is unavailable with no time; `idle` `state.paused` while `is_disabled` is true. The gateway's `status_message` is the dot's title |
+| The plan | on a Codex row, `ui.ai.plan {plan}` and `ui.ai.plan_until {date}` after the label, faint, each while the view names it |
+| The windows | one ring gauge per window, 30 px, the used percent inside and under it the window's word, `ui.ai.quota_5h`, `ui.ai.quota_7d`, `ui.ai.quota_month`, or an Antigravity model's name, then `ui.ai.quota_resets {time}` faint; the ring `ok` under 80 percent, `warn` from 80 and `error` at 100, as the Agents page's rings take tones. After the rings, `ui.ai.quota_updated {ago}` faint with the time the newest window was seen |
+| **Refresh** | `ui.ai.refresh`, a ghost `button--small` on a Claude, Codex, Kimi or Antigravity row, before **Pause**; busy while its read runs, then the row redrawn from the route's answer |
+| **Pause**, **Resume** | `ui.ai.pause` while the account serves and `ui.ai.resume` while it is paused, a ghost `button--small` before **Delete** |
+
+| Rule | Reason |
+| --- | --- |
+| **Refresh**, **Pause** and **Resume** write at once, with no confirmation and no apply bar. A refusal shows the code's words under the row, and the button stays live. | Signing in is never staged ([architecture.md](architecture.md)), and a pause is undone by **Resume**. |
+| The 15-second read sends no request to a vendor. Only **Refresh** does. | The windows of a Claude or Codex row follow the account's own requests through the gateway's signals, and the vendors' endpoints are read at a press alone ([hub_components/ai.md](hub_components/ai.md), "Quota on an account row"). |
+| A row with no window draws no rings and no updated line. | A Kimi or Antigravity row has windows only after its first **Refresh**, and an xAI row has none. |
+| Under 640 px the rings go under the label, the buttons keep the end of the line. | Five parts on one line leave a phone's label a few characters wide. |
+
 ## The Context length panel of the AI page
 
 The **Context length** panel (`ui.ai.context_title`) of the AI page comes

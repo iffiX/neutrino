@@ -81,7 +81,7 @@ Its usage is a row of its own under the device, the module and the account.
    request.** After a 403, 408, 429 or 5xx answer the gateway tries the
    next candidate inside the same request, up to 3 more rounds, and the
    failed credential sits out its cooldown. An account row shows it as
-   unavailable.
+   limited ("Quota on an account row").
 
 The renderer writes the tiers:
 
@@ -125,6 +125,53 @@ requests, and the client got ten 200s in every run.
 | A -1 answering 500, B -2 | 1 refused | 10 | |
 | C at 0 serving the name too, A -1, B -2 | 0 | 0 | 10 |
 | C at 0 answering 429, after A's cooldown of the 500 ended | 10 | 0 | 1 refused |
+
+## Quota on an account row
+
+An account row of the **Accounts** panel shows how much of each of the
+account's limit windows is used, when each resets, and, while the gateway
+cools the account, until when it is limited. Every number comes from the
+gateway: what it recorded from the vendor's answers, and what a **Refresh**
+reads from the vendor through it.
+
+| What the row shows | Where it comes from | Logins |
+| --- | --- | --- |
+| each window's used share, its reset time and when it was seen | `quota.signals` of the account's entry in `GET /v0/management/auth-files`, seen at `quota.observed_at`, from the read the usage collector already makes every 10 seconds | Claude and Codex |
+| limited until | the entry's `next_retry_after`, while its `unavailable` is true | every login |
+| the plan and the end of the subscription | the claims of the entry's `id_token`, `plan_type` and `chatgpt_subscription_active_until` | Codex |
+| each window as the vendor reads it now | the vendor's usage endpoint, read through `POST /v0/management/api-call` at a press of **Refresh** | Claude, Codex, Kimi and Antigravity |
+| paused | the entry's `disabled`, written by **Pause** and **Resume** | every login |
+
+A window has a name, a used share from 0 to 1, a reset time and the time it
+was seen. The signals give these windows:
+
+| Login | Headers the gateway keeps | Windows |
+| --- | --- | --- |
+| Claude | `anthropic-ratelimit-unified-5h-utilization` and `-5h-reset`, `-7d-utilization` and `-7d-reset` | `5h`, `7d` |
+| Codex | `x-codex-primary-used-percent`, `-window-minutes` and `-reset-at`, and the same of `x-codex-secondary-` | one per group, named by its window: 300 minutes `5h`, 10080 `7d`, any other its minutes |
+
+A **Refresh** sends one request:
+
+| Login | Request | Windows |
+| --- | --- | --- |
+| Claude | `GET https://api.anthropic.com/api/oauth/usage`, `anthropic-beta: oauth-2025-04-20` | `five_hour` as `5h` and `seven_day` as `7d`, each `utilization` and `resets_at` |
+| Codex | `GET https://chatgpt.com/backend-api/wham/usage`, `ChatGPT-Account-Id` the account's id from its `id_token` | `rate_limit.primary_window` and `.secondary_window`, each `used_percent` and `reset_at`, named by `limit_window_seconds` as the signals' are |
+| Kimi | `GET https://api.kimi.com/coding/v1/usages` | `usages.limit_5h` as `5h`, `.limit_7d` as `7d` and `.limit_month_total` as `month`, each `used_ratio` and `reset_time` |
+| Antigravity | `POST https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels` | one per model, named by the model: 1 less its `quotaInfo.remainingFraction`, and `resetTime` |
+
+| Rule | Reason |
+| --- | --- |
+| Every **Refresh** request names the account's `auth_index` and carries `Authorization: Bearer $TOKEN$`. The gateway puts the account's token in its place and sends the request through the account's own proxy. | The hub never holds a login's token (`internal/api/handlers/management/api_tools.go`), and the vendor sees the request come the way the account's traffic comes. |
+| The hub reads the vendors only at a press of **Refresh**, never on a timer. The signals need no read of their own. | The four endpoints are undocumented, and Anthropic answers `oauth/usage` with 429 when it is read every 10 to 30 minutes (claude-code issue 31637). None of the four reads spends quota, and the signals come with every answer the account already gets. |
+| An xAI login has no **Refresh**, and the route rejects one with `quota_read_unsupported`. | Its credits call is gRPC-web, and it was reported failing (CodexBar issue 3336). |
+| A vendor answer other than 2xx fails the read with `quota_read_failed {status}`, 0 for a request that reached no vendor, and keeps the last read. | A 429 says the vendor limits the reads themselves, and the last read is still the newest the hub has. |
+| A read keeps the windows whose fields parse and drops the rest. An answer with no window that parses fails with `quota_read_unparsed` and keeps the last read. | The vendors change these fields without notice (CodexBar issue 2737), and a window shown from a field that moved would show a wrong number. |
+| Each source's number becomes a share from 0 to 1: a percent is divided by 100, a ratio or a fraction is taken as it is. | One scale lets every login's windows be drawn the same. |
+| The hub keeps each account's last read in `cliproxyapi/account_quota.json` under the state root, `{accounts: {<token file>: {read_at, windows: [{name, used_share, resets_at}]}}}`, and removes an account's entry with the account. | A read is what the vendor said, and no person's decision, so it stays out of `config/`. A restarted panel shows the last read. |
+| A window named by both a signal and a read shows the one seen later. | Both describe the same window, and the later is the closer to now. |
+| A window shows the time it was seen. | A signal is as fresh as the account's last request, and an account nobody used for a day shows a day-old share. |
+| **Pause** writes `PATCH /v0/management/auth-files/status {name, disabled: true}`, and **Resume** the same with `false`. The gateway stops serving the account at once, and the token file keeps it paused across restarts. | Deleting was the only way to stop an account, and a deleted account needs a new sign-in to come back. A paused account keeps its token, so **Resume** brings it back. |
+| A paused account's names leave the served list when no other credential serves them, as a signed-out account's do ("The served list"). | The gateway serves none of them. |
 
 ## Names are the gateway's to define
 
@@ -416,7 +463,7 @@ the new one.
 | --- | --- |
 | Activity | Status dots, today's counters, the probe line (`/v1/models` as served), journal, and the chip-switched usage tables |
 | Providers | API-key provider records, their aliases, their serving order, enable/disable — staged behind the panel's apply, with the gateway-behind signal; and a read-only row for each provider generated from a machine's Ollama ("Every machine's Ollama") |
-| Accounts | Subscription sign-in (redirect flows finish by pasting the dead callback page's address; device flows show a pairing code; a timeout keeps the dialog open, [../ui_behavior.md](../ui_behavior.md), "Account sign-in on the AI page"), status, revocation — immediate, never staged |
+| Accounts | Subscription sign-in (redirect flows finish by pasting the dead callback page's address; device flows show a pairing code; a timeout keeps the dialog open, [../ui_behavior.md](../ui_behavior.md), "Account sign-in on the AI page"), status, each window's quota and the time an account is limited until ("Quota on an account row"), **Refresh**, **Pause** and **Resume**, revocation; each immediate, never staged |
 | Context length | The length every served name gives the AI tools ("Each model's context length"): a cloud name's set length, staged behind the panel's own apply; an Ollama name's computed length, read-only, with each machine's setting and the model's trained length |
 | Access | Keys for a tool on the hub's machine or one using an SSH tunnel to it, plus the endpoint line, which names the gateway on the hub's loopback, and the default model, staged behind the panel's apply while a key's generate and revoke write at once; a managed device is keyed when the first of its accounts turns its AI tools switch on, on the machine page, and its key reaches it over the agent channel. The hub holds a key of its own beside them, minted on the first apply and shown nowhere: it is what the hub probes `/v1/models` with, and it keeps the gateway's key list from ever being empty, since CLIProxyAPI with no key configured asks nobody for one |
 | Gateway port | `listen_port`, staged behind its own apply |
