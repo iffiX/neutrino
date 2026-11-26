@@ -80,7 +80,7 @@ def extract_archive(path: str, kind: str, directory: str, *, member: str = "") -
     if kind == AGENT_ARTIFACT_KIND_TAR_GZ:
         with tarfile.open(path, "r:*") as archive:
             if hasattr(tarfile, "data_filter"):
-                archive.extractall(directory, filter="data")
+                archive.extractall(directory, filter=_data_member)
                 return
             for member in archive.getmembers():
                 _check_member(member.name, directory)
@@ -375,6 +375,23 @@ def _keep_zip_modes(archive: zipfile.ZipFile, directory: str) -> None:
         mode = (info.external_attr >> 16) & 0o777
         if mode:
             os.chmod(os.path.join(directory, info.filename), mode)
+
+
+def _data_member(member, path: str):
+    """``tarfile``'s data filter, a relative link's target judged from the link's own folder.
+
+    The data filter of some Python releases, Ubuntu 22.04's 3.10.12 among
+    them, judges a relative link's target from the archive's top.
+
+    Raises:
+        ValueError: For a link whose target lands outside the directory.
+        tarfile.FilterError: For a member the data filter refuses.
+    """
+    if not member.issym() or os.path.isabs(member.linkname):
+        return tarfile.data_filter(member, path)
+    _check_member(os.path.join(os.path.dirname(member.name), member.linkname), path)
+    filtered = tarfile.data_filter(member.replace(linkname=""), path)
+    return filtered.replace(linkname=member.linkname) if filtered is not None else None
 
 
 def _check_member(name: str, directory: str) -> None:

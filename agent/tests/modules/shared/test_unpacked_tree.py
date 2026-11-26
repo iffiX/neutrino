@@ -384,3 +384,27 @@ def test_a_zstd_tar_member_outside_is_refused(tmp_path, monkeypatch):
     with pytest.raises((ValueError, tarfile.TarError)):
         extract_archive(str(plain), "tar_zst", str(tmp_path / "out"))
     assert not (tmp_path / "escape").exists()
+
+
+def _linked_tarball(path, linkname):
+    with tarfile.open(path, "w:gz") as archive:
+        target = tarfile.TarInfo("python/share/terminfo/a/adm1178")
+        target.size = 3
+        archive.addfile(target, io.BytesIO(b"adm"))
+        link = tarfile.TarInfo("python/share/terminfo/1/1178")
+        link.type = tarfile.SYMTYPE
+        link.linkname = linkname
+        archive.addfile(link)
+    return str(path)
+
+
+def test_a_relative_link_is_judged_from_its_own_folder(tmp_path):
+    inside = _linked_tarball(tmp_path / "inside.tar.gz", "../a/adm1178")
+    unpack_into(inside, "tar_gz", str(tmp_path / "python"))
+    link = tmp_path / "python" / "share" / "terminfo" / "1" / "1178"
+    assert os.readlink(link) == "../a/adm1178"
+    assert link.read_bytes() == b"adm"
+    unpacked_tree.remove_tree(str(tmp_path / "python"))
+    outside = _linked_tarball(tmp_path / "outside.tar.gz", "../../../../../etc/passwd")
+    with pytest.raises((ValueError, tarfile.TarError)):
+        unpack_into(outside, "tar_gz", str(tmp_path / "other"))
