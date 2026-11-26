@@ -185,7 +185,7 @@ context length: the smaller of the model's setting and its trained length,
 which the hub reads with `POST /api/show`, the setting being the `num_ctx`
 its Modelfile sets and this tab's `context_length` while it sets none, and
 the smallest over every machine whose Ollama holds the model while the
-module is installed, online or not. The AI page's **Context length**
+module is installed, online or not. The AI page's **Models**
 panel shows the length, each machine's setting and the trained length, and
 links each machine's name to this tab
 ([../../hub_components/ai.md](../../hub_components/ai.md), "Each model's

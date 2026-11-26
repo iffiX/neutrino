@@ -355,9 +355,9 @@ stored providers.
 
 ### A cloud name's length
 
-A cloud name's length is the one a person set on the **Context length**
-panel of the AI page ([../ui_behavior.md](../ui_behavior.md), "The Context
-length panel of the AI page"), and otherwise its default. The default comes
+A cloud name's length is the one a person set on the **Models** panel of
+the AI page ([../ui_behavior.md](../ui_behavior.md), "The Models panel of
+the AI page"), and otherwise its default. The default comes
 from the name's sources: each signed-in account and each stored provider
 turned on with a key that serves the name.
 
@@ -503,7 +503,7 @@ the new one.
 | The hub computes the lengths again at each change of what they come from: the served list, the stored catalog read, a stored provider, `config/ai/context_lengths.json`, a machine's Ollama setting, a generated provider, a read of `/api/show`, a model leaving a machine's `/api/tags`, an Ollama module's **Uninstall**, a machine's removal, and the table at the panel's start. When a length changed, it sends its state to every online machine and client whose state changes, as at a new default model, and publishes `ai_usage`. | The lengths are a reader of the served list like the default model, and nothing is switched or written while no length a tool or an app uses changed. |
 | A managed machine's `ai_tools` section has the lengths of the models its accounts use; a client, Hermes WebUI and SiYuan have those of every served name; AstrBot has its default model's. | An account's models are known to the hub. A client picks its models in its own **Configure** dialog, and Hermes WebUI and SiYuan list every served name in their own pickers. AstrBot's agent provider names the default model alone. |
 | The lengths in the `ai_tools` section, in the `ai` entry and in the three modules' configurations are added fields and keep `PROTOCOL`. An agent or a client that predates them writes no length. | A peer reads tolerantly and ignores a field it does not know ([../protocol.md](../protocol.md), "Versioning"). |
-| `GET /api/hub/ai/context` returns every length with where it comes from, and `POST /api/hub/ai/context/set {lengths}` writes the lengths a person set, a null taking a name back to its default ([../protocol.md](../protocol.md), "`/api/hub/ai`"). The write restarts nothing. | The gateway serves every name the same with any length. What changes is what the tools and apps are sent. |
+| `GET /api/hub/ai/model` returns every length with where it comes from, and every cloud name's price, and `POST /api/hub/ai/model/set {lengths, prices}` writes the lengths and prices a person set, a null taking a name back to its default ([../protocol.md](../protocol.md), "`/api/hub/ai`"). The write restarts nothing. | The gateway serves every name the same with any length and any price. What changes is what the tools and apps are sent and what the next record costs. |
 
 ## What each panel surface owns
 
@@ -512,7 +512,7 @@ the new one.
 | Activity | Status dots, today's counters, the probe line (`/v1/models` as served), journal, and the chip-switched usage tables |
 | Providers | API-key provider records, their aliases, their serving order, enable/disable — staged behind the panel's apply, with the gateway-behind signal; and a read-only row for each provider generated from a machine's Ollama ("Every machine's Ollama") |
 | Accounts | Subscription sign-in (redirect flows finish by pasting the dead callback page's address; device flows show a pairing code; a timeout keeps the dialog open, [../ui_behavior.md](../ui_behavior.md), "Account sign-in on the AI page"), status, each window's quota and the time an account is limited until ("Quota on an account row"), **Refresh**, **Pause** and **Resume**, revocation; each immediate, never staged |
-| Context length | The length every served name gives the AI tools ("Each model's context length"): a cloud name's set length, staged behind the panel's own apply; an Ollama name's computed length, read-only, with each machine's setting and the model's trained length |
+| Models | The length every served name gives the AI tools ("Each model's context length") and the price each cloud name costs ("A price a person sets"): a cloud name's set length and its set input and output price, staged behind the panel's own apply; an Ollama name's computed length, read-only, with each machine's setting and the model's trained length, and no price |
 | Access | Keys for a tool on the hub's machine or one using an SSH tunnel to it, plus the endpoint line, which names the gateway on the hub's loopback, and the default model, staged behind the panel's apply while a key's generate and revoke write at once; a managed device is keyed when the first of its accounts turns its AI tools switch on, on the machine page, and its key reaches it over the agent channel. The hub holds a key of its own beside them, minted on the first apply and shown nowhere: it is what the hub probes `/v1/models` with, and it keeps the gateway's key list from ever being empty, since CLIProxyAPI with no key configured asks nobody for one |
 | Gateway port | `listen_port`, staged behind its own apply |
 
@@ -744,6 +744,20 @@ A record's price is found from its upstream:
 | A cache read or cache write price models.dev does not give prices those tokens at the input price. | A vendor that names no cache price bills those tokens as input. |
 | A record with no price found has no cost and counts in `unpriced_requests`; the panel shows no price for it, never 0. | A 0 reads as free, and a `custom` relay or a model newer than the copy has a price nobody wrote down. |
 | A generated Ollama provider's record has no price, no cost and no count in `unpriced_requests`. | A machine's Ollama costs nothing per token, and a "no price" would read as a gap. |
+
+### A price a person sets
+
+The **Models** panel shows each cloud name's input and output price beside
+its length, and a person can set both, in USD or in CNY
+([../ui_behavior.md](../ui_behavior.md), "The Models panel of the AI page").
+
+| Rule | Reason |
+| --- | --- |
+| A cloud name's default price is the models.dev price of its first source that has one, in the serving order: its accounts, then its stored providers in the list's order ("How a request routes"). Its currency is USD. A name no source prices has no default. | The first source serves the name's requests while it is not limited, so its price is the one most requests pay. A record is priced by its own upstream all the same ("Prices"). |
+| A set price is `{input, output, currency}`: two numbers per million tokens from 0 to 10000, each with at most 6 decimals, and `currency` `USD` or `CNY`. | Both numbers are what a vendor's page shows first. The dearest price models.dev listed on 2026-11-26 was 180 USD a million output tokens, OpenRouter's `openai/gpt-5.4-pro`, so 10000 refuses a price typed with two digits too many; 6 decimals reach a millionth of the currency a million tokens, far below a cent. |
+| The hub keeps the set prices in `config/ai/prices.json`, `{prices: {<name>: {input, output, currency}}}`, by served name, beside `context_lengths.json`, and keeps a price whose name the gateway no longer serves. | A price is a person's decision, so it is configuration and travels with a backup. It is in force again when its name comes back. |
+| A price equal to the default, in the default's currency, is stored as none. | A name back at its default follows models.dev again when its prices change. |
+| An Ollama name has no price field, a name a cloud source also serves among them. Its cloud sources' records are priced from models.dev. | A machine's Ollama costs nothing per token, and the name's cloud records keep their vendor's price. |
 
 ### Cost
 

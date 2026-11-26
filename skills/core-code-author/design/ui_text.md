@@ -342,7 +342,7 @@ link's `app.title`.
 
 ## The AI page's words
 
-The **Access** panel, the **Context length** panel, the **Gateway port**
+The **Access** panel, the **Models** panel, the **Gateway port**
 field, the hints of the **Providers** and **Accounts** panels, the account
 rows' status, quota and buttons, and the Ollama rows of the **Providers**
 panel of the AI page
@@ -383,16 +383,24 @@ gateway listens on the hub's loopback alone.
 | `code.model_not_served` | The gateway does not serve {model}. | 网关不提供 {model}。 |
 | `ui.ai.ollama_provider`, the name of a provider generated from a machine's Ollama ([ui_behavior.md](ui_behavior.md), "The Ollama rows of the Providers panel") | from {machine}'s Ollama | 来自 {machine} 的 Ollama |
 | `ui.ai.ollama_models`, that row's link to the machine's **Models** panel | Models | 模型 |
-| `ui.ai.context_title`, the Context length panel ([ui_behavior.md](ui_behavior.md), "The Context length panel of the AI page") | Context length | 上下文长度 |
-| `ui.ai.context_col_model`, `ui.ai.context_col_source`, `ui.ai.context_col_tokens`, its head row | Model, From, Tokens | 模型、来源、Tokens |
+| `ui.ai.models_title`, the Models panel ([ui_behavior.md](ui_behavior.md), "The Models panel of the AI page") | Models | 模型 |
+| `ui.ai.context_col_model`, `ui.ai.context_col_source`, `ui.ai.context_col_tokens`, its head row | Model, From, Context | 模型、来源、上下文 |
+| `ui.ai.price_col_input`, `ui.ai.price_col_output`, the head row's price columns | Input, Output | 输入、输出 |
+| `ui.ai.price_unit`, after them | per 1M tokens | 每百万 tokens |
 | `ui.ai.context_length_of`, a cloud name's field's label for a screen reader | Context length of {model} | {model} 的上下文长度 |
 | `ui.ai.context_reset`, `{length}` being the name's default | Reset to {length} | 恢复为 {length} |
 | `ui.ai.context_setting`, a machine's Ollama setting under an Ollama name | setting {length} | 设置 {length} |
 | `ui.ai.context_trained`, the model's trained length beside it | model max {length} | 模型上限 {length} |
 | `ui.ai.context_empty` | No models served yet | 还没有在服务的模型 |
-| `ui.ai.context_apply`, the panel's apply bar | Apply context lengths | 应用上下文长度 |
-| `ui.ai.context_apply_hint` | Writes the lengths into every machine's AI tools. | 把这些长度写进每个系统的 AI 工具。 |
-| `code.context_length_invalid`, under a cloud name's field and as the refusal of `ai/context/set` | The context length must be between {min} and {max} tokens. | 非法上下文长度：要在 {min} 到 {max} 个 token 之间。 |
+| `ui.ai.price_input_of`, `ui.ai.price_output_of`, `ui.ai.price_currency_of`, a cloud name's price fields' labels for a screen reader | Input price of {model}, Output price of {model}, Currency of {model} | {model} 的输入价格、{model} 的输出价格、{model} 的币种 |
+| `ui.ai.currency_usd`, `ui.ai.currency_cny`, the currency picker's choices | USD, CNY | 美元、人民币 |
+| `ui.ai.price_reset`, `{price}` being the default's two prices, such as `$0.28 / $1.10` | Reset to {price} | 恢复为 {price} |
+| `ui.ai.no_price`, the placeholder of a name no source prices | no price | 无价格 |
+| `ui.ai.models_apply`, the panel's apply bar | Apply model settings | 应用模型设置 |
+| `ui.ai.models_apply_hint` | Writes the lengths into every machine's AI tools; a price counts from the next request. | 把长度写进每个系统的 AI 工具；价格从下一个请求起计。 |
+| `code.context_length_invalid`, under a cloud name's field and as the refusal of `ai/model/set` | The context length must be between {min} and {max} tokens. | 非法上下文长度：要在 {min} 到 {max} 个 token 之间。 |
+| `code.price_invalid`, under a cloud name's price fields and as the refusal of `ai/model/set` | A price must be a number from {min} to {max}, with at most 6 decimals. | 非法价格：要是 {min} 到 {max} 之间的数，最多 6 位小数。 |
+| `code.currency_invalid`, the refusal of `ai/model/set` | The currency must be USD or CNY. | 非法币种：只能是 USD 或 CNY。 |
 
 ## The setup's account screen's words
 

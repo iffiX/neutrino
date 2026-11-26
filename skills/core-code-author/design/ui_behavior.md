@@ -1580,34 +1580,40 @@ row").
 | A row with no window draws no rings and no updated line. | A Kimi or Antigravity row has windows only after its first **Refresh**, and an xAI row has none. |
 | Under 640 px the rings go under the label, the buttons keep the end of the line. | Five parts on one line leave a phone's label a few characters wide. |
 
-## The Context length panel of the AI page
+## The Models panel of the AI page
 
-The **Context length** panel (`ui.ai.context_title`) of the AI page comes
-after **Accounts** and before **Access**. It has one row for each name the
-gateway serves, the cloud names by name and then the Ollama names by name,
-each with the length the AI tools are given for it
+The **Models** panel (`ui.ai.models_title`) of the AI page comes after
+**Accounts** and before **Access**. It has one row for each name the gateway
+serves, the cloud names by name and then the Ollama names by name, each with
+the length the AI tools are given for it
 ([hub_components/ai.md](hub_components/ai.md), "Each model's context
-length"). It reads `GET /api/hub/ai/context`, and reads it again at each
+length") and, for a cloud name, its input and output price per million
+tokens ([hub_components/ai.md](hub_components/ai.md), "A price a person
+sets"). It reads `GET /api/hub/ai/model`, and reads it again at each
 `ai_usage` and each `config` event.
 
 | Part | Idiom |
 | --- | --- |
-| The head row | `ui.ai.context_col_model`, `ui.ai.context_col_source` and `ui.ai.context_col_tokens`, faint, over the one grid every row shares: the name takes the room the sources and the length leave |
+| The head row | `ui.ai.context_col_model`, `ui.ai.context_col_source`, `ui.ai.context_col_tokens`, `ui.ai.price_col_input` and `ui.ai.price_col_output`, then `ui.ai.price_unit`, faint, over the one grid every row shares: the name takes the room the sources, the length and the prices leave |
 | **Model** | the served name, mono, cut with an ellipsis, with the whole name as its title |
 | **From** of a cloud name | one chip per source, its accounts and then its providers: an account's chip is the service name the **Accounts** panel shows for its login kind, a provider's its name |
 | **From** of an Ollama name | the chip `ui.module_title.ollama`, then one chip per account or stored provider that also serves the name, as a cloud name's |
-| **Tokens** of a cloud name | a number field of whole tokens holding the length in force, the set one or the default, with `ui.ai.context_length_of {model}` as its label for a screen reader; while it holds another number than the default, `ui.ai.context_reset {length}` with the default, a ghost `button--small` at its left that puts the default in the field |
-| **Tokens** of an Ollama name | the name's length, mono and read-only, where a field's digits stand; under the row one line per machine of the name's pool, offline machines among them, by the machine's name: the name as a link to `/agents/<device id>?module=ollama&configure=1`, the machine page on its Ollama tab with its panels open, then `ui.ai.context_setting {length}` with the model's setting, the `num_ctx` its Modelfile sets or else the machine's, and `ui.ai.context_trained {length}`, each bright while it equals the name's length and faint otherwise. `ui.ai.context_trained` is left out while the view's `trained_context_length` is 0 |
+| **Context** of a cloud name | a number field of whole tokens holding the length in force, the set one or the default, with `ui.ai.context_length_of {model}` as its label for a screen reader; while it holds another number than the default, `ui.ai.context_reset {length}` with the default, a ghost `button--small` at its left that puts the default in the field |
+| **Context** of an Ollama name | the name's length, mono and read-only, where a field's digits stand; under the row one line per machine of the name's pool, offline machines among them, by the machine's name: the name as a link to `/agents/<device id>?module=ollama&configure=1`, the machine page on its Ollama tab with its panels open, then `ui.ai.context_setting {length}` with the model's setting, the `num_ctx` its Modelfile sets or else the machine's, and `ui.ai.context_trained {length}`, each bright while it equals the name's length and faint otherwise. `ui.ai.context_trained` is left out while the view's `trained_context_length` is 0 |
+| **Input** and **Output** of a cloud name | two number fields holding the price in force, the set one or the default, labelled `ui.ai.price_input_of {model}` and `ui.ai.price_output_of {model}` for a screen reader, both empty with `ui.ai.no_price` as their placeholder while the name has neither; after them a `Picker` of `ui.ai.currency_usd` and `ui.ai.currency_cny`, labelled `ui.ai.price_currency_of {model}`, on `ui.ai.currency_usd` while the name has no set price; while the three differ from the default, `ui.ai.price_reset {price}` with the default's two prices, a ghost `button--small` at their left that puts the default back, and none while the name has no default |
+| **Input** and **Output** of an Ollama name | nothing |
 | The empty state | `ui.ai.context_empty`, one line, while the gateway serves no name |
-| The apply bar | **Apply context lengths** (`ui.ai.context_apply`), its hint `ui.ai.context_apply_hint` |
+| The apply bar | **Apply model settings** (`ui.ai.models_apply`), its hint `ui.ai.models_apply_hint` |
 
 | Rule | Reason |
 | --- | --- |
-| The cloud fields are the panel's draft. A typed number lights the frame and the bar, and the bar writes every changed name with `POST /api/hub/ai/context/set`, a number equal to the default as null. | A name set back to its default follows the table and the catalog again when a hub release or the gateway changes them. |
-| The bar lights while a field holds other text than the length in force, and goes dark when each holds it again. | Typing the saved length back changes nothing the hub sends. |
-| A field that holds no whole number from 4096 to 10000000 shows `code.context_length_invalid {min, max}` under it, and the bar is disabled, as the Ollama tab's **Context length (tokens)** does. | One kind of field has one idiom and one sentence on every page ("An interaction this document does not cover"). |
-| An Ollama row has no field and belongs to no draft, a name a cloud source also serves among them. Its setting changes on the machine's Ollama tab, which the machine's name links to. | The length is computed from each machine's setting and the model, and a new setting restarts that machine's Ollama ([agent/modules/ollama.md](agent/modules/ollama.md), "The settings are the hub's"). |
-| Under 640 px the **From** head is not drawn, each row's chips go under its name, and the length keeps the end of the first line; an Ollama row's machine lines start at the left. | Three columns leave a phone's model names a few characters wide. |
+| The cloud fields are the panel's draft, the lengths and the prices together. A typed number or a picked currency lights the frame and the bar, and the bar writes every changed name with `POST /api/hub/ai/model/set`, a length equal to the default as null and a price equal to the default, in its currency, as null. | A name set back to its default follows the table, the catalog and models.dev again when a hub release, the gateway or models.dev changes them. |
+| The bar lights while a field holds other text than the value in force, or the picker another currency, and goes dark when each holds it again. | Typing the saved value back changes nothing the hub sends or counts. |
+| A length field that holds no whole number from 4096 to 10000000 shows `code.context_length_invalid {min, max}` under it, and the bar is disabled, as the Ollama tab's **Context length (tokens)** does. | One kind of field has one idiom and one sentence on every page ("An interaction this document does not cover"). |
+| A price field that holds no number from 0 to 10000 with at most 6 decimals, or is empty while the other holds a number, shows `code.price_invalid {min, max}` under the two, and the bar is disabled. Both emptied on a name with no default take its set price away. | A price is the pair of numbers. A name no source prices has nothing to go back to but no price. |
+| A price picked in CNY over the default's numbers is a set price. | The default is USD, and the same numbers in CNY are another price. |
+| An Ollama row has no field and belongs to no draft, a name a cloud source also serves among them. Its setting changes on the machine's Ollama tab, which the machine's name links to. | The length is computed from each machine's setting and the model, and a new setting restarts that machine's Ollama ([agent/modules/ollama.md](agent/modules/ollama.md), "The settings are the hub's"). A machine's Ollama costs nothing per token. |
+| Under 640 px the head row is not drawn; each row's chips go under its name, the length keeps the end of the first line, and the two prices and the currency take a line of their own under the chips, each field after its head word; an Ollama row's machine lines start at the left. | Five columns leave a phone's model names a few characters wide. |
 
 ## The Access panel of the AI page
 
