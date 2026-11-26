@@ -50,8 +50,9 @@ import "./services_page.css";
  * containers it runs; a container the hub does not manage is one app of its
  * own. An app declared here carries Test and Delete, and an app with a web
  * entry carries Share, which opens the App share dialog with that entry
- * chosen. Each web entry carries Open, which starts the hub's app forward for
- * it and opens the app in a new tab, while the panel was reached directly.
+ * chosen, and Open before it, which starts the hub's app forward for the
+ * app's first web entry and opens the app in a new tab, while the panel was
+ * reached directly.
  * The entries of no app
  * follow in their own sections: the AI gateway, the machines' file shares
  * and the shared desktops, with every online machine's terminal sessions
@@ -354,8 +355,8 @@ function AppRow({ app, isOpenShown, onChanged, onShare }: AppRowProps) {
   useLanguage();
   const confirm = useConfirm();
   const [isBusy, setIsBusy] = useState(false);
-  // The web entry whose Open waits for the hub, null while none does.
-  const [openingId, setOpeningId] = useState<string | null>(null);
+  // Whether the Open of the app's first web entry waits for the hub.
+  const [isOpening, setIsOpening] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const isDeclared =
     app.source === "declared" && !app.id.startsWith(CONTAINER_APP_PREFIX);
@@ -393,7 +394,7 @@ function AppRow({ app, isOpenShown, onChanged, onShare }: AppRowProps) {
     if (tab !== null) {
       tab.opener = null;
     }
-    setOpeningId(entry.id);
+    setIsOpening(true);
     setError(null);
     const request: ServiceEntryOpenRequest = { entry_id: entry.id };
     try {
@@ -408,7 +409,7 @@ function AppRow({ app, isOpenShown, onChanged, onShare }: AppRowProps) {
       tab?.close();
       setError(describeError(cause));
     } finally {
-      setOpeningId(null);
+      setIsOpening(false);
     }
   };
 
@@ -429,6 +430,21 @@ function AppRow({ app, isOpenShown, onChanged, onShare }: AppRowProps) {
           {machine}
         </span>
         <span className="app_row_end">
+          {isOpenShown && webEntry !== undefined && (
+            <button
+              type="button"
+              className="button button--ghost button--small"
+              disabled={isOpening || webEntry.is_healthy === false}
+              onClick={() => void open(webEntry)}
+            >
+              {isOpening ? (
+                <Spinner size={13} />
+              ) : (
+                <Icon name="globe" size={13} />
+              )}
+              {t("ui.services.open")}
+            </button>
+          )}
           {webEntry !== undefined && (
             <button
               type="button"
@@ -473,28 +489,12 @@ function AppRow({ app, isOpenShown, onChanged, onShare }: AppRowProps) {
       )}
       <div className="app_row_entries">
         {app.entries.map((entry) => (
-          <span key={entry.id} className="app_entry_group">
-            <EntryChip
-              entry={entry}
-              address={entryAddress(app.local_name, entry)}
-              stateWord={isDeclared ? declaredStateWord(entry) : null}
-            />
-            {isOpenShown && entry.type === "web" && (
-              <button
-                type="button"
-                className="button button--ghost button--small"
-                disabled={openingId !== null || entry.is_healthy === false}
-                onClick={() => void open(entry)}
-              >
-                {openingId === entry.id ? (
-                  <Spinner size={13} />
-                ) : (
-                  <Icon name="globe" size={13} />
-                )}
-                {t("ui.services.open")}
-              </button>
-            )}
-          </span>
+          <EntryChip
+            key={entry.id}
+            entry={entry}
+            address={entryAddress(app.local_name, entry)}
+            stateWord={isDeclared ? declaredStateWord(entry) : null}
+          />
         ))}
       </div>
       {details.map((key, index) => (

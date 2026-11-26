@@ -1,12 +1,13 @@
 """The Services page's Open and its Terminals panel, read from the page's source.
 
-What these pin: Open is on each web entry and on no other, hidden while a
-client's token opened the session or the page's own address is a client's
-loopback forward, and disabled while the entry reads unhealthy; the tab opens before the request and with no opener, and goes to
-the entry's scheme and path at the panel's own host and the forward's port,
-the token added; the Terminals panel follows Files and has no button; the
-list reads again at a machine's report and channel; every word is in both
-languages.
+What these pin: Open sits at the row's right before Share for the app's
+first web entry and never beside an address; it hides while a client's token
+opened the session or the page's own address is a client's loopback forward,
+and is disabled while the entry reads unhealthy; the tab opens before the
+request and with no opener, and goes to the entry's scheme and path at the
+panel's own host and the forward's port, the token added; the Terminals panel
+follows Files and has no button; the list reads again at a machine's report
+and channel; every word is in both languages.
 """
 
 import json
@@ -44,11 +45,17 @@ def catalog(language: str, name: str) -> dict:
     return json.loads((LOCALES_DIR / language / name).read_text(encoding="utf-8"))
 
 
-def test_open_is_on_each_web_entry_while_the_panel_was_reached_directly():
+def test_open_sits_at_the_rows_right_before_share_for_the_first_web_entry():
     row = function_body("AppRow")
+    end = row[row.index('<span className="app_row_end">') :]
+    entries = row[row.index('<div className="app_row_entries">') :]
 
-    assert 'isOpenShown && entry.type === "web" && (' in row
-    assert "entry.is_healthy === false" in row
+    assert 'const webEntry = app.entries.find((entry) => entry.type === "web");' in row
+    assert "isOpenShown && webEntry !== undefined && (" in end
+    assert end.index('t("ui.services.open")') < end.index("onShare(webEntry.id)")
+    assert 't("ui.services.open")' not in entries
+    assert "onClick={() => void open(webEntry)}" in end
+    assert "webEntry.is_healthy === false" in end
     assert "isOpenShown={isOpenShown}" in page_source()
     assert "const { isOpenedByClient } = useAuth();" in page_source()
 

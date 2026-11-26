@@ -116,7 +116,7 @@
   white-space: nowrap;
 }
 
-/* Share, Test, Delete and the source badge wrap onto a second line. */
+/* Open, Share, Test, Delete and the source badge wrap onto a second line. */
 .app_row_end {
   display: flex;
   flex-wrap: wrap;
@@ -148,13 +148,4 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-/* A web entry's chip and its Open stay on one line together. */
-.app_entry_group {
-  display: inline-flex;
-  gap: var(--space-2);
-  align-items: center;
-  max-width: 100%;
-  min-width: 0;
 }
