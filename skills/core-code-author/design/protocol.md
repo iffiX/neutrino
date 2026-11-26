@@ -65,8 +65,10 @@ peer. Two hubs on one host keep two sessions, and so do two hubs' panels a
 client opens on `localhost`, where a browser keeps cookies by host alone. One
 session holds on both ports. A client opens the panel on a host no app opens
 on ([client.md](client.md), "The Hubs page"), and the hub's app forwards
-("The app forwards") take each cookie whose name starts with
-`neutrino_session_` out of every request they pass on. A panel that cannot read its identity file names
+("The app forwards") and the agent's forwarder
+([agent/module_template.md](agent/module_template.md), "The run") take each
+cookie whose name starts with `neutrino_session_` out of every request they
+pass on. A panel that cannot read its identity file names
 the cookie `neutrino_session_`. The login page reads `/api/hub/setup`,
 `/api/hub/auth` and `/api/hub/display` before a session exists, so those
 prefixes take no session dependency, and neither do
