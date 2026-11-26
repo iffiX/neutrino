@@ -17,6 +17,7 @@ import pytest
 from neutrino_hub import edition
 from neutrino_hub.cli import setup
 from neutrino_hub.exceptions import DownloadFailedError
+from neutrino_hub.platforms.windows import WindowsHubPlatform
 from tests.cli.test_setup_local_agent import FakeReporter
 from tests.conftest import FakeSourceFetcher
 
@@ -457,7 +458,7 @@ def test_rendering_runs_nhub_apply_itself(monkeypatch, system):
         (
             "win32",
             "msi",
-            ["msiexec", "/i", "/cache/agent.msi", "/qn", "/norestart"],
+            WindowsHubPlatform().agent_install_command("/cache/agent.msi"),
             "C:\\Program Files\\Neutrino\\agent\\nagent.exe",
         ),
     ],
@@ -483,7 +484,13 @@ def test_the_local_agent_is_installed_by_the_systems_installer(
     monkeypatch.setattr(
         setup, "_enrollment_link", lambda password: ("neutrino://x", "")
     )
-    monkeypatch.setattr(setup, "run", lambda command, **k: commands.append(command))
+    timeouts = []
+    monkeypatch.setattr(
+        setup,
+        "run",
+        lambda command, **k: commands.append(command)
+        or timeouts.append(k["timeout_s"]),
+    )
     monkeypatch.setattr(
         setup.package_manager, "current", lambda: pytest.fail("no package manager")
     )
@@ -493,6 +500,10 @@ def test_the_local_agent_is_installed_by_the_systems_installer(
 
     assert families == [family]
     assert commands == [install, [agent, "join", "neutrino://x", "--yes"]]
+    assert timeouts == [
+        setup.package_manager.PACKAGE_INSTALL_TIMEOUT_S,
+        setup.SETUP_AGENT_JOIN_TIMEOUT_S,
+    ]
     assert reporter.done_notes == ["installed and joined"]
 
 

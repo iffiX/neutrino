@@ -1,6 +1,8 @@
 """The hub on Windows: its one service through a fake ``sc.exe``, the
 elevation check, the file lock and the job its children run in."""
 
+import os
+import shutil
 import subprocess
 import sys
 import types
@@ -193,13 +195,87 @@ def test_every_child_joins_one_kill_on_close_job():
 
 
 def test_the_agent_package_installs_quietly_with_msiexec():
-    assert _platform().agent_install_command("C:\\cache\\agent.msi") == [
-        "msiexec",
-        "/i",
-        "C:\\cache\\agent.msi",
-        "/qn",
-        "/norestart",
+    command = _platform().agent_install_command("C:\\cache\\agent.msi")
+
+    assert command[:-1] == [
+        "powershell.exe",
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
     ]
+    assert "-ArgumentList '/i \"C:\\cache\\agent.msi\" /qn /norestart'" in command[-1]
+
+
+def test_the_agent_install_waits_for_the_windows_installer():
+    script = _platform().agent_install_command("C:\\cache\\agent.msi")[-1]
+
+    assert "[Threading.Mutex]::TryOpenExisting('Global\\_MSIExecute', [ref]$held)" in (
+        script
+    )
+    assert "AddSeconds(300)" in script
+
+
+# Stands in for msiexec: each call takes the next exit code of FAKE_CODES.
+MSIEXEC_STAND_IN = """
+function Start-Process {
+    param([string]$FilePath, [switch]$Wait, [switch]$PassThru, [string]$WindowStyle,
+          [string]$ArgumentList)
+    Add-Content -LiteralPath $env:FAKE_ASKED -Value "$FilePath $ArgumentList"
+    $calls = @(Get-Content -LiteralPath $env:FAKE_ASKED).Count
+    return [pscustomobject]@{ ExitCode = [int]($env:FAKE_CODES.Split(',')[$calls - 1]) }
+}
+"""
+
+
+def _run_agent_install(tmp_path, codes: str) -> tuple:
+    """Run the agent's install script in pwsh with msiexec stood in for.
+
+    Returns:
+        The script's exit code and each msiexec call.
+    """
+    pwsh = shutil.which("pwsh")
+    if pwsh is None:
+        pytest.skip("PowerShell is not installed")
+    asked = tmp_path / "asked"
+    driver = tmp_path / "driver.ps1"
+    script = _platform().agent_install_command("C:\\cache\\agent.msi")[-1]
+    driver.write_text(MSIEXEC_STAND_IN + script)
+    result = subprocess.run(
+        [pwsh, "-NoProfile", "-NonInteractive", "-File", str(driver)],
+        capture_output=True,
+        text=True,
+        env={
+            "PATH": os.environ["PATH"],
+            "HOME": str(tmp_path),
+            "FAKE_ASKED": str(asked),
+            "FAKE_CODES": codes,
+        },
+        timeout=60,
+    )
+    return result.returncode, asked.read_text().splitlines()
+
+
+def test_a_busy_windows_installer_is_tried_once_more(tmp_path):
+    code, asked = _run_agent_install(tmp_path, "1618,3010")
+
+    assert code == 0
+    assert asked == ['msiexec.exe /i "C:\\cache\\agent.msi" /qn /norestart'] * 2
+
+
+def test_a_second_busy_answer_fails_the_install(tmp_path):
+    code, asked = _run_agent_install(tmp_path, "1618,1618,0")
+
+    assert code != 0
+    assert len(asked) == 2
+
+
+def test_a_finished_install_runs_msiexec_once(tmp_path):
+    code, asked = _run_agent_install(tmp_path, "0")
+
+    assert code == 0
+    assert len(asked) == 1
 
 
 def test_netbird_answers_on_a_loopback_port_of_the_hubs_own():

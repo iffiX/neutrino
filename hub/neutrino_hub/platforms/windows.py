@@ -34,7 +34,41 @@ from neutrino_hub.platforms.constants import (
     PLATFORM_WINDOWS_SHELL,
     PLATFORM_WINDOWS_STATE_PATTERN,
 )
+from neutrino_hub.modules.hub_update.constants import (
+    HUB_UPDATE_LOCK_TIMEOUT_S,
+    HUB_UPDATE_MSI_BUSY_CODE,
+    HUB_UPDATE_MSI_INSTALLED_CODES,
+    HUB_UPDATE_MSI_MUTEX,
+)
 from neutrino_hub.system import windows_net
+from neutrino_hub.system.constants import SYSTEM_POWERSHELL_PROGRAM
+
+# The PowerShell that installs the agent's package: msiexec once no other
+# install holds the Windows Installer's mutex, and once more after a busy
+# answer. It exits 0 for an install msiexec reports finished.
+AGENT_MSIEXEC_SCRIPT = """$ErrorActionPreference = 'Continue'
+function Wait-Installer {
+    $deadline = (Get-Date).AddSeconds(@WAIT@)
+    while ((Get-Date) -lt $deadline) {
+        $held = $null
+        try {
+            if (-not [Threading.Mutex]::TryOpenExisting(@MUTEX@, [ref]$held)) { return }
+            $held.Dispose()
+        } catch [UnauthorizedAccessException] {
+        }
+        Start-Sleep -Seconds 1
+    }
+}
+function Invoke-Install {
+    Wait-Installer
+    $run = Start-Process -FilePath msiexec.exe -Wait -PassThru -WindowStyle Hidden -ArgumentList @ARGUMENTS@
+    return $run.ExitCode
+}
+$code = Invoke-Install
+if ($code -eq @BUSY@) { $code = Invoke-Install }
+if (@(@INSTALLED@) -contains $code) { exit 0 }
+exit $code
+"""
 
 
 def drop_connection_reset(loop, context: dict) -> None:
@@ -326,13 +360,38 @@ class WindowsHubPlatform(HubPlatform):
     def agent_install_command(self, package: str) -> list:
         """The command that installs the agent's ``.msi``.
 
+        ``msiexec /i <file> /qn /norestart`` waits up to 300 seconds for
+        another install to release the Windows Installer, and runs once more
+        when it answers 1618.
+
         Args:
             package: The package file.
 
         Returns:
-            The argument vector.
+            The argument vector: PowerShell running the install, its exit 0
+            for 0 and 3010 and msiexec's own code otherwise.
         """
-        return ["msiexec", "/i", str(package), "/qn", "/norestart"]
+        from neutrino_hub.modules.hub_update.installer import powershell_quote
+
+        script = (
+            AGENT_MSIEXEC_SCRIPT.replace("@WAIT@", str(HUB_UPDATE_LOCK_TIMEOUT_S))
+            .replace("@MUTEX@", powershell_quote(HUB_UPDATE_MSI_MUTEX))
+            .replace("@ARGUMENTS@", powershell_quote(f'/i "{package}" /qn /norestart'))
+            .replace("@BUSY@", str(HUB_UPDATE_MSI_BUSY_CODE))
+            .replace(
+                "@INSTALLED@",
+                ", ".join(str(code) for code in HUB_UPDATE_MSI_INSTALLED_CODES),
+            )
+        )
+        return [
+            SYSTEM_POWERSHELL_PROGRAM,
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            script,
+        ]
 
     def netbird_daemon_address(self) -> str:
         """The loopback port the hub's own NetBird daemon answers on.

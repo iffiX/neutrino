@@ -214,8 +214,8 @@ PANEL_SETTINGS_FILE = "web/settings.json"
 # with no agent build gets none, and the step says so instead of failing the
 # run.
 SETUP_AGENT_PACKAGE_FAMILIES = AGENT_PACKAGE_FAMILY_OF_PLATFORM
-# Installing the package and joining the hub over the agent channel, which
-# includes the first handshake with a panel that has just started.
+# Joining the hub over the agent channel, which includes the first
+# handshake with a panel that has just started.
 SETUP_AGENT_JOIN_TIMEOUT_S = 120
 # Asking for this port is asking the operating system for whichever one is
 # free, which is what the wizard falls back to when the panel's is taken.
@@ -1206,7 +1206,7 @@ def _install_local_agent(password: str, reporter, *, link_of=None) -> bool:
         else:
             run(
                 hub_platform().agent_install_command(package),
-                timeout_s=SETUP_AGENT_JOIN_TIMEOUT_S,
+                timeout_s=package_manager.PACKAGE_INSTALL_TIMEOUT_S,
             )
         reporter.note("installed; joining this hub")
         link, note = link_of() if link_of else _enrollment_link(password)
