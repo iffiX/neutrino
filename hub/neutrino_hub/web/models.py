@@ -793,7 +793,7 @@ class AiOllamaProviderListView(BaseModel):
     providers: list[AiOllamaProviderView]
 
 
-class AiContextSourceView(BaseModel):
+class AiModelSourceView(BaseModel):
     """An account or a stored provider that serves a name."""
 
     origin: str
@@ -809,7 +809,7 @@ class AiModelPriceView(BaseModel):
     currency: str
 
 
-class AiDefaultPriceView(BaseModel):
+class AiModelDefaultPriceView(BaseModel):
     """A name's models.dev price per million tokens, in USD; a cache price models.dev does not give is absent."""
 
     input: float
@@ -827,18 +827,18 @@ class AiDefaultPriceView(BaseModel):
         return data
 
 
-class AiCloudContextView(BaseModel):
+class AiCloudModelView(BaseModel):
     """A cloud name's context length and price: each the one a person set, or its default."""
 
     model: str
-    sources: list[AiContextSourceView]
+    sources: list[AiModelSourceView]
     context_length: int | None = None
     default_context_length: int
     price: AiModelPriceView | None = None
-    default_price: AiDefaultPriceView | None = None
+    default_price: AiModelDefaultPriceView | None = None
 
 
-class AiOllamaContextMachineView(BaseModel):
+class AiOllamaModelMachineView(BaseModel):
     """One machine of an Ollama name's pool."""
 
     device_id: str
@@ -847,12 +847,12 @@ class AiOllamaContextMachineView(BaseModel):
     trained_context_length: int
 
 
-class AiOllamaContextView(BaseModel):
+class AiOllamaModelView(BaseModel):
     """An Ollama name's context length, computed from its pool and its cloud sources."""
 
     model: str
-    machines: list[AiOllamaContextMachineView]
-    sources: list[AiContextSourceView]
+    machines: list[AiOllamaModelMachineView]
+    sources: list[AiModelSourceView]
     cloud_context_length: int
     context_length: int
 
@@ -860,8 +860,8 @@ class AiOllamaContextView(BaseModel):
 class AiModelView(BaseModel):
     """The context length of every name the gateway serves, and each cloud name's price."""
 
-    cloud: list[AiCloudContextView]
-    ollama: list[AiOllamaContextView]
+    cloud: list[AiCloudModelView]
+    ollama: list[AiOllamaModelView]
 
 
 class AiModelPriceSet(BaseModel):

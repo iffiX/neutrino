@@ -21,6 +21,8 @@ import pytest
 from neutrino_hub.modules.ai.constants import (
     AI_CONTEXT_LENGTH_MAX,
     AI_CONTEXT_LENGTH_MIN,
+    AI_PRICE_MAX,
+    AI_PRICE_MIN,
 )
 
 HUB_DIR = Path(__file__).resolve().parents[2]
@@ -34,9 +36,6 @@ PANEL_KEY_PATTERN = re.compile(
     r"^(ui\.ai\.(models_|context_|price_|currency_|no_price)"
     r"|code\.(context_length_invalid|price_invalid|currency_invalid))"
 )
-# The prices a person may set, as ai.md's "A price a person sets" bounds them.
-PRICE_MIN = 0
-PRICE_MAX = 10000
 
 
 def ui_text_words() -> dict:
@@ -137,8 +136,8 @@ def test_a_length_outside_the_hub_s_bounds_shows_the_refusal_and_disables_the_ba
 def test_a_price_out_of_range_or_half_empty_shows_the_refusal():
     source = panel_source()
 
-    assert f"const PRICE_MIN = {PRICE_MIN};" in source
-    assert f"const PRICE_MAX = {PRICE_MAX:_};" in source
+    assert f"const PRICE_MIN = {AI_PRICE_MIN};" in source
+    assert f"const PRICE_MAX = {AI_PRICE_MAX:_};" in source
     assert r"const PRICE_PATTERN = /^\d+(\.\d{1,6})?$/;" in source
     assert 't("code.price_invalid", { min: PRICE_MIN, max: PRICE_MAX })' in source
     # Both empty pass on a name with no default alone; one empty never passes.
