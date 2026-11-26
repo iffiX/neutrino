@@ -3,8 +3,9 @@
 The gateway's management API hands out per-request usage records exactly
 once — reading the queue empties it — so one collector in the panel process
 is the whole pipeline. Each poll maps the records' client key, upstream key
-and credential handle to the ids the panel knows, folds them into the store,
-and everything that shows usage reads the store rather than the gateway.
+and credential handle to the ids the panel knows, prices each record at the
+prices in force at that poll, folds them into the store, and everything that
+shows usage reads the store rather than the gateway.
 """
 
 import logging
@@ -12,15 +13,28 @@ import threading
 
 import httpx
 
+from neutrino_hub.modules.ai.model_prices import (
+    AiPriceTable,
+    AiRecordPricer,
+    prices_in_force,
+    read_set_prices,
+)
 from neutrino_hub.modules.ai.registry import AiProviderRegistry
+from neutrino_hub.modules.ai.vendors import load_vendors, vendor_endpoints
 from neutrino_hub.exceptions import AiAccountRefusedError
 from neutrino_hub.modules.cliproxyapi.accounts import CliproxyApiAccountClient
 from neutrino_hub.modules.cliproxyapi.constants import (
+    CLIPROXYAPI_COMPATIBLE_PROVIDER_PREFIX,
     CLIPROXYAPI_USAGE_POLL_INTERVAL_S,
     CLIPROXYAPI_USAGE_QUEUE_COUNT,
 )
 from neutrino_hub.modules.cliproxyapi.management_key import read_management_key
-from neutrino_hub.modules.cliproxyapi.ops import load_config, load_module_keys
+from neutrino_hub.modules.cliproxyapi.ops import (
+    load_config,
+    load_module_keys,
+    read_ollama_providers,
+)
+from neutrino_hub.modules.cliproxyapi.renderer import ollama_entry_name
 from neutrino_hub.modules.cliproxyapi.usage_store import CliproxyApiUsageStore
 
 LOGGER = logging.getLogger(__name__)
@@ -72,6 +86,7 @@ class PanelUsageCollector:
         # reason.
         self._provider_ids: dict[str, str] = {}
         self._account_ids: dict[str, str] = {}
+        self._account_logins: dict[str, str] = {}
 
     def start(self) -> None:
         """Run the poll loop on a daemon thread; a second start is a no-op."""
@@ -130,6 +145,32 @@ class PanelUsageCollector:
             key_names={key.id: key.name for key in keys},
             provider_ids=self._provider_ids,
             account_ids=self._account_ids,
+            pricer=self._pricer(),
+        )
+
+    def _pricer(self) -> AiRecordPricer:
+        """The records' pricer, at the prices in force now and the prices a person set now."""
+        try:
+            providers = {
+                record.id: record for record in AiProviderRegistry().list_records()
+            }
+        except ValueError:
+            providers = {}
+        generated = read_ollama_providers()
+        return AiRecordPricer(
+            table=AiPriceTable(prices_in_force()["providers"]),
+            set_prices=read_set_prices(),
+            providers=providers,
+            accounts=self._account_logins,
+            endpoints=vendor_endpoints(load_vendors()),
+            ollama_providers=[
+                CLIPROXYAPI_COMPATIBLE_PROVIDER_PREFIX
+                + ollama_entry_name(provider["device_id"])
+                for provider in generated
+            ],
+            ollama_names=[
+                name for provider in generated for name in provider["models"]
+            ],
         )
 
     def _refresh_provider_ids(self) -> None:
@@ -163,6 +204,9 @@ class PanelUsageCollector:
             account.auth_index: account.name
             for account in accounts
             if account.auth_index and account.name
+        }
+        self._account_logins = {
+            account.name: account.provider for account in accounts if account.name
         }
 
     def sample_once(self) -> bool:

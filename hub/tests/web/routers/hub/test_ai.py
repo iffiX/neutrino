@@ -1,4 +1,4 @@
-"""The AI page's API: providers over their own prefix, keys by reference, and each served name's context length."""
+"""The AI page's API: providers over their own prefix, keys by reference, the vendor presets, and each served name's context length and price."""
 
 import json
 
@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from neutrino_hub.modules.ai.context_lengths import read_set_lengths
+from neutrino_hub.modules.ai.model_prices import read_set_prices
 from neutrino_hub.modules.cliproxyapi.ops import write_ollama_providers
 from neutrino_hub.modules.credentials.vault import SecretVault
 from neutrino_hub.modules.devices.registry import DeviceRegistry
@@ -41,7 +42,7 @@ def stored_token(value: str = "sk-test") -> str:  # scan: allow
 
 
 def test_provider_roundtrip(client):
-    assert client.get("/api/hub/ai").json() == {"providers": []}
+    assert client.get("/api/hub/ai").json()["providers"] == []
     token_id = stored_token()
 
     created = client.post(
@@ -74,7 +75,7 @@ def test_provider_roundtrip(client):
         "/api/hub/ai/provider/remove", json={"provider_id": view["id"]}
     )
     assert removed.status_code == 200
-    assert client.get("/api/hub/ai").json() == {"providers": []}
+    assert client.get("/api/hub/ai").json()["providers"] == []
     # The token outlives the provider: its lifecycle is the Credentials page's.
     assert SecretVault().get(token_id) is not None
 
@@ -224,7 +225,13 @@ def test_each_machines_ollama_is_listed_by_the_machines_name(client):
     }
 
 
-# --- the context lengths: read, set, refused ---
+# --- the context lengths and the prices: read, set, refused ---
+
+
+# The models.dev price of each name's first source, as the runtime gives it.
+DEFAULT_PRICES = {
+    "gpt-x": {"input": 1.25, "output": 10.0, "cache_read": 0.125, "currency": "USD"}
+}
 
 
 class ContextRuntime:
@@ -234,8 +241,9 @@ class ContextRuntime:
         self.served_models = None
         self.notes = 0
 
-    def context_view(self) -> dict:
+    def model_view(self) -> dict:
         lengths = read_set_lengths()
+        prices = read_set_prices()
         return {
             "cloud": [
                 {
@@ -243,6 +251,8 @@ class ContextRuntime:
                     "sources": [{"origin": "provider", "id": "p1", "name": "relay"}],
                     "context_length": lengths.get(name),
                     "default_context_length": 200000,
+                    "price": prices.get(name),
+                    "default_price": DEFAULT_PRICES.get(name),
                 }
                 for name in ("gpt-x", "lab-mini")
             ],
@@ -299,10 +309,10 @@ def stored_lengths(tmp_path) -> dict:
     return json.loads((tmp_path / "ai/context_lengths.json").read_text())["lengths"]
 
 
-def test_the_context_view_names_each_cloud_name_s_sources_and_each_ollama_name_s_machines(
+def test_the_model_view_names_each_cloud_name_s_sources_and_each_ollama_name_s_machines(
     context_client,
 ):
-    view = context_client.get("/api/hub/ai/context").json()
+    view = context_client.get("/api/hub/ai/model").json()
 
     assert [row["model"] for row in view["cloud"]] == ["gpt-x", "lab-mini"]
     assert view["cloud"][0]["sources"] == [
@@ -315,7 +325,7 @@ def test_a_set_length_is_stored_and_a_null_takes_its_name_back(
     context_client, tmp_path
 ):
     answer = context_client.post(
-        "/api/hub/ai/context/set", json={"lengths": {"gpt-x": 100000, "lab-mini": 4096}}
+        "/api/hub/ai/model/set", json={"lengths": {"gpt-x": 100000, "lab-mini": 4096}}
     )
 
     assert answer.status_code == 200
@@ -324,7 +334,7 @@ def test_a_set_length_is_stored_and_a_null_takes_its_name_back(
     assert context_client.runtime.notes == 1
 
     again = context_client.post(
-        "/api/hub/ai/context/set", json={"lengths": {"gpt-x": None, "gone": None}}
+        "/api/hub/ai/model/set", json={"lengths": {"gpt-x": None, "gone": None}}
     )
 
     assert again.status_code == 200
@@ -337,7 +347,7 @@ def test_a_length_out_of_bounds_is_refused_and_nothing_is_stored(
     context_client, tmp_path, length
 ):
     answer = context_client.post(
-        "/api/hub/ai/context/set", json={"lengths": {"gpt-x": length}}
+        "/api/hub/ai/model/set", json={"lengths": {"gpt-x": length}}
     )
 
     assert answer.status_code == 400
@@ -357,7 +367,7 @@ def test_a_length_out_of_bounds_is_refused_and_nothing_is_stored(
 @pytest.mark.parametrize("model", ["qwen2.5:0.5b", "never-served"])
 def test_a_length_for_no_cloud_name_served_is_refused(context_client, model):
     answer = context_client.post(
-        "/api/hub/ai/context/set", json={"lengths": {model: 8192}}
+        "/api/hub/ai/model/set", json={"lengths": {model: 8192}}
     )
 
     assert answer.status_code == 400
@@ -372,8 +382,336 @@ def test_a_value_that_is_no_whole_number_nor_null_is_body_invalid(
     context_client, value
 ):
     answer = context_client.post(
-        "/api/hub/ai/context/set", json={"lengths": {"gpt-x": value}}
+        "/api/hub/ai/model/set", json={"lengths": {"gpt-x": value}}
     )
 
     assert answer.status_code == 400
     assert answer.json()["detail"]["code"] == "body_invalid"
+
+
+def stored_prices(tmp_path) -> dict:
+    return json.loads((tmp_path / "ai/prices.json").read_text())["prices"]
+
+
+def test_a_set_price_is_stored_and_a_null_takes_its_name_back(context_client, tmp_path):
+    answer = context_client.post(
+        "/api/hub/ai/model/set",
+        json={
+            "prices": {
+                "gpt-x": {"input": 2.5, "output": 15, "currency": "USD"},
+                "lab-mini": {"input": 1, "output": 2.123456, "currency": "CNY"},
+            }
+        },
+    )
+
+    assert answer.status_code == 200
+    assert stored_prices(tmp_path) == {
+        "gpt-x": {"input": 2.5, "output": 15, "currency": "USD"},
+        "lab-mini": {"input": 1, "output": 2.123456, "currency": "CNY"},
+    }
+    cloud = {row["model"]: row for row in answer.json()["cloud"]}
+    assert cloud["gpt-x"]["price"] == {"input": 2.5, "output": 15.0, "currency": "USD"}
+    assert cloud["gpt-x"]["default_price"] == DEFAULT_PRICES["gpt-x"]
+    assert cloud["lab-mini"]["default_price"] is None
+    # A price restarts nothing and hands no state on.
+    assert context_client.runtime.notes == 0
+
+    again = context_client.post(
+        "/api/hub/ai/model/set", json={"prices": {"gpt-x": None}}
+    )
+    assert again.status_code == 200
+    assert stored_prices(tmp_path) == {
+        "lab-mini": {"input": 1, "output": 2.123456, "currency": "CNY"}
+    }
+
+
+def test_lengths_and_prices_are_stored_in_one_write_each(context_client, tmp_path):
+    answer = context_client.post(
+        "/api/hub/ai/model/set",
+        json={
+            "lengths": {"gpt-x": 100000},
+            "prices": {"gpt-x": {"input": 3, "output": 4, "currency": "USD"}},
+        },
+    )
+
+    assert answer.status_code == 200
+    assert stored_lengths(tmp_path) == {"gpt-x": 100000}
+    assert stored_prices(tmp_path)["gpt-x"]["input"] == 3
+    assert context_client.runtime.notes == 1
+
+
+def test_a_price_equal_to_the_default_is_stored_as_none(context_client, tmp_path):
+    context_client.post(
+        "/api/hub/ai/model/set",
+        json={"prices": {"gpt-x": {"input": 2, "output": 3, "currency": "USD"}}},
+    )
+
+    answer = context_client.post(
+        "/api/hub/ai/model/set",
+        json={"prices": {"gpt-x": {"input": 1.25, "output": 10, "currency": "USD"}}},
+    )
+
+    assert answer.status_code == 200
+    assert stored_prices(tmp_path) == {}
+    # The same numbers in CNY are another price.
+    context_client.post(
+        "/api/hub/ai/model/set",
+        json={"prices": {"gpt-x": {"input": 1.25, "output": 10, "currency": "CNY"}}},
+    )
+    assert stored_prices(tmp_path)["gpt-x"]["currency"] == "CNY"
+
+
+def test_a_price_whose_name_is_no_longer_served_is_kept(context_client, tmp_path):
+    (tmp_path / "ai").mkdir(exist_ok=True)
+    (tmp_path / "ai/prices.json").write_text(
+        json.dumps({"prices": {"gone": {"input": 1, "output": 2, "currency": "USD"}}})
+    )
+
+    answer = context_client.post(
+        "/api/hub/ai/model/set",
+        json={"prices": {"gpt-x": {"input": 2, "output": 3, "currency": "USD"}}},
+    )
+
+    assert answer.status_code == 200
+    assert set(stored_prices(tmp_path)) == {"gone", "gpt-x"}
+
+
+@pytest.mark.parametrize(
+    "price, number",
+    [
+        ({"input": -0.01, "output": 1, "currency": "USD"}, -0.01),
+        ({"input": 1, "output": 10000.5, "currency": "USD"}, 10000.5),
+        ({"input": 0.0000001, "output": 1, "currency": "USD"}, 0.0000001),
+    ],
+)
+def test_a_price_number_out_of_range_or_too_fine_is_refused(
+    context_client, tmp_path, price, number
+):
+    answer = context_client.post(
+        "/api/hub/ai/model/set", json={"prices": {"gpt-x": price}}
+    )
+
+    assert answer.status_code == 400
+    assert answer.json()["detail"] == {
+        "code": "price_invalid",
+        "params": {"model": "gpt-x", "price": number, "min": 0, "max": 10000},
+    }
+    assert not (tmp_path / "ai/prices.json").exists()
+
+
+def test_a_currency_other_than_usd_and_cny_is_refused(context_client, tmp_path):
+    answer = context_client.post(
+        "/api/hub/ai/model/set",
+        json={"prices": {"gpt-x": {"input": 1, "output": 2, "currency": "EUR"}}},
+    )
+
+    assert answer.status_code == 400
+    assert answer.json()["detail"] == {
+        "code": "currency_invalid",
+        "params": {"model": "gpt-x", "currency": "EUR"},
+    }
+    assert not (tmp_path / "ai/prices.json").exists()
+
+
+@pytest.mark.parametrize("model", ["qwen2.5:0.5b", "never-served"])
+def test_a_price_for_no_cloud_name_served_is_refused(context_client, model):
+    answer = context_client.post(
+        "/api/hub/ai/model/set",
+        json={"prices": {model: {"input": 1, "output": 2, "currency": "USD"}}},
+    )
+
+    assert answer.status_code == 400
+    assert answer.json()["detail"] == {
+        "code": "model_not_served",
+        "params": {"model": model},
+    }
+
+
+@pytest.mark.parametrize(
+    "value", [3, "cheap", {"input": "1", "output": 2, "currency": "USD"}, {"input": 1}]
+)
+def test_a_price_that_is_no_price_object_nor_null_is_body_invalid(
+    context_client, value
+):
+    answer = context_client.post(
+        "/api/hub/ai/model/set", json={"prices": {"gpt-x": value}}
+    )
+
+    assert answer.status_code == 400
+    assert answer.json()["detail"]["code"] == "body_invalid"
+
+
+# --- a default price: the first source in serving order models.dev prices ---
+
+
+@pytest.fixture
+def priced_client(monkeypatch, tmp_path):
+    """The model routes over a real runtime's view, its sources and prices stubbed."""
+    from neutrino_hub.modules.ai.context_lengths import AiContextLengthResolver
+    from neutrino_hub.modules.ai.registry import AiProviderRecord
+    from neutrino_hub.web import panel_runtime as runtime_module
+    from neutrino_hub.web.panel_runtime import PanelRuntime
+
+    monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", tmp_path)
+    unlock_vault(monkeypatch, tmp_path)
+    providers = [
+        AiProviderRecord(
+            id="relay", name="A relay", kind="custom", base_url="https://r.example/v1"
+        ),
+        AiProviderRecord(
+            id="ds-plan",
+            name="Zhipu plan",
+            kind="custom",
+            base_url="https://open.bigmodel.cn/api/coding/paas/v4",
+            models=[{"name": "glm-5.3", "alias": "shared"}],
+        ),
+        AiProviderRecord(
+            id="ds",
+            name="Another DeepSeek",
+            kind="custom",
+            base_url="https://api.deepseek.com",
+            models=[{"name": "deepseek-v4-pro", "alias": "shared"}],
+        ),
+    ]
+    providers[0].models = [{"name": "shared", "alias": ""}]
+    resolver = AiContextLengthResolver(
+        known_models=[],
+        catalog={
+            "channels": {},
+            "accounts": [
+                {"name": "kimi-person.json", "provider": "kimi", "models": ["kimi-k3"]}
+            ],
+        },
+        providers=providers,
+        set_lengths={},
+        ollama_machines=[],
+        ollama_names=set(),
+    )
+    monkeypatch.setattr(
+        runtime_module,
+        "prices_in_force",
+        lambda: {
+            "fetched_at": "2026-11-26T00:00:00Z",
+            "providers": {
+                "zhipuai": {"glm-5.3": {"input": 4, "output": 18, "cache_read": 0.8}},
+                "deepseek": {"deepseek-v4-pro": {"input": 0.28, "output": 1.1}},
+                "moonshotai": {"kimi-k3": {"input": 0.6, "output": 2.5}},
+            },
+        },
+    )
+    monkeypatch.setattr(
+        runtime_module, "gateway_models", lambda served: ["kimi-k3", "shared"]
+    )
+    monkeypatch.setattr(
+        ai_router, "gateway_models", lambda served: ["kimi-k3", "shared"]
+    )
+    panel = object.__new__(PanelRuntime)
+    panel.served_models = None
+    monkeypatch.setattr(panel, "_context_resolver", lambda: resolver, raising=False)
+    monkeypatch.setattr(panel, "note_context_lengths", lambda: None, raising=False)
+    app = FastAPI()
+    app.include_router(ai_router.router)
+    app.dependency_overrides[require_session] = lambda: None
+    app.dependency_overrides[get_runtime] = lambda: panel
+    with TestClient(app) as test_client:
+        yield test_client
+
+
+def test_a_default_price_is_the_first_source_in_serving_order_that_has_one(
+    priced_client,
+):
+    cloud = {
+        row["model"]: row
+        for row in priced_client.get("/api/hub/ai/model").json()["cloud"]
+    }
+
+    # The relay is first in the list but models.dev prices no custom relay;
+    # the Zhipu plan is next and priced, ahead of DeepSeek below it.
+    assert cloud["shared"]["default_price"] == {
+        "input": 4.0,
+        "output": 18.0,
+        "cache_read": 0.8,
+        "currency": "USD",
+    }
+    assert cloud["shared"]["price"] is None
+    # An account's name is priced at its login's provider, a cache price
+    # models.dev does not give left out.
+    assert cloud["kimi-k3"]["default_price"] == {
+        "input": 0.6,
+        "output": 2.5,
+        "currency": "USD",
+    }
+
+
+def test_a_price_equal_to_a_real_default_is_stored_as_none(priced_client, tmp_path):
+    answer = priced_client.post(
+        "/api/hub/ai/model/set",
+        json={"prices": {"shared": {"input": 4, "output": 18, "currency": "USD"}}},
+    )
+
+    assert answer.status_code == 200
+    assert stored_prices(tmp_path) == {}
+
+
+# --- the vendor presets ---
+
+
+def test_the_provider_list_carries_the_presets_and_each_providers_vendor(client):
+    token_id = stored_token()
+    preset = client.post(
+        "/api/hub/ai/provider/add",
+        json={
+            "name": "Zhipu GLM",
+            "kind": "custom",
+            "base_url": "https://OPEN.bigmodel.cn/api/coding/paas/v4/",
+            "secret_id": token_id,
+            "models": [{"name": "glm-5.3", "alias": ""}],
+        },
+    )
+    custom = client.post(
+        "/api/hub/ai/provider/add",
+        json={"name": "relay", "kind": "custom", "base_url": "https://r.example/v1"},
+    )
+    kind = client.post(
+        "/api/hub/ai/provider/add",
+        json={"name": "Anthropic", "kind": "anthropic", "base_url": ""},
+    )
+
+    assert (preset.json()["vendor"], preset.json()["endpoint"]) == ("zhipu", "plan_cn")
+    listed = client.get("/api/hub/ai").json()
+    vendors = {
+        row["name"]: (row["vendor"], row["endpoint"]) for row in listed["providers"]
+    }
+    assert vendors == {
+        "Zhipu GLM": ("zhipu", "plan_cn"),
+        "relay": ("", ""),
+        "Anthropic": ("", ""),
+    }
+    assert custom.status_code == kind.status_code == 200
+    assert [vendor["id"] for vendor in listed["vendors"]][:2] == ["deepseek", "kimi"]
+    assert listed["vendors"][1]["endpoints"][0] == {
+        "id": "api_cn",
+        "base_url": "https://api.moonshot.cn/v1",
+        "price_provider": "moonshotai-cn",
+        "is_plan": False,
+        "models": ["kimi-k3.1-pro", "kimi-k3.1-pro-highspeed", "kimi-k3"],
+    }
+
+
+def test_a_provider_saved_from_a_preset_is_stored_in_the_records_own_shape(
+    client, tmp_path
+):
+    client.post(
+        "/api/hub/ai/provider/add",
+        json={
+            "name": "DeepSeek",
+            "kind": "custom",
+            "base_url": "https://api.deepseek.com",
+            "models": [{"name": "deepseek-flash", "alias": ""}],
+        },
+    )
+
+    (stored,) = json.loads((tmp_path / "ai/providers.json").read_text())["providers"]
+    assert "vendor" not in stored and "endpoint" not in stored
+    assert stored["kind"] == "custom"
+    assert stored["base_url"] == "https://api.deepseek.com"

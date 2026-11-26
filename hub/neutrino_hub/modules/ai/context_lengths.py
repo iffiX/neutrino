@@ -250,6 +250,7 @@ class AiContextLengthResolver:
             ],
             key=_account_order,
         )
+        self._serving_providers = list(providers)
         self._providers = sorted(providers, key=operator.attrgetter("name", "id"))
         self._set_lengths = dict(set_lengths)
         self._machines = sorted(
@@ -284,8 +285,8 @@ class AiContextLengthResolver:
             served: The served list.
 
         Returns:
-            ``{cloud, ollama}`` as ``GET /api/hub/ai/context`` answers,
-            each by name.
+            ``{cloud, ollama}`` as ``GET /api/hub/ai/model`` answers, each
+            by name, without the prices.
         """
         cloud = []
         ollama = []
@@ -324,6 +325,34 @@ class AiContextLengthResolver:
                 }
             )
         return {"cloud": cloud, "ollama": ollama}
+
+    def providers(self) -> list:
+        """The stored providers the lengths come from, in the list's order.
+
+        Returns:
+            :class:`AiProviderRecord` each.
+        """
+        return list(self._serving_providers)
+
+    def serving_sources(self, name: str) -> list:
+        """The accounts and then the stored providers that serve a name, in serving order.
+
+        Args:
+            name: The served name.
+
+        Returns:
+            :class:`AiContextSource` each: the accounts by token file, then
+            the stored providers in the list's order.
+        """
+        sources = self._sources(name)
+        accounts = [s for s in sources if s.origin == AI_CONTEXT_ORIGIN_ACCOUNT]
+        providers = [
+            source
+            for provider in self._serving_providers
+            for source in sources
+            if source.origin == AI_CONTEXT_ORIGIN_PROVIDER and source.id == provider.id
+        ]
+        return accounts + providers
 
     def _cloud_length(self, name: str) -> dict:
         """A cloud name's length: its default, the window replaced by a set length."""

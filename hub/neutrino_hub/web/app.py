@@ -333,7 +333,7 @@ def _start_samplers() -> None:
     """The process-wide background readers, started with the panel application.
 
     Each watches something no write announces: what the gateway metered and
-    its model catalog, what the interfaces are doing, what each module's
+    its model catalog, the models.dev prices, what the interfaces are doing, what each module's
     publisher released, the models of each machine's Ollama, and, with the
     proxy, what every exit node measures. Each publishes an event when its reading moves, so no page
     has to ask on a timer. The traffic history counts every interface's bytes
@@ -352,6 +352,7 @@ def _start_samplers() -> None:
         target=runtime.note_context_lengths, name="context_lengths", daemon=True
     ).start()
     runtime.model_catalog.start()
+    runtime.model_prices.start()
     runtime.link_sampler.start()
     runtime.address_sampler.start()
     runtime.ollama_gateway.start()

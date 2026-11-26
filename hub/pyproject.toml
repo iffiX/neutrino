@@ -53,6 +53,8 @@ neutrino_hub = [
     "data/module_catalog.json",
     "data/source_sets.json",
     "data/context_lengths.json",
+    "data/ai_vendors.json",
+    "data/model_prices.json",
     "data/examples/*/*.json",
     "data/examples/*/*/*.json",
     "data/frontend/**/*",

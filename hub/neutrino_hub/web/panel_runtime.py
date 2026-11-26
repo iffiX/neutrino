@@ -43,12 +43,21 @@ from neutrino_hub.modules.channel.tickets import ChannelTicketRegistry
 from neutrino_hub.modules.cliproxyapi.ops import CliproxyApiServedModelCache
 from neutrino_hub.modules.cliproxyapi.model_catalog import read_model_catalog
 from neutrino_hub.modules.cliproxyapi.ops import read_ollama_providers
+from neutrino_hub.modules.ai.constants import AI_CONTEXT_ORIGIN_ACCOUNT
 from neutrino_hub.modules.ai.context_lengths import (
     AiContextLengthResolver,
     is_context_length_input,
     load_known_models,
     read_set_lengths,
 )
+from neutrino_hub.modules.ai.model_prices import (
+    AiPriceTable,
+    default_price,
+    prices_in_force,
+    read_set_prices,
+    source_price_provider,
+)
+from neutrino_hub.modules.ai.vendors import load_vendors, vendor_endpoints
 from neutrino_hub.modules.ai.registry import AiProviderRegistry
 from neutrino_hub.modules.devices.catalog import DeviceCatalogCache
 from neutrino_hub.modules.clients.ai_keys import apply_keys, gateway_models
@@ -142,6 +151,7 @@ from neutrino_hub.web.events import PanelEventBus
 from neutrino_hub.web.link_sampler import PanelLinkSampler
 from neutrino_hub.web.enrollment_sweep import PanelEnrollmentSweeper
 from neutrino_hub.web.model_catalog_sampler import PanelModelCatalogSampler
+from neutrino_hub.web.model_price_sampler import PanelModelPriceSampler
 from neutrino_hub.web.release_sampler import PanelReleaseSampler
 from neutrino_hub.web.web_share_access import (
     PanelWebShareSweeper,
@@ -275,6 +285,8 @@ class PanelRuntime:
         self.model_catalog = PanelModelCatalogSampler(
             on_change=self.note_context_lengths
         )
+        # The daily read of the models.dev price list.
+        self.model_prices = PanelModelPriceSampler()
         self.ollama_pulls = OllamaPullQueue(
             address_of=self.ollama_address, on_pulled=self.ollama_gateway.refresh
         )
@@ -1161,13 +1173,37 @@ class PanelRuntime:
             return {}
         return self._context_resolver().lengths(served)
 
-    def context_view(self) -> dict:
-        """Every served name's context length with where it comes from.
+    def model_view(self) -> dict:
+        """Every served name's context length with where it comes from, and each cloud name's price.
 
         Returns:
-            ``{cloud, ollama}``, as ``GET /api/hub/ai/context`` answers.
+            ``{cloud, ollama}``, as ``GET /api/hub/ai/model`` answers: each
+            cloud name with ``price``, the one a person set, and
+            ``default_price``, the models.dev price of its first source in
+            serving order that has one.
         """
-        return self._context_resolver().view(gateway_models(self.served_models))
+        resolver = self._context_resolver()
+        view = resolver.view(gateway_models(self.served_models))
+        set_prices = read_set_prices()
+        table = AiPriceTable(prices_in_force()["providers"])
+        endpoints = vendor_endpoints(load_vendors())
+        records = {record.id: record for record in resolver.providers()}
+        for entry in view["cloud"]:
+            sources = [
+                (
+                    source_price_provider(
+                        source.origin == AI_CONTEXT_ORIGIN_ACCOUNT,
+                        source.name,
+                        records.get(source.id),
+                        endpoints,
+                    ),
+                    source.upstream,
+                )
+                for source in resolver.serving_sources(entry["model"])
+            ]
+            entry["price"] = set_prices.get(entry["model"])
+            entry["default_price"] = default_price(sources, table)
+        return view
 
     def note_context_lengths(self) -> None:
         """Compute the context lengths again, and hand them on where one changed.

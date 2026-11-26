@@ -67,6 +67,7 @@ class StubRuntime:
         self.ollama_kept = StubLinkSampler()
         self.release_sampler = StubLinkSampler()
         self.model_catalog = StubLinkSampler()
+        self.model_prices = StubLinkSampler()
         self.enrollment_sweeper = StubLinkSampler()
         self.web_share_sweeper = StubLinkSampler()
         self.traffic_history = StubTrafficHistory()

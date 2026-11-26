@@ -6,7 +6,16 @@ so a rename here is a rename there.
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictBool,
+    StrictFloat,
+    StrictInt,
+    StrictStr,
+    model_serializer,
+)
 
 from neutrino_hub.web.constants import (
     WEB_DEFAULT_AGENT_LISTEN_PORT,
@@ -728,7 +737,11 @@ class AiProviderModelView(BaseModel):
 
 
 class AiProviderView(BaseModel):
-    """One stored AI provider; its key is a reference into the vault."""
+    """One stored AI provider; its key is a reference into the vault.
+
+    ``vendor`` and ``endpoint`` are the ids of the preset its base URL
+    names, both empty for **Custom**.
+    """
 
     id: str
     name: str
@@ -738,12 +751,32 @@ class AiProviderView(BaseModel):
     is_enabled: bool = True
     models: list[AiProviderModelView] = Field(default_factory=list)
     created_at: str = ""
+    vendor: str = ""
+    endpoint: str = ""
+
+
+class AiVendorEndpointView(BaseModel):
+    """One endpoint of a vendor preset."""
+
+    id: str
+    base_url: str
+    price_provider: str
+    is_plan: bool = False
+    models: list[str] = Field(default_factory=list)
+
+
+class AiVendorView(BaseModel):
+    """One vendor preset of the provider form, with its endpoints in order."""
+
+    id: str
+    endpoints: list[AiVendorEndpointView]
 
 
 class AiProviderListView(BaseModel):
-    """The AI page's provider section."""
+    """The AI page's provider section, and the vendor presets of its form."""
 
     providers: list[AiProviderView]
+    vendors: list[AiVendorView] = Field(default_factory=list)
 
 
 class AiOllamaProviderView(BaseModel):
@@ -768,13 +801,41 @@ class AiContextSourceView(BaseModel):
     name: str
 
 
+class AiModelPriceView(BaseModel):
+    """A price a person set: input and output per million tokens, in USD or CNY."""
+
+    input: float
+    output: float
+    currency: str
+
+
+class AiDefaultPriceView(BaseModel):
+    """A name's models.dev price per million tokens, in USD; a cache price models.dev does not give is absent."""
+
+    input: float
+    output: float
+    cache_read: float | None = None
+    cache_write: float | None = None
+    currency: str
+
+    @model_serializer(mode="wrap")
+    def _without_absent_cache(self, handler):
+        data = handler(self)
+        for field in ("cache_read", "cache_write"):
+            if data.get(field) is None:
+                data.pop(field, None)
+        return data
+
+
 class AiCloudContextView(BaseModel):
-    """A cloud name's context length: the one a person set, or its default."""
+    """A cloud name's context length and price: each the one a person set, or its default."""
 
     model: str
     sources: list[AiContextSourceView]
     context_length: int | None = None
     default_context_length: int
+    price: AiModelPriceView | None = None
+    default_price: AiDefaultPriceView | None = None
 
 
 class AiOllamaContextMachineView(BaseModel):
@@ -796,17 +857,26 @@ class AiOllamaContextView(BaseModel):
     context_length: int
 
 
-class AiContextView(BaseModel):
-    """The context length of every name the gateway serves."""
+class AiModelView(BaseModel):
+    """The context length of every name the gateway serves, and each cloud name's price."""
 
     cloud: list[AiCloudContextView]
     ollama: list[AiOllamaContextView]
 
 
-class AiContextUpdate(BaseModel):
-    """The lengths a person set, by cloud name; a null takes a name back to its default."""
+class AiModelPriceSet(BaseModel):
+    """A price a person sets for a cloud name."""
 
-    lengths: dict[str, StrictInt | None]
+    input: StrictInt | StrictFloat
+    output: StrictInt | StrictFloat
+    currency: StrictStr
+
+
+class AiModelUpdate(BaseModel):
+    """The lengths and prices a person set, by cloud name; a null takes a name back to its default."""
+
+    lengths: dict[str, StrictInt | None] = Field(default_factory=dict)
+    prices: dict[str, AiModelPriceSet | None] = Field(default_factory=dict)
 
 
 class AiProviderCreate(BaseModel):
@@ -869,9 +939,12 @@ class CliproxyApiStatusView(BaseModel):
     # Whether the stored configuration differs from what the last apply handed
     # the gateway, which is what lights the Providers panel's apply bar.
     is_serving_stale: bool = False
-    # The strip's numbers: the current UTC day, tokens as input plus output.
+    # The strip's numbers: the current UTC day, tokens as input plus output,
+    # and the cost and the API value, each in millionths per currency.
     requests_today: int = 0
     tokens_today: int = 0
+    cost_today: dict[str, int] = Field(default_factory=dict)
+    api_value_today: dict[str, int] = Field(default_factory=dict)
     # Signed-in subscription accounts, which serve beside the key providers
     # and are counted separately because nothing applies them.
     account_count: int = 0
@@ -891,7 +964,11 @@ class CliproxyApiUsageRates(BaseModel):
 
 
 class CliproxyApiUsageTotals(BaseModel):
-    """One counter set over a range or bucket."""
+    """One counter set over a range or bucket.
+
+    ``cost`` and ``api_value`` are millionths of each currency that has an
+    amount; ``unpriced_requests`` counts the requests with no price.
+    """
 
     requests: int = 0
     failed: int = 0
@@ -899,6 +976,9 @@ class CliproxyApiUsageTotals(BaseModel):
     output_tokens: int = 0
     cache_read_tokens: int = 0
     cache_write_tokens: int = 0
+    cost: dict[str, int] = Field(default_factory=dict)
+    api_value: dict[str, int] = Field(default_factory=dict)
+    unpriced_requests: int = 0
 
 
 class CliproxyApiUsageBucket(CliproxyApiUsageTotals):
@@ -943,8 +1023,14 @@ class CliproxyApiUsageProvider(CliproxyApiUsageTotals):
     health: list[CliproxyApiHealthBucket] = Field(default_factory=list)
 
 
+class CliproxyApiUsageModel(CliproxyApiUsageTotals):
+    """One served name's usage over the range; ``""`` for the days stored before the model field."""
+
+    model: str
+
+
 class CliproxyApiUsageView(BaseModel):
-    """The usage answer: rates, totals, the series, keys and providers."""
+    """The usage answer: rates, totals, the series, keys, providers and models."""
 
     range: str
     generated_at: str
@@ -953,6 +1039,7 @@ class CliproxyApiUsageView(BaseModel):
     series: list[CliproxyApiUsageBucket] = Field(default_factory=list)
     keys: list[CliproxyApiUsageKey] = Field(default_factory=list)
     providers: list[CliproxyApiUsageProvider] = Field(default_factory=list)
+    models: list[CliproxyApiUsageModel] = Field(default_factory=list)
 
 
 class CliproxyApiJournalView(BaseModel):
@@ -981,11 +1068,26 @@ class CliproxyApiSettingsUpdate(BaseModel):
     default_model: str | None = None
 
 
+class CliproxyApiQuotaWindowView(BaseModel):
+    """One limit window of an account: its used share from 0 to 1, its reset, and when it was seen.
+
+    ``origin`` is ``signal`` for what the gateway kept from the vendor's
+    answers, ``read`` for a **Refresh** of the vendor's usage endpoint.
+    """
+
+    name: str
+    used_share: float
+    resets_at: str = ""
+    seen_at: str = ""
+    origin: str
+
+
 class CliproxyApiAccountView(BaseModel):
     """One subscription account the gateway holds a token file for.
 
     There is no expiry here because the gateway refreshes its own tokens; what
-    it reports instead is whether the account is serving.
+    it reports instead is whether the account is serving, until when the
+    gateway cools it, and its windows.
     """
 
     name: str
@@ -997,6 +1099,11 @@ class CliproxyApiAccountView(BaseModel):
     status_message: str = ""
     is_disabled: bool = False
     is_unavailable: bool = False
+    next_retry_after: str = ""
+    plan: str = ""
+    subscription_ends_at: str = ""
+    has_quota_read: bool = False
+    windows: list[CliproxyApiQuotaWindowView] = Field(default_factory=list)
     failed_count: int = 0
     success_count: int = 0
     created_at: str = ""

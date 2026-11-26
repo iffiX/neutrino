@@ -1,6 +1,7 @@
 """The usage collector: what one poll pops, maps, and folds into the store."""
 
 import json
+from datetime import datetime, timezone
 
 import pytest
 
@@ -108,7 +109,17 @@ class FakeRegistry:
         pass
 
     def list_records(self):
-        record = type("Record", (), {"id": "p1", "is_enabled": True, "secret_id": "s1"})
+        record = type(
+            "Record",
+            (),
+            {
+                "id": "p1",
+                "is_enabled": True,
+                "secret_id": "s1",
+                "kind": "custom",
+                "base_url": "https://api.deepseek.com",
+            },
+        )
         return [record()]
 
     def open_api_key(self, record):
@@ -170,7 +181,7 @@ def test_a_poll_pops_maps_and_folds(collector, monkeypatch, tmp_path):
     assert seen["params"] == {"count": 1000}
 
     data = json.loads((tmp_path / "usage.json").read_text())
-    cell = data["cells"]["k1|p1"]
+    cell = data["cells"]["k1|p1|"]
     day = cell["days"]["2026-09-03"]
     assert day["requests"] == 2
     assert day["failed"] == 1
@@ -188,8 +199,8 @@ def test_an_account_served_record_lands_on_its_token_file(
     assert collector.poll_once() == 1
 
     data = json.loads((tmp_path / "usage.json").read_text())
-    assert list(data["cells"]) == ["k1|claude-person.json"]
-    day = data["cells"]["k1|claude-person.json"]["days"]["2026-09-03"]
+    assert list(data["cells"]) == ["k1|claude-person.json|"]
+    day = data["cells"]["k1|claude-person.json|"]["days"]["2026-09-03"]
     assert day["requests"] == 1
     assert day["input_tokens"] == 80
     assert "claude-person.json" in data["providers"]
@@ -208,7 +219,7 @@ def test_an_unlistable_account_leaves_the_record_unattributed(
     assert collector.poll_once() == 1
 
     data = json.loads((tmp_path / "usage.json").read_text())
-    assert list(data["cells"]) == ["k1|"]
+    assert list(data["cells"]) == ["k1||"]
     assert data["providers"] == {}
 
 
@@ -394,3 +405,93 @@ def test_a_hub_with_no_access_key_probes_with_its_own_key(monkeypatch, tmp_path)
     assert watcher.sample_once() is True
     assert changes.count == 1
     assert served.keys == ["hub-key", "hub-key"]
+
+
+# A priced request through the DeepSeek provider, one through the
+# account, and one a machine's Ollama served, in 7.2.146's v2 shape.
+def priced(model: str, **fields) -> dict:
+    return {
+        "timestamp": "2026-09-04T06:20:00+08:00",
+        "api_key": "client-key-one",
+        "source": "sk-upstream",
+        "provider": "openai-compatible-deepseek",
+        "model": model,
+        "alias": "",
+        "failed": False,
+        "token_breakdown": {
+            "schema_version": 2,
+            "quality": "complete",
+            "input": {
+                "total_tokens": 1000,
+                "uncached_tokens": 1000,
+                "cache_read_tokens": 0,
+                "cache_write_tokens": 0,
+            },
+            "output": {"total_tokens": 0},
+        },
+        **fields,
+    }
+
+
+def test_a_poll_prices_each_record_at_the_prices_in_force_at_that_poll(
+    collector, monkeypatch, tmp_path
+):
+    from neutrino_hub.modules.ai import model_prices
+    from neutrino_hub.modules.cliproxyapi.ops import write_ollama_providers
+
+    monkeypatch.setattr("neutrino_hub.utils.json_file.UTILS_CONFIG_DIR", tmp_path)
+    monkeypatch.setattr(
+        collector_module,
+        "prices_in_force",
+        lambda: {
+            "fetched_at": "2026-09-01T00:00:00Z",
+            "providers": {
+                "deepseek": {"deepseek-v4-pro": {"input": 0.28, "output": 1.1}},
+                "anthropic": {"claude-opus-5-5": {"input": 5, "output": 25}},
+            },
+        },
+    )
+    write_ollama_providers(
+        [{"device_id": "dev-1", "address": "127.0.0.1:1", "models": ["qwen2.5:7b"]}]
+    )
+    answer = [
+        priced("deepseek-v4-pro"),
+        priced(
+            "claude-opus-5-5",
+            source="person@example.com",
+            auth_index=ACCOUNT.auth_index,
+            provider="claude",
+        ),
+        priced("qwen2.5:7b", source="", provider="openai-compatible-ollama-dev-1"),
+    ]
+    monkeypatch.setattr(
+        collector_module.httpx, "get", lambda *a, **k: FakeResponse(answer)
+    )
+    assert collector.poll_once() == 3
+
+    # A person's price counts from the next record folded.
+    model_prices.write_set_prices(
+        {"deepseek-v4-pro": {"input": 2, "output": 8, "currency": "CNY"}}
+    )
+    monkeypatch.setattr(
+        collector_module.httpx,
+        "get",
+        lambda *a, **k: FakeResponse([priced("deepseek-v4-pro")]),
+    )
+    assert collector.poll_once() == 1
+
+    store = CliproxyApiUsageStore(path=tmp_path / "usage.json")
+    rows = {
+        row["model"]: row
+        for row in store.model_rows(
+            "year", now=datetime(2026, 9, 4, tzinfo=timezone.utc)
+        )
+    }
+    assert rows["deepseek-v4-pro"]["cost"] == {"USD": 280, "CNY": 2000}
+    assert rows["claude-opus-5-5"]["api_value"] == {"USD": 5000}
+    assert rows["claude-opus-5-5"]["cost"] == {}
+    assert (
+        rows["qwen2.5:7b"]["cost"],
+        rows["qwen2.5:7b"]["api_value"],
+        rows["qwen2.5:7b"]["unpriced_requests"],
+    ) == ({}, {}, 0)

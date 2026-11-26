@@ -58,6 +58,41 @@ CLIPROXYAPI_MODEL_DEFINITIONS_PATH = (
 )
 CLIPROXYAPI_AUTH_FILE_MODELS_PATH = f"{CLIPROXYAPI_MANAGEMENT_PREFIX}/auth-files/models"
 CLIPROXYAPI_ACCOUNT_TIMEOUT_S = 15
+# Pausing and resuming an account, and a request the gateway sends for the
+# hub with an account's token and through the account's proxy.
+CLIPROXYAPI_AUTH_FILE_STATUS_PATH = f"{CLIPROXYAPI_MANAGEMENT_PREFIX}/auth-files/status"
+CLIPROXYAPI_API_CALL_PATH = f"{CLIPROXYAPI_MANAGEMENT_PREFIX}/api-call"
+# How long a quota read through the gateway may take; the gateway's own
+# limit on the vendor's answer is 60 seconds.
+CLIPROXYAPI_API_CALL_TIMEOUT_S = 75
+# The token the gateway puts in place of this word in a request's headers.
+CLIPROXYAPI_TOKEN_WORD = "$TOKEN$"
+# Each login's quota read: the method, the vendor's usage endpoint, the
+# headers and the body (hub_components/ai.md, "Quota on an account row").
+CLIPROXYAPI_QUOTA_READS = {
+    "claude": (
+        "GET",
+        "https://api.anthropic.com/api/oauth/usage",
+        {"anthropic-beta": "oauth-2025-04-20"},
+        "",
+    ),
+    "codex": ("GET", "https://chatgpt.com/backend-api/wham/usage", {}, ""),
+    "kimi": ("GET", "https://api.kimi.com/coding/v1/usages", {}, ""),
+    "antigravity": (
+        "POST",
+        "https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels",
+        {"Content-Type": "application/json"},
+        "{}",
+    ),
+}
+# The header a Codex read names the account by.
+CLIPROXYAPI_CODEX_ACCOUNT_HEADER = "ChatGPT-Account-Id"
+# A window's name by its length in minutes; any other length is named by
+# its minutes.
+CLIPROXYAPI_WINDOW_NAMES = {300: "5h", 10080: "7d"}
+# Where a window's number came from.
+CLIPROXYAPI_WINDOW_SIGNAL = "signal"
+CLIPROXYAPI_WINDOW_READ = "read"
 # The flows 7.2.146 starts, each named after the route that starts it. Gemini
 # is absent because the binary carries no Gemini OAuth flow: a Google model is
 # reached with an API key provider instead.
@@ -89,6 +124,10 @@ CLIPROXYAPI_OLLAMA_PROVIDERS_RELATIVE = "cliproxyapi/ollama_providers.json"
 # both.
 CLIPROXYAPI_MODEL_CATALOG_RELATIVE = "cliproxyapi/model_catalog.json"
 CLIPROXYAPI_OLLAMA_LENGTHS_RELATIVE = "cliproxyapi/ollama_lengths.json"
+# Each account's last quota read from its vendor, and the last price list
+# read from models.dev that passed the hub's checks, beside the usage store.
+CLIPROXYAPI_ACCOUNT_QUOTA_RELATIVE = "cliproxyapi/account_quota.json"
+CLIPROXYAPI_MODEL_PRICES_RELATIVE = "cliproxyapi/model_prices.json"
 # How often the catalog is read again, as the gateway downloads a new one.
 CLIPROXYAPI_CATALOG_INTERVAL_S = 3 * 3600
 # How soon a catalog read that failed at the panel's start is tried again.
@@ -97,6 +136,9 @@ CLIPROXYAPI_CATALOG_RETRY_S = 10
 # Ollama's OpenAI-compatible API after its forward's address.
 CLIPROXYAPI_OLLAMA_PROVIDER_PREFIX = "ollama-"
 CLIPROXYAPI_OLLAMA_API_PATH = "/v1"
+# What the gateway names an OpenAI-compatible entry in its usage records:
+# this before the entry's name.
+CLIPROXYAPI_COMPATIBLE_PROVIDER_PREFIX = "openai-compatible-"
 
 # A change of keys alone is written into the served file, which the gateway
 # watches and reloads without a restart: how long the hub waits for it to

@@ -359,6 +359,8 @@ class StubGateway:
         self.login_status = [{"status": "wait"}]
         self.calls = []
         self.is_down = False
+        # What api-call answers: the gateway's own status, and its body.
+        self.api_call_answer = (200, {"status_code": 200, "header": {}, "body": "{}"})
 
     def request(self, method, url, **kwargs):
         path = httpx.URL(url).path
@@ -368,6 +370,15 @@ class StubGateway:
             raise httpx.ConnectError("connection refused")
         if path == "/v0/management/auth-files":
             return self._auth_files(method, params)
+        if path == "/v0/management/auth-files/status" and method == "PATCH":
+            body = kwargs.get("json") or {}
+            for entry in self.files:
+                if entry["name"] == body.get("name"):
+                    entry["disabled"] = body.get("disabled")
+                    return _response(200, {"status": "ok"})
+            return _response(404, {"error": "auth file not found"})
+        if path == "/v0/management/api-call" and method == "POST":
+            return _response(*self.api_call_answer)
         if path.endswith("-auth-url"):
             answer = DEVICE_URL_ANSWER if "kimi" in path else AUTH_URL_ANSWER
             return _response(200, answer)
@@ -650,6 +661,235 @@ def test_no_management_key_is_worded(accounts_client, monkeypatch):
     answer = accounts_client.get("/api/hub/ai/gateway/account")
     assert answer.status_code == 502
     assert answer.json()["detail"]["code"] == "management_key_missing"
+
+
+# --- quota: a Refresh through the gateway's api-call, Pause and Resume ---
+
+
+SCAN_PATH = "/api/hub/ai/gateway/account/quota/scan"
+CLAUDE_USAGE_BODY = (
+    '{"five_hour": {"utilization": 12.0, "resets_at": "2026-11-26T15:00:00Z"},'
+    ' "seven_day": {"utilization": 25.0, "resets_at": "2026-11-30T00:00:00Z"}}'
+)
+
+
+def _api_calls(gateway) -> list:
+    return [call[3] for call in gateway.calls if call[1] == "/v0/management/api-call"]
+
+
+def test_a_refresh_reads_the_vendor_through_api_call_and_shows_the_read(
+    accounts_client, accounts_gateway
+):
+    accounts_gateway.files = [ACCOUNT_ROW]
+    accounts_gateway.api_call_answer = (
+        200,
+        {"status_code": 200, "header": {}, "body": CLAUDE_USAGE_BODY},
+    )
+
+    answer = accounts_client.post(SCAN_PATH, json={"name": "claude-person.json"})
+
+    assert answer.status_code == 200
+    (call,) = _api_calls(accounts_gateway)
+    assert call == {
+        "auth_index": ACCOUNT_ROW["auth_index"],
+        "method": "GET",
+        "url": "https://api.anthropic.com/api/oauth/usage",
+        "header": {
+            "Authorization": "Bearer $TOKEN$",
+            "anthropic-beta": "oauth-2025-04-20",
+        },
+        "data": "",
+    }
+    (account,) = answer.json()["accounts"]
+    assert account["has_quota_read"] is True
+    assert [
+        (window["name"], window["used_share"], window["origin"])
+        for window in account["windows"]
+    ] == [("5h", 0.12, "read"), ("7d", 0.25, "read")]
+    # The list shows the stored read with no vendor asked.
+    listed = accounts_client.get("/api/hub/ai/gateway/account").json()["accounts"]
+    assert listed[0]["windows"] == account["windows"]
+    assert len(_api_calls(accounts_gateway)) == 1
+
+
+def test_each_logins_refresh_names_its_own_endpoint(accounts_client, accounts_gateway):
+    accounts_gateway.files = [
+        {
+            **ACCOUNT_ROW,
+            "name": "codex-person.json",
+            "provider": "codex",
+            "id_token": {"chatgpt_account_id": "acct-1", "plan_type": "plus"},
+        },
+        {**ACCOUNT_ROW, "name": "kimi-person.json", "provider": "kimi"},
+        {**ACCOUNT_ROW, "name": "ag-person.json", "provider": "antigravity"},
+    ]
+    accounts_gateway.api_call_answer = (
+        200,
+        {
+            "status_code": 200,
+            "body": '{"models": {"m": {"quotaInfo": {"remainingFraction": 0.5}}}}',
+        },
+    )
+
+    for name in ("codex-person.json", "kimi-person.json", "ag-person.json"):
+        accounts_client.post(SCAN_PATH, json={"name": name})
+
+    codex, kimi, antigravity = _api_calls(accounts_gateway)
+    assert codex["url"] == "https://chatgpt.com/backend-api/wham/usage"
+    assert codex["header"]["ChatGPT-Account-Id"] == "acct-1"
+    assert kimi["url"] == "https://api.kimi.com/coding/v1/usages"
+    assert (antigravity["method"], antigravity["url"], antigravity["data"]) == (
+        "POST",
+        "https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels",
+        "{}",
+    )
+    assert all(
+        call["header"]["Authorization"] == "Bearer $TOKEN$"
+        for call in (codex, kimi, antigravity)
+    )
+
+
+def test_an_xai_login_has_no_refresh(accounts_client, accounts_gateway):
+    accounts_gateway.files = [
+        {**ACCOUNT_ROW, "name": "xai-person.json", "provider": "xai"}
+    ]
+
+    answer = accounts_client.post(SCAN_PATH, json={"name": "xai-person.json"})
+
+    assert answer.status_code == 400
+    assert answer.json()["detail"] == {
+        "code": "quota_read_unsupported",
+        "params": {"provider": "xai"},
+    }
+    assert _api_calls(accounts_gateway) == []
+    listed = accounts_client.get("/api/hub/ai/gateway/account").json()["accounts"]
+    assert listed[0]["has_quota_read"] is False
+
+
+def test_a_failed_refresh_keeps_the_stored_read(accounts_client, accounts_gateway):
+    accounts_gateway.files = [ACCOUNT_ROW]
+    accounts_gateway.api_call_answer = (
+        200,
+        {"status_code": 200, "body": CLAUDE_USAGE_BODY},
+    )
+    accounts_client.post(SCAN_PATH, json={"name": "claude-person.json"})
+
+    accounts_gateway.api_call_answer = (200, {"status_code": 429, "body": "slow down"})
+    limited = accounts_client.post(SCAN_PATH, json={"name": "claude-person.json"})
+    accounts_gateway.api_call_answer = (502, {"error": "request failed"})
+    unreached = accounts_client.post(SCAN_PATH, json={"name": "claude-person.json"})
+    accounts_gateway.api_call_answer = (
+        200,
+        {"status_code": 200, "body": '{"moved": 1}'},
+    )
+    unparsed = accounts_client.post(SCAN_PATH, json={"name": "claude-person.json"})
+
+    assert (limited.status_code, limited.json()["detail"]) == (
+        502,
+        {"code": "quota_read_failed", "params": {"status": 429}},
+    )
+    assert unreached.json()["detail"] == {
+        "code": "quota_read_failed",
+        "params": {"status": 0},
+    }
+    assert (unparsed.status_code, unparsed.json()["detail"]) == (
+        502,
+        {"code": "quota_read_unparsed", "params": {}},
+    )
+    listed = accounts_client.get("/api/hub/ai/gateway/account").json()["accounts"]
+    assert [window["used_share"] for window in listed[0]["windows"]] == [0.12, 0.25]
+
+
+def test_a_refresh_of_an_account_the_gateway_lacks_is_404(accounts_client):
+    answer = accounts_client.post(SCAN_PATH, json={"name": "gone.json"})
+
+    assert answer.status_code == 404
+    assert answer.json()["detail"]["code"] == "unknown_account"
+
+
+def test_removing_an_account_removes_its_stored_read(
+    accounts_client, accounts_gateway, tmp_path
+):
+    accounts_gateway.files = [ACCOUNT_ROW]
+    accounts_gateway.api_call_answer = (
+        200,
+        {"status_code": 200, "body": CLAUDE_USAGE_BODY},
+    )
+    accounts_client.post(SCAN_PATH, json={"name": "claude-person.json"})
+    stored = tmp_path / "state/cliproxyapi/account_quota.json"
+    assert "claude-person.json" in stored.read_text()
+
+    accounts_client.post(
+        "/api/hub/ai/gateway/account/remove", json={"name": "claude-person.json"}
+    )
+
+    assert json.loads(stored.read_text()) == {"accounts": {}}
+
+
+def test_pause_and_resume_patch_the_accounts_status(accounts_client, accounts_gateway):
+    accounts_gateway.files = [dict(ACCOUNT_ROW)]
+
+    paused = accounts_client.post(
+        "/api/hub/ai/gateway/account/disable", json={"name": "claude-person.json"}
+    )
+    resumed = accounts_client.post(
+        "/api/hub/ai/gateway/account/enable", json={"name": "claude-person.json"}
+    )
+
+    patches = [call[3] for call in accounts_gateway.calls if call[0] == "PATCH"]
+    assert patches == [
+        {"name": "claude-person.json", "disabled": True},
+        {"name": "claude-person.json", "disabled": False},
+    ]
+    assert paused.json()["accounts"][0]["is_disabled"] is True
+    assert resumed.json()["accounts"][0]["is_disabled"] is False
+    missing = accounts_client.post(
+        "/api/hub/ai/gateway/account/disable", json={"name": "gone.json"}
+    )
+    assert missing.status_code == 404
+    assert missing.json()["detail"]["code"] == "unknown_account"
+
+
+def test_an_account_row_carries_its_signals_limit_plan_and_end(
+    accounts_client, accounts_gateway
+):
+    accounts_gateway.files = [
+        {
+            **ACCOUNT_ROW,
+            "name": "codex-person.json",
+            "provider": "codex",
+            "unavailable": True,
+            "next_retry_after": "2026-11-26T09:30:00.5Z",
+            "id_token": {
+                "plan_type": "pro",
+                "chatgpt_subscription_active_until": "2026-12-01T00:00:00Z",
+            },
+            "quota": {
+                "observed_at": "2026-11-26T08:00:00Z",
+                "signals": {
+                    "X-Codex-Primary-Used-Percent": "80",
+                    "X-Codex-Primary-Window-Minutes": "300",
+                },
+            },
+        }
+    ]
+
+    (account,) = accounts_client.get("/api/hub/ai/gateway/account").json()["accounts"]
+
+    assert account["next_retry_after"] == "2026-11-26T09:30:00Z"
+    assert (account["plan"], account["subscription_ends_at"]) == (
+        "pro",
+        "2026-12-01T00:00:00Z",
+    )
+    assert account["windows"] == [
+        {
+            "name": "5h",
+            "used_share": 0.8,
+            "resets_at": "",
+            "seen_at": "2026-11-26T08:00:00Z",
+            "origin": "signal",
+        }
+    ]
 
 
 def test_signing_in_never_makes_the_gateway_stale(monkeypatch, tmp_path):
@@ -1001,3 +1241,124 @@ class StubDeviceRegistry:
             name = "box"
 
         return Device() if device_id == "dev-1" else None
+
+
+def seed_priced_usage(provider_id: str) -> None:
+    """Two requests on key k1, one priced through a DeepSeek provider and one with no price."""
+    from neutrino_hub.modules.ai.model_prices import AiPriceTable, AiRecordPricer
+    from neutrino_hub.modules.ai.registry import AiProviderRegistry
+    from neutrino_hub.modules.ai.vendors import load_vendors, vendor_endpoints
+
+    def priced(model: str) -> dict:
+        return {
+            "timestamp": NOW.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
+            "api_key": "client-key-one",
+            "source": "sk-upstream",
+            "model": model,
+            "alias": "",
+            "failed": False,
+            "token_breakdown": {
+                "schema_version": 2,
+                "quality": "complete",
+                "input": {
+                    "total_tokens": 1000,
+                    "uncached_tokens": 400,
+                    "cache_read_tokens": 600,
+                    "cache_write_tokens": 0,
+                },
+                "output": {"total_tokens": 50},
+            },
+        }
+
+    CliproxyApiUsageStore().ingest(
+        [priced("deepseek-v4-pro"), priced("not-priced")],
+        key_ids={"client-key-one": "k1"},
+        key_names={"k1": "laptop key"},
+        provider_ids={"sk-upstream": provider_id},
+        pricer=AiRecordPricer(
+            table=AiPriceTable(
+                {
+                    "deepseek": {
+                        "deepseek-v4-pro": {
+                            "input": 0.28,
+                            "output": 1.1,
+                            "cache_read": 0.028,
+                        }
+                    }
+                }
+            ),
+            set_prices={},
+            providers={
+                record.id: record for record in AiProviderRegistry().list_records()
+            },
+            accounts={},
+            endpoints=vendor_endpoints(load_vendors()),
+        ),
+    )
+
+
+def test_usage_carries_a_models_table_and_cost_on_every_counter_set(usage_client):
+    token_id = (
+        SecretVault().add(kind="token", name="key", secret={"value": "sk-upstream"}).id
+    )
+    provider_id = usage_client.post(
+        "/api/hub/ai/provider/add",
+        json={
+            "name": "DeepSeek",
+            "kind": "custom",
+            "base_url": "https://api.deepseek.com",
+            "secret_id": token_id,
+        },
+    ).json()["id"]
+    seed_priced_usage(provider_id)
+
+    body = usage_client.get("/api/hub/ai/gateway/usage?range=month").json()
+
+    assert body["totals"]["cost"] == {"USD": 184}
+    assert body["totals"]["unpriced_requests"] == 1
+    assert body["keys"][0]["cost"] == {"USD": 184}
+    assert body["providers"][0]["cost"] == {"USD": 184}
+    assert body["series"][-1]["cost"] == {"USD": 184}
+    models = {row["model"]: row for row in body["models"]}
+    assert set(models) == {"deepseek-v4-pro", "not-priced"}
+    assert models["deepseek-v4-pro"]["cost"] == {"USD": 184}
+    assert models["deepseek-v4-pro"]["api_value"] == {}
+    assert models["not-priced"]["cost"] == {}
+    assert models["not-priced"]["unpriced_requests"] == 1
+
+
+def test_the_days_before_the_model_field_are_a_model_unknown_row(usage_client):
+    seed_usage()
+
+    (row,) = usage_client.get("/api/hub/ai/gateway/usage?range=day").json()["models"]
+
+    assert row["model"] == ""
+    assert row["requests"] == 1
+    assert row["cost"] == {}
+
+
+def test_the_status_carries_todays_cost_and_api_value(usage_client, monkeypatch):
+    token_id = (
+        SecretVault().add(kind="token", name="key", secret={"value": "sk-upstream"}).id
+    )
+    provider_id = usage_client.post(
+        "/api/hub/ai/provider/add",
+        json={
+            "name": "DeepSeek",
+            "kind": "custom",
+            "base_url": "https://api.deepseek.com/",
+            "secret_id": token_id,
+        },
+    ).json()["id"]
+    seed_priced_usage(provider_id)
+    monkeypatch.setattr(
+        SystemdServiceController,
+        "status",
+        lambda self, name: type("S", (), {"is_active": False})(),
+    )
+
+    body = usage_client.get("/api/hub/ai/gateway").json()
+
+    assert body["cost_today"] == {"USD": 184}
+    assert body["api_value_today"] == {}
+    assert body["requests_today"] == 2

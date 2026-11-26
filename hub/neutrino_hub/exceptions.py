@@ -173,8 +173,9 @@ class AiAccountRefusedError(RuntimeError):
 
     Attributes:
         code: What the panel words, one of ``gateway_unreachable``,
-            ``login_expired``, ``unsupported_kind``, ``unknown_account`` or
-            ``management_key_missing``.
+            ``login_expired``, ``unsupported_kind``, ``unknown_account``,
+            ``management_key_missing``, ``quota_read_unsupported``,
+            ``quota_read_failed`` or ``quota_read_unparsed``.
         params: What the wording needs, by name.
     """
 

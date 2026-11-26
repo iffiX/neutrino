@@ -1,13 +1,21 @@
 """Accumulated AI gateway usage, persisted under the state root.
 
 One JSON file holds everything the usage answers are built from. The unit of
-storage is a cell — one client key crossed with one upstream — with per-day
-counters kept forever and per-hour counters kept two days; every total,
-series and filter is a sum over cells. An upstream is an API-key provider or
-a subscription account, and both are named by id in the same slot. A minute
-ring beside them carries the rpm/tpm window. The gateway's queue records
-arrive already mapped to ids; unknown keys and upstreams land in a cell with
-an empty id, so the totals stay honest when a key is revoked mid-flight.
+storage is a cell, one client key, upstream and model, keyed
+``key|upstream|model``, with per-day counters kept forever and per-hour
+counters kept two days; every total, series and filter is a sum over cells.
+An upstream is an API-key provider or a subscription account, and both are
+named by id in the same slot; a model is the served name, the record's
+``alias``, else its ``model``. A cell stored before the model field, keyed
+``key|upstream``, reads as the model ``""``. A minute ring beside them
+carries the rpm/tpm window. The gateway's queue records arrive already
+mapped to ids; unknown keys and upstreams land in a cell with an empty id,
+so the totals stay honest when a key is revoked mid-flight.
+
+Each record is priced as it is folded in: its cost, or its API value for an
+account or a plan endpoint, in millionths of its currency, one counter per
+currency, or a count among the requests with no price (hub_components/ai.md,
+"Metering" and "Cost").
 
 Reads tolerate anything: a corrupt or hostile file is logged and replaced by
 a fresh store, never a crashed panel.
@@ -20,6 +28,13 @@ import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from neutrino_hub.modules.ai.constants import (
+    AI_CHARGE_API_VALUE,
+    AI_CHARGE_COST,
+    AI_CHARGE_UNPRICED,
+    AI_PRICE_CURRENCIES,
+)
+from neutrino_hub.modules.ai.model_prices import AiRecordCharge
 from neutrino_hub.modules.cliproxyapi.constants import (
     CLIPROXYAPI_USAGE_HOURS_KEPT,
     CLIPROXYAPI_USAGE_MINUTES_KEPT,
@@ -29,7 +44,7 @@ from neutrino_hub.utils import constants
 
 LOGGER = logging.getLogger(__name__)
 
-USAGE_VERSION = 1
+USAGE_VERSION = 2
 USAGE_COUNTER_FIELDS = (
     "requests",
     "failed",
@@ -37,7 +52,10 @@ USAGE_COUNTER_FIELDS = (
     "output_tokens",
     "cache_read_tokens",
     "cache_write_tokens",
+    "unpriced_requests",
 )
+# The counters kept per currency, each ``{<currency>: <millionths>}``.
+USAGE_AMOUNT_FIELDS = ("cost", "api_value")
 # Buckets per range: day is hourly, the rest are daily.
 USAGE_RANGE_BUCKETS = {"day": 24, "week": 7, "month": 30, "year": 365}
 USAGE_HEALTH_HOURS = 5
@@ -47,9 +65,12 @@ def zero_counters() -> dict:
     """A fresh counter set.
 
     Returns:
-        Every counter field at zero.
+        Every counter field at zero, and no amount in any currency.
     """
-    return {field: 0 for field in USAGE_COUNTER_FIELDS}
+    counters = {field: 0 for field in USAGE_COUNTER_FIELDS}
+    for field in USAGE_AMOUNT_FIELDS:
+        counters[field] = {}
+    return counters
 
 
 class CliproxyApiUsageStore:
@@ -71,6 +92,7 @@ class CliproxyApiUsageStore:
         key_names: dict[str, str],
         provider_ids: dict[str, str],
         account_ids: dict[str, str] | None = None,
+        pricer=None,
         now: datetime | None = None,
     ) -> int:
         """Fold popped queue records into the store and persist it.
@@ -85,6 +107,9 @@ class CliproxyApiUsageStore:
             account_ids: Credential handle (the record's ``auth_index``) to
                 account id, resolved from the gateway's auth files; None where
                 the gateway could not be asked.
+            pricer: Prices each record, an
+                :class:`neutrino_hub.modules.ai.model_prices.AiRecordPricer`;
+                None counts every record among the requests with no price.
             now: The poll moment; None is the real clock.
 
         Returns:
@@ -100,6 +125,7 @@ class CliproxyApiUsageStore:
                 key_ids=key_ids,
                 provider_ids=provider_ids,
                 account_ids=account_ids or {},
+                pricer=pricer,
             ):
                 folded += 1
         for key_id, name in key_names.items():
@@ -250,7 +276,7 @@ class CliproxyApiUsageStore:
             summed = zero_counters()
             health = {bucket: {"requests": 0, "failed": 0} for bucket in health_keys}
             for cell_key, cell in data["cells"].items():
-                if cell_key.split("|", 1)[1] != provider_id:
+                if _cell_parts(cell_key)[1] != provider_id:
                     continue
                 if not self._cell_matches(cell_key, key_id):
                     continue
@@ -271,6 +297,43 @@ class CliproxyApiUsageStore:
                 **summed,
             }
         return rows
+
+    def model_rows(
+        self,
+        range_name: str,
+        *,
+        key_id: str | None = None,
+        now: datetime | None = None,
+    ) -> list[dict]:
+        """Range counters per served name that has recorded usage in the range.
+
+        Args:
+            range_name: One of :data:`USAGE_RANGE_BUCKETS`.
+            key_id: Narrow to one client key; None sums every key.
+            now: The moment the range ends at; None is the real clock.
+
+        Returns:
+            One ``{"model", **counters}`` row per name with a request in the
+            range, by name; ``model`` is ``""`` for the days stored before the
+            model field.
+        """
+        data = self.load()
+        wanted = set(self._bucket_keys(range_name, now=now))
+        is_hourly = range_name == "day"
+        rows: dict[str, dict] = {}
+        for cell_key, cell in data["cells"].items():
+            if not self._cell_matches(cell_key, key_id):
+                continue
+            model = _cell_parts(cell_key)[2]
+            buckets = cell["hours"] if is_hourly else cell["days"]
+            for bucket, counters in buckets.items():
+                if bucket in wanted:
+                    self._add(rows.setdefault(model, zero_counters()), counters)
+        return [
+            {"model": model, **rows[model]}
+            for model in sorted(rows)
+            if rows[model]["requests"]
+        ]
 
     def empty_provider_row(self, *, now: datetime | None = None) -> dict:
         """A zero row shaped like :meth:`provider_rows` builds, for a
@@ -342,6 +405,7 @@ class CliproxyApiUsageStore:
         key_ids: dict[str, str],
         provider_ids: dict[str, str],
         account_ids: dict[str, str],
+        pricer,
     ) -> bool:
         if not isinstance(record, dict):
             return False
@@ -357,9 +421,16 @@ class CliproxyApiUsageStore:
             str(record.get("source", "")), ""
         ) or account_ids.get(str(record.get("auth_index", "")), "")
         counters = self._record_counters(record)
+        charge = (
+            pricer.charge(record, provider_id)
+            if pricer is not None
+            else AiRecordCharge(kind=AI_CHARGE_UNPRICED)
+        )
+        _add_charge(counters, charge)
+        model = str(record.get("alias", "") or "") or str(record.get("model", "") or "")
 
         cell = data["cells"].setdefault(
-            f"{key_id}|{provider_id}", {"days": {}, "hours": {}}
+            f"{key_id}|{provider_id}|{model}", {"days": {}, "hours": {}}
         )
         day = moment.strftime("%Y-%m-%d")
         hour = moment.strftime("%Y-%m-%dT%H:00:00Z")
@@ -466,6 +537,9 @@ class CliproxyApiUsageStore:
     def _add(self, into: dict, counters: dict) -> None:
         for field in USAGE_COUNTER_FIELDS:
             into[field] += counters[field]
+        for field in USAGE_AMOUNT_FIELDS:
+            for currency, amount in counters[field].items():
+                into[field][currency] = into[field].get(currency, 0) + amount
 
     def _parse_timestamp(self, value) -> datetime | None:
         if not isinstance(value, str):
@@ -521,10 +595,16 @@ class CliproxyApiUsageStore:
                     continue
                 if not isinstance(cell, dict):
                     continue
-                data["cells"][cell_key] = {
-                    "days": self._normalized_buckets(cell.get("days")),
-                    "hours": self._normalized_buckets(cell.get("hours")),
-                }
+                # A cell stored before the model field names no model.
+                key = "|".join(_cell_parts(cell_key))
+                held = data["cells"].setdefault(key, {"days": {}, "hours": {}})
+                for name in ("days", "hours"):
+                    for bucket, counters in self._normalized_buckets(
+                        cell.get(name)
+                    ).items():
+                        self._add(
+                            held[name].setdefault(bucket, zero_counters()), counters
+                        )
         minutes = raw.get("minutes")
         if isinstance(minutes, dict):
             for ring_key, ring in minutes.items():
@@ -551,9 +631,17 @@ class CliproxyApiUsageStore:
         for bucket, counters in buckets.items():
             if not isinstance(bucket, str) or not isinstance(counters, dict):
                 continue
-            normalized[bucket] = {
-                field: _int(counters.get(field)) for field in USAGE_COUNTER_FIELDS
-            }
+            entry = {field: _int(counters.get(field)) for field in USAGE_COUNTER_FIELDS}
+            for field in USAGE_AMOUNT_FIELDS:
+                amounts = counters.get(field)
+                entry[field] = {
+                    currency: _int(amount)
+                    for currency, amount in (
+                        amounts.items() if isinstance(amounts, dict) else ()
+                    )
+                    if currency in AI_PRICE_CURRENCIES
+                }
+            normalized[bucket] = entry
         return normalized
 
     def _save(self, data: dict) -> None:
@@ -572,6 +660,23 @@ class CliproxyApiUsageStore:
     def _resolved_path(self) -> Path:
         # Resolved per call, against the state root as it is right now.
         return self._path or constants.UTILS_STATE_ROOT / CLIPROXYAPI_USAGE_RELATIVE
+
+
+def _cell_parts(cell_key: str) -> tuple:
+    """A cell's key, upstream and model; a key of the shape before the model field has the model ``""``."""
+    parts = cell_key.split("|", 2)
+    while len(parts) < 3:
+        parts.append("")
+    return tuple(parts)
+
+
+def _add_charge(counters: dict, charge: AiRecordCharge) -> None:
+    """Put one record's charge into its counters."""
+    if charge.kind == AI_CHARGE_UNPRICED:
+        counters["unpriced_requests"] += 1
+    elif charge.kind in (AI_CHARGE_COST, AI_CHARGE_API_VALUE):
+        held = counters[charge.kind]
+        held[charge.currency] = held.get(charge.currency, 0) + charge.amount
 
 
 def _int(value) -> int:

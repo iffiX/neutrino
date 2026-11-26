@@ -1,0 +1,4 @@
+{
+  "_comment": "The prices a person set on the AI page's Models panel, by the name the gateway serves: the input and the output price per million tokens, each a number from 0 to 10000 with at most 6 decimals, and the currency, USD or CNY. A set price replaces the name's default, the models.dev price of its first source in serving order; its cache prices keep models.dev's ratio to the input price. A name absent here has its default. A price stays while its name is not served. The list ships empty; the panel fills it.",
+  "prices": {}
+}

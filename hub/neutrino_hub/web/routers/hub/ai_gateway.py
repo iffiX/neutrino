@@ -15,6 +15,11 @@ from neutrino_hub.modules.cliproxyapi.accounts import (
     LOGIN_COMPLETE,
     CliproxyApiAccount,
     CliproxyApiAccountClient,
+    forget_quota_read,
+    has_quota_read,
+    merged_windows,
+    read_quota_store,
+    store_quota_read,
 )
 from neutrino_hub.modules.cliproxyapi.config import CliproxyApiClientKey
 from neutrino_hub.modules.cliproxyapi.constants import CLIPROXYAPI_LOGIN_KINDS
@@ -56,6 +61,7 @@ from neutrino_hub.web.models import (
     CliproxyApiAccountsView,
     CliproxyApiAccountView,
     CliproxyApiHealthBucket,
+    CliproxyApiQuotaWindowView,
     CliproxyApiJournalView,
     CliproxyApiKeyCreate,
     CliproxyApiKeyRequest,
@@ -69,6 +75,7 @@ from neutrino_hub.web.models import (
     CliproxyApiStatusView,
     CliproxyApiUsageBucket,
     CliproxyApiUsageKey,
+    CliproxyApiUsageModel,
     CliproxyApiUsageProvider,
     CliproxyApiUsageRates,
     CliproxyApiUsageTotals,
@@ -87,6 +94,7 @@ ACCOUNT_ERROR_STATUS = {
     "unknown_account": status.HTTP_404_NOT_FOUND,
     "login_expired": status.HTTP_404_NOT_FOUND,
     "unsupported_kind": status.HTTP_400_BAD_REQUEST,
+    "quota_read_unsupported": status.HTTP_400_BAD_REQUEST,
 }
 
 
@@ -109,7 +117,7 @@ def usage(
     range_name: str = Query(default="day", alias="range"),
     key_id: str | None = None,
 ) -> CliproxyApiUsageView:
-    """Read accumulated usage: rates, totals, the series, keys, providers.
+    """Read accumulated usage: rates, totals, the series, keys, providers, models.
 
     Args:
         range_name: ``day`` answers in 24 hourly buckets; ``week``, ``month``
@@ -123,6 +131,9 @@ def usage(
         gateway is still holding a token file for; an account it no longer
         lists keeps its stored cells and gets no row, as a deleted provider
         does. A gateway that cannot be asked contributes no account rows.
+        Models are one row per served name with a request in the range, by
+        name. Every counter set carries its cost, its API value and its
+        requests with no price.
 
     Raises:
         HTTPException: 400 with ``invalid_range`` for an unknown range, 404
@@ -177,6 +188,10 @@ def usage(
                 account, provider_rows.get(account.name) or store.empty_provider_row()
             )
             for account in _accounts_quietly()
+        ],
+        models=[
+            CliproxyApiUsageModel(**row)
+            for row in store.model_rows(range_name, key_id=key_id)
         ],
     )
 
@@ -359,8 +374,11 @@ def read_accounts() -> CliproxyApiAccountsView:
             not answer, which includes it not running yet.
     """
     accounts = _account_call(lambda client: client.list_accounts())
+    reads = read_quota_store()
     return CliproxyApiAccountsView(
-        accounts=[CliproxyApiAccountView(**vars(account)) for account in accounts],
+        accounts=[
+            _account_view(account, reads.get(account.name)) for account in accounts
+        ],
         login_kinds=list(CLIPROXYAPI_LOGIN_KINDS),
     )
 
@@ -372,6 +390,8 @@ def delete_account(
     """Sign an account out; whatever it was serving stops now.
 
     The gateway's catalog is read again for the context lengths.
+
+    The account's stored quota read goes with it.
 
     Args:
         request: The account's token file, as the list reports it.
@@ -385,7 +405,75 @@ def delete_account(
             ``gateway_unreachable``.
     """
     _account_call(lambda client: client.delete_account(request.name))
+    forget_quota_read(request.name)
     runtime.model_catalog.wake()
+    return read_accounts()
+
+
+@router.post("/gateway/account/quota/scan", response_model=CliproxyApiAccountsView)
+def scan_account_quota(request: CliproxyApiAccountRequest) -> CliproxyApiAccountsView:
+    """Read an account's windows from its vendor through the gateway, and keep the read.
+
+    The gateway sends the request with the account's token, through the
+    account's own proxy; the hub never holds the token.
+
+    Args:
+        request: The account's token file, as the list reports it.
+
+    Returns:
+        The accounts, the read among their windows.
+
+    Raises:
+        HTTPException: 404 with ``unknown_account``, 400 with
+            ``quota_read_unsupported {provider}`` for a login with no read,
+            502 with ``quota_read_failed {status}`` and
+            ``quota_read_unparsed``, each keeping the stored read, and 502
+            with ``gateway_unreachable``.
+    """
+
+    def scan(client: CliproxyApiAccountClient) -> list:
+        for account in client.list_accounts():
+            if account.name == request.name:
+                return client.read_quota(account)
+        raise AiAccountRefusedError("unknown_account", name=request.name)
+
+    store_quota_read(request.name, _account_call(scan))
+    return read_accounts()
+
+
+@router.post("/gateway/account/disable", response_model=CliproxyApiAccountsView)
+def pause_account(request: CliproxyApiAccountRequest) -> CliproxyApiAccountsView:
+    """Pause an account: the gateway stops serving it at once and keeps its token.
+
+    Args:
+        request: The account's token file, as the list reports it.
+
+    Returns:
+        The accounts after the change.
+
+    Raises:
+        HTTPException: 404 with ``unknown_account``, 502 with
+            ``gateway_unreachable``.
+    """
+    _account_call(lambda client: client.set_disabled(request.name, is_disabled=True))
+    return read_accounts()
+
+
+@router.post("/gateway/account/enable", response_model=CliproxyApiAccountsView)
+def resume_account(request: CliproxyApiAccountRequest) -> CliproxyApiAccountsView:
+    """Resume a paused account.
+
+    Args:
+        request: The account's token file, as the list reports it.
+
+    Returns:
+        The accounts after the change.
+
+    Raises:
+        HTTPException: 404 with ``unknown_account``, 502 with
+            ``gateway_unreachable``.
+    """
+    _account_call(lambda client: client.set_disabled(request.name, is_disabled=False))
     return read_accounts()
 
 
@@ -567,6 +655,8 @@ def _status() -> CliproxyApiStatusView:
         is_serving_stale=applier.is_serving_stale,
         requests_today=today["requests"],
         tokens_today=today["input_tokens"] + today["output_tokens"],
+        cost_today=today["cost"],
+        api_value_today=today["api_value"],
         account_count=_account_count() if service.is_active else 0,
         default_model=config.default_model,
         has_ayakaleaf_on_default=has_default_model_follower(
@@ -619,6 +709,35 @@ def _device_names() -> dict[str, str]:
         device = registry.get(device_id)
         names[key.id] = (device.name if device is not None else "") or device_id
     return names
+
+
+def _account_view(
+    account: CliproxyApiAccount, read: "dict | None"
+) -> CliproxyApiAccountView:
+    """One account's row: the gateway's record, and its windows from the signals and its stored read."""
+    return CliproxyApiAccountView(
+        name=account.name,
+        provider=account.provider,
+        label=account.label,
+        email=account.email,
+        account_type=account.account_type,
+        status=account.status,
+        status_message=account.status_message,
+        is_disabled=account.is_disabled,
+        is_unavailable=account.is_unavailable,
+        next_retry_after=account.next_retry_after,
+        plan=account.plan,
+        subscription_ends_at=account.subscription_ends_at,
+        has_quota_read=has_quota_read(account.provider),
+        windows=[
+            CliproxyApiQuotaWindowView(**window)
+            for window in merged_windows(account.signal_windows, read)
+        ],
+        failed_count=account.failed_count,
+        success_count=account.success_count,
+        created_at=account.created_at,
+        updated_at=account.updated_at,
+    )
 
 
 def _usage_provider(record, row: dict) -> CliproxyApiUsageProvider:

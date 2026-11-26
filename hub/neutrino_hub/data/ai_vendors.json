@@ -1,0 +1,207 @@
+{
+  "_comment": "The provider form's vendor presets (hub_components/ai.md, \"Vendor presets\"), read from each vendor's own pages on 2026-11-26. Each endpoint's base URL, the models.dev provider its requests are priced at, whether it is a coding plan, and its model names. A developer updates the table with a hub release; the hub never downloads one.",
+  "vendors": [
+    {
+      "id": "deepseek",
+      "endpoints": [
+        {
+          "id": "api",
+          "base_url": "https://api.deepseek.com",
+          "price_provider": "deepseek",
+          "is_plan": false,
+          "models": ["deepseek-flash", "deepseek-v4-pro"]
+        }
+      ]
+    },
+    {
+      "id": "kimi",
+      "endpoints": [
+        {
+          "id": "api_cn",
+          "base_url": "https://api.moonshot.cn/v1",
+          "price_provider": "moonshotai-cn",
+          "is_plan": false,
+          "models": ["kimi-k3.1-pro", "kimi-k3.1-pro-highspeed", "kimi-k3"]
+        },
+        {
+          "id": "api_global",
+          "base_url": "https://api.moonshot.ai/v1",
+          "price_provider": "moonshotai",
+          "is_plan": false,
+          "models": ["kimi-k3.1-pro", "kimi-k3.1-pro-highspeed", "kimi-k3"]
+        }
+      ]
+    },
+    {
+      "id": "zhipu",
+      "endpoints": [
+        {
+          "id": "api_cn",
+          "base_url": "https://open.bigmodel.cn/api/paas/v4",
+          "price_provider": "zhipuai",
+          "is_plan": false,
+          "models": ["glm-5.3", "glm-5.3-flash", "glm-5.3-flashx"]
+        },
+        {
+          "id": "plan_cn",
+          "base_url": "https://open.bigmodel.cn/api/coding/paas/v4",
+          "price_provider": "zhipuai",
+          "is_plan": true,
+          "models": ["glm-5.3", "glm-5.3-flash", "glm-5.3-flashx"]
+        },
+        {
+          "id": "api_global",
+          "base_url": "https://api.z.ai/api/paas/v4",
+          "price_provider": "zai",
+          "is_plan": false,
+          "models": ["glm-5.3", "glm-5.3-flash", "glm-5.3-flashx"]
+        },
+        {
+          "id": "plan_global",
+          "base_url": "https://api.z.ai/api/coding/paas/v4",
+          "price_provider": "zai",
+          "is_plan": true,
+          "models": ["glm-5.3", "glm-5.3-flash", "glm-5.3-flashx"]
+        }
+      ]
+    },
+    {
+      "id": "qwen",
+      "endpoints": [
+        {
+          "id": "api_cn",
+          "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+          "price_provider": "alibaba-cn",
+          "is_plan": false,
+          "models": ["qwen4-max", "qwen3.7-plus", "qwen3.8-flash"]
+        },
+        {
+          "id": "api_global",
+          "base_url": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+          "price_provider": "alibaba",
+          "is_plan": false,
+          "models": ["qwen4-max", "qwen3.7-plus", "qwen3.8-flash"]
+        },
+        {
+          "id": "plan_cn",
+          "base_url": "https://coding.dashscope.aliyuncs.com/v1",
+          "price_provider": "alibaba-cn",
+          "is_plan": true,
+          "models": ["qwen4-max", "qwen3.7-plus", "qwen3.8-flash"]
+        },
+        {
+          "id": "plan_global",
+          "base_url": "https://coding-intl.dashscope.aliyuncs.com/v1",
+          "price_provider": "alibaba",
+          "is_plan": true,
+          "models": ["qwen4-max", "qwen3.7-plus", "qwen3.8-flash"]
+        }
+      ]
+    },
+    {
+      "id": "doubao",
+      "endpoints": [
+        {
+          "id": "api",
+          "base_url": "https://ark.cn-beijing.volces.com/api/v3",
+          "price_provider": "volcengine",
+          "is_plan": false,
+          "models": [
+            "doubao-seed-2-1-pro-260915",
+            "doubao-seed-2-1-lite-260915",
+            "doubao-seed-2-1-turbo-260628"
+          ]
+        },
+        {
+          "id": "plan",
+          "base_url": "https://ark.cn-beijing.volces.com/api/coding/v3",
+          "price_provider": "volcengine",
+          "is_plan": true,
+          "models": ["ark-code-latest"]
+        }
+      ]
+    },
+    {
+      "id": "minimax",
+      "endpoints": [
+        {
+          "id": "api_cn",
+          "base_url": "https://api.minimax.cn/v1",
+          "price_provider": "minimax-cn",
+          "is_plan": false,
+          "models": ["MiniMax-M3.1-Flash", "MiniMax-M3"]
+        },
+        {
+          "id": "api_global",
+          "base_url": "https://api.minimax.io/v1",
+          "price_provider": "minimax",
+          "is_plan": false,
+          "models": ["MiniMax-M3.1-Flash", "MiniMax-M3"]
+        }
+      ]
+    },
+    {
+      "id": "openrouter",
+      "endpoints": [
+        {
+          "id": "api",
+          "base_url": "https://openrouter.ai/api/v1",
+          "price_provider": "openrouter",
+          "is_plan": false,
+          "models": ["openai/gpt-6.2-sol", "anthropic/claude-fable-5.2"]
+        }
+      ]
+    },
+    {
+      "id": "siliconflow",
+      "endpoints": [
+        {
+          "id": "api_cn",
+          "base_url": "https://api.siliconflow.cn/v1",
+          "price_provider": "siliconflow-cn",
+          "is_plan": false,
+          "models": [
+            "deepseek-ai/DeepSeek-V4.1-Flash",
+            "deepseek-ai/DeepSeek-V4-Pro",
+            "zai-org/GLM-5.3"
+          ]
+        },
+        {
+          "id": "api_global",
+          "base_url": "https://api.siliconflow.com/v1",
+          "price_provider": "siliconflow",
+          "is_plan": false,
+          "models": [
+            "deepseek-ai/DeepSeek-V4.1-Flash",
+            "deepseek-ai/DeepSeek-V4-Pro",
+            "zai-org/GLM-5.3"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mistral",
+      "endpoints": [
+        {
+          "id": "api",
+          "base_url": "https://api.mistral.ai/v1",
+          "price_provider": "mistral",
+          "is_plan": false,
+          "models": ["mistral-large-latest", "mistral-small-2603"]
+        }
+      ]
+    },
+    {
+      "id": "xai",
+      "endpoints": [
+        {
+          "id": "api",
+          "base_url": "https://api.x.ai/v1",
+          "price_provider": "xai",
+          "is_plan": false,
+          "models": ["grok-4.7", "grok-4.6", "grok-4.3"]
+        }
+      ]
+    }
+  ]
+}
