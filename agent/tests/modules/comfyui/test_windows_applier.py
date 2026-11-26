@@ -65,7 +65,7 @@ def test_the_windows_task_runs_as_local_service_and_stays_while_its_script_is_th
     applier = windows(tmp_path, host)
     assert applier.apply(SERVER) == "started"
     written = [request for op, request in host.calls if op == "task_write_service"]
-    assert written[0]["account"] == "NT AUTHORITY\\LOCALSERVICE"
+    assert written[0]["account"] == "S-1-5-19"
     assert written[0]["program"] == "cmd.exe"
     script = open(applier.script_path, newline="").read()
     assert written[0]["description"] == task_description(script)
@@ -88,7 +88,7 @@ def test_a_command_as_local_service_runs_in_a_one_shot_task(tmp_path):
     )
     assert code == 0 and "Installed 98 packages" in words
     run = [request for op, request in host.calls if op == "task_run_service"][0]
-    assert run["account"] == "NT AUTHORITY\\LOCALSERVICE"
+    assert run["account"] == "S-1-5-19"
     assert run["task"] == "neutrino_comfyui_step"
     assert run["timeout_s"] == 600
     script = open(
@@ -185,3 +185,23 @@ def test_another_accounts_own_entries_go_from_the_shared_folders(tmp_path):
     applier.write_access("")
     assert (applier.base_dir, ["S-1-5-21-1-1001", "S-1-5-21-1-1002"]) in access.revoked
     assert access.grants == []
+
+
+def test_a_service_task_names_its_account_by_its_sid_in_the_systems_language():
+    from pathlib import Path
+
+    import neutrino_agent
+
+    library = (
+        Path(neutrino_agent.__file__).parent
+        / "data"
+        / "windows"
+        / "powershell_host.ps1"
+    ).read_text(encoding="utf-8")
+    for function in (
+        "Register-NeutrinoServiceTask",
+        "Invoke-NeutrinoServiceOneShotTask",
+    ):
+        body = library.split(f"function {function}(", 1)[1].split("\nfunction ", 1)[0]
+        assert "-UserId (Get-NeutrinoSidName $Request.account)" in body
+    assert "Translate([Security.Principal.NTAccount])" in library

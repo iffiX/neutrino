@@ -141,10 +141,10 @@ COMFYUI_DARWIN_OUTPUT_PATH = "/Library/Logs/Neutrino/agent/comfyui.log"
 COMFYUI_DARWIN_UNLOAD_TIMEOUT_S = 30
 COMFYUI_DARWIN_UNLOAD_POLL_S = 0.5
 
-# Windows: the account the service and uv run as, the scheduled task, its
+# Windows: the account the service and uv run as, by its SID, the scheduled task, its
 # description's marker, its script, the one-shot task uv runs in and how
 # often it is read, the server's log, and how a stop and an uninstall wait.
-COMFYUI_WINDOWS_ACCOUNT = "NT AUTHORITY\\LOCALSERVICE"
+COMFYUI_WINDOWS_ACCOUNT = "S-1-5-19"
 COMFYUI_WINDOWS_SERVICE_SID = "*S-1-5-19"
 # The SIDs whose own entries stay on the shared folders beside the default
 # account's: SYSTEM, the administrators and LOCAL SERVICE.

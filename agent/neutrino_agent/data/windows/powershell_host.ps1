@@ -114,6 +114,12 @@ function Register-NeutrinoSystemTask($Request) {
     return @{}
 }
 
+# The name a SID has in this system's language.
+function Get-NeutrinoSidName($Sid) {
+    $account = New-Object -TypeName Security.Principal.SecurityIdentifier -ArgumentList $Sid
+    return "$($account.Translate([Security.Principal.NTAccount]).Value)"
+}
+
 # Registers a task of a service account's, LOCAL SERVICE's among them, by its
 # SID: at startup, no time limit, started again a minute after it stops, at the
 # normal priority.
@@ -123,21 +129,23 @@ function Register-NeutrinoServiceTask($Request) {
     $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) `
         -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -Priority 4 `
         -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
-    $principal = New-ScheduledTaskPrincipal -UserId $Request.account -LogonType ServiceAccount
+    $principal = New-ScheduledTaskPrincipal -UserId (Get-NeutrinoSidName $Request.account) `
+        -LogonType ServiceAccount
     Register-ScheduledTask -TaskName $Request.task -Description $Request.description `
         -Action $action -Trigger $trigger -Settings $settings -Principal $principal `
         -Force | Out-Null
     return @{}
 }
 
-# Registers a one-shot task of a service account's with a time limit, and
-# starts it.
+# Registers a one-shot task of a service account's, by its SID, with a time
+# limit, and starts it.
 function Invoke-NeutrinoServiceOneShotTask($Request) {
     $action = New-ScheduledTaskAction -Execute $Request.program -Argument $Request.arguments
     $settings = New-ScheduledTaskSettingsSet `
         -ExecutionTimeLimit (New-TimeSpan -Seconds $Request.timeout_s) `
         -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
-    $principal = New-ScheduledTaskPrincipal -UserId $Request.account -LogonType ServiceAccount
+    $principal = New-ScheduledTaskPrincipal -UserId (Get-NeutrinoSidName $Request.account) `
+        -LogonType ServiceAccount
     Register-ScheduledTask -TaskName $Request.task -Action $action -Settings $settings `
         -Principal $principal -Force | Out-Null
     Start-ScheduledTask -TaskName $Request.task | Out-Null
