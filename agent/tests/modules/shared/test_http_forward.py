@@ -19,9 +19,10 @@ a WebSocket is relayed both ways; a taken port is reported until it frees;
 a forwarder follows the record fields the hooks name; a page's own fixed
 login cookie is renamed to the entry's name in every ``Set-Cookie`` it
 returns and back to its own in every request, a WebSocket's included, the
-browser's own cookie of that name dropped; every cookie of the hub panel's
-session taken out of each request the page is sent, a WebSocket's and a
-renamed one's included, the other cookies kept; and a token's expiry
+browser's own cookie of that name dropped; every ``neutrino_`` cookie but
+the forwarder's own, the hub panel's session among them, taken out of each
+request the page is sent, a WebSocket's and a renamed one's included, the
+other cookies kept; and a token's expiry
 is judged by the hub's time, so a machine whose clock is hours off, or is
 set while the socket stays open, accepts a fresh one.
 """
@@ -60,7 +61,7 @@ from neutrino_agent.modules.shared.http_forward import (
     renamed_set_cookies,
     split_target,
     take_token,
-    without_panel_cookies,
+    without_other_logins,
 )
 
 SECRET = "instance-secret"  # scan: allow
@@ -987,48 +988,66 @@ def test_the_forwarder_renames_the_cookie_toward_the_page_websocket_included():
     assert refused_answer.startswith(b"HTTP/1.1 401")
 
 
-# --- the hub panel's session cookie, taken out ---
+# --- the panel's session and the other forwarders' logins, taken out ---
 
 
-def test_a_requests_panel_cookies_are_taken_out_and_the_others_kept():
+def test_every_other_neutrino_cookie_is_taken_out_and_the_others_kept():
     head = (
         b"GET / HTTP/1.1\r\nHost: 127.0.0.1\r\n"
-        b"Cookie: neutrino_session_0123456789ab=s1; demo=ok; neutrino_session_=s2\r\n"
-        b"cookie: neutrino_session_ba9876543210=s3\r\n"
+        b"Cookie: neutrino_session_0123456789ab=s1; demo=ok; neutrino_own=mine\r\n"
+        b"cookie: neutrino_session_=s2; neutrino_0a1b2c3d4e5f=theirs\r\n"
         b"Accept: */*\r\n\r\n"
     )
 
-    assert without_panel_cookies(head) == (
+    assert without_other_logins(head, kept="neutrino_own") == (
+        b"GET / HTTP/1.1\r\nHost: 127.0.0.1\r\n"
+        b"Cookie: demo=ok; neutrino_own=mine\r\nAccept: */*\r\n\r\n"
+    )
+    assert without_other_logins(head, kept="") == (
         b"GET / HTTP/1.1\r\nHost: 127.0.0.1\r\n"
         b"Cookie: demo=ok\r\nAccept: */*\r\n\r\n"
     )
 
 
-def test_a_head_without_a_panel_cookie_is_passed_as_it_was():
+def test_a_head_with_no_other_login_is_passed_as_it_was():
     head = (
         b"GET / HTTP/1.1\r\nHost: 127.0.0.1\r\n"
         b"cookie: a=1;b=2\r\nCookie: neutrino_abc=v\r\n\r\n"
     )
 
-    assert without_panel_cookies(head) == head
+    assert without_other_logins(head, kept="neutrino_abc") == head
 
 
-def test_the_forwarder_passes_no_panel_cookie_to_the_page_websocket_included():
+def test_the_forwarder_passes_no_other_login_to_the_page_websocket_included():
     page = FakePage()
-    forwarder = forwarder_for(DemoHooks(page.port), free_port())
-    session = "neutrino_session_0123456789ab=root-session"
+    forwarder = InstanceForwarder(
+        name="demo",
+        record={
+            "account": "ann",
+            "port": free_port(),
+            "secret": SECRET,
+            "cookie_name": "neutrino_own",
+        },
+        hooks=DemoHooks(page.port),
+        log=lambda line: None,
+        ready_poll_s=0.01,
+        retry_s=0.01,
+    )
+    others = "neutrino_session_0123456789ab=root-session; neutrino_0a1b2c3d4e5f=theirs"
     try:
         forwarder.start()
         wait_until(lambda: forwarder.is_listening)
 
         answer = exchange(
             forwarder.port,
-            f"GET /app HTTP/1.1\r\nHost: 127.0.0.1\r\nCookie: {session}; demo=ok\r\n"
+            f"GET /app HTTP/1.1\r\nHost: 127.0.0.1\r\n"
+            f"Cookie: {others}; demo=ok; neutrino_own=mine\r\n"
             "Connection: close\r\n\r\n".encode(),
         )
         with socket.create_connection(("127.0.0.1", forwarder.port), timeout=5) as ws:
             ws.sendall(
-                f"GET /ws HTTP/1.1\r\nHost: 127.0.0.1\r\nCookie: demo=ok; {session}\r\n"
+                f"GET /ws HTTP/1.1\r\nHost: 127.0.0.1\r\n"
+                f"Cookie: demo=ok; neutrino_own=mine; {others}\r\n"
                 "Connection: Upgrade\r\nUpgrade: websocket\r\n\r\n".encode()
             )
             received = b""
@@ -1041,12 +1060,14 @@ def test_the_forwarder_passes_no_panel_cookie_to_the_page_websocket_included():
     assert answer.startswith(b"HTTP/1.1 200")
     assert received.startswith(b"HTTP/1.1 101")
     assert len(page.requests) == 2
+    assert b"Cookie: demo=ok; neutrino_own=mine\r\n" in page.requests[0] + b"\r\n"
+    assert b"Cookie: demo=ok; neutrino_own=mine\r\n" in page.requests[1] + b"\r\n"
     for request in page.requests:
-        assert b"Cookie: demo=ok\r\n" in request + b"\r\n"
         assert b"neutrino_session_" not in request
+        assert b"neutrino_0a1b2c3d4e5f" not in request
 
 
-def test_the_forwarder_takes_the_panel_cookie_out_of_a_renamed_request():
+def test_the_forwarder_takes_other_logins_out_of_a_renamed_request():
     page = FakePage()
     forwarder = InstanceForwarder(
         name="demo",
@@ -1068,8 +1089,8 @@ def test_the_forwarder_takes_the_panel_cookie_out_of_a_renamed_request():
         answer = exchange(
             forwarder.port,
             b"GET /stage HTTP/1.1\r\nHost: 127.0.0.1\r\n"
-            b"Cookie: neutrino_session_0123456789ab=root-session; neutrino_abc=v\r\n"
-            b"Connection: close\r\n\r\n",
+            b"Cookie: neutrino_session_0123456789ab=root-session; neutrino_abc=v; "
+            b"neutrino_0a1b2c3d4e5f=theirs\r\nConnection: close\r\n\r\n",
         )
     finally:
         forwarder.close()
@@ -1078,6 +1099,7 @@ def test_the_forwarder_takes_the_panel_cookie_out_of_a_renamed_request():
     assert answer.startswith(b"HTTP/1.1 200")
     assert b"Cookie: siyuan=v\r\n" in page.requests[0] + b"\r\n"
     assert b"neutrino_session_" not in page.requests[0]
+    assert b"neutrino_0a1b2c3d4e5f" not in page.requests[0]
 
 
 def test_a_token_is_checked_under_the_secret_given_and_spent_once():

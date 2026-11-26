@@ -530,9 +530,10 @@ AGENT_FORWARD_RETRY_S = 30.0
 # The address every forwarder listens on: loopback, where the agent's end of
 # a ``connect`` stream reaches it.
 AGENT_FORWARD_LISTEN_HOST = "127.0.0.1"
-# The start of the name of the hub panel's session cookie, which a forwarder
-# takes out of every request it passes on.
-AGENT_FORWARD_PANEL_COOKIE_PREFIX = "neutrino_session_"
+# The start of the name of the hub panel's session cookie and of every
+# forwarder's login cookie. A forwarder takes each such cookie but its own
+# out of every request it passes on.
+AGENT_FORWARD_COOKIE_PREFIX = "neutrino_"
 # The first port the page behind a forwarder listens on. It sits below every
 # system's dynamic ports, the range Windows reserves from at boot, and below
 # the client's forwards.
