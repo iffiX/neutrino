@@ -40,6 +40,9 @@ export interface DemoModuleSpec {
   title: string;
   category: string;
   method: string;
+  /** The method on a system whose manifest entry names another, by
+   * platform os. */
+  methodByOs?: Record<string, string>;
   version: string;
   isCarried: boolean;
   /** The kind chip's word: `system_service`, `account_service`, or
@@ -112,6 +115,7 @@ export const DEMO_MODULES: DemoModuleSpec[] = [
     title: "File share",
     category: "files",
     method: "system",
+    methodByOs: { windows: "builtin", darwin: "builtin" },
     version: "4.19.5",
     isCarried: false,
     kind: "system_service",
@@ -337,6 +341,7 @@ export const DEMO_MODULES: DemoModuleSpec[] = [
     title: "Containers",
     category: "other",
     method: "system",
+    methodByOs: { windows: "hub", darwin: "hub" },
     version: "5.6.2",
     isCarried: false,
     kind: "system_service",

@@ -1260,11 +1260,12 @@ export class DemoHub {
     spec: DemoModuleSpec,
   ): DeviceModuleView {
     const held = device.modules[spec.name] ?? moduleState("absent");
+    const method = spec.methodByOs?.[device.platformOs] ?? spec.method;
     return {
       name: spec.name,
       title: spec.title,
-      method: spec.method,
-      source: DEMO_SOURCE[spec.method] ?? "upstream",
+      method,
+      source: DEMO_SOURCE[method] ?? "upstream",
       kind: spec.kind,
       want: held.want,
       state: held.state,
