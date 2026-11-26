@@ -307,11 +307,13 @@ manager's output, to `local_agent.log` beside it:
    Windows. It looks every second.
 1. It ends when `nhub --version` names a version other than the one it was
    written for, or when `nagent --version` names the package's version.
-1. It installs the package with the command the hub's update installs with,
-   which waits up to 300 seconds for the lock of the install that started the
-   panel: apt and dnf by their own wait, pacman by a wait on its lock file,
-   macOS while `installer` runs, and Windows while the Windows Installer
-   runs and once more after `msiexec`'s busy answer.
+1. It installs the package with the package manager the hub's update
+   installs with, which waits up to 300 seconds for the lock of the install
+   that started the panel: apt and dnf by their own wait, pacman by a wait on
+   its lock file, macOS while `installer` runs, and Windows while the Windows
+   Installer runs and once more after `msiexec`'s busy answer. On Linux the
+   install installs nothing over the version already there: `apt-get
+   install` with no `--reinstall`, `dnf install`, and `pacman -U --needed`.
 
 A machine with no agent gets none. A hub that is not set up serves the setup
 wizard and starts no panel, and `nhub setup` installs its agent
@@ -345,6 +347,7 @@ and joins the agent. The panel's journal holds each try, and
 | The script runs apart from the panel and installs once the package manager lets go. | The package manager holds its lock while the hub package's scripts run, which is when the panel starts, and an install in the panel's own process ends when the panel stops. |
 | The script waits for the hub's own update to end and installs only while the hub is still the version it was written for. | The update's gate can put the previous version back, and the agent follows the version the update ends on. |
 | Nothing else holds the script back, and each wait looks every second. | The agent reaches the hub's version within seconds of the panel's start. The agent's own update installs nothing once the agent is at its version. |
+| On Linux the install installs nothing over the version already there. | The agent's own update starts when the agent reaches the new hub, about when the panel starts, and both wait for the lock of the install that started the panel. In the lab the agent's update took the lock first, and the script's `apt-get install --reinstall` installed the same version again and restarted the agent a second time. |
 | The hub joins its own agent by itself, at setup and after an upgrade. | The agent on the hub's machine is the hub's own, and the person never makes a link for it. |
 | The join waits for the agent at the package's version. | An agent of 0.5 reads no link of 0.6. |
 | The agent joins its row again, and is not uninstalled. | A join lands on the row its link names, which keeps the name, the icon and the modules; an uninstall clears the modules' state on the machine. |
