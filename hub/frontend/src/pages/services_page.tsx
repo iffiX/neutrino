@@ -12,7 +12,7 @@ import { WebShareModal } from "../components/web_share_modal";
 import { apiPost, describeError } from "../api_client";
 import { getLanguage, t, useLanguage } from "../i18n";
 import { moduleTitle } from "../module_title";
-import { hubHost } from "../origins";
+import { hubHost, isThroughClient } from "../origins";
 import { useApiResource } from "../use_api_resource";
 import { useAuth } from "../use_auth";
 import { useConfirm } from "../use_confirm";
@@ -27,6 +27,7 @@ import type {
   AppSource,
   AppView,
   ClientListView,
+  PanelSettings,
   DeclaredAppRequest,
   PublishedService,
   PublishedServicePayload,
@@ -183,6 +184,8 @@ const OPEN_PATH = "/hub/service/entry/open";
 const TOKEN_PARAM = "tkn";
 /** The Clients page's list, which holds what an App share can offer. */
 const CLIENTS_PATH = "/hub/client";
+/** The panel's ports, which tell a page reached through a client's forward. */
+const SETTINGS_PATH = "/hub/setting";
 
 export function ServicesPage() {
   // Redrawn when the panel's language changes.
@@ -191,6 +194,12 @@ export function ServicesPage() {
   const resource = useApiResource<ServiceListView>(SERVICE_PATH, {
     invalidateOn: INVALIDATE_ON,
   });
+  const settings = useApiResource<PanelSettings>(SETTINGS_PATH);
+  // Whether the panel was reached directly, which Open needs.
+  const isOpenShown =
+    !isOpenedByClient &&
+    settings.data !== null &&
+    !isThroughClient(settings.data);
   const [isDeclaring, setIsDeclaring] = useState(false);
   // The web entry whose Share is open, read with the clients' list.
   const [sharedEntryId, setSharedEntryId] = useState<string | null>(null);
@@ -267,7 +276,7 @@ export function ServicesPage() {
               <AppRow
                 key={app.id}
                 app={app}
-                isOpenShown={!isOpenedByClient}
+                isOpenShown={isOpenShown}
                 onChanged={resource.setData}
                 onShare={setSharedEntryId}
               />

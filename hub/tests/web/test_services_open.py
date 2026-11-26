@@ -1,8 +1,8 @@
 """The Services page's Open and its Terminals panel, read from the page's source.
 
 What these pin: Open is on each web entry and on no other, hidden while a
-client's token opened the session and disabled while the entry reads
-unhealthy; the tab opens before the request and with no opener, and goes to
+client's token opened the session or the page's own address is a client's
+loopback forward, and disabled while the entry reads unhealthy; the tab opens before the request and with no opener, and goes to
 the entry's scheme and path at the panel's own host and the forward's port,
 the token added; the Terminals panel follows Files and has no button; the
 list reads again at a machine's report and channel; every word is in both
@@ -49,8 +49,22 @@ def test_open_is_on_each_web_entry_while_the_panel_was_reached_directly():
 
     assert 'isOpenShown && entry.type === "web" && (' in row
     assert "entry.is_healthy === false" in row
-    assert "isOpenShown={!isOpenedByClient}" in page_source()
+    assert "isOpenShown={isOpenShown}" in page_source()
     assert "const { isOpenedByClient } = useAuth();" in page_source()
+
+
+def test_open_hides_on_a_page_reached_through_a_clients_loopback_forward():
+    """A password session opened through a client's forward is no client's
+    token, and its own address still names the client's loopback."""
+    source = page_source()
+
+    assert 'import { hubHost, isThroughClient } from "../origins";' in source
+    assert "useApiResource<PanelSettings>(SETTINGS_PATH)" in source
+    assert 'const SETTINGS_PATH = "/hub/setting";' in source
+    assert (
+        "const isOpenShown = !isOpenedByClient && settings.data !== null && "
+        "!isThroughClient(settings.data);"
+    ) in source
 
 
 def test_the_tab_opens_before_the_request_with_no_opener():
