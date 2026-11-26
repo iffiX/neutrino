@@ -406,6 +406,11 @@ gateway listens on the hub's loopback alone.
 | `ui.ai.price_reset`, `{price}` being the default's two prices, such as `$0.28 / $1.10` | Reset to {price} | 恢复为 {price} |
 | `ui.ai.no_price`, the placeholder of a name no source prices | no price | 无价格 |
 | `ui.ai.model_save`, the dialog's write | Save | 保存 |
+| `ui.ai.model_details`, a row's button | Details | 详情 |
+| `ui.ai.model_details_title`, the dialog it opens | Usage and prices of {model} | {model} 的用量和价格 |
+| `ui.ai.details_range_day`, `ui.ai.details_range_week`, `ui.ai.details_range_month`, `ui.ai.details_range_year`, the range of its figures | Last 24 hours, Last 7 days, Last 30 days, Last 12 months | 最近 24 小时、最近 7 天、最近 30 天、最近 12 个月 |
+| `ui.ai.details_api_value`, `ui.ai.details_price`, two of its figures | API value, Price | API 价值、价格 |
+| `ui.ai.source_account`, `ui.ai.source_provider`, a source's kind in its box | Account, Provider | 账号、提供方 |
 | `code.context_length_invalid`, under the dialog's length field and as the refusal of `ai/model/set` | The context length must be between {min} and {max} tokens. | 非法上下文长度：要在 {min} 到 {max} 个 token 之间。 |
 | `code.price_invalid`, under the dialog's price fields and as the refusal of `ai/model/set` | A price must be a number from {min} to {max}, with at most 6 decimals. | 非法价格：要是 {min} 到 {max} 之间的数，最多 6 位小数。 |
 | `code.currency_invalid`, the refusal of `ai/model/set` | The currency must be USD or CNY. | 非法币种：只能是 USD 或 CNY。 |

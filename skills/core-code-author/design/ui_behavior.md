@@ -1587,25 +1587,29 @@ gateway reports the flow `complete` or `failed`.
 
 The **Accounts** panel lists one row per signed-in account, read with
 `GET /api/hub/ai/gateway/account` every 15 seconds while the page is open.
-A row's line holds the service, the label or email, the ok and failed
-counts, the status, and its buttons; under the line come the account's
-windows ([hub_components/ai.md](hub_components/ai.md), "Quota on an account
-row").
+A row is a card, as a card of the Agents table is: at its left the service
+and the label or email, and under the label the account's windows
+([hub_components/ai.md](hub_components/ai.md), "Quota on an account row");
+at its right three lines, right-aligned; and at its foot, right-aligned, its
+buttons. The service, the label, the three lines and the buttons stand in
+columns every row shares.
 
 | Part | Idiom |
 | --- | --- |
+| The three lines | the ok and failed counts in tabular figures, the status, and `ui.ai.quota_updated {ago}` faint with the time the newest window was seen, each right-aligned |
 | The status | a `StatusDot` with its word: `ok` `state.serving`; `warn` `ui.ai.limited_until {time}` while the view's `is_unavailable` is true and its `next_retry_after` is set; `error` `state.unavailable` while it is unavailable with no time; `idle` `state.paused` while `is_disabled` is true. The gateway's `status_message` is the dot's title |
 | The plan | on a Codex row, `ui.ai.plan {plan}` and `ui.ai.plan_until {date}` after the label, faint, each while the view names it |
-| The windows | one ring gauge per window, 30 px, the used percent inside and under it the window's word, `ui.ai.quota_5h`, `ui.ai.quota_7d`, `ui.ai.quota_month`, or an Antigravity model's name, then `ui.ai.quota_resets {time}` faint; the ring `ok` under 80 percent, `warn` from 80 and `error` at 100, as the Agents page's rings take tones. After the rings, `ui.ai.quota_updated {ago}` faint with the time the newest window was seen |
-| **Refresh** | `ui.ai.refresh`, a ghost `button--small` on a Claude, Codex, Kimi or Antigravity row, before **Pause**; busy while its read runs, then the row redrawn from the route's answer |
-| **Pause**, **Resume** | `ui.ai.pause` while the account serves and `ui.ai.resume` while it is paused, a ghost `button--small` before **Delete** |
+| The windows | one cell of one width per window: a ring gauge, 30 px, the used percent inside and under it the window's word, `ui.ai.quota_5h`, `ui.ai.quota_7d`, `ui.ai.quota_month`, or an Antigravity model's name, then `ui.ai.quota_resets {time}` faint, the time the clock time today and else the date alone, with the whole time as the cell's title; the ring `ok` under 80 percent, `warn` from 80 and `error` at 100, as the Agents page's rings take tones |
+| The buttons | **Refresh**, **Pause** or **Resume**, then **Delete**, ghost `button--small`s at the card's foot, right-aligned, as the Agents card's actions are |
+| **Refresh** | `ui.ai.refresh`, on a Claude, Codex, Kimi or Antigravity row; busy while its read runs, then the row redrawn from the route's answer |
+| **Pause**, **Resume** | `ui.ai.pause` while the account serves and `ui.ai.resume` while it is paused, the button as wide as the wider of the two words |
 
 | Rule | Reason |
 | --- | --- |
 | **Refresh**, **Pause** and **Resume** write at once, with no confirmation and no apply bar. A refusal shows the code's words under the row, and the button stays live. | Signing in is never staged ([architecture.md](architecture.md)), and a pause is undone by **Resume**. |
 | The 15-second read sends no request to a vendor. Only **Refresh** does. | The windows of a Claude or Codex row follow the account's own requests through the gateway's signals, and the vendors' endpoints are read at a press alone ([hub_components/ai.md](hub_components/ai.md), "Quota on an account row"). |
 | A row with no window draws no rings and no updated line. | A Kimi or Antigravity row has windows only after its first **Refresh**, and an xAI row has none. |
-| In a panel under 860 px wide the counts and the status take a second line under the label, and the buttons keep the end of the first line. Under 520 px the label takes the second line whole, the counts and the status the third, and the rings go three across with the updated time on a line of its own. | Five parts on one line leave a narrow panel's label a few characters wide. |
+| In a panel under 520 px wide the card stacks in the same order: the service and the label, the windows three across, the three lines right-aligned, then the buttons at the foot's right. | The windows and the three lines side by side leave a phone's rings no room. |
 
 ## The Models panel of the AI page
 
@@ -1621,14 +1625,29 @@ sets"). It reads `GET /api/hub/ai/model`, and reads it again at each
 
 | Part | Idiom |
 | --- | --- |
-| The head row | `ui.ai.context_col_model`, `ui.ai.context_col_source` and `ui.ai.context_col_tokens`, faint, over the one grid every row shares: the name takes the room the sources, the length and the button leave, and the chips wrap before the name gets narrower than 12 characters |
+| The head row | `ui.ai.context_col_model`, `ui.ai.context_col_source` and `ui.ai.context_col_tokens`, faint, over the one grid every row shares: the name takes the room the sources, the length and the buttons leave, and the chips wrap before the name gets narrower than 12 characters |
 | **Model** | the served name, mono, cut with an ellipsis, with the whole name as its title |
 | **From** of a cloud name | one chip per source, its accounts and then its providers: an account's chip is the service name the **Accounts** panel shows for its login kind, a provider's its name |
 | **From** of an Ollama name | the chip `ui.module_title.ollama`, then one chip per account or stored provider that also serves the name, as a cloud name's |
 | **Context** | the name's length, mono and read-only: a cloud name's set length or else its default, an Ollama name's computed length |
-| The machines of an Ollama name | under the name, one line per machine of the name's pool, offline machines among them, by the machine's name: the name as a link to `/agents/<device id>?module=ollama&configure=1`, the machine page on its Ollama tab with its panels open, then `ui.ai.context_setting {length}` with the model's setting, the `num_ctx` its Modelfile sets or else the machine's, and `ui.ai.context_trained {length}`, each bright while it equals the name's length and faint otherwise. `ui.ai.context_trained` is left out while the view's `trained_context_length` is 0 |
-| **Configure** | `ui.ai.model_configure`, a ghost `button--small` at a cloud row's right that opens the name's dialog; an Ollama row has none |
+| **Configure** | `ui.ai.model_configure`, a ghost `button--small` on a cloud row that opens the name's dialog; an Ollama row leaves its place empty |
+| **Details** | `ui.ai.model_details`, a ghost `button--small` after **Configure** on every row, in one column, that opens the name's **Details** dialog |
 | The empty state | `ui.ai.context_empty`, one line, while the gateway serves no name |
+
+The **Details** dialog shows the name's use over the **Activity** panel's
+range and the price each source charges for it. It reads
+`GET /api/hub/ai/gateway/usage?range=<range>` when it opens, the range the
+Activity panel's chips picked, `month` while they picked none, and takes
+the name's row of `models` and its `upstreams`.
+
+| Part | Idiom |
+| --- | --- |
+| The title | `ui.ai.model_details_title {model}`, with Close at the head's right |
+| The range | `ui.ai.details_range_day`, `ui.ai.details_range_week`, `ui.ai.details_range_month` or `ui.ai.details_range_year`, faint, under the head |
+| The figures | in large type, the name's `ui.usage.header_requests`, `ui.usage.header_tokens` and `ui.usage.header_cost`, then `ui.ai.details_api_value` while the row has an API value, and on a cloud name `ui.ai.details_price` with the price in force, its input and output joined by ` / `, and `ui.ai.price_unit`; each amount as the **Cost** column writes one, `—` for none |
+| A source's box | one box per source, the accounts, then the stored providers, then each machine of an Ollama name's pool by its name: the source's name and its kind as a chip, `ui.ai.source_account`, `ui.ai.source_provider` or `ui.module_title.ollama`; then its requests, its tokens and its cost or API value from its row of `upstreams`, 0 and `—` without one |
+| A cloud source's prices | `ui.ai.price_input` and `ui.ai.price_output` with the source's `price` from `GET /api/hub/ai/model`, each with its currency's sign, and `ui.ai.no_price` while the source has none |
+| A machine's lengths | in place of the prices: the machine's name as a link to `/agents/<device id>?module=ollama&configure=1`, the machine page on its Ollama tab with its panels open, `ui.ai.context_setting {length}` with the model's setting, the `num_ctx` its Modelfile sets or else the machine's, and `ui.ai.context_trained {length}`, each bright while it equals the name's length and faint otherwise; `ui.ai.context_trained` is left out while the view's `trained_context_length` is 0 |
 
 The dialog a cloud row's **Configure** opens:
 
@@ -1648,8 +1667,9 @@ The dialog a cloud row's **Configure** opens:
 | A length field that holds no whole number from 4096 to 10000000 shows `code.context_length_invalid {min, max}` under it, as the Ollama tab's **Context length (tokens)** does. | One kind of field has one idiom and one sentence on every page ("An interaction this document does not cover"). |
 | A price field that holds no number from 0 to 10000 with at most 6 decimals, or is empty while the other holds a number, shows `code.price_invalid {min, max}` under the two. Both emptied on a name with no default take its set price away. | A price is the pair of numbers. A name no source prices has nothing to go back to but no price. |
 | A price picked in CNY over the default's numbers is a set price. | The default is USD, and the same numbers in CNY are another price. |
-| An Ollama row has no **Configure**, a name a cloud source also serves among them. Its setting changes on the machine's Ollama tab, which the machine's name links to. | The length is computed from each machine's setting and the model, and a new setting restarts that machine's Ollama ([agent/modules/ollama.md](agent/modules/ollama.md), "The settings are the hub's"). A machine's Ollama costs nothing per token. |
-| Under 640 px the head row is not drawn; each row's chips go under its name, and the length and **Configure** keep the end of the first line. | Four columns leave a phone's model names a few characters wide. |
+| An Ollama row has no **Configure**, a name a cloud source also serves among them. Its setting changes on the machine's Ollama tab, which the machine's name in **Details** links to. | The length is computed from each machine's setting and the model, and a new setting restarts that machine's Ollama ([agent/modules/ollama.md](agent/modules/ollama.md), "The settings are the hub's"). A machine's Ollama costs nothing per token. |
+| **Details** edits nothing. Close, Escape and the backdrop close it. | Its figures are the gateway's records and the prices in force; each is changed where it is set. |
+| Under 640 px the head row is not drawn; each row's chips go under its name, and the length and the buttons keep the end of the first line. The **Details** boxes stack one per line. | Five columns leave a phone's model names a few characters wide. |
 
 ## The Access panel of the AI page
 
