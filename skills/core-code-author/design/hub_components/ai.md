@@ -195,6 +195,54 @@ is the tool configuration the switch writes: the client's **Configure**
 dialog on a person's computer, the account's form on the machine page on a
 managed machine.
 
+## Vendor presets
+
+The provider form's first field is **Vendor**. A vendor's preset fills the
+form's kind, base URL and model names, and **Custom** is the form as it is
+without one. The presets are a table in the hub's package,
+`data/ai_vendors.json`, `{vendors: [{id, endpoints: [{id, base_url,
+price_provider, is_plan, models}]}]}`, read from each vendor's own pages on
+2026-11-26:
+
+| Vendor | Endpoint | Base URL | Prices from | Plan | Models |
+| --- | --- | --- | --- | --- | --- |
+| DeepSeek, `deepseek` | `api` | `https://api.deepseek.com` | `deepseek` | | `deepseek-flash`, `deepseek-v4-pro` |
+| Kimi, `kimi` | `api_cn` | `https://api.moonshot.cn/v1` | `moonshotai-cn` | | `kimi-k3.1-pro`, `kimi-k3.1-pro-highspeed`, `kimi-k3` |
+| | `api_global` | `https://api.moonshot.ai/v1` | `moonshotai` | | the same |
+| Zhipu GLM, `zhipu` | `api_cn` | `https://open.bigmodel.cn/api/paas/v4` | `zhipuai` | | `glm-5.3`, `glm-5.3-flash`, `glm-5.3-flashx` |
+| | `plan_cn` | `https://open.bigmodel.cn/api/coding/paas/v4` | `zhipuai` | yes | the same |
+| | `api_global` | `https://api.z.ai/api/paas/v4` | `zai` | | the same |
+| | `plan_global` | `https://api.z.ai/api/coding/paas/v4` | `zai` | yes | the same |
+| Qwen, `qwen` | `api_cn` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `alibaba-cn` | | `qwen4-max`, `qwen3.7-plus`, `qwen3.8-flash` |
+| | `api_global` | `https://dashscope-intl.aliyuncs.com/compatible-mode/v1` | `alibaba` | | the same |
+| | `plan_cn` | `https://coding.dashscope.aliyuncs.com/v1` | `alibaba-cn` | yes | the same |
+| | `plan_global` | `https://coding-intl.dashscope.aliyuncs.com/v1` | `alibaba` | yes | the same |
+| Doubao, `doubao` | `api` | `https://ark.cn-beijing.volces.com/api/v3` | `volcengine` | | `doubao-seed-2-1-pro-260915`, `doubao-seed-2-1-lite-260915`, `doubao-seed-2-1-turbo-260628` |
+| | `plan` | `https://ark.cn-beijing.volces.com/api/coding/v3` | `volcengine` | yes | `ark-code-latest` |
+| MiniMax, `minimax` | `api_cn` | `https://api.minimax.cn/v1` | `minimax-cn` | | `MiniMax-M3.1-Flash`, `MiniMax-M3` |
+| | `api_global` | `https://api.minimax.io/v1` | `minimax` | | the same |
+| OpenRouter, `openrouter` | `api` | `https://openrouter.ai/api/v1` | `openrouter` | | `openai/gpt-6.2-sol`, `anthropic/claude-fable-5.2` |
+| SiliconFlow, `siliconflow` | `api_cn` | `https://api.siliconflow.cn/v1` | `siliconflow-cn` | | `deepseek-ai/DeepSeek-V4.1-Flash`, `deepseek-ai/DeepSeek-V4-Pro`, `zai-org/GLM-5.3` |
+| | `api_global` | `https://api.siliconflow.com/v1` | `siliconflow` | | the same |
+| Mistral, `mistral` | `api` | `https://api.mistral.ai/v1` | `mistral` | | `mistral-large-latest`, `mistral-small-2603` |
+| xAI, `xai` | `api` | `https://api.x.ai/v1` | `xai` | | `grok-4.7`, `grok-4.6`, `grok-4.3` |
+
+"Prices from" is the models.dev provider whose prices the endpoint's
+requests are priced at ("Prices"). The kinds' own endpoints have a vendor
+too, with no preset of their own: `anthropic` at `https://api.anthropic.com`
+prices from `anthropic`, `openai` at `https://api.openai.com/v1` from
+`openai`, and `gemini` at Google's default endpoint from `google`.
+
+| Rule | Reason |
+| --- | --- |
+| A preset fills the kind `custom`, the base URL of its endpoint and its model names, one per line, and fills the name while the name field is empty or holds the previous vendor's name. Every field stays editable, and the stored record keeps its shape, `{name, kind, base_url, secret_id, models}`. | The renderer and the provider store stay as they are, and a vendor's new names arrive between hub releases, so a person adds them by hand. |
+| Every preset is `custom`, the OpenAI-compatible chat endpoint. | Each vendor above serves chat completions with its API key, and a `custom` entry with a model list serves those names alone. An `anthropic` or `openai` entry with an empty list serves every Claude or Codex name, so a DeepSeek key entered that way gets Claude requests. |
+| A vendor with more than one endpoint shows **Plan and region**, a picker of them in the table's order, and a pick fills the base URL and the names again. | A mainland and an international host are two accounts with two price lists, and a coding plan takes a key of its own. |
+| A provider's vendor and endpoint are the ones whose base URL equals the provider's, compared without a trailing slash and with the host in any case. A kind's provider with an empty base URL takes its kind's vendor. Any other provider is **Custom**. | The record names no vendor, and the base URL says which one serves it. The form shows the vendor of a stored provider the same way, so the price lookup and the form agree. |
+| A plan endpoint's requests count as an API value, as an account's do, and never as cost ("Cost"). | A coding plan is a subscription with a key: the vendor charges the plan, and models.dev gives its coding-plan entries a price of 0. MiniMax's plan keys use the API's own URLs, so a MiniMax key counts as cost. |
+| A developer updates the table with a hub release, rechecking each base URL and name on the vendor's page; the hub never downloads one. | Neutrino runs no server of its own. On 2026-11-26 MiniMax's mainland host was `api.minimax.cn`, where the research of the day before read `api.minimaxi.com`. |
+| xAI's preset is `custom` too. | xAI keeps chat completions as a legacy endpoint beside its Responses API, and the native `xai-api-key` kind is not offered. |
+
 ## The served list
 
 The served list is the last set of names the gateway's `/v1/models`

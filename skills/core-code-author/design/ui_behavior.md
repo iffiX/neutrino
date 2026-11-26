@@ -1503,6 +1503,26 @@ The AI tools of each account are its switch and its model rows in its form
 as a `StatusDot` with a word: `switched` `ok`, `switched_back` `idle`, and
 `failed` `error` with the code's words.
 
+## The provider form of the AI page
+
+The **Providers** panel's **Add provider** and a row's **Edit** open the
+provider form in place ("Inline forms"). Its fields, in order:
+
+| Field | Idiom |
+| --- | --- |
+| **Vendor** | `ui.ai.field_vendor`, a `Picker` of the vendors of `GET /api/hub/ai`'s `vendors` in the table's order, each by `ui.ai.vendor_<id>`, then `ui.ai.vendor_custom` ([hub_components/ai.md](hub_components/ai.md), "Vendor presets") |
+| **Plan and region** | `ui.ai.field_endpoint`, a `Picker` of the vendor's endpoints by `ui.ai.endpoint_<id>`, shown while the vendor has more than one |
+| **Name** | `ui.ai.field_name`, a text field |
+| **Kind** | `ui.ai.field_kind`, a `Picker` of the four kinds, shown while the vendor is **Custom** alone; a preset's kind is `custom` |
+| **Base URL**, **Model aliases**, **API token** | `ui.ai.field_base_url`, `ui.ai.field_models` and `ui.ai.field_token`, each with its hint |
+
+| Rule | Reason |
+| --- | --- |
+| A new form starts on **Custom**, with every field empty and the kind `anthropic`. | A person who has a vendor in mind picks it, and one who has a relay or one of the kinds' own endpoints fills the fields. |
+| A vendor or an endpoint picked fills **Base URL** and **Model aliases** with the endpoint's, and **Name** with `ui.ai.vendor_<id>` while the name is empty or still the previous vendor's name. | The preset is what the person would type, and a name the person typed is theirs. |
+| The **Vendor** and **Plan and region** pickers show the endpoint whose base URL equals the field's, and **Custom** while none does: a base URL edited to another address turns the picker to **Custom**. | The record stores no vendor, and the price lookup reads the vendor from the base URL the same way, so what the form shows is what the prices follow. |
+| An **Edit** opens on the vendor and endpoint its base URL names. | The same rule as above, on the stored record. |
+
 ## The Ollama rows of the Providers panel
 
 The **Providers** panel of the AI page lists, after the stored providers,

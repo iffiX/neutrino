@@ -354,6 +354,10 @@ gateway listens on the hub's loopback alone.
 | --- | --- | --- |
 | `ui.ai.providers_hint`, the Providers panel's line under its title ([hub_components/ai.md](hub_components/ai.md), "How a request routes") | Accounts serve first, then these providers from the top while the accounts are limited. | 先用账号；账号受限时，从上到下用这些提供方。 |
 | `ui.ai.accounts_hint`, the Accounts panel's line under its title | Accounts serve before the providers' API keys. | 账号先于提供方的 API 密钥使用。 |
+| `ui.ai.field_vendor`, the provider form's first field ([ui_behavior.md](ui_behavior.md), "The provider form of the AI page") | Vendor | 服务商 |
+| `ui.ai.vendor_deepseek`, `ui.ai.vendor_kimi`, `ui.ai.vendor_zhipu`, `ui.ai.vendor_qwen`, `ui.ai.vendor_doubao`, `ui.ai.vendor_minimax`, `ui.ai.vendor_openrouter`, `ui.ai.vendor_siliconflow`, `ui.ai.vendor_mistral`, `ui.ai.vendor_xai`, `ui.ai.vendor_custom`, its choices | DeepSeek, Kimi, Zhipu GLM, Qwen, Doubao, MiniMax, OpenRouter, SiliconFlow, Mistral, xAI, Custom | DeepSeek、Kimi、智谱 GLM、通义千问、豆包、MiniMax、OpenRouter、硅基流动、Mistral、xAI、自定义 |
+| `ui.ai.field_endpoint`, the picker of a vendor's endpoints | Plan and region | 套餐和地区 |
+| `ui.ai.endpoint_api`, `ui.ai.endpoint_api_cn`, `ui.ai.endpoint_api_global`, `ui.ai.endpoint_plan`, `ui.ai.endpoint_plan_cn`, `ui.ai.endpoint_plan_global`, its choices | API, API (mainland China), API (international), Coding Plan, Coding Plan (mainland China), Coding Plan (international) | API、API（中国大陆）、API（国际）、Coding Plan、Coding Plan（中国大陆）、Coding Plan（国际） |
 | `state.paused`, an account's status while it is paused ([ui_behavior.md](ui_behavior.md), "The Accounts panel of the AI page") | paused | 已暂停 |
 | `ui.ai.limited_until`, an account's status while the gateway cools it, `{time}` the clock time it serves again, with the date when that is not today | limited until {time} | 受限至 {time} |
 | `ui.ai.plan`, a Codex account's plan as the vendor names it | {plan} plan | {plan} 套餐 |

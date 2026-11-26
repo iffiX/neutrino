@@ -553,7 +553,7 @@ moved. Its steps and their order are [network.md](hub_components/network.md),
 
 | Route | Parameters | Does |
 | --- | --- | --- |
-| `GET /api/hub/ai` | | the providers and their order |
+| `GET /api/hub/ai` | | `AiProviderListView`, `{providers, vendors}`: the providers in their order, each with `vendor` and `endpoint`, the ids of the preset its base URL names and empty for **Custom**; and `vendors`, the preset table of `data/ai_vendors.json` ([hub_components/ai.md](hub_components/ai.md), "Vendor presets") |
 | `POST /api/hub/ai/provider/add` | a provider | |
 | `POST /api/hub/ai/provider/set` | `{provider_id, ...}` | |
 | `POST /api/hub/ai/provider/remove` | `{provider_id}` | |
