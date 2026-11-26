@@ -9,8 +9,9 @@ starts it apart from itself: a transient unit on Linux, a job given to
 script waits while the hub's own update runs, since its health gate can put
 the previous hub back. It ends when the hub moved to another version or the
 agent reached the package's version meanwhile. Otherwise it installs the
-package with the command the hub's update installs with, which waits for the
-lock of the install that started the panel. The panel can wait while the
+package with the package manager the hub's update installs with, which waits
+for the lock of the install that started the panel and on Linux installs
+nothing over the same version. The panel can wait while the
 script runs, and read whether the agent then is at the package's version.
 
 Not pure: reads the agent's version, writes the script and starts it.

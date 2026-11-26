@@ -429,9 +429,27 @@ def test_a_debian_agent_is_installed_with_apt_get(box):
         "agent updated to 0.6.0",
     ]
     assert ran == [
-        "apt-get install -y --reinstall --allow-downgrades "
-        f"-o DPkg::Lock::Timeout=300 {DEB}"
+        f"apt-get install -y --allow-downgrades -o DPkg::Lock::Timeout=300 {DEB}"
     ]
+
+
+@pytest.mark.parametrize(
+    ("family", "package", "words"),
+    [
+        ("debian", DEB, ["apt-get", "install", "-y"]),
+        ("arch", DEB, ["pacman", "-U", "--needed"]),
+        ("rhel", RPM, ["dnf", "install", "-y"]),
+    ],
+)
+def test_the_agent_is_installed_by_no_reinstall_verb(box, family, package, words):
+    """The agent's own update can install the package while the script waits
+    for the lock, and the script then installs nothing over it."""
+    code, _steps, ran = run_linux(box, family=family, package=package)
+
+    assert code == 0
+    assert ran[0].split()[: len(words)] == words
+    assert "--reinstall" not in ran[0]
+    assert "reinstall" not in ran[0].split()
 
 
 def test_a_rhel_agent_is_installed_with_dnf(box):
@@ -457,7 +475,7 @@ def test_an_arch_agent_waits_for_pacmans_lock_and_says_so(box, monkeypatch):
         "waiting for the package manager",
         "agent updated to 0.6.0",
     ]
-    assert ran == [f"pacman -U --noconfirm {DEB}"]
+    assert ran == [f"pacman -U --needed --noconfirm {DEB}"]
 
 
 def test_the_hubs_own_update_is_waited_out_first(box):

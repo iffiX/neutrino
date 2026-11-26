@@ -171,6 +171,14 @@ INSTALL_COMMANDS = {
         "/i @PATH@ /qn /norestart",
     ),
 }
+# What installs this machine's own agent where the hub's command reinstalls:
+# the package as an upgrade or a downgrade, and nothing once that version is
+# installed. The agent's own update can install it first.
+AGENT_INSTALL_COMMANDS = {
+    "debian": "$PACE apt-get install -y --allow-downgrades "
+    "-o DPkg::Lock::Timeout=@LOCK@ @PATH@",
+    "arch": PACMAN_LOCK_WAIT + "$PACE pacman -U --needed --noconfirm @PATH@",
+}
 # dnf5 answers a reinstall of a version other than the one installed with
 # "Nothing to do" and exit 0, so a reinstall is asked for only when the
 # version stays the same.
@@ -903,14 +911,16 @@ def agent_install_command(family: str) -> str:
         family: The distribution family, or ``pkg``.
 
     Returns:
-        The install command line, naming the file as ``"$AGENT"``.
+        The install command line, naming the file as ``"$AGENT"``; on
+        debian and arch it installs nothing over the same version.
 
     Raises:
         ValueError: If no package manager is known for the family.
     """
     if family not in INSTALL_COMMANDS:
         raise ValueError(f"no package manager is known for {family}")
-    return _filled(INSTALL_COMMANDS[family][0], '"$AGENT"')
+    line = AGENT_INSTALL_COMMANDS.get(family, INSTALL_COMMANDS[family][0])
+    return _filled(line, '"$AGENT"')
 
 
 def lock_step(family: str) -> str:

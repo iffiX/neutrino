@@ -883,7 +883,7 @@ def test_a_plan_without_a_rollback_renders_an_empty_rollback(tmp_path):
 
 def test_the_agent_is_installed_by_the_forward_command_naming_the_file_found():
     assert installer_module.agent_install_command("debian") == (
-        "$PACE apt-get install -y --reinstall --allow-downgrades "
+        "$PACE apt-get install -y --allow-downgrades "
         '-o DPkg::Lock::Timeout=300 "$AGENT"'
     )
     assert 'out=$($PACE dnf install -y "$AGENT" 2>&1)' in (
