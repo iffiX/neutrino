@@ -46,4 +46,6 @@
   gap: var(--space-2);
   align-items: center;
   font-size: 12px;
+  /* Inter's space at 12px is 3px wide. */
+  word-spacing: 0.15em;
 }
