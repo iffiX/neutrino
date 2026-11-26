@@ -2074,6 +2074,42 @@ export interface OllamaModelRequest {
   name: string;
 }
 
+/** What a machine has for ComfyUI, from its last report. */
+export interface ComfyuiResourcesView {
+  gpus: DeviceGpuInfo[];
+}
+
+/** The ComfyUI module's settings on one device. */
+export interface ComfyuiSettingsUpdate {
+  device_id: string;
+  /** The PyTorch build the venv's lock holds; empty on a Mac. */
+  torch_build: string;
+  /** How long a loaded model stays in memory with no job; `-1` is never. */
+  idle_unload: string;
+}
+
+/** One machine's ComfyUI: where the module stands, its settings and the
+ * forwarder's port. */
+export interface ComfyuiDeviceView extends ModuleDeviceState {
+  device_id: string;
+  host: string;
+  /** The version the machine reports; empty before it reports one. */
+  version: string;
+  /** What the machine last reported: `{is_running, port, version}`. */
+  details: Record<string, unknown>;
+  /** The forwarder's port as the machine reports it; 0 before it does. */
+  port: number;
+  /** The stored build, `cpu` while none is stored, empty on a Mac; the
+   * builds the machine's entry has a lock of, in the page's order. */
+  torch_build: string;
+  torch_builds: string[];
+  /** The stored idle unload time, `30m` while none is stored. */
+  idle_unload: string;
+  resources: ComfyuiResourcesView;
+  /** The shared models folder on the machine's system. */
+  models_dir: string;
+}
+
 /** One machine's Ayakaleaf: the forwarder's port, the AI model and where the
  * module stands. */
 export interface AyakaleafDeviceView extends ModuleDeviceState {

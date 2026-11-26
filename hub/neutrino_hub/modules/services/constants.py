@@ -189,6 +189,7 @@ SERVICES_PUBLISHED_MODULES = (
     "samba",
     "gitea",
     "ollama",
+    "comfyui",
     "podman",
     "vscode",
     "code_server",
@@ -232,6 +233,7 @@ SERVICES_DESCRIPTION_DECLARED = "declared"
 SERVICES_DESCRIPTION_DEVICE_SHARE = "device_share"
 SERVICES_DESCRIPTION_GITEA_MODULE = "gitea_module"
 SERVICES_DESCRIPTION_OLLAMA_MODULE = "ollama_module"
+SERVICES_DESCRIPTION_COMFYUI_MODULE = "comfyui_module"
 SERVICES_DESCRIPTION_SAMBA_MODULE = "samba_module"
 SERVICES_DESCRIPTION_VSCODE_MODULE = "vscode_module"
 SERVICES_DESCRIPTION_CLOUDCLI_MODULE = "cloudcli_module"
@@ -249,6 +251,7 @@ SERVICES_DESCRIPTION_CODES = (
     SERVICES_DESCRIPTION_DEVICE_SHARE,
     SERVICES_DESCRIPTION_GITEA_MODULE,
     SERVICES_DESCRIPTION_OLLAMA_MODULE,
+    SERVICES_DESCRIPTION_COMFYUI_MODULE,
     SERVICES_DESCRIPTION_SAMBA_MODULE,
     SERVICES_DESCRIPTION_VSCODE_MODULE,
     SERVICES_DESCRIPTION_CLOUDCLI_MODULE,
@@ -270,6 +273,12 @@ SERVICES_GITEA_ID = "gitea"
 SERVICES_OLLAMA_ID = "ollama"
 SERVICES_OLLAMA_TITLE = "Ollama"
 SERVICES_ENTRY_API = "api"
+# ComfyUI's app, ``comfyui_<device id>``, and its one web entry, its
+# forwarder's page, opened by a client with the token the ``service`` stream
+# hands while the device reports the module running.
+SERVICES_COMFYUI_ID = "comfyui"
+SERVICES_COMFYUI_TITLE = "ComfyUI"
+SERVICES_COMFYUI_DESCRIPTION = "published by the comfyui module on {host}"
 # One web entry per instance of a program run as a person's account, its id
 # ``<module>_<device id>_<account>`` and its title the description table's,
 # opened by a client through its own forward with the token the ``service``

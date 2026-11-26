@@ -353,6 +353,33 @@ def test_astrbot_is_one_app_with_its_page_alone():
     assert app["local_name"] == "astrbot.argon-box.localhost"
 
 
+def test_comfyui_is_one_app_with_its_forwarder_s_page_alone():
+    held = collector(
+        device_modules=[
+            {
+                "device_id": DEVICE,
+                "host": HOST,
+                "comfyui": {"port": 8188, "is_healthy": True},
+            }
+        ]
+    )
+
+    (entry,) = held.render()
+    (app,) = held.apps()
+    assert entry["id"] == f"comfyui_{DEVICE}_web"
+    assert entry["type"] == "web"
+    assert entry["payload"] == {
+        "url": f"http://{HOST}:8188/",
+        "is_token_required": True,
+    }
+    assert (entry["description_code"], entry["description_params"]) == (
+        "comfyui_module",
+        {"host": HOST},
+    )
+    assert app["title"] == "ComfyUI"
+    assert app["local_name"] == "comfyui.argon-box.localhost"
+
+
 def test_a_declared_apps_entries_are_named_by_their_type_and_port():
     app = DeclaredApp(
         id="app1",

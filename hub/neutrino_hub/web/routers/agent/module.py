@@ -55,6 +55,7 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_AGENT_MODULES,
     DEVICE_ASTRBOT_MODULE,
     DEVICE_AYAKALEAF_MODULE,
+    DEVICE_COMFYUI_MODULE,
     DEVICE_HERMES_WEBUI_MODULE,
     DEVICE_METHOD_AGENT,
     DEVICE_METHOD_CONTAINER,
@@ -87,7 +88,7 @@ from neutrino_hub.modules.devices.catalog import (
     module_source,
     resolve_module,
 )
-from neutrino_hub.modules.devices import astrbot, ayakaleaf, hermes_webui
+from neutrino_hub.modules.devices import astrbot, ayakaleaf, comfyui, hermes_webui
 from neutrino_hub.modules.devices.machine_memory import memory_need
 from neutrino_hub.modules.devices.module_table import (
     account_layer_names,
@@ -617,6 +618,8 @@ def install_module(
         and gives a container module its configuration and its gateway key
         where it has none. A module of the account layer gets the machine's
         default account enabled, first in its list, with its secrets.
+        ComfyUI gets its token secret and its PyTorch build from the
+        machine's last report where its file names none.
     """
     if request.module in command_line_program_names():
         return _set_want(runtime, request, CHANNEL_MODULE_STATE_RUNNING)
@@ -1367,8 +1370,9 @@ def _set_want(
     fresh retry mark into the state, so the agent applies the module again.
     An install or a start first wants each module the entry requires
     ``running``, with the same mark, and gives a container module its
-    configuration and its gateway key where it has none; a container
-    module's uninstall voids the key. An install or a start of a module of
+    configuration and its gateway key where it has none, and ComfyUI its
+    token secret and its PyTorch build; a container module's uninstall
+    voids the key. An install or a start of a module of
     the account layer enables the machine's default account in the module's
     file in the same hold of the lock, the file share's folder of it read
     first.
@@ -1441,6 +1445,13 @@ def _set_want(
             _want_required_running(runtime, key, required)
             if is_container and is_present:
                 minted = _prepare_container_module(runtime, key, module)
+            if module == DEVICE_COMFYUI_MODULE and is_present:
+                comfyui.ensure_config(
+                    runtime.desired_states,
+                    key,
+                    platform,
+                    machine_gpus(runtime.device_metrics.get(key)),
+                )
             runtime.desired_states.set_want(key, module, want)
             if is_retried:
                 DeviceRetryMarks().mark(key, module)
@@ -1456,6 +1467,19 @@ def _set_want(
     push_state(runtime, key)
     recompose_published(runtime, module)
     return list_modules(request.device_id, runtime)
+
+
+def machine_gpus(metrics: "dict | None") -> list:
+    """The GPUs a machine's last report names. Pure.
+
+    Args:
+        metrics: ``machine.metrics`` as last reported; None before a report.
+
+    Returns:
+        Each card's reading, in the report's order.
+    """
+    held = metrics.get("gpus") if isinstance(metrics, dict) else None
+    return [gpu for gpu in held or [] if isinstance(gpu, dict)]
 
 
 def _require_default_share_folder(runtime: PanelRuntime, key: str) -> None:

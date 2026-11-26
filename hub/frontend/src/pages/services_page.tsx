@@ -126,6 +126,7 @@ const DESCRIPTION_KEYS: Record<string, string> = {
   astrbot_module: "ui.services.description_astrbot_module",
   ssh_server_module: "ui.services.description_ssh_server_module",
   ollama_module: "ui.services.description_ollama_module",
+  comfyui_module: "ui.services.description_comfyui_module",
 };
 // The module a description names by the module's title.
 const DESCRIPTION_MODULES: Record<string, string> = {

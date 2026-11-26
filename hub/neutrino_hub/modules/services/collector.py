@@ -46,9 +46,13 @@ from neutrino_hub.modules.services.constants import (
     SERVICES_AYAKALEAF_DESCRIPTION,
     SERVICES_AYAKALEAF_ID,
     SERVICES_AYAKALEAF_TITLE,
+    SERVICES_COMFYUI_DESCRIPTION,
+    SERVICES_COMFYUI_ID,
+    SERVICES_COMFYUI_TITLE,
     SERVICES_DESCRIPTION_AI_GATEWAY,
     SERVICES_DESCRIPTION_ASTRBOT_MODULE,
     SERVICES_DESCRIPTION_AYAKALEAF_MODULE,
+    SERVICES_DESCRIPTION_COMFYUI_MODULE,
     SERVICES_DESCRIPTION_CONTAINER,
     SERVICES_DESCRIPTION_DECLARED,
     SERVICES_DESCRIPTION_DEVICE_SHARE,
@@ -123,10 +127,17 @@ CATALOG_ENTRY_DEFAULTS = {
 # The module name the Containers module's apps and entries carry in their ids.
 PODMAN_MODULE = "podman"
 
-# The container modules whose page the agent's forwarder serves, each one web
-# entry per device: the module, its app id's prefix, the title, the
-# provenance line and its code, in the list's order.
-FORWARDED_CONTAINER_MODULES = (
+# The modules whose one page per device the agent's forwarder serves, each
+# one web entry: the module, its app id's prefix, the title, the provenance
+# line and its code, in the list's order.
+FORWARDED_MODULES = (
+    (
+        "comfyui",
+        SERVICES_COMFYUI_ID,
+        SERVICES_COMFYUI_TITLE,
+        SERVICES_COMFYUI_DESCRIPTION,
+        SERVICES_DESCRIPTION_COMFYUI_MODULE,
+    ),
     (
         "hermes_webui",
         SERVICES_HERMES_WEBUI_ID,
@@ -191,8 +202,8 @@ class ServiceListCollector:
                 "is_healthy"}]}``, ``ssh_server: {"instances": [{"account",
                 "port", "is_healthy", "host_key_fingerprint",
                 "account_key_fingerprint"}]}``,
-                ``hermes_webui``, ``ayakaleaf`` and ``astrbot`` each as ``{"port",
-                "is_healthy"}``, and ``podman:
+                ``comfyui``, ``hermes_webui``, ``ayakaleaf`` and ``astrbot``
+                each as ``{"port", "is_healthy"}``, and ``podman:
                 {"containers": [{"name", "image", "is_running", "bindings",
                 "source"}]}``, ``bindings`` being ``(port, protocol,
                 scheme)`` triples, ``scheme`` naming a ``web`` entry's and
@@ -414,7 +425,7 @@ class ServiceListCollector:
                         device_id=device_id,
                     )
                 )
-        for name, prefix, title, description, code in FORWARDED_CONTAINER_MODULES:
+        for name, prefix, title, description, code in FORWARDED_MODULES:
             served = device.get(name)
             if not served or not served.get("port"):
                 continue

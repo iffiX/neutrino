@@ -382,7 +382,7 @@
   "code.terminal_account_missing": "这个系统的终端没有启用的账户，到它的系统页上启用一个。",
   "code.transport_apply_failed": "传输层没能启动：{detail}",
   "code.transport_key_missing": "中枢的连接端口还没就绪，稍后再生成链接。",
-  "code.version_locked": "{module} 的版本跟随系统或被控端，不能选择。",
+  "code.version_locked": "{module} 的版本是固定的，不能选择。",
   "code.version_older_than_run": "{module} 在这个系统上运行过 {newest_run}，数据已经往前迁移，不能安装更旧的 {version}。",
   "code.version_switch_failed": "版本 {version} 没能启动，已换回原来的版本：{detail}",
   "code.version_unknown": "这个系统没有版本 {version}。",

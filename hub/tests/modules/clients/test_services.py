@@ -849,6 +849,26 @@ def test_ayakaleaf_s_material_is_a_token_minted_from_its_own_secret(config_dir):
     assert runtime.desired_states.minted == [("dev", "ayakaleaf")]
 
 
+COMFYUI_ENTRY = {
+    **HERMES_ENTRY,
+    "id": "comfyui_dev_web",
+    "title": "ComfyUI",
+    "payload": {"url": "http://192.168.100.7:8188/", "is_token_required": True},
+    "description_code": "comfyui_module",
+}
+
+
+def test_comfyui_s_material_is_a_token_minted_from_its_own_secret(config_dir):
+    runtime = FakeRuntime(entries=(COMFYUI_ENTRY,))
+    runtime.desired_states = ModuleMintingDesiredStates()
+    client_id = ClientRegistry().create("alice")
+
+    answer = service_material(runtime, client_id, "comfyui_dev_web")
+
+    assert answer == ("", {"token": "fresh-1"})
+    assert runtime.desired_states.minted == [("dev", "comfyui")]
+
+
 # --- the rows of the fine mode ---
 
 

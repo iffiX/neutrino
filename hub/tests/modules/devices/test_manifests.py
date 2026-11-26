@@ -9,10 +9,12 @@ them as no module. Every platform entry names a runner and one of the five
 install methods with the params its method fixes, and every artifact a kind
 and a digest of its kind's form, or the loader refuses the manifest. A
 ``uv_lock`` names its lock beside the manifest and its entry no
-``releases``, and a ``git-tree:`` digest stands on a ``tar_gz`` alone.
+``releases``, a ``git-tree:`` digest stands on a ``tar_gz`` alone, and
+ComfyUI's four entries name the sha256 of each lock they ship.
 """
 
 import copy
+import hashlib
 import importlib.util
 import json
 from pathlib import Path
@@ -429,6 +431,7 @@ def test_the_manifests_come_back_in_the_order_every_list_of_modules_shows():
         "samba",
         "gitea",
         "ollama",
+        "comfyui",
         "vscode",
         "code_server",
         "cloudcli",
@@ -495,6 +498,7 @@ def test_every_shipped_manifest_names_its_publisher():
         "samba": "Samba Team",
         "gitea": "go-gitea/gitea",
         "ollama": "ollama/ollama",
+        "comfyui": "Comfy-Org/ComfyUI",
         "vscode": "Microsoft",
         "code_server": "coder/code-server",
         "cloudcli": "siteboon/claudecodeui",
@@ -1304,6 +1308,11 @@ SHIPPED_UNINSTALL_LINES = {
         False,
         "The pulled models stay in its data directory.",
         "拉取的模型都留在它的数据目录里。",
+    ),
+    "comfyui": (
+        False,
+        "The models, inputs, outputs and custom nodes stay in its data directory.",
+        "模型、输入、输出和自定义节点都留在它的数据目录里。",
     ),
     "samba": (
         False,
@@ -2412,6 +2421,7 @@ SHIPPED_GUEST_LOGINS = {
     "hermes_webui": "run_account",
     "astrbot": "run_account",
     "siyuan": "run_account",
+    "comfyui": "run_account",
 }
 
 
@@ -2588,3 +2598,157 @@ def test_a_zip_naming_a_member_places_its_files_in_another_s_directory(
     with pytest.raises(ValueError) as refusal:
         load_module_manifests()
     assert "beside another" in str(refusal.value)
+
+
+# --- ComfyUI's manifest, its locks and its tree ---
+
+COMFYUI_VERSION = "0.46.0"
+COMFYUI_LOCKS = Path(manifests_module.MANIFESTS_DIR) / "comfyui" / COMFYUI_VERSION
+# The builds each ComfyUI entry has a lock of, in the module page's order.
+COMFYUI_BUILDS = {
+    "linux-amd64": ["nvidia", "amd", "intel", "cpu"],
+    "linux-arm64": ["nvidia", "cpu"],
+    "windows-amd64": ["nvidia", "intel", "cpu"],
+    "darwin-arm64": [],
+}
+COMFYUI_TREE = "git-tree:2bd4ec8b4c66bad8d78eaf323b33fb0da5a995e0"  # scan: allow
+
+
+def test_comfyui_names_its_four_entries_and_no_intel_mac():
+    manifest = load_module_manifests()["comfyui"]
+
+    assert set(manifest["platforms"]) == set(COMFYUI_BUILDS)
+    assert manifest["platforms"]["darwin-arm64"]["min_version"] == "14"
+    assert all(
+        "min_version" not in entry
+        for key, entry in manifest["platforms"].items()
+        if key != "darwin-arm64"
+    )
+    for platform in (
+        {"os": "darwin", "family": "", "arch": "amd64", "version": "15.1"},
+        {"os": "darwin", "family": "", "arch": "arm64", "version": "13.6"},
+        {"os": "windows", "family": "", "arch": "arm64", "version": "26100"},
+    ):
+        assert resolve_platform_entry(manifest, platform) == ("", None), platform
+
+
+def test_comfyui_names_its_artifacts_in_the_install_s_order_and_no_releases():
+    manifest = load_module_manifests()["comfyui"]
+
+    for key, entry in manifest["platforms"].items():
+        params = entry_params(entry)
+        names = [artifact["name"] for artifact in params["artifacts"]]
+        expected = ["python", "uv", "source", "mcp", "venv"]
+        if key.startswith("windows"):
+            expected.insert(3, "vc_runtime")
+        assert names == expected, key
+        assert "releases" not in params, key
+        assert params["version"] == COMFYUI_VERSION
+        assert params["uninstall"] == {"post_uninstall": [], "is_data_kept": True}
+        source = params["artifacts"][2]
+        assert (source["kind"], source["digest"]) == ("tar_gz", COMFYUI_TREE)
+        assert artifact_sources(source, COMFYUI_VERSION) == [
+            "https://codeload.github.com/Comfy-Org/ComfyUI/tar.gz/refs/tags/v0.46.0"
+        ]
+    verify = {
+        key: entry_params(entry)["verify"]
+        for key, entry in manifest["platforms"].items()
+    }
+    assert verify["linux-amd64"] == (
+        '"/var/lib/neutrino/agent/comfyui/python/bin/python3" --version'
+    )
+    assert verify["windows-amd64"] == (
+        '"%ProgramData%\\Neutrino\\agent\\state\\comfyui\\python\\python.exe"'
+        " --version"
+    )
+    assert verify["darwin-arm64"] == (
+        '"/Library/Application Support/Neutrino/agent/state/comfyui/python/bin/'
+        'python3" --version'
+    )
+
+
+def test_comfyui_places_the_visual_cpp_runtime_beside_python_on_windows():
+    manifest = load_module_manifests()["comfyui"]
+    params = entry_params(manifest["platforms"]["windows-amd64"])
+    runtime = params["artifacts"][3]
+
+    assert runtime == {
+        "name": "vc_runtime",
+        "kind": "zip",
+        "directory": "python",
+        "member": "msvc_runtime-14.51.36231.data/data",
+        "file": "msvc_runtime-14.51.36231-cp313-cp313-win_amd64.whl",
+        "digest": "sha256:f3c3ac4f733a774f6ae209567e533bfde6f72dc1c10977733bfe09ce01e5b624",  # scan: allow
+        "sources": [
+            "https://files.pythonhosted.org/packages/c2/6e/"
+            "7ba5696e9d8c1bcb01352f06e441497c308e84f75aba598400646ab31ca7/{file}"
+        ],
+    }
+
+
+def test_each_comfyui_lock_digest_is_the_sha256_of_its_lock_beside_the_manifest():
+    manifest = load_module_manifests()["comfyui"]
+    named = set()
+
+    for key, entry in manifest["platforms"].items():
+        locks = [
+            artifact
+            for artifact in entry_params(entry)["artifacts"]
+            if artifact["kind"] == "uv_lock"
+        ]
+        assert [lock["name"] for lock in locks] == ["mcp", "venv"], key
+        assert locks[0]["source_sets"] == ["pypi"]
+        assert locks[0]["directory"] == "mcp"
+        venv = locks[1]
+        assert "directory" not in venv
+        assert list(venv.get("builds") or {}) == COMFYUI_BUILDS[key], key
+        for lock in locks:
+            for build in lock.get("builds") or [""]:
+                path = manifests_module.lock_path(
+                    manifest, COMFYUI_VERSION, lock, build
+                )
+                digest = manifests_module.lock_digest(lock, build)
+                assert path.parent == COMFYUI_LOCKS
+                assert (
+                    digest == "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
+                )
+                named.add(path.name)
+        if COMFYUI_BUILDS[key]:
+            assert venv["source_sets"] == ["pytorch", "pypi"]
+        else:
+            assert venv["source_sets"] == ["pypi"]
+    assert named == {path.name for path in COMFYUI_LOCKS.glob("*.txt")}
+
+
+def test_comfyui_s_recipe_names_the_lock_of_one_build_with_its_sets():
+    manifest = load_module_manifests()["comfyui"]
+    entry = manifest["platforms"]["linux-amd64"]
+    venv = entry_params(entry)["artifacts"][-1]
+
+    recipe = module_recipe(entry, build="amd")
+    sent = recipe["params"]["artifacts"]
+
+    assert [artifact["name"] for artifact in sent] == [
+        "python",
+        "uv",
+        "source",
+        "mcp",
+        "venv",
+    ]
+    assert sent[-1] == {
+        "name": "venv",
+        "kind": "uv_lock",
+        "digest": venv["builds"]["amd"],
+        "source_sets": ["pytorch", "pypi"],
+    }
+    assert sent[3]["directory"] == "mcp" and "file" not in sent[3]
+    assert sent[2]["digest"] == COMFYUI_TREE
+    assert "releases" not in recipe["params"]
+    assert [
+        artifact["name"] for artifact in module_recipe(entry)["params"]["artifacts"]
+    ] == [
+        "python",
+        "uv",
+        "source",
+        "mcp",
+    ]

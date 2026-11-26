@@ -101,6 +101,7 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_GITEA_SECRETS_FILE,
     DEVICE_ASTRBOT_MODULE,
     DEVICE_AYAKALEAF_MODULE,
+    DEVICE_COMFYUI_MODULE,
     DEVICE_HERMES_WEBUI_MODULE,
     DEVICE_INSTANCE_GATEWAY_FORWARD_URL,
     DEVICE_INSTANCE_LOGIN_KEY,
@@ -125,7 +126,7 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_RDP_SEAT_PASSWORD_AAD,
     DEVICE_RDP_SEAT_PASSWORD_CHARS,
 )
-from neutrino_hub.modules.devices import astrbot, ayakaleaf, hermes_webui
+from neutrino_hub.modules.devices import astrbot, ayakaleaf, comfyui, hermes_webui
 from neutrino_hub.modules.devices.accounts import DeviceAccount, DeviceAccountStore
 from neutrino_hub.modules.devices.folder_shares import (
     folder_shares,
@@ -163,6 +164,8 @@ from neutrino_hub.modules.services.constants import (
     SERVICES_ASTRBOT_TITLE,
     SERVICES_AYAKALEAF_ID,
     SERVICES_AYAKALEAF_TITLE,
+    SERVICES_COMFYUI_ID,
+    SERVICES_COMFYUI_TITLE,
     SERVICES_ENTRY_SSH,
     SERVICES_ENTRY_WEB,
     SERVICES_GITEA_ID,
@@ -252,9 +255,9 @@ def machine_apps(store: "DesiredStateStore", key: str) -> dict:
     """Every app the hub composes for one machine, by id, with its title.
 
     The set the local names are told apart in: each enabled account's
-    instance of a program run as an account, Gitea, Ollama, the SSH server,
-    Hermes WebUI, Ayakaleaf, AstrBot and the containers the Containers
-    module declares.
+    instance of a program run as an account, Gitea, Ollama, ComfyUI, the SSH
+    server, Hermes WebUI, Ayakaleaf, AstrBot and the containers the
+    Containers module declares.
 
     Args:
         store: The per-device store.
@@ -266,6 +269,7 @@ def machine_apps(store: "DesiredStateStore", key: str) -> dict:
     titles = {
         f"{SERVICES_GITEA_ID}_{key}": SERVICES_GITEA_TITLE,
         f"{SERVICES_OLLAMA_ID}_{key}": SERVICES_OLLAMA_TITLE,
+        f"{SERVICES_COMFYUI_ID}_{key}": SERVICES_COMFYUI_TITLE,
         f"{SERVICES_SSH_SERVER_ID}_{key}": SERVICES_SSH_SERVER_TITLE,
         f"{SERVICES_HERMES_WEBUI_ID}_{key}": SERVICES_HERMES_WEBUI_TITLE,
         f"{SERVICES_AYAKALEAF_ID}_{key}": SERVICES_AYAKALEAF_TITLE,
@@ -1669,7 +1673,9 @@ class DesiredStateStore:
             :func:`account_layer_agent_config` composes it, the file share
             with the networks its shares answer, Gitea with its address, the
             secrets it signs with and its SSH entry's local port, Ollama
-            with its settings alone, Containers
+            with its settings alone, ComfyUI with its secret opened, its
+            names, its settings, the default account and the command line
+            programs installed, Containers
             as :func:`podman_agent_config` composes it with the hub
             containers of the machine's container modules, and Hermes
             WebUI, Ayakaleaf and AstrBot with their secrets opened and their
@@ -1710,6 +1716,21 @@ class DesiredStateStore:
             )
         elif name == DEVICE_OLLAMA_MODULE:
             config = ollama_agent_config(config)
+        elif name == DEVICE_COMFYUI_MODULE:
+            app_id = module_app_id(name, key)
+            made = (app_slug_of or {}).get(app_id) or slug(SERVICES_COMFYUI_TITLE)
+            default = self.default_account(key)
+            row = next((held for held in available if held.account == default), None)
+            config = comfyui.agent_config(
+                config,
+                key,
+                platform,
+                local_name=local_name(made, machine_slug),
+                account=default,
+                password=account_login(row, platform) if row is not None else "",
+                wanted=self.modules(key) if wanted is None else wanted,
+                manifests=manifests,
+            )
         elif name == DEVICE_PODMAN_MODULE:
             config = podman_agent_config(
                 config, platform, available, self.default_account(key)
@@ -1854,6 +1875,10 @@ class DesiredStateStore:
             if version and releases is not None and recipe:
                 chosen = releases.recipe(name, platform, version)
                 recipe = chosen if chosen else recipe
+            if name == DEVICE_COMFYUI_MODULE:
+                recipe = comfyui.built_recipe(
+                    self.read(key, name), platform, shared["manifests"]
+                )
             modules[name] = {
                 "want": entry["want"],
                 "config": self.agent_config(

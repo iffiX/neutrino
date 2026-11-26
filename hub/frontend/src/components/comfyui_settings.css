@@ -1,0 +1,18 @@
+/* The Settings: the two pickers side by side, one under the other when
+   narrow, and the models folder across the whole width under them. */
+.comfyui_settings_fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--space-3);
+  align-items: start;
+}
+
+.comfyui_settings_models {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+.comfyui_settings_path {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}

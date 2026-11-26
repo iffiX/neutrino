@@ -216,6 +216,7 @@ MODULE_NAMES = (
     "remote_desktop",
     "gitea",
     "ollama",
+    "comfyui",
     "podman",
     "vscode",
     "code_server",

@@ -19,6 +19,7 @@
     {"name": "samba", "category": "files"},
     {"name": "remote_desktop", "category": "remote"},
     {"name": "podman", "category": "other"},
-    {"name": "astrbot", "category": "other"}
+    {"name": "astrbot", "category": "other"},
+    {"name": "comfyui", "category": "other"}
   ]
 }

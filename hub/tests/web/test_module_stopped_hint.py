@@ -7,7 +7,7 @@ row never started among them, and its apply then waits for the want it has;
 Terminal's and the SSH server's tabs, which the agent's package carries, and
 the command line programs' tabs, which have no Start, never show it, and a
 program's apply waits for the want it has; the folder shares, Containers'
-Run settings and Ollama's Settings show it the same way.
+Run settings, Ollama's Settings and ComfyUI's Settings show it the same way.
 Every apply bar the machine page reaches is listed here by its panel, and each
 shows it in place of its own hint, Remote desktop's alone keeping its own. A
 row with no want that reads ``running`` reaches its panels as wanted ``running``,
@@ -41,6 +41,7 @@ PANEL_BARS = {
     ],
     "ayakaleaf_panels.tsx": ['t("ui.ayakaleaf.model_hint")'],
     "ollama_settings.tsx": ['t("ui.ollama.settings_apply_hint")'],
+    "comfyui_settings.tsx": ['t("ui.comfyui.settings_apply_hint")'],
 }
 # The apply bars of a module the agent carries, by file, each by its one hint.
 CARRIED_BARS = {

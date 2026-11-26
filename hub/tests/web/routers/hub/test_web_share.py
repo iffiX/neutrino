@@ -185,6 +185,7 @@ class FakeRuntime:
         self.web_share_guests = WebShareGuestSessions()
         self.channel = FakeChannel()
         self.device_address: dict = {}
+        self.device_platform: dict = {}
         self.pushed: list = []
 
     def device_names(self) -> dict:
@@ -616,3 +617,20 @@ def test_a_visitor_of_a_container_module_s_page_uses_it_as_its_one_user(code, ac
 
     assert web_share_access.visitor_account(entry, "run_account") == account
     assert web_share_access.visitor_account(entry, "app") == ""
+
+
+@pytest.mark.parametrize(
+    "platform, account",
+    [
+        ({"os": "linux", "arch": "amd64"}, "neutrino_comfyui"),
+        ({"os": "darwin", "arch": "arm64"}, "neutrino_comfyui"),
+        ({"os": "windows", "arch": "amd64"}, "LOCAL SERVICE"),
+        (None, "neutrino_comfyui"),
+    ],
+)
+def test_a_visitor_of_comfyui_uses_it_as_the_account_its_service_runs_as(
+    platform, account
+):
+    entry = {"description_code": "comfyui_module", "description_params": {}}
+
+    assert web_share_access.visitor_account(entry, "run_account", platform) == account

@@ -48,15 +48,14 @@ from neutrino_hub.modules.clients.permissions import (
 from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.modules.cliproxyapi.ops import load_config
 from neutrino_hub.modules.devices.constants import (
-    DEVICE_MODULE_KIND_CONTAINER,
     DEVICE_SAMBA_MODULE,
     DEVICE_SAMBA_PASSWORD_KEY,
     DEVICE_SSH_SERVER_KEY_KEY,
     DEVICE_SSH_SERVER_MODULE,
 )
 from neutrino_hub.modules.devices.module_table import (
+    DEVICE_MODULE_ROWS,
     account_program_rows,
-    rows_of_kind,
 )
 from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.system.machine import machine_id
@@ -145,10 +144,10 @@ def service_material(runtime, client_id: str, entry_id: str) -> tuple:
         return _ssh_material(runtime, raw, entry)
     if entry["type"] == SERVICES_TYPE_FILE:
         return _share_material(runtime, raw, entry)
-    container = _container_row(str(entry["description_code"] or ""))
-    if container is not None:
+    page = _page_row(str(entry["description_code"] or ""))
+    if page is not None:
         token = runtime.desired_states.module_token(
-            str(raw.get("device_id") or ""), container.name
+            str(raw.get("device_id") or ""), page.name
         )
         if not token:
             return VaultLockedError.code, {}
@@ -527,10 +526,10 @@ def _instance_row(description_code: str):
     return None
 
 
-def _container_row(description_code: str):
-    """The row of the container module whose page carries a code and opens with a token."""
-    for row in rows_of_kind(DEVICE_MODULE_KIND_CONTAINER):
-        if row.description_code != description_code:
+def _page_row(description_code: str):
+    """The row of the module whose one page per device carries a code and opens with a token."""
+    for row in DEVICE_MODULE_ROWS:
+        if row.is_account_layer or row.description_code != description_code:
             continue
         if row.has_forwarder and row.token_field:
             return row

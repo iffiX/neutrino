@@ -40,6 +40,7 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_GUEST_LOGIN_RUN_ACCOUNT,
     DEVICE_HERMES_WEBUI_USER,
 )
+from neutrino_hub.modules.devices.comfyui import service_user
 from neutrino_hub.modules.devices.manifests import (
     guest_login_of,
     load_module_manifests,
@@ -50,6 +51,7 @@ from neutrino_hub.modules.overlay.direct_config import read_direct
 from neutrino_hub.modules.services.constants import (
     SERVICES_APP_SOURCE_ORDER,
     SERVICES_DESCRIPTION_ASTRBOT_MODULE,
+    SERVICES_DESCRIPTION_COMFYUI_MODULE,
     SERVICES_DESCRIPTION_CONTAINER,
     SERVICES_DESCRIPTION_HERMES_WEBUI_MODULE,
     SERVICES_SOURCE_MODULE,
@@ -144,14 +146,28 @@ def entry_guest_login(entry: dict, manifests: dict) -> tuple:
     return "", ""
 
 
-def visitor_account(entry: dict, guest_login: str) -> str:
-    """The account a visitor uses an app as, for ``run_account``; else empty."""
+def visitor_account(
+    entry: dict, guest_login: str, platform: "dict | None" = None
+) -> str:
+    """The account a visitor uses an app as, for ``run_account``; else empty.
+
+    Args:
+        entry: A published entry.
+        guest_login: How its share's visitor signs in.
+        platform: The tuple its machine's agent reported, which names the
+            account ComfyUI's service runs as; None is a Linux machine.
+
+    Returns:
+        The account's name.
+    """
     if guest_login != DEVICE_GUEST_LOGIN_RUN_ACCOUNT:
         return ""
     if entry.get("description_code") == SERVICES_DESCRIPTION_HERMES_WEBUI_MODULE:
         return DEVICE_HERMES_WEBUI_USER
     if entry.get("description_code") == SERVICES_DESCRIPTION_ASTRBOT_MODULE:
         return DEVICE_ASTRBOT_USER
+    if entry.get("description_code") == SERVICES_DESCRIPTION_COMFYUI_MODULE:
+        return service_user(platform or {})
     params = entry.get("description_params") or {}
     return str(params.get("account", "") or "")
 
@@ -183,7 +199,13 @@ def offerable_entries(runtime) -> list:
                 "app": app,
                 "guest_login": guest_login,
                 "module": module,
-                "visitor_account": visitor_account(entry, guest_login),
+                "visitor_account": visitor_account(
+                    entry,
+                    guest_login,
+                    runtime.device_platform.get(
+                        str(entry.get("device_id", "") or ""), {}
+                    ),
+                ),
             }
         )
     offered.sort(

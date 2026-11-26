@@ -1,0 +1,91 @@
+{
+  "_comment": "ComfyUI: the tested tag of Comfy Org's source, run by python-build-standalone's stripped CPython 3.13 in a venv the module's uv makes from a lock of every package with every file's hash. The Python, uv and, on Windows, the Visual C++ runtime wheel are archives with GitHub's or PyPI's digest; the source is GitHub's archive of the tag, checked against the tree of the tag's commit. The locks sit beside this file under comfyui/<version>/: the venv's one per PyTorch build of the platform, a Mac's one from PyPI alone, and comfy-mcp's. The version is locked: an entry that names a lock names no releases.",
+  "name": "comfyui",
+  "title": "ComfyUI",
+  "description": "Images, video and sound from node workflows of diffusion models",
+  "publisher": "Comfy-Org/ComfyUI",
+  "uninstall_data": {
+    "is_deleted": false,
+    "text": {
+      "en": "The models, inputs, outputs and custom nodes stay in its data directory.",
+      "zh-CN": "模型、输入、输出和自定义节点都留在它的数据目录里。"
+    }
+  },
+  "web_share": {"guest_login": "run_account"},
+  "platforms": {
+    "linux-amd64": {
+      "runner": "comfyui",
+      "install": {
+        "method": "hub",
+        "params": {
+          "version": "0.46.0",
+          "artifacts": [
+            {"name": "python", "kind": "tar_gz", "directory": "python", "file": "cpython-3.13.18+20261110-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz", "digest": "sha256:f2d2199eb25880e07863b391cf7124e7ffa1338b0d65600dfcec117c4223a7fb", "sources": ["https://github.com/astral-sh/python-build-standalone/releases/download/20261110/{file}"], "_digest_scan": "scan: allow", "_sources_scan": "scan: allow"},
+            {"name": "uv", "kind": "tar_gz", "directory": "uv", "file": "uv-x86_64-unknown-linux-gnu.tar.gz", "digest": "sha256:a7fbaff2b9a271d85c1bdb540941090fd1ce011797b4abeb48e4dcd39c2471d5", "sources": ["https://github.com/astral-sh/uv/releases/download/0.13.9/{file}"], "_digest_scan": "scan: allow", "_sources_scan": "scan: allow"},
+            {"name": "source", "kind": "tar_gz", "directory": "source", "file": "v{version}", "digest": "git-tree:2bd4ec8b4c66bad8d78eaf323b33fb0da5a995e0", "sources": ["https://codeload.github.com/Comfy-Org/ComfyUI/tar.gz/refs/tags/{file}"], "_digest_scan": "scan: allow", "_sources_scan": "scan: allow"},
+            {"name": "mcp", "kind": "uv_lock", "directory": "mcp", "file": "mcp_linux-amd64.txt", "digest": "sha256:3a373f5270fd850103e140b674a64b32d34ee28b8a912c44caab1d7586796b71", "source_sets": ["pypi"], "_digest_scan": "scan: allow"},
+            {"name": "venv", "kind": "uv_lock", "file": "{build}_linux-amd64.txt", "builds": {"nvidia": "sha256:96459c6d348a11f0133955c817b96bb2a4ff2fb0f7ec885cb1125c612bf9c499", "amd": "sha256:79147309d1d6a6a7351d8179a314b728a85758164bc4c6e0562a63a5f867b4ac", "intel": "sha256:036b63283f836f6c3008514460219d5aa66ec92527a5ce28c2d0b8c1efa65abf", "cpu": "sha256:8090e3b66a2c5574c8a344c65a57944290cd35d8fa84eb06bdc53901cf2f8f69"}, "source_sets": ["pytorch", "pypi"], "_builds_scan": "scan: allow"}
+          ],
+          "verify": "\"/var/lib/neutrino/agent/comfyui/python/bin/python3\" --version",
+          "uninstall": {"post_uninstall": [], "is_data_kept": true}
+        }
+      }
+    },
+    "linux-arm64": {
+      "runner": "comfyui",
+      "install": {
+        "method": "hub",
+        "params": {
+          "version": "0.46.0",
+          "artifacts": [
+            {"name": "python", "kind": "tar_gz", "directory": "python", "file": "cpython-3.13.18+20261110-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz", "digest": "sha256:55c00325f7c1fddf325dfc621aabdfbbac4dc54adda224af88ec411dc12db239", "sources": ["https://github.com/astral-sh/python-build-standalone/releases/download/20261110/{file}"], "_digest_scan": "scan: allow", "_sources_scan": "scan: allow"},
+            {"name": "uv", "kind": "tar_gz", "directory": "uv", "file": "uv-aarch64-unknown-linux-gnu.tar.gz", "digest": "sha256:0797542018e541a9288855df555c8077eed06f7a47d206362030480e8ecc9f3d", "sources": ["https://github.com/astral-sh/uv/releases/download/0.13.9/{file}"], "_digest_scan": "scan: allow", "_sources_scan": "scan: allow"},
+            {"name": "source", "kind": "tar_gz", "directory": "source", "file": "v{version}", "digest": "git-tree:2bd4ec8b4c66bad8d78eaf323b33fb0da5a995e0", "sources": ["https://codeload.github.com/Comfy-Org/ComfyUI/tar.gz/refs/tags/{file}"], "_digest_scan": "scan: allow", "_sources_scan": "scan: allow"},
+            {"name": "mcp", "kind": "uv_lock", "directory": "mcp", "file": "mcp_linux-arm64.txt", "digest": "sha256:3a373f5270fd850103e140b674a64b32d34ee28b8a912c44caab1d7586796b71", "source_sets": ["pypi"], "_digest_scan": "scan: allow"},
+            {"name": "venv", "kind": "uv_lock", "file": "{build}_linux-arm64.txt", "builds": {"nvidia": "sha256:96459c6d348a11f0133955c817b96bb2a4ff2fb0f7ec885cb1125c612bf9c499", "cpu": "sha256:8090e3b66a2c5574c8a344c65a57944290cd35d8fa84eb06bdc53901cf2f8f69"}, "source_sets": ["pytorch", "pypi"], "_builds_scan": "scan: allow"}
+          ],
+          "verify": "\"/var/lib/neutrino/agent/comfyui/python/bin/python3\" --version",
+          "uninstall": {"post_uninstall": [], "is_data_kept": true}
+        }
+      }
+    },
+    "windows-amd64": {
+      "runner": "comfyui",
+      "install": {
+        "method": "hub",
+        "params": {
+          "version": "0.46.0",
+          "artifacts": [
+            {"name": "python", "kind": "tar_gz", "directory": "python", "file": "cpython-3.13.18+20261110-x86_64-pc-windows-msvc-install_only_stripped.tar.gz", "digest": "sha256:2e0fed09d48989f64c9305da9ff2d37a41c0d13ab2aa6283405b2b620dfbf805", "sources": ["https://github.com/astral-sh/python-build-standalone/releases/download/20261110/{file}"], "_digest_scan": "scan: allow", "_sources_scan": "scan: allow"},
+            {"name": "uv", "kind": "zip", "directory": "uv", "file": "uv-x86_64-pc-windows-msvc.zip", "digest": "sha256:edd61f7f5728a56cc62455386661860bdfc7bab65872f39b0c25bdcc1d8e1beb", "sources": ["https://github.com/astral-sh/uv/releases/download/0.13.9/{file}"], "_digest_scan": "scan: allow", "_sources_scan": "scan: allow"},
+            {"name": "source", "kind": "tar_gz", "directory": "source", "file": "v{version}", "digest": "git-tree:2bd4ec8b4c66bad8d78eaf323b33fb0da5a995e0", "sources": ["https://codeload.github.com/Comfy-Org/ComfyUI/tar.gz/refs/tags/{file}"], "_digest_scan": "scan: allow", "_sources_scan": "scan: allow"},
+            {"name": "vc_runtime", "kind": "zip", "directory": "python", "member": "msvc_runtime-14.51.36231.data/data", "file": "msvc_runtime-14.51.36231-cp313-cp313-win_amd64.whl", "digest": "sha256:f3c3ac4f733a774f6ae209567e533bfde6f72dc1c10977733bfe09ce01e5b624", "sources": ["https://files.pythonhosted.org/packages/c2/6e/7ba5696e9d8c1bcb01352f06e441497c308e84f75aba598400646ab31ca7/{file}"], "_digest_scan": "scan: allow", "_sources_scan": "scan: allow"},
+            {"name": "mcp", "kind": "uv_lock", "directory": "mcp", "file": "mcp_windows-amd64.txt", "digest": "sha256:78ccaef83143089c84706b5492aeb0533df86d44b4de0227939fdb414f2c92fe", "source_sets": ["pypi"], "_digest_scan": "scan: allow"},
+            {"name": "venv", "kind": "uv_lock", "file": "{build}_windows-amd64.txt", "builds": {"nvidia": "sha256:e3c9abc765f11ae46dd511d34c55d308c45c576085ebb2d8e0ba8616027979f4", "intel": "sha256:ec1ec24196550006e7d6480d8c9068fa6ae6b99630de151170c9f051e71ff8ed", "cpu": "sha256:271a3ba36d87d08f5386717e39be30535dc2c7852d9c447b11a15aaf9aa7c91a"}, "source_sets": ["pytorch", "pypi"], "_builds_scan": "scan: allow"}
+          ],
+          "verify": "\"%ProgramData%\\Neutrino\\agent\\state\\comfyui\\python\\python.exe\" --version",
+          "uninstall": {"post_uninstall": [], "is_data_kept": true}
+        }
+      }
+    },
+    "darwin-arm64": {
+      "runner": "comfyui",
+      "min_version": "14",
+      "install": {
+        "method": "hub",
+        "params": {
+          "version": "0.46.0",
+          "artifacts": [
+            {"name": "python", "kind": "tar_gz", "directory": "python", "file": "cpython-3.13.18+20261110-aarch64-apple-darwin-install_only_stripped.tar.gz", "digest": "sha256:7a2384641584ab9984221fcb0fc9265df465922af71be71410529e2a9c3f0540", "sources": ["https://github.com/astral-sh/python-build-standalone/releases/download/20261110/{file}"], "_digest_scan": "scan: allow", "_sources_scan": "scan: allow"},
+            {"name": "uv", "kind": "tar_gz", "directory": "uv", "file": "uv-aarch64-apple-darwin.tar.gz", "digest": "sha256:5aeca67f2283f75235de40d0bd9c0a5bbc5fce23b6d48b3bf9fa1b2db08382ca", "sources": ["https://github.com/astral-sh/uv/releases/download/0.13.9/{file}"], "_digest_scan": "scan: allow", "_sources_scan": "scan: allow"},
+            {"name": "source", "kind": "tar_gz", "directory": "source", "file": "v{version}", "digest": "git-tree:2bd4ec8b4c66bad8d78eaf323b33fb0da5a995e0", "sources": ["https://codeload.github.com/Comfy-Org/ComfyUI/tar.gz/refs/tags/{file}"], "_digest_scan": "scan: allow", "_sources_scan": "scan: allow"},
+            {"name": "mcp", "kind": "uv_lock", "directory": "mcp", "file": "mcp_darwin-arm64.txt", "digest": "sha256:3a373f5270fd850103e140b674a64b32d34ee28b8a912c44caab1d7586796b71", "source_sets": ["pypi"], "_digest_scan": "scan: allow"},
+            {"name": "venv", "kind": "uv_lock", "file": "apple_darwin-arm64.txt", "digest": "sha256:9f7829ef8095d4fa2175cb57e77a0f3d5764c242fee2dcf2976e8e85b3811824", "source_sets": ["pypi"], "_digest_scan": "scan: allow"}
+          ],
+          "verify": "\"/Library/Application Support/Neutrino/agent/state/comfyui/python/bin/python3\" --version",
+          "uninstall": {"post_uninstall": [], "is_data_kept": true}
+        }
+      }
+    }
+  }
+}

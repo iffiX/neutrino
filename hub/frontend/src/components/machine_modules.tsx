@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { apiGet, apiPath, apiPost, describeError } from "../api_client";
 import { codeParams } from "../code_params";
 import { AyakaleafPanels } from "./ayakaleaf_panels";
+import { ComfyuiPanels } from "./comfyui_panels";
 import { ContainersAccountModal } from "./containers_account_modal";
 import { ContainersPanels } from "./containers_panels";
 import { ErrorPanel } from "./error_panel";
@@ -159,6 +160,15 @@ const MODULE_PANELS: Record<string, (target: PanelTarget) => ReactNode> = {
   ),
   ollama: (target) => (
     <OllamaPanels
+      deviceId={target.deviceId}
+      basePath={target.basePath}
+      blockedHint={target.blockedHint}
+      platformOs={target.platformOs}
+      want={target.want}
+    />
+  ),
+  comfyui: (target) => (
+    <ComfyuiPanels
       deviceId={target.deviceId}
       basePath={target.basePath}
       blockedHint={target.blockedHint}

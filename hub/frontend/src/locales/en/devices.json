@@ -334,6 +334,7 @@
   "ui.services.description_device_share": "shared from {device}",
   "ui.services.description_gitea_module": "published by the Gitea module on {host}",
   "ui.services.description_ollama_module": "published by the Ollama module on {host}",
+  "ui.services.description_comfyui_module": "published by the ComfyUI module on {host}",
   "ui.services.description_hermes_webui_module": "published by the Hermes WebUI module on {host}",
   "ui.services.description_astrbot_module": "published by the AstrBot module on {host}",
   "ui.services.description_ayakaleaf_module": "published by the Ayakaleaf module on {host}",

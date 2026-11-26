@@ -51,6 +51,7 @@ def test_the_rows_come_in_the_order_every_list_of_modules_shows():
         "samba",
         "gitea",
         "ollama",
+        "comfyui",
         "vscode",
         "code_server",
         "cloudcli",
@@ -81,6 +82,7 @@ def test_every_row_is_one_of_the_six_kinds():
         "remote_desktop": DEVICE_MODULE_KIND_AGENT,
         "gitea": DEVICE_MODULE_KIND_SERVICE_ACCOUNT,
         "ollama": DEVICE_MODULE_KIND_SERVICE_ACCOUNT,
+        "comfyui": DEVICE_MODULE_KIND_SERVICE_ACCOUNT,
         "vscode": DEVICE_MODULE_KIND_ACCOUNT_PROGRAM,
         "code_server": DEVICE_MODULE_KIND_ACCOUNT_PROGRAM,
         "cloudcli": DEVICE_MODULE_KIND_ACCOUNT_PROGRAM,
@@ -104,6 +106,7 @@ def test_every_row_names_the_kind_chip_of_its_module():
         "samba": DEVICE_KIND_SYSTEM_SERVICE,
         "gitea": DEVICE_KIND_SYSTEM_SERVICE,
         "ollama": DEVICE_KIND_SYSTEM_SERVICE,
+        "comfyui": DEVICE_KIND_SYSTEM_SERVICE,
         "vscode": DEVICE_KIND_ACCOUNT_SERVICE,
         "code_server": DEVICE_KIND_ACCOUNT_SERVICE,
         "cloudcli": DEVICE_KIND_ACCOUNT_SERVICE,
@@ -192,7 +195,9 @@ def test_each_account_layer_row_seals_its_own_fields():
     assert all(
         not row.sealed_fields
         for row in DEVICE_MODULE_ROWS
-        if row.kind != DEVICE_MODULE_KIND_CONTAINER and not row.is_account_layer
+        if row.kind != DEVICE_MODULE_KIND_CONTAINER
+        and not row.is_account_layer
+        and row.name != "comfyui"
     )
 
 
@@ -251,6 +256,19 @@ def test_astrbot_seals_its_secret_and_its_password_and_mints_its_token():
     assert (row.is_gateway_used, row.has_forwarder) == (True, True)
 
 
+def test_comfyui_seals_its_secret_and_mints_its_token_with_no_gateway():
+    row = module_row("comfyui")
+
+    assert [(field.key, field.opened_key) for field in row.sealed_fields] == [
+        ("secret_sealed", "secret"),
+    ]
+    assert row.sealed_field("secret_sealed").aad == b"device_comfyui:secret"
+    assert row.sealed_field("secret_sealed").secret_bytes == 32
+    assert (row.token_field, row.is_token_minted) == ("secret_sealed", True)
+    assert (row.is_gateway_used, row.has_forwarder) == (False, True)
+    assert "comfyui" not in module_table.gateway_module_names()
+
+
 def test_each_program_run_as_an_account_names_its_token_its_login_and_its_forwarder():
     rows = {row.name: row for row in account_program_rows()}
 
@@ -293,6 +311,7 @@ def test_each_row_names_its_published_entry():
         "remote_desktop": ("", ""),
         "gitea": ("gitea_module", "Gitea"),
         "ollama": ("ollama_module", "Ollama"),
+        "comfyui": ("comfyui_module", "ComfyUI"),
         "vscode": ("vscode_module", "VS Code ({account})"),
         "code_server": ("code_server_module", "code-server ({account})"),
         "cloudcli": ("cloudcli_module", "CloudCLI ({account})"),
@@ -349,6 +368,7 @@ SERVES = {
     "samba": "several",
     "gitea": "none",
     "ollama": "none",
+    "comfyui": "one",
     "vscode": "several",
     "code_server": "several",
     "cloudcli": "several",

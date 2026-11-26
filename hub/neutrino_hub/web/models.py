@@ -3465,6 +3465,42 @@ class OllamaModelRequest(BaseModel):
     name: str
 
 
+class ComfyuiResourcesView(BaseModel):
+    """What a machine has for ComfyUI, from its last report."""
+
+    gpus: list[DeviceGpuView] = Field(default_factory=list)
+
+
+class ComfyuiSettingsUpdate(BaseModel):
+    """The ComfyUI module's settings on one device."""
+
+    device_id: str
+    # The PyTorch build the venv's lock holds; empty on a Mac.
+    torch_build: Literal["nvidia", "amd", "intel", "cpu", ""]
+    # How long a loaded model stays in memory with no job; ``-1`` is never.
+    idle_unload: Literal["5m", "30m", "1h", "4h", "-1"]
+
+
+class ComfyuiDeviceView(ModuleDeviceFields):
+    """One device's ComfyUI: where the module stands, its settings and the forwarder's port."""
+
+    # The version the machine reports; empty before it reports one.
+    version: str = ""
+    # What the machine last reported: ``{is_running, port, version}``.
+    details: dict = Field(default_factory=dict)
+    # The forwarder's port as the machine reports it; 0 before it does.
+    port: int = 0
+    # The stored build, ``cpu`` while none is stored, empty on a Mac; the
+    # builds the machine's entry has a lock of, in the page's order.
+    torch_build: str = ""
+    torch_builds: list[str] = Field(default_factory=list)
+    # The stored idle unload time, ``30m`` while none is stored.
+    idle_unload: str = "30m"
+    resources: ComfyuiResourcesView = Field(default_factory=ComfyuiResourcesView)
+    # The shared models folder on the machine's system.
+    models_dir: str = ""
+
+
 class AyakaleafDeviceView(ModuleDeviceFields):
     """One device's Ayakaleaf: the forwarder's port, the AI model and where the module stands."""
 

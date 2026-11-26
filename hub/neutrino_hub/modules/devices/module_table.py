@@ -46,6 +46,10 @@ from neutrino_hub.modules.devices.constants import (
     DEVICE_CODEG_SECRET_BYTES,
     DEVICE_CODEG_SECRET_KEY,
     DEVICE_CODEX_MODULE,
+    DEVICE_COMFYUI_MODULE,
+    DEVICE_COMFYUI_SECRET_AAD,
+    DEVICE_COMFYUI_SECRET_BYTES,
+    DEVICE_COMFYUI_SECRET_KEY,
     DEVICE_GITEA_MODULE,
     DEVICE_HERMES_WEBUI_MODULE,
     DEVICE_HERMES_WEBUI_PASSWORD_AAD,
@@ -92,11 +96,13 @@ from neutrino_hub.modules.devices.constants import (
 from neutrino_hub.modules.services.constants import (
     SERVICES_ASTRBOT_TITLE,
     SERVICES_AYAKALEAF_TITLE,
+    SERVICES_COMFYUI_TITLE,
     SERVICES_DESCRIPTION_ASTRBOT_MODULE,
     SERVICES_DESCRIPTION_AYAKALEAF_MODULE,
     SERVICES_DESCRIPTION_CLOUDCLI_MODULE,
     SERVICES_DESCRIPTION_CODE_SERVER_MODULE,
     SERVICES_DESCRIPTION_CODEG_MODULE,
+    SERVICES_DESCRIPTION_COMFYUI_MODULE,
     SERVICES_DESCRIPTION_CONTAINER,
     SERVICES_DESCRIPTION_GITEA_MODULE,
     SERVICES_DESCRIPTION_HERMES_WEBUI_MODULE,
@@ -153,9 +159,9 @@ class DeviceModuleRow:
             default account; ``none``, nothing that runs as a person's
             account.
         sealed_fields: The fields the vault seals in each account's record,
-            or in the file itself for a container module, in the order the
-            state carries them opened; empty for a module that keeps no
-            secret.
+            or in the file itself for a module serving one or no account,
+            in the order the state carries them opened; empty for a module
+            that keeps no secret.
         description_code: The published entry's ``description_code``; empty
             for a module that publishes nothing.
         entry_title: The published app's title, with ``{account}`` for an
@@ -297,6 +303,25 @@ DEVICE_MODULE_ROWS = (
         kind_chip=DEVICE_KIND_SYSTEM_SERVICE,
         description_code=SERVICES_DESCRIPTION_OLLAMA_MODULE,
         entry_title=SERVICES_OLLAMA_TITLE,
+    ),
+    _row(
+        DEVICE_COMFYUI_MODULE,
+        DEVICE_MODULE_KIND_SERVICE_ACCOUNT,
+        kind_chip=DEVICE_KIND_SYSTEM_SERVICE,
+        accounts=DEVICE_SERVES_ONE,
+        sealed_fields=(
+            SealedField(
+                key=DEVICE_COMFYUI_SECRET_KEY,
+                opened_key="secret",
+                aad=DEVICE_COMFYUI_SECRET_AAD,
+                secret_bytes=DEVICE_COMFYUI_SECRET_BYTES,
+            ),
+        ),
+        description_code=SERVICES_DESCRIPTION_COMFYUI_MODULE,
+        entry_title=SERVICES_COMFYUI_TITLE,
+        has_forwarder=True,
+        token_field=DEVICE_COMFYUI_SECRET_KEY,
+        is_token_minted=True,
     ),
     _row(
         DEVICE_VSCODE_MODULE,

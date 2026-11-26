@@ -209,6 +209,7 @@ DEVICE_MODULE_NAMES = (
     "ssh_server",
     "gitea",
     "ollama",
+    "comfyui",
     "podman",
     "hermes_webui",
     "ayakaleaf",
@@ -316,6 +317,50 @@ DEVICE_OLLAMA_GATEWAY_READ_INTERVAL_S = 30.0
 DEVICE_OLLAMA_PULL_QUEUED = "queued"
 DEVICE_OLLAMA_PULL_RUNNING = "running"
 DEVICE_OLLAMA_PULL_FAILED = "failed"
+# ComfyUI: one service per machine. Its file under the device's directory
+# holds the forwarder's token secret, which the hub generates once and keeps
+# sealed, and the settings: the PyTorch build the venv's lock holds and how
+# long a loaded model stays in memory with no job.
+DEVICE_COMFYUI_MODULE = "comfyui"
+DEVICE_COMFYUI_SECRET_KEY = "secret_sealed"  # scan: allow
+DEVICE_COMFYUI_SECRET_AAD = b"device_comfyui:secret"
+DEVICE_COMFYUI_SECRET_BYTES = 32
+DEVICE_COMFYUI_TORCH_BUILD_KEY = "torch_build"
+DEVICE_COMFYUI_IDLE_UNLOAD_KEY = "idle_unload"
+# The PyTorch builds in the order of the module's page. Install picks the
+# first of the first three whose vendor has a card in the machine's last
+# report and whose lock the machine's entry holds, else ``cpu``. An Intel
+# card counts only when its name holds the word ``Arc``.
+DEVICE_COMFYUI_TORCH_BUILDS = ("nvidia", "amd", "intel", "cpu")
+DEVICE_COMFYUI_TORCH_BUILD_CPU = "cpu"
+DEVICE_COMFYUI_INTEL_BUILD = "intel"
+DEVICE_COMFYUI_INTEL_CARD_PATTERN = r"\barc\b"
+# The idle unload times, ``-1`` for never, and the default.
+DEVICE_COMFYUI_IDLE_UNLOAD_CHOICES = ("5m", "30m", "1h", "4h", "-1")
+DEVICE_COMFYUI_IDLE_UNLOAD_DEFAULT = "30m"
+# The command line programs whose MCP server lists name comfy-mcp, in the
+# description table's order.
+DEVICE_COMFYUI_TOOL_MODULES = ("claude_code", "codex", "opencode")
+# The account ComfyUI's service runs as on each system, the one an App
+# share's visitor uses the page as.
+DEVICE_COMFYUI_USERS = {
+    "linux": "neutrino_comfyui",
+    "darwin": "neutrino_comfyui",
+    "windows": "LOCAL SERVICE",
+}
+# The shared models folder on each system, under the agent's state root
+# (agent/modules/comfyui.md, "The shared folders"), written as an uninstall
+# line's ``{data_dir}`` is.
+DEVICE_COMFYUI_MODELS_DIRS = {
+    "linux": "/var/lib/neutrino/agent/comfyui_data/data/models/",
+    "darwin": (
+        "/Library/Application Support/Neutrino/agent/state/comfyui_data/data/models/"
+    ),
+    "windows": ("%ProgramData%\\Neutrino\\agent\\state\\comfyui_data\\data\\models\\"),
+}
+# The system a machine that has not reported one takes the account and the
+# folder of.
+DEVICE_COMFYUI_DEFAULT_OS = "linux"
 # VS Code in the browser. Each instance in its file under the device's
 # directory holds, beside its account and port, two keys the hub keeps there:
 # its connection token sealed under the vault's data key, and the vault login
