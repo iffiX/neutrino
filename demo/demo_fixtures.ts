@@ -71,6 +71,47 @@ export function secondsAgo(seconds: number): string {
   return new Date(Date.now() - seconds * 1000).toISOString();
 }
 
+/** A terminal session the Services page's Terminals panel lists. */
+export interface DemoTerminalSession {
+  device_id: string;
+  session_id: string;
+  account: string;
+  title: string;
+  /** Minutes since it was opened. */
+  age_minutes: number;
+  /** The client that opened it. */
+  owner_client_id: string;
+  attached_count: number;
+  is_persistent: boolean;
+  is_shared: boolean;
+}
+
+/** The terminal sessions of two machines, oldest first. */
+export const DEMO_TERMINAL_SESSIONS: DemoTerminalSession[] = [
+  {
+    device_id: "dev_desktop",
+    session_id: "session_desktop_build",
+    account: "xiaoming",
+    title: "htop",
+    age_minutes: 185,
+    owner_client_id: "client_office",
+    attached_count: 0,
+    is_persistent: true,
+    is_shared: false,
+  },
+  {
+    device_id: "dev_laptop",
+    session_id: "session_laptop_notes",
+    account: "xiaoming",
+    title: "xiaoming@laptop: ~/notes",
+    age_minutes: 12,
+    owner_client_id: "client_phone",
+    attached_count: 2,
+    is_persistent: false,
+    is_shared: true,
+  },
+];
+
 export const DEMO_AI_STATUS: CliproxyApiStatusView = {
   is_installed: true,
   is_active: true,

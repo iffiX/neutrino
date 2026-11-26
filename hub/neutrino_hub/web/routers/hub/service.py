@@ -1,4 +1,5 @@
-"""The Services page: the apps the hub publishes, and the entries of no app.
+"""The Services page: the apps the hub publishes, the entries of no app, and
+every online machine's terminal sessions.
 
 Module apps are read-only rows; declared apps are created and deleted here,
 and every write answers with the whole refreshed list. An Open of a web entry
@@ -24,6 +25,7 @@ from neutrino_hub.exceptions import (
     ServiceFieldInvalidError,
     VaultLockedError,
 )
+from neutrino_hub.modules.channel.constants import CHANNEL_SHELL_OWNER_HUB
 from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.modules.clients.services import app_open
 from neutrino_hub.modules.devices.manifests import load_module_manifests
@@ -56,8 +58,10 @@ from neutrino_hub.web.models import (
     ServiceEntryOpenView,
     ServiceListView,
     ServiceShareListView,
+    TerminalSessionView,
 )
 from neutrino_hub.web.panel_runtime import PanelRuntime
+from neutrino_hub.web.shell_bridge import reported_sessions, viewer_rows
 from neutrino_hub.web.web_share_access import end_app_shares, entry_guest_login
 
 # The status of each refusal of an Open the hub judges before it listens.
@@ -326,7 +330,20 @@ def _list_view(request: Request, runtime: PanelRuntime) -> ServiceListView:
             )
             for entry, catalog in zip(loose, catalog_entries(loose))
         ],
+        terminals=[
+            TerminalSessionView(**_terminal_fields(session))
+            for session in viewer_rows(
+                runtime,
+                CHANNEL_SHELL_OWNER_HUB,
+                reported_sessions(runtime.agent_sessions),
+            )
+        ],
     )
+
+
+def _terminal_fields(session: dict) -> dict:
+    """The fields of one reported session the Terminals panel lists."""
+    return {name: session[name] for name in TerminalSessionView.model_fields}
 
 
 def _source_rank(source: str) -> int:

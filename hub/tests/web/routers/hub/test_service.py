@@ -4,7 +4,8 @@ What these pin: ``GET /api/hub/service`` answers ``apps``, a module's first,
 then the declared, then the manual, each by title, with each entry's
 ``local_port``, 0 on an entry with none, and ``detail_code``, and
 ``services``, the entries of no app; no ``ssh`` entry and no row for a
-machine's SSH server; declaring an app with its entries answers
+machine's SSH server; ``terminals``, the machines' sessions with the owner's
+name, oldest first; declaring an app with its entries answers
 the list with it, a bad field ``declared_service_invalid {field}``;
 removing and probing name the app by ``app_id``, an unknown one
 ``declared_service_unknown``; ``entry/open`` starts the entry's forward and
@@ -15,10 +16,13 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from neutrino_hub.modules.clients.registry import ClientRegistry
 from neutrino_hub.modules.clients.services import AppOpen
+from neutrino_hub.modules.devices.registry import DeviceRegistry
 from neutrino_hub.modules.services.config import DeclaredAppRegistry
 from neutrino_hub.modules.services.host_scope import HostScope
 from neutrino_hub.web.dependencies import get_runtime, require_session
+from neutrino_hub.web import shell_bridge
 from neutrino_hub.web.app_forwards import AppForwardTarget
 from neutrino_hub.web.routers.hub import service as services
 from tests.conftest import FakeChannelSessions
@@ -327,6 +331,50 @@ def test_removing_and_probing_name_the_app(api):
     assert DeclaredAppRegistry().list_apps() == []
     assert unknown.status_code == 404
     assert unknown.json()["detail"]["code"] == "declared_service_unknown"
+
+
+def test_the_terminals_are_the_machines_sessions_oldest_first(api, monkeypatch):
+    client, runtime = api
+    lepton = DeviceRegistry().create("lepton")
+    alice = ClientRegistry().create("alice")
+    runtime.agent_sessions = FakeChannelSessions(online=[lepton.id])
+    reports = {
+        lepton.id: {
+            "machine": {
+                "sessions": [
+                    {
+                        "session_id": "s2",
+                        "account": "iffi",
+                        "started_at": 20,
+                        "title": "htop",
+                        "owner": f"client:{alice}",
+                        "attached_count": 2,
+                        "is_persistent": True,
+                    },
+                    {"session_id": "s1", "started_at": 10, "owner": "hub"},
+                ]
+            }
+        },
+    }
+    monkeypatch.setattr(runtime.agent_sessions, "reports", lambda: reports)
+    monkeypatch.setattr(shell_bridge, "hub_name", lambda: "Neutrino")
+
+    terminals = client.get("/api/hub/service").json()["terminals"]
+
+    assert [row["session_id"] for row in terminals] == ["s1", "s2"]
+    assert terminals[1] == {
+        "device_id": lepton.id,
+        "device_name": "lepton",
+        "session_id": "s2",
+        "account": "iffi",
+        "title": "htop",
+        "started_at": 20,
+        "owner_name": "alice",
+        "attached_count": 2,
+        "is_persistent": True,
+        "is_shared": False,
+    }
+    assert terminals[0]["owner_name"] == "Neutrino"
 
 
 def test_an_open_starts_the_entry_s_forward_and_answers_its_port_and_token(

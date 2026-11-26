@@ -1691,11 +1691,29 @@ export interface AppView {
   entries: AppEntryView[];
 }
 
+/** One terminal session a machine reports, as the Terminals panel lists
+ * it. */
+export interface TerminalSessionView {
+  device_id: string;
+  device_name: string;
+  session_id: string;
+  account: string;
+  title: string;
+  /** When it was opened, in Unix seconds. */
+  started_at: number;
+  owner_name: string;
+  attached_count: number;
+  is_persistent: boolean;
+  is_shared: boolean;
+}
+
 /** The Services page: a module's apps first, then the declared, then the
- * manual; and the entries of no app. */
+ * manual; the entries of no app; and every online machine's terminal
+ * sessions, oldest first. */
 export interface ServiceListView {
   apps: AppView[];
   services: PublishedService[];
+  terminals: TerminalSessionView[];
 }
 
 /** The Services page's Open of one web entry. */

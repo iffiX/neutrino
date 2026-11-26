@@ -1,4 +1,5 @@
 import { useState } from "react";
+import type { ReactNode } from "react";
 
 import { DeclareServiceModal } from "../components/declare_service_modal";
 import { DialogFrame } from "../components/dialog_frame";
@@ -9,13 +10,18 @@ import { StatusDot } from "../components/status_dot";
 import type { StatusTone } from "../components/status_dot";
 import { WebShareModal } from "../components/web_share_modal";
 import { apiPost, describeError } from "../api_client";
-import { t, useLanguage } from "../i18n";
+import { getLanguage, t, useLanguage } from "../i18n";
 import { moduleTitle } from "../module_title";
 import { hubHost } from "../origins";
 import { useApiResource } from "../use_api_resource";
 import { useAuth } from "../use_auth";
 import { useConfirm } from "../use_confirm";
-import { HUB_EVENT_CONFIG, HUB_EVENT_SERVICES } from "../use_hub_events";
+import {
+  HUB_EVENT_CONFIG,
+  HUB_EVENT_DEVICE_REPORT,
+  HUB_EVENT_DEVICES,
+  HUB_EVENT_SERVICES,
+} from "../use_hub_events";
 import type {
   AppEntryView,
   AppSource,
@@ -28,6 +34,7 @@ import type {
   ServiceEntryOpenRequest,
   ServiceEntryOpenView,
   ServiceListView,
+  TerminalSessionView,
 } from "../api_types";
 
 import "./services_page.css";
@@ -46,13 +53,16 @@ import "./services_page.css";
  * it and opens the app in a new tab, while the panel was reached directly.
  * The entries of no app
  * follow in their own sections: the AI gateway, the machines' file shares
- * and the shared desktops. A machine's SSH server is no app, and the hub
+ * and the shared desktops, with every online machine's terminal sessions
+ * between the last two. A machine's SSH server is no app, and the hub
  * sends none of its entries here. **Declare service** opens the dialog that
  * declares an app with its entries.
  */
 
 /** The sections of the entries that belong to no app, in order. */
 const SECTION_ORDER: PublishedServiceType[] = ["ai", "file", "rdp"];
+/** The section the Terminals panel follows. */
+const TERMINALS_AFTER: PublishedServiceType = "file";
 const SECTION_TITLE_KEYS: Record<string, string> = {
   ai: "ui.services.group_ai",
   file: "ui.services.group_file",
@@ -156,11 +166,14 @@ const DECLARED_ERROR_KEYS: Record<string, string> = {
   declared_service_unknown: "code.declared_service_unknown",
 };
 
-// What moves this list: the hub composing it differently, and any write
-// under config/, since a module's own settings decide what it publishes.
+// What moves this list: the hub composing it differently, any write under
+// config/, since a module's own settings decide what it publishes, and a
+// machine's report or channel, which move its terminal sessions.
 const INVALIDATE_ON = [
   { type: HUB_EVENT_SERVICES },
   { type: HUB_EVENT_CONFIG },
+  { type: HUB_EVENT_DEVICE_REPORT },
+  { type: HUB_EVENT_DEVICES },
 ];
 
 const SERVICE_PATH = "/hub/service";
@@ -268,6 +281,11 @@ export function ServicesPage() {
           key={type}
           type={type}
           services={view.services.filter((service) => service.type === type)}
+          after={
+            type === TERMINALS_AFTER ? (
+              <TerminalsSection sessions={view.terminals} />
+            ) : null
+          }
         />
       ))}
 
@@ -523,26 +541,99 @@ function declaredStateWord(entry: AppEntryView): string {
 interface ServiceSectionProps {
   type: PublishedServiceType;
   services: PublishedService[];
+  /** A panel drawn right after this one. */
+  after: ReactNode;
 }
 
-function ServiceSection({ type, services }: ServiceSectionProps) {
+function ServiceSection({ type, services, after }: ServiceSectionProps) {
+  // Redrawn when the panel's language changes.
+  useLanguage();
+  return (
+    <>
+      <section className="settings_group">
+        <div className="settings_group_title">
+          <h2>{t(SECTION_TITLE_KEYS[type] ?? "")}</h2>
+        </div>
+        {services.length === 0 ? (
+          <p className="field_hint faint">{t("ui.services.group_empty")}</p>
+        ) : (
+          <div className="published_rows">
+            {services.map((service) => (
+              <ServiceRow key={service.id} service={service} />
+            ))}
+          </div>
+        )}
+      </section>
+      {after}
+    </>
+  );
+}
+
+interface TerminalsSectionProps {
+  sessions: TerminalSessionView[];
+}
+
+/** Every online machine's terminal sessions, read only. */
+function TerminalsSection({ sessions }: TerminalsSectionProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
   return (
     <section className="settings_group">
       <div className="settings_group_title">
-        <h2>{t(SECTION_TITLE_KEYS[type] ?? "")}</h2>
+        <h2>{t("ui.services.group_terminal")}</h2>
       </div>
-      {services.length === 0 ? (
-        <p className="field_hint faint">{t("ui.services.group_empty")}</p>
+      {sessions.length === 0 ? (
+        <p className="field_hint faint">{t("ui.services.terminals_empty")}</p>
       ) : (
         <div className="published_rows">
-          {services.map((service) => (
-            <ServiceRow key={service.id} service={service} />
+          {sessions.map((session) => (
+            <TerminalRow
+              key={`${session.device_id}/${session.session_id}`}
+              session={session}
+            />
           ))}
         </div>
       )}
     </section>
+  );
+}
+
+interface TerminalRowProps {
+  session: TerminalSessionView;
+}
+
+/** One terminal session: its title, where it runs, who opened it and when. */
+function TerminalRow({ session }: TerminalRowProps) {
+  return (
+    <div className="published_row">
+      <StatusDot tone={session.attached_count > 0 ? "ok" : "idle"} />
+      <div className="published_row_body">
+        <div className="published_row_head">
+          <span className="published_row_title">{session.title}</span>
+          <span className="published_row_payload">
+            {t("ui.services.terminal_where", {
+              account: session.account,
+              machine: session.device_name,
+            })}
+          </span>
+        </div>
+        <span className="published_row_description">
+          {t("ui.services.terminal_opened", {
+            owner: session.owner_name,
+            time: startedTime(session.started_at),
+          })}
+        </span>
+      </div>
+      <span className="published_row_state">
+        {t("ui.services.terminal_attached", { count: session.attached_count })}
+      </span>
+      {session.is_persistent && (
+        <span className="badge">{t("ui.services.terminal_kept")}</span>
+      )}
+      {session.is_shared && (
+        <span className="badge">{t("ui.services.terminal_shared")}</span>
+      )}
+    </div>
   );
 }
 
@@ -656,6 +747,11 @@ function openedAddress(
     address.searchParams.set(TOKEN_PARAM, opened.token);
   }
   return address.toString();
+}
+
+/** When a session was opened, in the panel's language. */
+function startedTime(seconds: number): string {
+  return new Date(seconds * 1000).toLocaleString(getLanguage());
 }
 
 /** The host an app with no machine the hub knows is at. */

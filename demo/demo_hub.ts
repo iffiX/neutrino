@@ -37,6 +37,7 @@ import {
   DEMO_SAKURAFRP,
   DEMO_SAKURAFRP_TUNNELS,
   DEMO_SETTINGS,
+  DEMO_TERMINAL_SESSIONS,
   DEMO_TOKENS,
   demoAbout,
   demoAccounts,
@@ -105,6 +106,7 @@ import type {
   ServiceListView,
   SettingsView,
   StatsFrame,
+  TerminalSessionView,
   TrafficHistoryRange,
   WebShareCreatedView,
   WebShareEntryView,
@@ -712,6 +714,7 @@ export class DemoHub {
     return {
       apps: this.composeApps(language),
       services: this.composeServices(language),
+      terminals: this.composeTerminals(),
     };
   }
 
@@ -2125,6 +2128,33 @@ export class DemoHub {
     return spec.web?.isPerAccount === true
       ? `${spec.name}_${device.id}_${DEMO_ACCOUNT}`
       : `${spec.name}_${device.id}`;
+  }
+
+  /** The sample terminal sessions of the machines online now. */
+  private composeTerminals(): TerminalSessionView[] {
+    const nowS = Math.floor(Date.now() / 1000);
+    return DEMO_TERMINAL_SESSIONS.flatMap((session) => {
+      const device = this.devices.find((row) => row.id === session.device_id);
+      if (device === undefined || !device.isOnline) {
+        return [];
+      }
+      return [
+        {
+          device_id: session.device_id,
+          device_name: device.name,
+          session_id: session.session_id,
+          account: session.account,
+          title: session.title,
+          started_at: nowS - session.age_minutes * 60,
+          owner_name:
+            this.clientRow(session.owner_client_id)?.name ??
+            this.settings.hub_name,
+          attached_count: session.attached_count,
+          is_persistent: session.is_persistent,
+          is_shared: session.is_shared,
+        },
+      ];
+    });
   }
 
   private composeApps(language: string): AppView[] {

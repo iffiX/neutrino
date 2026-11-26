@@ -467,5 +467,12 @@
   "ui.web_shares.site_other_hint": "The https:// address of your own copy of the page.",
   "ui.web_shares.title": "App shares",
   "ui.web_shares.until_revoked": "Until revoked",
-  "ui.services.open": "Open"
+  "ui.services.open": "Open",
+  "ui.services.group_terminal": "Terminals",
+  "ui.services.terminals_empty": "No terminal sessions yet",
+  "ui.services.terminal_where": "{account} on {machine}",
+  "ui.services.terminal_opened": "Opened by {owner} at {time}",
+  "ui.services.terminal_attached": "{count} attached",
+  "ui.services.terminal_kept": "kept",
+  "ui.services.terminal_shared": "shared"
 }

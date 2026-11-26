@@ -467,5 +467,12 @@
   "ui.web_shares.site_other_hint": "你自己托管的那份页面的 https:// 地址。",
   "ui.web_shares.title": "应用分享",
   "ui.web_shares.until_revoked": "直到撤销",
-  "ui.services.open": "打开"
+  "ui.services.open": "打开",
+  "ui.services.group_terminal": "终端",
+  "ui.services.terminals_empty": "还没有终端会话",
+  "ui.services.terminal_where": "{machine} 上的 {account}",
+  "ui.services.terminal_opened": "由 {owner} 在 {time} 打开",
+  "ui.services.terminal_attached": "连接 {count}",
+  "ui.services.terminal_kept": "持久",
+  "ui.services.terminal_shared": "共享"
 }

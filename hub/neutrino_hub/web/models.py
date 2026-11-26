@@ -1430,11 +1430,29 @@ class ServiceShareListView(BaseModel):
     shares: list[str] = Field(default_factory=list)
 
 
+class TerminalSessionView(BaseModel):
+    """One terminal session a machine reports, as the Terminals panel lists it."""
+
+    device_id: str
+    device_name: str = ""
+    session_id: str
+    account: str = ""
+    title: str = ""
+    # When it was opened, in Unix seconds.
+    started_at: int = 0
+    owner_name: str = ""
+    attached_count: int = 0
+    is_persistent: bool = False
+    is_shared: bool = False
+
+
 class ServiceListView(BaseModel):
-    """The Services page payload: the apps, and the entries of no app."""
+    """The Services page payload: the apps, the entries of no app, and every
+    online machine's terminal sessions."""
 
     apps: list[AppView] = Field(default_factory=list)
     services: list[PublishedServiceView] = Field(default_factory=list)
+    terminals: list[TerminalSessionView] = Field(default_factory=list)
 
 
 class ServiceEntryOpenRequest(BaseModel):
