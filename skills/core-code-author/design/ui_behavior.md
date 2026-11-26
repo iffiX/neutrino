@@ -1562,7 +1562,7 @@ read again at each `ai_usage` event.
 | --- | --- |
 | The name | `ui.ai.ollama_provider {machine}`, in the place of a stored row's name |
 | The models | the names the machine's Ollama lists, joined by commas, faint and cut with an ellipsis, in the place of a stored row's endpoint, with the whole list as its title |
-| **Models** | `ui.ai.ollama_models`, a ghost `button--small` link at the row's right to `/agents/<device id>?module=ollama&configure=1`, the machine page on its Ollama tab with **Models** open ("The machine page") |
+| **Manage** | `ui.ai.ollama_models`, a ghost `button--small` link at the row's right to `/agents/<device id>?module=ollama&configure=1`, the machine page on its Ollama tab with **Models** open ("The machine page") |
 
 | Rule | Reason |
 | --- | --- |
