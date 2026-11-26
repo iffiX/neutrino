@@ -981,7 +981,7 @@ module has. A
 running module of this layer with no enabled account reads
 `state.running_no_accounts` on its tab's state line. The tabs of the
 machine layer,
-Remote desktop, Gitea, Ollama, Containers and the container modules, hold no
+Remote desktop, Gitea, Ollama, ComfyUI, Containers and the container modules, hold no
 accounts. No module asks for a port: the agent takes them.
 
 The tab of a command line program, Codex, Claude Code or OpenCode
@@ -1236,7 +1236,7 @@ shows:
 | **Update** (`ui.modules.update`) | a bordered `button` beside the line, live while the newest version differs from the one installed and the module is installed and not in transit; it sends `POST /api/agent/module/version/set` with the newest version |
 | **Install another version…** (`ui.modules.install_version`) | a bordered `button` beside it, live under the same conditions; it opens a dialog listing the versions newest first, the tested one marked `ui.modules.version_tested` and each newer one `ui.modules.version_untested`, with **Follow the tested version** (`ui.modules.version_follow_tested`) at the top; a press on a row sends `version/set` with that version, or empty for the top row, and closes the dialog |
 | A version older than the newest run | on a module whose manifest says `is_data_forward_only`, each row the view marks `is_older_than_run` is shown greyed out, in the faint text colour, and cannot be pressed, and so is **Follow the tested version** while the tested row is marked; a press on any other row asks nothing ([agent/module_install.md](agent/module_install.md), "Module versions") |
-| A locked version | a module of the `builtin` or `system` method, a `container` module whose manifest names no `releases`, and Containers on a person's Podman, whose one version is the one Podman prints ([agent/modules/containers.md](agent/modules/containers.md), "A person's Podman and the module's"), shows the same line and buttons: **Update** disabled, and **Install another version…** opening the dialog with its one version as a row that cannot be pressed and no **Follow the tested version** row |
+| A locked version | a module of the `builtin` or `system` method, a `container` module whose manifest names no `releases`, a `hub` module whose entry names a `uv_lock`, ComfyUI, and Containers on a person's Podman, whose one version is the one Podman prints ([agent/modules/containers.md](agent/modules/containers.md), "A person's Podman and the module's"), shows the same line and buttons: **Update** disabled, and **Install another version…** opening the dialog with its one version as a row that cannot be pressed and no **Follow the tested version** row |
 
 There is no switch that updates a module by itself. A `version_switch_failed`
 shows under its step, as any `failed` module's code does, with the old
@@ -1244,7 +1244,7 @@ version on the version line.
 
 The rows of the module list, each a tab, come in one order, the modules
 every system runs first: Terminal, the SSH server, Remote desktop, File
-share, Gitea, Ollama, VS Code, code-server, CloudCLI, Codeg, Claude Code, Codex, OpenCode, SiYuan,
+share, Gitea, Ollama, ComfyUI, VS Code, code-server, CloudCLI, Codeg, Claude Code, Codex, OpenCode, SiYuan,
 Containers, Hermes WebUI, Ayakaleaf, AstrBot. The order is the row order of the hub's description table
 ([agent/module_template.md](agent/module_template.md), "The hub side"), in
 which `GET /api/agent/module` sends the rows, and the page keeps it. The
@@ -1360,6 +1360,35 @@ bar, each press acting at once, as the Containers tab's rows do:
 
 The tab holds no link to Ollama: a client forwards its `api` entry, and a
 tool there reaches the API at the forward's address.
+
+The ComfyUI tab ([agent/modules/comfyui.md](agent/modules/comfyui.md))
+draws its state, its log and its buttons, and the version line shows the
+version the machine reports with **Update** disabled, its one version
+being locked. It holds no link to the page: a client opens it from its
+**Apps** page with the token the hub hands
+([agent/modules/comfyui.md](agent/modules/comfyui.md), "The page").
+**Configure** opens **Settings** (`ui.comfyui.settings_title`), one
+`settings_group` with its own apply bar, as the Ollama tab's **Settings**:
+
+| Control | Idiom |
+| --- | --- |
+| **Runs on** (`ui.comfyui.torch_build`) | the panel's picker over the view's `torch_builds`, in their order, each worded `ui.comfyui.torch_build_<build>`, the view's `torch_build` chosen. The row is not drawn on macOS |
+| **Idle unload time** (`ui.comfyui.idle_unload`) | the panel's picker over `ui.comfyui.idle_unload_5m`, `_30m`, `_1h`, `_4h` and `_never`, the view's `idle_unload` chosen |
+
+The bar's label is `ui.comfyui.settings_apply` and its hint
+`ui.comfyui.settings_apply_hint`, or `ui.modules.stopped_hint` while the
+module's `want` is not `running`. While the bar is dirty with another
+**Runs on** and the module runs, its warning is
+`ui.comfyui.torch_build_warning`. A press writes
+`POST /api/agent/module/comfyui/set`, and the bar stays busy until the
+machine reports the module where its `want` asks, at most two minutes, as
+the Ollama tab's bar does; the install of a new build then shows in the
+tab's steps.
+
+| Rule | Reason |
+| --- | --- |
+| **Runs on** offers only the builds the machine's entry has a lock of. | No lock serves AMD on Windows or Intel on Linux arm64, and a build with no lock installs nothing ([agent/modules/comfyui.md](agent/modules/comfyui.md), "The PyTorch build"). |
+| The tab draws no account. | ComfyUI serves the machine's default account alone, which every machine with any has ([agent/accounts.md](agent/accounts.md), "Which modules serve which accounts"). |
 
 The Containers tab on Windows and macOS opens with **Run settings**
 (`components/containers_run_settings.tsx`), above **Running now**,

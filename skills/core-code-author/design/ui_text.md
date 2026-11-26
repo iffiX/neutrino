@@ -183,6 +183,7 @@ Chinese: SiYuan is 思源笔记.
 | `podman` | Containers | 容器 |
 | `gitea` | Gitea | Gitea |
 | `ollama` | Ollama | Ollama |
+| `comfyui` | ComfyUI | ComfyUI |
 | `vscode` | VS Code | VS Code |
 | `code_server` | code-server | code-server |
 | `cloudcli` | CloudCLI | CloudCLI |
@@ -198,7 +199,7 @@ Chinese: SiYuan is 思源笔记.
 
 ## Software the owner installs
 
-Gitea, Ollama, VS Code, code-server, CloudCLI, Codeg, SiYuan, Hermes WebUI,
+Gitea, Ollama, ComfyUI, VS Code, code-server, CloudCLI, Codeg, SiYuan, Hermes WebUI,
 Ayakaleaf, AstrBot, Codex, Claude Code and OpenCode are programs the machine's owner installs on their own machine through a module. The text
 rules follow from that:
 
@@ -206,7 +207,7 @@ rules follow from that:
 | --- | --- |
 | A module page names the publisher's terms only where the publisher asks for acceptance; VS Code is the one such module ([ui_behavior.md](ui_behavior.md), "Terms before a module opens"). No other module page carries a licence line or a line saying that the owner installs the software. | |
 | No surface says the hub downloads, provides, bundles or distributes third-party software, in either language (代为下载, 提供, 自带). A sentence about the mechanism, in a standard page or a code comment, makes the module's installer its subject. The source chip's 自带 marks the modules the agent carries alone, and never one of these programs ("The machine page's words"). | `The module's installer fetches the archive.`, never `The hub downloads VS Code.` |
-| The **About** card on the Settings page credits only the components the hub's own package carries on that system and in that edition, such as xray, CLIProxyAPI, NetBird, EasyTier, frp and tun2socks. Gitea, Ollama, VS Code, code-server, CloudCLI, Codeg, SiYuan, Hermes WebUI, Ayakaleaf, AstrBot, Codex, Claude Code and OpenCode are never on it. | |
+| The **About** card on the Settings page credits only the components the hub's own package carries on that system and in that edition, such as xray, CLIProxyAPI, NetBird, EasyTier, frp and tun2socks. Gitea, Ollama, ComfyUI, VS Code, code-server, CloudCLI, Codeg, SiYuan, Hermes WebUI, Ayakaleaf, AstrBot, Codex, Claude Code and OpenCode are never on it. | |
 
 The VS Code notice and its button:
 
@@ -578,6 +579,12 @@ which takes no step of its own:
 | `ui.modules.step.artifact.codeg.server` | Install the Codeg server | 安装 Codeg 服务端 |
 | `ui.modules.step.artifact.gitea.git` | Install Git | 安装 Git |
 | `ui.modules.step.artifact.gitea.gitea` | Install Gitea | 安装 Gitea |
+| `ui.modules.step.artifact.comfyui.python` | Install Python | 安装 Python |
+| `ui.modules.step.artifact.comfyui.uv` | Install uv | 安装 uv |
+| `ui.modules.step.artifact.comfyui.source` | Install ComfyUI | 安装 ComfyUI |
+| `ui.modules.step.artifact.comfyui.vc_runtime` | Install the Visual C++ runtime | 安装 Visual C++ 运行库 |
+| `ui.modules.step.artifact.comfyui.mcp` | Install comfy-mcp | 安装 comfy-mcp |
+| `ui.modules.step.artifact.comfyui.venv` | Install ComfyUI's Python packages | 安装 ComfyUI 的 Python 软件包 |
 | `ui.modules.step.pull.ayakaleaf.app` | Pull the Ayakaleaf image | 拉取 Ayakaleaf 镜像 |
 | `ui.modules.step.pull.ayakaleaf.mongo` | Pull the MongoDB image | 拉取 MongoDB 镜像 |
 | `ui.modules.step.pull.ayakaleaf.redis` | Pull the Redis image | 拉取 Redis 镜像 |
@@ -629,6 +636,7 @@ machine's system.
 | `podman` | no | The declared containers' volumes stay, and on Windows and macOS so does the Podman machine. | 声明的容器的卷都保留，Windows 和 macOS 上的 Podman 虚拟机也保留。 |
 | `gitea` | no | The repositories, Gitea's accounts and its database stay in its data directory. | 仓库、Gitea 的账户和数据库都留在它的数据目录里。 |
 | `ollama` | no | The pulled models stay in its data directory. | 拉取的模型都留在它的数据目录里。 |
+| `comfyui` | no | The models, inputs, outputs and custom nodes stay in its data directory. | 模型、输入、输出和自定义节点都留在它的数据目录里。 |
 | `vscode` | no | Each account's settings and extensions stay in its home folder. | 每个账户的设置和扩展都留在它的主目录里。 |
 | `code_server` | no | Each account's code-server settings and extensions stay in its home folder. | 每个账户的 code-server 设置和扩展都留在它的主目录里。 |
 | `cloudcli` | no | Each account's CloudCLI data stays in {data_dir}. | 每个账户的 CloudCLI 数据留在 {data_dir}。 |
@@ -753,6 +761,25 @@ other times.
 | `code.ollama_model_unknown` | This machine has no model named {name}. | 这个系统上没有叫 {name} 的模型。 |
 | `code.ollama_pull_unknown` | No pull of {name} is waiting or running. | 没有在等待或进行中的 {name} 拉取。 |
 | `code.ollama_pull_failed` | Ollama could not pull {name}: {detail} | Ollama 没能拉取 {name}：{detail} |
+
+## The ComfyUI tab's words
+
+[ui_behavior.md](ui_behavior.md), "The machine page", places them. The keys
+are in `locales/<language>/modules.json`, and the Services page's line in
+`devices.json`.
+
+| Key | English | Chinese |
+| --- | --- | --- |
+| `ui.module_catalog.comfyui`, ComfyUI's line in the **Add module** dialog | Images and video from node workflows, on this machine. | 在这个系统上用节点工作流生成图片和视频。 |
+| `ui.comfyui.settings_title` | Settings | 设置 |
+| `ui.comfyui.torch_build` | Runs on | 运行在 |
+| `ui.comfyui.torch_build_nvidia`, `_amd`, `_intel`, `_cpu` | NVIDIA GPU (CUDA), AMD GPU (ROCm), Intel Arc GPU (XPU), CPU | NVIDIA 显卡（CUDA）、AMD 显卡（ROCm）、Intel Arc 显卡（XPU）、CPU |
+| `ui.comfyui.idle_unload` | Idle unload time | 空闲多久后移出内存 |
+| `ui.comfyui.idle_unload_5m`, `_30m`, `_1h`, `_4h`, `_never` | 5 minutes, 30 minutes, 1 hour, 4 hours, Never | 5 分钟、30 分钟、1 小时、4 小时、从不 |
+| `ui.comfyui.settings_apply` | Apply settings | 应用设置 |
+| `ui.comfyui.settings_apply_hint` | A new Runs on installs its PyTorch and restarts ComfyUI. The idle unload time takes effect at once. | 换了“运行在”会安装对应的 PyTorch 并重启 ComfyUI。空闲时间立即生效。 |
+| `ui.comfyui.torch_build_warning` | ComfyUI stops while the new PyTorch downloads, several GB of it. | 下载新的 PyTorch 期间 ComfyUI 会停止，要下载几 GB。 |
+| `ui.services.description_comfyui_module`, the Services page's provenance line of the `web` entry | published by the ComfyUI module on {host} | 由 {host} 上的 ComfyUI 模块发布 |
 
 ## The Ayakaleaf tab's words
 
