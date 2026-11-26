@@ -350,7 +350,7 @@ The row's controls, from left to right:
 | --- | --- | --- | --- |
 | the network picker | when `overlay.networks` has two or more entries | in overlay `off` only | writes the chosen engine to the binding |
 | the network button | always | as the overlay table gives it | Connect, Cancel or Disconnect |
-| **Panel** | when `is_panel_allowed` | when the hub is `connected` and not disabled | job `ui.job.opening`: asks `service {is_panel: true}` for a sign-in token, makes the panel's forward when the hub has none, then opens the system browser at `http://panel-<hub-id>.localhost:<local-port>/?tkn=<token>` (on macOS `http://127.0.0.1:<local-port>/?tkn=<token>`); a failure, `permission_denied` among them, writes the code on the row's error line |
+| **Panel** | when `is_panel_allowed` | when the hub is `connected` and not disabled | job `ui.job.opening`: asks `service {is_panel: true}` for a sign-in token, makes the panel's forward when the hub has none, then opens the system browser at `http://panel-<hub-id>.localhost:<local-port>/?tkn=<token>` (on macOS `http://localhost:<local-port>/?tkn=<token>`); a failure, `permission_denied` among them, writes the code on the row's error line |
 | **Reconnect** | in `replaced` only | always | takes the binding back and starts a round |
 | **Leave** | always | not while `is_leaving` | arms; the second press deletes the binding at once, whether or not the hub answers: the core stops that hub's forwards (the panel's among them), mounts and viewers, leaves its network when no other hub uses it, forgets the binding, and only then tells the hub once, in the background, trying the hub's addresses in turn with an equal share each of `CLIENT_LEAVE_TELL_TIMEOUT_S`, 5 seconds, a refusal or an unreachable hub changing nothing; the row shows `ui.job.leaving` and goes when the core has forgotten the binding, which never waits on the hub |
 
@@ -361,6 +361,11 @@ over plain HTTP, the channel being its encryption, and signs the browser
 in with the token, so no panel password is asked; a token that no longer
 spends lands on the ordinary login page. `<hub-id>` is the hub's id, so
 each hub's panel keeps its own session cookie in the browser.
+
+| Rule | Reason |
+| --- | --- |
+| The panel opens on a host no app opens on: `panel-<hub-id>.localhost`, and `localhost` on macOS and iOS, where every app opens on `127.0.0.1` ("The Apps page"). | A browser sends a host's cookies to every port of that host. An app's server on the panel's host would receive the panel's session cookie and could act on the panel with it. WebKit resolves `localhost` and no other `.localhost` name. |
+| The panel's forward listens on `127.0.0.1` alone, as every forward does. | macOS and iOS resolve `localhost` to `::1` and `127.0.0.1`, and a browser refused on `::1` connects to `127.0.0.1`. |
 
 The row of the hub whose gateway the AI tools point at shows `ui.hub_is_exit`
 under its mono line; the AI page sets it.
@@ -1128,9 +1133,9 @@ entry.
 
 | Rule | Reason |
 | --- | --- |
-| **Open** on an app in use reads the token as on Android, and **Panel** on a hub row makes the panel's forward and reads its token; each then opens the in-app browser at `<scheme>://127.0.0.1:<local-port><path>`, with `?tkn=<token>` where the entry has `is_token_required`, and `/?tkn=<token>` for the panel. | iOS suspends the app while another app is in front, and a suspended app's forward answers nothing, so the system browser cannot use it. WebKit resolves no `.localhost` name, so the host is the loopback address, as on macOS. |
+| **Open** on an app in use reads the token as on Android, and **Panel** on a hub row makes the panel's forward and reads its token; each then opens the in-app browser, an app at `<scheme>://127.0.0.1:<local-port><path>`, with `?tkn=<token>` where the entry has `is_token_required`, and the panel at `http://localhost:<local-port>/?tkn=<token>`. | iOS suspends the app while another app is in front, and a suspended app's forward answers nothing, so the system browser cannot use it. WebKit resolves no `.localhost` name but `localhost`, so the hosts are those of macOS ("The Hubs page"). |
 | The in-app browser is a WebKit web view under the top bar. Its back arrow closes the page; the forward listens until **Stop**, as on every client. | A page closed by mistake opens again with **Open**, on the same port. |
-| Every page the in-app browser opens shares one cookie store and the host `127.0.0.1`, and a cookie belongs to its host whatever the port, so two instances whose cookies have the same name sign each other out, as on macOS. | iOS 16 gives an app one persistent web data store. |
+| Every page the in-app browser opens shares one cookie store. Every app's page has the host `127.0.0.1`, and a cookie belongs to its host whatever the port, so two instances whose cookies have the same name sign each other out, as on macOS. | iOS 16 gives an app one persistent web data store. |
 
 ### The share page
 

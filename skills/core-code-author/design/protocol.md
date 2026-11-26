@@ -62,8 +62,11 @@ The session cookie is `neutrino_session_<hub>`, `<hub>` the first 12
 characters of the hub's id ("The hub's own identity"). A password login and a
 client's sign-in set it under that one name, on either port and from any
 peer. Two hubs on one host keep two sessions, and so do two hubs' panels a
-client opens on `127.0.0.1`, where a browser keeps cookies by host alone. One
-session holds on both ports. A panel that cannot read its identity file names
+client opens on `localhost`, where a browser keeps cookies by host alone. One
+session holds on both ports. A client opens the panel on a host no app opens
+on ([client.md](client.md), "The Hubs page"), and the hub's app forwards
+("The app forwards") take each cookie whose name starts with
+`neutrino_session_` out of every request they pass on. A panel that cannot read its identity file names
 the cookie `neutrino_session_`. The login page reads `/api/hub/setup`,
 `/api/hub/auth` and `/api/hub/display` before a session exists, so those
 prefixes take no session dependency, and neither do
