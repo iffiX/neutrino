@@ -1,0 +1,188 @@
+/* One grid for every row: the name takes the room left, the sources, the
+   length, the two prices and the currency their own widths, so each column
+   lines up down the panel. */
+.ai_models_list {
+  display: grid;
+  grid-template-columns:
+    minmax(0, 1fr) max-content max-content max-content max-content
+    max-content;
+  gap: var(--space-2) var(--space-3);
+}
+
+.ai_models_head,
+.ai_models_row {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: center;
+}
+
+.ai_models_head {
+  padding: 0 calc(var(--space-3) + 1px);
+  color: var(--color-text-faint);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.ai_models_head_number {
+  justify-self: end;
+  padding-right: 10px;
+}
+
+.ai_models_head_unit {
+  font-weight: 500;
+}
+
+.ai_models_row {
+  row-gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+}
+
+.ai_models_model {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ai_models_sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.ai_models_field {
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+  justify-self: end;
+}
+
+/* The prices and the currency are cells of the row's grid; on a phone they
+   take a line of their own. */
+.ai_models_prices {
+  display: contents;
+}
+
+/* A price field's head word, drawn on a phone alone. */
+.ai_models_field_word {
+  display: none;
+  color: var(--color-text-faint);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.ai_models_input {
+  width: 8ch;
+  padding: 5px 9px;
+  font-size: 12.5px;
+  text-align: right;
+}
+
+.ai_models_input--length {
+  width: 11ch;
+}
+
+.ai_models_currency {
+  width: 9ch;
+}
+
+.ai_models_currency .picker_control {
+  padding: 5px 9px;
+  font-size: 12.5px;
+}
+
+.ai_models_error {
+  grid-column: 1 / -1;
+  justify-self: end;
+}
+
+/* A read-only length stands where a field's digits stand. */
+.ai_models_value {
+  justify-self: end;
+  padding-right: 10px;
+  font-size: 12.5px;
+}
+
+/* Each machine's setting and the model's trained length, under the length
+   they give; the number in force is the bright one. */
+.ai_models_machines {
+  display: grid;
+  grid-column: 1 / 4;
+  grid-template-columns: repeat(3, max-content);
+  gap: 2px var(--space-3);
+  justify-content: end;
+  padding-right: 10px;
+  font-size: 11.5px;
+}
+
+.ai_models_machine {
+  display: contents;
+}
+
+.ai_models_machine_name {
+  justify-self: end;
+  color: var(--color-text-muted);
+}
+
+.ai_models_machine_name:hover {
+  color: var(--color-accent);
+}
+
+.ai_models_source {
+  color: var(--color-text-faint);
+  text-align: right;
+}
+
+.ai_models_source--in_force {
+  color: var(--color-text);
+}
+
+/* Portrait: the head row goes, each row lays out alone, the sources drop
+   under the name, the length keeps the first line's end, the prices and
+   the currency take the next line with each field after its head word,
+   and the machine lines start at the left. */
+@media (max-width: 640px) {
+  .ai_models_list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ai_models_head {
+    display: none;
+  }
+
+  .ai_models_row {
+    grid-template-columns: minmax(0, 1fr) max-content;
+  }
+
+  .ai_models_sources {
+    grid-row: 2;
+    grid-column: 1 / -1;
+  }
+
+  .ai_models_prices {
+    display: flex;
+    flex-wrap: wrap;
+    grid-column: 1 / -1;
+    gap: var(--space-2) var(--space-3);
+    align-items: center;
+  }
+
+  .ai_models_field_word {
+    display: inline;
+  }
+
+  .ai_models_machines {
+    grid-column: 1 / -1;
+    justify-content: start;
+  }
+
+  .ai_models_machine_name {
+    justify-self: start;
+  }
+}

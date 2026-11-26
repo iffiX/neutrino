@@ -9,7 +9,7 @@ import { ToggleSwitch } from "./toggle_switch";
 import { Picker } from "./picker";
 import { VaultPicker } from "./vault_picker";
 import { apiPost, describeApplied, describeError } from "../api_client";
-import { t, useLanguage } from "../i18n";
+import { hasWord, t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
 import { useConfirm } from "../use_confirm";
 import { useDraft } from "../use_draft";
@@ -21,6 +21,8 @@ import type {
   AiProviderModel,
   AiProviderView,
   AiProvidersResponse,
+  AiVendorEndpointView,
+  AiVendorView,
   ApplyResult,
 } from "../api_types";
 
@@ -75,6 +77,15 @@ const PROVIDER_KIND_LABEL_KEYS: Record<AiProviderKind, string> = {
   custom: "ui.ai.kind_custom",
 };
 
+/** The **Custom** choice of the Vendor picker: the form with no preset. */
+const VENDOR_CUSTOM = "custom";
+
+/** A vendor and the endpoint of it a base URL names. */
+interface VendorMatch {
+  vendor: AiVendorView;
+  endpoint: AiVendorEndpointView;
+}
+
 /** One drag in flight, measured from the list as it stood when it started. */
 interface ProviderDragState {
   providerId: string;
@@ -114,6 +125,7 @@ export function AiProvidersSection({
     invalidateOn: OLLAMA_INVALIDATE_ON,
   });
   const ollamaProviders = ollama.data?.providers ?? [];
+  const vendors = resource.data?.vendors ?? [];
   const providersDraft = useDraft(resource.data, providersOf);
   const saved = resource.data?.providers ?? [];
   const draft = providersDraft.draft ?? [];
@@ -311,6 +323,7 @@ export function AiProvidersSection({
 
       {isAdding && (
         <ProviderForm
+          vendors={vendors}
           onSaved={handleSaved}
           onCancel={() => {
             setIsAdding(false);
@@ -332,6 +345,7 @@ export function AiProvidersSection({
             editingId === provider.id ? (
               <ProviderForm
                 key={provider.id}
+                vendors={vendors}
                 initial={provider}
                 onSaved={handleSaved}
                 onCancel={() => {
@@ -391,12 +405,24 @@ export function AiProvidersSection({
 }
 
 interface ProviderFormProps {
+  /** The vendor presets, in the table's order. */
+  vendors: AiVendorView[];
   initial?: AiProviderView;
   onSaved: (provider: AiProviderView) => void;
   onCancel: () => void;
 }
 
-function ProviderForm({ initial, onSaved, onCancel }: ProviderFormProps) {
+/**
+ * A provider's form: **Vendor** first, whose preset fills the kind, the base
+ * URL and the model names, and **Custom**, the form with no preset. The
+ * pickers show the vendor and the endpoint the base URL names.
+ */
+function ProviderForm({
+  vendors,
+  initial,
+  onSaved,
+  onCancel,
+}: ProviderFormProps) {
   // Redrawn when the panel's language changes.
   useLanguage();
   const [name, setName] = useState(initial?.name ?? "");
@@ -415,6 +441,44 @@ function ProviderForm({ initial, onSaved, onCancel }: ProviderFormProps) {
 
   const isEditing = initial !== undefined;
   const isReady = name.trim().length > 0 && (isEditing || secretId !== null);
+  const match = matchEndpoint(vendors, baseUrl);
+  const isCustom = match === null;
+
+  // Writes a vendor's name into the Name field while the field is empty or
+  // holds the name of the vendor shown before the pick.
+  const fillName = (vendor: AiVendorView | null) => {
+    const shownName = match === null ? null : vendorName(match.vendor.id);
+    if (name.trim().length === 0 || name === shownName) {
+      setName(vendor === null ? "" : vendorName(vendor.id));
+    }
+  };
+
+  const fillEndpoint = (endpoint: AiVendorEndpointView) => {
+    setKind("custom");
+    setBaseUrl(endpoint.base_url);
+    setModelsText(endpoint.models.join("\n"));
+  };
+
+  const handlePickVendor = (id: string) => {
+    const vendor = vendors.find((entry) => entry.id === id) ?? null;
+    const endpoint = vendor?.endpoints[0];
+    fillName(vendor);
+    if (vendor === null || endpoint === undefined) {
+      setBaseUrl("");
+      setModelsText("");
+      return;
+    }
+    fillEndpoint(endpoint);
+  };
+
+  const handlePickEndpoint = (id: string) => {
+    const endpoint = match?.vendor.endpoints.find((entry) => entry.id === id);
+    if (match === null || endpoint === undefined) {
+      return;
+    }
+    fillName(match.vendor);
+    fillEndpoint(endpoint);
+  };
 
   const handleSubmit = async () => {
     setIsSaving(true);
@@ -448,6 +512,31 @@ function ProviderForm({ initial, onSaved, onCancel }: ProviderFormProps) {
           ? t("ui.ai.edit_provider", { name: initial.name })
           : t("ui.ai.new_provider")}
       </div>
+      <div className="credentials_form_row ai_provider_vendor_row">
+        <Picker
+          options={[
+            ...vendors.map((vendor) => ({
+              id: vendor.id,
+              name: vendorName(vendor.id),
+            })),
+            { id: VENDOR_CUSTOM, name: t("ui.ai.vendor_custom") },
+          ]}
+          value={match === null ? VENDOR_CUSTOM : match.vendor.id}
+          onChange={handlePickVendor}
+          label={t("ui.ai.field_vendor")}
+        />
+        {match !== null && match.vendor.endpoints.length > 1 && (
+          <Picker
+            options={match.vendor.endpoints.map((endpoint) => ({
+              id: endpoint.id,
+              name: endpointName(endpoint.id),
+            }))}
+            value={match.endpoint.id}
+            onChange={handlePickEndpoint}
+            label={t("ui.ai.field_endpoint")}
+          />
+        )}
+      </div>
       <div className="credentials_form_row">
         <label className="field">
           <span className="field_label">{t("ui.ai.field_name")}</span>
@@ -461,17 +550,19 @@ function ProviderForm({ initial, onSaved, onCancel }: ProviderFormProps) {
             }}
           />
         </label>
-        <Picker
-          options={PROVIDER_KINDS.map((option) => ({
-            id: option,
-            name: t(PROVIDER_KIND_LABEL_KEYS[option]),
-          }))}
-          value={kind}
-          onChange={(id) => {
-            setKind(id as AiProviderKind);
-          }}
-          label={t("ui.ai.field_kind")}
-        />
+        {isCustom && (
+          <Picker
+            options={PROVIDER_KINDS.map((option) => ({
+              id: option,
+              name: t(PROVIDER_KIND_LABEL_KEYS[option]),
+            }))}
+            value={kind}
+            onChange={(id) => {
+              setKind(id as AiProviderKind);
+            }}
+            label={t("ui.ai.field_kind")}
+          />
+        )}
       </div>
       <label className="field">
         <span className="field_label">{t("ui.ai.field_base_url")}</span>
@@ -793,6 +884,48 @@ function moveProvider(
   }
   reordered.splice(toIndex, 0, moved);
   return reordered;
+}
+
+/** A base URL compared without a trailing slash and with its host in any
+ * case. */
+function normalizedUrl(url: string): string {
+  const trimmed = url.trim();
+  try {
+    const parsed = new URL(trimmed);
+    const path = parsed.pathname.replace(/\/+$/, "");
+    return `${parsed.protocol}//${parsed.host}${path}${parsed.search}`;
+  } catch {
+    return trimmed.replace(/\/+$/, "");
+  }
+}
+
+/** The vendor and endpoint whose base URL equals the field's, else null. */
+function matchEndpoint(
+  vendors: AiVendorView[],
+  baseUrl: string,
+): VendorMatch | null {
+  if (baseUrl.trim().length === 0) {
+    return null;
+  }
+  const wanted = normalizedUrl(baseUrl);
+  for (const vendor of vendors) {
+    for (const endpoint of vendor.endpoints) {
+      if (normalizedUrl(endpoint.base_url) === wanted) {
+        return { vendor, endpoint };
+      }
+    }
+  }
+  return null;
+}
+
+function vendorName(id: string): string {
+  const key = `ui.ai.vendor_${id}`;
+  return hasWord(key) ? t(key) : id;
+}
+
+function endpointName(id: string): string {
+  const key = `ui.ai.endpoint_${id}`;
+  return hasWord(key) ? t(key) : id;
 }
 
 function serializeModels(models: AiProviderModel[]): string {

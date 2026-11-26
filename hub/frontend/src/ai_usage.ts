@@ -1,5 +1,6 @@
 import { t } from "./i18n";
 import type {
+  AiUsageAmounts,
   AiUsageBucket,
   AiUsageCounters,
   AiUsageHealthBucket,
@@ -100,6 +101,52 @@ export function successShareOf(counters: {
  */
 export function cacheShareOf(counters: AiUsageCounters): number | null {
   return shareOf(counters.cache_read_tokens, counters.input_tokens);
+}
+
+/** The sign each currency's amounts read with. */
+const CURRENCY_SIGNS: Record<string, string> = { USD: "$", CNY: "¥" };
+/** The order amounts of two currencies are joined in. */
+const CURRENCY_ORDER = ["USD", "CNY"];
+/** An amount's unit in the counters, a millionth of its currency. */
+const AMOUNT_UNITS = 1_000_000;
+/** The least amount a bill names. */
+const AMOUNT_LEAST = 0.01;
+
+/** Whether a set of amounts holds one above 0. */
+export function hasAmount(amounts: AiUsageAmounts | undefined): boolean {
+  return Object.values(amounts ?? {}).some((value) => value > 0);
+}
+
+/**
+ * Format amounts in millionths as `$3.10 + ¥12.40`, USD first.
+ *
+ * An amount above 0 and under a cent reads `<$0.01`. Two currencies are
+ * never added.
+ *
+ * Args:
+ *   amounts: Millionths by currency.
+ *
+ * Returns:
+ *   The amounts joined by ` + `, or an empty string while none is above 0.
+ */
+export function formatAmounts(amounts: AiUsageAmounts | undefined): string {
+  return Object.entries(amounts ?? {})
+    .filter(([, value]) => value > 0)
+    .sort(([a], [b]) => currencyRank(a) - currencyRank(b) || a.localeCompare(b))
+    .map(([currency, value]) => formatAmount(currency, value / AMOUNT_UNITS))
+    .join(" + ");
+}
+
+function formatAmount(currency: string, amount: number): string {
+  const sign = CURRENCY_SIGNS[currency] ?? `${currency} `;
+  return amount < AMOUNT_LEAST
+    ? `<${sign}${AMOUNT_LEAST.toFixed(2)}`
+    : `${sign}${amount.toFixed(2)}`;
+}
+
+function currencyRank(currency: string): number {
+  const rank = CURRENCY_ORDER.indexOf(currency);
+  return rank < 0 ? CURRENCY_ORDER.length : rank;
 }
 
 /**

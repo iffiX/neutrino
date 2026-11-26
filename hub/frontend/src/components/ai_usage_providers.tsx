@@ -1,5 +1,6 @@
 import { useState } from "react";
 
+import { AiUsageCost } from "./ai_usage_cost";
 import { Picker } from "./picker";
 import {
   cacheShareOf,
@@ -140,6 +141,7 @@ export function AiUsageProviders({ providers }: AiUsageProvidersProps) {
               <th className="num">{t("ui.usage.header_cache")}</th>
               <th>{t("ui.usage.header_health")}</th>
               <th>{t("ui.usage.header_seen")}</th>
+              <th className="num">{t("ui.usage.header_cost")}</th>
             </tr>
           </thead>
           <tbody>
@@ -283,6 +285,9 @@ function ProviderRow({ provider }: ProviderRowProps) {
             })}
           </span>
         </div>
+      </td>
+      <td className="num">
+        <AiUsageCost counters={provider} />
       </td>
     </tr>
   );

@@ -653,6 +653,28 @@ export interface AiProviderView {
   is_enabled: boolean;
   models: AiProviderModel[];
   created_at: string;
+  /** The preset vendor its base URL names; empty for **Custom**. */
+  vendor: string;
+  /** The vendor's endpoint its base URL names; empty for **Custom**. */
+  endpoint: string;
+}
+
+/** One endpoint of a vendor preset. */
+export interface AiVendorEndpointView {
+  id: string;
+  base_url: string;
+  /** The models.dev provider its requests are priced at. */
+  price_provider: string;
+  /** Whether the endpoint is a coding plan, its requests an API value. */
+  is_plan: boolean;
+  models: string[];
+}
+
+/** A vendor of the provider form's presets, its endpoints in the table's
+ * order. */
+export interface AiVendorView {
+  id: string;
+  endpoints: AiVendorEndpointView[];
 }
 
 /** One client key of the AI gateway, shown in full to its owner. */
@@ -684,6 +706,8 @@ export interface CliproxyApiStatusView {
   /** Served over the current UTC day; absent until usage is collected. */
   requests_today?: number;
   tokens_today?: number;
+  cost_today?: AiUsageAmounts;
+  api_value_today?: AiUsageAmounts;
   /** The saved default model, kept while the gateway no longer serves it;
    * empty while none is saved. */
   default_model?: string;
@@ -710,10 +734,31 @@ export interface CliproxyApiAccountView {
   status_message: string;
   is_disabled: boolean;
   is_unavailable: boolean;
+  /** When the gateway serves the account again; empty while it is not
+   * cooling. */
+  next_retry_after: string;
+  /** A Codex login's plan and the end of its subscription; empty for the
+   * rest. */
+  plan: string;
+  subscription_ends_at: string;
+  /** Whether a **Refresh** reads the vendor's quota for the login. */
+  has_quota_read: boolean;
+  windows: CliproxyApiQuotaWindowView[];
   failed_count: number;
   success_count: number;
   created_at: string;
   updated_at: string;
+}
+
+/** One limit window of an account: a gateway signal or the last read. */
+export interface CliproxyApiQuotaWindowView {
+  /** `5h`, `7d`, `month`, a window's minutes, or an Antigravity model. */
+  name: string;
+  /** The used share, from 0 to 1. */
+  used_share: number;
+  resets_at: string;
+  seen_at: string;
+  origin: "signal" | "read";
 }
 
 /** Every account, and the sign-ins this gateway build actually offers. */
@@ -749,9 +794,11 @@ export interface CliproxyApiLoginStateView {
   message: string;
 }
 
-/** The Credentials page's AI provider section payload. */
+/** `GET /api/hub/ai`: the providers in their order, and the vendor
+ * presets. */
 export interface AiProvidersResponse {
   providers: AiProviderView[];
+  vendors: AiVendorView[];
 }
 
 /** A provider the hub generates from one machine's Ollama, read-only. */
@@ -770,7 +817,7 @@ export interface AiOllamaProvidersResponse {
 }
 
 /** An account or a stored provider that serves a name. */
-export interface AiContextSourceView {
+export interface AiModelSourceView {
   origin: "account" | "provider";
   /** The account's token file, or the provider's id. */
   id: string;
@@ -779,20 +826,44 @@ export interface AiContextSourceView {
   name: string;
 }
 
+export type AiPriceCurrency = "USD" | "CNY";
+
+/** A price a person set, per million tokens. */
+export interface AiModelPrice {
+  input: number;
+  output: number;
+  currency: AiPriceCurrency;
+}
+
+/** The models.dev price of a name's first source that has one, per million
+ * tokens, in USD; a cache price is absent where models.dev gives none. */
+export interface AiModelDefaultPrice {
+  input: number;
+  output: number;
+  cache_read?: number;
+  cache_write?: number;
+  currency: AiPriceCurrency;
+}
+
 /** A cloud name the gateway serves, with the context length the AI tools
- * are given for it. */
-export interface AiCloudContextView {
+ * are given for it and its price. */
+export interface AiCloudModelView {
   model: string;
   /** Its accounts and then its providers, by name. */
-  sources: AiContextSourceView[];
+  sources: AiModelSourceView[];
   /** The length a person set; null while none is stored. */
   context_length: number | null;
   /** The length the name has while a person sets none. */
   default_context_length: number;
+  /** The price a person set; null while none is stored. */
+  price: AiModelPrice | null;
+  /** The price the name has while a person sets none; null while no source
+   * has one. */
+  default_price: AiModelDefaultPrice | null;
 }
 
 /** One machine of an Ollama name's pool, online or not. */
-export interface AiOllamaContextMachineView {
+export interface AiOllamaModelMachineView {
   device_id: string;
   /** The machine's name. */
   name: string;
@@ -805,27 +876,29 @@ export interface AiOllamaContextMachineView {
 
 /** An Ollama name the gateway serves: every machine of its pool, and the
  * length the AI tools are given for it. */
-export interface AiOllamaContextView {
+export interface AiOllamaModelView {
   model: string;
-  machines: AiOllamaContextMachineView[];
+  machines: AiOllamaModelMachineView[];
   /** The accounts and stored providers that also serve the name. */
-  sources: AiContextSourceView[];
+  sources: AiModelSourceView[];
   /** Their default; 0 while there are none. */
   cloud_context_length: number;
   /** The smallest of each machine's smaller number and the cloud default. */
   context_length: number;
 }
 
-/** `GET /api/hub/ai/context`: every served name's context length. */
-export interface AiContextResponse {
-  cloud: AiCloudContextView[];
-  ollama: AiOllamaContextView[];
+/** `GET /api/hub/ai/model`: every served name's context length, and each
+ * cloud name's price. */
+export interface AiModelResponse {
+  cloud: AiCloudModelView[];
+  ollama: AiOllamaModelView[];
 }
 
-/** `POST /api/hub/ai/context/set`: lengths by cloud name; a null takes a
- * name back to its default. */
-export interface AiContextUpdate {
-  lengths: Record<string, number | null>;
+/** `POST /api/hub/ai/model/set`: lengths and prices by cloud name; a null
+ * takes a name back to its default. */
+export interface AiModelUpdate {
+  lengths?: Record<string, number | null>;
+  prices?: Record<string, AiModelPrice | null>;
 }
 
 /** The serving order write: every provider id, in the order tried. */
@@ -841,7 +914,12 @@ export interface AiUsageRates {
   tpm: number;
 }
 
-/** Counter set shared by usage totals, buckets, keys and providers. */
+/** Amounts by currency (`USD`, `CNY`), in millionths; a currency only
+ * where it has an amount. */
+export type AiUsageAmounts = Record<string, number>;
+
+/** Counter set shared by usage totals, buckets, keys, providers and
+ * models. */
 export interface AiUsageCounters {
   requests: number;
   failed: number;
@@ -849,6 +927,12 @@ export interface AiUsageCounters {
   output_tokens: number;
   cache_read_tokens: number;
   cache_write_tokens: number;
+  /** What the requests through API keys cost. */
+  cost: AiUsageAmounts;
+  /** What an account's or a plan's requests would cost through a key. */
+  api_value: AiUsageAmounts;
+  /** Requests no price was found for. */
+  unpriced_requests: number;
 }
 
 /** One time bucket of the usage series; hourly for day, daily otherwise. */
@@ -894,6 +978,12 @@ export interface AiUsageProvider extends AiUsageCounters {
   health: AiUsageHealthBucket[];
 }
 
+/** One served name's usage over the range; `model` is empty for the days
+ * stored before the model field. */
+export interface AiUsageModel extends AiUsageCounters {
+  model: string;
+}
+
 /** The `/cliproxyapi/usage` payload. */
 export interface AiUsageResponse {
   range: AiUsageRange;
@@ -903,6 +993,7 @@ export interface AiUsageResponse {
   series: AiUsageBucket[];
   keys: AiUsageKey[];
   providers: AiUsageProvider[];
+  models: AiUsageModel[];
 }
 
 /** The gateway's journal tail, most recent line last. */

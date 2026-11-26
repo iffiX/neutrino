@@ -3,7 +3,6 @@
   "code.language_unknown": "This panel does not have that language.",
   "code.theme_unknown": "This panel does not have that theme.",
   "state.connecting": "connecting",
-  "state.disabled": "disabled",
   "state.installed": "installed",
   "state.live": "live",
   "state.no_address": "no address",

@@ -19,7 +19,8 @@
 
 .ai_today {
   display: inline-flex;
-  gap: var(--space-4);
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
   align-items: baseline;
 }
 
@@ -27,6 +28,7 @@
   display: inline-flex;
   gap: var(--space-2);
   align-items: baseline;
+  white-space: nowrap;
 }
 
 .ai_today_value {
@@ -38,6 +40,11 @@
 .ai_today_label {
   color: var(--color-text-faint);
   font-size: 11px;
+}
+
+.ai_today_item--faint .ai_today_value {
+  color: var(--color-text-faint);
+  font-weight: 500;
 }
 
 /* The serving line: family counts collapsed, copyable names expanded. */
@@ -99,7 +106,7 @@
   color: var(--color-accent);
 }
 
-/* The two halves of the usage area, and the window they both read. */
+/* The tables of the usage area, and the range they all read. */
 .ai_usage_switch {
   display: flex;
   flex-wrap: wrap;
@@ -109,12 +116,6 @@
   padding-bottom: var(--space-3);
   border-bottom: 1px solid var(--color-border);
   margin-bottom: var(--space-4);
-}
-
-.ai_usage_window {
-  display: inline-flex;
-  gap: var(--space-3);
-  align-items: center;
 }
 
 .ai_service_chips {
@@ -216,6 +217,16 @@
 
 .usage_device--none {
   color: var(--color-text-faint);
+}
+
+/* A cost, and under it an API value or the no-price word. */
+.usage_cost {
+  white-space: nowrap;
+}
+
+.usage_cost_note {
+  font-size: 11px;
+  white-space: nowrap;
 }
 
 .usage_split {

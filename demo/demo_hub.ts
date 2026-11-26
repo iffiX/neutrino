@@ -25,12 +25,14 @@ import {
   DEMO_HUB_VERSION,
   DEMO_KEYS,
   DEMO_LOGINS,
+  DEMO_MODEL_PRICES,
   DEMO_NETBIRD,
   DEMO_NEW_PODMAN_MACHINE,
   DEMO_OPENCODE_MODEL,
   DEMO_OPENFRP,
   DEMO_OPENFRP_TUNNELS,
   DEMO_OVERLAY_KINDS,
+  DEMO_PRICES_SAVED,
   DEMO_RELAY,
   DEMO_RELEASE,
   DEMO_RELEASE_SCAN,
@@ -58,14 +60,16 @@ import {
 import type { DemoFrameReadings } from "./demo_traffic";
 import type {
   AccountListView,
-  AiCloudContextView,
-  AiContextResponse,
-  AiContextSourceView,
-  AiOllamaContextView,
+  AiCloudModelView,
+  AiModelPrice,
+  AiModelResponse,
+  AiModelSourceView,
+  AiOllamaModelView,
   AiOllamaProvidersResponse,
   AiUsageRange,
   AppEntryView,
   ApplyResult,
+  CliproxyApiAccountsResponse,
   CliproxyApiStatusView,
   AppView,
   AuthState,
@@ -496,6 +500,11 @@ export class DemoHub {
   private defaultModel = DEMO_AI_STATUS.default_model ?? "";
   /** The context lengths a visitor set, by cloud name. */
   private contextLengths: Record<string, number> = { ...DEMO_CONTEXT_SAVED };
+  /** The prices a visitor set, by cloud name. */
+  private modelPrices: Record<string, AiModelPrice> = { ...DEMO_PRICES_SAVED };
+  /** The signed-in accounts, paused and resumed by a visitor. */
+  private readonly aiAccounts: CliproxyApiAccountsResponse =
+    structuredClone(DEMO_AI_ACCOUNTS);
   private currentEdition: DemoEdition = "cn";
   private defaultPermission = [...DEFAULT_PERMISSION];
   private defaultPermissionDevices: Record<string, string[]> = {};
@@ -850,10 +859,10 @@ export class DemoHub {
           (query.get("range") ?? "month") as AiUsageRange,
           query.get("key_id") ?? "",
         ),
-      "/hub/ai/gateway/account": () => DEMO_AI_ACCOUNTS,
+      "/hub/ai/gateway/account": () => this.aiAccounts,
       "/hub/ai/gateway/journal": () => ({ lines: DEMO_AI_JOURNAL_LINES }),
       "/hub/ai/ollama": () => this.ollamaProviders(),
-      "/hub/ai/context": () => this.aiContext(),
+      "/hub/ai/model": () => this.aiModel(),
       "/hub/overlay": () => this.overlayChoice(),
       "/hub/overlay/netbird": () => DEMO_NETBIRD,
       "/hub/overlay/easytier": () => DEMO_EASYTIER,
@@ -970,7 +979,13 @@ export class DemoHub {
         this.removeDeclaredApp(body),
       "/hub/setting/release/scan": () => DEMO_RELEASE_SCAN,
       "/hub/setting/set": (_query, body) => this.setSettings(body),
-      "/hub/ai/context/set": (_query, body) => this.setAiContext(body),
+      "/hub/ai/model/set": (_query, body) => this.setAiModel(body),
+      "/hub/ai/gateway/account/quota/scan": (_query, body) =>
+        this.scanAccountQuota(textField(body, "name")),
+      "/hub/ai/gateway/account/disable": (_query, body) =>
+        this.pauseAccount(textField(body, "name"), true),
+      "/hub/ai/gateway/account/enable": (_query, body) =>
+        this.pauseAccount(textField(body, "name"), false),
       "/hub/ai/gateway/set": (_query, body) => {
         const picked = (body as { default_model?: unknown }).default_model;
         this.defaultModel = typeof picked === "string" ? picked : "";
@@ -1164,12 +1179,16 @@ export class DemoHub {
     };
   }
 
-  /** The AI gateway's state, with the default model a visitor picked. */
+  /** The AI gateway's state, with the default model a visitor picked and
+   * today's cost. */
   private aiStatus(): CliproxyApiStatusView {
+    const today = demoAiUsage("day", "").totals;
     return {
       ...DEMO_AI_STATUS,
       served_models: this.servedModels(),
       default_model: this.defaultModel,
+      cost_today: today.cost,
+      api_value_today: today.api_value,
     };
   }
 
@@ -1182,25 +1201,26 @@ export class DemoHub {
     return [...(DEMO_AI_STATUS.served_models ?? []), ...[...local].sort()];
   }
 
-  /** Every served name's context length: each cloud name with the length a
-   * visitor set or its default, and each Ollama name with the smallest of
-   * each machine's setting and the model's trained length. */
-  private aiContext(): AiContextResponse {
-    const cloud: AiCloudContextView[] = [
-      ...(DEMO_AI_STATUS.served_models ?? []),
-    ]
+  /** Every served name's context length and each cloud name's price: each
+   * cloud name with the length and the price a visitor set or its default,
+   * and each Ollama name with the smallest of each machine's setting and the
+   * model's trained length. */
+  private aiModel(): AiModelResponse {
+    const cloud: AiCloudModelView[] = [...(DEMO_AI_STATUS.served_models ?? [])]
       .sort((a, b) => a.localeCompare(b))
       .map((model) => ({
         model,
-        sources: this.contextSources(model),
+        sources: this.modelSources(model),
         context_length: this.contextLengths[model] ?? null,
         default_context_length:
           DEMO_CONTEXT_DEFAULTS[model] ?? DEMO_CONTEXT_FALLBACK,
+        price: this.modelPrices[model] ?? null,
+        default_price: DEMO_MODEL_PRICES[model] ?? null,
       }));
     const names = new Set(
       this.ollamaProviders().providers.flatMap((provider) => provider.models),
     );
-    const ollama: AiOllamaContextView[] = [...names]
+    const ollama: AiOllamaModelView[] = [...names]
       .sort((a, b) => a.localeCompare(b))
       .map((model) => {
         const machines = this.devices
@@ -1232,9 +1252,9 @@ export class DemoHub {
     return { cloud, ollama };
   }
 
-  /** The sample account and providers that serve a cloud name. */
-  private contextSources(model: string): AiContextSourceView[] {
-    const accounts = DEMO_AI_ACCOUNTS.accounts
+  /** The sample accounts and providers that serve a cloud name. */
+  private modelSources(model: string): AiModelSourceView[] {
+    const accounts = this.aiAccounts.accounts
       .filter((account) =>
         (DEMO_AI_ACCOUNT_MODELS[account.name] ?? []).includes(model),
       )
@@ -1255,19 +1275,67 @@ export class DemoHub {
     return [...accounts, ...providers];
   }
 
-  /** Keeps the lengths a visitor applied; a null takes a name back to its
-   * default. */
-  private setAiContext(body: DemoBody): AiContextResponse {
-    const lengths = (body as { lengths?: Record<string, unknown> }).lengths;
-    for (const [model, length] of Object.entries(lengths ?? {})) {
+  /** Keeps the lengths and the prices a visitor applied; a null takes a
+   * name back to its default. */
+  private setAiModel(body: DemoBody): AiModelResponse {
+    const update = body as {
+      lengths?: Record<string, unknown>;
+      prices?: Record<string, unknown>;
+    };
+    for (const [model, length] of Object.entries(update.lengths ?? {})) {
       if (typeof length === "number") {
         this.contextLengths[model] = length;
       } else {
         delete this.contextLengths[model];
       }
     }
+    for (const [model, price] of Object.entries(update.prices ?? {})) {
+      if (typeof price === "object" && price !== null) {
+        this.modelPrices[model] = structuredClone(price) as AiModelPrice;
+      } else {
+        delete this.modelPrices[model];
+      }
+    }
     this.publish("config", "ai");
-    return this.aiContext();
+    return this.aiModel();
+  }
+
+  /** Reads an account's quota again: each window seen now. */
+  private scanAccountQuota(name: string): CliproxyApiAccountsResponse {
+    const account = this.aiAccountOf(name);
+    if (!account.has_quota_read) {
+      throw new DemoRefusal("quota_read_unsupported", {
+        provider: account.provider,
+      });
+    }
+    const now = secondsAgo(0);
+    account.windows = account.windows.map((window) => ({
+      ...window,
+      seen_at: now,
+      origin: "read",
+    }));
+    return this.aiAccounts;
+  }
+
+  /** Pauses an account, or resumes it. */
+  private pauseAccount(
+    name: string,
+    isPaused: boolean,
+  ): CliproxyApiAccountsResponse {
+    const account = this.aiAccountOf(name);
+    account.is_disabled = isPaused;
+    account.status = isPaused ? "disabled" : "active";
+    return this.aiAccounts;
+  }
+
+  private aiAccountOf(name: string) {
+    const account = this.aiAccounts.accounts.find(
+      (entry) => entry.name === name,
+    );
+    if (account === undefined) {
+      throw new DemoRefusal("unknown_account");
+    }
+    return account;
   }
 
   /** One provider per online machine whose Ollama runs and holds a model,

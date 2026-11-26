@@ -2,22 +2,29 @@ import { useEffect, useState } from "react";
 
 import { AiAccessPanel } from "../components/ai_access_panel";
 import { AiAccountsPanel } from "../components/ai_accounts_panel";
-import { AiContextPanel } from "../components/ai_context_panel";
 import { AiJournalPanel } from "../components/ai_journal_panel";
+import { AiModelsPanel } from "../components/ai_models_panel";
 import { AiProvidersSection } from "../components/ai_providers_section";
 import { AiUsageKeys } from "../components/ai_usage_keys";
+import { AiUsageModels } from "../components/ai_usage_models";
 import { AiUsageProviders } from "../components/ai_usage_providers";
 import { ApplyBar } from "../components/apply_bar";
 import { ErrorPanel } from "../components/error_panel";
 import { Icon } from "../components/icon";
+import { RangeSwitch } from "../components/range_switch";
 import { StatusDot } from "../components/status_dot";
+import { formatAmounts, hasAmount } from "../ai_usage";
 import { apiPath, apiPost, describeCode, describeError } from "../api_client";
 import { copyText } from "../copy_text";
 import { formatCompact } from "../format_compact";
 import { t, useLanguage } from "../i18n";
 import { useApiResource } from "../use_api_resource";
 import { HUB_EVENT_AI_USAGE, HUB_EVENT_CONFIG } from "../use_hub_events";
-import type { AiUsageResponse, CliproxyApiStatusView } from "../api_types";
+import type {
+  AiUsageRange,
+  AiUsageResponse,
+  CliproxyApiStatusView,
+} from "../api_types";
 
 import "./ai_page.css";
 
@@ -37,7 +44,7 @@ const PORT_MAX = 65535;
 /** The one address the gateway listens on. */
 const GATEWAY_HOST = "127.0.0.1";
 const STATUS_PATH = "/hub/ai/gateway";
-const USAGE_PATH = apiPath("/hub/ai/gateway/usage", { range: "month" });
+const USAGE_PATH = "/hub/ai/gateway/usage";
 // What moves the gateway's own state and its numbers: the collector saying
 // the counters or the served list changed, and any write to its settings.
 const AI_INVALIDATE_ON = [
@@ -45,8 +52,17 @@ const AI_INVALIDATE_ON = [
   { type: HUB_EVENT_CONFIG },
 ];
 
-/** Which half of the usage area the chips are showing. */
-type UsageView = "providers" | "keys";
+/** Which table of the usage area the chips are showing. */
+type UsageView = "providers" | "keys" | "models";
+
+/** The range the three tables read, the dashboard's chips. */
+const RANGE_OPTIONS: { value: AiUsageRange; labelKey: string }[] = [
+  { value: "day", labelKey: "ui.usage.range_day" },
+  { value: "week", labelKey: "ui.usage.range_week" },
+  { value: "month", labelKey: "ui.usage.range_month" },
+  { value: "year", labelKey: "ui.usage.range_year" },
+];
+const RANGE_START: AiUsageRange = "month";
 
 const COPIED_FLASH_MS = 1200;
 
@@ -82,9 +98,10 @@ export function AiPage() {
   const [isServingOpen, setIsServingOpen] = useState(false);
   const [copiedModel, setCopiedModel] = useState<string | null>(null);
   const [usageView, setUsageView] = useState<UsageView>("providers");
+  const [range, setRange] = useState<AiUsageRange>(RANGE_START);
   const isInstalled = view !== null && view.is_installed;
   const usage = useApiResource<AiUsageResponse>(
-    isInstalled ? USAGE_PATH : null,
+    isInstalled ? apiPath(USAGE_PATH, { range }) : null,
     { invalidateOn: AI_INVALIDATE_ON },
   );
   const listenPort = view?.listen_port ?? null;
@@ -130,6 +147,7 @@ export function AiPage() {
     view.requests_today !== undefined || view.tokens_today !== undefined;
   const servedModels = view.served_models ?? [];
   const servedFamilies = toModelFamilies(servedModels);
+  const costToday = formatAmounts(view.cost_today);
 
   const handleCopyModel = async (name: string) => {
     await copyText(name);
@@ -243,6 +261,24 @@ export function AiPage() {
                     {t("ui.ai.tokens_today")}
                   </span>
                 </span>
+                <span className="ai_today_item">
+                  <span className="ai_today_value mono">
+                    {costToday === "" ? "—" : costToday}
+                  </span>
+                  <span className="ai_today_label">
+                    {t("ui.ai.cost_today")}
+                  </span>
+                </span>
+                {hasAmount(view.api_value_today) && (
+                  <span className="ai_today_item ai_today_item--faint">
+                    <span className="ai_today_value mono">
+                      {formatAmounts(view.api_value_today)}
+                    </span>
+                    <span className="ai_today_label">
+                      {t("ui.ai.api_value_today")}
+                    </span>
+                  </span>
+                )}
               </span>
             )}
             <button
@@ -312,17 +348,38 @@ export function AiPage() {
                 <span className="ai_chip_count">{usage.data.keys.length}</span>
               )}
             </button>
+            <button
+              type="button"
+              className={`ai_chip ${usageView === "models" ? "ai_chip--on" : ""}`}
+              onClick={() => {
+                setUsageView("models");
+              }}
+            >
+              {t("ui.ai.view_models")}
+              {usage.data !== null && (
+                <span className="ai_chip_count">
+                  {usage.data.models.length}
+                </span>
+              )}
+            </button>
           </div>
-          <span className="ai_usage_window">
-            <span className="badge">{t("ui.ai.usage_window")}</span>
-          </span>
+          <RangeSwitch
+            options={RANGE_OPTIONS.map((option) => ({
+              value: option.value,
+              label: t(option.labelKey),
+            }))}
+            value={range}
+            onChange={setRange}
+          />
         </div>
 
         {usage.data !== null ? (
           usageView === "providers" ? (
             <AiUsageProviders providers={usage.data.providers} />
-          ) : (
+          ) : usageView === "keys" ? (
             <AiUsageKeys keys={usage.data.keys} />
+          ) : (
+            <AiUsageModels models={usage.data.models} />
           )
         ) : usage.isLoading ? (
           <div className="skeleton" style={{ height: 180 }} />
@@ -342,7 +399,7 @@ export function AiPage() {
 
       <AiAccountsPanel />
 
-      <AiContextPanel />
+      <AiModelsPanel />
 
       <AiAccessPanel
         endpoint={endpoint}

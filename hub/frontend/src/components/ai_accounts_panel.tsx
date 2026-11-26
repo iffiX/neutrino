@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useState } from "react";
 
+import { DeviceGauge } from "./device_gauge";
 import { DialogLayer } from "./dialog_layer";
 import { ErrorPanel } from "./error_panel";
 import { Icon } from "./icon";
+import { Spinner } from "./spinner";
 import { StatusDot } from "./status_dot";
 import { providerLabel } from "../ai_provider_labels";
+import { monthLabel } from "../ai_usage";
 import { ApiError, apiGet, apiPost, describeError } from "../api_client";
 import { copyText } from "../copy_text";
-import { formatDuration } from "../format_duration";
+import { formatDuration, formatTimeAgo } from "../format_duration";
 import { t, useLanguage } from "../i18n";
 import { usePolledResource } from "../use_polled_resource";
 import { useConfirm } from "../use_confirm";
@@ -17,6 +20,7 @@ import type {
   CliproxyApiAccountsResponse,
   CliproxyApiLoginStartView,
   CliproxyApiLoginStateView,
+  CliproxyApiQuotaWindowView,
 } from "../api_types";
 
 import "./ai_accounts_panel.css";
@@ -27,8 +31,10 @@ import "./confirm_modal.css";
  *
  * An account is a login the box holds rather than a token somebody pasted, so
  * nothing here stages: signing in writes the credential the moment the
- * provider hands it over, and deleting one is a revocation, which never waits
- * behind an apply bar. The panel therefore carries no frame to light.
+ * provider hands it over, a refresh, a pause and a resume write at once, and
+ * deleting one is a revocation, which never waits behind an apply bar. The
+ * panel therefore carries no frame to light. Under each account's line come
+ * its limit windows as rings.
  *
  * A sign-in is one interaction that has to finish, so it happens in a modal:
  * the provider decides how — a redirect the person brings back, or a code they
@@ -47,6 +53,17 @@ const COPIED_CLEAR_MS = 1600;
 
 /** The one `status` a working account reports. */
 const ACCOUNT_STATUS_ACTIVE = "active";
+
+/** A window's ring turns amber from this used percent, and red at full. */
+const QUOTA_WARN_PERCENT = 80;
+const QUOTA_ERROR_PERCENT = 100;
+
+/** The word under the ring of each window the hub names. */
+const WINDOW_WORD_KEYS: Record<string, string> = {
+  "5h": "ui.ai.quota_5h",
+  "7d": "ui.ai.quota_7d",
+  month: "ui.ai.quota_month",
+};
 
 /** The sentence keying each error code the accounts endpoints return. */
 const ERROR_KEYS: Record<string, string> = {
@@ -151,6 +168,7 @@ export function AiAccountsPanel() {
                 key={account.name}
                 value={account}
                 isBusy={isBusy}
+                onChanged={setData}
                 onDelete={() => {
                   askDelete(account);
                 }}
@@ -176,44 +194,143 @@ export function AiAccountsPanel() {
 interface AccountRowProps {
   value: CliproxyApiAccountView;
   isBusy: boolean;
+  /** A refresh, a pause or a resume landed, with the list it returned. */
+  onChanged: (view: CliproxyApiAccountsResponse) => void;
   onDelete: () => void;
 }
 
-/** One account: who it is, what it is doing, and the way to revoke it. */
-function AccountRow({ value, isBusy, onDelete }: AccountRowProps) {
+/** One account: who it is, what it is doing, its windows, and the ways to
+ * read its quota, pause it and revoke it. */
+function AccountRow({ value, isBusy, onChanged, onDelete }: AccountRowProps) {
+  const [pending, setPending] = useState<"refresh" | "pause" | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const health = describeAccount(value);
   const hasMessage = value.status_message.length > 0;
+  const newestSeenAt = newestSeen(value.windows);
+
+  const write = async (path: string, action: "refresh" | "pause") => {
+    setPending(action);
+    setError(null);
+    try {
+      onChanged(
+        await apiPost<CliproxyApiAccountsResponse>(path, { name: value.name }),
+      );
+    } catch (cause: unknown) {
+      setError(wordError(cause));
+    } finally {
+      setPending(null);
+    }
+  };
 
   return (
     <div className="ai_account_row">
-      <span className="key_card_type">{providerLabel(value.provider)}</span>
-      <span className="ai_account_label">{accountLabel(value)}</span>
-      <span className="ai_account_counts">
-        <span>{t("ui.ai.count_ok", { count: value.success_count })}</span>
-        <span>·</span>
-        <span
-          className={
-            value.failed_count > 0 ? "ai_account_counts--failed" : undefined
-          }
-        >
-          {t("ui.ai.count_failed", { count: value.failed_count })}
+      <div className="ai_account_line">
+        <span className="key_card_type">{providerLabel(value.provider)}</span>
+        <span className="ai_account_label">
+          <span className="ai_account_name">{accountLabel(value)}</span>
+          {value.plan.length > 0 && (
+            <span className="ai_account_plan faint">
+              {t("ui.ai.plan", { plan: value.plan })}
+            </span>
+          )}
+          {value.subscription_ends_at.length > 0 && (
+            <span className="ai_account_plan faint">
+              {t("ui.ai.plan_until", {
+                date: formatDay(value.subscription_ends_at),
+              })}
+            </span>
+          )}
         </span>
-      </span>
-      <span
-        className="ai_account_status"
-        title={hasMessage ? value.status_message : undefined}
-      >
-        <StatusDot tone={health.tone} label={health.word} />
-      </span>
-      <button
-        type="button"
-        className="button button--ghost button--small button--danger"
-        disabled={isBusy}
-        onClick={onDelete}
-      >
-        <Icon name="trash" size={13} />
-        {t("ui.ai.delete")}
-      </button>
+        <span className="ai_account_counts">
+          <span>{t("ui.ai.count_ok", { count: value.success_count })}</span>
+          <span>·</span>
+          <span
+            className={
+              value.failed_count > 0 ? "ai_account_counts--failed" : undefined
+            }
+          >
+            {t("ui.ai.count_failed", { count: value.failed_count })}
+          </span>
+        </span>
+        <span
+          className="ai_account_status"
+          title={hasMessage ? value.status_message : undefined}
+        >
+          <StatusDot tone={health.tone} label={health.word} />
+        </span>
+        <span className="ai_account_actions">
+          {value.has_quota_read && (
+            <button
+              type="button"
+              className="button button--ghost button--small"
+              disabled={isBusy || pending !== null}
+              onClick={() =>
+                void write("/hub/ai/gateway/account/quota/scan", "refresh")
+              }
+            >
+              {pending === "refresh" ? (
+                <Spinner size={12} />
+              ) : (
+                <Icon name="refresh" size={13} />
+              )}
+              {t("ui.ai.refresh")}
+            </button>
+          )}
+          <button
+            type="button"
+            className="button button--ghost button--small"
+            disabled={isBusy || pending !== null}
+            onClick={() =>
+              void write(
+                value.is_disabled
+                  ? "/hub/ai/gateway/account/enable"
+                  : "/hub/ai/gateway/account/disable",
+                "pause",
+              )
+            }
+          >
+            {value.is_disabled ? t("ui.ai.resume") : t("ui.ai.pause")}
+          </button>
+          <button
+            type="button"
+            className="button button--ghost button--small button--danger"
+            disabled={isBusy || pending !== null}
+            onClick={onDelete}
+          >
+            <Icon name="trash" size={13} />
+            {t("ui.ai.delete")}
+          </button>
+        </span>
+      </div>
+
+      {value.windows.length > 0 && (
+        <div className="ai_account_windows">
+          {value.windows.map((window) => (
+            <span key={window.name} className="ai_account_window">
+              <DeviceGauge
+                label={windowWord(window.name)}
+                reading={window.used_share * 100}
+                warnAt={QUOTA_WARN_PERCENT}
+                errorAt={QUOTA_ERROR_PERCENT}
+              />
+              {window.resets_at.length > 0 && (
+                <span className="ai_account_resets faint">
+                  {t("ui.ai.quota_resets", {
+                    time: formatMoment(window.resets_at),
+                  })}
+                </span>
+              )}
+            </span>
+          ))}
+          {newestSeenAt !== null && (
+            <span className="ai_account_updated faint">
+              {t("ui.ai.quota_updated", { ago: formatTimeAgo(newestSeenAt) })}
+            </span>
+          )}
+        </div>
+      )}
+
+      {error !== null && <span className="field_error">{error}</span>}
     </div>
   );
 }
@@ -599,19 +716,74 @@ function accountLabel(account: CliproxyApiAccountView): string {
 /**
  * The dot and the word one account wears.
  *
- * A disabled account answers first: it is off by hand, not by failure.
+ * A paused account shows as paused before any failure, and a cooling one
+ * with the time it serves again.
  */
 function describeAccount(account: CliproxyApiAccountView): {
   tone: StatusTone;
   word: string;
 } {
   if (account.is_disabled) {
-    return { tone: "idle", word: t("state.disabled") };
+    return { tone: "idle", word: t("state.paused") };
+  }
+  if (account.is_unavailable && account.next_retry_after.length > 0) {
+    return {
+      tone: "warn",
+      word: t("ui.ai.limited_until", {
+        time: formatMoment(account.next_retry_after),
+      }),
+    };
   }
   if (account.is_unavailable || account.status !== ACCOUNT_STATUS_ACTIVE) {
     return { tone: "error", word: t("state.unavailable") };
   }
   return { tone: "ok", word: t("state.serving") };
+}
+
+/** The word under a window's ring: its own word, else its name. */
+function windowWord(name: string): string {
+  const key = WINDOW_WORD_KEYS[name];
+  return key === undefined ? name : t(key);
+}
+
+/** The time the newest of the windows was seen, null with none. */
+function newestSeen(windows: CliproxyApiQuotaWindowView[]): string | null {
+  let newest: string | null = null;
+  let newestAt = Number.NEGATIVE_INFINITY;
+  for (const window of windows) {
+    const at = Date.parse(window.seen_at);
+    if (!Number.isNaN(at) && at > newestAt) {
+      newest = window.seen_at;
+      newestAt = at;
+    }
+  }
+  return newest;
+}
+
+/** A day as `Nov 26`, or the stamp itself while it will not parse. */
+function formatDay(isoTimestamp: string): string {
+  const parsed = Date.parse(isoTimestamp);
+  if (Number.isNaN(parsed)) {
+    return isoTimestamp;
+  }
+  const date = new Date(parsed);
+  return t("ui.usage.bucket_day", {
+    month: monthLabel(date.getMonth()),
+    day: date.getDate(),
+  });
+}
+
+/** A local clock time as `14:05`, after its day when that is not today. */
+function formatMoment(isoTimestamp: string): string {
+  const parsed = Date.parse(isoTimestamp);
+  if (Number.isNaN(parsed)) {
+    return isoTimestamp;
+  }
+  const date = new Date(parsed);
+  const clock = `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+  return date.toDateString() === new Date().toDateString()
+    ? clock
+    : `${formatDay(isoTimestamp)} ${clock}`;
 }
 
 /** A failed sign-in's own reason, or the plain sentence where it sent none. */
@@ -625,6 +797,11 @@ function wordError(cause: unknown): string {
     if (kind.length > 0) {
       return t("code.unsupported_kind", { provider: providerLabel(kind) });
     }
+  }
+  if (cause.code === "quota_read_unsupported") {
+    return t("code.quota_read_unsupported", {
+      provider: providerLabel(readParam(cause.detail, "provider")),
+    });
   }
   const key = ERROR_KEYS[cause.code];
   return key === undefined ? describeError(cause) : t(key);

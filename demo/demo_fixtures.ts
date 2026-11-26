@@ -2,8 +2,13 @@ import { DEMO_ACCOUNT } from "./demo_modules";
 import type {
   AboutInfo,
   AccountListView,
+  AiModelDefaultPrice,
+  AiModelPrice,
   AiProvidersResponse,
+  AiVendorEndpointView,
+  AiVendorView,
   CliproxyApiAccountsResponse,
+  CliproxyApiQuotaWindowView,
   CliproxyApiStatusView,
   DirectView,
   EasyTierView,
@@ -112,6 +117,47 @@ export const DEMO_TERMINAL_SESSIONS: DemoTerminalSession[] = [
   },
 ];
 
+const ZHIPU_MODELS = ["glm-5.3", "glm-5.3-flash", "glm-5.3-flashx"];
+const QWEN_MODELS = ["qwen4-max", "qwen3.7-plus", "qwen3.8-flash"];
+const SILICONFLOW_MODELS = [
+  "deepseek-ai/DeepSeek-V4.1-Flash",
+  "deepseek-ai/DeepSeek-V4-Pro",
+  "zai-org/GLM-5.3",
+];
+
+function vendorEndpoint(
+  id: string,
+  baseUrl: string,
+  priceProvider: string,
+  models: string[],
+  isPlan = false,
+): AiVendorEndpointView {
+  return {
+    id,
+    base_url: baseUrl,
+    price_provider: priceProvider,
+    is_plan: isPlan,
+    models,
+  };
+}
+
+/** A limit window that resets in `resetsInS` and was seen `seenAgoS` ago. */
+function quotaWindow(
+  name: string,
+  usedShare: number,
+  resetsInS: number,
+  seenAgoS: number,
+  origin: CliproxyApiQuotaWindowView["origin"],
+): CliproxyApiQuotaWindowView {
+  return {
+    name,
+    used_share: usedShare,
+    resets_at: secondsAgo(-resetsInS),
+    seen_at: secondsAgo(seenAgoS),
+    origin,
+  };
+}
+
 export const DEMO_AI_STATUS: CliproxyApiStatusView = {
   is_installed: true,
   is_active: true,
@@ -133,11 +179,19 @@ export const DEMO_AI_STATUS: CliproxyApiStatusView = {
   is_reachable: true,
   probe_code: "",
   probe_params: {},
-  served_models: ["deepseek-chat", "qwen-max", "gpt-5-codex"],
-  default_model: "deepseek-chat",
+  served_models: [
+    "claude-fable-5-2",
+    "deepseek-flash",
+    "deepseek-v4-pro",
+    "glm-5.3",
+    "gpt-6.2-astra",
+    "kimi-k3",
+    "kimi-k3.1-pro",
+  ],
+  default_model: "deepseek-flash",
   has_ayakaleaf_on_default: false,
-  enabled_provider_count: 2,
-  account_count: 1,
+  enabled_provider_count: 4,
+  account_count: 3,
   is_serving_stale: false,
   requests_today: 418,
   tokens_today: 1_284_000,
@@ -146,29 +200,235 @@ export const DEMO_AI_STATUS: CliproxyApiStatusView = {
 /** The model the demo account's OpenCode uses: one of the desktop's Ollama. */
 export const DEMO_OPENCODE_MODEL = "qwen2.5:7b";
 
+/** The provider form's vendor presets, as `data/ai_vendors.json` holds
+ * them. */
+export const DEMO_AI_VENDORS: AiVendorView[] = [
+  {
+    id: "deepseek",
+    endpoints: [
+      vendorEndpoint("api", "https://api.deepseek.com", "deepseek", [
+        "deepseek-flash",
+        "deepseek-v4-pro",
+      ]),
+    ],
+  },
+  {
+    id: "kimi",
+    endpoints: [
+      vendorEndpoint("api_cn", "https://api.moonshot.cn/v1", "moonshotai-cn", [
+        "kimi-k3.1-pro",
+        "kimi-k3.1-pro-highspeed",
+        "kimi-k3",
+      ]),
+      vendorEndpoint("api_global", "https://api.moonshot.ai/v1", "moonshotai", [
+        "kimi-k3.1-pro",
+        "kimi-k3.1-pro-highspeed",
+        "kimi-k3",
+      ]),
+    ],
+  },
+  {
+    id: "zhipu",
+    endpoints: [
+      vendorEndpoint(
+        "api_cn",
+        "https://open.bigmodel.cn/api/paas/v4",
+        "zhipuai",
+        ZHIPU_MODELS,
+      ),
+      vendorEndpoint(
+        "plan_cn",
+        "https://open.bigmodel.cn/api/coding/paas/v4",
+        "zhipuai",
+        ZHIPU_MODELS,
+        true,
+      ),
+      vendorEndpoint(
+        "api_global",
+        "https://api.z.ai/api/paas/v4",
+        "zai",
+        ZHIPU_MODELS,
+      ),
+      vendorEndpoint(
+        "plan_global",
+        "https://api.z.ai/api/coding/paas/v4",
+        "zai",
+        ZHIPU_MODELS,
+        true,
+      ),
+    ],
+  },
+  {
+    id: "qwen",
+    endpoints: [
+      vendorEndpoint(
+        "api_cn",
+        "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "alibaba-cn",
+        QWEN_MODELS,
+      ),
+      vendorEndpoint(
+        "api_global",
+        "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+        "alibaba",
+        QWEN_MODELS,
+      ),
+      vendorEndpoint(
+        "plan_cn",
+        "https://coding.dashscope.aliyuncs.com/v1",
+        "alibaba-cn",
+        QWEN_MODELS,
+        true,
+      ),
+      vendorEndpoint(
+        "plan_global",
+        "https://coding-intl.dashscope.aliyuncs.com/v1",
+        "alibaba",
+        QWEN_MODELS,
+        true,
+      ),
+    ],
+  },
+  {
+    id: "doubao",
+    endpoints: [
+      vendorEndpoint(
+        "api",
+        "https://ark.cn-beijing.volces.com/api/v3",
+        "volcengine",
+        [
+          "doubao-seed-2-1-pro-260915",
+          "doubao-seed-2-1-lite-260915",
+          "doubao-seed-2-1-turbo-260628",
+        ],
+      ),
+      vendorEndpoint(
+        "plan",
+        "https://ark.cn-beijing.volces.com/api/coding/v3",
+        "volcengine",
+        ["ark-code-latest"],
+        true,
+      ),
+    ],
+  },
+  {
+    id: "minimax",
+    endpoints: [
+      vendorEndpoint("api_cn", "https://api.minimax.cn/v1", "minimax-cn", [
+        "MiniMax-M3.1-Flash",
+        "MiniMax-M3",
+      ]),
+      vendorEndpoint("api_global", "https://api.minimax.io/v1", "minimax", [
+        "MiniMax-M3.1-Flash",
+        "MiniMax-M3",
+      ]),
+    ],
+  },
+  {
+    id: "openrouter",
+    endpoints: [
+      vendorEndpoint("api", "https://openrouter.ai/api/v1", "openrouter", [
+        "openai/gpt-6.2-sol",
+        "anthropic/claude-fable-5.2",
+      ]),
+    ],
+  },
+  {
+    id: "siliconflow",
+    endpoints: [
+      vendorEndpoint(
+        "api_cn",
+        "https://api.siliconflow.cn/v1",
+        "siliconflow-cn",
+        SILICONFLOW_MODELS,
+      ),
+      vendorEndpoint(
+        "api_global",
+        "https://api.siliconflow.com/v1",
+        "siliconflow",
+        SILICONFLOW_MODELS,
+      ),
+    ],
+  },
+  {
+    id: "mistral",
+    endpoints: [
+      vendorEndpoint("api", "https://api.mistral.ai/v1", "mistral", [
+        "mistral-large-latest",
+        "mistral-small-2603",
+      ]),
+    ],
+  },
+  {
+    id: "xai",
+    endpoints: [
+      vendorEndpoint("api", "https://api.x.ai/v1", "xai", [
+        "grok-4.7",
+        "grok-4.6",
+        "grok-4.3",
+      ]),
+    ],
+  },
+];
+
 export const DEMO_AI_PROVIDERS: AiProvidersResponse = {
   providers: [
     {
       id: "provider_deepseek",
       name: "DeepSeek",
-      kind: "openai",
-      base_url: "https://api.example.net/deepseek/v1",
+      kind: "custom",
+      base_url: "https://api.deepseek.com",
       secret_id: "token_deepseek",
       is_enabled: true,
-      models: [{ name: "deepseek-chat", alias: "deepseek-chat" }],
+      models: [
+        { name: "deepseek-flash", alias: "" },
+        { name: "deepseek-v4-pro", alias: "" },
+      ],
       created_at: secondsAgo(86400 * 40),
+      vendor: "deepseek",
+      endpoint: "api",
     },
     {
-      id: "provider_qwen",
-      name: sample("通义千问", "Qwen"),
-      kind: "openai",
-      base_url: "https://api.example.net/qwen/v1",
-      secret_id: "token_qwen",
+      id: "provider_kimi",
+      name: "Kimi",
+      kind: "custom",
+      base_url: "https://api.moonshot.cn/v1",
+      secret_id: "token_kimi",
       is_enabled: true,
-      models: [{ name: "qwen-max", alias: "qwen-max" }],
+      models: [
+        { name: "kimi-k3.1-pro", alias: "" },
+        { name: "kimi-k3", alias: "" },
+      ],
       created_at: secondsAgo(86400 * 21),
+      vendor: "kimi",
+      endpoint: "api_cn",
+    },
+    {
+      id: "provider_zhipu",
+      name: sample("智谱 GLM", "Zhipu GLM"),
+      kind: "custom",
+      base_url: "https://open.bigmodel.cn/api/coding/paas/v4",
+      secret_id: "token_zhipu",
+      is_enabled: true,
+      models: [{ name: "glm-5.3", alias: "" }],
+      created_at: secondsAgo(86400 * 14),
+      vendor: "zhipu",
+      endpoint: "plan_cn",
+    },
+    {
+      id: "provider_relay",
+      name: sample("中转站", "My relay"),
+      kind: "anthropic",
+      base_url: "https://relay.example.net",
+      secret_id: "token_relay",
+      is_enabled: true,
+      models: [{ name: "claude-fable-5-2", alias: "" }],
+      created_at: secondsAgo(86400 * 6),
+      vendor: "",
+      endpoint: "",
     },
   ],
+  vendors: DEMO_AI_VENDORS,
 };
 
 export const DEMO_AI_ACCOUNTS: CliproxyApiAccountsResponse = {
@@ -183,10 +443,65 @@ export const DEMO_AI_ACCOUNTS: CliproxyApiAccountsResponse = {
       status_message: "",
       is_disabled: false,
       is_unavailable: false,
+      next_retry_after: "",
+      plan: "Plus",
+      subscription_ends_at: secondsAgo(-86400 * 23),
+      has_quota_read: true,
+      windows: [
+        quotaWindow("5h", 0.42, 2.4 * 3600, 240, "signal"),
+        quotaWindow("7d", 0.81, 3.2 * 86400, 240, "signal"),
+      ],
       failed_count: 0,
       success_count: 214,
       created_at: secondsAgo(86400 * 9),
       updated_at: secondsAgo(1800),
+    },
+    {
+      name: "claude-xiaoming@example.com.json",
+      provider: "claude",
+      label: "",
+      email: "xiaoming@example.com",
+      account_type: "oauth",
+      status: "error",
+      status_message: "rate limited",
+      is_disabled: false,
+      is_unavailable: true,
+      next_retry_after: secondsAgo(-1.6 * 3600),
+      plan: "",
+      subscription_ends_at: "",
+      has_quota_read: true,
+      windows: [
+        quotaWindow("5h", 1, 1.6 * 3600, 600, "signal"),
+        quotaWindow("7d", 0.63, 4.5 * 86400, 600, "signal"),
+      ],
+      failed_count: 3,
+      success_count: 96,
+      created_at: secondsAgo(86400 * 18),
+      updated_at: secondsAgo(600),
+    },
+    {
+      name: "kimi-xiaoming.json",
+      provider: "kimi",
+      label: "xiaoming",
+      email: "",
+      account_type: "oauth",
+      status: "disabled",
+      status_message: "",
+      is_disabled: true,
+      is_unavailable: false,
+      next_retry_after: "",
+      plan: "",
+      subscription_ends_at: "",
+      has_quota_read: true,
+      windows: [
+        quotaWindow("5h", 0.12, 3.1 * 3600, 3 * 3600, "read"),
+        quotaWindow("7d", 0.35, 5 * 86400, 3 * 3600, "read"),
+        quotaWindow("month", 0.2, 19 * 86400, 3 * 3600, "read"),
+      ],
+      failed_count: 0,
+      success_count: 41,
+      created_at: secondsAgo(86400 * 27),
+      updated_at: secondsAgo(3 * 3600),
     },
   ],
   login_kinds: ["anthropic", "codex", "antigravity", "kimi", "xai"],
@@ -194,28 +509,78 @@ export const DEMO_AI_ACCOUNTS: CliproxyApiAccountsResponse = {
 
 /** The names each sample account serves, by its token file. */
 export const DEMO_AI_ACCOUNT_MODELS: Record<string, string[]> = {
-  "codex-xiaoming@example.com.json": ["gpt-5-codex"],
+  "codex-xiaoming@example.com.json": ["gpt-6.2-astra"],
+  "claude-xiaoming@example.com.json": ["claude-fable-5-2"],
+  "kimi-xiaoming.json": ["kimi-k3.1-pro"],
 };
 
 /** Each sample cloud name's default context length, as the hub's table and
  * the gateway's catalog give it, and the length of a name neither names. */
 export const DEMO_CONTEXT_DEFAULTS: Record<string, number> = {
-  "deepseek-chat": 1000000,
-  "qwen-max": 1000000,
-  "gpt-5-codex": 272000,
+  "claude-fable-5-2": 1000000,
+  "deepseek-flash": 1000000,
+  "deepseek-v4-pro": 1000000,
+  "glm-5.3": 1000000,
+  "gpt-6.2-astra": 272000,
+  "kimi-k3": 1048576,
+  "kimi-k3.1-pro": 262144,
 };
 export const DEMO_CONTEXT_FALLBACK = 200000;
 
 /** The context lengths a person set, by cloud name. */
 export const DEMO_CONTEXT_SAVED: Record<string, number> = {
-  "qwen-max": 131072,
+  "deepseek-v4-pro": 262144,
+};
+
+/** Each sample cloud name's default price per million tokens, the
+ * models.dev price of its first source that has one. */
+export const DEMO_MODEL_PRICES: Record<string, AiModelDefaultPrice> = {
+  "claude-fable-5-2": {
+    input: 5,
+    output: 25,
+    cache_read: 0.5,
+    cache_write: 6.25,
+    currency: "USD",
+  },
+  "deepseek-flash": {
+    input: 0.28,
+    output: 1.1,
+    cache_read: 0.028,
+    currency: "USD",
+  },
+  "deepseek-v4-pro": {
+    input: 0.55,
+    output: 2.2,
+    cache_read: 0.14,
+    currency: "USD",
+  },
+  "glm-5.3": { input: 0.6, output: 2.2, cache_read: 0.11, currency: "USD" },
+  "gpt-6.2-astra": {
+    input: 1.25,
+    output: 10,
+    cache_read: 0.125,
+    currency: "USD",
+  },
+  "kimi-k3": { input: 0.58, output: 2.32, cache_read: 0.1, currency: "USD" },
+  "kimi-k3.1-pro": {
+    input: 0.6,
+    output: 2.5,
+    cache_read: 0.15,
+    currency: "USD",
+  },
+};
+
+/** The prices a person set, by cloud name. */
+export const DEMO_PRICES_SAVED: Record<string, AiModelPrice> = {
+  "kimi-k3.1-pro": { input: 4, output: 16, currency: "CNY" },
 };
 
 export const DEMO_AI_JOURNAL_LINES = [
   "gateway listening on 127.0.0.1:8317",
-  "loaded 2 providers and 1 account",
-  "served deepseek-chat for key_phone in 812 ms",
-  "served qwen-max for key_desktop in 1204 ms",
+  "loaded 4 providers and 3 accounts",
+  "served deepseek-flash for key_phone in 812 ms",
+  "served kimi-k3.1-pro for key_desktop in 1204 ms",
+  "claude-xiaoming@example.com.json cooling after 429",
 ];
 
 function overlayKind(

@@ -1,3 +1,4 @@
+import { AiUsageCost } from "./ai_usage_cost";
 import {
   cacheShareOf,
   formatShare,
@@ -44,6 +45,7 @@ export function AiUsageKeys({ keys }: AiUsageKeysProps) {
             <th className="num">{t("ui.usage.header_cache")}</th>
             <th>{t("ui.usage.header_first_seen")}</th>
             <th>{t("ui.usage.header_last_seen")}</th>
+            <th className="num">{t("ui.usage.header_cost")}</th>
           </tr>
         </thead>
         <tbody>
@@ -77,6 +79,9 @@ export function AiUsageKeys({ keys }: AiUsageKeysProps) {
               <td className="num mono">{formatShare(cacheShareOf(key))}</td>
               <td className="mono">{formatTimeAgo(key.first_seen_at)}</td>
               <td className="mono">{formatTimeAgo(key.last_seen_at)}</td>
+              <td className="num">
+                <AiUsageCost counters={key} />
+              </td>
             </tr>
           ))}
         </tbody>

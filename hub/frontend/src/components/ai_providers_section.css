@@ -107,12 +107,22 @@
   white-space: nowrap;
 }
 
+/* The form's Vendor and Plan and region pickers, side by side at one
+   width. */
+.ai_provider_vendor_row {
+  grid-template-columns: 1fr 1fr;
+}
+
 /* Portrait: the endpoint or the models drop to their own line and the
-   actions stay on the first one. */
+   actions stay on the first one; the form's pickers stack. */
 @media (max-width: 640px) {
   .ai_provider_url,
   .ai_provider_models {
     order: 1;
     flex-basis: 100%;
+  }
+
+  .ai_provider_vendor_row {
+    grid-template-columns: 1fr;
   }
 }
