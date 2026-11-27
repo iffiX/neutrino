@@ -15,7 +15,7 @@ that address as the person, never as root, at ``127.0.0.1``, or at
 
 import argparse
 import json
-import os
+import shutil
 import socket
 import subprocess
 import sys
@@ -42,6 +42,9 @@ OPEN_SETTINGS_FILE = "web/settings.json"
 OPEN_NETWORK_FILE = "router/network.json"
 OPEN_START_SERVICE_FLAG = "--start-service"
 OPEN_OUTPUT_FLAG = "--output"
+# The file the elevated step writes the address to, inside a directory the
+# person makes.
+OPEN_ADDRESS_FILE_NAME = "address"
 # The route only the panel of a set-up box answers, without a session, and
 # how long the entry waits for it.
 OPEN_PANEL_PROBE_PATH = "/api/hub/auth/session"
@@ -189,16 +192,20 @@ def _start_service() -> bool:
 def _address_from_elevated_step(platform) -> str:
     """Run the elevated step and read back the address it wrote.
 
+    The file is the person's, in a directory of the person's, mode 0700.
+    Under ``fs.protected_regular`` root may not open a file of another
+    account in a shared temporary directory.
+
     Args:
         platform: This system's :class:`HubPlatform`.
 
     Returns:
         The address, empty when the step did not run.
     """
-    descriptor, name = tempfile.mkstemp(prefix="nhub_open_")
-    os.close(descriptor)
-    path = Path(name)
+    directory = Path(tempfile.mkdtemp(prefix="nhub_open_"))
+    path = directory / OPEN_ADDRESS_FILE_NAME
     try:
+        path.write_text("", encoding="utf-8")
         if not platform.run_elevated(
             ["open", OPEN_START_SERVICE_FLAG, OPEN_OUTPUT_FLAG, str(path)]
         ):
@@ -207,7 +214,7 @@ def _address_from_elevated_step(platform) -> str:
     except OSError:
         return ""
     finally:
-        path.unlink(missing_ok=True)
+        shutil.rmtree(directory, ignore_errors=True)
 
 
 def _say(url: str, output: str) -> None:

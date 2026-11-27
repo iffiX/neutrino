@@ -7,11 +7,14 @@ the address only before setup, that an unprivileged run opens a panel that
 already answers without asking, asks for the elevated step otherwise and
 opens what that step wrote, opens nothing when the step is declined, that
 the step itself refuses to run without privilege, and that macOS opens the
-wizard and the panel at ``localhost``.
+wizard and the panel at ``localhost``. The step writes into a directory the
+person owns.
 """
 
 import http.server
 import json
+import os
+import stat
 import threading
 from pathlib import Path
 from types import SimpleNamespace
@@ -37,6 +40,7 @@ class FakePlatform:
         self.panel_browser_host = panel_browser_host
         self.step_address = step_address
         self.elevated: list = []
+        self.output_stats: list = []
         self.opened: list = []
         self.is_opening = True
 
@@ -45,11 +49,11 @@ class FakePlatform:
 
     def run_elevated(self, arguments: list) -> bool:
         self.elevated.append(arguments)
+        output = Path(arguments[arguments.index("--output") + 1])
+        self.output_stats.append((os.stat(output.parent), os.stat(output)))
         if not self.step_address:
             return False
-        Path(arguments[arguments.index("--output") + 1]).write_text(
-            self.step_address + "\n"
-        )
+        output.write_text(self.step_address + "\n")
         return True
 
     def open_browser(self, url: str) -> bool:
@@ -136,9 +140,32 @@ def test_without_privilege_the_elevated_step_runs_and_its_address_opens(box):
 
     ((open_word, flag, output_flag, output),) = platform.elevated
     assert (open_word, flag, output_flag) == ("open", "--start-service", "--output")
-    assert not Path(output).exists()
+    assert not Path(output).parent.exists()
     assert platform.opened == ["http://127.0.0.1:8080/?token=t0ken"]
     assert box.controller.asked == []
+
+
+def test_the_elevated_step_writes_a_file_of_the_person_in_a_private_directory(box):
+    platform = FakePlatform(
+        is_elevated=False, step_address="http://127.0.0.1:8080/?token=t0ken"
+    )
+
+    box.run(platform=platform)
+
+    ((directory, output),) = platform.output_stats
+    assert directory.st_uid == os.getuid()
+    assert stat.S_IMODE(directory.st_mode) == 0o700
+    assert not directory.st_mode & stat.S_ISVTX
+    assert output.st_uid == os.getuid()
+
+
+def test_a_declined_elevated_step_leaves_no_directory(box):
+    platform = FakePlatform(is_elevated=False)
+
+    box.run(platform=platform)
+
+    ((_, _, _, output),) = platform.elevated
+    assert not Path(output).parent.exists()
 
 
 def test_a_declined_elevated_step_opens_nothing_and_says_so(box, capsys):
