@@ -42,10 +42,12 @@ jobs:
       - run: nhub scan-secrets
 
       # The panel is not built here: app.py mounts it only when it exists.
-      - run: pytest -q --cov=neutrino_hub --cov-report=xml
+      # Each suite runs on eight pytest-xdist workers, twice the runner's
+      # processors.
+      - run: pytest -q -n 8 --dist loadgroup --cov=neutrino_hub --cov-report=xml
         working-directory: hub
 
-      - run: pytest -q --cov=neutrino_agent --cov-report=xml
+      - run: pytest -q -n 8 --dist loadgroup --cov=neutrino_agent --cov-report=xml
         working-directory: agent
 
       # coverage.xml names each file from its package root, and the three
@@ -95,9 +97,9 @@ jobs:
         with:
           python-version: "3.13"
 
-      - run: pip install -e client/desktop pytest pytest-cov
+      - run: pip install -e client/desktop pytest pytest-cov pytest-xdist
 
-      - run: pytest -q --cov=neutrino_client --cov-report=xml
+      - run: pytest -q -n 8 --dist loadgroup --cov=neutrino_client --cov-report=xml
         working-directory: client/desktop
 
       - uses: codecov/codecov-action@v7.1.1
@@ -515,9 +517,9 @@ jobs:
         with:
           python-version: "3.9"
 
-      - run: pip install pytest
+      - run: pip install pytest pytest-xdist
 
-      - run: pytest -q
+      - run: pytest -q -n 8 --dist loadgroup
         working-directory: agent
 
   # Containers' install on macOS: the pinned Podman pkg and machine image of
@@ -647,10 +649,10 @@ jobs:
 
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends dnsmasq-base
 
-      - run: pytest -q
+      - run: pytest -q -n 8 --dist loadgroup
         working-directory: cn/hub
 
-      - run: pytest -q
+      - run: pytest -q -n 8 --dist loadgroup
         working-directory: cn/agent
 
   mainland_client:
@@ -670,9 +672,9 @@ jobs:
         with:
           python-version: "3.13"
 
-      - run: pip install -e cn/client/desktop pytest
+      - run: pip install -e cn/client/desktop pytest pytest-xdist
 
-      - run: pytest -q
+      - run: pytest -q -n 8 --dist loadgroup
         working-directory: cn/client/desktop
 
   mainland_frontend:
