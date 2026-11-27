@@ -9,8 +9,8 @@ default) answers ``args["value"]``; ``refuse`` a refusal with ``code`` and
 answers another request's id; ``noise`` writes a line that is no JSON
 first; ``bom`` puts a byte order mark before the answer. Every answer
 reports ``args["private_bytes"]``, 1000 when unnamed. The log gets a line
-when the process starts, when a request begins and ends, and at the end of
-standard input.
+when the process starts, when a request begins, when it ends before its
+answer is written, and at the end of standard input.
 """
 
 import json
@@ -62,9 +62,9 @@ def main() -> None:
         text = json.dumps(answer_to(request))
         if mode == "bom":
             text = "\ufeff" + text
+        note(log, f"end {request['id']}")
         sys.stdout.write(text + "\n")
         sys.stdout.flush()
-        note(log, f"end {request['id']}")
 
 
 main()
