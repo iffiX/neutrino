@@ -27,6 +27,9 @@ import netbird_payload
 import payload
 from shared import wix_build
 
+# The module's staged payload and the icons a process draws once.
+pytestmark = pytest.mark.xdist_group("client_windows_installer")
+
 # The agent's own upgrade code, which this one must not be.
 AGENT_UPGRADE_CODE = "9F4E4A1C-9C0B-4C0E-9E2E-6C5A2C7C1E33"
 

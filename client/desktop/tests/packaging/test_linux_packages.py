@@ -30,6 +30,9 @@ from neutrino_client.constants import (
 )
 from neutrino_client.platforms.linux import CONFIG_DIR_NAME
 
+# The first layout in a process draws the icons the rest reuse.
+pytestmark = pytest.mark.xdist_group("client_linux_packages")
+
 
 @pytest.fixture
 def carried(monkeypatch, tmp_path):
