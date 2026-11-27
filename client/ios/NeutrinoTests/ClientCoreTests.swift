@@ -134,7 +134,7 @@ final class ClientCoreTests: XCTestCase {
         core.openApp(bindingId: id, app: app)
         XCTAssertTrue(RunLoopWait.until { core.browser != nil })
         let starts = transport.sent("forward_start")
-        XCTAssertEqual(starts.map { $0.text("listen") }, ["127.0.0.1:24001"])
+        XCTAssertEqual(starts.map { $0.text("listen") }, ["127.0.0.1:24001", "[::1]:24001"])
         XCTAssertEqual(starts.first?.object("open").text("id"), "gitea")
         XCTAssertEqual(starts.first?.object("open").text("kind"), "connect")
         XCTAssertEqual(core.browser?.url, "http://127.0.0.1:24001/explore")
@@ -142,8 +142,8 @@ final class ClientCoreTests: XCTestCase {
         XCTAssertTrue(row.isInUse)
         XCTAssertNil(row.job)
         core.stopApp(bindingId: id, appId: "gitea")
-        XCTAssertTrue(RunLoopWait.until { !self.transport.sent("forward_stop").isEmpty })
-        XCTAssertEqual(transport.sent("forward_stop").first?.text("listen"), "127.0.0.1:24001")
+        XCTAssertTrue(RunLoopWait.until { self.transport.sent("forward_stop").count == 2 })
+        XCTAssertEqual(transport.sent("forward_stop").map { $0.text("listen") }, ["127.0.0.1:24001", "[::1]:24001"])
     }
 
     func testTheEndOfTheBackgroundTimeStopsEveryListenerAndTheReturnListensAgainOnTheSamePort() throws {
@@ -154,12 +154,13 @@ final class ClientCoreTests: XCTestCase {
         XCTAssertTrue(RunLoopWait.until { core.forwardRows[AppForwards.key(id, "gitea")]?.isInUse == true })
 
         core.suspend()
-        XCTAssertTrue(RunLoopWait.until { !self.transport.sent("forward_stop").isEmpty })
+        XCTAssertTrue(RunLoopWait.until { self.transport.sent("forward_stop").count == 2 })
         XCTAssertTrue(RunLoopWait.until { !self.transport.sent("undial").isEmpty })
 
         core.foreground()
-        XCTAssertTrue(RunLoopWait.until { self.transport.sent("forward_start").count == 2 })
-        XCTAssertEqual(transport.sent("forward_start").last?.text("listen"), "127.0.0.1:24001")
+        XCTAssertTrue(RunLoopWait.until { self.transport.sent("forward_start").count == 4 })
+        XCTAssertEqual(
+            transport.sent("forward_start").suffix(2).map { $0.text("listen") }, ["127.0.0.1:24001", "[::1]:24001"])
         XCTAssertTrue(RunLoopWait.until { self.transport.sent("dial").count == 2 })
         XCTAssertEqual(core.forwardRows[AppForwards.key(id, "gitea")]?.isInUse, true)
     }
