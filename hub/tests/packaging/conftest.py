@@ -197,9 +197,11 @@ def release_sites(tmp_path):
         opened.append(site)
         return site
 
-    with socket.socket() as probe:
-        probe.bind(("127.0.0.1", 0))
-        dead_port = probe.getsockname()[1]
+    # Bound and never listening for the test's length, so connections to it
+    # are refused and no other process takes its port.
+    dead = socket.socket()
+    dead.bind(("127.0.0.1", 0))
+    dead_port = dead.getsockname()[1]
     open_site.served = served
     open_site.dead = (
         f"http://127.0.0.1:{dead_port}/download/{{tag}}/",
@@ -209,3 +211,4 @@ def release_sites(tmp_path):
     yield open_site
     for site in opened:
         site.close()
+    dead.close()
