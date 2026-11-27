@@ -16,7 +16,6 @@ with the platform's answer and never the password.
 import os
 import signal
 import subprocess
-import time
 
 import pytest
 
@@ -266,8 +265,11 @@ def test_kill_ends_a_real_child():
 
 def test_kill_kills_what_ignores_the_term(monkeypatch):
     monkeypatch.setattr(commands, "AGENT_KILL_GRACE_S", 0.2)
-    child = subprocess.Popen(["sh", "-c", "trap '' TERM; sleep 30"])
-    time.sleep(0.2)
+    child = subprocess.Popen(
+        ["sh", "-c", "trap '' TERM; echo trapped; sleep 30"], stdout=subprocess.PIPE
+    )
+    assert child.stdout.readline() == b"trapped\n"
+    child.stdout.close()
 
     outcome = device_operator().run("agent", "kill", {"pid": child.pid})
 
