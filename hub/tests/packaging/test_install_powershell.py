@@ -149,7 +149,7 @@ def run(tmp_path, release_sites):
             + STAND_INS
             + f"$script:NeutrinoReleaseSites = @({_sites_text(given)})\n"
             + "$script:NeutrinoProbeWaitSeconds = 1\n"
-            + "$script:NeutrinoStallSeconds = 1\n"
+            + "$script:NeutrinoStallSeconds = 2\n"
             + f"$script:NeutrinoLockWaitSeconds = {lock_wait_s}\n"
             + "$outcome = 'ok'\n"
             + f"$given = @({quoted})\n"

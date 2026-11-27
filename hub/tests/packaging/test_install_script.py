@@ -244,7 +244,7 @@ def stand_ins(tmp_path, release_sites):
                 "sh",
                 "-c",
                 f'. "{functions}"; RELEASE_SITES="{addresses}"; '
-                "PROBE_WAIT_S=1; STALL_S=1; "
+                "PROBE_WAIT_S=1; STALL_S=2; "
                 f'OS_RELEASE="{release_file}"; '
                 f'AGENT_BINDING_LINUX="{tmp_path}/agent.json"; '
                 f'AGENT_BINDING_MACOS="{tmp_path}/agent.json"; '
