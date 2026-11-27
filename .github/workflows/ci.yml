@@ -99,7 +99,8 @@ jobs:
 
       - run: pip install -e client/desktop pytest pytest-cov pytest-xdist
 
-      - run: pytest -q -n 8 --dist loadgroup --cov=neutrino_client --cov-report=xml
+      # Four workers for the client, whose tests spend their time in Python.
+      - run: pytest -q -n 4 --dist loadgroup --cov=neutrino_client --cov-report=xml
         working-directory: client/desktop
 
       - uses: codecov/codecov-action@v7.1.1
@@ -671,7 +672,7 @@ jobs:
 
       - run: pip install -e cn/client/desktop pytest pytest-xdist
 
-      - run: pytest -q -n 8 --dist loadgroup
+      - run: pytest -q -n 4 --dist loadgroup
         working-directory: cn/client/desktop
 
   mainland_frontend:
