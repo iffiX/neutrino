@@ -443,6 +443,9 @@ start line names and the one `journal("netbird")` reads. The agent writes
 /run/neutrino/
     hub/
         lockout             the panel's login lockout
+        panel_port          the panel's HTTP port and nothing else, mode
+                            0644, written at setup, at a change on the
+                            Settings page and at each start of the panel
         wpa_supplicant/     one control socket per radio the hub drives
         netbird.sock        the hub's NetBird daemon, macOS only
         transport/          the transport's run directory, 0700, its own:
@@ -466,3 +469,12 @@ to bind. On Windows the same things are named pipes: `neutrino_agent`,
 `neutrino_hub_transport`, `neutrino_agent_transport`,
 `neutrino_client_easytier`, `neutrino_client_<user>` and
 `neutrino_client_transport_<user>`.
+
+`hub/panel_port` is readable by every local account. The application entry
+`Neutrino Hub` runs as the person who opened it and probes the panel at that
+port ([privilege.md](privilege.md), "The application entry elevates once").
+The file exists on every system, at `/var/run/neutrino/hub/panel_port` on
+macOS and at `C:\ProgramData\Neutrino\hub\run\panel_port` on Windows, where
+its access list grants the Users group read beside SYSTEM and the
+administrators. No backup carries it, and the panel writes it again from
+`web/settings.json` at its next start.

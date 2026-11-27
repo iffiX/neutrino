@@ -174,6 +174,12 @@ holding a script and nothing else, and the desktop entry
    `http://127.0.0.1:<http-port>/`, and on `http://localhost:<http-port>/`
    on macOS, with the setup token while the box is not set up.
 
+The person's session reads the HTTP port from `panel_port` under the runtime
+root ([files.md](files.md)). The file holds the port and nothing else, and
+every local account reads it. `web/settings.json` holds the password hash and
+stays readable by root alone. With `panel_port` missing or unreadable, the
+session probes the default port.
+
 The browser opens as the person who clicked, never as root, and everything
 the page then does goes through the service's own authentication.
 
