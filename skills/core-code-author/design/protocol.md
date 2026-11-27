@@ -72,9 +72,10 @@ pass on. On macOS each of the panel's ports also listens on `[::1]`, and so
 does the browser wizard of `nhub setup`, and `nhub open` and setup open them
 at `localhost`, the host a macOS client opens the panel on and no app on. A
 `[::1]` another program holds keeps the panel from starting, as a held IPv4
-port does, and the wizard takes another port. A macOS client opens every app
-on `127.0.0.1`, and a browser tries `::1` first for `localhost`. A panel that cannot read its identity file names
-the cookie `neutrino_session_`. The login page reads `/api/hub/setup`,
+port does, and the wizard takes another port. A macOS client opens a
+forwarder's page on `127.0.0.1` and every other app on `[::1]`, and a
+browser tries `::1` first for `localhost`. A panel that cannot read its
+identity file names the cookie `neutrino_session_`. The login page reads `/api/hub/setup`,
 `/api/hub/auth` and `/api/hub/display` before a session exists, so those
 prefixes take no session dependency, and neither do
 `GET /api/hub/setting/https/authority`, which a browser downloads before it
@@ -1976,7 +1977,7 @@ what the entry's `payload` names:
 
 | `type` | `payload` | An entry is in the list while |
 | --- | --- | --- |
-| `web` | `{url, is_token_required}`, `is_token_required` present and true only on a VS Code, code-server, CloudCLI, Codeg or SiYuan instance and on Hermes WebUI, Ayakaleaf, AstrBot and ComfyUI, whose page opens with a token the `service` frame hands | a device's Gitea module reports a URL, a device's VS Code, code-server, CloudCLI, Codeg or SiYuan module runs an instance, a device's Hermes WebUI, Ayakaleaf, AstrBot or ComfyUI module reads `running`, a device's Podman container publishes a TCP port whose service is web, chosen or detected (`http` or `https` under `auto`), with `url` `<scheme>://<host>:<port>/`, or a declared app names a `web` entry |
+| `web` | `{url, is_token_required}`, `is_token_required` present and true only on a VS Code, code-server, CloudCLI, Codeg or SiYuan instance and on Hermes WebUI, Ayakaleaf, AstrBot and ComfyUI, the pages a forwarder of the agent's serves, which open with a token the `service` frame hands | a device's Gitea module reports a URL, a device's VS Code, code-server, CloudCLI, Codeg or SiYuan module runs an instance, a device's Hermes WebUI, Ayakaleaf, AstrBot or ComfyUI module reads `running`, a device's Podman container publishes a TCP port whose service is web, chosen or detected (`http` or `https` under `auto`), with `url` `<scheme>://<host>:<port>/`, or a declared app names a `web` entry |
 | `port` | `{host, port, protocol}`, `protocol` being `tcp` or `udp`, `tcp` when absent. One entry has one protocol, so a number published on both is two entries | a device's Podman container publishes a host port whose service is port, chosen or under `auto` on a TCP binding detected `tcp` or not yet detected and on every UDP binding, one entry for each item of its `host_bindings` (a report with no `host_bindings`, from an agent before 0.5.0, gives each `host_ports` number as `tcp`), or a declared app names a `port` entry |
 | `ssh` | `{host, port, account, host_key_fingerprint, account_key_fingerprint}`: `port` the loopback port the account's instance of the machine's SSH server listens on, `account` the account it runs as, `host_key_fingerprint` the host key of the account's instance and `account_key_fingerprint` the account's key the hub made, each as `SHA256:<base64>` | a device's SSH server module enables that account ([agent/modules/ssh_server.md](agent/modules/ssh_server.md)); the hub lists a machine's `ssh` entries in the order the module enables the accounts |
 | `ai` | `{endpoint, protocol, models, model, context_lengths}`, `protocol` being `openai`, `model` the default model ([hub_components/ai.md](hub_components/ai.md), "The default model") and `context_lengths` `{<name>: {context_length, input_limit, output_limit}}` for every name of `models` ([hub_components/ai.md](hub_components/ai.md), "Each model's context length"), an added field that keeps `PROTOCOL` | the AI gateway is installed and enabled |

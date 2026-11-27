@@ -364,7 +364,7 @@ each hub's panel keeps its own session cookie in the browser.
 
 | Rule | Reason |
 | --- | --- |
-| The panel opens on a host no app opens on: `panel-<hub-id>.localhost`, and `localhost` on macOS and iOS, where every app opens on `127.0.0.1` ("The Apps page"). | A browser sends a host's cookies to every port of that host. An app's server on the panel's host would receive the panel's session cookie and could act on the panel with it. WebKit resolves `localhost` and no other `.localhost` name. |
+| The panel opens on a host no app opens on: `panel-<hub-id>.localhost`, and `localhost` on macOS and iOS, where every app opens on `127.0.0.1` or `[::1]` ("The Apps page"). | A browser sends a host's cookies to every port of that host. An app's server on the panel's host would receive the panel's session cookie and could act on the panel with it. WebKit resolves `localhost` and no other `.localhost` name. |
 | The panel's forward listens on `127.0.0.1` and on `[::1]`, as every forward a browser opens does ("The local port table"). | macOS and iOS resolve `localhost` to `::1` and `127.0.0.1`, and a browser tries `::1` first. |
 
 The row of the hub whose gateway the AI tools point at shows `ui.hub_is_exit`
@@ -457,7 +457,8 @@ hub's leave, or the client's quit.
 
 | Rule | Reason |
 | --- | --- |
-| The browser opens `<scheme>://<local name>:<local port><path>`, with `?tkn=<token>` added for an entry with `is_token_required`; `<scheme>` and `<path>` are the entry's url's own. On macOS and iOS the host is `127.0.0.1`. | A browser resolves a `.localhost` name to the loopback by itself and keeps cookies per host, so two apps never overwrite each other's login; Safari and WebKit resolve no `.localhost` name, so on macOS and iOS every app shares one host, and two apps whose cookies have the same name sign each other out. |
+| The browser opens `<scheme>://<local name>:<local port><path>`, with `?tkn=<token>` added for an entry with `is_token_required`; `<scheme>` and `<path>` are the entry's url's own. On macOS and iOS the host is `127.0.0.1` for an entry with `is_token_required`, whose page a forwarder of the agent's serves, and `[::1]` for every other entry. | A browser resolves a `.localhost` name to the loopback by itself and keeps cookies per host, so two apps never overwrite each other's login; Safari and WebKit resolve no `.localhost` name, so on macOS and iOS every forwarder's page shares one host, and two apps whose cookies have the same name sign each other out. A forwarder takes every other entry's login cookie out of what it passes on ([agent/module_template.md](agent/module_template.md), "The run"), and a page no forwarder serves passes on every byte. In the lab such a page on `127.0.0.1` received code-server's login cookie. A browser keeps the cookies of `[::1]` apart from those of `127.0.0.1` and `localhost`. |
+| On a Mac with no IPv6 loopback no forward listens on `[::1]` ("The local port table"), and **Open** opens every entry at `127.0.0.1`. | The page still opens, and receives the cookies of `127.0.0.1` as a forwarder's page does. |
 | A token is read at every **Open**. | The token of code-server, CloudCLI, Codeg, SiYuan, Hermes WebUI, Ayakaleaf, AstrBot and ComfyUI is spent once and dies after 60 seconds; VS Code's is read from the URL by VS Code's own page. |
 | An entry the hub reports unhealthy keeps its forward and shows `ui.unhealthy` on its line. | The forward stays where the person put it; the service behind it can come back. |
 | A declared app's `file` entries are on the Files page and not here, and an app whose entries are all `file` entries has no row. | A share is mounted, not opened in a browser, and the Files page holds every mount. |
@@ -1135,9 +1136,9 @@ entry.
 
 | Rule | Reason |
 | --- | --- |
-| **Open** on an app in use reads the token as on Android, and **Panel** on a hub row makes the panel's forward and reads its token; each then opens the in-app browser, an app at `<scheme>://127.0.0.1:<local-port><path>`, with `?tkn=<token>` where the entry has `is_token_required`, and the panel at `http://localhost:<local-port>/?tkn=<token>`. | iOS suspends the app while another app is in front, and a suspended app's forward answers nothing, so the system browser cannot use it. WebKit resolves no `.localhost` name but `localhost`, so the hosts are those of macOS ("The Hubs page"). |
+| **Open** on an app in use reads the token as on Android, and **Panel** on a hub row makes the panel's forward and reads its token; each then opens the in-app browser, an app at `<scheme>://127.0.0.1:<local-port><path>` with `?tkn=<token>` where the entry has `is_token_required` and at `<scheme>://[::1]:<local-port><path>` where it has not, and the panel at `http://localhost:<local-port>/?tkn=<token>`. | iOS suspends the app while another app is in front, and a suspended app's forward answers nothing, so the system browser cannot use it. WebKit resolves no `.localhost` name but `localhost`, so the hosts are those of macOS ("The Hubs page"). |
 | The in-app browser is a WebKit web view under the top bar. Its back arrow closes the page; the forward listens until **Stop**, as on every client. | A page closed by mistake opens again with **Open**, on the same port. |
-| Every page the in-app browser opens shares one cookie store. Every app's page has the host `127.0.0.1`, and a cookie belongs to its host whatever the port, so two instances whose cookies have the same name sign each other out, as on macOS. | iOS 16 gives an app one persistent web data store. |
+| Every page the in-app browser opens shares one cookie store. Every forwarder's page has the host `127.0.0.1` and every other app's page `[::1]`, and a cookie belongs to its host whatever the port, so two instances whose cookies have the same name sign each other out, as on macOS. | iOS 16 gives an app one persistent web data store. |
 
 ### The share page
 

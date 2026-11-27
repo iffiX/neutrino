@@ -114,7 +114,7 @@ the kernel's port:
 
 | Rule | Reason |
 | --- | --- |
-| The forwarder renames the cookie both ways, `siyuan` toward the kernel and `cookie_name` toward the browser ([module_template.md](../module_template.md), "The run"). | The kernel names its cookie `siyuan` and no setting renames it. On macOS and iOS every app is at `127.0.0.1`, where two instances' cookies of one name sign each other out, each kernel signing with its own key. |
+| The forwarder renames the cookie both ways, `siyuan` toward the kernel and `cookie_name` toward the browser ([module_template.md](../module_template.md), "The run"). | The kernel names its cookie `siyuan` and no setting renames it. On macOS and iOS every forwarder's page is at `127.0.0.1`, where two instances' cookies of one name sign each other out, each kernel signing with its own key. |
 | The login the browser holds is SiYuan's own cookie, HttpOnly and SameSite=Lax, for 30 days, and never the kernel's API token. | The kernel admits its API token header on HTTP requests and never on its WebSockets, `/ws?...&type=main`, `filetree` and `protyle`, which the page opens at once. |
 | The login is the forwarder's own request, with the code as JSON and no `Origin`. | The kernel returns `{"code": 0}` and the cookie to it, and returns "invalid request origin" to a request whose `Origin` differs from its `Host`. After a few wrong codes the kernel's login shows a captcha, and the forwarder only ever sends the instance's code. |
 | The token is the one every program run as an account takes ([module_template.md](../module_template.md), "The run"). | The hub generates it from the instance's secret on every `service` ask, and the forwarder checks it on the device and spends it once. |
