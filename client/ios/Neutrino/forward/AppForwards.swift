@@ -2,9 +2,10 @@ import Foundation
 
 /// The loopback forwards of the app core, held by the transport. An app's Use forwards each of its `web` and
 /// `port` entries at its local port, the person's number or the hub's, and the app is in use until Stop, its hub's
-/// leave or the app's quit; Open opens the in-app browser at `127.0.0.1` on the app's first `http` or `https`
-/// entry, with a fresh token for an entry that takes one. The hub's panel's forward lives from the first press of
-/// Panel until the hub is left, on a number picked from 20000 to 23999 and kept, and Panel opens it at `localhost`.
+/// leave or the app's quit; Open opens the in-app browser on the app's first `http` or `https` entry, at
+/// `127.0.0.1` with a fresh token for an entry that takes one and at `[::1]` for any other. The hub's panel's
+/// forward lives from the first press of Panel until the hub is left, on a number picked from 20000 to 23999 and
+/// kept, and Panel opens it at `localhost`.
 /// A forward stops when its hub is left and when its entry leaves the hub's state; every listener stops when the
 /// app is suspended and listens again on its number when the app comes back. Every call runs on the main queue.
 final class AppForwards {
@@ -68,9 +69,9 @@ final class AppForwards {
         }
     }
 
-    /// Press Open on an app in use: the in-app browser at `127.0.0.1` on its first `http` or `https` entry, whose
-    /// forward listens again if it does not, with a fresh token where that entry takes one. A press while the app
-    /// is not in use, has no such entry or runs a job is dropped.
+    /// Press Open on an app in use: the in-app browser on its first `http` or `https` entry, whose forward listens
+    /// again if it does not, at the entry's browser host with a fresh token where that entry takes one. A press
+    /// while the app is not in use, has no such entry or runs a job is dropped.
     ///
     /// - Parameters:
     ///   - hub: The hub that publishes the app.
@@ -391,7 +392,7 @@ final class AppForwards {
             completion(nil)
             return
         }
-        let address = "\(target.scheme)://\(Forward.bindHost):\(held.port)\(target.path)"
+        let address = "\(target.scheme)://\(Self.browserHost(of: entry)):\(held.port)\(target.path)"
         guard entry.payload.flag("is_token_required") else {
             onOpen(address)
             completion(nil)
@@ -442,6 +443,15 @@ final class AppForwards {
     /// - Returns: The entry, or nil for an app with none.
     static func page(of hub: HubView, app: ChannelApp) -> ChannelServiceEntry? {
         entries(of: hub, app: app).first { $0.type == "web" && ForwardWebTarget($0.payload.text("url")) != nil }
+    }
+
+    /// The host the in-app browser opens a `web` entry on: `127.0.0.1` for an entry with `is_token_required`, whose
+    /// page a forwarder of the agent's serves, and `[::1]` for any other.
+    ///
+    /// - Parameter entry: The entry.
+    /// - Returns: The host.
+    static func browserHost(of entry: ChannelServiceEntry) -> String {
+        entry.payload.flag("is_token_required") ? Forward.bindHost : Forward.bindHostIpv6
     }
 
     /// An app's `web` and `port` entries, in the hub's order. No Apps page shows an `ssh` entry, so the machine's SSH

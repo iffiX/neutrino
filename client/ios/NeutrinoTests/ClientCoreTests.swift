@@ -137,7 +137,7 @@ final class ClientCoreTests: XCTestCase {
         XCTAssertEqual(starts.map { $0.text("listen") }, ["127.0.0.1:24001", "[::1]:24001"])
         XCTAssertEqual(starts.first?.object("open").text("id"), "gitea")
         XCTAssertEqual(starts.first?.object("open").text("kind"), "connect")
-        XCTAssertEqual(core.browser?.url, "http://127.0.0.1:24001/explore")
+        XCTAssertEqual(core.browser?.url, "http://[::1]:24001/explore")
         let row = try XCTUnwrap(core.forwardRows[AppForwards.key(id, "gitea")])
         XCTAssertTrue(row.isInUse)
         XCTAssertNil(row.job)

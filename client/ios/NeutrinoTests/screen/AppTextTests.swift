@@ -15,7 +15,12 @@ final class AppTextTests: XCTestCase {
     func testEachEntryShowsItsAddressOnTheLoopback() {
         XCTAssertEqual(
             AppText.localAddress(entry("web", ["url": .string("https://10.0.0.5:3000/login?next=%2F")]), port: 27311),
-            "https://127.0.0.1:27311/login?next=%2F")
+            "https://[::1]:27311/login?next=%2F")
+        XCTAssertEqual(
+            AppText.localAddress(
+                entry("web", ["url": .string("http://10.0.0.5:8000/"), "is_token_required": .bool(true)]),
+                port: 27312),
+            "http://127.0.0.1:27312/")
         XCTAssertEqual(AppText.localAddress(entry("port", ["port": .int(22)]), port: 30418), "127.0.0.1:30418")
         XCTAssertEqual(
             AppText.localAddress(entry("port", ["protocol": .string("udp")]), port: 25001), "127.0.0.1:25001/udp")
@@ -33,7 +38,7 @@ final class AppTextTests: XCTestCase {
             AppText.line(
                 entry("web", ["url": .string("http://10.0.0.5:3000/")], isHealthy: false), port: 24001,
                 words: words),
-            "http://127.0.0.1:24001/ · Not reachable now")
+            "http://[::1]:24001/ · Not reachable now")
     }
 
     func testTheProviderLineNamesTheEntrysHostWhenTheHubNamesNoMachine() throws {

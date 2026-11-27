@@ -2,8 +2,8 @@ import Foundation
 
 /// What an app's row says: its dot, its entries' local addresses and the reason its buttons are disabled.
 enum AppText {
-    /// An entry's local address as the Apps page shows it: `<scheme>://127.0.0.1:<port><path>` for a `web` entry,
-    /// `127.0.0.1:<port>` for a `port` entry with `/udp` after a UDP one; on iOS every app opens on the loopback.
+    /// An entry's local address as the Apps page shows it: `<scheme>://<host>:<port><path>` for a `web` entry, the
+    /// host the in-app browser opens it on, and `127.0.0.1:<port>` for a `port` entry with `/udp` after a UDP one.
     ///
     /// - Parameters:
     ///   - entry: The entry.
@@ -11,7 +11,7 @@ enum AppText {
     /// - Returns: The address.
     static func localAddress(_ entry: ChannelServiceEntry, port: Int) -> String {
         if entry.type == "web", let target = ForwardWebTarget(entry.payload.text("url")) {
-            return "\(target.scheme)://\(Forward.bindHost):\(port)\(target.path)"
+            return "\(target.scheme)://\(AppForwards.browserHost(of: entry)):\(port)\(target.path)"
         }
         let address = "\(Forward.bindHost):\(port)"
         return entry.protocol == Forward.protocolUdp ? address + "/udp" : address

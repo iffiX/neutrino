@@ -89,13 +89,13 @@ final class AppForwardsTests: XCTestCase {
         XCTAssertTrue(asked.isEmpty)
     }
 
-    func testOpenOpensThePageOfAnAppInUseOnTheLoopback() throws {
+    func testOpenOpensAPageNoForwarderServesOnTheIpv6Loopback() throws {
         let forwards = try XCTUnwrap(self.forwards)
         forwards.open(hub: hub(gitea), app: app) { self.opened.append($0) }
         XCTAssertTrue(opened.isEmpty)
         forwards.use(hub: hub(gitea), app: app)
         forwards.open(hub: hub(gitea), app: app) { self.opened.append($0) }
-        XCTAssertEqual(opened, ["http://127.0.0.1:27311/explore?tab=1"])
+        XCTAssertEqual(opened, ["http://[::1]:27311/explore?tab=1"])
         XCTAssertEqual(forwarder.started.count, 2)
         XCTAssertTrue(asked.isEmpty)
     }
