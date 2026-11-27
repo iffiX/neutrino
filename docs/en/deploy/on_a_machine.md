@@ -167,7 +167,7 @@ You can stop an app you do not need for a while, which frees the memory and port
 
    ![The tab showing running, with the Stop button boxed in red](/guide/en/deploy_on_a_machine_30_stop.webp)
 
-1. The tab shows **stopped**. When you need the app, select **Start**, and the tab returns to **running**.
+1. The tab shows **stopping**, then **stopped**. When you need the app, select **Start**; the tab shows **starting**, then returns to **running**.
 
    ![The tab showing stopped, with the Start button boxed in red](/guide/en/deploy_on_a_machine_31_stopped.webp "Select Start")
    ![The tab showing running again](/guide/en/deploy_on_a_machine_32_started.webp "Running again")

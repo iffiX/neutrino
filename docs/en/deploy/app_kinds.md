@@ -13,16 +13,16 @@ On a system's page, select a module in **Module configuration**. The two chips f
 ![The Module configuration area of a system's page, with two chips after the Terminal tab's title](/guide/en/deploy_app_kinds_00_page.webp "Module configuration")
 ![The Terminal tab's title, with Built-in boxed in red, then Account service and the running state](/guide/en/deploy_app_kinds_01_chips.webp "Source and kind")
 
-The modules in **Module configuration** appear in this order: Terminal, SSH server, Remote desktop, File share, Gitea, Ollama, VS Code, code-server, CloudCLI, Codeg, Claude Code, Codex, OpenCode, SiYuan, Containers, Hermes WebUI, Ayakaleaf, AstrBot.
+The modules in **Module configuration** appear in this order: Terminal, SSH server, Remote desktop, File share, Gitea, Ollama, ComfyUI, VS Code, code-server, CloudCLI, Codeg, Claude Code, Codex, OpenCode, SiYuan, Containers, Hermes WebUI, Ayakaleaf, AstrBot.
 
 ## Source
 
-| Source        | Meaning                                                                                                                                             | Modules                                                                                                                     |
-| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| **Built-in**  | Installed with the agent, which manages it                                                                                                          | Terminal, SSH server, Remote desktop                                                                                        |
-| **System**    | Managed by the operating system: installed through its package manager, or a service the system includes. Software you installed earlier counts too | File share; Containers on Linux                                                                                             |
-| **Upstream**  | The hub downloads it from the publisher and decides the version                                                                                     | Gitea, Ollama, VS Code, code-server, CloudCLI, Codeg, SiYuan, Claude Code, Codex, OpenCode; Containers on Windows and macOS |
-| **Container** | An image that Podman in the Containers module pulls                                                                                                 | Hermes WebUI, Ayakaleaf, AstrBot                                                                                            |
+| Source        | Meaning                                                                                                                                             | Modules                                                                                                                              |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| **Built-in**  | Installed with the agent, which manages it                                                                                                          | Terminal, SSH server, Remote desktop                                                                                                 |
+| **System**    | Managed by the operating system: installed through its package manager, or a service the system includes. Software you installed earlier counts too | File share; Containers on Linux                                                                                                      |
+| **Upstream**  | The hub downloads it from the publisher and decides the version                                                                                     | Gitea, Ollama, ComfyUI, VS Code, code-server, CloudCLI, Codeg, SiYuan, Claude Code, Codex, OpenCode; Containers on Windows and macOS |
+| **Container** | An image that Podman in the Containers module pulls                                                                                                 | Hermes WebUI, Ayakaleaf, AstrBot                                                                                                     |
 
 The system's package manager upgrades and uninstalls software whose source is **System**, whether or not Neutrino Hub installed it.
 
@@ -30,11 +30,11 @@ If the system already has software of the same name that you installed yourself,
 
 ## Kind
 
-| Kind                | Meaning                                                                                                      | Modules                                                                                 |
-| ------------------- | ------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
-| **System service**  | One copy runs for the whole system, as the module's own service account, as root or SYSTEM, or in containers | Remote desktop, File share, Containers, Ollama, Gitea, Hermes WebUI, Ayakaleaf, AstrBot |
-| **Account service** | One copy runs for each enabled account, as that account                                                      | Terminal, SSH server, VS Code, code-server, CloudCLI, Codeg, SiYuan                     |
-| **Program**         | Has no Start or Stop, and runs only when you run it, as you                                                  | Claude Code, Codex, OpenCode                                                            |
+| Kind                | Meaning                                                                                                      | Modules                                                                                          |
+| ------------------- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
+| **System service**  | One copy runs for the whole system, as the module's own service account, as root or SYSTEM, or in containers | Remote desktop, File share, Containers, Ollama, ComfyUI, Gitea, Hermes WebUI, Ayakaleaf, AstrBot |
+| **Account service** | One copy runs for each enabled account, as that account                                                      | Terminal, SSH server, VS Code, code-server, CloudCLI, Codeg, SiYuan                              |
+| **Program**         | Has no Start or Stop, and runs only when you run it, as you                                                  | Claude Code, Codex, OpenCode                                                                     |
 
 The agent runs Terminal, SSH server and Remote desktop, so their tabs have no **Start** button, and they still show their kind.
 

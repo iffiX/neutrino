@@ -87,6 +87,7 @@ export const sidebar: DefaultTheme.SidebarItem[] = [
           { text: "Codex", link: "/deploy/codex" },
           { text: "OpenCode", link: "/deploy/opencode" },
           { text: "Ollama", link: "/deploy/ollama" },
+          { text: "ComfyUI", link: "/deploy/comfyui" },
         ],
       },
       {

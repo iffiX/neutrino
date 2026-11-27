@@ -128,13 +128,11 @@ These steps use DeepSeek. For other providers, see [AI gateway](/en/hub/ai_gatew
 
    ![AI page, with Add provider marked in red](/guide/en/hub_ai_gateway_03_page.webp)
 
-1. Fill in the form as follows, then select **Save provider**:
+1. In **Vendor**, choose **DeepSeek**. The form fills in **Name**, **Base URL** and the two model names.
 
-   - **Name**: `DeepSeek`
-   - **Kind**: **OpenAI-compatible — /chat/completions**
-   - **Base URL**: `https://api.deepseek.com`
-   - **Model aliases**: two rows, `deepseek-flash` in the first and `deepseek-v4-pro` in the second
-   - **API token**: `deepseek`, the token you saved earlier
+   ![The Vendor list open, with the DeepSeek row marked in red](/guide/en/hub_ai_gateway_20_provider_vendor.webp)
+
+1. In **API token**, choose `deepseek`, the token you saved earlier, then select **Save provider**.
 
    ![The API token list open, with the saved token marked in red](/guide/en/hub_ai_gateway_04_provider_token.webp "Choose the saved token")
    ![The completed provider form, with Save provider marked in red](/guide/en/hub_ai_gateway_05_provider_form.webp "Select Save provider")

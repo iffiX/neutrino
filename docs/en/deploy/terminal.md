@@ -58,6 +58,12 @@ On a phone, the terminal has an extra row of keys under it, such as Esc, Tab, Ct
 
 You can also use the terminal from the command line, for example to run one command and return immediately; see [nclient commands](/en/reference/nclient).
 
+### See the terminals in use on the panel
+
+The **Terminals** section of the panel's **Services** page lists the terminal sessions running on every online system. Each row shows the session's title, its account and system, and who opened it and when. It also shows how many windows are attached, and the **kept** and **shared** badges. The dot at the row's start is green while a window is attached. The section is for viewing only; you end a session from a client.
+
+![The Terminals section of the Services page, with the row of a kept session marked in red](/guide/en/deploy_terminal_30_services_panel.webp)
+
 ### Messages when a terminal disconnects
 
 When a terminal's connection breaks, the terminal shows a one-line message. The desktop client, Android and iOS show the same messages:

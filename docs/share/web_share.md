@@ -49,6 +49,7 @@ description: "微子中枢让你发个链接，对方用浏览器就能打开你
 | Hermes WebUI                                    | 账户 hermeswebui       | 不显示登录页，访客和你共用对话、记忆和工作区                            |
 | AstrBot                                         | 管理台账户 astrbot     | 不显示登录页，访客能修改你的机器人、插件和对话                          |
 | Ayakaleaf                                       | 这条链接专用的访客账户 | 访客只能看到你邀请这个账户加入的项目，见 [Ayakaleaf](/deploy/ayakaleaf) |
+| ComfyUI                                         | 账户 neutrino_comfyui  | 不显示登录页，访客和你共用工作区，能安装自定义节点                      |
 | Gitea                                           | 未登录                 | 访客看到 Gitea 自己的登录页，账号在 Gitea 里创建                        |
 | 容器、声明的应用                                | 未登录                 | 原样打开，如果有登录页，访客会看到登录页                                |
 

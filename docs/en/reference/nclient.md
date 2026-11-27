@@ -129,7 +129,7 @@ use the app first: nclient app use
 
 When two systems have apps with the same name, the app is written as `<system>/<app>`.
 
-A web entry's address is `<app>.<system>.localhost:<port>`, and `127.0.0.1:<port>` on macOS. A port entry's address is `127.0.0.1:<port>`. The port is between 24000 and 31999 and stays the same after its first assignment.
+A web entry's address is `<app>.<system>.localhost:<port>`. On macOS, an app the agent installed is at `127.0.0.1:<port>`, and a declared app, Gitea or a container's web entry is at `[::1]:<port>`. A port entry's address is `127.0.0.1:<port>`. The port is between 24000 and 31999 and stays the same after its first assignment.
 
 ## ssh
 

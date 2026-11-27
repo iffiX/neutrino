@@ -64,6 +64,17 @@ Each type of entry works as follows:
 
 A web entry can also get a link through [App share](/en/share/web_share): select **Share** in its row. The visitor sees the app's own page and signs in to it when the app has a sign-in page. Port and file entries cannot be shared.
 
+## Open from the panel
+
+Open the panel on the hub's own computer, or at the hub's address on the LAN. A web app's row then has **Open** on its right, before **Share**. Select **Open**, and the browser opens the app in a new tab. You need no client for this, and an installed app asks for no password.
+
+![The Services page with the Open button of a web app marked in red](/guide/en/deploy_services_20_open.webp)
+
+- The hub opens a forward for the app on a port from 19000 to 19099. The new tab's address is the hub's address with that port.
+- After 30 minutes with no connection, the hub closes the forward; select **Open** again to get a new one.
+- While the app shows **unreachable**, the button is grey. Port and file entries have no **Open**.
+- A panel that a client opened has no such button; use the client's **Apps** page there. Programs on other computers also reach the app through a client.
+
 ## Apps that appear automatically
 
 Apps you install on a system appear automatically after they run. Each port that a container publishes also appears automatically, with its entry type, web or port, detected, and its source shows **declared** or **manual**. To run new software, you can use [Containers](/en/deploy/containers).
@@ -88,4 +99,4 @@ The hub keeps no password for a declared file share, so enter the password yours
 
 Declared entries have no one-time passphrase. After you select **Use**, every program on this client computer can connect to that local address.
 
-On macOS and iOS, all web apps share one address. When two apps keep sign-in records with the same name, signing in to one signs you out of the other.
+On macOS and iOS, declared apps, Gitea and containers' web entries all open at the one address `[::1]`. When two of them keep sign-in records with the same name, signing in to one signs you out of the other.

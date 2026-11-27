@@ -624,6 +624,16 @@ This system has no account yet, so its terminal has no enabled account. Add the 
 
 The SSH server lacks the key that the hub generated. Select **Apply SSH server** again.
 
+## Services page
+
+### `entry_unknown`
+
+The app stopped publishing its page, for example because it stopped or was uninstalled. Reload the page, and select **Open** again if the row is still there.
+
+### `forward_port_unavailable`
+
+Every port from 19000 to 19099 that the hub uses for **Open** is taken. Close app tabs you no longer use; an idle port frees itself after 30 minutes. Then select **Open** again.
+
 ## AI
 
 Phones have no AI page.
@@ -647,6 +657,22 @@ The gateway rejects these settings. Change them as the reason after the code say
 ### `login_expired`
 
 This sign-in timed out. Select **Sign in** again and finish it quickly.
+
+### `quota_read_failed`
+
+The vendor did not answer **Refresh** normally, and the number after the code is the status it returned; 0 means the request never reached the vendor. The account's row keeps the quota it read last. Select **Refresh** again later.
+
+### `quota_read_unparsed`
+
+The vendor's answer holds no quota the hub can read, which happens when the vendor changes its format. The account's row keeps the quota it read last, and the account serves as before.
+
+### `quota_read_unsupported`
+
+This kind of account has no quota to read, for example an xAI account.
+
+### `price_invalid`, `currency_invalid`
+
+A price is a number from 0 to 10000 with at most 6 decimals, and the input and output prices are filled in together. The currency is USD or CNY.
 
 ### `switch_failed`
 

@@ -128,13 +128,11 @@ CloudCLI 通过中枢的 AI 网关使用模型，所以你不用在电脑上安�
 
    ![AI 页，添加提供方按钮标红](/guide/zh/hub_ai_gateway_03_page.webp)
 
-1. 按下面填写，再按 **保存提供方**。
+1. 在 **服务商** 里选择 **DeepSeek**，表单会自动填好 **名称**、**Base URL** 和两个模型名。
 
-   - **名称**：`DeepSeek`
-   - **类型**：**OpenAI 兼容 — /chat/completions**
-   - **Base URL**：`https://api.deepseek.com`
-   - **模型别名**：两行，第一行 `deepseek-flash`，第二行 `deepseek-v4-pro`
-   - **API 令牌**：刚才保存的 `deepseek`
+   ![服务商的列表展开，DeepSeek 这一行标红](/guide/zh/hub_ai_gateway_20_provider_vendor.webp)
+
+1. 在 **API 令牌** 里选择刚才保存的 `deepseek`，再按 **保存提供方**。
 
    ![API 令牌的选择框展开，刚保存的令牌标红](/guide/zh/hub_ai_gateway_04_provider_token.webp "选择刚保存的令牌")
    ![填好的提供方表单，保存提供方按钮标红](/guide/zh/hub_ai_gateway_05_provider_form.webp "按 保存提供方")

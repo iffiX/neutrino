@@ -53,6 +53,7 @@ Each app gives visitors a different identity. Check it before you generate a lin
 | Hermes WebUI                                  | The account hermeswebui            | No sign-in page appears, and the visitor shares your conversations, memory and workspace             |
 | AstrBot                                       | The console account astrbot        | No sign-in page appears, and the visitor can change your bots, plugins and conversations             |
 | Ayakaleaf                                     | A guest account for this link only | The visitor sees only the projects you invite this account to; see [Ayakaleaf](/en/deploy/ayakaleaf) |
+| ComfyUI                                       | The account neutrino_comfyui       | No sign-in page; the visitor shares your workspace and can install custom nodes                      |
 | Gitea                                         | Not signed in                      | The visitor sees the Gitea sign-in page, and accounts are created in Gitea                           |
 | Containers, declared apps                     | Not signed in                      | The app opens as it is; if it has a sign-in page, the visitor sees that page                         |
 

@@ -17,7 +17,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 SKIP = {"index.md", "app.md", "README.md", "SOURCES.md", "layout_demo.md"}
-EXPECTED_PAGES = 62
+EXPECTED_PAGES = 63
 
 VALUE_MIN, VALUE_MAX = 10, 60
 # The search description: its subject, its longest length, and words it never holds.
@@ -45,6 +45,7 @@ LONG_PAGES = {
     "deploy/containers.md": 80,
     "deploy/on_a_machine.md": 80,
     "hub/agents.md": 80,
+    "hub/ai_gateway.md": 130,
 }
 CLAUSE_MAX = 40
 LABEL_MAX = 30
@@ -55,7 +56,7 @@ APP_PAGES = {
     f"deploy/{name}.md"
     for name in (
         "cloudcli codeg hermes_webui vscode code_server terminal ssh gitea "
-        "ayakaleaf siyuan remote_desktop file_share containers claude_code codex opencode ollama astrbot"
+        "ayakaleaf siyuan remote_desktop file_share containers claude_code codex opencode ollama astrbot comfyui"
     ).split()
 }
 APP_HEADINGS = ["支持的系统", "安装", "使用", "分享", "注意", "设置", "卸载"]

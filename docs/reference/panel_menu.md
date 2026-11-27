@@ -12,18 +12,18 @@ description: "微子中枢在这张表里列出面板的每个菜单和对应的
 
 下面的图用红框标出每个菜单在侧栏上的位置。
 
-| 菜单         | 英文界面    | 内容                                                                 | 手册页                                               | 图                                                                                |
-| ------------ | ----------- | -------------------------------------------------------------------- | ---------------------------------------------------- | --------------------------------------------------------------------------------- |
-| **总览**     | Dashboard   | 实时吞吐和被控端计数                                                 | [总览](/hub/dashboard)                               | ![总览页，侧栏的总览标红](/guide/zh/reference_panel_menu_01_dashboard.webp)       |
-| **网络**     | Network     | 模式、开放范围、面板端口和连接端口                                   | [网络形态：服务器、路由器、旁路网关](/hub/network)   | ![网络页，侧栏的网络标红](/guide/zh/reference_panel_menu_02_network.webp)         |
-| **外部访问** | Access      | 六张卡片：NetBird、EasyTier、SSH 中继、直连、SakuraFrp、OpenFrp      | [外部访问：选择一种方式](/access/ways_in)            | ![外部访问页，侧栏的外部访问标红](/guide/zh/reference_panel_menu_03_overlay.webp) |
-| **代理**     | Proxy       | 出口、分流和 DNS                                                     | [代理](/hub/proxy)                                   | ![代理页，侧栏的代理标红](/guide/zh/reference_panel_menu_04_proxy.webp)           |
-| **AI**       | AI          | 所有 AI 工具共用的端点、提供方和用量                                 | [AI 网关](/hub/ai_gateway)                           | ![AI 页，侧栏的 AI 标红](/guide/zh/reference_panel_menu_05_ai.webp)               |
-| **被控端**   | Agents      | 每行一个系统，右上角有 **用链接添加** 和 **用 SSH 添加**             | [被控端](/hub/agents)                                | ![被控端页，侧栏的被控端标红](/guide/zh/reference_panel_menu_06_agents.webp)      |
-| **客户端**   | Clients     | 上面是 **客户端** 面板，下面是 **应用分享** 面板                     | [客户端](/hub/clients)、[应用分享](/share/web_share) | ![客户端页，侧栏的客户端标红](/guide/zh/reference_panel_menu_07_clients.webp)     |
-| **服务**     | Services    | **应用**、**AI**、**文件**、**远程桌面** 四节，右上角有 **声明应用** | [加入已有的服务](/deploy/services)                   | ![服务页，侧栏的服务标红](/guide/zh/reference_panel_menu_08_services.webp)        |
-| **凭据**     | Credentials | **SSH 密钥**、**登录信息**、**令牌** 和 **中枢生成的**               | [数据和外连](/hub/what_it_holds)                     | ![凭据页，侧栏的凭据标红](/guide/zh/reference_panel_menu_09_credentials.webp)     |
-| **设置**     | Settings    | 密码、备份和版本                                                     | [设置：备份、更新、密码](/hub/settings)              | ![设置页，侧栏的设置标红](/guide/zh/reference_panel_menu_10_settings.webp)        |
+| 菜单         | 英文界面    | 内容                                                                           | 手册页                                               | 图                                                                                |
+| ------------ | ----------- | ------------------------------------------------------------------------------ | ---------------------------------------------------- | --------------------------------------------------------------------------------- |
+| **总览**     | Dashboard   | 实时吞吐和被控端计数                                                           | [总览](/hub/dashboard)                               | ![总览页，侧栏的总览标红](/guide/zh/reference_panel_menu_01_dashboard.webp)       |
+| **网络**     | Network     | 模式、开放范围、面板端口和连接端口                                             | [网络形态：服务器、路由器、旁路网关](/hub/network)   | ![网络页，侧栏的网络标红](/guide/zh/reference_panel_menu_02_network.webp)         |
+| **外部访问** | Access      | 六张卡片：NetBird、EasyTier、SSH 中继、直连、SakuraFrp、OpenFrp                | [外部访问：选择一种方式](/access/ways_in)            | ![外部访问页，侧栏的外部访问标红](/guide/zh/reference_panel_menu_03_overlay.webp) |
+| **代理**     | Proxy       | 出口、分流和 DNS                                                               | [代理](/hub/proxy)                                   | ![代理页，侧栏的代理标红](/guide/zh/reference_panel_menu_04_proxy.webp)           |
+| **AI**       | AI          | 所有 AI 工具共用的端点、提供方和用量                                           | [AI 网关](/hub/ai_gateway)                           | ![AI 页，侧栏的 AI 标红](/guide/zh/reference_panel_menu_05_ai.webp)               |
+| **被控端**   | Agents      | 每行一个系统，右上角有 **用链接添加** 和 **用 SSH 添加**                       | [被控端](/hub/agents)                                | ![被控端页，侧栏的被控端标红](/guide/zh/reference_panel_menu_06_agents.webp)      |
+| **客户端**   | Clients     | 上面是 **客户端** 面板，下面是 **应用分享** 面板                               | [客户端](/hub/clients)、[应用分享](/share/web_share) | ![客户端页，侧栏的客户端标红](/guide/zh/reference_panel_menu_07_clients.webp)     |
+| **服务**     | Services    | **应用**、**AI**、**文件**、**终端**、**远程桌面** 五节，右上角有 **声明应用** | [加入已有的服务](/deploy/services)                   | ![服务页，侧栏的服务标红](/guide/zh/reference_panel_menu_08_services.webp)        |
+| **凭据**     | Credentials | **SSH 密钥**、**登录信息**、**令牌** 和 **中枢生成的**                         | [数据和外连](/hub/what_it_holds)                     | ![凭据页，侧栏的凭据标红](/guide/zh/reference_panel_menu_09_credentials.webp)     |
+| **设置**     | Settings    | 密码、备份和版本                                                               | [设置：备份、更新、密码](/hub/settings)              | ![设置页，侧栏的设置标红](/guide/zh/reference_panel_menu_10_settings.webp)        |
 
 ## 被控端一栏
 
@@ -51,6 +51,7 @@ description: "微子中枢在这张表里列出面板的每个菜单和对应的
 | **文件共享**     | [文件共享](/deploy/file_share)       |
 | **Gitea**        | [Gitea](/deploy/gitea)               |
 | **Ollama**       | [Ollama](/deploy/ollama)             |
+| **ComfyUI**      | [ComfyUI](/deploy/comfyui)           |
 | **VS Code**      | [VS Code](/deploy/vscode)            |
 | **code-server**  | [code-server](/deploy/code_server)   |
 | **CloudCLI**     | [CloudCLI](/deploy/cloudcli)         |

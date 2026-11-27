@@ -171,7 +171,7 @@ Ayakaleaf 第一次启动的时间较长，这段时间也有 **取消** 按钮�
 
    ![标签显示运行中，停止按钮标红](/guide/zh/deploy_on_a_machine_30_stop.webp)
 
-1. 标签变成 **已停止**。需要使用时按 **启动**，标签会恢复为 **运行中**。
+1. 标签先显示 **停止中**，再变成 **已停止**。需要使用时按 **启动**，标签显示 **启动中**，然后恢复为 **运行中**。
 
    ![标签显示已停止，启动按钮标红](/guide/zh/deploy_on_a_machine_31_stopped.webp "按 启动")
    ![标签又显示运行中](/guide/zh/deploy_on_a_machine_32_started.webp "回到运行中")

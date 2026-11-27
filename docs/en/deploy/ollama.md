@@ -33,17 +33,17 @@ Each system runs one Ollama, and every account shares it and its models, so you 
    ![The module list with the Ollama row marked in red](/guide/en/deploy_ollama_04_tab.webp "Select Ollama")
    ![The Ollama tab showing not installed, with the Install button marked in red](/guide/en/deploy_ollama_05_install.webp "Select Install")
 
-1. The tab lists each step while the hub downloads the archive and sends it to the agent. When the tab shows **installed**, select **Start**. The install is complete when the tab shows **running**.
+1. The tab lists each step while the hub downloads the archive and sends it to the agent. When the tab shows **installed**, select **Start**, and the tab shows **starting**. The install is complete when the tab shows **running**.
 
    ![The tab showing installing, with each step listed](/guide/en/deploy_ollama_06_installing.webp "Installing")
    ![The tab showing installed, with the Start button marked in red](/guide/en/deploy_ollama_07_installed.webp "Select Start")
 
 If you installed Ollama on this system yourself, the panel handles it by system:
 
-| System         | Your own Ollama                                                      | What the panel does                                                                                                                                                                                     |
-| -------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Linux          | The `ollama.service` unit, from Ollama's install script or a package | The tab shows **installed**. Your first **Start** puts the unit under the agent's control. **Uninstall** returns the unit to the state your first **Start** found it in, and keeps your files           |
-| Windows, macOS | Ollama's official app, which starts when you sign in                 | After you install this module, Neutrino Hub stops the app and turns off its start at sign-in. Do not open the app while the module runs. When you uninstall the module, the app starts at sign-in again |
+| System         | Your own Ollama                                                      | What the panel does                                                                                                                                                                                                                                                                                                                                                  |
+| -------------- | -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Linux          | The `ollama.service` unit, from Ollama's install script or a package | The tab shows **installed**. Your first **Start** puts the unit under the agent's control. **Uninstall** returns the unit to the state your first **Start** found it in, and keeps your files                                                                                                                                                                        |
+| Windows, macOS | Ollama's official app, which starts when you sign in                 | After you install this module, Neutrino Hub stops the app and turns off its start at sign-in, and on macOS the app stays closed when you sign in. While the module is installed, an app you open by hand is closed again within seconds. When you uninstall the module, the app starts at sign-in again, and the hub opens it again if it was running at the install |
 
 On Linux, you update your own Ollama yourself, and the panel manages only its models. If the install fails, see [Troubleshooting](/en/reference/troubleshooting).
 
@@ -105,7 +105,7 @@ Any other tool that uses Ollama's API takes `http://127.0.0.1:<local-port>` as i
 
 ### Use the models through the AI gateway
 
-While this system is online and its Ollama runs with at least one model, the hub adds the models to the [AI gateway](/en/hub/ai_gateway). They keep their names from Ollama, and every tool that uses the gateway can choose them. The hub also writes each model's [context length](/en/hub/ai_gateway#context-length) into those tools. Under **Providers** on the panel's **AI** page, the row **from my-computer's Ollama** lists them, where my-computer is the name of this system. Its **Models** button opens the Ollama tab of this system with its **Models** area.
+While this system is online and its Ollama runs with at least one model, the hub adds the models to the [AI gateway](/en/hub/ai_gateway). They keep their names from Ollama, and every tool that uses the gateway can choose them. The hub also writes each model's [context length](/en/hub/ai_gateway#context-length) into those tools. Under **Providers** on the panel's **AI** page, the row **from my-computer's Ollama** lists them, where my-computer is the name of this system. Its **Manage** button opens the Ollama tab of this system with its **Models** area. Embedding models, which make vectors and cannot chat, stay out of the gateway.
 
 ![The provider list on the AI page with the row from my-computer's Ollama marked in red](/guide/en/hub_ai_gateway_30_ollama_row.webp)
 
