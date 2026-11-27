@@ -20,6 +20,7 @@ from neutrino_hub.modules.xray.exit_controller import XrayExitController
 from neutrino_hub.modules.xray.node_config import XrayNodeList
 from neutrino_hub.modules.xray.node_health import XrayNodeHealthStore
 from neutrino_hub.modules.xray.node_probe import XrayNodeMeasurement
+from tests.conftest import own_sleep
 
 NOW = datetime(2026, 5, 1, 12, 0, tzinfo=timezone.utc)
 PROBE_URL = "http://probe.example.net/generate_204"
@@ -600,7 +601,7 @@ def test_an_xray_already_holding_the_stored_exit_is_left_alone(tmp_path):
 
 def test_the_pin_is_tried_again_while_the_api_is_still_coming_up(tmp_path, monkeypatch):
     slept: list = []
-    monkeypatch.setattr(exit_controller.time, "sleep", slept.append)
+    monkeypatch.setattr(exit_controller.time, "sleep", own_sleep(slept.append))
     box = _Box(
         tmp_path,
         probe=_StubProbe({"node_a": [measured("node_a", 40)]}),
@@ -615,7 +616,7 @@ def test_the_pin_is_tried_again_while_the_api_is_still_coming_up(tmp_path, monke
 
 def test_an_api_that_never_comes_up_stops_after_its_tries(tmp_path, monkeypatch):
     slept: list = []
-    monkeypatch.setattr(exit_controller.time, "sleep", slept.append)
+    monkeypatch.setattr(exit_controller.time, "sleep", own_sleep(slept.append))
     box = _Box(
         tmp_path,
         probe=_StubProbe({"node_a": [measured("node_a", 40)]}),

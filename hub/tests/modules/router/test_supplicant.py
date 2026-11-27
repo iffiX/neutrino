@@ -8,6 +8,7 @@ import pytest
 
 from neutrino_hub.modules.router import supplicant
 from neutrino_hub.modules.router.supplicant import RouterWifiClient
+from tests.conftest import own_sleep
 
 SCAN_TABLE = (
     "bssid / frequency / signal level / flags / ssid\n"
@@ -43,7 +44,7 @@ class Radio:
 @pytest.fixture
 def no_sleep(monkeypatch):
     slept: list[float] = []
-    monkeypatch.setattr(supplicant.time, "sleep", slept.append)
+    monkeypatch.setattr(supplicant.time, "sleep", own_sleep(slept.append))
     return slept
 
 

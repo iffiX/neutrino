@@ -14,6 +14,7 @@ import pytest
 import build_core_rustdesk
 from shared import cc_switch_assets, download, hub_assets, rustdesk_assets
 from shared.constants import PACKAGING_DOWNLOAD_RETRY_WAITS_S
+from tests.conftest import own_sleep
 
 BODY = b"the pinned bytes"
 DIGEST = hashlib.sha256(BODY).hexdigest()
@@ -69,7 +70,7 @@ def site():
 @pytest.fixture
 def waits(monkeypatch):
     slept = []
-    monkeypatch.setattr(download.time, "sleep", slept.append)
+    monkeypatch.setattr(download.time, "sleep", own_sleep(slept.append))
     return slept
 
 
