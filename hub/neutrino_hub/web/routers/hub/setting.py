@@ -112,6 +112,7 @@ from neutrino_hub.web.channel_addresses import channel_hosts
 from neutrino_hub.web import panel_tls
 from neutrino_hub.web.dependencies import get_runtime, require_session, session_cookie
 from neutrino_hub.web.identity import hub_name, set_hub_name
+from neutrino_hub.web.panel_port import write_panel_port
 from neutrino_hub.web.models import (
     AboutView,
     AcknowledgementView,
@@ -363,6 +364,7 @@ def update_settings(
         settings["language"] = language
         settings["theme"] = theme
         write_config(PANEL_SETTINGS_FILE, settings)
+        write_panel_port(request.listen_port)
         runtime.settings["listen_port"] = request.listen_port
         runtime.settings[WEB_SETTING_HTTPS_PORT] = https_port
         runtime.settings["agent_listen_port"] = agent_port

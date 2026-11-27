@@ -107,6 +107,7 @@ from neutrino_hub.web.constants import (
     WEB_SETTING_HTTPS_PORT,
 )
 from neutrino_hub.web.identity import ensure_hub_identity
+from neutrino_hub.web.panel_port import write_panel_port
 from neutrino_hub.web.panel_tls import ensure_served, watch_served_context
 from neutrino_hub.utils.json_file import read_config
 from neutrino_hub.utils.loopback_listen import bind_ipv6_loopback, with_ipv6_loopback
@@ -488,6 +489,10 @@ def _serve_panel(arguments) -> int:
         ensure_hub_identity()
     except (OSError, ValueError) as error:
         print(f"error: the hub has no identity ({error})", file=sys.stderr)
+    try:
+        write_panel_port(port)
+    except OSError as error:
+        print(f"error: the panel's port file is not written ({error})", file=sys.stderr)
     # The same belt the agent key gets: the usage collector reads the working
     # copy, and a panel started fresh after a restore has none yet.
     if not resolve_management_key():

@@ -107,6 +107,17 @@ class HubPlatform:
         """
         os.chmod(path, 0o600)
 
+    def make_readable_by_all(self, path) -> None:
+        """Leave one file readable by every account and writable by root alone.
+
+        Args:
+            path: The file.
+
+        Raises:
+            OSError: When its permissions cannot be set.
+        """
+        os.chmod(path, 0o644)
+
     def open_browser(self, url: str) -> bool:
         """Open a page in this machine's browser.
 

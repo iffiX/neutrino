@@ -20,6 +20,7 @@ from neutrino_hub.cli import run
 from neutrino_hub.modules.transport import ops as transport_ops
 from neutrino_hub.system.constants import SYSTEM_RESTART_EXIT_STATUS
 from neutrino_hub.web.constants import WEB_DEFAULT_HTTPS_LISTEN_PORT
+from neutrino_hub.web.panel_port import read_panel_port
 
 TLS = {"ssl_certfile": "/state/cert.pem", "ssl_keyfile": "/state/key.pem"}
 
@@ -83,6 +84,13 @@ def served(monkeypatch):
 
 def arguments(port=None) -> argparse.Namespace:
     return argparse.Namespace(host="0.0.0.0", port=port, reload=False)
+
+
+@pytest.mark.parametrize("port, expected", [(None, 80), (8090, 8090)])
+def test_the_panel_writes_the_port_it_listens_on_to_its_file(served, port, expected):
+    run._serve_panel(arguments(port))
+
+    assert read_panel_port() == expected
 
 
 def test_the_app_forwards_listen_where_the_panel_listens(served):

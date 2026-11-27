@@ -148,6 +148,7 @@ from neutrino_hub.web.constants import (
 )
 from neutrino_hub.web.identity import ensure_hub_identity
 from neutrino_hub.web.identity import hub_name
+from neutrino_hub.web.panel_port import write_panel_port
 from neutrino_hub.web.panel_tls import (
     authority_der,
     authority_file_name,
@@ -1261,6 +1262,7 @@ def _write_panel_settings(
     settings["language"] = language
     settings[WEB_SETTING_HTTPS] = is_https_enabled
     write_config("web/settings.json", settings)
+    write_panel_port(port)
 
 
 def _enrollment_link(password: str) -> tuple:

@@ -48,6 +48,7 @@ from neutrino_hub.web import channel_state, identity
 from neutrino_hub.web.auth import SessionStore, hash_password
 from neutrino_hub.web.dependencies import get_runtime, require_session
 from neutrino_hub.web.identity import ensure_hub_identity
+from neutrino_hub.web.panel_port import read_panel_port
 from neutrino_hub.web.routers.hub import auth as auth_router
 from neutrino_hub.modules.transport import ops as transport_ops
 from neutrino_hub.web.routers.hub import setting as settings_router
@@ -146,6 +147,7 @@ def test_a_new_port_is_written_and_the_panel_moves_to_it(port_client):
     assert response.json()["listen_port"] == 9443
     assert stored["listen_port"] == 9443
     assert runtime.settings["listen_port"] == 9443
+    assert read_panel_port() == 9443
     assert restarts == ["restarted"]
 
 

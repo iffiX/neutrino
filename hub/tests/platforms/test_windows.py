@@ -493,6 +493,28 @@ def test_a_root_only_file_is_left_to_system_and_the_administrators(monkeypatch):
     ]
 
 
+def test_a_file_readable_by_all_adds_read_for_the_users_group(monkeypatch):
+    icacls = _Icacls()
+    monkeypatch.setattr(windows.subprocess, "run", icacls)
+
+    _platform().make_readable_by_all("C:\\ProgramData\\Neutrino\\hub\\run\\panel_port")
+
+    assert icacls.calls == [
+        (
+            [
+                "icacls.exe",
+                "C:\\ProgramData\\Neutrino\\hub\\run\\panel_port",
+                "/inheritance:r",
+                "/grant:r",
+                "*S-1-5-18:F",
+                "*S-1-5-32-544:F",
+                "*S-1-5-32-545:R",
+            ],
+            0x08000000,
+        )
+    ]
+
+
 def test_a_refused_access_list_is_raised(monkeypatch):
     monkeypatch.setattr(windows.subprocess, "run", _Icacls(returncode=5))
 

@@ -34,6 +34,7 @@ from neutrino_hub.system.constants import SYSTEM_SUPERVISED_WEB
 from neutrino_hub.utils.constants import is_dev_root_set
 from neutrino_hub.utils.json_file import read_config
 from neutrino_hub.web.constants import WEB_DEFAULT_LISTEN_PORT
+from neutrino_hub.web.panel_port import read_panel_port
 from neutrino_hub.web.setup_app import ensure_setup_token
 
 # --- config ---
@@ -107,7 +108,7 @@ def main() -> int:
         )
         return 0
 
-    port = _configured_port()
+    port = read_panel_port()
     if platform.is_elevated():
         _start_service()
         url = address(platform.panel_browser_host)

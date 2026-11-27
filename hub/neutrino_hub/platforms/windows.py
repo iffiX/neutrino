@@ -28,6 +28,7 @@ from neutrino_hub.platforms.constants import (
     PLATFORM_WINDOWS_CONNECTION_LOST_CALLBACK,
     PLATFORM_WINDOWS_CREATE_NO_WINDOW,
     PLATFORM_WINDOWS_ICACLS,
+    PLATFORM_WINDOWS_READABLE_BY_ALL_ACL,
     PLATFORM_WINDOWS_ROOT_ONLY_ACL,
     PLATFORM_WINDOWS_SERVICE_NAME,
     PLATFORM_WINDOWS_SERVICE_STATES,
@@ -98,6 +99,30 @@ def quiet_connection_resets(loop) -> None:
 
     if hub_os() == PLATFORM_OS_WINDOWS:
         loop.set_exception_handler(drop_connection_reset)
+
+
+def _set_access_list(path, access_list: tuple) -> None:
+    """Replace one file's access list through icacls.
+
+    Args:
+        path: The file.
+        access_list: icacls's arguments after the path.
+
+    Raises:
+        OSError: When icacls cannot be run or refuses.
+    """
+    result = subprocess.run(
+        [PLATFORM_WINDOWS_ICACLS, str(path), *access_list],
+        capture_output=True,
+        text=True,
+        timeout=PLATFORM_COMMAND_TIMEOUT_S,
+        creationflags=PLATFORM_WINDOWS_CREATE_NO_WINDOW,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise OSError(
+            f"icacls refused {path}: {(result.stdout + result.stderr).strip()}"
+        )
 
 
 class WindowsHubPlatform(HubPlatform):
@@ -213,18 +238,18 @@ class WindowsHubPlatform(HubPlatform):
         Raises:
             OSError: When icacls cannot be run or refuses.
         """
-        result = subprocess.run(
-            [PLATFORM_WINDOWS_ICACLS, str(path), *PLATFORM_WINDOWS_ROOT_ONLY_ACL],
-            capture_output=True,
-            text=True,
-            timeout=PLATFORM_COMMAND_TIMEOUT_S,
-            creationflags=PLATFORM_WINDOWS_CREATE_NO_WINDOW,
-            check=False,
-        )
-        if result.returncode != 0:
-            raise OSError(
-                f"icacls refused {path}: {(result.stdout + result.stderr).strip()}"
-            )
+        _set_access_list(path, PLATFORM_WINDOWS_ROOT_ONLY_ACL)
+
+    def make_readable_by_all(self, path) -> None:
+        """Leave one file to SYSTEM and the Administrators, readable by Users.
+
+        Args:
+            path: The file.
+
+        Raises:
+            OSError: When icacls cannot be run or refuses.
+        """
+        _set_access_list(path, PLATFORM_WINDOWS_READABLE_BY_ALL_ACL)
 
     def open_browser(self, url: str) -> bool:
         """Open a page with the shell's own handler, as the signed-in account.

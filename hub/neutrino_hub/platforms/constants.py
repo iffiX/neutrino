@@ -119,6 +119,11 @@ PLATFORM_WINDOWS_ROOT_ONLY_ACL = (
     "*S-1-5-18:F",
     "*S-1-5-32-544:F",
 )
+# The same, with read for the Users group (S-1-5-32-545).
+PLATFORM_WINDOWS_READABLE_BY_ALL_ACL = (
+    *PLATFORM_WINDOWS_ROOT_ONLY_ACL,
+    "*S-1-5-32-545:R",
+)
 # The proactor callback that raises when a browser drops its connection.
 PLATFORM_WINDOWS_CONNECTION_LOST_CALLBACK = "_call_connection_lost"
 

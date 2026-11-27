@@ -106,6 +106,8 @@ WEB_DEFAULT_THEME = "dark"
 # offers it, the unit serves on it, and an enrollment link points a device at
 # it, and three copies of it is how a device ends up sent to the wrong port.
 WEB_DEFAULT_LISTEN_PORT = 8080
+# The panel's HTTP port and nothing else, readable by every local account.
+WEB_PANEL_PORT_PATH = UTILS_RUNTIME_ROOT / "panel_port"
 # The port the panel serves HTTPS on, beside the HTTP port, whether or not
 # HTTPS is on.
 WEB_DEFAULT_HTTPS_LISTEN_PORT = 443

@@ -9,6 +9,7 @@ install rather than by anything here.
 import pytest
 
 from neutrino_hub.cli import setup
+from neutrino_hub.web.panel_port import read_panel_port
 
 # --- a step that fails without ending the run ---
 
@@ -196,6 +197,7 @@ def test_the_panel_settings_carry_the_scheme_asked_for(tmp_path, monkeypatch, is
     assert settings["https_listen_port"] == 8453
     assert settings["language"] == "zh-CN"
     assert settings["is_https_enabled"] is is_https
+    assert read_panel_port() == 8090
 
 
 def test_the_panel_certificates_are_made_right_after_the_config_files():

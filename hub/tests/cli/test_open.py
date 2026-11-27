@@ -8,7 +8,7 @@ already answers without asking, asks for the elevated step otherwise and
 opens what that step wrote, opens nothing when the step is declined, that
 the step itself refuses to run without privilege, and that macOS opens the
 wizard and the panel at ``localhost``. The step writes into a directory the
-person owns.
+person owns, and the probe reads the port from the panel's port file.
 """
 
 import http.server
@@ -22,6 +22,7 @@ from types import SimpleNamespace
 import pytest
 
 from neutrino_hub.cli import open as open_command
+from neutrino_hub.web import panel_port
 
 
 class FakePlatform:
@@ -205,6 +206,27 @@ def test_on_macos_the_wizard_and_the_panel_open_at_localhost(box, tmp_path):
     assert output.read_text() == "http://localhost:8080/?token=t0ken\n"
     assert panel.opened == ["http://localhost:8080/"]
     assert box.probed == [8080]
+
+
+def test_the_probe_reads_the_port_from_the_panel_port_file(box):
+    panel_port.WEB_PANEL_PORT_PATH.write_text("80\n")
+    box.is_panel_answering = True
+    platform = FakePlatform(is_elevated=False)
+
+    assert box.run(platform=platform) == 0
+
+    assert box.probed == [80]
+    assert platform.elevated == []
+    assert platform.opened == ["http://127.0.0.1:80/"]
+
+
+def test_a_missing_port_file_probes_the_default_port(box):
+    platform = FakePlatform(is_elevated=False, step_address="http://127.0.0.1:80/")
+
+    box.run(platform=platform)
+
+    assert box.probed == [8080]
+    assert platform.opened == ["http://127.0.0.1:80/"]
 
 
 def test_with_privilege_nothing_is_probed(box):
