@@ -11,9 +11,9 @@ fake.
 
 | Block | Lives in | Runs | May touch |
 | --- | --- | --- | --- |
-| agent | `agent/tests/` | `pytest -q`, seconds, every commit | Fakes and `tmp_path` only: fake platforms, injected clocks, sockets on temporary paths; an autouse fixture redirects every store off the real machine |
-| client | `client/desktop/tests/` | `pytest -q`, seconds, every commit | Fakes and `tmp_path` only: fake platforms and toolkits, the compiled and fetched parts stood in for |
-| hub | `hub/tests/` | `pytest -q`, under a minute, every commit | FastAPI test clients and temporary config roots; never a unit, an interface, or `/etc` |
+| agent | `agent/tests/` | `pytest -q` on pytest-xdist workers, seconds, every commit | Fakes and `tmp_path` only: fake platforms, injected clocks, sockets on temporary paths; an autouse fixture redirects every store off the real machine |
+| client | `client/desktop/tests/` | `pytest -q` on pytest-xdist workers, seconds, every commit | Fakes and `tmp_path` only: fake platforms and toolkits, the compiled and fetched parts stood in for |
+| hub | `hub/tests/` | `pytest -q` on pytest-xdist workers, under a minute, every commit | FastAPI test clients and temporary config roots; never a unit, an interface, or `/etc` |
 | go | `transport/` and `agent/sshserver/`, each test beside its file, and `transport/tests/` | `go vet ./...` and `go test -race ./...` in each module, in the `go` job of `ci.yml`, every commit | sockets on loopback and temporary directories alone; the Python side of every local channel faked by a test that speaks its lines |
 | android | `client/android/app/src/test/` | `./gradlew test lint`, every commit | JUnit on the JVM; a fake socket, fake Keystore and fake VpnService; never an emulator or a device |
 | ios | `client/ios/NeutrinoTests/`, `client/ios/NeutrinoUITests/` | `swift-format lint --strict --recursive` and `xcodebuild test` on the iOS Simulator, in the `ios` job of `ci.yml` on GitHub's `macos-15` runner, every commit; the `ios_core` job builds the app for a device with the RustDesk core, checks the app defines `_nd_attach_frames`, and keeps the unsigned `.ipa` as the run's artifact `client_ios_device_test` for a test on an iPhone | XCTest; a fake socket, a fake Keychain, a fake SMB client and a fake RustDesk core; never a device |
@@ -24,8 +24,52 @@ process guard fails a test on any program that changes the machine or asks
 for authorization, such as `systemctl`, `nft`, `apt` or `sudo`. An audit hook
 fails a test that writes, creates, renames or removes a file outside its
 temporary folders. Its failure message names the path and the test. The agent
-block's `conftest.py` ends the reads of each reconcile worker at the end of its
-test.
+block's `conftest.py` ends the reads of each reconcile worker and the start
+watch of each engine at the end of its test.
+
+## Parallel runs
+
+The hub, agent and client suites run on pytest-xdist workers, as
+`pytest -q -n <workers> --dist loadgroup`, in a checkout and in `ci.yml`.
+pytest-xdist comes with the hub's dev extra, and the jobs that install pytest
+by name install it beside. A suite run without `-n` runs in one process and
+passes the same.
+
+Most of a test's time is a wait on a subprocess, a socket or a timer, so a
+suite still gains from more workers than processors. A machine of 16
+processors runs a suite on 16 workers, or on 8 when two suites run side by
+side. A runner of `ci.yml` has 4 processors and runs 8 workers.
+
+`--dist loadgroup` hands each test to the next free worker on its own, and
+the tests marked with one `xdist_group` to one worker in their order. The
+agent's two tests of a reconcile worker left running form such a group: the
+first leaves the worker, and the second reads what the first test's end did
+to it.
+
+A test that runs beside tests in other processes holds to these rules:
+
+- It takes a port the system picks, or searches from a random port; it never
+  starts from a fixed number.
+- A socket path it makes stays under the system's limit, whatever the folder
+  of its worker.
+- An order of events it proves is held by an event or a fake clock, never by
+  a time the other side has to finish in.
+- No thread it starts outlives it.
+
+## Python 3.9
+
+The agent's source declares Python 3.9, the oldest a checkout runs it on. A
+newer Python takes what 3.9 rejects: syntax newer than 3.9, a union written
+`X | Y` in an annotation evaluated as its module loads, and names of the
+standard library newer than 3.9, such as `zip(strict=)`, `tomllib` and
+`datetime.UTC`. Syntax and such an annotation fail the import of their module,
+a newer name only the code that runs it.
+
+The `agent_oldest_python` job of `ci.yml` runs the whole agent suite on 3.9.
+A checkout runs on 3.9 `pytest -q --collect-only`, which imports every test
+file and the packaging scripts they load, then `tests/test_imports.py`, which
+imports every module of the package, and the test files of the code a change
+touches.
 
 ## The mirror rule
 
@@ -289,17 +333,27 @@ the file its source mirrors:
 
 ## Editions
 
-Every block runs twice in CI: on the full tree, and on the mainland tree
-that `build_sources.py --edition cn` writes, where the hub, the agent and the
-client run `pytest -q` and the frontend runs `npm run build`. A test that
-needs a left-out feature lives in that feature's own mirrored directory and
-is deleted with it. A test outside that directory that needs one carries
-`@pytest.mark.feature("<name>")`, and the block's `conftest.py` skips it when
-the edition table reports the feature absent
+The hub and the client blocks run twice in CI: on the full tree, and on the
+mainland tree that `build_sources.py --edition cn` writes, where both run
+their whole suites and the frontend runs `npm run build`. A checkout runs the
+mainland tree's hub suite. The agent's files are the same in both trees and
+none of its tests reads a file the mainland tree changes, so the agent block
+runs once.
+
+The mainland tree runs the hub's whole suite. A choice of the tests its
+edition files can change keeps the tests that read the stamped install
+scripts, which are among the slowest. A rule by text or imports that keeps
+every test reaching the edition table keeps nearly every file, and a smaller
+rule leaves out tests that reach the table through another module.
+
+A test that needs a left-out feature lives in that feature's own mirrored
+directory and is deleted with it. A test outside that directory that needs one
+carries `@pytest.mark.feature("<name>")`, and the block's `conftest.py` skips
+it when the edition table reports the feature absent
 ([architecture.md](architecture.md), "A left-out feature is reached through
 one table"). The edition table's own test, `hub/tests/test_edition.py`, reads
-every Python file of the hub and fails on an import of a left-out package
-from outside that feature's files and the table.
+every Python file of the hub and fails on an import of a left-out package from
+outside that feature's files and the table.
 
 ## Coverage
 
@@ -416,7 +470,8 @@ and then a reset, and a 0.6.0 agent installed over a 0.5.2 one reads
 ## What a change owes
 
 A new module, service type, route, CLI verb or Go file arrives with its
-mirrored test file in the same commit. A new operator-visible behavior adds its cell to
+mirrored test file in the same commit, and every new test holds to the rules
+of "Parallel runs". A new operator-visible behavior adds its cell to
 the cli or control matrix. Changing a channel model fails the golden schema
 test until `PROTOCOL` moves or the change is shown additive
 ([protocol.md](protocol.md), "Versioning"). A new `{code}` anywhere adds its
