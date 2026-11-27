@@ -11,7 +11,6 @@ from neutrino_agent.modules.shared import system_package as system_package_modul
 from neutrino_agent.exceptions import InstallError, ModuleApplyError
 from neutrino_agent.modules.shared.system_package import SystemPackageModuleRunner
 from neutrino_agent.platforms.base import AgentPlatform
-from tests.conftest import own_sleep
 
 DNF_LOCK_PATHS = system_package_module.DNF_LOCK_PATHS
 
@@ -509,18 +508,18 @@ def test_pacman_runs_at_once_while_its_lock_file_is_not_there(fakes):
     assert fakes.args("pacman") == ["-Sy --needed --noconfirm x"]
 
 
-def test_pacman_waits_while_a_process_holds_its_lock_file_and_names_it(
-    fakes, monkeypatch
-):
+def test_pacman_waits_while_a_process_holds_its_lock_file_and_names_it(fakes):
     fakes.pacman_lock.write_text("")
     fakes.process(4321, "packagekitd", b"/usr/lib/packagekitd")
     waits: list = []
 
-    def release(seconds):
-        fakes.pacman_lock.unlink()
+    def told(wait):
+        # The holder lets the lock go once the wait for it is told.
+        waits.append(wait)
+        if wait:
+            fakes.pacman_lock.unlink()
 
-    monkeypatch.setattr(system_package_module.time, "sleep", own_sleep(release))
-    system_package_module.set_wait_sink(waits.append)
+    system_package_module.set_wait_sink(told)
     try:
         system_package_module.run_package_manager(PACMAN)
     finally:
