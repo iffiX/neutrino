@@ -21,7 +21,7 @@ from starlette.websockets import WebSocketDisconnect
 from neutrino_hub.modules.channel.constants import CHANNEL_ROLE_AGENT, PROTOCOL
 from neutrino_hub.modules.channel.port_guard import ChannelPortGuard
 from neutrino_hub.modules.channel.sessions import ChannelSessionRegistry
-from neutrino_hub.modules.devices.registry import DeviceRegistry
+from neutrino_hub.modules.devices.registry import DEVICES_CONFIG_PATH, DeviceRegistry
 from neutrino_hub.modules.services.device_shares import DeviceShareRegistry
 from neutrino_hub.utils.json_file import set_config_write_hook, write_config
 from neutrino_hub.web import identity, ws
@@ -226,15 +226,25 @@ def agent_of(runtime, panel, device) -> Agent:
     """One agent's session, with the presence event it caused read off."""
     agent = Agent(runtime, device)
     agent.open()
-    assert panel.receive_json()["type"] == WEB_EVENT_DEVICES
+    assert [frame["type"] for frame in frames_until(panel, WEB_EVENT_DEVICES)] == [
+        WEB_EVENT_DEVICES
+    ]
     return agent
 
 
 def frames_until(panel, event_type: str) -> list:
-    """Every frame up to and including the next one of this type."""
+    """Every frame up to and including the next one of this type, the
+    registry's own writes left out.
+
+    The registry writes its file when the device is made and at each report.
+    A write inside the coalescing window sends its hint when the window ends,
+    at a moment the machine's load sets.
+    """
     frames = []
     while True:
         frame = panel.receive_json()
+        if frame["type"] == WEB_EVENT_CONFIG and frame["key"] == DEVICES_CONFIG_PATH:
+            continue
         frames.append(frame)
         if frame["type"] == event_type:
             return frames
@@ -268,7 +278,7 @@ def test_a_channel_opening_says_the_device_list_moved(box, device):
 
     agent = Agent(runtime, device)
     agent.open()
-    frame = panel.receive_json()
+    (frame,) = frames_until(panel, WEB_EVENT_DEVICES)
     closed(agent, panel)
 
     assert frame["type"] == WEB_EVENT_DEVICES
