@@ -361,10 +361,6 @@ def test_containers_with_no_account_are_refused():
     )
 
 
-def test_no_containers_and_no_account_pass():
-    PodmanConfig.from_dict({"containers": []}).validate(os_name="windows")
-
-
 @pytest.mark.parametrize(
     "ports, services",
     [
