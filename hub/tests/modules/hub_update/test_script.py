@@ -10,12 +10,14 @@ a file of the test's own too.
 
 import json
 import os
+import shlex
 import subprocess
 from pathlib import Path
 
 import pytest
 
 from neutrino_hub.modules.hub_update import installer as installer_module
+from neutrino_hub.modules.hub_update.constants import HUB_UPDATE_STEP_WAITING
 from neutrino_hub.modules.hub_update.installer import HubUpdatePlan, render_script
 from neutrino_hub.modules.hub_update.state import HubUpdateStateFile
 
@@ -451,7 +453,17 @@ def arch_box(box, monkeypatch, *, is_locked: bool) -> Path:
     lock = directory / "db.lck"
     if is_locked:
         lock.write_text("")
-        subprocess.Popen(["sh", "-c", f"sleep 1.5; rm {lock}"])
+        # The lock goes once the script has written its wait, or after 2 minutes.
+        state = directory / "state.json"
+        seen = f"grep -qs {shlex.quote(HUB_UPDATE_STEP_WAITING)} {state}"
+        subprocess.Popen(
+            [
+                "sh",
+                "-c",
+                f"n=0; until {seen} || [ $n -ge 2400 ]; do sleep 0.05; n=$((n + 1)); "
+                f"done; rm {lock}",
+            ]
+        )
     monkeypatch.setattr(installer_module, "HUB_UPDATE_PACMAN_LOCK_PATH", str(lock))
     return lock
 

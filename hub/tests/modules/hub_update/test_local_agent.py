@@ -9,6 +9,7 @@ stand-in writes down the version it installed, and nagent says it back.
 """
 
 import os
+import shlex
 import shutil
 import subprocess
 from pathlib import Path
@@ -17,6 +18,7 @@ from types import SimpleNamespace
 import pytest
 
 from neutrino_hub.modules.hub_update import installer as installer_module
+from neutrino_hub.modules.hub_update.constants import HUB_UPDATE_STEP_WAITING
 from neutrino_hub.modules.hub_update import local_agent as local_agent_module
 from neutrino_hub.modules.hub_update.local_agent import (
     HubLocalAgentInstaller,
@@ -464,7 +466,17 @@ def test_an_arch_agent_waits_for_pacmans_lock_and_says_so(box, monkeypatch):
     _, directory = box
     lock = directory / "db.lck"
     lock.write_text("")
-    subprocess.Popen(["sh", "-c", f"sleep 1; rm {lock}"])
+    # The lock goes once the script has written its wait, or after 2 minutes.
+    log = directory / "local_agent.log"
+    seen = f"grep -qs {shlex.quote(HUB_UPDATE_STEP_WAITING)} {log}"
+    subprocess.Popen(
+        [
+            "sh",
+            "-c",
+            f"n=0; until {seen} || [ $n -ge 2400 ]; do sleep 0.05; n=$((n + 1)); "
+            f"done; rm {lock}",
+        ]
+    )
     monkeypatch.setattr(installer_module, "HUB_UPDATE_PACMAN_LOCK_PATH", str(lock))
 
     code, steps, ran = run_linux(box, family="arch")
