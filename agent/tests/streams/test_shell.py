@@ -97,8 +97,9 @@ def test_the_first_size_is_the_terminals():
 def test_a_resize_reaches_the_terminal():
     channel = FakeChannel()
     channel.feed(("resize", 132, 50))
+    channel.feed(("data", b"go\n"))
 
-    run_shell(channel, ["/bin/sh", "-c", "sleep 0.3; stty size"])
+    run_shell(channel, ["/bin/sh", "-c", "read line; stty size"])
 
     assert b"50 132" in channel.output()
 
