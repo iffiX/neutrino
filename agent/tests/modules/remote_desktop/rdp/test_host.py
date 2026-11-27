@@ -9,6 +9,7 @@ in its own file.
 """
 
 import ast
+import functools
 import os
 import pwd
 import shutil
@@ -20,6 +21,7 @@ from neutrino_agent.core.store import MachineStateStore
 from neutrino_agent.exceptions import ModuleApplyError
 from neutrino_agent.modules.shared.account_files import WRITE_SHELL, AccountFiles
 from neutrino_agent.platforms.base import AgentPlatform
+from neutrino_agent.modules.remote_desktop.rdp import host as host_module
 from neutrino_agent.modules.remote_desktop.rdp.host import RdpShareHost
 
 from tests.conftest import fd_owners
@@ -1398,7 +1400,11 @@ def test_an_options_file_that_is_no_text_stays_and_the_switch_goes_off(linux_hos
     assert "restore" in _steps(linux_host.applier)
 
 
-def test_an_options_path_that_is_no_regular_file_is_not_opened(linux_host):
+def test_an_options_path_that_is_no_regular_file_is_not_opened(linux_host, monkeypatch):
+    # The account's read of the pipe ends at its timeout.
+    monkeypatch.setattr(
+        host_module, "AccountFiles", functools.partial(AccountFiles, timeout_s=2)
+    )
     settings = _later_account(linux_host)
     (settings / "RustDesk2.toml").unlink()
     os.mkfifo(settings / "RustDesk2.toml")
