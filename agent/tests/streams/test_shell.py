@@ -119,11 +119,11 @@ def test_a_close_from_the_hub_ends_a_shell_that_would_run_on():
     outcome: dict = {}
 
     def serve():
-        outcome.update(run_shell(channel, ["/bin/sh", "-c", "sleep 30"]))
+        outcome.update(run_shell(channel, ["/bin/sh", "-c", "echo up; sleep 30"]))
 
     thread = threading.Thread(target=serve)
     thread.start()
-    time.sleep(0.2)
+    wait_for_output(channel, b"up")
     channel.close_from_hub()
     thread.join(timeout=5)
 
@@ -487,7 +487,8 @@ def test_a_kept_shell_that_is_not_persistent_ends_with_its_stream():
     registry = ShellSessionRegistry()
     channel = FakeChannel()
     thread, outcome = serve_kept(registry, channel, "tab-2")
-    time.sleep(0.2)
+    channel.feed(("data", b"echo re''ady\n"))
+    wait_for_output(channel, b"ready")
 
     channel.close_from_hub()
     thread.join(timeout=5)

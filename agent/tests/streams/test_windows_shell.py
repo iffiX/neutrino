@@ -267,6 +267,16 @@ def run_shell(kernel32, channel, **args):
     return stream.run()
 
 
+def wait_until(condition, timeout_s: float = 5.0) -> bool:
+    """Whether a condition holds within a few seconds."""
+    deadline = time.monotonic() + timeout_s
+    while not condition():
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.01)
+    return True
+
+
 def created(kernel32):
     return next(call for call in kernel32.calls if call[0] == "CreateProcessAsUserW")
 
@@ -324,7 +334,7 @@ def test_a_close_from_the_hub_terminates_the_shell_and_closes_its_job():
 
     thread = threading.Thread(target=serve)
     thread.start()
-    time.sleep(0.1)
+    assert wait_until(lambda: "ResumeThread" in kernel32.names())
     channel.close_from_hub()
     thread.join(timeout=5)
 
@@ -491,7 +501,7 @@ def test_a_persistent_shell_survives_its_stream_and_is_attached_again():
 
     thread = threading.Thread(target=serve, args=(first,))
     thread.start()
-    time.sleep(0.1)
+    assert wait_until(registry.describe)
     registry.persist("tab-1", True)
     first.close_from_hub()
     thread.join(timeout=5)
