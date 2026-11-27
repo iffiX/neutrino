@@ -2,18 +2,18 @@
 
 The autouse redirect keeps every store off the real machine: the binding
 file, the machine's own state store, the credentials directory, the
-configured marks and the package directory all land in ``tmp_path``, and
-the AI gateway forward an agent builds listens on a port the system picks.
-A guard on every process a test starts refuses by name the firewalls, the
+configured marks and the package directory all land in ``tmp_path``, and the
+AI gateway forward an agent builds listens on a port the system picks. A
+guard on every process a test starts refuses by name the firewalls, the
 network tools, the service and package managers, Podman and every other
 program that reads or changes the machine or asks for authorization to, an
 agent a test builds on this system's own platform observes none of its
-modules, each reconcile worker a test starts reads nothing once the test
-ends, and each test has a hub clock of its own. An audit hook fails a
-test that writes, creates, renames or removes a file outside its temporary
-folders. The fakes here are the ones more than one directory drives:
-the control channel's platform and agent, the injected clock, the link
-builder and the log sink.
+modules, each reconcile worker and each start watch a test starts reads
+nothing once the test ends, and each test has a hub clock of its own. An
+audit hook fails a test that writes, creates, renames or removes a file
+outside its temporary folders. The fakes here are the ones more than one
+directory drives: the control channel's platform and agent, the injected
+clock, the link builder and the log sink.
 """
 
 import base64
@@ -390,6 +390,27 @@ def _no_reconcile_worker_outlives_its_test(
     with passes:
         state["is_ended"] = True
         passes.wait_for(lambda: not state["running"], RECONCILE_END_WAIT_S)
+
+
+@pytest.fixture(autouse=True)
+def _no_start_watch_outlives_its_test(monkeypatch):
+    """End the start watch of each engine the test started one on, at its end.
+
+    A watch reads its module again on a thread of its own for two minutes.
+    One that runs on reads a later test's patched clock and runners.
+    """
+    engines = []
+    real_watch_start = engine_module.ModuleEngine._watch_start
+
+    def watch_start(engine, name: str) -> None:
+        engines.append(engine)
+        real_watch_start(engine, name)
+
+    monkeypatch.setattr(engine_module.ModuleEngine, "_watch_start", watch_start)
+    yield
+    for engine in engines:
+        with engine._lock:
+            engine._start_watches.clear()
 
 
 def _moduleless_platform():
