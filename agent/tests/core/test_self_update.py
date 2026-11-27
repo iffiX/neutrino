@@ -16,7 +16,6 @@ import json
 import os
 import shutil
 import subprocess
-import threading
 from pathlib import Path
 
 import pytest
@@ -975,11 +974,10 @@ def test_the_arch_update_waits_for_a_process_that_holds_the_lock_file(
     lock, calls, run = pacman_unit(tmp_path, stubbed, monkeypatch, is_reinstall=True)
     lock.write_text("")
     holder = pacman_holder(tmp_path, "packagekitd")
-    released = threading.Timer(2, shutil.rmtree, [holder])
-    released.start()
+    # The holder ends once the script starts its first wait for it.
+    stub_manager(stubbed, "sleep", body=f'rm -rf {holder}\nexec /bin/sleep "$@"')
 
     written = json.loads(run())
-    released.join()
 
     assert written["exit_code"] == 0
     assert written["output"].endswith("Installed\n")
