@@ -612,8 +612,8 @@ jobs:
 
       - run: python packaging/ci/check_demo.py demo/dist
 
-  # The mainland tree build_sources.py --edition cn writes: the same suite
-  # again where the features cn leaves out are not there.
+  # The mainland tree build_sources.py --edition cn writes: the hub's and the
+  # client's suites again where the features cn leaves out are not there.
   mainland_tree:
     name: mainland source tree
     runs-on: ubuntu-24.04
@@ -629,7 +629,7 @@ jobs:
           if-no-files-found: error
 
   mainland_python:
-    name: mainland tree, hub and agent tests
+    name: mainland tree, hub tests
     needs: [mainland_tree]
     runs-on: ubuntu-24.04
     steps:
@@ -651,9 +651,6 @@ jobs:
 
       - run: pytest -q -n 8 --dist loadgroup
         working-directory: cn/hub
-
-      - run: pytest -q -n 8 --dist loadgroup
-        working-directory: cn/agent
 
   mainland_client:
     name: mainland tree, client tests
