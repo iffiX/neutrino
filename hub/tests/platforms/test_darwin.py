@@ -5,6 +5,7 @@ import subprocess
 import pytest
 
 from neutrino_hub.platforms import darwin
+from neutrino_hub.platforms.constants import PLATFORM_DARWIN_CONSOLE
 from neutrino_hub.platforms.darwin import DarwinHubPlatform
 from tests.conftest import FakeLaunchd, completed
 
@@ -204,10 +205,15 @@ def test_the_account_at_the_screen_is_the_system_configurations_console_user(
         calls.append((command, keywords.get("input")))
         return completed(AUTO_LOGIN_CONSOLE_USER)
 
+    real_stat = darwin.os.stat
+
+    def stat(path, *arguments, **keywords):
+        if path == PLATFORM_DARWIN_CONSOLE:
+            pytest.fail("the console is not read")
+        return real_stat(path, *arguments, **keywords)
+
     monkeypatch.setattr(darwin.subprocess, "run", fake_run)
-    monkeypatch.setattr(
-        darwin.os, "stat", lambda path: pytest.fail("the console is not read")
-    )
+    monkeypatch.setattr(darwin.os, "stat", stat)
 
     assert darwin.console_uid() == 502
     assert calls == [(["/usr/sbin/scutil"], "show State:/Users/ConsoleUser\n")]
