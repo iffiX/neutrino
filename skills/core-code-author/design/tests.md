@@ -35,10 +35,12 @@ pytest-xdist comes with the hub's dev extra, and the jobs that install pytest
 by name install it beside. A suite run without `-n` runs in one process and
 passes the same.
 
-Most of a test's time is a wait on a subprocess, a socket or a timer, so a
-suite still gains from more workers than processors. A machine of 16
-processors runs a suite on 16 workers, or on 8 when two suites run side by
-side. A runner of `ci.yml` has 4 processors and runs 8 workers.
+Most of a hub or agent test's time is a wait on a subprocess, a socket or a
+timer, so those suites still gain from more workers than processors. A
+machine of 16 processors runs a suite on 16 workers, or on 8 when two suites
+run side by side. A runner of `ci.yml` has 4 processors and runs the hub's
+and the agent's suites on 8 workers, and the client's on 4: its tests spend
+their time in Python, the more so under the coverage tracer.
 
 `--dist loadgroup` hands each test to the next free worker on its own, and
 the tests marked with one `xdist_group` to one worker in their order. A group
@@ -57,8 +59,10 @@ A test that runs beside tests in other processes holds to these rules:
 - An order of events it proves is held by an event or a fake clock, never by
   a time the other side has to finish in.
 - No thread it starts outlives it.
-- A function of `os` it replaces still serves every other caller, the
-  coverage tracer among them.
+- A function of `os` or `time` it replaces still serves every other caller,
+  the coverage tracer and the other threads of its process among them; the
+  block's `conftest.py` gives `own_sleep` for a `time.sleep` that records the
+  test's own waits.
 - A state it hands to the next test still holds when the two run in
   different processes.
 
