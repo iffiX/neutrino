@@ -24,6 +24,8 @@ import pytest
 from shared import install_script_stamp
 from shared.constants import PACKAGING_RELEASE_SITES
 
+from tests.packaging.conftest import level_first_bytes
+
 SCRIPT = Path(__file__).resolve().parents[3] / "packaging" / "install" / "install.ps1"
 RELATIVE = "packaging/install/install.ps1"
 LAST_LINE = "Install-Neutrino @args"
@@ -325,6 +327,7 @@ def test_the_tree_s_script_names_the_sites_of_its_edition():
 
 def test_the_fastest_site_serves_the_package(run):
     _publish(run.served, MSI, os.urandom(1536 * 1024))
+    level_first_bytes(run.first, run.second)
     run.first.chunk_delay_s = 0.05
 
     outcome, _asked = run()
@@ -354,6 +357,7 @@ def test_a_site_quick_to_answer_outscores_a_faster_one_slow_to_answer(run):
 def test_a_stalled_download_resumes_on_the_next_site_where_it_stopped(run):
     _publish(run.served, MSI, os.urandom(3 * 1024 * 1024))
     run.first.stall_at = 2 * 1024 * 1024
+    level_first_bytes(run.first, run.second)
     run.second.chunk_delay_s = 0.05
 
     outcome, asked = run(env={"NEUTRINO_VERSION": TAG})
@@ -369,6 +373,7 @@ def test_a_stalled_download_resumes_on_the_next_site_where_it_stopped(run):
 def test_a_site_serving_other_bytes_is_dropped_and_the_next_serves(run):
     _publish(run.served, MSI, os.urandom(1536 * 1024))
     run.first.is_wrong = True
+    level_first_bytes(run.first, run.second)
     run.second.chunk_delay_s = 0.05
 
     outcome, _asked = run(env={"NEUTRINO_VERSION": TAG})

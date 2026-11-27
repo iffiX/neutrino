@@ -39,6 +39,15 @@ WRONG_BYTES = bytes(byte ^ 0xFF for byte in range(256))
 SITE_HOLD_S = 15
 SITE_FILE_PATH = re.compile(r"^/download/([^/]+)/([^/]+)$")
 SITE_RANGE = re.compile(r"^bytes=(\d+)-(\d*)$")
+# The first-byte delay sites share where their speeds alone order them: a
+# probe's latency score then holds them level whatever the machine's load.
+SITE_LEVEL_FIRST_BYTE_S = 0.1
+
+
+def level_first_bytes(*sites) -> None:
+    """Delay every file's first byte alike on each site, so speed orders them."""
+    for site in sites:
+        site.first_byte_delay_s = SITE_LEVEL_FIRST_BYTE_S
 
 
 class ReleaseSite:

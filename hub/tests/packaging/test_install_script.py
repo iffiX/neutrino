@@ -27,6 +27,8 @@ import pytest
 from shared import install_script_stamp
 from shared.constants import PACKAGING_RELEASE_SITES
 
+from tests.packaging.conftest import level_first_bytes
+
 SCRIPT = Path(__file__).resolve().parents[3] / "packaging" / "install" / "install.sh"
 RELATIVE = "packaging/install/install.sh"
 TAG = "v9.9.9"
@@ -677,6 +679,7 @@ def test_the_tree_s_script_names_the_sites_of_its_edition():
 def test_the_fastest_site_serves_the_package(stand_ins):
     name = "neutrino-hub_9.9.9_amd64.deb"
     _publish(stand_ins.served, name, os.urandom(1536 * 1024))
+    level_first_bytes(stand_ins.first, stand_ins.second)
     stand_ins.first.chunk_delay_s = 0.05
 
     result, _asked = stand_ins()
@@ -709,6 +712,7 @@ def test_a_stalled_download_resumes_on_the_next_site_where_it_stopped(stand_ins)
     data = os.urandom(3 * 1024 * 1024)
     _publish(stand_ins.served, name, data)
     stand_ins.first.stall_at = 2 * 1024 * 1024
+    level_first_bytes(stand_ins.first, stand_ins.second)
     stand_ins.second.chunk_delay_s = 0.05
 
     result, asked = stand_ins()
@@ -727,6 +731,7 @@ def test_a_site_serving_other_bytes_is_dropped_and_the_next_serves(stand_ins):
     name = "neutrino-hub_9.9.9_amd64.deb"
     _publish(stand_ins.served, name, os.urandom(1536 * 1024))
     stand_ins.first.is_wrong = True
+    level_first_bytes(stand_ins.first, stand_ins.second)
     stand_ins.second.chunk_delay_s = 0.05
 
     result, asked = stand_ins(environment={"NEUTRINO_VERSION": TAG})
@@ -771,6 +776,7 @@ def test_a_site_that_answers_a_range_with_the_whole_file_is_never_moved_to(
     _publish(stand_ins.served, name, os.urandom(3 * 1024 * 1024))
     stand_ins.first.stall_at = 2 * 1024 * 1024
     stand_ins.second.is_rangeless = True
+    level_first_bytes(stand_ins.first, stand_ins.second)
     stand_ins.second.chunk_delay_s = 0.05
 
     result, asked = stand_ins(environment={"NEUTRINO_VERSION": TAG})
