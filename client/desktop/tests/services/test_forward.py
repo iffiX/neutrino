@@ -518,13 +518,19 @@ def test_a_number_outside_the_ports_is_not_free():
 
 
 def test_the_udp_probe_binds_udp_sockets_on_the_wildcard():
-    held = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    held.bind(("0.0.0.0", 0))  # scan: allow
-    port = held.getsockname()[1]
+    # Another process can hold the same number on TCP; the case takes the
+    # first of five numbers no TCP socket holds.
+    for _attempt in range(5):
+        held = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        held.bind(("0.0.0.0", 0))  # scan: allow
+        port = held.getsockname()[1]
+        assert is_port_free(port, protocol="udp") is False
+        is_tcp_free = is_port_free(port)
+        held.close()
+        if is_tcp_free:
+            break
 
-    assert is_port_free(port, protocol="udp") is False
-    assert is_port_free(port) is True
-    held.close()
+    assert is_tcp_free is True
     assert is_port_free(port, protocol="udp") is True
 
 
