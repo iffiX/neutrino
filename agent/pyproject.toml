@@ -28,3 +28,6 @@ target-version = ["py39"]
 testpaths = ["tests"]
 pythonpath = ["."]
 addopts = "-ra --strict-markers"
+markers = [
+    "xdist_group(name): runs on one pytest-xdist worker with the other tests of its group, in their order.",
+]

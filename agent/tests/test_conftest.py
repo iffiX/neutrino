@@ -295,10 +295,12 @@ class SlowWorker(ReconcileWorker):
         self.ended.set()
 
 
-# The worker the first of the two tests below leaves to the second.
+# The worker the first of the two tests below leaves to the second, on the
+# same pytest-xdist worker.
 LEFT_WORKERS: list = []
 
 
+@pytest.mark.xdist_group("left_reconcile_worker")
 def test_a_reconcile_worker_left_with_a_pass_running():
     worker = SlowWorker()
     worker._wakeup.set()
@@ -308,6 +310,7 @@ def test_a_reconcile_worker_left_with_a_pass_running():
     LEFT_WORKERS.append(worker)
 
 
+@pytest.mark.xdist_group("left_reconcile_worker")
 def test_a_reconcile_worker_ends_its_pass_under_its_test_and_runs_no_other():
     worker = LEFT_WORKERS.pop()
 
