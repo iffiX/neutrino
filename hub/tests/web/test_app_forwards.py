@@ -16,6 +16,7 @@ started, and one with an open connection kept.
 
 import asyncio
 import datetime
+import random
 import socket
 import ssl
 
@@ -39,6 +40,10 @@ needs_ipv6 = pytest.mark.skipif(
 PORT = 19000
 DEVICE = "d1"
 APP_PORT = 8444
+# The ports a run of free ports is taken from, below the system's ephemeral
+# range. Each look starts at a random port, away from the looks of cases
+# running in other processes.
+FREE_PORTS = range(20000, 32000)
 
 
 class FakeHubForwards:
@@ -101,7 +106,11 @@ class FarEnd:
 
 def free_range(count: int = 4) -> int:
     """The first port of ``count`` free ports in a row on loopback."""
-    for first in range(39100, 40000, count):
+    start = random.randrange(FREE_PORTS.start, FREE_PORTS.stop - count)
+    for first in (
+        *range(start, FREE_PORTS.stop - count, count),
+        *range(FREE_PORTS.start, start, count),
+    ):
         sockets = []
         try:
             for port in range(first, first + count):
