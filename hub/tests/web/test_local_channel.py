@@ -715,12 +715,14 @@ def test_a_dropped_control_connection_ends_every_session_and_is_dialled_again(
             await fake.wait_control()
             await admitted_agent(fake, device_id, session="s2")
             online_again = runtime.agent_sessions.is_online(device_id)
+            # The stop below ends the second session too, at a moment of its own.
+            dropped = list(recorded["offline"])
         finally:
             await stopped(fake, channel, task)
-        return offline, online_again, fake.control_count, runtime
+        return offline, online_again, fake.control_count, runtime, dropped
 
-    offline, online_again, count, runtime = asyncio.run(scenario())
+    offline, online_again, count, runtime, dropped = asyncio.run(scenario())
     assert (offline, online_again, count) == (True, True, 2)
-    assert recorded["offline"] == [(device_id_of(recorded), True)]
+    assert dropped == [(device_id_of(recorded), True)]
     assert runtime.ollama_gateway.forgotten == 2
     assert runtime.ollama_kept.forgotten == 2
