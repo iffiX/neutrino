@@ -1108,13 +1108,14 @@ nsenter -t $peer -n sh -c 'ip link set lo up; ip link set peer0 up
 ip route add 10.8.0.0/24 dev hub0
 nft -f "$2"
 "$3" "$4" serve &
+server=$!
 sleep 0.5
 for source in 10.9.0.2 10.8.0.2 fd00:9::2; do
   for port in 8080 2222; do
     nsenter -t $peer -n "$3" "$4" probe $source $port
   done
 done
-kill $peer
+kill $server $peer
 """
 
 NAMESPACE_PEER = r"""
