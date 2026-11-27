@@ -1173,6 +1173,8 @@ const PORT_LAST = 65535;
 // The loopback every forward listens on, which every port entry's address,
 // macOS's browser and a share mounted there name.
 const LOOPBACK_SERVER = '127.0.0.1';
+// The IPv6 loopback macOS's browser opens a page no forwarder serves on.
+const LOOPBACK_SERVER_IPV6 = '[::1]';
 
 function drawApps(state) {
   const hubs = state.hubs || [];
@@ -1232,10 +1234,12 @@ function appProviderLine(hub, app, entries) {
   return t('ui.app_provided_by', { hub: hubName(hub), machine: machine, source: source });
 }
 
-// The host an app's web addresses name: its local name, or the loopback
-// on macOS, whose browser resolves no .localhost name.
-function localHost(app) {
-  return isMac() ? LOOPBACK_SERVER : app.local_name;
+// The host a web entry's address names: its app's local name, or on macOS,
+// whose browser resolves no .localhost name, the loopback for a forwarder's
+// page and the IPv6 loopback for any other.
+function localHost(app, entry) {
+  if (!isMac()) return app.local_name;
+  return (entry.payload || {}).is_token_required === true ? LOOPBACK_SERVER : LOOPBACK_SERVER_IPV6;
 }
 
 // One entry's local address: the page's own url at the local name for a
@@ -1248,7 +1252,7 @@ function localAddress(app, entry) {
     const url = /^([a-z][a-z0-9+.-]*):\/\/[^/?#]*([^#]*)/i.exec((entry.payload || {}).url || '');
     const scheme = url ? url[1].toLowerCase() : 'http';
     const path = url && url[2] ? url[2] : '/';
-    return scheme + '://' + localHost(app) + ':' + port + path;
+    return scheme + '://' + localHost(app, entry) + ':' + port + path;
   }
   return LOOPBACK_SERVER + ':' + port + protocolSuffix(entry);
 }

@@ -567,6 +567,23 @@ class ForwardListenerRegistry:
             record = self._forwards.get(service_key(hub_id, entry_id))
         return record["port"] if record else 0
 
+    def has_ipv6_listener(self, hub_id: str, entry_id: str) -> bool:
+        """Whether one entry's forward also listens on ``[::1]``.
+
+        Args:
+            hub_id: The hub the entry came from.
+            entry_id: The entry's id.
+
+        Returns:
+            True while its forward listens on ``[::1]``.
+        """
+        with self._lock:
+            record = self._forwards.get(service_key(hub_id, entry_id))
+        return bool(record) and any(
+            listen.startswith(f"[{FORWARD_BIND_HOST_IPV6}]:")
+            for listen in record["listens"]
+        )
+
     def forwards(self) -> dict:
         """Every forward listening now.
 

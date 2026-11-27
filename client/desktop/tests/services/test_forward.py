@@ -10,7 +10,8 @@ names the hub's binding, the loopback address, the protocol and the
 the panel's also listen on ``[::1]`` at the same number where the machine
 has IPv6, a held ``[::1]`` refused ``port_taken`` with the ``127.0.0.1``
 listener closed, and the end of either listener ending the forward; every
-other forward listens on ``127.0.0.1`` alone; ``forward_stop`` names the
+other forward listens on ``127.0.0.1`` alone, and the registry says which
+forward listens on ``[::1]``; ``forward_stop`` names the
 address and the protocol; a ``forward_end`` with a code ends the forward and
 says why; every forward starts again when the transport is back; and the
 probe that says whether a number is free on every address.
@@ -255,6 +256,16 @@ def test_a_machine_with_no_ipv6_listens_on_127_0_0_1_alone(tmp_path, monkeypatch
     ]
     assert len(listens) == 2
     assert all(listen.startswith("127.0.0.1:") for listen in listens)
+    assert not registry.forwards.has_ipv6_listener("h1", "w")
+
+
+def test_the_registry_says_which_forward_listens_on_the_ipv6_loopback(registry):
+    registry.forwards.ensure(hub_id="h1", entry_id="w", kind="web", own_port=25026)
+    registry.forwards.ensure(hub_id="h1", entry_id="p", kind="port", own_port=25027)
+
+    assert registry.forwards.has_ipv6_listener("h1", "w")
+    assert not registry.forwards.has_ipv6_listener("h1", "p")
+    assert not registry.forwards.has_ipv6_listener("h1", "gone")
 
 
 def test_a_held_ipv6_loopback_is_port_taken_and_closes_the_ipv4_listener(registry):

@@ -17,9 +17,11 @@ import urllib.parse
 
 from neutrino_client.cli import names, wording
 
-# The host every port entry's address names, and every web entry's where
-# the browser resolves no ``.localhost`` name.
+# The host every port entry's address names, and a forwarder's page's where
+# the browser resolves no ``.localhost`` name; there every other page's host
+# is the IPv6 loopback.
 APP_LOOPBACK_HOST = "127.0.0.1"
+APP_LOOPBACK_HOST_IPV6 = "[::1]"
 APP_LOOPBACK_OS = "darwin"
 # The separator of ``--port``'s entry and number.
 APP_PORT_SEPARATOR = "="
@@ -226,9 +228,11 @@ def local_address(state: dict, app: dict, entry: dict) -> str:
         entry: The entry.
 
     Returns:
-        ``<scheme>://<local name>:<port><path>`` for a ``web`` entry, the
-        host ``127.0.0.1`` on macOS; ``127.0.0.1:<port>`` for a ``port``
-        one, ``/udp`` after a UDP one. Empty while the entry has no number.
+        ``<scheme>://<local name>:<port><path>`` for a ``web`` entry, on
+        macOS the host ``127.0.0.1`` for an entry with
+        ``is_token_required`` and ``[::1]`` for any other;
+        ``127.0.0.1:<port>`` for a ``port`` one, ``/udp`` after a UDP one.
+        Empty while the entry has no number.
     """
     port = entry.get("local_port")
     if isinstance(port, bool) or not isinstance(port, int) or port <= 0:
@@ -237,7 +241,10 @@ def local_address(state: dict, app: dict, entry: dict) -> str:
     payload = entry.get("payload") or {}
     if entry.get("type") == "web":
         name = str(app.get("local_name", "") or "")
-        if (state.get("platform") or {}).get("os") != APP_LOOPBACK_OS and name:
+        if (state.get("platform") or {}).get("os") == APP_LOOPBACK_OS:
+            if payload.get("is_token_required") is not True:
+                host = APP_LOOPBACK_HOST_IPV6
+        elif name:
             host = name
         parts = urllib.parse.urlsplit(str(payload.get("url", "")))
         path = parts.path or "/"

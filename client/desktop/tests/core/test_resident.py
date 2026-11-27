@@ -32,7 +32,8 @@ gives, a number another program holds refused ``port_taken`` with the
 other forwards kept, Stop ending them, and Configure's numbers judged
 before any is kept. The panel's sign-in asked with a ``service`` frame
 before its forward, the panel opened at ``localhost`` on macOS, where
-every app opens at ``127.0.0.1``, the terminals' streams opened through the transport
+a forwarder's page opens at ``127.0.0.1`` and any other at ``[::1]``,
+``127.0.0.1`` where its forward has no ``[::1]`` listener, the terminals' streams opened through the transport
 with their account, the window terminal's Clear, the shares on Windows
 through the files adapter, and the Settings page's values.
 """
@@ -3170,7 +3171,9 @@ def test_an_app_entry_the_hub_gave_no_number_has_none_and_use_passes_it_by(
     assert resident.app_rows()[0]["last_error"] is None
 
 
-def test_open_on_a_mac_opens_the_loopback(app_hub):
+def test_open_on_a_mac_opens_a_page_no_forwarder_serves_at_the_ipv6_loopback(
+    app_hub,
+):
     resident, _transport, (web_port, _port_port) = app_hub
     resident.platform.os_name = "darwin"
 
@@ -3178,7 +3181,35 @@ def test_open_on_a_mac_opens_the_loopback(app_hub):
     resident.open_app_page("h1", "gitea_d1")
 
     assert resident.platform.opened_urls == [
+        f"http://[::1]:{web_port}/explore?tab=repos"
+    ]
+
+
+def test_open_on_a_mac_with_no_ipv6_loopback_opens_127_0_0_1(app_hub):
+    resident, _transport, (web_port, _port_port) = app_hub
+    resident.platform.os_name = "darwin"
+    resident._forwards._has_ipv6 = lambda: False
+
+    resident.open_app("h1", "gitea_d1")
+    resident.open_app_page("h1", "gitea_d1")
+
+    assert resident.platform.opened_urls == [
         f"http://127.0.0.1:{web_port}/explore?tab=repos"
+    ]
+
+
+def test_open_on_a_mac_opens_a_forwarders_page_at_127_0_0_1(two_hubs_up):
+    resident, transport = two_hubs_up
+    resident.platform.os_name = "darwin"
+    ports = (free_port(), free_port())
+    transport.deliver("c1", {"frame": app_state(*ports, is_token_required=True)})
+    answering(transport, lambda frame: {"params": {"token": "t0k"}})
+
+    resident.open_app("h1", "gitea_d1")
+    resident.open_app_page("h1", "gitea_d1")
+
+    assert resident.platform.opened_urls == [
+        f"http://127.0.0.1:{ports[0]}/explore?tab=repos&tkn=t0k"
     ]
 
 

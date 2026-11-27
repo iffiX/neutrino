@@ -2,7 +2,7 @@
 
 ``list`` groups the apps by machine, with each entry's kind and its fixed
 local address before the app is used, ``/udp`` after a UDP one, and the
-loopback host on macOS; the machine's SSH server is no app there, and no
+on macOS ``127.0.0.1`` for a forwarder's page and ``[::1]`` for any other; the machine's SSH server is no app there, and no
 command names it. An app is named by its name, its title, or
 ``<machine>/<app>`` where two machines hold one name. ``use`` posts
 **Use**, waits for its job and prints the addresses or the failure;
@@ -80,9 +80,16 @@ def test_an_unhealthy_entry_says_so_on_its_line(running, capsys):
     assert "(not reachable now)" in capsys.readouterr().out
 
 
-def test_on_macos_every_address_is_the_loopback(running, capsys):
+def test_on_macos_a_forwarders_page_is_at_127_0_0_1_and_any_other_at_ipv6(
+    running, capsys
+):
     running.state["platform"]["os"] = "darwin"
 
+    assert app.main_list(hub="home") == 0
+    out = capsys.readouterr().out
+    assert "    web  web  http://[::1]:25101/explore" in out
+    assert "    ssh  port  127.0.0.1:26022" in out
+    running.state["services"][0]["payload"]["is_token_required"] = True
     assert app.main_list(hub="home") == 0
     assert "    web  web  http://127.0.0.1:25101/explore" in capsys.readouterr().out
 

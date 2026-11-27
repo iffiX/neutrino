@@ -12,7 +12,9 @@ on an app in use, opens the system browser at the app's first ``http`` or
 name>:<local port><path>``; an entry with ``is_token_required`` takes a
 fresh token from the ``service`` frame and opens with ``?tkn=<token>``. On
 macOS, whose browser resolves no ``.localhost`` name, the host is
-``127.0.0.1``. **Stop** ends every forward of the app.
+``127.0.0.1`` for an entry with ``is_token_required``, whose page a
+forwarder of the agent's serves, and ``[::1]`` for any other while its
+forward listens there. **Stop** ends every forward of the app.
 """
 
 # PEP 604 unions below are annotations only; this keeps them lazy so the
@@ -24,6 +26,7 @@ import urllib.parse
 from neutrino_client.services.base import channel_refusal, is_unhealthy, service_key
 from neutrino_client.services.forward import (
     FORWARD_BIND_HOST,
+    FORWARD_BIND_HOST_IPV6,
     FORWARD_PROTOCOL_TCP,
     FORWARD_PROTOCOL_UDP,
     forward_refusal,
@@ -60,19 +63,33 @@ def entry_protocol(entry: dict) -> str:
     return FORWARD_PROTOCOL_TCP
 
 
-def browser_host(local_name: str, os_name: str) -> str:
+def browser_host(
+    local_name: str,
+    os_name: str,
+    *,
+    has_forwarder: bool = True,
+    has_ipv6_listener: bool = False,
+) -> str:
     """The host a forwarded page opens on in the browser.
 
     Args:
         local_name: The app's local name.
         os_name: The machine's system, as the platform names it.
+        has_forwarder: Whether a forwarder of the agent's serves the page,
+            the entry's ``is_token_required``.
+        has_ipv6_listener: Whether the page's forward also listens on
+            ``[::1]``.
 
     Returns:
-        The local name; ``127.0.0.1`` on macOS, or when it names none.
+        The local name, or ``127.0.0.1`` when it names none. On macOS
+        ``[::1]`` for a page no forwarder serves whose forward listens
+        there, and ``127.0.0.1`` otherwise.
     """
-    if os_name == APP_NO_LOCALHOST_NAMES_OS or not local_name:
+    if os_name == APP_NO_LOCALHOST_NAMES_OS:
+        if not has_forwarder and has_ipv6_listener:
+            return f"[{FORWARD_BIND_HOST_IPV6}]"
         return FORWARD_BIND_HOST
-    return local_name
+    return local_name or FORWARD_BIND_HOST
 
 
 def local_url(url: str, host: str, port: int, token: str) -> str:
@@ -292,7 +309,14 @@ class AppServiceHandler:
             token = str((material or {}).get("token", "") or "")
             if not token:
                 return {"code": "web_token_missing", "params": {}}
-        host = browser_host(str(app.get("local_name", "")), self._platform.os_name)
+        host = browser_host(
+            str(app.get("local_name", "")),
+            self._platform.os_name,
+            has_forwarder=payload.get("is_token_required") is True,
+            has_ipv6_listener=self._forwards.has_ipv6_listener(
+                str(app.get("hub_id", "")), str(entry.get("id", ""))
+            ),
+        )
         self._platform.open_url(
             local_url(str(payload.get("url", "")), host, port, token)
         )

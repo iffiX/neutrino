@@ -2915,7 +2915,7 @@ def run_app_row(app: dict, entries: list, os_name: str = "linux", hub=None) -> d
     )
     constants = "\n".join(
         f"const {name} = " + PAGE_JS.split(f"const {name} = ")[1].split(";\n")[0] + ";"
-        for name in ("APP_SOURCES", "LOOPBACK_SERVER")
+        for name in ("APP_SOURCES", "LOOPBACK_SERVER", "LOOPBACK_SERVER_IPV6")
     )
     script = "\n".join(
         [
@@ -3074,10 +3074,17 @@ def test_an_entry_with_no_number_shows_its_kind_and_no_port():
     ]
 
 
-def test_on_a_mac_every_local_address_is_the_loopback():
-    row = run_app_row(GITEA, [GITEA_WEB], os_name="darwin")
+def test_on_a_mac_a_forwarders_page_is_at_the_loopback_and_any_other_at_ipv6():
+    token_web = dict(
+        GITEA_WEB, payload=dict(GITEA_WEB["payload"], is_token_required=True)
+    )
 
-    assert row["lines"] == ["http://127.0.0.1:24123/explore?tab=repos"]
+    row = run_app_row(GITEA, [GITEA_WEB, GITEA_SSH], os_name="darwin")
+    token_row = run_app_row(GITEA, [token_web], os_name="darwin")
+
+    assert row["lines"][0] == "http://[::1]:24123/explore?tab=repos"
+    assert row["lines"][1].startswith("127.0.0.1:")
+    assert token_row["lines"] == ["http://127.0.0.1:24123/explore?tab=repos"]
 
 
 def test_an_app_in_use_offers_stop_in_uses_place_open_and_holds_its_ports():
