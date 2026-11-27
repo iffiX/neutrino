@@ -21,6 +21,9 @@ import build_hub_macos
 import compiled_tree
 from shared.constants import PACKAGING_EDITION_ENV, PACKAGING_RELEASE_SITES_ENV
 
+# The first stage in a process draws the icons the rest reuse.
+pytestmark = pytest.mark.xdist_group("hub_macos_installer")
+
 AGENT_PACKAGES = (
     "neutrino-agent-9.9.9-macos-arm64.pkg",
     "neutrino-agent-9.9.9-macos-amd64.pkg",
