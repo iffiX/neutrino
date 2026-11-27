@@ -2507,8 +2507,12 @@ def test_the_watch_after_a_start_lasts_until_a_late_check_passes(tmp_path, monke
     reads.is_present = True
     engine.mark_configured("demo")
     clock = types.SimpleNamespace(now=0.0)
+    # The watch's first read waits for the test's read, which its two real
+    # seconds put first on a machine.
+    is_read = threading.Event()
 
     def sleep(seconds):
+        is_read.wait(10)
         clock.now += seconds
         if clock.now >= 100.0:
             reads.is_active = True
@@ -2523,6 +2527,7 @@ def test_the_watch_after_a_start_lasts_until_a_late_check_passes(tmp_path, monke
     engine.publish_task("demo", START_TASK, "", {})
     engine.publish_task("demo", dict(START_TASK, is_running=False), "", {})
     engine.refresh_one("demo")
+    is_read.set()
 
     assert state_within_real(engine, "demo", "running", real_sleep)
 
@@ -2532,8 +2537,12 @@ def test_the_watch_after_a_start_gives_up_after_two_minutes(tmp_path, monkeypatc
     reads.is_present = True
     engine.mark_configured("demo")
     clock = types.SimpleNamespace(now=0.0)
+    # The watch's first read waits for the test's read, which its two real
+    # seconds put first on a machine.
+    is_read = threading.Event()
 
     def sleep(seconds):
+        is_read.wait(10)
         clock.now += seconds
         real_sleep(0.001)
 
@@ -2546,6 +2555,7 @@ def test_the_watch_after_a_start_gives_up_after_two_minutes(tmp_path, monkeypatc
     engine.publish_task("demo", START_TASK, "", {})
     engine.publish_task("demo", dict(START_TASK, is_running=False), "", {})
     engine.refresh_one("demo")
+    is_read.set()
 
     for _turn in range(2000):
         if "demo" not in engine._start_watches:
