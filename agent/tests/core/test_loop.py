@@ -1494,8 +1494,9 @@ def test_each_tick_reads_the_hub_clock_and_checks_the_seat_password(
 
 
 def test_a_join_from_another_process_ends_the_wait_and_resets_the_backoff(
-    config_path,
+    config_path, monkeypatch
 ):
+    monkeypatch.setattr(loop_module, "IDLE_POLL_INTERVAL_S", 0.05)
     agent = Agent(log=lambda m: None, platform=default_platform())
     agent._backoff_s = AGENT_BACKOFF_MAX_S
     started = time.monotonic()
