@@ -295,8 +295,7 @@ class SlowWorker(ReconcileWorker):
         self.ended.set()
 
 
-# The worker the first of the two tests below leaves to the second, on the
-# same pytest-xdist worker.
+# The worker the first of the two tests below leaves to the second.
 LEFT_WORKERS: list = []
 
 
@@ -311,7 +310,27 @@ def test_a_reconcile_worker_left_with_a_pass_running():
 
 
 @pytest.mark.xdist_group("left_reconcile_worker")
-def test_a_reconcile_worker_ends_its_pass_under_its_test_and_runs_no_other():
+def test_a_reconcile_worker_ends_its_pass_under_its_test_and_runs_no_other(tmp_path):
+    if not LEFT_WORKERS:
+        # The first test ran in another process: both run here, in order, in a
+        # process of their own.
+        pair = [
+            f"{__file__}::{name}"
+            for name in (
+                "test_a_reconcile_worker_left_with_a_pass_running",
+                "test_a_reconcile_worker_ends_its_pass_under_its_test_and_runs_no_other",
+            )
+        ]
+        result = subprocess.run(
+            [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider"]
+            + ["-p", "no:xdist", f"--basetemp={tmp_path / 'pair'}", *pair],
+            cwd=os.path.dirname(HERE),
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        return
     worker = LEFT_WORKERS.pop()
 
     assert worker.ended.wait(5)
