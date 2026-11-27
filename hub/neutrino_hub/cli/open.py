@@ -9,7 +9,8 @@ and says the address it answers at, with the setup token while the box is
 not set up; run without privilege, ``nhub open`` asks for it through UAC,
 the administrator prompt of ``osascript`` or ``pkexec``, and only when the
 panel does not already answer on loopback. Then the default browser opens
-that address as the person, never as root.
+that address as the person, never as root, at ``127.0.0.1``, or at
+``localhost`` on macOS.
 """
 
 import argparse
@@ -87,7 +88,7 @@ def main() -> int:
             return 2
         if not _start_service():
             return 1
-        _say(address(OPEN_LOOPBACK_HOST), arguments.output)
+        _say(address(platform.panel_browser_host), arguments.output)
         return 0
 
     if arguments.is_print_only:
@@ -106,9 +107,9 @@ def main() -> int:
     port = _configured_port()
     if platform.is_elevated():
         _start_service()
-        url = address(OPEN_LOOPBACK_HOST)
+        url = address(platform.panel_browser_host)
     elif _is_panel_answering(port):
-        url = f"http://{OPEN_LOOPBACK_HOST}:{port}/"
+        url = f"http://{platform.panel_browser_host}:{port}/"
     else:
         url = _address_from_elevated_step(platform)
     if not url:

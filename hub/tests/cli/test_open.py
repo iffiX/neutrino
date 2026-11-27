@@ -5,8 +5,9 @@ The platform, the service and the browser are fakes. What is pinned is that
 the service is started only when it is stopped, that the setup token rides
 the address only before setup, that an unprivileged run opens a panel that
 already answers without asking, asks for the elevated step otherwise and
-opens what that step wrote, opens nothing when the step is declined, and
-that the step itself refuses to run without privilege.
+opens what that step wrote, opens nothing when the step is declined, that
+the step itself refuses to run without privilege, and that macOS opens the
+wizard and the panel at ``localhost``.
 """
 
 import http.server
@@ -25,8 +26,15 @@ class FakePlatform:
 
     elevation_word = "root"
 
-    def __init__(self, *, is_elevated: bool, step_address: str = ""):
+    def __init__(
+        self,
+        *,
+        is_elevated: bool,
+        step_address: str = "",
+        panel_browser_host: str = "127.0.0.1",
+    ):
         self._is_elevated = is_elevated
+        self.panel_browser_host = panel_browser_host
         self.step_address = step_address
         self.elevated: list = []
         self.opened: list = []
@@ -153,6 +161,23 @@ def test_a_panel_already_answering_opens_without_asking(box):
     assert box.probed == [8080]
     assert platform.elevated == []
     assert platform.opened == ["http://127.0.0.1:8080/"]
+
+
+def test_on_macos_the_wizard_and_the_panel_open_at_localhost(box, tmp_path):
+    mac = {"panel_browser_host": "localhost"}
+    wizard = FakePlatform(is_elevated=True, **mac)
+    output = tmp_path / "address"
+
+    box.run(platform=wizard)
+    box.run("--start-service", "--output", str(output), platform=wizard)
+    box.is_panel_answering = True
+    panel = FakePlatform(is_elevated=False, **mac)
+    box.run(platform=panel)
+
+    assert wizard.opened == ["http://localhost:8080/?token=t0ken"]
+    assert output.read_text() == "http://localhost:8080/?token=t0ken\n"
+    assert panel.opened == ["http://localhost:8080/"]
+    assert box.probed == [8080]
 
 
 def test_with_privilege_nothing_is_probed(box):

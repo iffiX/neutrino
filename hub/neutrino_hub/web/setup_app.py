@@ -30,6 +30,8 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse, JSONResponse
 from starlette.staticfiles import StaticFiles
 
+from neutrino_hub.platforms.detect import hub_platform
+from neutrino_hub.utils.loopback_listen import bind_ipv6_loopback, with_ipv6_loopback
 from neutrino_hub.web.constants import (
     WEB_FRONTEND_DIST_DIR,
     WEB_SETUP_LOCK_PATH,
@@ -364,6 +366,7 @@ class WebSetupServer:
         """
         self.session = session
         self.port = port
+        self._host = host
         config = uvicorn.Config(
             create_setup_app(session),
             host=host,
@@ -424,16 +427,39 @@ class WebSetupServer:
         is that :meth:`start` says no.
         """
         try:
-            asyncio.run(self._serve_quietly())
-        except SystemExit:
+            asyncio.run(self._serve_quietly(self._sockets()))
+        except (SystemExit, OSError):
             pass
 
-    async def _serve_quietly(self) -> None:
+    def _sockets(self) -> "list | None":
+        """The sockets the wizard serves on.
+
+        Returns:
+            None for uvicorn's own bind; on a system whose browser opens the
+            wizard at ``localhost``, its address and ``[::1]`` at one port,
+            bound.
+
+        Raises:
+            OSError: When another program holds ``[::1]`` at the port.
+            SystemExit: When the address cannot be bound at the port.
+        """
+        if not hub_platform().has_panel_ipv6_loopback:
+            return None
+        if len(with_ipv6_loopback(self._host)) == 1:
+            return None
+        first = self._server.config.bind_socket()
+        try:
+            return [first, bind_ipv6_loopback(first.getsockname()[1])]
+        except OSError:
+            first.close()
+            raise
+
+    async def _serve_quietly(self, sockets: "list | None") -> None:
         """Serve, with a closed connection on Windows kept out of the log."""
         from neutrino_hub.platforms.windows import quiet_connection_resets
 
         quiet_connection_resets(asyncio.get_running_loop())
-        await self._server.serve()
+        await self._server.serve(sockets=sockets)
 
 
 def create_setup_app(session: WebSetupSession) -> FastAPI:

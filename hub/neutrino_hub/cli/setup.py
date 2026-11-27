@@ -624,7 +624,7 @@ def _browser_answers():
         return None
     # Something here may be able to open a page; where nothing can, the
     # addresses printed below are how it is reached.
-    is_opened = _open_browser(f"http://127.0.0.1:{server.port}/?token={session.token}")
+    is_opened = _open_browser(_wizard_url(server.port, session.token))
     while True:
         is_answered = wizard.offer_browser(
             urls=_reachable_urls(server.port),
@@ -701,6 +701,20 @@ def _open_browser(url: str) -> bool:
     if not is_linux():
         return hub_platform().open_browser(url)
     return hub_platform().open_browser(url, user_runtime_root=SETUP_USER_RUNTIME_ROOT)
+
+
+def _wizard_url(port: int, token: str) -> str:
+    """The address this machine's own browser opens the wizard at.
+
+    Args:
+        port: The wizard's port.
+        token: The run's token.
+
+    Returns:
+        ``http://127.0.0.1:<port>/?token=<token>``, the host ``localhost`` on
+        macOS.
+    """
+    return f"http://{hub_platform().panel_browser_host}:{port}/?token={token}"
 
 
 def _browser_server(session):

@@ -49,6 +49,10 @@ class HubPlatform:
     os_name = ""
     # Who a command that acts on the installed hub must run as.
     elevation_word = "root"
+    # The host this machine's own browser opens the panel and the wizard at.
+    panel_browser_host = "127.0.0.1"
+    # Whether the panel's ports and the wizard's also listen on ``[::1]``.
+    has_panel_ipv6_loopback = False
 
     def is_elevated(self) -> bool:
         """Whether this process may act on the installed hub.

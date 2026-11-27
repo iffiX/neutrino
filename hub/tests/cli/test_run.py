@@ -1,7 +1,8 @@
 """`nhub run --only-web`: the servers one process runs, and their ports.
 
 The panel is served over HTTP on ``listen_port`` and over HTTPS on
-``https_listen_port`` whatever ``is_https_enabled`` says. The HTTPS
+``https_listen_port`` whatever ``is_https_enabled`` says, on macOS each also
+on ``[::1]``, a held ``[::1]`` keeping the panel from starting. The HTTPS
 listener's TLS context is the one a renewal loads the new certificate into.
 """
 
@@ -31,6 +32,9 @@ class FakeConfig:
         self.keywords = keywords
         self.ssl = None
 
+    def bind_socket(self):
+        return f"{self.keywords['host']} at {self.keywords['port']}"
+
     def load(self):
         if self.keywords.get("ssl_certfile"):
             self.ssl = f"context for port {self.keywords['port']}"
@@ -46,8 +50,9 @@ def served(monkeypatch):
     """Run ``_serve_panel`` with every effect recorded instead of made."""
     recorded = {"servers": [], "watched": [], "steps": []}
 
-    def serve_together(servers, **_):
+    def serve_together(servers, sockets=None, **_):
         recorded["servers"] = servers
+        recorded["sockets"] = sockets
         recorded["steps"].append("served")
 
     def asyncio_run(awaited):
@@ -97,6 +102,61 @@ def test_two_panel_servers_each_on_its_own_port(served, monkeypatch):
         run.APPLICATION_PATH,
     ]
     assert [config.keywords["port"] for config in configs] == [80, 443]
+
+
+def test_off_macos_each_server_binds_its_own_port(served, monkeypatch):
+    monkeypatch.setattr(run, "_panel_certificate", lambda: dict(TLS))
+    monkeypatch.setattr(run, "hub_platform", _linux)
+
+    run._serve_panel(arguments())
+
+    assert served["sockets"] == [None, None]
+
+
+def test_on_macos_each_panel_port_also_listens_on_the_ipv6_loopback(
+    served, monkeypatch
+):
+    monkeypatch.setattr(run, "_panel_certificate", lambda: dict(TLS))
+    monkeypatch.setattr(run, "hub_platform", _mac)
+    monkeypatch.setattr(run, "with_ipv6_loopback", _with_ipv6)
+    monkeypatch.setattr(run, "bind_ipv6_loopback", "[::1] at {}".format)
+
+    assert run._serve_panel(arguments()) == 0
+
+    assert served["sockets"] == [
+        ["0.0.0.0 at 80", "[::1] at 80"],  # scan: allow
+        ["0.0.0.0 at 443", "[::1] at 443"],  # scan: allow
+    ]
+
+
+def test_on_macos_a_held_ipv6_loopback_keeps_the_panel_from_starting(
+    served, monkeypatch, capsys
+):
+    monkeypatch.setattr(run, "_panel_certificate", dict)
+    monkeypatch.setattr(run, "hub_platform", _mac)
+    monkeypatch.setattr(run, "with_ipv6_loopback", _with_ipv6)
+    monkeypatch.setattr(run, "bind_ipv6_loopback", _held)
+
+    assert run._serve_panel(arguments()) == 1
+
+    assert served["steps"] == []
+    assert "[::1]" in capsys.readouterr().err
+
+
+def _linux():
+    return SimpleNamespace(has_panel_ipv6_loopback=False)
+
+
+def _mac():
+    return SimpleNamespace(has_panel_ipv6_loopback=True)
+
+
+def _with_ipv6(host: str) -> list:
+    return [host, "::1"]
+
+
+def _held(port: int):
+    raise OSError(48, "Address already in use")
 
 
 def test_the_samplers_stop_once_the_servers_have(served, monkeypatch):
@@ -438,7 +498,7 @@ def test_a_stop_asked_before_the_servers_start_still_stops_them(monkeypatch):
         def __init__(self):
             self.should_exit = False
 
-        async def serve(self):
+        async def serve(self, sockets=None):
             while not self.should_exit:
                 await asyncio.sleep(0.01)
 

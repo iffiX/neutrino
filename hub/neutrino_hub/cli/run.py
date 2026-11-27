@@ -84,7 +84,7 @@ from neutrino_hub.modules.router.link_monitor import RouterLinkMonitor, link_fin
 from neutrino_hub.modules.firewall.ops import is_network_set_moved, reload_firewall
 from neutrino_hub.cli.password import is_password_set
 from neutrino_hub.platforms.constants import PLATFORM_SETUP_POLL_S
-from neutrino_hub.platforms.detect import is_linux, process_controller
+from neutrino_hub.platforms.detect import hub_platform, is_linux, process_controller
 from neutrino_hub.platforms.windows import quiet_connection_resets
 from neutrino_hub.system.child_supervisor import ChildStartLine
 from neutrino_hub.system.systemd_ctl import notify_ready, take_notify_address
@@ -109,6 +109,7 @@ from neutrino_hub.web.constants import (
 from neutrino_hub.web.identity import ensure_hub_identity
 from neutrino_hub.web.panel_tls import ensure_served, watch_served_context
 from neutrino_hub.utils.json_file import read_config
+from neutrino_hub.utils.loopback_listen import bind_ipv6_loopback, with_ipv6_loopback
 
 # --- config ---
 GRACEFUL_SHUTDOWN_S = 5
@@ -510,6 +511,7 @@ def _serve_panel(arguments) -> int:
         )
         return 0
     servers = [uvicorn.Server(_panel_config(arguments.host, port))]
+    listeners = [port]
     https_port = _configured_https_port()
     if panel_tls and https_port == port:
         print(
@@ -523,10 +525,23 @@ def _serve_panel(arguments) -> int:
         https_config.load()
         watch_served_context(https_config.ssl)
         servers.append(uvicorn.Server(https_config))
+        listeners.append(https_port)
+    try:
+        sockets = [
+            _panel_sockets(server.config, arguments.host, listener)
+            for server, listener in zip(servers, listeners)
+        ]
+    except OSError as error:
+        print(
+            f"error: another program holds [::1] at the panel's port ({error}); "
+            "the panel does not start",
+            file=sys.stderr,
+        )
+        return 1
     _prepare_transport()
     _finish_first_run()
     _listen_app_forwards(arguments.host)
-    asyncio.run(_serve_together(servers))
+    asyncio.run(_serve_together(servers, sockets=sockets))
     _stop_samplers()
     return 0
 
@@ -621,6 +636,30 @@ def _follow_local_agent() -> None:
     setup.join_local_agent_again(follow)
 
 
+def _panel_sockets(config, host: str, port: int) -> "list | None":
+    """The sockets one panel listener serves on.
+
+    Args:
+        config: The listener's uvicorn configuration.
+        host: The address it binds.
+        port: Its port.
+
+    Returns:
+        None for uvicorn's own bind; on a system whose browser opens the
+        panel at ``localhost``, the listener's address and ``[::1]`` at the
+        port, bound.
+
+    Raises:
+        OSError: When another program holds ``[::1]`` at the port.
+    """
+    if not hub_platform().has_panel_ipv6_loopback:
+        return None
+    if len(with_ipv6_loopback(host)) == 1:
+        return None
+    ipv6 = bind_ipv6_loopback(port)
+    return [config.bind_socket(), ipv6]
+
+
 def _panel_config(host: str, port: int, **tls) -> uvicorn.Config:
     """One listener of the panel application.
 
@@ -678,7 +717,7 @@ def _panel_certificate() -> dict:
     }
 
 
-async def _serve_together(servers: list) -> None:
+async def _serve_together(servers: list, sockets: "list | None" = None) -> None:
     """Run every server in one loop, and stop them all when one stops.
 
     The local channel to the transport runs on the same loop and ends with
@@ -686,6 +725,8 @@ async def _serve_together(servers: list) -> None:
 
     Args:
         servers: Configured uvicorn servers.
+        sockets: The bound sockets each server serves on, in the servers'
+            order, None for a server that binds its own; None for every one.
     """
     from neutrino_hub.web.app import shared_runtime
 
@@ -694,7 +735,11 @@ async def _serve_together(servers: list) -> None:
     if _STOP_ASKED.is_set():
         for server in servers:
             server.should_exit = True
-    tasks = [asyncio.create_task(server.serve()) for server in servers]
+    held = sockets if sockets is not None else [None] * len(servers)
+    tasks = [
+        asyncio.create_task(server.serve(sockets=bound))
+        for server, bound in zip(servers, held)
+    ]
     channel = shared_runtime().channel
     channel_task = asyncio.create_task(channel.run())
     try:

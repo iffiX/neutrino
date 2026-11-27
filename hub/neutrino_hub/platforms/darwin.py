@@ -36,6 +36,8 @@ class DarwinHubPlatform(HubPlatform):
     """macOS, where one LaunchDaemon runs the panel and every daemon."""
 
     os_name = PLATFORM_OS_DARWIN
+    panel_browser_host = "localhost"
+    has_panel_ipv6_loopback = True
 
     def process_controller(self):
         """The controller of the service's children.
