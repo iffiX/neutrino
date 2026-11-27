@@ -2,7 +2,8 @@
 
 The Services page's Open starts one for a browser that reached the panel
 directly (protocol.md, "The app forwards"). A forward listens where the
-panel listens, at the first free port of its range, and joins each
+panel listens, and on ``[::1]`` beside an IPv4 address, at the first port of
+its range free on both, and joins each
 connection to the entry's far end: the hub transport's loopback forward to a
 machine's port, or a declared app's host. It reads each request's head,
 writes ``Host`` and ``Origin`` as loopback's, takes the panel's session
@@ -19,6 +20,7 @@ import time
 from dataclasses import dataclass, field
 
 from neutrino_hub.exceptions import AgentOfflineError, StreamRefusedError
+from neutrino_hub.utils.loopback_listen import has_ipv6_loopback, with_ipv6_loopback
 from neutrino_hub.web.constants import (
     WEB_APP_FORWARD_HEAD_BYTES_MAX,
     WEB_APP_FORWARD_IDLE_S,
@@ -276,6 +278,7 @@ class AppForwardTable:
         idle_s: float = WEB_APP_FORWARD_IDLE_S,
         sweep_s: float = WEB_APP_FORWARD_SWEEP_S,
         upstream_tls=upstream_tls_context,
+        is_ipv6=has_ipv6_loopback,
     ):
         """
         Args:
@@ -291,6 +294,8 @@ class AppForwardTable:
             sweep_s: How often the forwards are checked for idleness.
             upstream_tls: Returns the client context an https entry's
                 forward opens to the app with.
+            is_ipv6: Says whether the machine has the IPv6 loopback, which a
+                forward also listens on beside an IPv4 address.
         """
         self.listen_host = listen_host
         self._hub_forwards = hub_forwards
@@ -301,6 +306,7 @@ class AppForwardTable:
         self._idle_s = idle_s
         self._sweep_s = sweep_s
         self._upstream_tls = upstream_tls
+        self._is_ipv6 = is_ipv6
         # Each forward, by its entry's id.
         self._forwards: dict = {}
         self._lock = asyncio.Lock()
@@ -376,7 +382,7 @@ class AppForwardTable:
             self._sweeper.cancel()
 
     async def _listen(self, target: AppForwardTarget) -> AppForward:
-        """Listen at the first free port of the range.
+        """Listen at the first port of the range free on every address the forward binds.
 
         Raises:
             OSError: When no port of the range is free.
@@ -388,6 +394,7 @@ class AppForwardTable:
             if context is None:
                 raise RuntimeError("the panel serves no TLS context")
         held = {forward.port for forward in self._forwards.values()}
+        hosts = with_ipv6_loopback(self.listen_host, self._is_ipv6)
         for port in range(self._port_min, self._port_max + 1):
             if port in held:
                 continue
@@ -395,7 +402,7 @@ class AppForwardTable:
             try:
                 forward.server = await asyncio.start_server(
                     functools.partial(self._serve, forward),
-                    self.listen_host,
+                    hosts,
                     port,
                     ssl=context,
                     limit=WEB_APP_FORWARD_HEAD_BYTES_MAX,

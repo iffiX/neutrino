@@ -191,3 +191,7 @@ UTILS_SOURCE_FILE = "{file}"
 UTILS_SOURCE_VERSION = "{version}"
 # The tag a release site keeps a version's files under.
 UTILS_RELEASE_TAG_PREFIX = "v"
+
+# The IPv6 loopback address a listener a browser opens binds beside its IPv4
+# address.
+UTILS_LOOPBACK_IPV6 = "::1"

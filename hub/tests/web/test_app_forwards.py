@@ -7,7 +7,9 @@ kept, a second request on a kept connection read the same way, a body passed
 by its length, ``Transfer-Encoding`` answered 411, an ``Upgrade`` carried
 both ways; an ``https`` entry's TLS ended with the given context and opened
 to the far end unchecked; the first free port of the range taken and a held
-one skipped, an ``OSError`` with none free; a press keeping the forward it
+one skipped, an ``OSError`` with none free; a forward listening on ``[::1]``
+beside its IPv4 address at the same port, a port whose ``[::1]`` is held
+skipped, and a machine with no IPv6 loopback listening on IPv4 alone; a press keeping the forward it
 has; a forward idle past the idle time closed with the transport forward it
 started, and one with an open connection kept.
 """
@@ -23,10 +25,15 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509.oid import NameOID
 
+from neutrino_hub.utils.loopback_listen import bind_ipv6_loopback, has_ipv6_loopback
 from neutrino_hub.web.app_forwards import (
     AppForwardTable,
     AppForwardTarget,
     rewrite_request_head,
+)
+
+needs_ipv6 = pytest.mark.skipif(
+    not has_ipv6_loopback(), reason="the machine has no IPv6 loopback"
 )
 
 PORT = 19000
@@ -157,7 +164,15 @@ async def far_end_server(far: FarEnd, context=None):
     return server, f"127.0.0.1:{port}"
 
 
-def table_for(forwards, first: int, *, clock=None, tls=None, count: int = 4):
+def table_for(
+    forwards,
+    first: int,
+    *,
+    clock=None,
+    tls=None,
+    count: int = 4,
+    is_ipv6=has_ipv6_loopback,
+):
     return AppForwardTable(
         hub_forwards=forwards,
         tls_context_of=lambda: tls,
@@ -167,13 +182,16 @@ def table_for(forwards, first: int, *, clock=None, tls=None, count: int = 4):
         port_max=first + count - 1,
         idle_s=60,
         sweep_s=3600,
+        is_ipv6=is_ipv6,
     )
 
 
-async def ask(port: int, requests: list, *, context=None) -> bytes:
+async def ask(
+    port: int, requests: list, *, context=None, host: str = "127.0.0.1"
+) -> bytes:
     """Send requests on one connection and read until it closes or quiets."""
     reader, writer = await asyncio.open_connection(
-        "127.0.0.1", port, ssl=context, server_hostname="" if context else None
+        host, port, ssl=context, server_hostname="" if context else None
     )
     answers = b""
     for request in requests:
@@ -384,6 +402,64 @@ def test_a_held_port_is_skipped_and_a_full_range_is_an_os_error():
     first, port, again = asyncio.run(scenario())
 
     assert port == again == first + 1
+
+
+@needs_ipv6
+def test_a_forward_also_listens_on_the_ipv6_loopback_at_its_port():
+    async def scenario():
+        far = FarEnd()
+        server, listen = await far_end_server(far)
+        table = table_for(FakeHubForwards(listen), free_range())
+        port = await table.open(AppForwardTarget("e", "http", DEVICE, "", APP_PORT))
+        answers = await ask(
+            port,
+            [b"GET / HTTP/1.1\r\nHost: localhost:1\r\n\r\n"],
+            host="::1",
+        )
+        await table.close_all()
+        server.close()
+        return port, answers, far
+
+    port, answers, far = asyncio.run(scenario())
+
+    assert answers.startswith(b"HTTP/1.1 200 OK")
+    assert far.heads[0].split(b"\r\n")[1] == f"Host: 127.0.0.1:{port}".encode()
+
+
+@needs_ipv6
+def test_a_port_whose_ipv6_loopback_is_held_is_skipped():
+    async def scenario():
+        first = free_range(2)
+        held = bind_ipv6_loopback(first)
+        held.listen()
+        table = table_for(FakeHubForwards("127.0.0.1:1"), first, count=2)
+        try:
+            port = await table.open(AppForwardTarget("a", "http", "", "h", 80))
+        finally:
+            held.close()
+            await table.close_all()
+        return first, port
+
+    first, port = asyncio.run(scenario())
+
+    assert port == first + 1
+
+
+def test_a_machine_with_no_ipv6_loopback_listens_on_the_ipv4_address_alone():
+    async def scenario():
+        table = table_for(
+            FakeHubForwards("127.0.0.1:1"), free_range(), is_ipv6=_no_ipv6
+        )
+        port = await table.open(AppForwardTarget("a", "http", "", "h", 80))
+        bound = [held.getsockname()[0] for held in table._forwards["a"].server.sockets]
+        await table.close_all()
+        return bound
+
+    assert asyncio.run(scenario()) == ["127.0.0.1"]
+
+
+def _no_ipv6() -> bool:
+    return False
 
 
 def test_an_idle_forward_ends_and_a_busy_one_stays():
