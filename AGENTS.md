@@ -71,15 +71,15 @@ and leave this pointing at it.**
 ## Commands
 
 ```bash
-pip install -e "hub[dev]"            # nhub, black, pytest, pytest-cov, detect-secrets
+pip install -e "hub[dev]"            # nhub, black, pytest, pytest-xdist, pytest-cov, detect-secrets
 pip install -e agent                 # nagent
 pip install -e client/desktop        # nclient
 
 black --check hub agent client packaging  # REQUIRED before every commit
 nhub scan-secrets                    # REQUIRED before every commit
-cd hub && pytest -q                  # hub tests
-cd agent && pytest -q                # agent tests
-cd client/desktop && pytest -q       # desktop client tests
+cd hub && pytest -q -n 16 --dist loadgroup             # hub tests
+cd agent && pytest -q -n 16 --dist loadgroup           # agent tests
+cd client/desktop && pytest -q -n 16 --dist loadgroup  # desktop client tests
 cd transport && go vet ./... && go test -race ./...   # the transport
 cd agent/sshserver && go vet ./... && go test -race ./...  # the agent's SSH server
 cd client/android && ./gradlew test lint   # Android app tests and lint
