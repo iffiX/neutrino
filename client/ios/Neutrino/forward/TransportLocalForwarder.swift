@@ -12,12 +12,40 @@ final class TransportLocalForwarder: LocalForwarder {
     }
 
     func start(
-        bindingId: String, port: Int, protocol: String, open: [String: JSONValue],
+        bindingId: String, port: Int, protocol: String, open: [String: JSONValue], isBrowserOpened: Bool,
+        completion: @escaping (Result<Int, ClientError>) -> Void
+    ) {
+        listen(bindingId: bindingId, host: Forward.bindHost, port: port, protocol: `protocol`, open: open) {
+            [weak self] first in
+            guard case .success(let number) = first, isBrowserOpened, let self else {
+                completion(first)
+                return
+            }
+            self.listen(
+                bindingId: bindingId, host: Forward.bindHostIpv6, port: number, protocol: `protocol`, open: open
+            ) { [weak self] second in
+                if case .failure(let refusal) = second {
+                    self?.close(host: Forward.bindHost, port: number, protocol: `protocol`)
+                    completion(.failure(refusal))
+                    return
+                }
+                completion(.success(number))
+            }
+        }
+    }
+
+    func stop(port: Int, protocol: String, isBrowserOpened: Bool) {
+        close(host: Forward.bindHost, port: port, protocol: `protocol`)
+        if isBrowserOpened { close(host: Forward.bindHostIpv6, port: port, protocol: `protocol`) }
+    }
+
+    private func listen(
+        bindingId: String, host: String, port: Int, protocol: String, open: [String: JSONValue],
         completion: @escaping (Result<Int, ClientError>) -> Void
     ) {
         let fields: [String: JSONValue] = [
             "binding": .string(bindingId),
-            "listen": .string("\(Forward.bindHost):\(port)"),
+            "listen": .string("\(host):\(port)"),
             "protocol": .string(`protocol`),
             "open": .object(open),
         ]
@@ -32,10 +60,8 @@ final class TransportLocalForwarder: LocalForwarder {
         }
     }
 
-    func stop(port: Int, protocol: String) {
-        let fields: [String: JSONValue] = [
-            "listen": .string("\(Forward.bindHost):\(port)"), "protocol": .string(`protocol`),
-        ]
+    private func close(host: String, port: Int, protocol: String) {
+        let fields: [String: JSONValue] = ["listen": .string("\(host):\(port)"), "protocol": .string(`protocol`)]
         transport.command("forward_stop", fields) { _ in }
     }
 }

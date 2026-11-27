@@ -84,6 +84,7 @@ final class AppForwardsTests: XCTestCase {
         XCTAssertEqual(forwarder.started.map(\.port), [27311, 30418])
         XCTAssertEqual(forwarder.started.map { $0.open.text("id") }, ["gitea_d1_web", "gitea_d1_ssh"])
         XCTAssertEqual(forwarder.started.map { $0.open.text("kind") }, ["connect", "connect"])
+        XCTAssertEqual(forwarder.browserStarts, [true, false])
         XCTAssertEqual(forwards.rows["b1/gitea_d1"]?.isInUse, true)
         XCTAssertTrue(asked.isEmpty)
     }
@@ -159,6 +160,7 @@ final class AppForwardsTests: XCTestCase {
         forwards.openPanel(bindingId: "b1") { self.opened.append($0) }
         XCTAssertEqual(opened, ["http://localhost:20000/?tkn=one-time"])
         XCTAssertEqual(forwarder.started.first?.open["is_panel"], .bool(true))
+        XCTAssertEqual(forwarder.browserStarts, [true])
         XCTAssertEqual(forwards.rows["b1/#panel"]?.localPort, 20000)
         XCTAssertEqual(asked.first?["is_panel"], .bool(true))
     }
@@ -192,5 +194,13 @@ final class AppForwardsTests: XCTestCase {
         XCTAssertEqual(forwards.rows["b1/gitea_d1"]?.error?.code, "agent_offline")
         clock.advance(by: Forward.udpRestartSeconds)
         XCTAssertEqual(forwarder.started.count, 2)
+    }
+
+    func testTheEndOfABrowserForwardsListenerClosesItsOtherListener() throws {
+        let forwards = try XCTUnwrap(self.forwards)
+        forwards.use(hub: hub(gitea), app: app)
+        forwards.ended(TransportForwardEnd(listen: "[::1]:27311", protocol: "tcp", refusal: nil))
+        XCTAssertEqual(forwarder.stopped.map(\.port), [27311])
+        XCTAssertEqual(forwarder.browserStops, [true])
     }
 }

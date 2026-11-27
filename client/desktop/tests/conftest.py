@@ -37,6 +37,7 @@ import pytest
 
 import neutrino_client.cli.wording as wording_module
 import neutrino_client.core.enrollment as enrollment
+import neutrino_client.services.forward as forward_module
 from neutrino_client.platforms.base import ClientPlatform
 from neutrino_client.platforms.darwin import DarwinPlatform
 from neutrino_client.platforms.linux import LinuxPlatform
@@ -533,10 +534,16 @@ REAL_ASK_HOLD = wording_module.ask_hold
 
 @pytest.fixture(autouse=True)
 def _isolated_network(monkeypatch):
-    """No route is looked at and no EasyTier daemon of this machine is asked
-    who holds it, unless a test says otherwise."""
+    """No route is looked at, no EasyTier daemon of this machine is asked
+    who holds it, and the machine has the IPv6 loopback, unless a test says
+    otherwise."""
     monkeypatch.setattr(wording_module, "ask_hold", lambda verb: {})
     monkeypatch.setattr(enrollment, "default_source_address", lambda urls: "")
+    monkeypatch.setattr(forward_module, "has_ipv6_loopback", _has_ipv6)
+
+
+def _has_ipv6() -> bool:
+    return True
 
 
 @pytest.fixture

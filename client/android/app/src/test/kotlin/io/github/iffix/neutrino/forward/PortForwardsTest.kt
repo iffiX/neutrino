@@ -233,6 +233,7 @@ class PortForwardsTest {
         runCurrent()
         assertEquals(listOf("http://panel-hub-1.localhost:20000/?tkn=t-1_x"), opened)
         assertEquals(JsonPrimitive(true), forwarder.listening.single().fourth["is_panel"])
+        assertEquals(listOf(true), forwarder.browserStarts)
         assertEquals(20000, forwards.rows.value["b1/#panel"]?.localPort)
         assertEquals(JsonPrimitive(true), asked.single()["is_panel"])
     }
@@ -258,6 +259,8 @@ class PortForwardsTest {
         forwards.release("b1", "rdp_d1")
         runCurrent()
         assertEquals(listOf(20000 to "tcp"), forwarder.stopped)
+        assertEquals(listOf(false), forwarder.browserStarts)
+        assertEquals(listOf(false), forwarder.browserStops)
     }
 
     @Test
@@ -289,10 +292,34 @@ class PortForwardsTest {
         assertFalse(forwarder.listening.isEmpty())
     }
 
+    @Test
+    fun aWebEntryListensForABrowserAndAPortEntryDoesNot() = runTest {
+        val forwards = forwards()
+        forwards.use(hub, app)
+        runCurrent()
+        val flags = forwarder.listening.map { it.second }.zip(forwarder.browserStarts)
+        assertEquals(listOf(27311 to true, 30418 to false), flags)
+    }
+
+    @Test
+    fun theEndOfABrowserForwardsListenerClosesItsOtherListener() = runTest {
+        val forwards = forwards()
+        val ends = MutableSharedFlow<TransportForwardEnd>(extraBufferCapacity = 4)
+        forwards.follow(MutableStateFlow(listOf(hub)), ends)
+        forwards.use(hub, app)
+        runCurrent()
+        ends.emit(TransportForwardEnd("[::1]:27311", "tcp", null))
+        runCurrent()
+        assertEquals(listOf(27311 to "tcp"), forwarder.stopped)
+        assertEquals(listOf(true), forwarder.browserStops)
+    }
+
     /** A forwarder that records each listener and answers with [refusal] when one is set. */
     private class FakeForwarder : LocalForwarder {
         val listening = mutableListOf<Quad>()
         val stopped = mutableListOf<Pair<Int, String>>()
+        val browserStarts = mutableListOf<Boolean>()
+        val browserStops = mutableListOf<Boolean>()
         var refusal: ChannelResult.Refused? = null
 
         override suspend fun start(
@@ -300,14 +327,17 @@ class PortForwardsTest {
             port: Int,
             protocol: String,
             open: JsonObject,
+            isBrowserOpened: Boolean,
         ): ChannelResult<Int> {
             refusal?.let { return it }
             listening += Quad(bindingId, port, protocol, open)
+            browserStarts += isBrowserOpened
             return ChannelResult.Ok(port)
         }
 
-        override suspend fun stop(port: Int, protocol: String) {
+        override suspend fun stop(port: Int, protocol: String, isBrowserOpened: Boolean) {
             stopped += port to protocol
+            browserStops += isBrowserOpened
         }
     }
 

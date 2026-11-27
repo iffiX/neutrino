@@ -237,7 +237,7 @@ final class AppForwards {
     func suspend() {
         for (key, listener) in listening {
             suspended[key] = listener
-            forwarder.stop(port: listener.port, protocol: listener.protocol)
+            forwarder.stop(port: listener.port, protocol: listener.protocol, isBrowserOpened: listener.isBrowserOpened)
         }
         listening = [:]
     }
@@ -249,7 +249,7 @@ final class AppForwards {
         for (key, listener) in waiting {
             listen(
                 listener.bindingId, entryKey: key, appKey: listener.appKey, port: listener.port,
-                protocol: listener.protocol, open: listener.open
+                protocol: listener.protocol, open: listener.open, isBrowserOpened: listener.isBrowserOpened
             ) { [weak self] result in
                 if case .failure(let refusal) = result {
                     self?.rows[listener.appKey, default: ForwardRow()].error = refusal
@@ -258,8 +258,9 @@ final class AppForwards {
         }
     }
 
-    /// The transport ended a listener: a UDP forward whose stream the hub closed with a code writes the code on its
-    /// app's row and listens again a second later while its app is in use.
+    /// The transport ended a listener: its forward ends, the other listener of a forward a browser opens closing too.
+    /// A UDP forward whose stream the hub closed with a code writes the code on its app's row and listens again a
+    /// second later while its app is in use.
     ///
     /// - Parameter ended: The listener and its code.
     func ended(_ ended: TransportForwardEnd) {
@@ -270,12 +271,13 @@ final class AppForwards {
         else { return }
         listening[key] = nil
         if let refusal = ended.refusal { rows[listener.appKey, default: ForwardRow()].error = refusal }
+        if listener.isBrowserOpened { forwarder.stop(port: port, protocol: listener.protocol, isBrowserOpened: true) }
         guard listener.protocol == Forward.protocolUdp else { return }
         clock.schedule(after: Forward.udpRestartSeconds) { [weak self] in
             guard let self, self.rows[listener.appKey]?.isInUse == true, self.listening[key] == nil else { return }
             self.listen(
                 listener.bindingId, entryKey: key, appKey: listener.appKey, port: listener.port,
-                protocol: listener.protocol, open: listener.open
+                protocol: listener.protocol, open: listener.open, isBrowserOpened: listener.isBrowserOpened
             ) { [weak self] result in
                 if case .failure(let refusal) = result {
                     self?.rows[listener.appKey, default: ForwardRow()].error = refusal
@@ -339,7 +341,7 @@ final class AppForwards {
         let open: [String: JSONValue] = ["kind": .string(Channel.kindConnect), "id": .string(entry.id)]
         listen(
             bindingId, entryKey: entryKey, appKey: Self.key(bindingId, entry.appId), port: port,
-            protocol: entry.protocol, open: open, completion: completion)
+            protocol: entry.protocol, open: open, isBrowserOpened: entry.type == "web", completion: completion)
     }
 
     private func pick(
@@ -354,7 +356,7 @@ final class AppForwards {
             let port = try table.pick(for: entryKey, protocol: "tcp")
             listen(
                 bindingId, entryKey: entryKey, appKey: rowKey, port: port, protocol: "tcp", open: open,
-                completion: completion)
+                isBrowserOpened: true, completion: completion)
         } catch let refusal as ClientError {
             completion(.failure(refusal))
         } catch {
@@ -364,12 +366,15 @@ final class AppForwards {
 
     private func listen(
         _ bindingId: String, entryKey: String, appKey: String, port: Int, protocol: String,
-        open: [String: JSONValue], completion: @escaping (Result<Int, ClientError>) -> Void
+        open: [String: JSONValue], isBrowserOpened: Bool, completion: @escaping (Result<Int, ClientError>) -> Void
     ) {
-        forwarder.start(bindingId: bindingId, port: port, protocol: `protocol`, open: open) { [weak self] result in
+        forwarder.start(
+            bindingId: bindingId, port: port, protocol: `protocol`, open: open, isBrowserOpened: isBrowserOpened
+        ) { [weak self] result in
             if case .success(let bound) = result {
                 self?.listening[entryKey] = ForwardListener(
-                    bindingId: bindingId, appKey: appKey, port: bound, protocol: `protocol`, open: open)
+                    bindingId: bindingId, appKey: appKey, port: bound, protocol: `protocol`, open: open,
+                    isBrowserOpened: isBrowserOpened)
                 ClientLog.info("forwarding \(Forward.bindHost):\(bound)/\(`protocol`) to \(entryKey) through the hub")
             }
             completion(result)
@@ -410,7 +415,7 @@ final class AppForwards {
 
     private func end(_ entryKey: String, why: String) {
         guard let held = listening.removeValue(forKey: entryKey) else { return }
-        forwarder.stop(port: held.port, protocol: held.protocol)
+        forwarder.stop(port: held.port, protocol: held.protocol, isBrowserOpened: held.isBrowserOpened)
         ClientLog.info("stopped forwarding \(Forward.bindHost):\(held.port)/\(held.protocol) to \(entryKey): \(why)")
         guard entryKey.hasSuffix("/" + Forward.panelEntry), var row = rows[entryKey] else { return }
         row.localPort = 0

@@ -6,7 +6,11 @@ program or another entry of the same protocol holds it, or when the
 transport cannot bind it; a forward of no app picks from 20000 to 23999 and
 keeps the pick, picked again when another program took it; ``forward_start``
 names the hub's binding, the loopback address, the protocol and the
-``connect`` open, the panel's by ``is_panel``; ``forward_stop`` names the
+``connect`` open, the panel's by ``is_panel``; an app's ``web`` forward and
+the panel's also listen on ``[::1]`` at the same number where the machine
+has IPv6, a held ``[::1]`` refused ``port_taken`` with the ``127.0.0.1``
+listener closed, and the end of either listener ending the forward; every
+other forward listens on ``127.0.0.1`` alone; ``forward_stop`` names the
 address and the protocol; a ``forward_end`` with a code ends the forward and
 says why; every forward starts again when the transport is back; and the
 probe that says whether a number is free on every address.
@@ -80,6 +84,16 @@ def registry(tmp_path):
     return Registry(tmp_path)
 
 
+def _no_ipv6() -> bool:
+    return False
+
+
+def _refuse_ipv6(fields: dict) -> dict:
+    if fields["listen"].startswith("[::1]"):
+        return {"code": "port_taken", "params": {"port": 25024}}
+    return {}
+
+
 # --- the forwards ---
 
 
@@ -94,11 +108,12 @@ def test_an_app_entry_forwards_at_the_hubs_number_through_the_transport(registry
             "forward_start",
             {
                 "binding": "c1",
-                "listen": "127.0.0.1:25001",
+                "listen": listen,
                 "protocol": "tcp",
                 "open": {"kind": "connect", "id": "gitea_d1_web"},
             },
         )
+        for listen in ("127.0.0.1:25001", "[::1]:25001")
     ]
     assert registry.forwards.forwards() == {"h1/gitea_d1_web": 25001}
     assert registry.forwards.port_of("h1", "gitea_d1_web") == 25001
@@ -201,9 +216,72 @@ def test_a_forward_of_no_app_picks_from_20000_and_keeps_the_pick(tmp_path):
 def test_the_panel_forward_opens_the_panel(registry):
     registry.forwards.ensure(hub_id="h1", entry_id=":panel", kind="panel")
 
-    (start,) = registry.transport.commands_of("forward_start")
-    assert start["open"] == {"kind": "connect", "is_panel": True}
-    assert 20000 <= int(start["listen"].rsplit(":", 1)[1]) <= 23999
+    starts = registry.transport.commands_of("forward_start")
+    port = int(starts[0]["listen"].rsplit(":", 1)[1])
+    assert [start["open"] for start in starts] == [
+        {"kind": "connect", "is_panel": True}
+    ] * 2
+    assert [start["listen"] for start in starts] == [
+        f"127.0.0.1:{port}",
+        f"[::1]:{port}",
+    ]
+    assert 20000 <= port <= 23999
+
+
+def test_a_port_entry_and_every_forward_of_no_page_listen_on_127_0_0_1_alone(
+    registry,
+):
+    registry.forwards.ensure(hub_id="h1", entry_id="p", kind="port", own_port=25021)
+    registry.forwards.ensure(hub_id="h1", entry_id="s", kind="ssh", own_port=25022)
+    for kind in ("ai", "rdp", "file"):
+        registry.forwards.ensure(hub_id="h1", entry_id=kind, kind=kind)
+
+    listens = [
+        fields["listen"] for fields in registry.transport.commands_of("forward_start")
+    ]
+    assert len(listens) == 5
+    assert all(listen.startswith("127.0.0.1:") for listen in listens)
+
+
+def test_a_machine_with_no_ipv6_listens_on_127_0_0_1_alone(tmp_path, monkeypatch):
+    monkeypatch.setattr(forward_module, "has_ipv6_loopback", _no_ipv6)
+    registry = Registry(tmp_path)
+
+    registry.forwards.ensure(hub_id="h1", entry_id="w", kind="web", own_port=25023)
+    registry.forwards.ensure(hub_id="h1", entry_id=":panel", kind="panel")
+
+    listens = [
+        fields["listen"] for fields in registry.transport.commands_of("forward_start")
+    ]
+    assert len(listens) == 2
+    assert all(listen.startswith("127.0.0.1:") for listen in listens)
+
+
+def test_a_held_ipv6_loopback_is_port_taken_and_closes_the_ipv4_listener(registry):
+    registry.transport.answers["forward_start"] = _refuse_ipv6
+
+    with pytest.raises(LocalPortTakenError):
+        registry.forwards.ensure(hub_id="h1", entry_id="w", kind="web", own_port=25024)
+
+    assert registry.transport.commands_of("forward_stop") == [
+        {"listen": "127.0.0.1:25024", "protocol": "tcp"}
+    ]
+    assert registry.forwards.forwards() == {}
+
+
+def test_the_end_of_the_ipv6_listener_ends_the_forward_and_closes_the_other(
+    registry,
+):
+    registry.forwards.ensure(hub_id="h1", entry_id="w", kind="web", own_port=25025)
+
+    registry.forwards.take_end(
+        {"listen": "[::1]:25025", "protocol": "tcp", "code": "", "params": {}}
+    )
+
+    assert registry.forwards.forwards() == {}
+    assert registry.transport.commands_of("forward_stop") == [
+        {"listen": "127.0.0.1:25025", "protocol": "tcp"}
+    ]
 
 
 def test_stop_names_the_address_and_the_protocol(registry):
@@ -260,6 +338,7 @@ def test_every_forward_starts_again_when_the_transport_is_back(registry):
     ] == [
         "127.0.0.1:25014",
         "127.0.0.1:25015",
+        "[::1]:25015",
     ]
 
 

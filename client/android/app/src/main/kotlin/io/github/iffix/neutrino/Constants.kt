@@ -315,6 +315,9 @@ const val CLIENT_AGENT_PORT_DEFAULT = 8443
 /** The address every forward listens on. */
 const val FORWARD_BIND_HOST = "127.0.0.1"
 
+/** The address a forward a browser opens also listens on, an app's web entry's and the panel's. */
+const val FORWARD_BIND_HOST_IPV6 = "[::1]"
+
 /** The query parameter a web page that needs a token takes it in. */
 const val WEB_TOKEN_PARAMETER = "tkn"
 

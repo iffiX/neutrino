@@ -356,6 +356,9 @@ enum Forward {
     /// The address every forward listens on.
     static let bindHost = "127.0.0.1"
 
+    /// The address a forward a browser opens also listens on, an app's web entry's and the panel's.
+    static let bindHostIpv6 = "[::1]"
+
     /// The host the hub's panel opens on, apart from every app's.
     static let panelHost = "localhost"
 

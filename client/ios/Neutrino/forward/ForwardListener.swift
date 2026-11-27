@@ -16,4 +16,7 @@ struct ForwardListener: Equatable {
 
     /// Its streams' `open` record.
     let open: [String: JSONValue]
+
+    /// Whether a browser opens it, so that it also listens on `[::1]`.
+    let isBrowserOpened: Bool
 }

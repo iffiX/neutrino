@@ -3083,6 +3083,12 @@ def test_use_forwards_every_entry_at_its_number_and_opens_nothing(app_hub):
         },
         {
             "binding": "c1",
+            "listen": f"[::1]:{web_port}",
+            "protocol": "tcp",
+            "open": {"kind": "connect", "id": "gitea_d1_web"},
+        },
+        {
+            "binding": "c1",
             "listen": f"127.0.0.1:{port_port}",
             "protocol": "tcp",
             "open": {"kind": "connect", "id": "gitea_d1_ssh"},
@@ -3158,7 +3164,8 @@ def test_an_app_entry_the_hub_gave_no_number_has_none_and_use_passes_it_by(
     held[0]()
 
     assert [line["open"]["id"] for line in forward_starts(transport)] == [
-        "gitea_d1_web"
+        "gitea_d1_web",
+        "gitea_d1_web",
     ]
     assert resident.app_rows()[0]["last_error"] is None
 
@@ -3212,7 +3219,8 @@ def test_a_number_another_program_holds_is_refused_and_the_other_forwards_stay(
     assert row["last_error"] == {"code": "port_taken", "params": {"port": port_port}}
     assert row["is_in_use"] is True
     assert [command["listen"] for command in forward_starts(transport)] == [
-        f"127.0.0.1:{web_port}"
+        f"127.0.0.1:{web_port}",
+        f"[::1]:{web_port}",
     ]
 
 
@@ -3239,6 +3247,7 @@ def test_stop_ends_every_forward_of_the_app(app_hub):
 
     assert transport.commands_of("forward_stop") == [
         {"listen": f"127.0.0.1:{web_port}", "protocol": "tcp"},
+        {"listen": f"[::1]:{web_port}", "protocol": "tcp"},
         {"listen": f"127.0.0.1:{port_port}", "protocol": "tcp"},
     ]
     assert resident.app_rows()[0]["is_in_use"] is False
@@ -3473,14 +3482,21 @@ def test_panel_asks_its_sign_in_then_makes_the_forward_and_opens_its_address(
     assert resident.platform.opened_urls == [
         f"http://panel-h1.localhost:{port}/?tkn={PANEL_TOKEN}"
     ]
-    assert [step for step, _detail in steps] == ["service", "forward_start"]
+    assert [step for step, _detail in steps] == [
+        "service",
+        "forward_start",
+        "forward_start",
+    ]
     assert steps[0][1]["is_panel"] is True
-    assert steps[1][1] == {
-        "binding": "c1",
-        "listen": f"127.0.0.1:{port}",
-        "protocol": "tcp",
-        "open": {"kind": "connect", "is_panel": True},
-    }
+    assert [detail for _step, detail in steps[1:]] == [
+        {
+            "binding": "c1",
+            "listen": f"{host}:{port}",
+            "protocol": "tcp",
+            "open": {"kind": "connect", "is_panel": True},
+        }
+        for host in ("127.0.0.1", "[::1]")
+    ]
 
 
 def test_panel_on_a_mac_opens_localhost_apart_from_the_apps_loopback(two_hubs_up):

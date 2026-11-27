@@ -209,7 +209,8 @@ class PortForwards(
                 settle(key) { it.copy(job = null, error = ChannelResult.refused("web_token_missing")) }
                 return@launch
             }
-            when (val bound = pick(bindingId, FORWARD_PANEL_ENTRY, key, buildJsonObject { put("is_panel", true) })) {
+            val panelOpen = buildJsonObject { put("is_panel", true) }
+            when (val bound = pick(bindingId, FORWARD_PANEL_ENTRY, key, panelOpen, isBrowserOpened = true)) {
                 is ChannelResult.Refused -> settle(key) { it.copy(job = null, error = bound) }
 
                 is ChannelResult.Ok -> {
@@ -230,7 +231,7 @@ class PortForwards(
      * @return The loopback number, or the refusal.
      */
     suspend fun hold(bindingId: String, entryId: String): ChannelResult<Int> =
-        pick(bindingId, entryId, "", entryOpen(entryId))
+        pick(bindingId, entryId, "", entryOpen(entryId), isBrowserOpened = false)
 
     /**
      * End a forward [hold] made.
@@ -346,10 +347,16 @@ class PortForwards(
         val isHeld = listening.value.values.any { it.port == port && it.protocol == protocol }
         if (isHeld) return ChannelResult.refused("port_taken", "port" to port.toString())
         val appKey = keyOf(bindingId, entry.appId)
-        return listen(bindingId, entryKey, appKey, port, protocol, entryOpen(entry.id))
+        return listen(bindingId, entryKey, appKey, port, protocol, entryOpen(entry.id), entry.type == "web")
     }
 
-    private suspend fun pick(bindingId: String, entryId: String, rowKey: String, open: JsonObject): ChannelResult<Int> {
+    private suspend fun pick(
+        bindingId: String,
+        entryId: String,
+        rowKey: String,
+        open: JsonObject,
+        isBrowserOpened: Boolean,
+    ): ChannelResult<Int> {
         val entryKey = keyOf(bindingId, entryId)
         listening.value[entryKey]?.let { return ChannelResult.Ok(it.port) }
         val port = try {
@@ -357,7 +364,7 @@ class PortForwards(
         } catch (error: IOException) {
             return ChannelResult.refused("forward_failed", "detail" to (error.message ?: "IOException"))
         }
-        return listen(bindingId, entryKey, rowKey, port, "tcp", open)
+        return listen(bindingId, entryKey, rowKey, port, "tcp", open, isBrowserOpened)
     }
 
     private suspend fun listen(
@@ -367,11 +374,13 @@ class PortForwards(
         port: Int,
         protocol: String,
         open: JsonObject,
+        isBrowserOpened: Boolean,
     ): ChannelResult<Int> {
-        val started = forwarder.start(bindingId, port, protocol, open)
+        val started = forwarder.start(bindingId, port, protocol, open, isBrowserOpened)
         if (started is ChannelResult.Ok) {
+            val listener = Listener(started.value, protocol, appKey, bindingId, open, isBrowserOpened)
             synchronized(lock) {
-                listening.update { it + (entryKey to Listener(started.value, protocol, appKey, bindingId, open)) }
+                listening.update { it + (entryKey to listener) }
             }
             log("forwarding $FORWARD_BIND_HOST:${started.value}/$protocol to $entryKey through the hub")
         }
@@ -384,7 +393,7 @@ class PortForwards(
             if (found != null) listening.update { it - entryKey }
             found
         } ?: return
-        forwarder.stop(held.port, held.protocol)
+        forwarder.stop(held.port, held.protocol, held.isBrowserOpened)
         log("stopped forwarding $FORWARD_BIND_HOST:${held.port}/${held.protocol} to $entryKey: $why")
         if (entryKey.substringAfter('/') == FORWARD_PANEL_ENTRY) {
             settle(entryKey) { it.copy(localPort = 0) }
@@ -403,11 +412,20 @@ class PortForwards(
         val held = found.value
         log("the transport ended the forward $FORWARD_BIND_HOST:$port/${held.protocol}: ${end.refusal?.code.orEmpty()}")
         end.refusal?.let { refusal -> settle(held.appKey) { it.copy(error = refusal) } }
+        if (held.isBrowserOpened) scope.launch { forwarder.stop(held.port, held.protocol, true) }
         if (held.protocol != FORWARD_PROTOCOL_UDP) return
         scope.launch {
             delay(FORWARD_UDP_RESTART_MILLIS)
             if (current.value[held.appKey]?.isInUse != true || found.key in listening.value) return@launch
-            val again = listen(held.bindingId, found.key, held.appKey, held.port, held.protocol, held.open)
+            val again = listen(
+                held.bindingId,
+                found.key,
+                held.appKey,
+                held.port,
+                held.protocol,
+                held.open,
+                held.isBrowserOpened,
+            )
             if (again is ChannelResult.Refused) settle(held.appKey) { it.copy(error = again) }
         }
     }
@@ -449,6 +467,7 @@ class PortForwards(
         val appKey: String,
         val bindingId: String,
         val open: JsonObject,
+        val isBrowserOpened: Boolean,
     )
 
     companion object {

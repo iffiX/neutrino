@@ -1,7 +1,9 @@
 """The local forwards: a loopback listener per forwarded entry, held by the transport.
 
 Every entry the client forwards, and the hub's own panel, listens on
-``127.0.0.1`` at the port the one local port table gives it; the transport
+``127.0.0.1`` at the port the one local port table gives it, and a forward
+a browser opens, an app's ``web`` entry's and the panel's, on ``[::1]`` at
+the same port where the machine has IPv6; the transport
 holds the listener, started with ``forward_start``, and carries every
 connection it accepts as one ``connect`` stream, or a UDP entry's datagrams
 on one stream. The hub alone dials the service. While a hub has no session
@@ -36,6 +38,7 @@ from neutrino_client.services.base import hub_of_key, service_key
 from neutrino_client.services.store import STORE_LOCAL_PORT_AUTO
 
 FORWARD_BIND_HOST = "127.0.0.1"
+FORWARD_BIND_HOST_IPV6 = "::1"
 # A local port's setting when the client picks the number.
 FORWARD_PORT_AUTO = STORE_LOCAL_PORT_AUTO
 # The protocols a port entry is forwarded on; an entry that names none is TCP.
@@ -50,6 +53,8 @@ FORWARD_FIXED_PORT_MIN = 1024
 # The entry id the hub's panel is forwarded under; no published entry has it.
 FORWARD_PANEL_ID = ":panel"
 FORWARD_KIND_PANEL = "panel"
+# The kinds a browser opens, whose forwards also listen on ``[::1]``.
+FORWARD_BROWSER_KINDS = ("web", FORWARD_KIND_PANEL)
 # The kinds that forward at a fixed number, an app's entries and the ssh
 # entries, each ending when its entry leaves the hub's list.
 FORWARD_FIXED_PORT_KINDS = ("web", "port", "ssh")
@@ -117,6 +122,25 @@ def is_port_free(
             return False
         finally:
             probe.close()
+    return True
+
+
+def has_ipv6_loopback() -> bool:
+    """Whether the machine has the IPv6 loopback address.
+
+    Returns:
+        True when a TCP socket binds ``[::1]``.
+    """
+    try:
+        probe = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+    except OSError:
+        return False
+    try:
+        probe.bind((FORWARD_BIND_HOST_IPV6, 0))
+    except OSError:
+        return False
+    finally:
+        probe.close()
     return True
 
 
@@ -442,6 +466,7 @@ class ForwardListenerRegistry:
         log=print,
         on_change=None,
         on_refused=None,
+        has_ipv6=None,
     ):
         """
         Args:
@@ -459,6 +484,9 @@ class ForwardListenerRegistry:
                 nobody listening.
             on_refused: ``on_refused(hub_id, entry_id, refusal)`` is told
                 when a forward ended with a code; None for nobody listening.
+            has_ipv6: Says whether the machine has the IPv6 loopback, asked
+                as each forward a browser opens starts; None asks
+                :func:`has_ipv6_loopback`.
         """
         self._command = command
         self._binding_of = binding_of if binding_of is not None else _no_binding
@@ -466,6 +494,7 @@ class ForwardListenerRegistry:
         self._log = log
         self._on_change = on_change if on_change is not None else _nobody
         self._on_refused = on_refused if on_refused is not None else _nobody
+        self._has_ipv6 = has_ipv6 if has_ipv6 is not None else has_ipv6_loopback
         self._lock = threading.Lock()
         # Every forward the transport listens for: key to its record.
         self._forwards: dict = {}
@@ -513,11 +542,13 @@ class ForwardListenerRegistry:
                 "kind": kind,
                 "protocol": protocol,
                 "port": port,
+                "listens": self._listens(kind, port),
             }
             self._start(record)
             self._forwards[key] = record
         self._log(
-            f"forwarding {FORWARD_BIND_HOST}:{port}/{protocol} to {key} through the hub"
+            f"forwarding {' and '.join(record['listens'])}/{protocol} to {key} "
+            "through the hub"
         )
         self._on_change()
         return port
@@ -561,12 +592,14 @@ class ForwardListenerRegistry:
         if record is None:
             return False
         self._stop(record)
-        self._log(f"stopped forwarding {FORWARD_BIND_HOST}:{record['port']}")
+        self._log(f"stopped forwarding {' and '.join(record['listens'])}")
         self._on_change()
         return True
 
     def take_end(self, line: dict) -> None:
-        """Take the transport's ``forward_end``: that listener stopped.
+        """Take the transport's ``forward_end``: that listener stopped, and its forward ends.
+
+        A forward that also listens on ``[::1]`` has its other listener closed.
 
         Args:
             line: ``{listen, protocol, code, params}``.
@@ -577,12 +610,14 @@ class ForwardListenerRegistry:
             found = [
                 (key, record)
                 for key, record in self._forwards.items()
-                if _listen(record["port"]) == listen and record["protocol"] == protocol
+                if listen in record["listens"] and record["protocol"] == protocol
             ]
             for key, _record in found:
                 self._forwards.pop(key, None)
         if not found:
             return
+        for _key, record in found:
+            self._stop(record, ended=listen)
         code = str(line.get("code", "") or "")
         params = line.get("params")
         for _key, record in found:
@@ -690,8 +725,17 @@ class ForwardListenerRegistry:
             raise LocalPortTakenError(port)
         return port
 
+    def _listens(self, kind: str, port: int) -> list:
+        """The addresses a new forward listens on, ``127.0.0.1`` first."""
+        listens = [_listen(port)]
+        if kind in FORWARD_BROWSER_KINDS and self._has_ipv6():
+            listens.append(f"[{FORWARD_BIND_HOST_IPV6}]:{port}")
+        return listens
+
     def _start(self, record: dict) -> None:
-        """Have the transport listen for one forward.
+        """Have the transport listen for one forward, on each of its addresses.
+
+        An address the transport refuses closes the ones it already listens on.
 
         Raises:
             LocalPortTakenError: When the transport cannot bind the number.
@@ -708,32 +752,39 @@ class ForwardListenerRegistry:
             open_record = {"kind": CLIENT_STREAM_KIND_CONNECT, "is_panel": True}
         else:
             open_record = {"kind": CLIENT_STREAM_KIND_CONNECT, "id": record["entry_id"]}
-        answer = self._command(
-            "forward_start",
-            {
-                "binding": binding,
-                "listen": _listen(record["port"]),
-                "protocol": record["protocol"],
-                "open": open_record,
-            },
-        )
-        code = str(answer.get("code", "") or "")
-        if code == "port_taken":
-            raise LocalPortTakenError(record["port"])
-        if code:
-            raise OSError(f"the transport refused the forward: {code}")
+        started = []
+        for listen in record["listens"]:
+            answer = self._command(
+                "forward_start",
+                {
+                    "binding": binding,
+                    "listen": listen,
+                    "protocol": record["protocol"],
+                    "open": open_record,
+                },
+            )
+            code = str(answer.get("code", "") or "")
+            if code:
+                self._stop(dict(record, listens=started))
+            if code == "port_taken":
+                raise LocalPortTakenError(record["port"])
+            if code:
+                raise OSError(f"the transport refused the forward: {code}")
+            started.append(listen)
 
-    def _stop(self, record: dict) -> None:
-        """Have the transport close one forward's listener; a refusal is logged."""
+    def _stop(self, record: dict, ended: str = "") -> None:
+        """Have the transport close each of a forward's listeners but ``ended``; a refusal is logged."""
         if self._command is None:
             return
-        try:
-            self._command(
-                "forward_stop",
-                {"listen": _listen(record["port"]), "protocol": record["protocol"]},
-            )
-        except GatewayUnreachable as error:
-            self._log(f"could not stop the forward at {record['port']}: {error}")
+        for listen in record["listens"]:
+            if listen == ended:
+                continue
+            try:
+                self._command(
+                    "forward_stop", {"listen": listen, "protocol": record["protocol"]}
+                )
+            except GatewayUnreachable as error:
+                self._log(f"could not stop the forward at {listen}: {error}")
 
     def _end(self, is_ended) -> int:
         """End the forwards ``is_ended(key, record)`` picks."""
