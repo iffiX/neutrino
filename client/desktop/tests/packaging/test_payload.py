@@ -23,6 +23,8 @@ from shared import icons, nuitka_build
 import netbird_payload
 import payload
 
+from tests.conftest import own_sleep
+
 # A readelf whose answer for a file is the version its own name spells, so a
 # tree can be staged with the versions the walk is meant to read.
 # One ldd line per library the compiled bindings link, as ldd prints them.
@@ -507,7 +509,7 @@ def test_fetch_downloads_after_a_504_and_fails_at_once_on_a_404(monkeypatch):
         return io.BytesIO(body)
 
     monkeypatch.setattr(payload.download.urllib.request, "urlopen", urlopen)
-    monkeypatch.setattr(payload.download.time, "sleep", slept.append)
+    monkeypatch.setattr(payload.download.time, "sleep", own_sleep(slept.append))
 
     assert payload.fetch("https://example.invalid/a.tar.gz", digest, "a") == body
     assert len(slept) == 1
