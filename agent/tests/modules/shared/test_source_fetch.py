@@ -334,18 +334,19 @@ def test_every_ranking_probes_again(sources):
 
 
 def test_the_probes_run_at_once():
-    started: list = []
+    # Each probe answers once all three have begun; probes one after another
+    # break the barrier and answer nothing.
+    begun = threading.Barrier(3, timeout=10)
 
-    def slow_probe(url, *, source=""):
-        started.append(time.monotonic())
-        time.sleep(0.2)
+    def waiting_probe(url, *, source=""):
+        begun.wait()
         return SourceProbe(source=source, is_answered=True, speed=1.0)
 
-    began = time.monotonic()
-    source_fetch.probe_all([("a", "a"), ("b", "b"), ("c", "c")], probe_one=slow_probe)
+    probes = source_fetch.probe_all(
+        [("a", "a"), ("b", "b"), ("c", "c")], probe_one=waiting_probe
+    )
 
-    assert time.monotonic() - began < 0.5
-    assert max(started) - min(started) < 0.15
+    assert [probe.source for probe in probes] == ["a", "b", "c"]
 
 
 # --- images and source sets ---
