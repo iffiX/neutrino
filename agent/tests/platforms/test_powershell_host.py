@@ -281,7 +281,7 @@ def test_a_host_that_does_not_answer_in_time_is_killed_and_started_again(started
     assert host.call("task_read", {"value": {"is_present": False}}) == {
         "is_present": False
     }
-    assert starter.starts() == 2
+    assert len(starter.processes) == 2
 
 
 def test_a_call_that_cannot_get_the_host_in_time_kills_nothing(started):
