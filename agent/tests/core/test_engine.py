@@ -47,6 +47,7 @@ import types
 import pytest
 
 import neutrino_agent.core.engine as engine_module
+import neutrino_agent.platforms.base as platforms_base_module
 from neutrino_agent.core.desired_state import APPLY_ORDER
 from neutrino_agent.core.engine import ModuleEngine
 from neutrino_agent.core.tasks import run_step
@@ -3567,8 +3568,12 @@ class PackagesPlatform(FakePlatform):
 
 @pytest.mark.parametrize("module", ACCOUNT_MODULES)
 def test_a_running_program_run_as_an_account_steps_through_each_account(
-    tmp_path, module
+    tmp_path, tmp_path_factory, monkeypatch, module
 ):
+    # A folder short enough for code-server's socket path, whatever the test's name.
+    monkeypatch.setattr(
+        platforms_base_module, "AGENT_VAR_DIR", str(tmp_path_factory.mktemp("var"))
+    )
     engine = ModuleEngine(platform=PackagesPlatform(), configured_dir=str(tmp_path))
     runner = engine.runner_of(module)
     entry = {
