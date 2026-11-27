@@ -33,7 +33,8 @@ def write_table(tmp_path, monkeypatch, text=ARP_TABLE):
 
 
 def test_only_the_served_networks_are_counted(tmp_path, monkeypatch):
-    """A neighbour on the uplink is the upstream network's, not the gateway's."""
+    """A neighbour on the uplink is the upstream network's, not the gateway's,
+    and an incomplete entry is an unanswered probe, not a machine that is there."""
     write_table(tmp_path, monkeypatch)
 
     assert count_lan_neighbours(["enp1s0"]) == 2
@@ -43,13 +44,6 @@ def test_every_served_interface_contributes(tmp_path, monkeypatch):
     write_table(tmp_path, monkeypatch)
 
     assert count_lan_neighbours(["enp1s0", "wlp3s0"]) == 3
-
-
-def test_unresolved_entries_are_not_devices(tmp_path, monkeypatch):
-    """An incomplete entry is an unanswered probe, not a machine that is there."""
-    write_table(tmp_path, monkeypatch)
-
-    assert count_lan_neighbours(["enp1s0"]) == 2
 
 
 def test_a_box_serving_nothing_counts_nothing(tmp_path, monkeypatch):
