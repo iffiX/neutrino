@@ -67,6 +67,7 @@ from neutrino_agent.modules.siyuan.hooks import SiyuanHooks
 from neutrino_agent.modules.ssh_server.hooks import SshServerHooks
 from neutrino_agent.modules.vscode.hooks import VscodeHooks
 from neutrino_agent.platforms.base import AgentPlatform
+from tests.conftest import own_sleep
 
 INSTANCE = {"account": "ann", "secret": "s"}
 CONFIG = {"instances": [INSTANCE]}
@@ -1604,7 +1605,7 @@ def test_an_uninstall_tries_again_while_a_file_of_an_ended_process_stays(
 
     slept = []
     monkeypatch.setattr(instances_module, "remove_tree", remove_on_third)
-    monkeypatch.setattr(instances_module.time, "sleep", slept.append)
+    monkeypatch.setattr(instances_module.time, "sleep", own_sleep(slept.append))
 
     runner.uninstall({})
 
@@ -1619,7 +1620,7 @@ def test_an_uninstall_gives_up_on_a_directory_that_stays(runner, tmp_path, monke
     tries = []
     slept = []
     monkeypatch.setattr(instances_module, "remove_tree", tries.append)
-    monkeypatch.setattr(instances_module.time, "sleep", slept.append)
+    monkeypatch.setattr(instances_module.time, "sleep", own_sleep(slept.append))
 
     runner.uninstall({})
 

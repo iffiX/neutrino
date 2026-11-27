@@ -25,6 +25,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import zlib
 
 import pytest
@@ -525,6 +526,28 @@ class Clock:
 
     def __call__(self) -> float:
         return self.now
+
+
+def own_sleep(record):
+    """A ``time.sleep`` that hands the calling thread's waits to ``record``.
+
+    Args:
+        record: Called with the seconds of each wait of the thread that made
+            this sleep.
+
+    Returns:
+        The sleep; every other thread sleeps for real.
+    """
+    real_sleep = time.sleep
+    caller = threading.get_ident()
+
+    def sleep(seconds) -> None:
+        if threading.get_ident() != caller:
+            real_sleep(seconds)
+            return
+        record(seconds)
+
+    return sleep
 
 
 def link_for(payload: dict) -> str:
