@@ -41,10 +41,12 @@ processors runs a suite on 16 workers, or on 8 when two suites run side by
 side. A runner of `ci.yml` has 4 processors and runs 8 workers.
 
 `--dist loadgroup` hands each test to the next free worker on its own, and
-the tests marked with one `xdist_group` to one worker in their order. The
-agent's two tests of a reconcile worker left running form such a group: the
-first leaves the worker, and the second reads what the first test's end did
-to it.
+the tests marked with one `xdist_group` to one worker in their order. A group
+saves work and no test's result rests on one: pytest-xdist 3.8 cannot name a
+group under pytest 9.2, and the marks then do nothing. The packaging files
+whose first test draws the icons the rest reuse carry one each. The agent's
+two tests of a reconcile worker left running carry one, and the second runs
+both in a process of its own when the first ran in another.
 
 A test that runs beside tests in other processes holds to these rules:
 
@@ -55,6 +57,10 @@ A test that runs beside tests in other processes holds to these rules:
 - An order of events it proves is held by an event or a fake clock, never by
   a time the other side has to finish in.
 - No thread it starts outlives it.
+- A function of `os` it replaces still serves every other caller, the
+  coverage tracer among them.
+- A state it hands to the next test still holds when the two run in
+  different processes.
 
 ## Python 3.9
 
