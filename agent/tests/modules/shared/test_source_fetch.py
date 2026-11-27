@@ -114,10 +114,21 @@ def document(integrity=INTEGRITY, size=200_000) -> bytes:
     ).encode()
 
 
-def closed_port() -> str:
-    with socket.socket() as held:
-        held.bind(("127.0.0.1", 0))
-        return f"http://127.0.0.1:{held.getsockname()[1]}"
+@pytest.fixture
+def closed_port():
+    """Addresses on loopback that refuse connections, each port held bound and
+    never listening to the test's end, so no other process takes it."""
+    held = []
+
+    def make() -> str:
+        port = socket.socket()
+        port.bind(("127.0.0.1", 0))
+        held.append(port)
+        return f"http://127.0.0.1:{port.getsockname()[1]}"
+
+    yield make
+    for port in held:
+        port.close()
 
 
 # --- one probe ---
@@ -147,7 +158,7 @@ def test_an_http_error_is_its_status(sources):
     }
 
 
-def test_a_refused_connection_is_unreachable():
+def test_a_refused_connection_is_unreachable(closed_port):
     found = probe(closed_port())
 
     assert (found.is_answered, found.reason) == (False, "unreachable")
@@ -278,7 +289,9 @@ def test_a_registry_document_names_the_package_with_its_slash_escaped():
     )
 
 
-def test_registries_are_ranked_by_speed_while_they_name_the_pinned_integrity(sources):
+def test_registries_are_ranked_by_speed_while_they_name_the_pinned_integrity(
+    sources, closed_port
+):
     slow = sources(body=document(), chunks=10, pause_s=0.15)
     fast = sources(body=document())
     wrong = sources(body=document("sha512-other"))
@@ -596,7 +609,9 @@ def test_images_are_ranked_by_their_layer_and_the_unanswered_follow_in_order():
     ]
 
 
-def test_a_set_is_probed_at_its_path_under_each_source_fastest_first(sources):
+def test_a_set_is_probed_at_its_path_under_each_source_fastest_first(
+    sources, closed_port
+):
     slow = sources(body=b"x" * 200_000, chunks=20, pause_s=0.075)
     fast = sources(body=b"x" * 200_000)
     gone = closed_port()
