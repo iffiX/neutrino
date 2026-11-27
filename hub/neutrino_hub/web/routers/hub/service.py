@@ -255,6 +255,7 @@ async def open_entry(
         device_id=opened.device_id,
         host=opened.host,
         port=opened.port,
+        has_forwarder=opened.has_forwarder,
     )
     try:
         port = await runtime.app_forwards.open(target)

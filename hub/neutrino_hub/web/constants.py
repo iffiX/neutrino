@@ -12,6 +12,9 @@ WEB_FRONTEND_DIST_DIR = UTILS_DATA_DIR / "frontend"
 # it. The name is composed in one place, ``web/dependencies.session_cookie``.
 WEB_SESSION_COOKIE_PREFIX = "neutrino_session_"
 WEB_SESSION_COOKIE_HUB_CHARS = 12
+# The prefix of every cookie Neutrino sets: the panel's session and each
+# forwarder's login.
+WEB_NEUTRINO_COOKIE_PREFIX = "neutrino_"
 # How much of a failure's words a ``package`` stream's close keeps.
 WEB_PACKAGE_FAILURE_DETAIL_CHARS = 200
 # A client's sign-in to the panel: the query parameter the token rides in,

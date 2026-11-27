@@ -3,7 +3,8 @@
 What these pin: each request's head is written for the app, ``Host`` as
 ``127.0.0.1:<port>``, the forward's own ``Origin`` the same way and another
 answered 403, every ``neutrino_session_`` cookie taken out and the others
-kept, a second request on a kept connection read the same way, a body passed
+kept on a page a forwarder serves, every ``neutrino_`` cookie taken out on
+any other page, a second request on a kept connection read the same way, a body passed
 by its length, ``Transfer-Encoding`` answered 411, an ``Upgrade`` carried
 both ways; an ``https`` entry's TLS ended with the given context and opened
 to the far end unchecked; the first free port of the range taken and a held
@@ -222,7 +223,7 @@ def test_a_head_is_written_for_the_app():
         b"Content-Length: 3\r\n\r\n"
     )
 
-    written = rewrite_request_head(head, scheme="http", port=PORT)
+    written = rewrite_request_head(head, scheme="http", port=PORT, has_forwarder=True)
 
     assert written.status == 0
     assert written.length == 3
@@ -232,6 +233,48 @@ def test_a_head_is_written_for_the_app():
         b"Cookie: neutrino_0123=a; k=v\r\n"
         b"Content-Length: 3\r\n\r\n"
     )
+
+
+def test_a_page_no_forwarder_serves_loses_every_neutrino_cookie():
+    head = (
+        b"GET / HTTP/1.1\r\nHost: h\r\n"
+        b"Cookie: neutrino_session_abc=s; neutrino_eab3b7e36ad3=a; k=v\r\n\r\n"
+    )
+    alone = b"GET / HTTP/1.1\r\nHost: h\r\nCookie: neutrino_0123=a\r\n\r\n"
+
+    assert (
+        b"Cookie: k=v\r\n" in rewrite_request_head(head, scheme="http", port=PORT).head
+    )
+    assert b"Cookie" not in rewrite_request_head(alone, scheme="http", port=PORT).head
+
+
+def test_a_declared_app_gets_no_neutrino_cookie_and_a_forwarders_page_its_own():
+    async def scenario():
+        far = FarEnd()
+        server, listen = await far_end_server(far)
+        host, _, number = listen.rpartition(":")
+        table = table_for(FakeHubForwards(listen), free_range())
+        declared = await table.open(
+            AppForwardTarget("a_web", "http", "", host, int(number))
+        )
+        page = await table.open(
+            AppForwardTarget("p_web", "http", DEVICE, "", APP_PORT, has_forwarder=True)
+        )
+        cookie = b"Cookie: neutrino_session_x=s; neutrino_0123=a; k=v\r\n\r\n"
+        for port in (declared, page):
+            await ask(port, [b"GET / HTTP/1.1\r\nHost: hub:1\r\n" + cookie])
+        await table.close_all()
+        server.close()
+        return far
+
+    far = asyncio.run(scenario())
+
+    assert [line for line in far.heads[0].split(b"\r\n") if b"Cookie" in line] == [
+        b"Cookie: k=v"
+    ]
+    assert [line for line in far.heads[1].split(b"\r\n") if b"Cookie" in line] == [
+        b"Cookie: neutrino_0123=a; k=v"
+    ]
 
 
 def test_another_origin_is_refused_403():

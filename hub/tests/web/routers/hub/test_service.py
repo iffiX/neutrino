@@ -388,6 +388,7 @@ def test_an_open_starts_the_entry_s_forward_and_answers_its_port_and_token(
         host="",
         port=8444,
         token="tkn-1",
+        has_forwarder=True,
     )
     monkeypatch.setattr(
         services, "app_open", lambda runtime, entry_id: ("", {}, opened)
@@ -406,6 +407,7 @@ def test_an_open_starts_the_entry_s_forward_and_answers_its_port_and_token(
             device_id=DEVICE,
             host="",
             port=8444,
+            has_forwarder=True,
         )
     ]
 

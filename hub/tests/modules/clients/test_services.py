@@ -987,6 +987,7 @@ def test_the_panels_open_of_an_instance_mints_its_token_and_names_its_machine(
             host="",
             port=3001,
             token="fresh-1",
+            has_forwarder=True,
         ),
     )
     assert second[2].token == "fresh-2"
@@ -999,12 +1000,14 @@ def test_the_panels_open_of_a_page_with_no_token_answers_none(config_dir):
 
     assert (code, params) == ("", {})
     assert (opened.scheme, opened.port, opened.token) == ("https", 3000, "")
+    assert opened.has_forwarder is False
 
 
 def test_the_panels_open_of_a_declared_app_dials_its_own_host(config_dir):
     _, _, opened = services.app_open(opening_runtime((DECLARED_ENTRY,)), "declared_nas")
 
     assert (opened.device_id, opened.host, opened.port) == ("", "192.168.100.1", 5000)
+    assert opened.has_forwarder is False
 
 
 def test_the_panels_open_refuses_what_is_no_web_entry_published_now(config_dir):

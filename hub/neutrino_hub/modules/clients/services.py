@@ -125,6 +125,8 @@ class AppOpen:
         port: The entry's port.
         token: The token the forwarder signs the browser in with; empty for
             an entry that takes none.
+        has_forwarder: Whether a forwarder of the agent's serves the page,
+            the entry's ``is_token_required``.
     """
 
     entry_id: str
@@ -133,6 +135,7 @@ class AppOpen:
     host: str
     port: int
     token: str = ""
+    has_forwarder: bool = False
 
 
 def service_material(runtime, client_id: str, entry_id: str) -> tuple:
@@ -234,7 +237,8 @@ def app_open(runtime, entry_id: str) -> tuple:
     code, material = web_material(runtime, entry, device_id)
     if code:
         return code, material, None
-    url = urlsplit(str((entry.get("payload") or {}).get("url", "") or ""))
+    payload = entry.get("payload") or {}
+    url = urlsplit(str(payload.get("url", "") or ""))
     return (
         "",
         {},
@@ -245,6 +249,7 @@ def app_open(runtime, entry_id: str) -> tuple:
             host=host,
             port=entry_port(entry),
             token=str(material.get("token", "") or ""),
+            has_forwarder=payload.get("is_token_required") is True,
         ),
     )
 

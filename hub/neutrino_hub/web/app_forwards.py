@@ -7,7 +7,8 @@ its range free on both, and joins each
 connection to the entry's far end: the hub transport's loopback forward to a
 machine's port, or a declared app's host. It reads each request's head,
 writes ``Host`` and ``Origin`` as loopback's, takes the panel's session
-cookie out, and passes every other byte on unread. A forward with no open
+cookie out, or every ``neutrino_`` cookie for a page no forwarder of the
+agent's serves, and passes every other byte on unread. A forward with no open
 connection for the idle time ends.
 
 Not pure: listens and dials.
@@ -27,6 +28,7 @@ from neutrino_hub.web.constants import (
     WEB_APP_FORWARD_PORT_MAX,
     WEB_APP_FORWARD_PORT_MIN,
     WEB_APP_FORWARD_SWEEP_S,
+    WEB_NEUTRINO_COOKIE_PREFIX,
     WEB_SESSION_COOKIE_PREFIX,
 )
 
@@ -57,6 +59,7 @@ class AppForwardTarget:
             forwards to; empty for a declared app.
         host: The declared app's host; empty for a machine's port.
         port: The port on the machine or at ``host``.
+        has_forwarder: Whether a forwarder of the agent's serves the page.
     """
 
     entry_id: str
@@ -64,6 +67,7 @@ class AppForwardTarget:
     device_id: str
     host: str
     port: int
+    has_forwarder: bool = False
 
 
 @dataclass(frozen=True)
@@ -103,19 +107,23 @@ class AppForward:
     last_active_at: float = 0.0
 
 
-def rewrite_request_head(head: bytes, *, scheme: str, port: int) -> RequestHead:
+def rewrite_request_head(
+    head: bytes, *, scheme: str, port: int, has_forwarder: bool = False
+) -> RequestHead:
     """One request's head written for the app behind a forward.
 
     Args:
         head: The request line and the headers, up to the blank line.
         scheme: The forward's scheme, ``http`` or ``https``.
         port: The forward's port.
+        has_forwarder: Whether a forwarder of the agent's serves the page.
 
     Returns:
         The head with ``Host`` as ``127.0.0.1:<port>``, the forward's own
         ``Origin`` written the same way, and every cookie whose name starts
-        with ``neutrino_session_`` taken out; or a refusal, 403 for another
-        ``Origin`` and 411 for ``Transfer-Encoding`` or an unreadable
+        with ``neutrino_session_`` taken out, or with ``neutrino_`` for a
+        page no forwarder serves; or a refusal, 403 for another ``Origin``
+        and 411 for ``Transfer-Encoding`` or an unreadable
         ``Content-Length``.
     """
     lines = head.split(b"\r\n")
@@ -123,6 +131,7 @@ def rewrite_request_head(head: bytes, *, scheme: str, port: int) -> RequestHead:
     headers = [_split_field(line) for line in fields]
     received_host = _value(headers, b"host")
     place = f"{LOOPBACK_HOST}:{port}"
+    prefix = WEB_SESSION_COOKIE_PREFIX if has_forwarder else WEB_NEUTRINO_COOKIE_PREFIX
     written = [request_line]
     for name, value, line in headers:
         lowered = name.lower()
@@ -134,7 +143,7 @@ def rewrite_request_head(head: bytes, *, scheme: str, port: int) -> RequestHead:
             written.append(b"Origin: " + f"{scheme}://{place}".encode("latin-1"))
             continue
         if lowered == b"cookie":
-            kept = _kept_cookies(value)
+            kept = _kept_cookies(value, prefix)
             if kept:
                 written.append(b"Cookie: " + kept)
             continue
@@ -188,13 +197,13 @@ def _value(headers: list, name: bytes) -> bytes:
     return b""
 
 
-def _kept_cookies(value: bytes) -> bytes:
-    """A ``Cookie`` value without the panel's session cookies."""
-    prefix = WEB_SESSION_COOKIE_PREFIX.encode("latin-1")
+def _kept_cookies(value: bytes, prefix: str) -> bytes:
+    """A ``Cookie`` value without the cookies whose name starts with a prefix."""
+    taken = prefix.encode("latin-1")
     kept = [
         pair.strip()
         for pair in value.split(b";")
-        if pair.strip() and not pair.strip().startswith(prefix)
+        if pair.strip() and not pair.strip().startswith(taken)
     ]
     return b"; ".join(kept)
 
@@ -496,7 +505,10 @@ class AppForwardTable:
             except (asyncio.IncompleteReadError, asyncio.LimitOverrunError):
                 return
             request = rewrite_request_head(
-                head, scheme=target.scheme, port=forward.port
+                head,
+                scheme=target.scheme,
+                port=forward.port,
+                has_forwarder=target.has_forwarder,
             )
             if request.status:
                 await _answer(writer, request.status)
