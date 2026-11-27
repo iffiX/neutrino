@@ -1,4 +1,4 @@
-"""ComfyUI on Windows: the task registered as LOCAL SERVICE under a digest of its script and left running while the script is the same; a command as LOCAL SERVICE run in a one-shot task of LOCAL SERVICE's whose script sets ``UV_STACK_SIZE`` and writes its output to a file in the data directory, its last result and output read back and the task removed; the shared folders' rights set on each handle, the account's and LOCAL SERVICE's on every file and folder under them."""
+"""ComfyUI on Windows: the task registered as LOCAL SERVICE under a digest of its script and left running while the script is the same; a command as LOCAL SERVICE run in a one-shot task of LOCAL SERVICE's whose script sets ``UV_STACK_SIZE`` and writes its output to a file in the data directory, its last result and output read back and the task removed; the shared folders' rights set on each handle, the account's pass-through on the data directory and the account's and LOCAL SERVICE's on every file and folder under them."""
 
 import os
 import types
@@ -132,6 +132,7 @@ def test_the_windows_shared_folders_take_the_accounts_rights_on_each_handle(tmp_
         path: (rights, is_folder, is_inherited)
         for path, rights, is_folder, is_inherited in access.grants
     }
+    assert grants[applier.data_dir] == ([("anna", "(S,X,RA)")], True, False)
     assert grants[applier.base_dir] == ([("anna", "RX")], True, False)
     assert grants[os.path.join(applier.base_dir, "models")] == (
         [("anna", "M")],
@@ -170,6 +171,7 @@ def test_another_accounts_own_entries_go_from_the_shared_folders(tmp_path):
         os.makedirs(os.path.join(applier.base_dir, name))
     access = Access(
         {
+            applier.data_dir: ["S-1-5-18", "S-1-5-21-1-1001", "S-1-5-21-1-1002"],
             applier.base_dir: ["S-1-5-21-1-1001", "S-1-5-21-1-1002", "S-1-5-18"],
             models: ["S-1-5-21-1-1002", "S-1-5-19"],
         }
@@ -177,12 +179,14 @@ def test_another_accounts_own_entries_go_from_the_shared_folders(tmp_path):
     applier._folder_access = access
     applier.write_access("anna")
     assert access.revoked == [
+        (applier.data_dir, ["S-1-5-21-1-1002"]),
         (applier.base_dir, ["S-1-5-21-1-1002"]),
         (models, ["S-1-5-21-1-1002"]),
     ]
     access.revoked.clear()
     access.grants.clear()
     applier.write_access("")
+    assert (applier.data_dir, ["S-1-5-21-1-1001", "S-1-5-21-1-1002"]) in access.revoked
     assert (applier.base_dir, ["S-1-5-21-1-1001", "S-1-5-21-1-1002"]) in access.revoked
     assert access.grants == []
 

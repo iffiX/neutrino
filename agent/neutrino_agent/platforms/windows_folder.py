@@ -32,7 +32,8 @@ FOLDER_FLAGS = win32.FILE_FLAG_BACKUP_SEMANTICS | win32.FILE_FLAG_OPEN_REPARSE_P
 FOLDER_RIGHT_MASKS = {"(OI)(CI)M": 0x1301BF, "(OI)(CI)RX": 0x1200A9}
 # The mask of each right a folder is left to an account with, and of full
 # control. A file or a folder granted one right alone takes the same masks.
-LEFT_RIGHT_MASKS = {"R": 0x120089, "RX": 0x1200A9, "M": 0x1301BF}
+# ``(S,X,RA)`` passes through a folder and reads its attributes.
+LEFT_RIGHT_MASKS = {"R": 0x120089, "RX": 0x1200A9, "M": 0x1301BF, "(S,X,RA)": 0x1000A0}
 FULL_CONTROL_MASK = 0x1F01FF
 # SYSTEM and the administrators, by their well-known SIDs.
 SYSTEM_SID = "S-1-5-18"
@@ -91,8 +92,9 @@ class WindowsFolderAccess:
 
         Args:
             path: The folder or the file.
-            rights: ``[(account, right)]``, ``right`` one of ``R``, ``RX`` and
-                ``M``; an account written ``*<SID>`` is named by its SID.
+            rights: ``[(account, right)]``, ``right`` one of ``R``, ``RX``,
+                ``M`` and ``(S,X,RA)``; an account written ``*<SID>`` is
+                named by its SID.
             is_folder: Whether the path is a folder.
             is_inherited: Whether what a folder holds inherits the rights.
 

@@ -67,7 +67,10 @@ from neutrino_agent.modules.comfyui.server import (
 from neutrino_agent.modules.shared.account_service import write_if_changed
 from neutrino_agent.modules.shared.subprocess_run import run
 from neutrino_agent.modules.shared.unpacked_tree import remove_tree
-from neutrino_agent.modules.shared.windows_acl import grant_account_alone
+from neutrino_agent.modules.shared.windows_acl import (
+    WINDOWS_ACL_PASS_THROUGH,
+    grant_account_alone,
+)
 
 # The shell the tasks run their script with, a running task's state, the
 # states of a task that has not ended, and the last result of a task that
@@ -268,11 +271,12 @@ class ComfyuiWindowsApplier:
     def write_access(self, account: str) -> list:
         """Give the default account its entries on the shared folders and every file and folder under them.
 
-        Every other account's own allow entry on ``data\\`` and the five
-        folders goes. ``data\\`` takes read and execute for the account
-        alone, the write folders ``(OI)(CI)M`` and the read folders
-        ``(OI)(CI)RX``; every file and folder under them takes the account's
-        right and LOCAL SERVICE's modify, each on its own handle.
+        Every other account's own allow entry on the data directory,
+        ``data\\`` and the five folders goes. The data directory takes
+        ``(S,X,RA)`` for the account, ``data\\`` read and execute, each
+        inherited by nothing, the write folders ``(OI)(CI)M`` and the read
+        folders ``(OI)(CI)RX``; every file and folder under them takes the
+        account's right and LOCAL SERVICE's modify, each on its own handle.
 
         Args:
             account: The default account; empty names none.
@@ -287,7 +291,7 @@ class ComfyuiWindowsApplier:
         kept = set(COMFYUI_WINDOWS_KEPT_SIDS)
         if account:
             kept.add(self._account_sid(account))
-        folders = [self.base_dir] + [
+        folders = [self.data_dir, self.base_dir] + [
             self._join(self.base_dir, name)
             for name in COMFYUI_WRITE_FOLDERS + COMFYUI_READ_FOLDERS
         ]
@@ -300,6 +304,12 @@ class ComfyuiWindowsApplier:
                 left.append(folder)
         if not account:
             return left
+        access.grant_rights(
+            self.data_dir,
+            [(account, WINDOWS_ACL_PASS_THROUGH)],
+            is_folder=True,
+            is_inherited=False,
+        )
         access.grant_rights(
             self.base_dir, [(account, "RX")], is_folder=True, is_inherited=False
         )

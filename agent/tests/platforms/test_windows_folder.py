@@ -5,7 +5,8 @@ followed; a folder that is a reparse point, or whose final path is not the
 path asked because a folder above it is a junction, is refused ``ELOOP``
 and its handle closed; a grant folds one inherited entry of the right's
 mask for the account into the list read on that handle and sets it on the
-same handle; a revoke folds one revoking entry per account; keeping a
+same handle; the pass-through right folds ``(S,X,RA)``'s mask inherited by
+nothing; a revoke folds one revoking entry per account; keeping a
 folder's entries copies each inherited entry as its own and sets the list
 protected on the handle.
 """
@@ -186,6 +187,21 @@ def test_a_grant_folds_one_inherited_entry_and_sets_it_on_the_same_handle():
             win32.TRUSTEE_IS_NAME,
             "neutrino_ann",
         )
+    ]
+    assert advapi32.set == [
+        (HANDLE, win32.SE_FILE_OBJECT, win32.DACL_SECURITY_INFORMATION)
+    ]
+
+
+def test_a_pass_through_right_folds_one_entry_inherited_by_nothing():
+    access, _, advapi32 = folders()
+
+    access.grant_rights(
+        "C:\\data", [("anna", "(S,X,RA)")], is_folder=True, is_inherited=False
+    )
+
+    assert advapi32.folded == [
+        (0x1000A0, win32.SET_ACCESS, 0, win32.TRUSTEE_IS_NAME, "anna")
     ]
     assert advapi32.set == [
         (HANDLE, win32.SE_FILE_OBJECT, win32.DACL_SECURITY_INFORMATION)
