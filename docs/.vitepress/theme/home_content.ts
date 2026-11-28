@@ -182,7 +182,7 @@ export const APP_GROUPS = [
     apps: [{ name: "Ollama", icon: "ollama", link: "/deploy/ollama" }],
   },
   {
-    label: "AI 生图",
+    label: "AI 生图和视频",
     apps: [{ name: "ComfyUI", icon: "comfyui", link: "/deploy/comfyui" }],
   },
   {

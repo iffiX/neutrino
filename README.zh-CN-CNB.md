@@ -59,6 +59,7 @@ AI 工具更新快、配置多，有些默认源安装还慢。微子中枢点�
 | AI 助手 | [Hermes WebUI](https://neutrinohub.net/deploy/hermes_webui) |
 | AI 聊天机器人 | [AstrBot](https://neutrinohub.net/deploy/astrbot) |
 | AI 本地模型 | [Ollama](https://neutrinohub.net/deploy/ollama) |
+| AI 生图和视频 | [ComfyUI](https://neutrinohub.net/deploy/comfyui) |
 | AI 编辑器 | [VS Code](https://neutrinohub.net/deploy/vscode)、[code-server](https://neutrinohub.net/deploy/code_server) |
 | AI 写论文 | [Ayakaleaf](https://neutrinohub.net/deploy/ayakaleaf) |
 | AI 笔记 | [思源笔记](https://neutrinohub.net/deploy/siyuan) |
@@ -235,23 +236,20 @@ API 密钥或者订阅账号在中枢上添加一次，每台电脑上的 AI 工
 
 列表里没有的也能用：你可以自己声明服务，填多个端口和 HTTP 入口。容器暴露的端口会自动添加为应用，全部自动。
 
-| 应用 | 是什么 | 怎么部署 |
-| --- | --- | --- |
-| [VS Code](https://github.com/microsoft/vscode) | 微软的代码编辑器，运行在浏览器里 | [部署 VS Code](https://neutrinohub.net/deploy/vscode) |
-| [code-server](https://github.com/coder/code-server) | 开源的网页版 VS Code | [部署 code-server](https://neutrinohub.net/deploy/code_server) |
-| [Claude Code](https://github.com/anthropics/claude-code) | Anthropic 的命令行 AI 编程工具 | [部署 Claude Code](https://neutrinohub.net/deploy/claude_code) |
-| [Codex](https://github.com/openai/codex) | OpenAI 的命令行 AI 编程工具 | [部署 Codex](https://neutrinohub.net/deploy/codex) |
-| [OpenCode](https://github.com/anomalyco/opencode) | 开源的命令行 AI 编程工具 | [部署 OpenCode](https://neutrinohub.net/deploy/opencode) |
-| [Ollama](https://github.com/ollama/ollama) | 在自己电脑上运行大语言模型，模型也能通过 AI 网关使用 | [部署 Ollama](https://neutrinohub.net/deploy/ollama) |
-| [CloudCLI](https://github.com/siteboon/claudecodeui) | Claude Code 等 AI 编程工具的网页界面 | [部署 CloudCLI](https://neutrinohub.net/deploy/cloudcli) |
-| [Codeg](https://github.com/spacering-net/codeg) | AI 编程工作台，在一个网页里使用 Claude Code、Codex 和 Gemini | [部署 Codeg](https://neutrinohub.net/deploy/codeg) |
-| [Hermes WebUI](https://github.com/nesquena/hermes-webui) | AI 助手 Hermes Agent 的网页界面 | [部署 Hermes WebUI](https://neutrinohub.net/deploy/hermes_webui) |
-| [Ayakaleaf](https://github.com/ayaka-notes/ayakaleaf-pro) | 写 LaTeX 论文的网页编辑器，能和同学一起写 | [部署 Ayakaleaf](https://neutrinohub.net/deploy/ayakaleaf) |
-| [AstrBot](https://github.com/AstrBotDevs/AstrBot) | 把大模型接进 QQ、微信、飞书的聊天机器人平台 | [部署 AstrBot](https://neutrinohub.net/deploy/astrbot) |
-| [思源笔记](https://github.com/siyuan-note/siyuan) | 笔记和知识库软件，笔记保存在自己的电脑上 | [部署思源笔记](https://neutrinohub.net/deploy/siyuan) |
-| [Gitea](https://github.com/go-gitea/gitea) | 可以自行部署的代码托管服务，类似 GitHub | [部署 Gitea](https://neutrinohub.net/deploy/gitea) |
-| [Podman](https://github.com/podman-container-tools/podman) | 运行容器的引擎，列表里没有的软件也能运行 | [部署容器](https://neutrinohub.net/deploy/containers) |
-| [Samba](https://www.samba.org/) | 把系统上的文件夹挂载到客户端的某个路径或者盘符来直接读写 | [部署文件共享](https://neutrinohub.net/deploy/file_share) |
+| 用途 | 应用 |
+| --- | --- |
+| AI agent | [Claude Code](https://neutrinohub.net/deploy/claude_code)、[Codex](https://neutrinohub.net/deploy/codex)、[OpenCode](https://neutrinohub.net/deploy/opencode) |
+| AI harness | [CloudCLI](https://neutrinohub.net/deploy/cloudcli)、[Codeg](https://neutrinohub.net/deploy/codeg) |
+| AI 助手 | [Hermes WebUI](https://neutrinohub.net/deploy/hermes_webui) |
+| AI 聊天机器人 | [AstrBot](https://neutrinohub.net/deploy/astrbot) |
+| AI 本地模型 | [Ollama](https://neutrinohub.net/deploy/ollama) |
+| AI 生图和视频 | [ComfyUI](https://neutrinohub.net/deploy/comfyui) |
+| AI 编辑器 | [VS Code](https://neutrinohub.net/deploy/vscode)、[code-server](https://neutrinohub.net/deploy/code_server) |
+| AI 写论文 | [Ayakaleaf](https://neutrinohub.net/deploy/ayakaleaf) |
+| AI 笔记 | [思源笔记](https://neutrinohub.net/deploy/siyuan) |
+| 放代码 | [Gitea](https://neutrinohub.net/deploy/gitea) |
+| 系统访问 | [远程桌面](https://neutrinohub.net/deploy/remote_desktop)、[文件共享](https://neutrinohub.net/deploy/file_share)、[终端](https://neutrinohub.net/deploy/terminal)、[SSH](https://neutrinohub.net/deploy/ssh) |
+| 跑容器 | [容器](https://neutrinohub.net/deploy/containers) |
 
 ## 致谢
 

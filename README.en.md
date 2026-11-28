@@ -60,6 +60,7 @@ AI tools change fast, take a lot of setup, and some install slowly from their de
 | AI assistants | [Hermes WebUI](https://neutrinohub.net/en/deploy/hermes_webui) |
 | AI chat bots | [AstrBot](https://neutrinohub.net/en/deploy/astrbot) |
 | AI local models | [Ollama](https://neutrinohub.net/en/deploy/ollama) |
+| AI images and video | [ComfyUI](https://neutrinohub.net/en/deploy/comfyui) |
 | AI editors | [VS Code](https://neutrinohub.net/en/deploy/vscode), [code-server](https://neutrinohub.net/en/deploy/code_server) |
 | AI paper writing | [Ayakaleaf](https://neutrinohub.net/en/deploy/ayakaleaf) |
 | AI notes | [SiYuan](https://neutrinohub.net/en/deploy/siyuan) |
@@ -254,23 +255,20 @@ Neutrino Hub supports the apps below, and the list is growing fast.
 
 Anything else works too. You can declare your own service, with several ports and HTTP entries. A port a container publishes appears as an app automatically.
 
-| App | What it is | How to deploy |
-| --- | --- | --- |
-| [VS Code](https://github.com/microsoft/vscode) | Microsoft's code editor, running in a browser | [Deploy VS Code](https://neutrinohub.net/en/deploy/vscode) |
-| [code-server](https://github.com/coder/code-server) | VS Code as an open source web app | [Deploy code-server](https://neutrinohub.net/en/deploy/code_server) |
-| [Claude Code](https://github.com/anthropics/claude-code) | The command-line AI coding tool from Anthropic | [Deploy Claude Code](https://neutrinohub.net/en/deploy/claude_code) |
-| [Codex](https://github.com/openai/codex) | The command-line AI coding tool from OpenAI | [Deploy Codex](https://neutrinohub.net/en/deploy/codex) |
-| [OpenCode](https://github.com/anomalyco/opencode) | An open source command-line AI coding tool | [Deploy OpenCode](https://neutrinohub.net/en/deploy/opencode) |
-| [Ollama](https://github.com/ollama/ollama) | Runs language models on your own computer, and its models reach the AI gateway too | [Deploy Ollama](https://neutrinohub.net/en/deploy/ollama) |
-| [CloudCLI](https://github.com/siteboon/claudecodeui) | A web page for Claude Code and other AI coding tools | [Deploy CloudCLI](https://neutrinohub.net/en/deploy/cloudcli) |
-| [Codeg](https://github.com/spacering-net/codeg) | An AI coding workspace with Claude Code, Codex and Gemini on one page | [Deploy Codeg](https://neutrinohub.net/en/deploy/codeg) |
-| [Hermes WebUI](https://github.com/nesquena/hermes-webui) | A web page for the Hermes Agent assistant | [Deploy Hermes WebUI](https://neutrinohub.net/en/deploy/hermes_webui) |
-| [Ayakaleaf](https://github.com/ayaka-notes/ayakaleaf-pro) | A web editor for writing LaTeX papers with classmates | [Deploy Ayakaleaf](https://neutrinohub.net/en/deploy/ayakaleaf) |
-| [AstrBot](https://github.com/AstrBotDevs/AstrBot) | A chat bot platform that brings large language models into QQ, WeChat, Telegram and Slack | [Deploy AstrBot](https://neutrinohub.net/en/deploy/astrbot) |
-| [SiYuan](https://github.com/siyuan-note/siyuan) | Notes and a knowledge base, kept on your computer | [Deploy SiYuan](https://neutrinohub.net/en/deploy/siyuan) |
-| [Gitea](https://github.com/go-gitea/gitea) | A self-hosted code hosting service, similar to GitHub | [Deploy Gitea](https://neutrinohub.net/en/deploy/gitea) |
-| [Podman](https://github.com/podman-container-tools/podman) | A container engine for software the list leaves out | [Deploy containers](https://neutrinohub.net/en/deploy/containers) |
-| [Samba](https://www.samba.org/) | Mounts a folder on your system at a path or drive letter on the client for direct reading and writing | [Deploy file sharing](https://neutrinohub.net/en/deploy/file_share) |
+| Use | Apps |
+| --- | --- |
+| AI agents | [Claude Code](https://neutrinohub.net/en/deploy/claude_code), [Codex](https://neutrinohub.net/en/deploy/codex), [OpenCode](https://neutrinohub.net/en/deploy/opencode) |
+| AI harnesses | [CloudCLI](https://neutrinohub.net/en/deploy/cloudcli), [Codeg](https://neutrinohub.net/en/deploy/codeg) |
+| AI assistants | [Hermes WebUI](https://neutrinohub.net/en/deploy/hermes_webui) |
+| AI chat bots | [AstrBot](https://neutrinohub.net/en/deploy/astrbot) |
+| AI local models | [Ollama](https://neutrinohub.net/en/deploy/ollama) |
+| AI images and video | [ComfyUI](https://neutrinohub.net/en/deploy/comfyui) |
+| AI editors | [VS Code](https://neutrinohub.net/en/deploy/vscode), [code-server](https://neutrinohub.net/en/deploy/code_server) |
+| AI paper writing | [Ayakaleaf](https://neutrinohub.net/en/deploy/ayakaleaf) |
+| AI notes | [SiYuan](https://neutrinohub.net/en/deploy/siyuan) |
+| Hosting code | [Gitea](https://neutrinohub.net/en/deploy/gitea) |
+| System access | [Remote desktop](https://neutrinohub.net/en/deploy/remote_desktop), [File share](https://neutrinohub.net/en/deploy/file_share), [Terminal](https://neutrinohub.net/en/deploy/terminal), [SSH](https://neutrinohub.net/en/deploy/ssh) |
+| Containers | [Containers](https://neutrinohub.net/en/deploy/containers) |
 
 ## Acknowledgements
 

@@ -60,6 +60,56 @@ export const sidebar: DefaultTheme.SidebarItem[] = [
       { text: "在一个系统上安装应用", link: "/deploy/on_a_machine" },
       { text: "应用的分类", link: "/deploy/app_kinds" },
       {
+        text: "AI agent",
+        items: [
+          { text: "Claude Code", link: "/deploy/claude_code" },
+          { text: "Codex", link: "/deploy/codex" },
+          { text: "OpenCode", link: "/deploy/opencode" },
+        ],
+      },
+      {
+        text: "AI harness",
+        items: [
+          { text: "CloudCLI", link: "/deploy/cloudcli" },
+          { text: "Codeg", link: "/deploy/codeg" },
+        ],
+      },
+      {
+        text: "AI 助手",
+        items: [{ text: "Hermes WebUI", link: "/deploy/hermes_webui" }],
+      },
+      {
+        text: "AI 聊天机器人",
+        items: [{ text: "AstrBot", link: "/deploy/astrbot" }],
+      },
+      {
+        text: "AI 本地模型",
+        items: [{ text: "Ollama", link: "/deploy/ollama" }],
+      },
+      {
+        text: "AI 生图和视频",
+        items: [{ text: "ComfyUI", link: "/deploy/comfyui" }],
+      },
+      {
+        text: "AI 编辑器",
+        items: [
+          { text: "VS Code", link: "/deploy/vscode" },
+          { text: "code-server", link: "/deploy/code_server" },
+        ],
+      },
+      {
+        text: "AI 写论文",
+        items: [{ text: "Ayakaleaf", link: "/deploy/ayakaleaf" }],
+      },
+      {
+        text: "AI 笔记",
+        items: [{ text: "思源笔记", link: "/deploy/siyuan" }],
+      },
+      {
+        text: "放代码",
+        items: [{ text: "Gitea", link: "/deploy/gitea" }],
+      },
+      {
         text: "系统访问",
         items: [
           { text: "远程桌面", link: "/deploy/remote_desktop" },
@@ -69,38 +119,12 @@ export const sidebar: DefaultTheme.SidebarItem[] = [
         ],
       },
       {
-        text: "写代码",
-        items: [
-          { text: "VS Code", link: "/deploy/vscode" },
-          { text: "code-server", link: "/deploy/code_server" },
-          { text: "Gitea", link: "/deploy/gitea" },
-        ],
+        text: "跑容器",
+        items: [{ text: "容器", link: "/deploy/containers" }],
       },
       {
-        text: "AI 工作流",
+        text: "已有的服务和设备",
         items: [
-          { text: "CloudCLI", link: "/deploy/cloudcli" },
-          { text: "Codeg", link: "/deploy/codeg" },
-          { text: "Hermes WebUI", link: "/deploy/hermes_webui" },
-          { text: "AstrBot", link: "/deploy/astrbot" },
-          { text: "Claude Code", link: "/deploy/claude_code" },
-          { text: "Codex", link: "/deploy/codex" },
-          { text: "OpenCode", link: "/deploy/opencode" },
-          { text: "Ollama", link: "/deploy/ollama" },
-          { text: "ComfyUI", link: "/deploy/comfyui" },
-        ],
-      },
-      {
-        text: "论文和笔记",
-        items: [
-          { text: "Ayakaleaf", link: "/deploy/ayakaleaf" },
-          { text: "思源笔记", link: "/deploy/siyuan" },
-        ],
-      },
-      {
-        text: "自己的服务",
-        items: [
-          { text: "容器", link: "/deploy/containers" },
           { text: "加入已有的服务", link: "/deploy/services" },
           { text: "访问没有安装被控端的设备", link: "/deploy/without_agent" },
         ],
@@ -188,11 +212,19 @@ const ENGLISH: Record<string, string> = {
   远程桌面: "Remote desktop",
   文件共享: "File sharing",
   终端: "Terminal",
-  写代码: "Coding",
-  "AI 工作流": "AI workflows",
-  论文和笔记: "Papers and notes",
+  "AI agent": "AI agents",
+  "AI harness": "AI harnesses",
+  "AI 助手": "AI assistants",
+  "AI 聊天机器人": "AI chat bots",
+  "AI 本地模型": "AI local models",
+  "AI 生图和视频": "AI images and video",
+  "AI 编辑器": "AI editors",
+  "AI 写论文": "AI paper writing",
+  "AI 笔记": "AI notes",
+  放代码: "Hosting code",
+  跑容器: "Containers",
+  已有的服务和设备: "Existing services and devices",
   思源笔记: "SiYuan",
-  自己的服务: "Your own services",
   容器: "Containers",
   加入已有的服务: "Add existing services",
   访问没有安装被控端的设备: "Devices without an agent",
